@@ -116,8 +116,8 @@ name: app-store screenshots (iPad)
 - takeScreenshot: 01-home
 
 # Wall display — the wall-mounted kiosk HERO: the lit board + the current climb big
-# and readable from the mat. It is no sidebar destination: it opens full screen from
-# the Climbs ⋯ menu, so go back to Climbs first.
+# and readable from the mat. Return to Climbs and put the verified climb in the
+# solo queue through its real row, so the native MiniPlayer has a climb to show.
 - retry:
     maxRetries: 2
     commands:
@@ -147,13 +147,85 @@ name: app-store screenshots (iPad)
     visible:
       id: '^climbs-screen$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^climbs-capture-settled$'
+    timeout: 90000
+- tapOn:
+    id: '^climb-row$'
+    text: ${SCREENSHOT_PRIMARY_CLIMB_ROW}
+    childOf:
+      id: '^climb-list$'
+- extendedWaitUntil:
+    visible:
+      id: '^play-drawer-board-overlay$'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
+- tapOn: ${SCREENSHOT_CLOSE_LABEL}
+- extendedWaitUntil:
+    notVisible:
+      id: '^play-drawer-board-overlay$'
+    timeout: 60000
+# Both the native MiniPlayer and the legacy floating bar expose Log ascent.
+# Prove the queue is populated before deciding which Wall display entry exists.
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_MINI_PLAYER_LOG_LABEL}
+    timeout: 30000
+- waitForAnimationToEnd
 - retry:
     maxRetries: 2
     commands:
-      - tapOn: ${SCREENSHOT_CLIMBS_OPTIONS_LABEL}
-      - tapOn: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+      # A prior tap may already have opened the kiosk before a retry starts.
+      - runFlow:
+          when:
+            notVisible:
+              id: '^wall-display-controls(?:-faded)?$'
+          commands:
+            - runFlow:
+                when:
+                  visible: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+                commands:
+                  - tapOn: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+                  - extendedWaitUntil:
+                      visible:
+                        id: '^wall-display-controls(?:-faded)?$'
+                      timeout: 15000
+            - runFlow:
+                when:
+                  notVisible:
+                    id: '^wall-display-controls(?:-faded)?$'
+                commands:
+                  - runFlow:
+                      when:
+                        visible: ${SCREENSHOT_MINI_PLAYER_MORE_LABEL}
+                      commands:
+                        - tapOn: ${SCREENSHOT_MINI_PLAYER_MORE_LABEL}
+                        - extendedWaitUntil:
+                            visible: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+                            timeout: 15000
+                        - tapOn: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+                        - extendedWaitUntil:
+                            visible:
+                              id: '^wall-display-controls(?:-faded)?$'
+                            timeout: 15000
+                  # Only a bar without native controls uses the Climbs menu.
+                  - runFlow:
+                      when:
+                        notVisible:
+                          id: '^wall-display-controls(?:-faded)?$'
+                      commands:
+                        - assertNotVisible: ${SCREENSHOT_MINI_PLAYER_MORE_LABEL}
+                        - tapOn: ${SCREENSHOT_CLIMBS_OPTIONS_LABEL}
+                        - extendedWaitUntil:
+                            visible: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+                            timeout: 15000
+                        - tapOn: ${SCREENSHOT_WALL_DISPLAY_LABEL}
       - extendedWaitUntil:
-          visible: ${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}
+          visible:
+            id: '^wall-display-controls(?:-faded)?$'
           timeout: 15000
 - extendedWaitUntil:
     visible: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*'

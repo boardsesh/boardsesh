@@ -1128,9 +1128,11 @@ describe('renderMaestroFlowForIosDevice', () => {
       assertNotVisible?: string;
     }>;
     // Sidebar navigations open the collapsed sidebar first; the Wall display's own
-    // retries (open it from the Climbs menu, leave it) do not.
+    // retries (open the Wall display from the bar or menu, leave it) do not.
     const navigation = commands.flatMap((command) =>
-      command.retry?.commands.some((nested) => nested.runFlow) ? [command.retry.commands] : [],
+      command.retry?.commands.some((nested) => nested.runFlow?.when.visible === '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}')
+        ? [command.retry.commands]
+        : [],
     );
     expect(navigation).toHaveLength(6);
     // The Wall display is no sidebar destination: its scene goes back to Climbs.
@@ -1216,7 +1218,7 @@ describe('renderMaestroFlowForIosDevice', () => {
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
-      expect(env).toHaveLength(20);
+      expect(env).toHaveLength(22);
       expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
       expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
       for (const [index, segment] of ['HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
@@ -1225,7 +1227,174 @@ describe('renderMaestroFlowForIosDevice', () => {
       for (const [index, name] of ['CLIMBS_OPTIONS', 'WALL_DISPLAY', 'WALL_DISPLAY_EXIT'].entries()) {
         expect(env).toContain('SCREENSHOT_' + name + '_LABEL=' + wallDisplay[locale][index]);
       }
+      const session = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+        mobile: { queue: { logAscent: string; alreadyLogged: string } };
+      };
+      const logSelector = env
+        .find((entry) => entry.startsWith('SCREENSHOT_MINI_PLAYER_LOG_LABEL='))!
+        .split('=')
+        .slice(1)
+        .join('=');
+      expect(new RegExp(logSelector).test(session.mobile.queue.logAscent)).toBe(true);
+      expect(
+        new RegExp(logSelector).test(`${session.mobile.queue.logAscent}, ${session.mobile.queue.alreadyLogged}`),
+      ).toBe(true);
+      expect(new RegExp(logSelector).test(`${session.mobile.queue.logAscent} somewhere else`)).toBe(false);
     }
+  });
+});
+
+describe('iPad Wall display capture navigation', () => {
+  type Selector = string | { id?: string; text?: string; childOf?: { id: string } };
+  type Command = {
+    tapOn?: Selector;
+    assertNotVisible?: Selector;
+    extendedWaitUntil?: { visible?: Selector; notVisible?: Selector };
+    runFlow?: { when: { visible?: Selector; notVisible?: Selector }; commands: Command[] };
+    retry?: { commands: Command[] };
+    takeScreenshot?: string;
+  };
+  type Element = { id?: string; text?: string; parentId?: string };
+
+  const row = '${SCREENSHOT_PRIMARY_CLIMB_ROW}';
+  const close = '${SCREENSHOT_CLOSE_LABEL}';
+  const log = '${SCREENSHOT_MINI_PLAYER_LOG_LABEL}';
+  const more = '${SCREENSHOT_MINI_PLAYER_MORE_LABEL}';
+  const options = '${SCREENSHOT_CLIMBS_OPTIONS_LABEL}';
+  const wall = '${SCREENSHOT_WALL_DISPLAY_LABEL}';
+  const routeId = '^wall-display-controls(?:-faded)?$';
+
+  function captureCommands() {
+    const source = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
+    const commands = parseAllDocuments(source)[1].toJS() as Command[];
+    const entryIndex = commands.findIndex((command) =>
+      command.retry?.commands.some(
+        (nested) =>
+          typeof nested.extendedWaitUntil?.visible === 'object' && nested.extendedWaitUntil.visible.id === routeId,
+      ),
+    );
+    const primingIndex = commands.findIndex(
+      (command) =>
+        typeof command.extendedWaitUntil?.visible === 'object' &&
+        command.extendedWaitUntil.visible.id === '^climbs-capture-settled$',
+    );
+    expect(primingIndex).toBeGreaterThan(-1);
+    expect(entryIndex).toBeGreaterThan(primingIndex);
+    return { commands, entryIndex, program: commands.slice(primingIndex, entryIndex + 1) };
+  }
+
+  function runFixture(bar: 'direct' | 'overflow' | 'legacy' | 'empty', root = 'wall-display-controls', settled = true) {
+    let elements: Element[] = [
+      { id: 'climbs-screen' },
+      ...(settled ? [{ id: 'climbs-capture-settled' }] : []),
+      { id: 'climb-row', text: row, parentId: 'climb-list' },
+    ];
+    const taps: string[] = [];
+    const visible = (selector: Selector) =>
+      elements.some((element) => {
+        if (typeof selector === 'string') return element.text === selector;
+        return (
+          (!selector.id || new RegExp(selector.id).test(element.id ?? '')) &&
+          (!selector.text || selector.text === element.text) &&
+          (!selector.childOf || new RegExp(selector.childOf.id).test(element.parentId ?? ''))
+        );
+      });
+    const run = (commands: Command[]) => {
+      for (const command of commands) {
+        const flow = command.runFlow;
+        if (flow) {
+          if (
+            (!flow.when.visible || visible(flow.when.visible)) &&
+            (!flow.when.notVisible || !visible(flow.when.notVisible))
+          )
+            run(flow.commands);
+        }
+        if (command.retry) run(command.retry.commands);
+        const wait = command.extendedWaitUntil;
+        if (wait?.visible && !visible(wait.visible)) throw new Error(`Missing ${JSON.stringify(wait.visible)}`);
+        if (wait?.notVisible && visible(wait.notVisible))
+          throw new Error(`Still visible ${JSON.stringify(wait.notVisible)}`);
+        if (command.assertNotVisible && visible(command.assertNotVisible)) throw new Error('Unexpected control');
+        const selector = command.tapOn;
+        if (!selector) continue;
+        if (!visible(selector)) throw new Error(`Cannot tap ${JSON.stringify(selector)}`);
+        const label = typeof selector === 'string' ? selector : selector.text!;
+        taps.push(label);
+        if (label === row) {
+          elements = [{ id: 'play-drawer-board-overlay' }, { id: 'cpp-climb-painted-primary' }, { text: close }];
+        } else if (label === close) {
+          elements = [
+            { id: 'climbs-screen' },
+            { text: options },
+            ...(bar === 'empty' ? [] : [{ text: log }]),
+            ...(bar === 'direct' || bar === 'overflow' ? [{ text: more }] : []),
+            ...(bar === 'direct' ? [{ text: wall }] : []),
+          ];
+        } else if (label === more || label === options) {
+          elements.push({ text: wall });
+        } else if (label === wall) {
+          elements = [{ id: root }];
+        }
+      }
+    };
+    return { run, taps, setRoot: () => (elements = [{ id: root }]) };
+  }
+
+  it.each(['wall-display-controls', 'wall-display-controls-faded'])(
+    'primes the real climb and prefers the direct MiniPlayer button with %s',
+    (root) => {
+      const fixture = runFixture('direct', root);
+      fixture.run(captureCommands().program);
+      expect(fixture.taps).toEqual([row, close, wall]);
+    },
+  );
+
+  it('opens the specific MiniPlayer overflow when its Wall display button is hidden', () => {
+    const fixture = runFixture('overflow');
+    fixture.run(captureCommands().program);
+    expect(fixture.taps).toEqual([row, close, more, wall]);
+  });
+
+  it('keeps the Climbs menu fallback for a populated legacy bar', () => {
+    const fixture = runFixture('legacy');
+    fixture.run(captureCommands().program);
+    expect(fixture.taps).toEqual([row, close, options, wall]);
+  });
+
+  it('fails before menu fallback if closing the player leaves the queue empty', () => {
+    const fixture = runFixture('empty');
+    expect(() => fixture.run(captureCommands().program)).toThrow('SCREENSHOT_MINI_PLAYER_LOG_LABEL');
+    expect(fixture.taps).toEqual([row, close]);
+  });
+
+  it('waits for settled rows before tapping a placeholder result', () => {
+    const fixture = runFixture('direct', 'wall-display-controls', false);
+    expect(() => fixture.run(captureCommands().program)).toThrow('climbs-capture-settled');
+    expect(fixture.taps).toEqual([]);
+  });
+
+  it('accepts an already-open faded kiosk on retry without reopening any menu', () => {
+    const fixture = runFixture('direct', 'wall-display-controls-faded');
+    fixture.setRoot();
+    const { commands, entryIndex } = captureCommands();
+    fixture.run([commands[entryIndex]]);
+    expect(fixture.taps).toEqual([]);
+  });
+
+  it('retains exact title, paint, faded-controls and normal Exit checks around capture', () => {
+    const { commands, entryIndex } = captureCommands();
+    expect(commands.slice(entryIndex + 1, entryIndex + 4).map((command) => command.extendedWaitUntil?.visible)).toEqual(
+      [
+        '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*',
+        { id: '${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}' },
+        { id: '^wall-display-controls-faded$' },
+      ],
+    );
+    const screenshotIndex = commands.findIndex((command) => command.takeScreenshot === '00-wall');
+    expect(commands[screenshotIndex + 1].retry?.commands.slice(0, 2)).toEqual([
+      { tapOn: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*' },
+      { tapOn: '${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}' },
+    ]);
   });
 });
 

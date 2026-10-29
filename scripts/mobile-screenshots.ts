@@ -3632,6 +3632,7 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
     mobile: {
       session: { recordTab: string };
       boardPresence: { wallDisplay: { open: string; exitA11y: string } };
+      queue: { logAscent: string; alreadyLogged: string };
     };
   };
   const playlists = JSON.parse(readFileSync(join(directory, 'playlists.json'), 'utf8')) as {
@@ -3646,10 +3647,11 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
     SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
     SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
     SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
-    // The Wall display opens from the Climbs ⋯ menu, not the sidebar.
+    // Prefer the populated MiniPlayer; older chrome keeps the Climbs menu entry.
     SCREENSHOT_CLIMBS_OPTIONS_LABEL: climbs.mobile.listOptions.title,
     SCREENSHOT_WALL_DISPLAY_LABEL: session.mobile.boardPresence.wallDisplay.open,
     SCREENSHOT_WALL_DISPLAY_EXIT_LABEL: session.mobile.boardPresence.wallDisplay.exitA11y,
+    SCREENSHOT_MINI_PLAYER_LOG_LABEL: `^${cppReadinessSelector(session.mobile.queue.logAscent)}(?:, ${cppReadinessSelector(session.mobile.queue.alreadyLogged)})?$`,
     // These UIKit-owned controls follow the simulator system language, not the JS catalog.
     // Store capture simulators use English; an unsupported native language fails closed.
     SCREENSHOT_SIDEBAR_HIDE_LABEL: 'Hide Sidebar',
@@ -3670,7 +3672,7 @@ export function buildIosCampaignMaestroEnv(
     mobileJoin: { join: string };
     mobile: { boardPresence: { stripA11yLabelWithSender: string } };
     queueDrawer: { title: string };
-    playView: { closeAria: string; actionBar: { queueCountAria: string } };
+    playView: { closeAria: string; actionBar: { queueCountAria: string; moreActionsForAria: string } };
   };
   const labels = {
     ...(primary
@@ -3679,6 +3681,7 @@ export function buildIosCampaignMaestroEnv(
           SCREENSHOT_PRIMARY_CLIMB_ROW: cppClimbRowReadinessSelector(primary.climb.name, locale),
           SCREENSHOT_PRIMARY_CLIMB_TITLE: cppReadinessSelector(primary.climb.name),
           SCREENSHOT_PRIMARY_WALL_PAINTED_ID: `^${cppReadinessSelector(primary.paintedId)}$`,
+          SCREENSHOT_MINI_PLAYER_MORE_LABEL: `^${cppReadinessSelector(catalog.playView.actionBar.moreActionsForAria.replaceAll('{{name}}', () => primary.climb.name))}$`,
         }
       : {}),
     SCREENSHOT_SHARED_SESSION_ID: capture?.sharedSessionId ?? '',
