@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 
 const ctrl = vi.hoisted(() => ({ os: 'ios' as string }));
 
@@ -77,8 +78,7 @@ const climbWithFrames = {
 //
 // What it warms is the per-board base, shared with the card an unfurler asks
 // for. The card itself is read off the page; see `share-prewarm.test.ts`.
-const expectedOgImageUrl =
-  'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225';
+const expectedOgImageUrl = `https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225&v=${BOARD_RENDER_VERSION}`;
 
 describe('useShareClimb', () => {
   beforeEach(() => {
@@ -223,7 +223,7 @@ describe('useShareClimb', () => {
       // The public card is warmed with exactly the URL www advertises.
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
-        `https://ws.boardsesh.com/og/climb?board_name=spray&layout_id=${SPRAY_LAYOUT_ID}&size_id=${SPRAY_LAYOUT_ID}&set_ids=1&frames=p12r42&format=jpeg`,
+        `https://ws.boardsesh.com/og/climb?board_name=spray&layout_id=${SPRAY_LAYOUT_ID}&size_id=${SPRAY_LAYOUT_ID}&set_ids=1&frames=p12r42&format=jpeg&v=${BOARD_RENDER_VERSION}`,
       );
       expect(fetchMock).toHaveBeenNthCalledWith(2, expected, expect.anything());
     });

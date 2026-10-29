@@ -7,7 +7,7 @@ import { createElement, type ReactNode } from 'react';
 
 const motion = vi.hoisted(() => ({ reduce: false, timings: [] as { toValue: number; duration: number }[] }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => motion.reduce }));
-vi.mock('../../../../assets/wall-glow/grain.png', () => ({ default: 1 }));
+vi.mock('@boardsesh/frosted-bokeh/grain.png', () => ({ default: 1 }));
 
 type Style = Record<string, unknown> | null | undefined | false | Style[];
 const flatten = (style: Style): Record<string, unknown> =>
@@ -54,6 +54,7 @@ vi.mock('react-native', () => {
 });
 
 import { WallGlow } from '../WallGlow';
+import { FrostedBokeh } from '../../FrostedBokeh';
 import type { WallGlowLayer } from '../use-wall-glow';
 
 afterEach(() => {
@@ -78,6 +79,14 @@ function layer(overrides: Partial<WallGlowLayer> = {}): WallGlowLayer {
 }
 
 describe('WallGlow', () => {
+  it('reuses the background independently of the button label policy', () => {
+    const view = render(createElement(FrostedBokeh, { layer: layer() }));
+    expect(view.getByTestId('frosted-bokeh').dataset.bg).toBe('#0E0D12');
+    expect(view.getByTestId('frosted-bokeh-blobs').children).toHaveLength(2);
+    expect(view.getByTestId('frosted-bokeh-frost')).toBeTruthy();
+    expect(view.queryByTestId('wall-glow-label-fade')).toBeNull();
+  });
+
   it('draws each blob, screened, on the dark base with the fade, the frost and the grain', () => {
     const view = render(createElement(WallGlow, { layer: layer(), width: 360 }));
     expect(view.getByTestId('wall-glow').dataset.bg).toBe('#0E0D12');

@@ -623,6 +623,9 @@ importers:
       '@boardsesh/board-react':
         specifier: workspace:*
         version: link:../shared/board-react
+      '@boardsesh/board-render':
+        specifier: workspace:*
+        version: link:../shared/board-render
       '@boardsesh/climb-actions':
         specifier: workspace:*
         version: link:../shared/climb-actions
@@ -638,6 +641,9 @@ importers:
       '@boardsesh/create-climb-react':
         specifier: workspace:*
         version: link:../shared/create-climb-react
+      '@boardsesh/frosted-bokeh':
+        specifier: workspace:*
+        version: link:../shared/frosted-bokeh
       '@boardsesh/graphql':
         specifier: workspace:*
         version: link:../shared/graphql
@@ -1206,6 +1212,9 @@ importers:
       '@boardsesh/board-renderer-wasm':
         specifier: workspace:*
         version: link:../../board-renderer/wasm
+      '@boardsesh/frosted-bokeh':
+        specifier: workspace:*
+        version: link:../frosted-bokeh
       '@boardsesh/play-view':
         specifier: workspace:*
         version: link:../play-view
@@ -1307,6 +1316,12 @@ importers:
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/frosted-bokeh:
+    devDependencies:
       typescript:
         specifier: ~7.0.2
         version: 7.0.2

@@ -1,4 +1,5 @@
 import { DynamicColorIOS, Platform, PlatformColor, type OpaqueColorValue } from 'react-native';
+import { BOKEH_DARK_SURFACE, BOKEH_LIGHT_SURFACE } from '@boardsesh/frosted-bokeh';
 import {
   blendOpaque,
   brandColors,
@@ -231,6 +232,6 @@ export type MaterialSurfaceContainers = typeof materialSurfaceContainers.light;
  * `wall-glow.ts` keeps the label at 4.5:1 over either.
  */
 export const wallGlowSurfaces = {
-  dark: { base: '#0E0D12', label: '#FFFFFF', frost: true, border: 'rgba(255, 255, 255, 0.2)' },
-  light: { base: '#F6F3FB', label: '#16111F', frost: false, border: 'rgba(0, 0, 0, 0.12)' },
+  dark: { ...BOKEH_DARK_SURFACE, label: '#FFFFFF', border: 'rgba(255, 255, 255, 0.2)' },
+  light: { ...BOKEH_LIGHT_SURFACE, label: '#16111F', border: 'rgba(0, 0, 0, 0.12)' },
 } as const;

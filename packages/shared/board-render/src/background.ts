@@ -87,46 +87,25 @@ export function getBackgroundRelPaths(
 export type OgBoardRect = { left: number; top: number; width: number; height: number };
 
 /**
- * Build the OG social-card backdrop: a gradient canvas, a soft spotlight behind
- * the board, blurred accent circles, a rounded frame around the board art and a
- * rule separating it from the climb-identity column.
+ * Transparent OG framing, cached with the board photos. The climb-specific
+ * frosted backdrop is composed underneath this plane on each byte-cache miss.
  *
- * Carries no `<text>` on purpose. The backdrop is a pure function of the board
+ * Carries no `<text>` on purpose. The framing is a pure function of the board
  * rect, which is a pure function of the board config, which is what lets the
  * composited result be cached once per board and reused by every climb on it —
  * a per-climb string in here would make that cache per-climb.
  *
  * Returns an SVG buffer sharp can rasterise.
  */
-export function createOgBackgroundBuffer(board: OgBoardRect): Buffer {
+export function createOgFrameBuffer(board: OgBoardRect): Buffer {
   const frameX = Math.max(board.left - 14, 12);
   const frameY = Math.max(board.top - 14, 12);
   const frameWidth = Math.min(board.width + 28, OG_IMAGE_WIDTH - frameX - 12);
   const frameHeight = Math.min(board.height + 28, OG_IMAGE_HEIGHT - frameY - 12);
-  const spotlightX = Math.round(board.left + board.width / 2);
-  const spotlightY = Math.round(board.top + board.height / 2);
-  const spotlightRadius = Math.round(Math.max(board.width, board.height) * 0.75);
 
   return Buffer.from(
     `
       <svg width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#0E1720" />
-            <stop offset="100%" stop-color="#080D13" />
-          </linearGradient>
-          <radialGradient id="spotlight" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.07" />
-            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
-          </radialGradient>
-          <filter id="blur">
-            <feGaussianBlur stdDeviation="48" />
-          </filter>
-        </defs>
-        <rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#bg)" />
-        <circle cx="200" cy="180" r="190" fill="#14B8A6" opacity="0.20" filter="url(#blur)" />
-        <circle cx="1020" cy="560" r="170" fill="#F43F5E" opacity="0.12" filter="url(#blur)" />
-        <circle cx="${spotlightX}" cy="${spotlightY}" r="${spotlightRadius}" fill="url(#spotlight)" />
         <rect x="24" y="24" width="${OG_IMAGE_WIDTH - 48}" height="${OG_IMAGE_HEIGHT - 48}" rx="28" fill="none" stroke="rgba(255,255,255,0.09)" />
         <rect x="${frameX}" y="${frameY}" width="${frameWidth}" height="${frameHeight}" rx="20" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.16)" />
       </svg>

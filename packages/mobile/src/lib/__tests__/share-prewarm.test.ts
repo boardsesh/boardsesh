@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { BACKEND_URL } from '../env';
 import { PAGE_READ_TIMEOUT_MS, buildOgImageUrl, extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
 
@@ -263,6 +264,21 @@ describe('prewarmShareCaches', () => {
   });
 });
 
+describe('buildOgImageUrl for a catalogue board', () => {
+  it('warms a versioned Aura card without guessing the canonical climb identity', () => {
+    const builtUrl = buildOgImageUrl({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '20,1',
+      frames: 'p1145r15p1146r12',
+    });
+    expect(builtUrl).toBe(
+      `${BACKEND_URL}/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225&v=${BOARD_RENDER_VERSION}`,
+    );
+  });
+});
+
 describe('buildOgImageUrl for a spray wall', () => {
   const SPRAY = { boardName: 'spray', layoutId: 4321, sizeId: 4321, setIds: '1', frames: 'p12r42p19r43' } as const;
 
@@ -277,6 +293,7 @@ describe('buildOgImageUrl for a spray wall', () => {
       set_ids: '1',
       frames,
       format: 'jpeg',
+      v: BOARD_RENDER_VERSION,
     });
     return `${BACKEND_URL}/og/climb?${params}`;
   }

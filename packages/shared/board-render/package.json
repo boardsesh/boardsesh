@@ -39,6 +39,11 @@
       "types": "./src/generated/render-version.ts",
       "import": "./src/generated/render-version.ts",
       "default": "./src/generated/render-version.ts"
+    },
+    "./frosted-bokeh": {
+      "types": "./src/frosted-bokeh.ts",
+      "import": "./src/frosted-bokeh.ts",
+      "default": "./src/frosted-bokeh.ts"
     }
   },
   "scripts": {
@@ -50,6 +55,7 @@
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/board-look": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
+    "@boardsesh/frosted-bokeh": "workspace:*",
     "@boardsesh/play-view": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "zod": "^4.4.3"
