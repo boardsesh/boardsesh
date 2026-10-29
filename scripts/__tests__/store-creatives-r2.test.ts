@@ -75,6 +75,13 @@ describe('content-addressed store creative storage', () => {
     expect(() => parseCreativeManifest(duplicate)).toThrow('Duplicate');
     expect(() => parseCreativeManifest({ ...manifest, release: 'old' })).toThrow('schema');
   });
+  it('preserves an optional marketing version and rejects malformed bindings', () => {
+    const { manifest } = fixture();
+    expect(parseCreativeManifest({ ...manifest, marketingVersion: '2.6.0' }).marketingVersion).toBe('2.6.0');
+    for (const marketingVersion of ['2.6', '../2.6.0', 26, null]) {
+      expect(() => parseCreativeManifest({ ...manifest, marketingVersion })).toThrow('marketing version');
+    }
+  });
   it('uploads once, promotes server-side, then fetches verified originals', async () => {
     const { root, manifest, objects, store, video, file } = fixture();
     expect(await runCreativeStorage({ action: 'upload-candidates', root, manifest, store })).toEqual({

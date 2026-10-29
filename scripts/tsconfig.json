@@ -37,6 +37,7 @@
     "mobile-ota-preview-refresh.ts",
     "mobile-ota-preview-refresh.test.ts",
     "__tests__/mobile-ota-preview*.test.ts",
+    "__tests__/mobile-store-creatives-workflow.test.ts",
     "store-videos-gate.ts",
     "store-videos-publish.ts",
     "__tests__/store-videos-pipeline.test.ts",
