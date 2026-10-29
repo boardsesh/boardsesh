@@ -1229,6 +1229,7 @@
   },
   "undoDelete": {
     "removed": "Voce rimossa",
+    "removedMany": "{{count}} voci rimosse",
     "undo": "Annulla",
     "cancelled": "Eliminazione annullata. La tua voce è stata mantenuta."
   }
