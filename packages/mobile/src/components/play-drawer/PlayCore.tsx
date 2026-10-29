@@ -92,6 +92,7 @@ import {
   computeFirstSectionScrollTarget,
   initialDrawerPreviewItem,
   resolveWallStatusLinePlacement,
+  shouldFitBoardToHeight,
   shouldShowPanePlaceholder,
 } from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
@@ -2232,16 +2233,16 @@ export function PlayCore({
   //   so every button ends above the capsule and the first section starts below
   //   the fold rather than peeking under the capsule.
   // - The iPad player does only with sections to scroll to, with the controls
-  //   under the board, and with a plain second row (the busy-wall question or
-  //   Fell / Sent keep their place on screen); its favourite / share row hangs below
-  //   the fold.
-  const fitsBoardToHeight =
-    fitBoardToHeight &&
-    (isPane ||
-      (hasVisibleSections &&
-        !controlsAbove &&
-        Array.isArray(actionBarLayout.secondaryRow) &&
-        actionBarLayout.secondaryRow.length > 0));
+  //   under the board, and with a plain second row that hangs below the fold.
+  //   The wall button, the busy-wall question and Fell / Sent keep their place
+  //   on screen (`shouldFitBoardToHeight`, #6956).
+  const fitsBoardToHeight = shouldFitBoardToHeight({
+    fitBoardToHeight,
+    isPane,
+    hasVisibleSections,
+    controlsAbove,
+    secondaryRow: actionBarLayout.secondaryRow,
+  });
   const firstScreenPaddingBottom = fitsBoardToHeight && isPane ? insets.bottom : 0;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
   // In tabletop the controls sit between the first screen and the sections.
