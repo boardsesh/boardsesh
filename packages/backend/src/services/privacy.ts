@@ -16,7 +16,7 @@ export {
   resourceLocationCondition,
   sessionBoardLocationCondition,
 } from '@boardsesh/db/queries';
-import { and, eq, inArray, isNull, ne, not, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, not, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import {
@@ -472,6 +472,8 @@ export async function isLiveSessionMemberOnHomeWall(
         ),
       ),
     )
+    // Newest first, so a long-lived row cannot crowd the live session out of the cap.
+    .orderBy(desc(schema.boardSessions.lastActivity))
     .limit(5);
   if (rows.length === 0) return false;
   // Lazy: the room manager imports this module.
