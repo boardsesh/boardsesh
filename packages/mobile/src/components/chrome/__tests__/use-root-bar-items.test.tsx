@@ -26,6 +26,7 @@ const ctrl = vi.hoisted(() => ({
   haptic: vi.fn(),
   onRail: false,
   isTablet: false,
+  nativeAccessory: true,
 }));
 
 vi.mock('expo-router', () => ({ useRouter: () => ctrl.router }));
@@ -51,6 +52,9 @@ vi.mock('../BoardAnglePicker', () => ({
 }));
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: ctrl.isTablet }) }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useTabChrome: () => ({ nativeAccessory: ctrl.nativeAccessory }),
+}));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));
 
 import {
@@ -74,6 +78,7 @@ beforeEach(() => {
   ctrl.haptic.mockReset();
   ctrl.onRail = false;
   ctrl.isTablet = false;
+  ctrl.nativeAccessory = true;
 });
 
 describe('useAccountRailItem', () => {
@@ -225,6 +230,23 @@ describe('useClimbListBarItems', () => {
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
+  });
+
+  it('keeps Wall display in the menu on a tablet with no native MiniPlayer', () => {
+    ctrl.isTablet = true;
+    ctrl.nativeAccessory = false;
+    const { result } = renderHook(() => useClimbListBarItems({ onOpenHistory: vi.fn(), badge: false }));
+    const menu = result.current.find((item) => item.type === 'menu');
+    if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.wallDisplay.open',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    const wallDisplay = menu.menu.items.find((item) => item.label === 'mobile.boardPresence.wallDisplay.open');
+    if (wallDisplay?.type !== 'action') throw new Error('expected the Wall display action');
+    wallDisplay.onPress();
+    expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
   });
 
   it('puts the angle at the top of the menu when the bar has no room for it', () => {

@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   board: null as Board | null,
   isPad: false,
   isTablet: false,
+  nativeAccessory: true,
   widthClass: 'compact',
   os: 'ios',
   push: vi.fn(),
@@ -52,6 +53,9 @@ vi.mock('@boardsesh/board-config', () => ({ formatBoardDisplayName: (boardType: 
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: state.board }) }));
 vi.mock('../../../lib/boards/use-set-board-angle', () => ({ useSetBoardAngle: () => state.change }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: state.haptic }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useTabChrome: () => ({ nativeAccessory: state.nativeAccessory }),
+}));
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ isPad: state.isPad, isTablet: state.isTablet, widthClass: state.widthClass }),
 }));
@@ -201,6 +205,7 @@ beforeEach(() => {
   state.board = { ...BOARD };
   state.isPad = false;
   state.isTablet = false;
+  state.nativeAccessory = true;
   state.widthClass = 'compact';
   state.os = 'ios';
   state.push.mockReset();
@@ -292,6 +297,20 @@ describe('Climb list angle, history and options', () => {
     ]);
     // Switch board still opens its own group.
     expect(state.menu?.actions[1].dividerBefore).toBe(true);
+  });
+
+  it('keeps Wall display between View options and Switch board on a tablet with no native MiniPlayer', () => {
+    state.isPad = true;
+    state.isTablet = true;
+    state.nativeAccessory = false;
+    const { getByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.wallDisplay.open',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.open' }));
+    expect(state.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
   });
 
   it('cancels a phone picker without saving and applies only after confirmation', () => {
