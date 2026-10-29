@@ -286,7 +286,9 @@ climb).
   react-native-screens patch), about 47 pt tall, spanning both halves left of the rail. It never covers the player
   pane: the pane docks its controls above it (`PhoneSplitPane` gives its subtree a bottom inset of the bottom-chrome
   metrics' `fixedFooterBottom`, the accessory's height plus its gap), and fits the board to the height that leaves
-  (`computeFitToHeightFirstScreenHeight`), so the big row and the ♡ / share row both stay in view. The list on the
+  (`computeFitToHeightFirstScreenHeight`), so the big row and the ♡ / share row both stay in view. The first screen
+  pads that inset too, so the band under the capsule is empty at rest and the first section (Logbook) starts below
+  the fold instead of peeking out under the capsule. The list on the
   right pads for the bar through `scrollBottomPadding`, as every tab list does.
 
 ### Wide bar (iPad, open Duo)

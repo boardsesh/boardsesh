@@ -55,14 +55,18 @@ describe('resolvePlayerArrangement', () => {
 
 describe('computeFitToHeightFirstScreenHeight', () => {
   // The iPhone Duo's split pane: 669pt tall, with a 90pt bottom inset that clears
-  // the MiniPlayer capsule (34pt home indicator + 56pt accessory and gap).
-  const pane = { viewport: 669, bottomInset: 90 };
-  it('fills the pane down to the capsule, with both control rows above it', () => {
-    expect(computeFitToHeightFirstScreenHeight(pane)).toBe(579);
+  // the MiniPlayer capsule. The pane hangs that inset below the fold and pads it,
+  // so the first screen spans the pane and the first section starts below it.
+  it('spans the whole pane when the capsule band hangs below the fold', () => {
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 669, bottomInset: 90, belowFoldHeight: 90 })).toBe(669);
+  });
+
+  it("hangs the landscape iPad player's favourite / share row below the fold", () => {
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 1000, bottomInset: 20, belowFoldHeight: 52 })).toBe(1032);
   });
 
   it('never goes negative before the viewport is measured', () => {
-    expect(computeFitToHeightFirstScreenHeight({ viewport: 0, bottomInset: 90 })).toBe(0);
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 0, bottomInset: 90, belowFoldHeight: 0 })).toBe(0);
   });
 });
 

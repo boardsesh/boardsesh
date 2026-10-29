@@ -55,7 +55,7 @@ import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
-import { PlayDrawerActionBar } from './PlayDrawerActionBar';
+import { ACTION_BAR_SECONDARY_ROW_HEIGHT, PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { LastOnWallNote } from './LastOnWallNote';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
@@ -1959,13 +1959,24 @@ export function PlayCore({
 
   // Reserve only the first eligible section's header. Without sections, content
   // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  // The phone split's pane fits the board to the viewport's height instead,
-  // whatever its rows hold: the first screen ends at the pane's bottom inset,
-  // which clears the MiniPlayer capsule (`PhoneSplitPane`), so every button
-  // stays in view above it and the sections scroll clear of it. The usual first
-  // screen ends a section peek above the viewport's bottom, inside that inset,
-  // which would leave the last row under the capsule.
-  const fitsBoardToHeight = fitBoardToHeight;
+  // The phone split's pane and the landscape iPad player fit the board to the
+  // viewport's height instead (`computeFitToHeightFirstScreenHeight`).
+  // - The pane always does, whatever its rows hold: its bottom inset clears the
+  //   MiniPlayer capsule (`PhoneSplitPane`), and the first screen pads that band
+  //   so every button ends above the capsule and the first section starts below
+  //   the fold rather than peeking under the capsule.
+  // - The iPad player does only with sections to scroll to, with the controls
+  //   under the board, and with a plain second row (Put on the wall or Fell /
+  //   Sent keep their place on screen); its favourite / share row hangs below
+  //   the fold.
+  const fitsBoardToHeight =
+    fitBoardToHeight &&
+    (isPane ||
+      (hasVisibleSections &&
+        !controlsAbove &&
+        Array.isArray(actionBarLayout.secondaryRow) &&
+        actionBarLayout.secondaryRow.length > 0));
+  const firstScreenPaddingBottom = fitsBoardToHeight && isPane ? insets.bottom : 0;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
   // In tabletop the controls sit between the first screen and the sections.
   const [tabletopControlsHeight, setTabletopControlsHeight] = useState(0);
@@ -1978,6 +1989,7 @@ export function PlayCore({
       ? computeFitToHeightFirstScreenHeight({
           viewport: firstScreenViewport,
           bottomInset: insets.bottom,
+          belowFoldHeight: isPane ? firstScreenPaddingBottom : ACTION_BAR_SECONDARY_ROW_HEIGHT,
         })
       : computeDrawerFirstScreenHeight({
           viewport: firstScreenViewport,
@@ -2275,7 +2287,14 @@ export function PlayCore({
                 close + climb name sit at the very top. In the pane a docked WallStrip
                 can already own the top inset (paneTopInset=false). */}
                     <View
-                      style={[styles.firstScreen, { height: firstScreenHeight, paddingTop: firstScreenPaddingTop }]}
+                      style={[
+                        styles.firstScreen,
+                        {
+                          height: firstScreenHeight,
+                          paddingTop: firstScreenPaddingTop,
+                          paddingBottom: firstScreenPaddingBottom,
+                        },
+                      ]}
                     >
                       {/* Everything the wall-state callout covers. Wrapped so the
                         callout can trap assistive tech the way a modal does: iOS
