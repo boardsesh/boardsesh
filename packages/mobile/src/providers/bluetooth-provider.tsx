@@ -984,6 +984,13 @@ export function BluetoothProvider({
   // `conn:{connectionId}` and loses membership on every socket reconnect, so the
   // first rejection is worth one retry — a second would just hammer.
   const restampedReportSignatureRef = useRef<string | null>(null);
+  // Presence reports in flight, so a set and a clear never overlap (#7015). The
+  // server numbers them in allocation order, and `reportBoardClimb` does database
+  // reads before it allocates, so a set sent just before a clear can be numbered
+  // after it and leave every viewer "lit" over a dark wall. A clear waits for the
+  // set reports in flight; a set report waits for the clear in flight.
+  const climbReportsInFlightRef = useRef(new Set<Promise<boolean>>());
+  const clearReportInFlightRef = useRef<Promise<void> | null>(null);
   const wallCurrentClimbRef = useRef<BoardPresenceClimb | null>(wallCurrentClimb);
   wallCurrentClimbRef.current = wallCurrentClimb;
   const showUndoWallChangeSnackbarRef = useRef(showUndoWallChangeSnackbar);
@@ -1154,11 +1161,16 @@ export function BluetoothProvider({
       // flip never reaches `item.climb.mirrored`.
       const climbInput = { uuid: item.uuid, climb: { ...toClimbInput(item.climb), mirrored } };
       const angle = item.climb.angle ?? null;
-      const sendReport = () =>
-        reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
+      const sendReport = async () => {
+        await clearReportInFlightRef.current;
+        const report = reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
           console.warn('[board-presence] reportBoardClimb failed', error);
           return false;
         });
+        climbReportsInFlightRef.current.add(report);
+        void report.finally(() => climbReportsInFlightRef.current.delete(report));
+        return report;
+      };
 
       pendingReportSignatureRef.current = reportSignature;
       let accepted = await sendReport();
@@ -2208,8 +2220,20 @@ export function BluetoothProvider({
     // clear and put the dark climb back on peers' walls.
     wallOperationEpochRef.current += 1;
     pendingWallReportRef.current = null;
+    const operationEpoch = wallOperationEpochRef.current;
+    const operationBoardUuid = boardUuidRef.current;
+    const isCurrentOperation = () =>
+      operationEpoch === wallOperationEpochRef.current && operationBoardUuid === boardUuidRef.current;
     const cleared = await clearBoard();
     if (cleared !== true) return false;
+    // A reconnect, board switch or virtual take during the write owns the refs
+    // now; resetting them or reporting would act on the wrong wall.
+    if (!isCurrentOperation()) return false;
+    // The auto-sender's dedup still names the cleared climb. Any drain re-run that
+    // doesn't write (a crew FullSync with a new item object, the clock moving)
+    // would confirm and re-report it as lit over a dark board. Same as
+    // `invalidateWallState`, which is declared further down.
+    lastPhysicalFramesRef.current = null;
     // The feed now reads the wall as dark, which the report dedup takes as "no
     // conflict". Forget the last accepted report so re-lighting the same climb
     // reports it again.
@@ -2218,7 +2242,31 @@ export function BluetoothProvider({
     pendingReportSignatureRef.current = null;
     if (!presenceEnabledRef.current) return true;
     const boardId = presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current;
-    if (boardId !== null) void reportClearForBoardRef.current(boardId);
+    if (boardId === null) return true;
+
+    const reportClear = async () => {
+      // Waits for any set report in flight (see `climbReportsInFlightRef`).
+      await Promise.all(climbReportsInFlightRef.current);
+      if (!isCurrentOperation()) return;
+      let accepted = await reportClearForBoardRef.current(boardId);
+      // Same one re-stamp and retry as a climb report: an anonymous holder loses
+      // membership on every socket reconnect.
+      if (!accepted && operationBoardUuid && isCurrentOperation()) {
+        const stillTheSameBoard = await restampBoardMembershipByUuidRef
+          .current({ boardUuid: operationBoardUuid })
+          .catch(() => false);
+        if (stillTheSameBoard && isCurrentOperation()) accepted = await reportClearForBoardRef.current(boardId);
+      }
+      // Refused: another emitter holds the board (a half-open old socket can still
+      // hold it), or the backend predates the mutation. Viewers keep the climb lit.
+      if (!accepted) console.warn('[board-presence] reportBoardClear was not accepted', { boardId });
+    };
+    const clearReport = reportClear()
+      .catch((error: unknown) => console.warn('[board-presence] reportBoardClear failed', error))
+      .finally(() => {
+        if (clearReportInFlightRef.current === clearReport) clearReportInFlightRef.current = null;
+      });
+    clearReportInFlightRef.current = clearReport;
     return true;
   }, [clearBoard]);
 
