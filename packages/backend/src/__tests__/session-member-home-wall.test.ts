@@ -5,6 +5,7 @@
  * angle) while the session is live. Discovery, gym walls, spray walls and a
  * revoked grant keep every gate, and the access ends with the session.
  */
+import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { eq } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -15,6 +16,8 @@ import { resolveSessionBoardId } from '../services/session-board-binding';
 import { canAccessBoard } from '../services/privacy';
 import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { updateSessionBoardPathIfChanged } from '../services/room-manager/session-discovery';
+import { roomManager } from '../services/room-manager';
+import { buildSessionPayload } from '../graphql/resolvers/sessions/helpers';
 
 const HOST = 'home-wall-host';
 const MEMBER = 'home-wall-member';
@@ -163,5 +166,34 @@ describe('a session member on a home wall', () => {
     await sessionOn('private-spray-wall');
     expect(await projectSessionBoardPath(named('private-spray-wall'), MEMBER)).toBe('/spray/876543/876543/1/40');
     expect(await canAccessBoard(boardUuid('private-spray-wall'), MEMBER, null)).toBe(false);
+  });
+
+  it('names the wall to a fresh joiner once they have joined, not from the invite before', async () => {
+    // No seeded participant row: the host opens the session, the friend joins it
+    // through the room manager the way joinSession does.
+    const sessionId = randomUUID();
+    await roomManager.registerClient('home-wall-host-conn', 'Host', HOST);
+    await roomManager.joinSession('home-wall-host-conn', sessionId, named('private-home-wall'));
+    const sessionRead = async (userId: string) => {
+      const [sessionData] = await db.select().from(schema.boardSessions).where(eq(schema.boardSessions.id, sessionId));
+      const payload = await buildSessionPayload(sessionId, viewer(userId), {
+        users: [],
+        queueState: null,
+        sessionData,
+        lastConnectedBoardSerial: null,
+        isLeader: false,
+        clientId: '',
+      });
+      return payload.boardPath;
+    };
+
+    // The invite alone is not the wall's link: the confirm screen shows geometry.
+    expect(await sessionRead(MEMBER)).toBe(GEOMETRY);
+
+    await roomManager.registerClient('home-wall-member-conn', 'Member', MEMBER);
+    await roomManager.joinSession('home-wall-member-conn', sessionId, GEOMETRY);
+
+    expect(await sessionRead(MEMBER)).toBe(named('private-home-wall'));
+    expect(await sessionRead(STRANGER)).toBe(GEOMETRY);
   });
 });
