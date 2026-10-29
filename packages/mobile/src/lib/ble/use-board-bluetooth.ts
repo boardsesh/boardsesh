@@ -863,6 +863,12 @@ export function useBoardBluetooth({
       let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
       // Boards heard while `searching`, held back until the list is on screen.
       let latestDevices: DiscoveredDevice[] = [];
+      // A connect started with the app in the background (the Android session
+      // notification's bulb) keeps the silent search: nothing on screen, ever.
+      // Whether the climber has seen this sheet decides how the scan ends
+      // (#7038): a sheet they saw waits with its empty state, one they never
+      // saw ends the connect with "board not found".
+      const presentedAtOpen = mode === 'list' || isAppActive();
 
       // Every write is scoped to this session: a late callback from an earlier
       // connect must never change, or clear, a newer picker.
@@ -919,10 +925,7 @@ export function useBoardBluetooth({
         handleSelect,
         handleCancel,
         mode,
-        // A connect started with the app in the background (the Android
-        // notification bulb) keeps the silent search: nothing on screen until
-        // the list.
-        presented: mode === 'list' || isAppActive(),
+        presented: presentedAtOpen,
         closing: false,
         handleSearchAnyBoard: targetSearch?.searchAnyBoard,
         handleDisplaced,
@@ -936,13 +939,19 @@ export function useBoardBluetooth({
           updateSession((current) => ({ ...current, devices }));
         },
         () => {
-          // Nobody is looking at this picker: the Android session notification's
-          // bulb connects without bringing the app forward. Since the adapters
-          // stopped failing an empty scan, nothing else would end this connect,
-          // and connectInFlightRef would swallow every later bulb tap until the
-          // app is opened. End it with the silent cancel, as unmount does (#5654).
-          if (!isAppActive()) {
-            handleCancel();
+          // Nobody ever saw this picker: the Android session notification's bulb
+          // connects without bringing the app forward. Since the adapters stopped
+          // failing an empty scan, nothing else would end this connect, and
+          // connectInFlightRef would swallow every later bulb tap until the app
+          // is opened. End it as "board not found" (classifyBleFailure reads the
+          // message): connect() shows the standard alert, which Android holds
+          // until the app is on screen again (#7038). Gated on whether the sheet
+          // was ever shown, not on where the app is now: a sheet the climber saw
+          // and then left in the background still waits for them.
+          if (!presentedAtOpen) {
+            if (settled) return;
+            cleanup();
+            rejectPicker(new Error('No boards found'));
             return;
           }
           // Scan window closed — drop the spinner. The picker stays open (a
@@ -957,7 +966,9 @@ export function useBoardBluetooth({
                 updateSession((current) => ({
                   ...current,
                   mode: 'list',
-                  presented: true,
+                  // A sheet nobody has seen stays off screen: the list would land
+                  // on a paused activity, where nobody can pick from it (#7038).
+                  presented: presentedAtOpen,
                   devices: latestDevices,
                   handleSearchAnyBoard: undefined,
                 }));

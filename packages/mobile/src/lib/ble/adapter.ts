@@ -17,6 +17,7 @@ import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from './scan-options';
 import { upsertDiscoveredDevice } from './scan-device-cache';
+import { setBackgroundSafeTimeout } from './background-safe-timeout';
 import type {
   BleAdapterOptions,
   BluetoothAdapter,
@@ -105,7 +106,10 @@ export class RNBleAdapter implements BluetoothAdapter {
   }
 
   // The scan/select flow mirrors NativeIosBleAdapter.requestAndConnect. Kept in lockstep
-  // by hand; if you change one, change the other. With a saved board (#5658) it
+  // by hand; if you change one, change the other. The background guards (#7038:
+  // the grace window's AppState check, the native-clock scan timeout, the native
+  // connect timeout) are Android's alone: iOS keeps firing JS timers, and its
+  // background reconnect runs in Swift. With a saved board (#5658) it
   // is a three-state machine:
   //   searching: the picker opens at the tap in its "searching" state, and the
   //              scan auto-selects the saved board if it advertises.
@@ -165,7 +169,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     // startDeviceScan failure still runs the finally — otherwise the scan could
     // be left running and the timers (if any) uncleared.
     let pickerFallbackId: ReturnType<typeof setTimeout> | undefined;
-    let scanTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    let cancelScanTimeout: (() => void) | undefined;
     let selectedDeviceId: string;
     try {
       // Scan UNFILTERED and filter results in JS (isLikelyBoardDevice below).
@@ -245,10 +249,21 @@ export class RNBleAdapter implements BluetoothAdapter {
 
       // Grace window: if the saved board hasn't matched by now, stop auto-selecting
       // and let the picker show the list. The scan keeps running, so the list
-      // live-updates.
-      pickerFallbackId = hasTarget ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
+      // live-updates. Not in the background (the session notification's bulb,
+      // #7038): nobody can pick from a list there, so the saved board keeps the
+      // whole scan to show up and connect. A plain JS timer is enough here: the
+      // check only has to hold whenever the timer does fire in the background.
+      pickerFallbackId = hasTarget
+        ? setTimeout(() => {
+            if (AppState.currentState !== 'active') return;
+            endTargetSearch();
+          }, SERIAL_RECONNECT_GRACE_MS)
+        : undefined;
 
-      scanTimeoutId = setTimeout(() => {
+      // On the native clock as well as the JS one: Android stops firing JS timers
+      // while the activity is paused, and a background connect would otherwise
+      // scan until the app came back (#7038).
+      cancelScanTimeout = setBackgroundSafeTimeout(() => {
         void getBleManager().stopDeviceScan();
         // Belt-and-suspenders: end a search still running even if the grace
         // window never fired, so the picker is showing the list.
@@ -257,7 +272,9 @@ export class RNBleAdapter implements BluetoothAdapter {
         // so it drops the spinner. With boards listed the climber can still pick
         // one. With none it shows its empty state (tips, Scan again, the location
         // hints and the no-lights offer), which a reject here used to replace with
-        // a dead-end alert (#5654). The climber leaves it by cancelling.
+        // a dead-end alert (#5654). The climber leaves it by cancelling. A picker
+        // nobody ever saw (a background connect) ends the connect instead, with
+        // "board not found": the picker owns that, not this timer (#7038).
         scanStoppedListener?.();
       }, SCAN_TIMEOUT_MS);
 
@@ -266,7 +283,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
-      if (scanTimeoutId) clearTimeout(scanTimeoutId);
+      cancelScanTimeout?.();
       void getBleManager().stopDeviceScan();
     }
 
@@ -284,7 +301,10 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const connected = await Promise.race([
-      getBleManager().connectToDevice(selectedDeviceId),
+      // ble-plx runs this timeout on a native (RxJava) timer, which keeps
+      // running while Android has paused JS timers (#7038). The JS race below
+      // stays: it is the iOS path's deadline and carries the copy we classify.
+      getBleManager().connectToDevice(selectedDeviceId, { timeout: CONNECTION_TIMEOUT_MS }),
       new Promise<never>((_resolve, reject) => {
         connectionTimeoutId = setTimeout(() => {
           getBleManager()

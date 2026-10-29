@@ -5,6 +5,7 @@ import {
   readBluetoothAuthorization,
   requestBluetoothAuthorization,
 } from './bluetooth-authorization';
+import { setBackgroundSafeTimeout } from './background-safe-timeout';
 
 const DEFAULT_BLE_POWERED_ON_TIMEOUT_MS = 2_500;
 
@@ -50,14 +51,14 @@ export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIM
 
   return new Promise<boolean>((resolve) => {
     let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelTimeout: (() => void) | null = null;
     let subscription: BleStateSubscription | null = null;
     let removeAfterSubscribe = false;
 
     const finish = (available: boolean) => {
       if (settled) return;
       settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      cancelTimeout?.();
       if (subscription) {
         subscription.remove();
       } else {
@@ -66,7 +67,9 @@ export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIM
       resolve(available);
     };
 
-    timeoutId = setTimeout(() => finish(false), timeoutMs);
+    // On the native clock too: a background connect (the session notification's
+    // bulb) would otherwise wait here until Android resumed JS timers (#7038).
+    cancelTimeout = setBackgroundSafeTimeout(() => finish(false), timeoutMs);
 
     try {
       subscription = getBleManager().onStateChange((nextState) => {

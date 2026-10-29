@@ -1,6 +1,7 @@
 package com.boardsesh.liveactivity
 
 import androidx.annotation.VisibleForTesting
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
@@ -154,6 +155,12 @@ class SessionPresenceModule : Module() {
         // tear down, and the JS hook has already cleared its own state. Kept
         // deliberately lenient unlike startSession's error-surfacing contract.
         AsyncFunction("endSession") { controller?.endSession() }
+
+        // A timer that keeps running while the activity is paused, when React
+        // Native stops firing JS timers (#7038). The background connect's scan
+        // and power-on watchdogs race it against their JS timer. No session or
+        // controller needed, and no cancel: JS ignores a late resolution.
+        AsyncFunction("delay").Coroutine { ms: Double -> NativeDelay.await(ms) }
     }
 
     private fun emit(eventName: String, event: Map<String, Any?>) {
