@@ -74,7 +74,7 @@ function formatUpNextLabelParts(
 export const MAX_CAPTION_NAME_LENGTH = 24;
 
 /** `name` cut to {@link MAX_CAPTION_NAME_LENGTH} characters, never mid-character. */
-function shortCaptionName(name: string): string {
+export function shortCaptionName(name: string): string {
   const characters = Array.from(name);
   if (characters.length <= MAX_CAPTION_NAME_LENGTH) return name;
   return `${characters

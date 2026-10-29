@@ -147,30 +147,26 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
 // The latch controls' own content is covered by their own test; stubbed here
 // (they pull reanimated) so this file stays a pure prop-contract test of the bar
 // itself: which control renders where, and which handler each one is handed.
-vi.mock('../PlayDrawerCommitBar', () => ({
-  PlayDrawerCommitBar: ({
-    wallClimbName,
-    wallClimbUuid,
-    onKeepTheirs,
-    onConfirm,
+vi.mock('../BusyWallQuestionGroup', () => ({
+  BusyWallQuestionGroup: ({
+    model,
+    onKeep,
+    onPut,
   }: {
-    wallClimbName: string | null;
-    wallClimbUuid: string | null;
-    onKeepTheirs: () => void;
-    onConfirm: () => void;
+    model: { holderName: string | null; wallClimbName: string };
+    onKeep: () => void;
+    onPut: () => void;
   }) =>
     createElement(
       'div',
       {
         'data-commit-bar': 'true',
-        'data-wall-climb': wallClimbName ?? '',
-        'data-wall-climb-uuid': wallClimbUuid ?? '',
+        'data-wall-climb': model.wallClimbName,
+        'data-holder': model.holderName ?? '',
       },
-      createElement('button', { 'data-keep-theirs': 'true', onClick: onKeepTheirs }),
-      createElement('button', { 'data-confirm': 'true', onClick: onConfirm }),
+      createElement('button', { 'data-keep-theirs': 'true', onClick: onKeep }),
+      createElement('button', { 'data-confirm': 'true', onClick: onPut }),
     ),
-  PutOnWallButton: ({ commitLabel, onPress }: { commitLabel: string; onPress: () => void }) =>
-    createElement('button', { 'data-put-on-wall': 'true', 'data-commit-label': commitLabel, onClick: onPress }),
 }));
 // The wall button has its own test; here only where it goes and what it is handed.
 vi.mock('../WallControlButton', () => ({
@@ -218,10 +214,17 @@ vi.mock('../../../lib/haptics', () => haptics);
 
 import { PlayDrawerActionBar } from '../PlayDrawerActionBar';
 import { EMPTY_WALL_CONTROL, type WallControlModel } from '../wall-control';
+import { resolveBusyWallQuestion } from '../busy-wall-question';
 import { useWorkoutOutcomeHold } from '../use-workout-outcome-hold';
 import { WALL_MOVED_GRACE_MS } from '../workout-outcome';
 
 /** A board to connect: what the player hands the bar with no link up. */
+const BUSY_WALL = resolveBusyWallQuestion({
+  holder: { name: 'Test2', avatarUrl: null },
+  wallClimbName: 'Moonlight Sonata',
+  selfHoldsBoard: true,
+  ready: true,
+});
 const CONNECT_MODEL: WallControlModel = { ...EMPTY_WALL_CONTROL, state: 'connect', tapAction: 'connect' };
 /** This phone holds the board and the climb is lit. */
 const LIT_MODEL: WallControlModel = {
@@ -437,30 +440,36 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
   });
 });
 
-// The busy-wall question takes the whole second row, and the wall button with
-// it, so the bulb comes back to the first row.
+// The busy-wall question (#7017) takes the wall button's row as a pair; the
+// first row stays exactly as it was, and nothing draws over it.
 describe('PlayDrawerActionBar (the busy-wall question)', () => {
   const confirmProps = {
     ...baseProps,
     commitButton: 'confirm' as const,
-    wallClimbName: 'Moonlight Sonata',
-    wallClimbUuid: 'climb-wall',
+    busyWall: BUSY_WALL,
     onCommit: vi.fn(),
     onKeepTheirs: vi.fn(),
   };
 
-  // Never "suddenly the old lightbulb": the wall button moves up between ⏮ and
-  // ⏭, as in a workout, and Log waits in ⋯ while the question is up.
-  it('swaps the row for the question, handing it the lit climb, and moves the wall button up', () => {
+  it('swaps the wall button for the question’s pair, and leaves the first row as it was', () => {
     const { container } = render(createElement(PlayDrawerActionBar, confirmProps));
     const bar = container.querySelector('[data-commit-bar="true"]') as HTMLElement;
+    const plain = render(createElement(PlayDrawerActionBar, baseProps)).container;
 
     expect(bar.getAttribute('data-wall-climb')).toBe('Moonlight Sonata');
-    expect(bar.getAttribute('data-wall-climb-uuid')).toBe('climb-wall');
-    expect(container.querySelector('[data-wall-control]')?.getAttribute('data-compact')).toBe('true');
+    expect(bar.getAttribute('data-holder')).toBe('Test2');
+    expect(container.querySelector('[data-wall-control]')).toBeNull();
+    // Put mine up carries the bulb, so the bulb doesn't come back.
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
-    expect(container.querySelector('[data-icon="tick.outline"]')).toBeNull();
-    expect(labels(container)).not.toContain(QUEUE_LABEL);
+    expect(container.querySelector('[data-icon="tick.outline"]')).not.toBeNull();
+    expect(actions(container)).toEqual(actions(plain));
+    expect(labels(container)).toContain(QUEUE_LABEL);
+  });
+
+  it('stands the question down when the host has no model for it', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...confirmProps, busyWall: null }));
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeNull();
+    expect(container.querySelector('[data-wall-control]')).not.toBeNull();
   });
 
   it('keeps the bulb in the first row for the question with the bulb chosen', () => {
@@ -528,17 +537,35 @@ describe('PlayDrawerActionBar (beside a MiniPlayer, tablets and the open Duo)', 
     expect(container.querySelector('[data-testid="play-drawer-action-bar-wall-row"]')).not.toBeNull();
   });
 
-  it('keeps the busy-wall question in the second row', () => {
+  it('puts the busy-wall question’s pair in the wall button’s place, the first row', () => {
     const { container } = render(
       createElement(PlayDrawerActionBar, {
         ...besideProps,
         commitButton: 'confirm' as const,
+        busyWall: BUSY_WALL,
+        onCommit: vi.fn(),
+        onKeepTheirs: vi.fn(),
+      }),
+    );
+    const row = container.querySelector('[data-testid="play-drawer-action-bar-wall-row"]');
+    expect(row?.querySelector('[data-commit-bar="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-wall-control]')).toBeNull();
+    expect(container.querySelectorAll('[data-commit-bar="true"]')).toHaveLength(1);
+  });
+
+  it('keeps the busy-wall question in the second row with the bulb chosen: there is no first row', () => {
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...besideProps,
+        boardControl: 'lightbulb' as const,
+        commitButton: 'confirm' as const,
+        busyWall: BUSY_WALL,
         onCommit: vi.fn(),
         onKeepTheirs: vi.fn(),
       }),
     );
     expect(container.querySelector('[data-commit-bar="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="play-drawer-action-bar-wall-row"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="play-drawer-action-bar-wall-row"]')).toBeNull();
   });
 
   it('draws no first row with the bulb chosen: the bar has the bulb', () => {
@@ -844,6 +871,26 @@ describe('PlayDrawerActionBar (timed workout block)', () => {
   };
   const workoutProps = { ...baseProps, workoutOutcome };
 
+  // #7017 bug 1: React reused the `⏮ [wall button] ⏭` row's views for the
+  // five slots when the block ended, and a stale style left the slots uneven
+  // (✓ 23pt off centre, ☰ 53pt from ⏭). Each first row is its own mount.
+  it('mounts a fresh first row when Fell / Sent hands it back, never the workout row’s views', () => {
+    const view = render(createElement(PlayDrawerActionBar, workoutProps));
+    const workoutRow = view.container.querySelector('[data-testid="play-drawer-action-bar-workout-row"]');
+    const workoutSlots = [...(workoutRow?.children ?? [])];
+    expect(workoutRow).not.toBeNull();
+
+    view.rerender(createElement(PlayDrawerActionBar, { ...workoutProps, workoutOutcome: null }));
+    const primaryRow = view.container.querySelector('[data-testid="play-drawer-action-bar-primary-row"]');
+    expect(primaryRow).not.toBeNull();
+    expect(primaryRow).not.toBe(workoutRow);
+    for (const slot of primaryRow?.children ?? []) expect(workoutSlots).not.toContain(slot);
+    expect(primaryRow?.children).toHaveLength(5);
+
+    view.rerender(createElement(PlayDrawerActionBar, workoutProps));
+    expect(view.container.querySelector('[data-testid="play-drawer-action-bar-workout-row"]')).not.toBe(workoutRow);
+  });
+
   // #7000: the block keeps the wall button: ⏮ [wall button] ⏭ over Fell | Sent.
   it('gives the second row to Fell / Sent and moves the wall button between ⏮ and ⏭', () => {
     const { container } = render(createElement(PlayDrawerActionBar, workoutProps));
@@ -892,6 +939,7 @@ describe('PlayDrawerActionBar (timed workout block)', () => {
       createElement(PlayDrawerActionBar, {
         ...workoutProps,
         commitButton: 'confirm' as const,
+        busyWall: BUSY_WALL,
         onCommit: vi.fn(),
         onKeepTheirs: vi.fn(),
       }),

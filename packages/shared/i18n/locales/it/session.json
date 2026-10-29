@@ -910,11 +910,13 @@
       "onlyYouSeeThis": "Lo vedi solo tu",
       "onlyYouSeeThisWallOn": "Lo vedi solo tu · la parete è su {{name}}",
       "commitOverride": {
-        "body": "Qualcuno ha appena illuminato {{name}}. Vuoi mettere in parete il tuo?",
         "confirm": "Metti il mio",
         "cancel": "Lascia il suo",
-        "bodyNamed": "{{person}} ha appena messo in parete {{name}}. Vuoi mettere in parete il tuo?",
         "cancelNamed": "Lascia quello di {{person}}"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} ha appena illuminato {{name}}",
+        "caption": "Qualcuno ha appena illuminato {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Stai sfogliando. La parete resta com'è.",

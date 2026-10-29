@@ -349,7 +349,7 @@ export function usePlaySelectionController({
       })
     ) {
       setBusyWallConfirmArmed(true);
-      // The question row speaks for itself when it mounts (PlayDrawerCommitBar).
+      // The question speaks for itself when it appears (useBusyWallQuestion).
       return false;
     }
     markLatchExit('commit');

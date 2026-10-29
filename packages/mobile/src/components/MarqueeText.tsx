@@ -70,6 +70,14 @@ type MarqueeTextProps = {
    * name (wrapped) instead of a truncation.
    */
   fallbackLines?: number;
+  /**
+   * Shrink the type down to this scale (0.9 = 90%) instead of scrolling when
+   * that fits the whole label (#7017). A name a few points too long would
+   * otherwise scroll by those few points, and at rest at the far end its first
+   * glyph sits clipped under the edge ("ɹrain from the Brain"). Off when left
+   * out: the label scrolls past `MIN_OVERFLOW_PX`.
+   */
+  shrinkToFitScale?: number;
 };
 
 export const MarqueeText = memo(function MarqueeText({
@@ -81,13 +89,17 @@ export const MarqueeText = memo(function MarqueeText({
   textStyle,
   maxFontSizeMultiplier,
   fallbackLines = 1,
+  shrinkToFitScale,
 }: MarqueeTextProps) {
   const reduceMotion = useReduceMotion();
   const [clipWidth, setClipWidth] = useState(0);
   const [contentWidth, setContentWidth] = useState(0);
 
   const overflow = contentWidth - clipWidth;
-  const shouldScroll = active && !reduceMotion && clipWidth > 0 && overflow > MIN_OVERFLOW_PX;
+  // Close enough to shrink into place: the whole label shows, first glyph included.
+  const shrinksToFit =
+    shrinkToFitScale !== undefined && clipWidth > 0 && overflow > 0 && clipWidth / contentWidth >= shrinkToFitScale;
+  const shouldScroll = active && !reduceMotion && clipWidth > 0 && overflow > MIN_OVERFLOW_PX && !shrinksToFit;
 
   const onClipLayout = useCallback((event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
@@ -137,6 +149,18 @@ export const MarqueeText = memo(function MarqueeText({
             {children}
           </Text>
         </MarqueeScroller>
+      ) : shrinksToFit ? (
+        <Text
+          variant={variant}
+          color={color}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={shrinkToFitScale}
+          maxFontSizeMultiplier={maxFontSizeMultiplier}
+          style={textStyle}
+        >
+          {children}
+        </Text>
       ) : (
         <Text
           variant={variant}

@@ -22,8 +22,8 @@ export type ActionBarSecondaryItem = 'wallControl' | 'spacer' | PlayerButtonId;
 
 /**
  * The browse latch's control. `putOnWall` is one of the wall button's states.
- * `confirm`: someone else moved the wall while you looked around, so the whole
- * row becomes "Keep Sam's / Put mine up".
+ * `confirm`: someone else moved the wall while you looked around, so the wall
+ * button's row becomes "Keep Sam's / Put mine up" (`BusyWallQuestionGroup`).
  */
 export type ActionBarCommitButton = 'putOnWall' | 'confirm' | null;
 
@@ -76,12 +76,12 @@ export type ActionBarLayoutInput = {
 
 /**
  * The first row: Log in the middle of the climber's buttons (`tick`); the
- * narrower wall button between ⏮ and ⏭ in a timed block or under the busy-wall
- * question (`wallControl`); the full-width wall button alone, beside a
- * MiniPlayer that has the rest (`wallControlFull`); or no first row at all
- * there with the bulb chosen (`none`).
+ * narrower wall button between ⏮ and ⏭ in a timed block (`wallControl`); the
+ * full-width wall button alone, beside a MiniPlayer that has the rest
+ * (`wallControlFull`), or the busy-wall question's pair in its place
+ * (`confirm`); or no first row at all there with the bulb chosen (`none`).
  */
-export type ActionBarPrimaryCenter = 'tick' | 'wallControl' | 'wallControlFull' | 'none';
+export type ActionBarPrimaryCenter = 'tick' | 'wallControl' | 'wallControlFull' | 'confirm' | 'none';
 
 export type ActionBarLayout = {
   primaryCenter: ActionBarPrimaryCenter;
@@ -112,8 +112,10 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
  *                                        [ 💡      You have the board     (S) ]
  * Other boards (Kilter, MoonBoard)       [♡]  [⏮]  [✓]  [⏭]  [☰]
  *                                        [ 💡        Connect board            ]
- * Fell / Sent, or the busy-wall question [⇄ or ♡]  [⏮]  [✓]  [⏭]  [💡]  (☰ in ⋯)
+ * Fell / Sent                            [⏮]  [ 💡  You have the board ]  [⏭]   (♡ ✓ ☰ in ⋯)
  *                                        [ Fell              Sent             ]
+ * The busy-wall question                 [♡]  [⏮]  [✓]  [⏭]  [☰]
+ *                                        [ (T) Keep Test2's ] [ 💡 Put mine up ]
  * Anonymous                              [⇄ or  ]  [⏮]  [✓]  [⏭]  [ ]
  *                                        [40°] ···················· [⬆]
  * ```
@@ -134,17 +136,21 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
  *   except for a preview's Set active.
  * - Log, ⏮ ⏭ and the wall button never move. Previous and next off leaves both
  *   slots empty, so Log stays centred.
- * - The busy-wall question and a timed block's Fell / Sent take the whole
- *   second row, and the board control keeps the climber's chosen look: with
- *   the wall button, the top row becomes `⏮ [wall button] ⏭` and ♡ / ⇄, ✓ and
- *   ☰ wait in ⋯ (Fell / Sent log each go; the question is answered below);
- *   with the bulb, it stays in the trailing slot.
+ * - A timed block's Fell / Sent takes the whole second row, and the board
+ *   control keeps the climber's chosen look: with the wall button, the top row
+ *   becomes `⏮ [wall button] ⏭` and ♡ / ⇄, ✓ and ☰ wait in ⋯ (Fell / Sent log
+ *   each go); with the bulb, it stays in the trailing slot.
+ * - The busy-wall question (#7017) is the wall button's row as two segments,
+ *   Keep theirs and Put mine up, and the first row stays as it was. Put mine up
+ *   carries the bulb, so the bulb doesn't come back. Beside a MiniPlayer the
+ *   pair takes the full-width wall button's place in the first row.
  *
  * With the bulb chosen (View options › Buttons › Board control):
  *
  * ```
  * Mirror board                           [⇄]  [⏮]  [✓]  [⏭]  [💡]      (♡ ☰ in ⋯)
  * A preview, the busy wall, Fell / Sent  the same row, over the second row
+ *                                        (the busy wall's is the same pair)
  * ```
  *
  * The bulb takes the trailing slot whenever there is a wall to light. The
@@ -155,9 +161,6 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
  * question still take the whole row. It folds only where there is no wall to
  * light, as with the wall button.
  *
- * With the wall button chosen, the busy-wall question outside a block uses the
- * workout's top row too (`⏮ [wall button] ⏭`, Log and the end buttons in ⋯),
- * rather than bringing the bulb back.
  * - Every button that applies here and is not drawn is flagged in `hidden`, and
  *   ⋯ carries a row for it.
  * - An anonymous reader gets the read-only bar whatever is stored on the
@@ -197,14 +200,17 @@ export function resolveActionBarLayout({
     // the height. With the bulb chosen the bar has the bulb, so there is no
     // first row, and a preview's Put on the wall takes the second.
     const bulbChosen = boardControl === 'lightbulb';
+    // The busy-wall question takes the wall button's row: the first row here,
+    // the second with the bulb chosen (there is no first row then).
+    const confirmUp = commitButton === 'confirm' && !bulbChosen;
     let secondaryRow: ActionBarSecondaryRow;
-    if (commitButton === 'confirm') secondaryRow = 'confirm';
+    if (commitButton === 'confirm') secondaryRow = confirmUp ? [] : 'confirm';
     else if (workoutOutcome && commitButton === null) secondaryRow = 'workoutOutcome';
     else if (bulbChosen && commitButton === 'putOnWall') secondaryRow = ['wallControl'];
     else secondaryRow = [];
     const wallButtonUp = !bulbChosen && ((showLightbulb && hasWall) || commitButton === 'putOnWall');
     return {
-      primaryCenter: wallButtonUp ? 'wallControlFull' : 'none',
+      primaryCenter: confirmUp ? 'confirm' : wallButtonUp ? 'wallControlFull' : 'none',
       leadingSlot: null,
       trailingSlot: null,
       showPreviousNext: false,
@@ -262,14 +268,16 @@ export function resolveActionBarLayout({
     secondaryRow = [];
   }
 
-  if (!bulbMode && controlShown && typeof secondaryRow === 'string') {
-    // Fell / Sent or the busy-wall question takes the second row: the wall
-    // button moves into the top row between ⏮ and ⏭, and the climber's
-    // buttons and Log wait in ⋯ (#7000). It never turns back into the bulb.
+  if (!bulbMode && secondaryRow === 'workoutOutcome' && controlShown) {
+    // Fell / Sent takes the second row: the wall button moves into the top row
+    // between ⏮ and ⏭, and the climber's buttons and Log wait in ⋯ (#7000).
+    // It never turns back into the bulb.
     primaryCenter = 'wallControl';
     leadingSlot = null;
     trailingSlot = null;
-  } else if (bulbMode ? controlShown : typeof secondaryRow === 'string' && showLightbulb) {
+  } else if (bulbMode ? controlShown : secondaryRow === 'workoutOutcome' && showLightbulb) {
+    // The bulb chosen; or Fell / Sent where the wall button has no wall to
+    // light. The busy-wall question needs neither: Put mine up has the bulb.
     trailingSlot = 'lightbulb';
   }
 

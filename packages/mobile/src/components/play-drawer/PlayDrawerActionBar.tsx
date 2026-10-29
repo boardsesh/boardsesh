@@ -4,7 +4,8 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
-import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
+import { BusyWallQuestionGroup } from './BusyWallQuestionGroup';
+import type { BusyWallQuestionModel } from './busy-wall-question';
 import { WorkoutOutcomeRow } from './WorkoutOutcomeRow';
 import { AnglePill } from './AnglePill';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
@@ -88,8 +89,9 @@ type PlayDrawerActionBarProps = {
   /**
    * The browse latch's control. `putOnWall` is one of the wall button's states;
    * `confirm` (someone else moved the wall while you looked around) swaps the
-   * row for Keep theirs / Put mine up. Resolved from `resolveCommitBarModel`; an
-   * anonymous viewer never gets either, alongside the rest of the `viewer` rules.
+   * wall button for Keep theirs / Put mine up. Resolved from
+   * `resolveCommitBarModel`; an anonymous viewer never gets either, alongside
+   * the rest of the `viewer` rules.
    */
   commitButton?: ActionBarCommitButton;
   /**
@@ -104,13 +106,11 @@ type PlayDrawerActionBarProps = {
    * climb on the wall.
    */
   workoutOutcomeWallLeftAtMs?: number | null;
-  /** Confirm only: the lit climb's name, for the question. */
-  wallClimbName?: string | null;
-  /** Confirm only: the lit climb's uuid, to name who put it up. */
-  wallClimbUuid?: string | null;
-  /** Confirm only: leave their climb up. */
+  /** Confirm only: the busy-wall question's model (`useBusyWallQuestion`). */
+  busyWall?: BusyWallQuestionModel | null;
+  /** Confirm only: leave their climb up. Debounced by `useBusyWallQuestion`. */
   onKeepTheirs?: () => void;
-  /** Confirm only: Put mine up. */
+  /** Confirm only: Put mine up. Debounced by `useBusyWallQuestion`. */
   onCommit?: () => void;
   ascentCount: number;
   currentAngle?: number;
@@ -179,8 +179,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   commitButton = null,
   workoutOutcome = null,
   workoutOutcomeWallLeftAtMs = null,
-  wallClimbName = null,
-  wallClimbUuid = null,
+  busyWall = null,
   onKeepTheirs,
   onCommit,
   ascentCount,
@@ -208,7 +207,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // suppression lives here with the rest of the `viewer` rules rather than only
   // in the resolver — the same shape as `showLightbulb` above.
   const commit: ActionBarCommitButton =
-    isAnonymous || onCommit == null || (commitButton === 'confirm' && onKeepTheirs == null) ? null : commitButton;
+    isAnonymous || onCommit == null || (commitButton === 'confirm' && (onKeepTheirs == null || busyWall === null))
+      ? null
+      : commitButton;
   // Which button sits where. The host resolves the same layout to learn which
   // buttons ⋯ has to stand in for, so both read one rule.
   const layout = resolveActionBarLayout({
@@ -300,10 +301,24 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           : [styles.containerAbove, { borderBottomColor: theme.systemColors.separator }]
       }
     >
-      {layout.primaryCenter === 'none' ? null : layout.primaryCenter === 'wallControlFull' ? (
+      {layout.primaryCenter === 'none' ? null : layout.primaryCenter === 'confirm' &&
+        busyWall &&
+        onKeepTheirs &&
+        onCommit ? (
+        // The busy-wall question beside a MiniPlayer (#7017): the pair takes the
+        // full-width wall button's place.
+        <View
+          key="confirm"
+          style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
+          testID="play-drawer-action-bar-wall-row"
+        >
+          <BusyWallQuestionGroup model={busyWall} onKeep={onKeepTheirs} onPut={onCommit} />
+        </View>
+      ) : layout.primaryCenter === 'wallControlFull' ? (
         // Beside a MiniPlayer that has ⏮ ⏭, the climber's buttons and ✓ (#7000,
         // tablets and the open Duo): the wall button takes the first row, full width.
         <View
+          key="wallControlFull"
           style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-wall-row"
         >
@@ -320,6 +335,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         // in ⋯. The ⏮ ⏭ slots hold their width and height even when switched
         // off, so the button stays centred and the board keeps its size.
         <View
+          key="wallControl"
           style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-workout-row"
         >
@@ -356,7 +372,16 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           </View>
         </View>
       ) : (
-        <View style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}>
+        // Keyed, like each first row above, so swapping rows mounts fresh views.
+        // Reused across the swap, a slot kept a stale style from the
+        // `⏮ [wall button] ⏭` row it had been (the fixed 48pt ⏮ ⏭ slots, the
+        // button's flexible middle), and the five slots came back uneven: ✓ 23pt
+        // right of the wall button's centre, ☰ 53pt from ⏭ (#7017).
+        <View
+          key="tick"
+          style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}
+          testID="play-drawer-action-bar-primary-row"
+        >
           {/* The climber's first button on (Mirror or the heart by default).
             An empty slot keeps the row's five-slot spacing. */}
           <View style={drawerActionBarStyles.primarySlot}>
@@ -402,8 +427,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           </View>
           <View style={drawerActionBarStyles.primarySlot}>
             {layout.trailingSlot === 'lightbulb' ? (
-              // The bulb chosen, or back while the busy-wall question takes the
-              // second row. It draws the same model as the wall button.
+              // The bulb chosen, or back while Fell / Sent takes the second row
+              // with no wall button. It draws the same model as the wall button.
               <WallControlBulb
                 model={wallControl}
                 showFace={showHolderBadge}
@@ -419,13 +444,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
       {hasSecondaryRow ? (
         <View style={[drawerActionBarStyles.rowSecondary, styles.rowSecondaryHeight]}>
-          {layout.secondaryRow === 'confirm' && onKeepTheirs && onCommit ? (
-            <PlayDrawerCommitBar
-              wallClimbName={wallClimbName}
-              wallClimbUuid={wallClimbUuid}
-              onKeepTheirs={onKeepTheirs}
-              onConfirm={onCommit}
-            />
+          {layout.secondaryRow === 'confirm' && busyWall && onKeepTheirs && onCommit ? (
+            <BusyWallQuestionGroup model={busyWall} onKeep={onKeepTheirs} onPut={onCommit} />
           ) : layout.secondaryRow === 'workoutOutcome' && workoutOutcome ? (
             <WorkoutOutcomeRow
               target={workoutOutcome}

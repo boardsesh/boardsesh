@@ -77,6 +77,9 @@ import {
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
 import { usePresenceClearedClimbUuid, useWallClimb } from './use-wall-climb';
+import { resolveBusyWallHolder } from './busy-wall-question';
+import { formatBusyWallCaption } from './busy-wall-question-text';
+import { useBusyWallQuestion } from './use-busy-wall-question';
 import { claimJoinedBrowseNotice, claimSoloBrowseNotice } from './joined-browse-notice';
 import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-angle-anchor';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
@@ -1232,16 +1235,24 @@ export function PlayCore({
   });
   const workoutOutcome = workoutOutcomeShown?.target ?? null;
   // What the browse latch asks for: Put on the wall (one of the wall button's
-  // states), or the busy-wall question in place of the whole row.
-  const commitButton: ActionBarCommitButton = resolveCommitButton(commitBarModel);
+  // states), or the busy-wall question in the wall button's place. A story can
+  // force the question (`ScenarioOverrides.player.busyWall`).
+  const scenarioBusyWall = scenarioPlayer?.busyWall ?? null;
+  const commitButton: ActionBarCommitButton =
+    scenarioBusyWall !== null ? 'confirm' : resolveCommitButton(commitBarModel);
+  const busyWallUp = commitButton === 'confirm';
   // The board control (#7000): what it says about the climb on screen, whose
   // board it is, and what a tap and a hold do. One model for every view of
   // it (the wall button, the bulb, the open Duo's bar bulb); they draw only
   // this. A face needs a live link: presence alone never puts one up.
   const wallWriting = useBluetoothWriteInProgress();
   const wallHolderIdentity = useWallHolderIdentity();
-  const selfHoldsBoard = bluetoothConnected || wallHeldLocally;
-  const { data: wallSelfProfile } = useProfile({ enabled: selfHoldsBoard && !isAnonymous });
+  // A story can say this phone holds the board (`ScenarioOverrides.player.selfHoldsBoard`).
+  const wallLinked = scenarioPlayer?.selfHoldsBoard === true || bluetoothConnected;
+  const selfHoldsBoard = wallLinked || wallHeldLocally;
+  // This climber's profile: their face while they hold the board, and their id
+  // while the busy-wall question is up, so it never names them as the holder.
+  const { data: wallSelfProfile } = useProfile({ enabled: (selfHoldsBoard || busyWallUp) && !isAnonymous });
   const selfFace = useMemo(
     () =>
       wallSelfProfile
@@ -1255,7 +1266,7 @@ export function PlayCore({
         commitButton,
         pressAction: lightbulbPressAction,
         holderIsAuthoritative: lightbulbHolderIsAuthoritative,
-        localConnected: bluetoothConnected,
+        localConnected: wallLinked,
         pending: lightbulbPending,
         displayedLit,
         // The switch-board overlay, another board's climb, or a board with no
@@ -1270,7 +1281,7 @@ export function PlayCore({
         holderIsSelfAccount: wallHolderIdentity.userId !== null && wallSelfProfile?.id === wallHolderIdentity.userId,
         selfFace,
         crewFace: wallHolderIdentity.face,
-        confirmArmed: busyWallConfirmArmed,
+        confirmArmed: busyWallUp,
         commitLabel: commitBarModel.commitLabel,
         otherClimbLit: wallClimbUuid !== null && wallClimbUuid !== displayedClimbUuid,
         writing: wallWriting,
@@ -1280,7 +1291,7 @@ export function PlayCore({
       commitButton,
       lightbulbPressAction,
       lightbulbHolderIsAuthoritative,
-      bluetoothConnected,
+      wallLinked,
       lightbulbPending,
       displayedLit,
       showBoardMismatch,
@@ -1294,7 +1305,7 @@ export function PlayCore({
       wallHolderIdentity,
       wallSelfProfile?.id,
       selfFace,
-      busyWallConfirmArmed,
+      busyWallUp,
       commitBarModel.commitLabel,
       wallClimbUuid,
       displayedClimbUuid,
@@ -1676,6 +1687,34 @@ export function PlayCore({
     bluetoothConnected,
     connectLightbulb,
   ]);
+  // The busy-wall question (#7017): who put the lit climb up, and the one
+  // handler behind its pair, which drops taps for the first 500 ms and speaks
+  // the caption once. Its words replace the browse caption while it is up.
+  // Unknown (signed out, the profile still loading) is never read as somebody else.
+  const viewerUserId = wallSelfProfile?.id ?? null;
+  const busyWallHolder = useMemo(
+    () =>
+      scenarioBusyWall
+        ? { name: scenarioBusyWall.holderName, avatarUrl: null }
+        : busyWallUp
+          ? resolveBusyWallHolder({
+              picker: currentClimbQueueItem?.addedByUser ?? null,
+              viewerUserId,
+              wallClimbUuid,
+              currentClimbUuid: currentClimbQueueItem?.climb.uuid ?? null,
+            })
+          : null,
+    [scenarioBusyWall, busyWallUp, currentClimbQueueItem, viewerUserId, wallClimbUuid],
+  );
+  const busyWall = useBusyWallQuestion({
+    armed: busyWallUp,
+    holder: busyWallHolder,
+    wallClimbName: scenarioBusyWall?.climbName ?? wallClimb.name,
+    selfHoldsBoard,
+    onKeep: handleBackToLive,
+    onPut: handleLightThisClimb,
+  });
+  const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : browseCaption;
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
@@ -2346,8 +2385,8 @@ export function PlayCore({
   ) : null;
   const actionBar = (
     <PlayDrawerActionBar
-      canSwipePrevious={navigationState.canPrevious}
-      canSwipeNext={canPressNext}
+      canSwipePrevious={scenarioPlayer?.previousNextEnabled === true || navigationState.canPrevious}
+      canSwipeNext={scenarioPlayer?.previousNextEnabled === true || canPressNext}
       isMirrored={isMirrored}
       supportsMirroring={supportsMirroring}
       isFavorited={isFavorited}
@@ -2383,11 +2422,10 @@ export function PlayCore({
       // A timed workout block: the second row is one-tap Fell / Sent.
       workoutOutcome={workoutOutcome}
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
-      wallClimbName={wallClimb.name}
-      wallClimbUuid={wallClimbUuid}
-      onKeepTheirs={handleBackToLive}
+      busyWall={busyWall.model}
+      onKeepTheirs={busyWall.keep}
       // The busy-wall question's Put mine up.
-      onCommit={handleLightThisClimb}
+      onCommit={busyWall.put}
       ascentCount={ascentCount}
       onPrevClick={handlePrevButton}
       onNextClick={handleNextPress}
@@ -2533,7 +2571,7 @@ export function PlayCore({
                           {/* The workout stage or the list the player walks, under the grabber. Takes no
                           touches of its own, but keeps them (no pointerEvents="none"),
                           which on Android would hide it from TalkBack's explore by touch. */}
-                          {topBarParts || browseCaption ? (
+                          {topBarParts || topBarCaption ? (
                             <View
                               style={[
                                 styles.topListContext,
@@ -2547,7 +2585,7 @@ export function PlayCore({
                             >
                               <PlayListContext
                                 parts={topBarParts}
-                                caption={browseCaption}
+                                caption={topBarCaption}
                                 testID="play-drawer-track-label"
                               />
                             </View>

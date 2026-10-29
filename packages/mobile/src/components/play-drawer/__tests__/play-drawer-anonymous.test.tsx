@@ -508,6 +508,7 @@ const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDraw
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
+const { BUSY_WALL_TAP_DEBOUNCE_MS } = await import('../busy-wall-question');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -593,6 +594,20 @@ function joinedNoticeAnnouncements(): number {
 function pressWallPill(pillProps: Props | undefined = recorded.wallPill.at(-1)): void {
   if (!pillProps) throw new Error('WallStatePill never rendered');
   (pillProps.onPress as () => void)();
+}
+
+/**
+ * Runs `answer` once the busy-wall question's tap debounce has run out: taps in
+ * its first 500 ms are dropped (`useBusyWallQuestion`).
+ */
+function afterBusyWallDebounce(answer: () => void): void {
+  const realNow = Date.now.bind(Date);
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + BUSY_WALL_TAP_DEBOUNCE_MS);
+  try {
+    act(answer);
+  } finally {
+    clock.mockRestore();
+  }
 }
 
 function lastActionBarProps(): Props {
@@ -841,8 +856,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(pill?.backTarget).toBe('wall');
     // The chip carries the driver's face, so the bulb's pip stands down.
     expect(lastActionBarProps().showHolderBadge).toBe(false);
-    // The commit bar is told which climb is lit, to name who put it up.
-    expect(lastActionBarProps().wallClimbUuid).toBe(SIMILAR_CLIMB.uuid);
+    // No question is up, so the bar has no busy-wall model to draw.
+    expect(lastActionBarProps().busyWall).toBeNull();
   });
 
   it('sends the back chip to the climber’s own climb when the wall shows a third one', () => {
@@ -1532,7 +1547,7 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     });
 
     expect(lastActionBarProps().commitButton).toBe('confirm');
-    expect(lastActionBarProps().wallClimbName).toBe('Their Project');
+    expect(lastActionBarProps().busyWall).toMatchObject({ wallClimbName: 'Their Project', ready: false });
     // The whole point: the first tap did NOT take the wall.
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
   });
@@ -1600,13 +1615,48 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     });
   });
 
-  it('commits on the second tap, marked as Put on the wall', () => {
+  // #7017: the question is the header's caption, in place of "Only you see
+  // this", and VoiceOver hears it once; nothing draws over the first row.
+  it('puts the question in the header caption and says it once', () => {
+    browseThenLoseTheWall();
+    expect(recorded.listContext.at(-1)?.caption).toBe('playView.wallState.onlyYouSeeThisWallOn');
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+
+    // Unnamed here: the viewer's profile isn't known, so nobody is named as the holder.
+    expect(recorded.listContext.at(-1)?.caption).toBe('playView.wallState.busyWall.caption');
+    const spoken = vi.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([sentence]) => sentence);
+    expect(spoken.filter((sentence) => sentence.startsWith('playView.wallState.busyWall'))).toEqual([
+      'playView.wallState.busyWall.caption',
+    ]);
+  });
+
+  // #7017: the question arrives under a thumb already moving toward the wall
+  // button, so a second tap inside 500 ms is that thumb, not an answer.
+  it('drops a Put mine up that lands in the question’s first 500 ms', () => {
     browseThenLoseTheWall();
 
     act(() => {
       (lastActionBarProps().onCommit as () => void)();
     });
     act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+      (lastActionBarProps().onKeepTheirs as () => void)();
+    });
+
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('commits on the second tap, marked as Put on the wall', () => {
+    browseThenLoseTheWall();
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+    afterBusyWallDebounce(() => {
       (lastActionBarProps().onCommit as () => void)();
     });
 
@@ -1643,7 +1693,7 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(lastActionBarProps().commitButton).toBe('confirm');
 
     // "Keep theirs" IS the exit — the row is handed the same handler.
-    act(() => {
+    afterBusyWallDebounce(() => {
       (lastActionBarProps().onKeepTheirs as () => void)();
     });
 

@@ -5,14 +5,13 @@ import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
 import type { StoryModule } from '../../dev/stories/types';
 import { setSetting } from '../../settings';
 import { spacing } from '../../theme/tokens';
-import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import { WallControlButton } from './WallControlButton';
 import { WallStatePill } from './WallStatePill';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from './wall-control';
 
 // Browsing in a crew session (#4281): the back chip in the drawer header (a back
-// glyph, "Back", and the face of whoever lit the wall), the wall button in each
-// state (#7000), and the busy-wall question.
+// glyph, "Back", and the face of whoever lit the wall) and the wall button in
+// each state (#7000). The busy-wall question has its own file (BusyWall.stories).
 // The scenario stories put the real drawer into the same states with a fake
 // second climber, since a real crew needs two phones.
 
@@ -99,7 +98,7 @@ const stories: StoryModule = {
       ),
     },
     commitBar: {
-      name: 'The wall button, and the busy-wall question',
+      name: 'The wall button in each state',
       render: () => (
         <View style={styles.stack}>
           {WALL_BUTTON_STATES.map(({ label, state, holder }) => (
@@ -111,18 +110,6 @@ const stories: StoryModule = {
               </StorySurface>
             </StoryVariant>
           ))}
-          <StoryVariant label="someone else lit the wall">
-            <StorySurface>
-              <View style={styles.confirmRoom}>
-                <PlayDrawerCommitBar
-                  wallClimbName="Moonlight Sonata"
-                  wallClimbUuid={null}
-                  onKeepTheirs={noop}
-                  onConfirm={noop}
-                />
-              </View>
-            </StorySurface>
-          </StoryVariant>
         </View>
       ),
     },
@@ -157,9 +144,6 @@ const styles = StyleSheet.create({
   },
   pillRow: {
     flexDirection: 'row',
-  },
-  confirmRoom: {
-    paddingTop: spacing[16],
   },
   // The width of a 375pt phone's row, so the stories show the real fit.
   buttonRow: {

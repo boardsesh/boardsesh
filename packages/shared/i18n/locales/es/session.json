@@ -910,11 +910,13 @@
       "onlyYouSeeThis": "Solo tú lo ves",
       "onlyYouSeeThisWallOn": "Solo tú lo ves · en el muro: {{name}}",
       "commitOverride": {
-        "body": "Alguien acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
         "confirm": "Poner el mío",
         "cancel": "Dejar el muro",
-        "bodyNamed": "{{person}} acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
         "cancelNamed": "Dejar el de {{person}}"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} acaba de encender {{name}}",
+        "caption": "Alguien acaba de encender {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Explorando. El muro sigue como está.",

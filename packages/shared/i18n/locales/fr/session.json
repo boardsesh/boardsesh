@@ -910,11 +910,13 @@
       "onlyYouSeeThis": "Toi seul le vois",
       "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {
-        "body": "Quelqu'un vient d'allumer {{name}}. Allumer le tien quand même ?",
         "confirm": "Allumer le mien",
         "cancel": "Garder le mur",
-        "bodyNamed": "{{person}} vient d'allumer {{name}}. Allumer le tien quand même ?",
         "cancelNamed": "Garder celui de {{person}}"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} vient d'allumer {{name}}",
+        "caption": "Quelqu'un vient d'allumer {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Exploration. Le mur ne bouge pas.",

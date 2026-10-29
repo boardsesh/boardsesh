@@ -65,6 +65,22 @@ export type ScenarioOverrides = {
   player?: {
     wallPill?: 'browsing' | null;
     wallLit?: WallLitState | null;
+    /**
+     * ⏮ and ⏭ drawn enabled whatever the queue says, for the first row's
+     * spacing with both live (#7017). The swipes keep the real queue's answer.
+     */
+    previousNextEnabled?: boolean;
+    /**
+     * The busy-wall question up (#7017): `holderName` just put up `climbName`
+     * while this climber looked around. Forces the question past its arming
+     * rule; Keep and Put mine up still run the real handlers.
+     */
+    busyWall?: { holderName: string; climbName: string };
+    /**
+     * This phone holds the board, for the board control's model only (the
+     * filled bulb, You have the board). Bluetooth itself stays unlinked.
+     */
+    selfHoldsBoard?: boolean;
   };
 };
 

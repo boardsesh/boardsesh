@@ -910,11 +910,13 @@
       "onlyYouSeeThis": "Only you see this",
       "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
-        "body": "Someone just lit {{name}}. Put yours up instead?",
         "confirm": "Put mine up",
         "cancel": "Keep theirs",
-        "bodyNamed": "{{person}} just put up {{name}}. Put yours up instead?",
         "cancelNamed": "Keep {{person}}'s"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} just put up {{name}}",
+        "caption": "Someone just put up {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Browsing. The wall stays where it is.",

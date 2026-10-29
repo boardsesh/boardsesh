@@ -173,13 +173,24 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
         if (trail !== null) expect(taken.hidden[trail]).toBe(true);
       }
 
-      // Fell / Sent or the busy-wall question with the wall button: ⏮ [wall button] ⏭, everything else in ⋯.
-      for (const overlay of [{ workoutOutcome: true }, { commitButton: 'confirm' as const }]) {
-        const block = resolveActionBarLayout({ ...board, buttons, ...overlay });
-        expect(block.primaryCenter).toBe('wallControl');
-        expect([block.leadingSlot, block.trailingSlot]).toEqual([null, null]);
-        expect(block.hidden.tick).toBe(true);
-        for (const buttonId of ['favorite', 'queue'] as const) expect(block.hidden[buttonId]).toBe(true);
+      // Fell / Sent with the wall button: ⏮ [wall button] ⏭, everything else in ⋯.
+      const block = resolveActionBarLayout({ ...board, buttons, workoutOutcome: true });
+      expect(block.primaryCenter).toBe('wallControl');
+      expect([block.leadingSlot, block.trailingSlot]).toEqual([null, null]);
+      expect(block.hidden.tick).toBe(true);
+      for (const buttonId of ['favorite', 'queue'] as const) expect(block.hidden[buttonId]).toBe(true);
+
+      // The busy-wall question with the wall button (#7017): the first row is
+      // untouched, ends and all; the pair replaces the wall button below it.
+      for (const overlay of [
+        { commitButton: 'confirm' as const },
+        { commitButton: 'confirm' as const, workoutOutcome: true },
+      ]) {
+        const asked = resolveActionBarLayout({ ...board, buttons, ...overlay });
+        expect(asked.primaryCenter).toBe('tick');
+        expect([asked.leadingSlot, asked.trailingSlot]).toEqual([lead, trail]);
+        expect(asked.secondaryRow).toBe('confirm');
+        expect(asked.hidden).toEqual(plain.hidden);
       }
     }
   });
@@ -228,10 +239,11 @@ describe('resolveActionBarLayout: the board control choice', () => {
     wallButton: {
       'nothing asked': ['tick', 'queue', ['wallControl'], ['wallControl']],
       'a preview': ['tick', 'queue', ['wallControl'], ['wallControl']],
-      // Never the old bulb: the wall button moves up, and Log waits in ⋯ while the question is up.
-      'the busy-wall question': ['wallControl', null, 'confirm', 'confirm'],
+      // #7017: the first row stays as it was, and the pair takes the wall
+      // button's row. Put mine up carries the bulb, so the bulb never comes back.
+      'the busy-wall question': ['tick', 'queue', 'confirm', 'confirm'],
       'Fell / Sent': ['wallControl', null, 'workoutOutcome', 'workoutOutcome'],
-      'the busy-wall question in a block': ['wallControl', null, 'confirm', 'confirm'],
+      'the busy-wall question in a block': ['tick', 'queue', 'confirm', 'confirm'],
     },
     lightbulb: {
       // The row stays, so the board never jumps: ♡ left and ☰ right on a mirror
@@ -324,9 +336,10 @@ describe('resolveActionBarLayout: beside a MiniPlayer (tablets, the open Duo)', 
     wallButton: {
       'nothing asked': ['wallControlFull', []],
       'a preview': ['wallControlFull', []],
-      'the busy-wall question': ['wallControlFull', 'confirm'],
+      // #7017: the pair takes the full-width wall button's place in the first row.
+      'the busy-wall question': ['confirm', []],
       'Fell / Sent': ['wallControlFull', 'workoutOutcome'],
-      'the busy-wall question in a block': ['wallControlFull', 'confirm'],
+      'the busy-wall question in a block': ['confirm', []],
     },
     // The bar has the bulb: no first row, and a preview's Put on the wall takes the second.
     lightbulb: {

@@ -25,7 +25,7 @@ Fixed, and why:
 | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Log                                      | The core loop. Always the centre of the big row.                            |
 | The board control                        | The one control that says whether the climb is lit, and how to get it lit. The climber picks its look (wall button or bulb), not whether it is there. |
-| Put on the wall, busy-wall question, Fell / Sent | Session states, not preferences. Put on the wall is a wall button state; the other two take the second row while they need it. |
+| Put on the wall, busy-wall question, Fell / Sent | Session states, not preferences. Put on the wall is a wall button state; the busy-wall question takes the wall button's row as a pair; Fell / Sent takes the second row while it needs it. |
 | Playback slider                          | Belongs to the board, so it always sits next to it.                         |
 | Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. Where you are (the list, "Projects · 4 of 23", or the workout stage, "4x4 · Rep 3 of 4 · Set 2 of 4") sits between ⌄ and the timer and costs the board nothing. A second, smaller line there is for what the wall is doing. |
 
@@ -155,13 +155,14 @@ bar, the player's ⋯ menu and the preview all read it, so they can't disagree.
 Wall button (the default)
 Kilter, MoonBoard          [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡        Connect board            ]
 Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡     You have the board      (me) ]
-Busy wall                  [⏮] [ 💡  You have the board  (me) ] [⏭]  /  [ Keep Sam's     Put mine up ]
+Busy wall                  [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
 Fell / Sent                [⏮] [ 💡  You have the board  (me) ] [⏭]  /  [ Fell              Sent ]
 
 Lightbulb
 Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [♡] ······················ [☰]
 A preview                  [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [♡] [ 💡 Put on the wall ] [☰]
-Fell / Sent, busy wall     [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [ Fell              Sent ]
+Fell / Sent                [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [ Fell              Sent ]
+Busy wall                  [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
 
 Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ················ [⬆]   (mirror boards keep [⇄])
 ```
@@ -181,21 +182,35 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   no lights there is no wall to light, so the row collapses (and there is no bulb). A preview keeps the row there
   for its Set active button.
 - **Previous and next off** leaves both slots empty, so Log stays centred. Swiping the board still moves.
-- **The busy-wall question** (`commitButton: 'confirm'`, "Keep Sam's" / "Put mine up") takes the whole second row.
-  With the wall button chosen it uses the workout's top row (below), never the old bulb: `⏮ [wall button] ⏭`, with
-  Log and the end buttons in ⋯ while the question is up. With the bulb chosen the bulb stays where it is.
+- **The busy-wall question** (#7017, `commitButton: 'confirm'`): someone else put a climb up while this climber
+  looked around. Nothing draws over the first row or the climb. The question is the header caption, "Sam just put
+  up Crimp Ladder" (`playView.wallState.busyWall.captionNamed`, the climb's name last and cut first), in place of
+  "Only you see this", and VoiceOver hears it once. The answers are the wall button's row as two segments in the
+  wall button's family (`BusyWallQuestionGroup`): 44 pt, pill radius, the same type, two equal halves with an 8 pt
+  gap. Put mine up is the primary and looks exactly like Put on the wall (the tonal fill, the bulb, filled amber
+  while this phone holds the board, the lavender label), since it confirms the tap the climber just made. Keep
+  Sam's is the neutral tonal fill with a hairline and Sam's face, and reads "Keep theirs" where the name won't fit.
+  Where a label won't fit half the row (large Dynamic Type, German) the two stack full width, Put mine up on top.
+  The first row stays as it was in both Board control modes; Put mine up carries the bulb, so the wall button's bulb
+  doesn't come back. Taps on either segment in the question's first 500 ms are dropped (`useBusyWallQuestion`), so
+  a thumb already on its way to the wall button doesn't answer a question it never read. Browsing on still
+  cancels it. The rule (`resolveBusyWallQuestion`, `resolveBusyWallFit`) decides the labels, the primary and the
+  disabled state; the view only draws. `BUSY_WALL_PRIMARY` in `busy-wall-question.ts` is a temporary dev switch
+  that makes Keep the primary, for comparing the two.
 - **Fell / Sent** (`workoutOutcome: true`) keeps the climber's chosen look; it never switches icon language mid-block.
   With the wall button, the top row becomes `⏮ [wall button] ⏭` (`primaryCenter: 'wallControl'`): the same button,
   `compact`, about 239 pt wide on a 375 pt phone, same height, radius and colours, its label shrinking to 85% for
   German. ⇄ / ♡, ✓ and ☰ wait in ⋯ (`hidden.tick` adds a Log row there); Fell / Sent log each go. The ⏮ ⏭ slots
-  keep their 48 pt even with Previous and next off, so the row and the board keep their size. The busy-wall
-  question, in a block or not, takes the second row the same way, with the wall button still in the top row. With
-  the bulb, the block keeps today's row, `⇄ ⏮ ✓ ⏭ 💡` over Fell | Sent.
+  keep their 48 pt even with Previous and next off, so the row and the board keep their size. Each first row is
+  keyed, so the swap back to the five slots mounts fresh views; reused ones kept the `⏮ [wall button] ⏭` row's
+  styles and left the slots uneven (#7017). The busy-wall question in a block takes the second row as the pair,
+  with the five-slot first row. With the bulb, the block keeps today's row, `⇄ ⏮ ✓ ⏭ 💡` over Fell | Sent.
 - **Tablets and the open Duo: the wall button moves up a row (Marco's tablet rule).** There the MiniPlayer always
   shows beside the player (the open Duo's pane, the iPad's player route) and has the same controls as the player's
   first row: ⏮ ⏭, the climber's buttons, ⋯ and ✓. So the player drops its first row of icons and puts the
-  full-width wall button there instead (`primaryCenter: 'wallControlFull'`), frost, bulb and face included; the
-  second row is only Fell / Sent or the busy-wall question, and otherwise folds so the board gets the height back.
+  full-width wall button there instead (`primaryCenter: 'wallControlFull'`), frost, bulb and face included, or the
+  busy-wall question's pair in its place (`primaryCenter: 'confirm'`); the second row is only Fell / Sent (or the
+  pair, with the bulb chosen), and otherwise folds so the board gets the height back.
   The MiniPlayer then has no bulb of its own. With the bulb chosen the player has no first row at all, and the
   MiniPlayer's bulb is the player's board control (`PaneWallControlBulb`, `control: 'mini_bar'`, the same model and
   handler), with a preview's Put on the wall in the player's second row. The signal is one rule in two halves:
