@@ -168,17 +168,32 @@ credential to `pending` so the daemon picks it up again).
 
 - Route: `packages/mobile/app/settings/integrations.tsx`.
 - Board account cards render above platform/device integration cards.
-- A **MoonBoard** card renders first, above the Aurora-board cards on web and mobile.
+- A **MoonBoard** card renders first, above the Aurora-board cards in Expo
+  Connected apps. Next's board-account cards were removed in W-21.
   MoonBoard isn't in `AURORA_BOARDS`, so the card is self-contained — no
   credential, status chip, or sync flow. It offers two actions: "Request your
-  data" opens a pre-filled mailto to `moonboardsupport@moonclimbing.com` (body
-  is copied to the clipboard on mobile), and "Import data" opens a CSV picker.
-  The CSV import previews MoonBoard logbook row counts and the angles found,
+  data" copies the request to the clipboard and offers to open an email to
+  `moonboardsupport@moonclimbing.com`; "Import data" opens a single-file CSV
+  picker. File contents determine the import path; renaming a CSV has no effect.
+  The logbook path previews MoonBoard row counts and the angles found,
   stores each entry at its logged angle (25° or 40°, default 40°), turns
   Project/Fail rows into attempts, and streams progress from
-  `/api/moonboard-import`. Column order doesn't matter; see
-  `docs/integrations.md` for how rows are matched to climbs.
-- Uses backend REST endpoints instead of Next internal routes.
+  `/api/moonboard-import`. Column order doesn't matter. An inline column editor
+  lets the user choose the header row and map unfamiliar column names, with five
+  sample rows. Date formats and outcome labels retain their existing meanings.
+  Profile-only files explain why they cannot be imported.
+- A named-climb CSV can instead save catalogue matches to a private playlist.
+  The user confirms that rows are climb names, selects layout and angle, then
+  chooses a new private playlist or an owned private destination. The preview
+  separates matches, missing climbs, ambiguous matches, duplicates and excluded
+  inactive/deleted rows. Inactive rows can be included explicitly. Import saves
+  only unique matched climbs, in source order, and reports unmatched rows with a
+  copy action. This recovers a saved collection, not setter-profile attribution.
+  An absent catalogue match can be a draft, a renamed climb or a recent climb.
+  Draft hold maps and original playlist membership require additional data from
+  MoonBoard; the request email explicitly asks for these records. See
+  `docs/integrations.md` for matching and backend guarantees.
+- Uses backend REST and GraphQL APIs instead of Next internal routes.
 - Kilter links via the username/password (ROPC) "Sign in to Kilter" card when the
   `kilter-oauth-linking` PostHog flag is on; otherwise only the "Kilter (Aurora)"
   JSON-import / data-request card shows. The username/password path also serves

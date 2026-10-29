@@ -12,6 +12,7 @@ import {
   type MoonBoardExportLogRow,
   type MoonBoardImportProgressEvent,
   type MoonBoardImportResult,
+  type MoonBoardCollectionRow,
   type StrippedMoonBoardExportData,
 } from '@boardsesh/shared-schema';
 
@@ -307,6 +308,7 @@ async function queryNameCandidates(
   db: DrizzleDb,
   lookups: MoonBoardNameLookup[],
   mode: 'exact' | 'pattern',
+  publicOnly = false,
 ): Promise<MoonBoardNameMatchRow[]> {
   if (lookups.length === 0) return [];
 
@@ -347,6 +349,24 @@ async function queryNameCandidates(
       ON board_climb_stats.board_type = 'moonboard'
      AND board_climb_stats.climb_uuid = COALESCE(board_climb_aliases.canonical_uuid, board_climbs.uuid)
      AND board_climb_stats.angle = name_input.angle
+    ${
+      publicOnly
+        ? sql`WHERE board_climbs.is_draft IS NOT TRUE
+      AND board_climbs.is_listed IS TRUE
+      AND board_climbs.is_hidden IS NOT TRUE
+      AND board_climb_stats.angle IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM board_climbs canonical_climb
+        WHERE canonical_climb.board_type = 'moonboard'
+          AND canonical_climb.uuid = COALESCE(board_climb_aliases.canonical_uuid, board_climbs.uuid)
+          AND canonical_climb.layout_id = name_input.layout_id
+          AND (canonical_climb.angle IS NULL OR canonical_climb.angle = name_input.angle)
+          AND canonical_climb.is_draft IS NOT TRUE
+          AND canonical_climb.is_listed IS TRUE
+          AND canonical_climb.is_hidden IS NOT TRUE
+      )`
+        : sql``
+    }
   `);
   return rowsOf<MoonBoardNameMatchRow>(matchResult);
 }
@@ -358,13 +378,14 @@ async function queryNameCandidates(
 async function findNameCandidates(
   db: DrizzleDb,
   lookups: MoonBoardNameLookup[],
+  publicOnly = false,
 ): Promise<Map<string, MoonBoardNameCandidate[]>> {
   const lossyLookups = lookups.filter((lookup) => lossyNamePattern(normalizeProblemName(lookup.name)) != null);
   const lossyKeys = new Set(lossyLookups.map((lookup) => lookup.lookupKey));
   const exactLookups = lookups.filter((lookup) => !lossyLookups.includes(lookup));
   const matches = [
-    ...(await queryNameCandidates(db, exactLookups, 'exact')),
-    ...(await queryNameCandidates(db, lossyLookups, 'pattern')),
+    ...(await queryNameCandidates(db, exactLookups, 'exact', publicOnly)),
+    ...(await queryNameCandidates(db, lossyLookups, 'pattern', publicOnly)),
   ];
 
   const candidatesByKey = new Map<string, MoonBoardNameCandidate[]>();
@@ -381,6 +402,24 @@ async function findNameCandidates(
     candidatesByKey.set(match.lookupKey, candidates);
   }
   return candidatesByKey;
+}
+
+/** The collection importer shares logbook matching, but only reads public catalogue climbs. */
+export async function findPublicMoonBoardCollectionCandidates(
+  db: DrizzleDb,
+  rows: readonly MoonBoardCollectionRow[],
+  layoutId: number,
+  angle: number,
+): Promise<Map<number, MoonBoardNameCandidate[]>> {
+  const lookups = new Map<string, MoonBoardNameLookup>();
+  for (const row of rows) {
+    const lookupKey = nameLookupKey(row.name, layoutId, angle);
+    lookups.set(lookupKey, { lookupKey, name: row.name, layoutId, angle });
+  }
+  const candidatesByKey = await findNameCandidates(db, [...lookups.values()], true);
+  return new Map(
+    rows.map((row) => [row.lineNumber, candidatesByKey.get(nameLookupKey(row.name, layoutId, angle)) ?? []]),
+  );
 }
 
 function normalizeSetterName(setter: string): string {

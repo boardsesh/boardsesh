@@ -4152,6 +4152,57 @@ export type MoonBoardClimbDuplicateMatch = {
   exists: Scalars['Boolean']['output'];
 };
 
+export type MoonBoardCollectionImportInput = {
+  angle: Scalars['Int']['input'];
+  layoutId: Scalars['Int']['input'];
+  /** Existing destination's database ID, paired with playlistUuid. Omit to create a private playlist. */
+  playlistId?: InputMaybe<Scalars['ID']['input']>;
+  playlistName: Scalars['String']['input'];
+  playlistUuid: Scalars['ID']['input'];
+  rows: Array<MoonBoardCollectionRowInput>;
+};
+
+export type MoonBoardCollectionImportResult = {
+  __typename?: 'MoonBoardCollectionImportResult';
+  imported: Scalars['Int']['output'];
+  playlistId: Scalars['ID']['output'];
+  playlistUuid: Scalars['ID']['output'];
+  preview: MoonBoardCollectionPreview;
+  skipped: Scalars['Int']['output'];
+};
+
+export type MoonBoardCollectionMatch = {
+  __typename?: 'MoonBoardCollectionMatch';
+  climbUuid?: Maybe<Scalars['String']['output']>;
+  grade: Scalars['String']['output'];
+  lineNumber: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  /** matched, missing, ambiguous, or duplicate */
+  status: Scalars['String']['output'];
+};
+
+export type MoonBoardCollectionPreview = {
+  __typename?: 'MoonBoardCollectionPreview';
+  ambiguous: Scalars['Int']['output'];
+  duplicates: Scalars['Int']['output'];
+  matched: Scalars['Int']['output'];
+  missing: Scalars['Int']['output'];
+  rows: Array<MoonBoardCollectionMatch>;
+};
+
+export type MoonBoardCollectionPreviewInput = {
+  angle: Scalars['Int']['input'];
+  layoutId: Scalars['Int']['input'];
+  rows: Array<MoonBoardCollectionRowInput>;
+};
+
+export type MoonBoardCollectionRowInput = {
+  grade: Scalars['String']['input'];
+  lineNumber: Scalars['Int']['input'];
+  name: Scalars['String']['input'];
+  setter?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MoonBoardHoldsInput = {
   finish: Array<Scalars['String']['input']>;
   hand: Array<Scalars['String']['input']>;
@@ -4412,6 +4463,8 @@ export type Mutation = {
   grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
+  /** Save matched catalogue climbs to an owned private playlist. Rechecks matches at import time. */
+  importMoonBoardCollection: MoonBoardCollectionImportResult;
   inviteResourceMember: Scalars['Boolean']['output'];
   /**
    * Join an existing session or create it if it doesn't exist.
@@ -5237,6 +5290,11 @@ export type MutationGrantGymWriteAccessArgs = {
 /** Root mutation type for all write operations. */
 export type MutationGrantRoleArgs = {
   input: GrantRoleInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationImportMoonBoardCollectionArgs = {
+  input: MoonBoardCollectionImportInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7303,6 +7361,8 @@ export type Query = {
   playlistsForClimbs: Array<ClimbPlaylistMembership>;
   /** Get popular board configurations ranked by climb count. */
   popularBoardConfigs: PopularBoardConfigConnection;
+  /** Match exported MoonBoard problem names against the public catalogue without saving anything. */
+  previewMoonBoardCollectionImport: MoonBoardCollectionPreview;
   privacyRelationship: PrivacyRelationship;
   privacySettings: PrivacySettings;
   /**
@@ -8165,6 +8225,11 @@ export type QueryPlaylistsForClimbsArgs = {
 /** Root query type for all read operations. */
 export type QueryPopularBoardConfigsArgs = {
   input?: InputMaybe<PopularBoardConfigsInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryPreviewMoonBoardCollectionImportArgs = {
+  input: MoonBoardCollectionPreviewInput;
 };
 
 /** Root query type for all read operations. */
@@ -12781,6 +12846,12 @@ export type ResolversTypes = ResolversObject<{
   MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
+  MoonBoardCollectionImportInput: MoonBoardCollectionImportInput;
+  MoonBoardCollectionImportResult: ResolverTypeWrapper<MoonBoardCollectionImportResult>;
+  MoonBoardCollectionMatch: ResolverTypeWrapper<MoonBoardCollectionMatch>;
+  MoonBoardCollectionPreview: ResolverTypeWrapper<MoonBoardCollectionPreview>;
+  MoonBoardCollectionPreviewInput: MoonBoardCollectionPreviewInput;
+  MoonBoardCollectionRowInput: MoonBoardCollectionRowInput;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
   MoonBoardMethod: MoonBoardMethod;
   Mutation: ResolverTypeWrapper<{}>;
@@ -13330,6 +13401,12 @@ export type ResolversParentTypes = ResolversObject<{
   MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: MoonBoardClimbDuplicateMatch;
+  MoonBoardCollectionImportInput: MoonBoardCollectionImportInput;
+  MoonBoardCollectionImportResult: MoonBoardCollectionImportResult;
+  MoonBoardCollectionMatch: MoonBoardCollectionMatch;
+  MoonBoardCollectionPreview: MoonBoardCollectionPreview;
+  MoonBoardCollectionPreviewInput: MoonBoardCollectionPreviewInput;
+  MoonBoardCollectionRowInput: MoonBoardCollectionRowInput;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
   Mutation: {};
   MyBoardsInput: MyBoardsInput;
@@ -15736,6 +15813,45 @@ export type MoonBoardClimbDuplicateMatchResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type MoonBoardCollectionImportResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MoonBoardCollectionImportResult'] =
+    ResolversParentTypes['MoonBoardCollectionImportResult'],
+> = ResolversObject<{
+  imported?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  playlistId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  playlistUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['MoonBoardCollectionPreview'], ParentType, ContextType>;
+  skipped?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type MoonBoardCollectionMatchResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MoonBoardCollectionMatch'] =
+    ResolversParentTypes['MoonBoardCollectionMatch'],
+> = ResolversObject<{
+  climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  grade?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  lineNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type MoonBoardCollectionPreviewResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MoonBoardCollectionPreview'] =
+    ResolversParentTypes['MoonBoardCollectionPreview'],
+> = ResolversObject<{
+  ambiguous?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  duplicates?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  matched?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  missing?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  rows?: Resolver<Array<ResolversTypes['MoonBoardCollectionMatch']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type MutationResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation'],
@@ -16059,6 +16175,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationGrantRoleArgs, 'input'>
+  >;
+  importMoonBoardCollection?: Resolver<
+    ResolversTypes['MoonBoardCollectionImportResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationImportMoonBoardCollectionArgs, 'input'>
   >;
   inviteResourceMember?: Resolver<
     ResolversTypes['Boolean'],
@@ -17768,6 +17890,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     Partial<QueryPopularBoardConfigsArgs>
+  >;
+  previewMoonBoardCollectionImport?: Resolver<
+    ResolversTypes['MoonBoardCollectionPreview'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryPreviewMoonBoardCollectionImportArgs, 'input'>
   >;
   privacyRelationship?: Resolver<
     ResolversTypes['PrivacyRelationship'],
@@ -20127,6 +20255,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   LoggedSetter?: LoggedSetterResolvers<ContextType>;
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
+  MoonBoardCollectionImportResult?: MoonBoardCollectionImportResultResolvers<ContextType>;
+  MoonBoardCollectionMatch?: MoonBoardCollectionMatchResolvers<ContextType>;
+  MoonBoardCollectionPreview?: MoonBoardCollectionPreviewResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   MyGymClaim?: MyGymClaimResolvers<ContextType>;
   NewClimbCreatedEvent?: NewClimbCreatedEventResolvers<ContextType>;

@@ -40,9 +40,11 @@ import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
+import { moonBoardCollectionTypeDefs } from './moonboard-collection';
 
 export const typeDefs = [
   releaseContextTypeDefs,
+  moonBoardCollectionTypeDefs,
   appleAdsAttributionTypeDefs,
   privacyTypeDefs,
   scalarTypeDefs,

@@ -189,7 +189,7 @@ allowlist.
   importing a stripped MoonBoard CSV export. Project/Fail rows become attempts,
   and Session Flash rows become sends with one attempt.
 
-  **Columns.** Moon builds these exports by hand, so the parser
+  **Columns.** Export headers and column order vary, so the parser
   (`packages/shared-schema/src/moonboard-import.ts`) finds the log header by
   name, not position. It needs Grade, Tries and Date plus either ProblemId or
   Name. Header matching ignores case, spaces and punctuation, and accepts a few
@@ -224,8 +224,48 @@ allowlist.
   unresolved, never guessed. The `matchedBy` field of the result counts rows
   per method.
 
-The JSON and CSV import parsers are shared with web/mobile so previews and
-server-side validation agree on missing users, board mismatches, and item counts.
+  **File recognition and column recovery.** Connected apps accepts one CSV at a
+  time and inspects its contents, not its filename. A logbook opens the normal
+  count preview. Profile-only files explain which file to choose instead.
+  Unknown tables can be configured by selecting their header row and assigning
+  CSV columns to import fields; the preview shows five sample rows. The same
+  column editor is available for recognized files. These controls change column
+  assignments only: the existing date formats and outcome labels still apply.
+  Missing required fields or invalid rows must be corrected before importing.
+
+  **Private climb collections.** A table of named climbs can be saved to a
+  private playlist after the user confirms that its rows are climb names and
+  selects the MoonBoard layout and angle. The authenticated GraphQL query
+  `previewMoonBoardCollectionImport` matches up to 1,000 source rows against
+  visible, published catalogue climbs using the name-matching rules above.
+  Preview counts separate unique matches, missing climbs, ambiguous matches and
+  duplicates. Inactive and deleted rows are excluded by default; inactive rows
+  can be included explicitly. A missing match is not automatically a draft:
+  renamed climbs and recent additions absent from the periodically refreshed
+  catalogue can also miss.
+
+  `importMoonBoardCollection` resolves the rows again before writing. It saves
+  unique matched climbs in source order to a new private playlist or an existing
+  private playlist owned by the caller. The destination's ownership, privacy and
+  board/layout compatibility are checked at write time. Retry UUIDs and unique
+  playlist memberships prevent duplicate writes to the same destination. The
+  result reports unmatched rows, which can be copied for a follow-up data
+  request. Collection import does not create logbook entries, grade votes,
+  catalogue climbs or setter-identity links, and grants no authorship or edit
+  rights over existing climbs.
+
+  **What a metadata-only export cannot restore.** Named-climb records can
+  recover references to catalogue climbs, but cannot reconstruct an uncatalogued
+  draft without its hold map. A file without playlist membership cannot restore
+  the original playlists' contents or ordering. The data-request email asks for
+  complete authored-problem records, including IDs, hold positions and roles,
+  layout, angle and draft/published status, plus playlist IDs, member problem IDs
+  and ordering. It requests access and portability where applicable and asks
+  for an explanation of omitted fields, without asserting why they were omitted.
+
+The Aurora JSON and MoonBoard CSV parsers live in shared-schema so previews use
+the same normalized types as backend validation. The account-import UI lives in
+Expo Connected apps; Next's board-account cards were removed in W-21.
 
 ## Adding a provider
 

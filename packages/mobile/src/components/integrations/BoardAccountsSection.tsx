@@ -6,6 +6,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
+import {
+  decodeMoonBoardExportBytes,
+  inspectMoonBoardExportCsv,
+  type ParsedMoonBoardExportResult,
+  type MoonBoardCsvParseOptions,
+} from '@boardsesh/shared-schema/moonboard-import';
+import { MoonBoardCsvConfiguration } from './MoonBoardCsvConfiguration';
+import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { LinkBoardAccountModal, errorMessageFor } from './LinkBoardAccountModal';
 import {
   AURORA_CREDENTIALS_QUERY_KEY,
@@ -56,6 +65,7 @@ import {
 } from '../../lib/aurora-credentials';
 
 type ImportPhase = 'preview' | 'importing' | 'complete' | 'error';
+type MoonBoardImportPhase = ImportPhase | 'configure';
 type ImportStep = 'climbs' | 'resolving' | 'dedup' | 'ascents' | 'attempts' | 'circuits';
 type MoonBoardExportPreview = {
   username?: string;
@@ -282,6 +292,7 @@ function getMoonBoardFileErrorMessage(t: TFunction<'settings'>, error: unknown):
 
 function getMoonBoardImportErrorMessage(t: TFunction<'settings'>, error: unknown): string {
   const errorCode = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (errorCode === 'moonboard_import_too_large') return t('aurora.import.tooLarge');
   if (errorCode === 'moonboard_import_interrupted') {
     return t('aurora.moonboard.csvImport.interrupted');
   }
@@ -636,20 +647,25 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
   const confirm = useConfirm();
   const [importPreview, setImportPreview] = useState<MoonBoardExportPreview | null>(null);
   const [importData, setImportData] = useState<StrippedMoonBoardExportData | null>(null);
-  const [importPhase, setImportPhase] = useState<ImportPhase | null>(null);
+  const [importPhase, setImportPhase] = useState<MoonBoardImportPhase | null>(null);
   const [importProgress, setImportProgress] = useState<MoonBoardProgress | null>(null);
   const [importResult, setImportResult] = useState<MoonBoardImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [sourceCsv, setSourceCsv] = useState<string | null>(null);
+  const [sourceOptions, setSourceOptions] = useState<MoonBoardCsvParseOptions | undefined>();
+  const [configurationBusy, setConfigurationBusy] = useState(false);
 
   const resetImport = useCallback(() => {
-    if (importPhase === 'importing') return;
+    if (importPhase === 'importing' || configurationBusy) return;
+    setSourceCsv(null);
+    setSourceOptions(undefined);
     setImportPreview(null);
     setImportData(null);
     setImportPhase(null);
     setImportProgress(null);
     setImportResult(null);
     setImportError(null);
-  }, [importPhase]);
+  }, [importPhase, configurationBusy]);
 
   const handleRequestData = useCallback(() => {
     // The GDPR letter is too long to encode into the mailto: body reliably, so
@@ -683,6 +699,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
 
   const handleImportPress = useCallback(() => {
     void (async () => {
+      let selectedCsv: string | null = null;
       try {
         const DocumentPicker = await import('expo-document-picker');
         const document = await DocumentPicker.getDocumentAsync({
@@ -698,10 +715,21 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
           return;
         }
 
-        const parsed = await parseMoonBoardCsvForImport(await new File(asset.uri).bytes());
-        setImportData(parsed.data);
-        setImportPreview(parsed.preview);
-        setImportPhase('preview');
+        const bytes = await new File(asset.uri).bytes();
+        selectedCsv = decodeMoonBoardExportBytes(bytes);
+        setSourceCsv(selectedCsv);
+        setSourceOptions(undefined);
+        const inspection = inspectMoonBoardExportCsv(selectedCsv);
+        if (inspection.kind === 'logbook') {
+          const parsed = await parseMoonBoardCsvForImport(bytes);
+          setImportData(parsed.data);
+          setImportPreview(parsed.preview);
+          setImportPhase('preview');
+        } else {
+          setImportData(null);
+          setImportPreview(null);
+          setImportPhase('configure');
+        }
         setImportProgress(null);
         setImportResult(null);
         setImportError(null);
@@ -709,7 +737,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
         showToast(getMoonBoardFileErrorMessage(t, error), 'error');
         setImportPreview(null);
         setImportData(null);
-        setImportPhase(null);
+        setImportPhase(selectedCsv == null ? null : 'configure');
       }
     })();
   }, [showToast, t]);
@@ -788,8 +816,8 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
           icon="upload"
           variant="outlined"
           size="small"
-          loading={importPhase === 'importing'}
-          disabled={importPhase === 'importing'}
+          loading={importPhase === 'importing' || configurationBusy}
+          disabled={importPhase === 'importing' || configurationBusy}
           onPress={handleImportPress}
         />
         <Button
@@ -811,6 +839,17 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
         systemColors={systemColors}
         onCancel={resetImport}
         onConfirm={handleImportConfirm}
+        sourceCsv={sourceCsv}
+        sourceOptions={sourceOptions}
+        configurationBusy={configurationBusy}
+        onBusyChange={setConfigurationBusy}
+        onConfigure={() => setImportPhase('configure')}
+        onParsed={(parsed: ParsedMoonBoardExportResult, options: MoonBoardCsvParseOptions) => {
+          setSourceOptions(options);
+          setImportData(parsed.data);
+          setImportPreview(parsed.preview);
+          setImportPhase('preview');
+        }}
       />
     </View>
   );
@@ -818,7 +857,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
 
 type MoonBoardImportDialogProps = {
   visible: boolean;
-  phase: ImportPhase | null;
+  phase: MoonBoardImportPhase | null;
   preview: MoonBoardExportPreview | null;
   progress: MoonBoardProgress | null;
   result: MoonBoardImportResult | null;
@@ -826,6 +865,12 @@ type MoonBoardImportDialogProps = {
   systemColors: ReturnType<typeof useTheme>['systemColors'];
   onCancel: () => void;
   onConfirm: () => void;
+  sourceCsv: string | null;
+  sourceOptions: MoonBoardCsvParseOptions | undefined;
+  configurationBusy: boolean;
+  onBusyChange: (busy: boolean) => void;
+  onConfigure: () => void;
+  onParsed: (parsed: ParsedMoonBoardExportResult, options: MoonBoardCsvParseOptions) => void;
 };
 
 function MoonBoardImportDialog({
@@ -838,6 +883,12 @@ function MoonBoardImportDialog({
   systemColors,
   onCancel,
   onConfirm,
+  sourceCsv,
+  sourceOptions,
+  configurationBusy,
+  onBusyChange,
+  onConfigure,
+  onParsed,
 }: MoonBoardImportDialogProps) {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
@@ -850,85 +901,98 @@ function MoonBoardImportDialog({
     title = t('aurora.moonboard.importDialog.completeTitle');
   }
 
+  if (phase === 'configure' && sourceCsv != null)
+    return (
+      <MoonBoardCsvConfiguration
+        initialOptions={sourceOptions}
+        csv={sourceCsv}
+        onParsed={onParsed}
+        onClose={onCancel}
+        onBusyChange={onBusyChange}
+      />
+    );
+
   return (
-    <Modal
+    <ModalSheet
       visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={phase === 'importing' ? undefined : onCancel}
+      onClose={onCancel}
+      enablePanDownToClose={phase !== 'importing' && !configurationBusy}
+      scrollable
+      header={
+        <SheetTopBar
+          title={title}
+          leading={{
+            kind: phase === 'complete' ? 'close' : 'cancel',
+            onPress: onCancel,
+            disabled: phase === 'importing',
+          }}
+          trailing={phase === 'preview' ? { label: t('aurora.import.dialog.confirm'), onPress: onConfirm } : undefined}
+        />
+      }
     >
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, styles.importModalCard, { backgroundColor: systemColors.secondaryBackground }]}>
-          <Text variant="headline" style={styles.modalTitle}>
-            {title}
-          </Text>
-
-          {phase === 'preview' && preview ? (
-            <>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
-                {preview.username
-                  ? t('aurora.moonboard.importDialog.previewIntroWithUser', { username: preview.username })
-                  : t('aurora.moonboard.importDialog.previewIntro')}
-              </Text>
-              <View style={[styles.summaryBox, { backgroundColor: systemColors.tertiaryBackground }]}>
-                <SummaryLine label={t('aurora.moonboard.importDialog.rows', { count: preview.rows })} />
-                <SummaryLine label={t('aurora.moonboard.importDialog.sends', { count: preview.sends })} />
-                <SummaryLine label={t('aurora.moonboard.importDialog.flashes', { count: preview.flashes })} />
-                <SummaryLine label={t('aurora.moonboard.importDialog.attempts', { count: preview.attempts })} />
-                {preview.projects > 0 ? (
-                  <SummaryLine label={t('aurora.moonboard.importDialog.projects', { count: preview.projects })} />
-                ) : null}
-                {preview.fails > 0 ? (
-                  <SummaryLine label={t('aurora.moonboard.importDialog.fails', { count: preview.fails })} />
-                ) : null}
-                <SummaryLine
-                  label={t('aurora.moonboard.importDialog.angleNote', { angle: preview.angles.join('° / ') })}
-                />
-              </View>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('aurora.moonboard.importDialog.previewNote')}
-              </Text>
-              <View style={styles.modalActions}>
-                <Button title={tCommon('actions.cancel')} variant="text" role="cancel" onPress={onCancel} />
-                <Button title={t('aurora.import.dialog.confirm')} icon="upload" onPress={onConfirm} />
-              </View>
-            </>
-          ) : null}
-
-          {phase === 'importing' ? (
-            <View style={styles.importProgressBlock}>
-              <ActivityIndicator />
-              <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                {getMoonBoardProgressLabel(t, progress)}
-                {progress?.current != null && progress.total != null ? ` (${progress.current}/${progress.total})` : ''}
-              </Text>
+      <View style={styles.importSheetBody}>
+        {phase === 'preview' && preview ? (
+          <>
+            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
+              {preview.username
+                ? t('aurora.moonboard.importDialog.previewIntroWithUser', { username: preview.username })
+                : t('aurora.moonboard.importDialog.previewIntro')}
+            </Text>
+            <View style={[styles.summaryBox, { backgroundColor: systemColors.tertiaryBackground }]}>
+              <SummaryLine label={t('aurora.moonboard.importDialog.rows', { count: preview.rows })} />
+              <SummaryLine label={t('aurora.moonboard.importDialog.sends', { count: preview.sends })} />
+              <SummaryLine label={t('aurora.moonboard.importDialog.flashes', { count: preview.flashes })} />
+              <SummaryLine label={t('aurora.moonboard.importDialog.attempts', { count: preview.attempts })} />
+              {preview.projects > 0 ? (
+                <SummaryLine label={t('aurora.moonboard.importDialog.projects', { count: preview.projects })} />
+              ) : null}
+              {preview.fails > 0 ? (
+                <SummaryLine label={t('aurora.moonboard.importDialog.fails', { count: preview.fails })} />
+              ) : null}
+              <SummaryLine
+                label={t('aurora.moonboard.importDialog.angleNote', { angle: preview.angles.join('° / ') })}
+              />
             </View>
-          ) : null}
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('aurora.moonboard.importDialog.previewNote')}
+            </Text>
+            <Button title={t('aurora.moonboard.recovery.editColumns')} variant="text" onPress={onConfigure} />
+          </>
+        ) : null}
 
-          {phase === 'complete' && result ? (
-            <>
-              <ScrollView style={styles.resultScroll}>
-                <MoonBoardImportResultSummary result={result} />
-              </ScrollView>
-              <View style={styles.modalActions}>
-                <Button title={tCommon('actions.done')} onPress={onCancel} />
-              </View>
-            </>
-          ) : null}
+        {phase === 'importing' ? (
+          <View style={styles.importProgressBlock}>
+            <ActivityIndicator />
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {getMoonBoardProgressLabel(t, progress)}
+              {progress?.current != null && progress.total != null ? ` (${progress.current}/${progress.total})` : ''}
+            </Text>
+          </View>
+        ) : null}
 
-          {phase === 'error' ? (
-            <>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
-                {error ?? t('aurora.moonboard.csvImport.interrupted')}
-              </Text>
-              <View style={styles.modalActions}>
-                <Button title={tCommon('actions.close')} onPress={onCancel} />
-              </View>
-            </>
-          ) : null}
-        </View>
+        {phase === 'complete' && result ? (
+          <>
+            <ScrollView style={styles.resultScroll}>
+              <MoonBoardImportResultSummary result={result} />
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <Button title={tCommon('actions.done')} onPress={onCancel} />
+            </View>
+          </>
+        ) : null}
+
+        {phase === 'error' ? (
+          <>
+            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
+              {error ?? t('aurora.moonboard.csvImport.interrupted')}
+            </Text>
+            <View style={styles.modalActions}>
+              <Button title={tCommon('actions.close')} onPress={onCancel} />
+            </View>
+          </>
+        ) : null}
       </View>
-    </Modal>
+    </ModalSheet>
   );
 }
 
@@ -1436,6 +1500,7 @@ function UnresolvedList({ title, names }: { title: string; names: string[] }) {
 }
 
 const styles = StyleSheet.create({
+  importSheetBody: { padding: spacing[4], gap: spacing[4] },
   section: {
     width: '100%',
     marginBottom: spacing[6],

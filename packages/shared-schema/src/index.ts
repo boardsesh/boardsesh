@@ -11,6 +11,7 @@ export * from './image-sizes';
 export * from './feedback-screenshots';
 export * from './aurora-import';
 export * from './moonboard-import';
+export * from './moonboard-collection';
 export * from './instagram-caption-parse';
 export * from './sync-error-codes';
 export * from './vote-summary-batching';
