@@ -6,9 +6,17 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 const preferences = vi.hoisted(() => ({
-  getPreference: vi.fn(async (_key: string): Promise<boolean | null> => null),
-  setPreference: vi.fn(async (_key: string, _value: boolean): Promise<void> => {}),
+  getPreference: vi.fn(async (_key: string): Promise<unknown> => null),
+  setPreference: vi.fn(async (_key: string, _value: unknown): Promise<void> => {}),
 }));
+
+const DISMISSED_KEY = 'supportBanner:december2026:dismissed';
+const VIEWS_KEY = 'supportBanner:december2026:views';
+
+/** Answer the IndexedDB reads per key, as the real store would. */
+function storedPreferences(values: Record<string, unknown>) {
+  preferences.getPreference.mockImplementation(async (key: string) => values[key] ?? null);
+}
 
 vi.mock('@/app/lib/user-preferences-db', () => preferences);
 
@@ -42,8 +50,8 @@ describe('HomeSupportBanner', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-12-10T09:00:00Z'));
-    preferences.getPreference.mockClear();
-    preferences.getPreference.mockResolvedValue(null);
+    preferences.getPreference.mockReset();
+    storedPreferences({});
     preferences.setPreference.mockClear();
   });
 
@@ -60,7 +68,7 @@ describe('HomeSupportBanner', () => {
   });
 
   it('stays hidden for a visitor who closed it', async () => {
-    preferences.getPreference.mockResolvedValue(true);
+    storedPreferences({ [DISMISSED_KEY]: true });
     await renderBanner();
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();
@@ -71,7 +79,38 @@ describe('HomeSupportBanner', () => {
 
     fireEvent.click(screen.getByLabelText(tFromCatalog('marketing', 'home.supportBanner.close')));
 
-    expect(preferences.setPreference).toHaveBeenCalledWith('supportBanner:december2026:dismissed', true);
+    expect(preferences.setPreference).toHaveBeenCalledWith(DISMISSED_KEY, true);
+  });
+
+  // At most 2 views per person for December (campaign plan, initiative 5).
+  it('counts each view', async () => {
+    storedPreferences({ [VIEWS_KEY]: 1 });
+    await renderBanner();
+
+    expect(screen.getByTestId('home-support-banner')).toBeTruthy();
+    expect(preferences.setPreference).toHaveBeenCalledWith(VIEWS_KEY, 2);
+  });
+
+  it('starts the count at one on a first visit', async () => {
+    await renderBanner();
+
+    expect(preferences.setPreference).toHaveBeenCalledWith(VIEWS_KEY, 1);
+  });
+
+  it('stops showing after the second view', async () => {
+    storedPreferences({ [VIEWS_KEY]: 2 });
+    await renderBanner();
+
+    expect(screen.queryByTestId('home-support-banner')).toBeNull();
+    expect(preferences.setPreference).not.toHaveBeenCalled();
+  });
+
+  // Not in the page flow: showing it must not push the hero down.
+  it('sits fixed over the page instead of in its flow', async () => {
+    await renderBanner();
+
+    const banner = screen.getByTestId('home-support-banner');
+    expect(banner.parentElement?.className).toMatch(/strip/);
   });
 
   // A homepage held in a cache past 31 Dec must not show it.
@@ -80,6 +119,6 @@ describe('HomeSupportBanner', () => {
     await renderBanner();
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();
-    expect(preferences.getPreference).not.toHaveBeenCalledWith('supportBanner:december2026:dismissed');
+    expect(preferences.getPreference).not.toHaveBeenCalled();
   });
 });

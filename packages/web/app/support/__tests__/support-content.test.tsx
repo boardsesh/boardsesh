@@ -32,6 +32,12 @@ vi.mock('next/link', () => ({
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('@/app/lib/analytics', () => analytics);
 
+const preferences = vi.hoisted(() => ({
+  getPreference: vi.fn(async (_key: string): Promise<unknown> => null),
+  setPreference: vi.fn(async (_key: string, _value: unknown): Promise<void> => {}),
+}));
+vi.mock('@/app/lib/user-preferences-db', () => preferences);
+
 const STRIPE_URL = 'https://donate.stripe.com/test_link';
 
 /** The page as it was before monthly links: one optional one-off AUD link. */
@@ -60,6 +66,11 @@ const MONTHLY_OPTIONS: SupportPageOptions = {
   billingPortalUrl: 'https://billing.stripe.com/p/login/test',
   monthlyFirst: true,
 };
+
+/** A monthly button's text: the env label inside the localized per-month template. */
+function perMonth(label: string): string {
+  return tFromCatalog('marketing', 'support.chooser.perMonth', { amount: label });
+}
 
 function renderPage(options: SupportPageOptions = fallbackOptions(), thanks = false) {
   return render(<SupportContent options={options} src="web-support" thanks={thanks} />);
@@ -149,6 +160,34 @@ describe('SupportContent', () => {
       expect(screen.queryByTestId('support-one-time-rail')).toBeNull();
     });
 
+    // The env label is the amount only; the cadence wording is the locale's.
+    it('wraps each label in the localized per-month template', () => {
+      renderPage(MONTHLY_OPTIONS);
+
+      const buttons = Array.from(screen.getByTestId('support-monthly-options').querySelectorAll('a'));
+      expect(buttons.map((button) => button.textContent)).toEqual([perMonth('AUD tier A'), perMonth('AUD tier B')]);
+      expect(perMonth('AUD tier A')).toBe('AUD tier A/month');
+    });
+
+    // The monthly ask is for build time. No line beside it may pitch the bills.
+    it('swaps every running-costs line for its build-time variant', () => {
+      const { container } = renderPage(MONTHLY_OPTIONS);
+
+      for (const key of ['support.promiseMonthly', 'support.why.p2Monthly', 'support.honesty.p1Monthly']) {
+        expect(screen.getByText(tFromCatalog('marketing', key))).toBeTruthy();
+      }
+      for (const key of [
+        'support.promise',
+        'support.why.p2',
+        'support.honesty.p1',
+        'support.why.p1',
+        'support.honesty.p2',
+      ]) {
+        expect(container.textContent).not.toContain(tFromCatalog('marketing', key));
+      }
+      expect(container.textContent).not.toMatch(/server bill|pays the bill|keeps the lights on/i);
+    });
+
     // GitHub Sponsors stays as the third way to give.
     it('keeps GitHub Sponsors beside the chooser', () => {
       const { container } = renderPage(MONTHLY_OPTIONS);
@@ -194,7 +233,7 @@ describe('SupportContent', () => {
       analytics.track.mockClear();
       renderPage(MONTHLY_OPTIONS);
 
-      fireEvent.click(screen.getByText('AUD tier B'));
+      fireEvent.click(screen.getByText(perMonth('AUD tier B')));
 
       expect(analytics.track).toHaveBeenCalledWith('Support CTA Clicked', {
         cadence: 'monthly',
@@ -232,9 +271,19 @@ describe('SupportContent', () => {
     expect(screen.getByTestId('support-thanks')).toBeTruthy();
   });
 
-  it('shows no thank-you on a normal visit', () => {
+  // Someone who just gave is not asked again by the homepage's December banner.
+  it('closes the December banner for good on the thank-you visit', () => {
+    preferences.setPreference.mockClear();
+    renderPage(fallbackOptions(), true);
+
+    expect(preferences.setPreference).toHaveBeenCalledWith('supportBanner:december2026:dismissed', true);
+  });
+
+  it('shows no thank-you on a normal visit and leaves the banner alone', () => {
+    preferences.setPreference.mockClear();
     renderPage();
 
     expect(screen.queryByTestId('support-thanks')).toBeNull();
+    expect(preferences.setPreference).not.toHaveBeenCalled();
   });
 });

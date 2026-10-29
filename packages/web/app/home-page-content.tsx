@@ -55,7 +55,8 @@ type HomePageContentProps = {
   /**
    * The December support banner. `page.tsx` passes it only inside its window
    * (`support-banner-window.ts`), so outside December the slot is empty and
-   * nothing about it is in the HTML.
+   * nothing about it is in the HTML. It is fixed to the viewport, so where it
+   * sits here only sets its place in the reading order.
    */
   supportBanner?: React.ReactNode;
 };

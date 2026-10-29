@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Image from 'next/image';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -19,6 +19,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
 import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
+import { SUPPORT_BANNER_DISMISSED_KEY } from '@/app/components/home/support-banner-window';
+import { setPreference } from '@/app/lib/user-preferences-db';
 import type { SupportPageOptions } from './support-links';
 import SupportChooser, { SUPPORT_CHOOSER_ID } from './support-chooser';
 import { trackSupportCta } from './support-analytics';
@@ -56,6 +58,11 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
   const { monthlyFirst } = options;
   const onceCurrency = options.once[options.defaultCurrency] ? options.defaultCurrency : options.currencies[0];
   const stripeDonateUrl = onceCurrency ? options.once[onceCurrency] : undefined;
+  // Someone Stripe just sent back here has given: the homepage's December
+  // banner must not ask them again.
+  useEffect(() => {
+    if (thanks) void setPreference(SUPPORT_BANNER_DISMISSED_KEY, true);
+  }, [thanks]);
   const trackSponsors = (placement: 'hero' | 'options') =>
     trackSupportCta({ cadence: 'sponsors', currency: 'none', src, option: 1, placement });
   return (
@@ -111,14 +118,14 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
       {/* The promise belongs next to the ask, not buried in the small print. */}
       <Box className={styles.promise}>
         <Typography variant="h5" component="p">
-          {t('support.promise')}
+          {monthlyFirst ? t('support.promiseMonthly') : t('support.promise')}
         </Typography>
       </Box>
 
       <Box className={styles.contributionGrid}>
         <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
           <Prose>{monthlyFirst ? t('support.why.p1Monthly') : t('support.why.p1')}</Prose>
-          <Prose>{t('support.why.p2')}</Prose>
+          <Prose>{monthlyFirst ? t('support.why.p2Monthly') : t('support.why.p2')}</Prose>
         </PageSection>
 
         <PageSection title={t('support.rails.title')} className={styles.contributionOptions}>
@@ -184,7 +191,7 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
         icon={<InfoOutlined />}
         tone="neutral"
       >
-        <Prose>{t('support.honesty.p1')}</Prose>
+        <Prose>{monthlyFirst ? t('support.honesty.p1Monthly') : t('support.honesty.p1')}</Prose>
         <Prose>{monthlyFirst ? t('support.honesty.p2Monthly') : t('support.honesty.p2')}</Prose>
         <Prose>
           <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>

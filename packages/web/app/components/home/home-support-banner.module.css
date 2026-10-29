@@ -1,5 +1,18 @@
-/* The December support banner, first thing under the header on `/`.
+/* The December support banner on `/`: a strip fixed to the bottom of the
+ * viewport, so showing it never moves the page under it.
  * Colours are CSS vars from app/components/index.css. Never literals. */
+
+.strip {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-2) var(--spacing-4);
+  padding-bottom: max(var(--spacing-2), env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
 
 .banner {
   display: flex;
@@ -7,11 +20,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-3) var(--spacing-6);
-  margin-top: var(--spacing-6);
+  width: 100%;
+  max-width: 960px;
   padding: var(--spacing-4) var(--spacing-5);
   border: 1px solid var(--separator);
   border-radius: var(--border-radius-lg);
   background: var(--neutral-100);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
 }
 
 .text {

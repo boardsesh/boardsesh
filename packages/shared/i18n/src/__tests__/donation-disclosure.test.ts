@@ -80,7 +80,10 @@ const SUPPORT_COPY_KEYS = [
   'support.oneTime.cta',
   // The monthly-first layout, shown once SUPPORT_MONTHLY_LINKS_* is set.
   'support.hero.ctaMonthly',
+  'support.promiseMonthly',
   'support.why.p1Monthly',
+  'support.why.p2Monthly',
+  'support.chooser.perMonth',
   'support.chooser.monthly',
   'support.chooser.once',
   'support.chooser.monthlyBody',
@@ -106,6 +109,7 @@ const SUPPORT_COPY_KEYS = [
   'support.otherWays.discord.cta',
   'support.honesty.p1',
   'support.honesty.p2',
+  'support.honesty.p1Monthly',
   'support.honesty.p2Monthly',
   'support.thanks.body',
   // The homepage support block carries the same ask above the footer, so it
@@ -126,8 +130,18 @@ const SUPPORT_COPY_KEYS = [
 describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale) => {
   const catalog = loadMarketing(locale);
 
-  it('says donations are not tax-deductible', () => {
-    expect(readString(catalog, 'support.honesty.p1')).toMatch(NOT_TAX_DEDUCTIBLE[locale]);
+  // Both layouts' small print: the fallback page and the monthly-first one.
+  it.each(['support.honesty.p1', 'support.honesty.p1Monthly'])('says donations are not tax-deductible (%s)', (key) => {
+    expect(readString(catalog, key)).toMatch(NOT_TAX_DEDUCTIBLE[locale]);
+  });
+
+  // A monthly button's label is the env's amount only ("A$5"); this template
+  // adds the cadence in the visitor's language. Losing the placeholder would
+  // drop the amount from every button.
+  it('wraps the monthly amount in a per-month template', () => {
+    const template = readString(catalog, 'support.chooser.perMonth');
+    expect(template).toContain('{{amount}}');
+    expect(template.replace('{{amount}}', '').trim().length).toBeGreaterThan(0);
   });
 
   it('promises nothing in return for a donation', () => {

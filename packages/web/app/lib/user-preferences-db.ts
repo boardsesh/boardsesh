@@ -43,10 +43,15 @@ export type UserPreferenceKeyMap = {
   'homeGymCard:dismissed': boolean;
   /**
    * The visitor closed the homepage's December 2026 support banner
-   * (`components/home/home-support-banner.tsx`). It stays closed for the rest
-   * of the month; the next campaign uses a new key.
+   * (`components/home/home-support-banner.tsx`), or reached the thank-you
+   * state on `/support?thanks=1`. It stays closed for the rest of the month;
+   * the next campaign uses a new key.
    */
   'supportBanner:december2026:dismissed': boolean;
+  /**
+   * How many page loads have shown that banner. It stops at 2 for the month.
+   */
+  'supportBanner:december2026:views': number;
   lastUsedGrade: number;
   /**
    * A random UUID that a signed-out visitor's feature-flag requests bucket on,

@@ -120,6 +120,7 @@ export default async function PrivacyPolicyPage() {
 
       <PageSection title={t('privacy.retention.title')}>
         <Prose>{t('privacy.retention.body')}</Prose>
+        <Prose>{t('privacy.retention.donations')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.deletion.title')}>

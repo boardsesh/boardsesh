@@ -739,9 +739,12 @@ They never go in the repo, the i18n catalogs, an issue or an analytics event.
 
 - **Monthly lists.** `SUPPORT_MONTHLY_LINKS_AUD` and `SUPPORT_MONTHLY_LINKS_USD`
   each hold a JSON array of 1 to 6 `{ "label": "...", "url": "..." }` objects,
-  in the order the buttons show. A label is 1 to 40 characters and is shown
-  as typed, so write it in the currency it charges. Shape:
-  `[{"label":"<label>","url":"https://buy.stripe.com/<id>"}]`.
+  in the order the buttons show. A label is the amount only, 1 to 40
+  characters, written in the currency it charges (`<currency symbol><amount>`,
+  with no "/month" or "monthly"). The page wraps it in the localized
+  `support.chooser.perMonth` template, so `/es`, `/fr` and `/de` add their own
+  per-month wording. Shape:
+  `[{"label":"<amount>","url":"https://buy.stripe.com/<id>"}]`.
 - **Hosts.** Every Payment Link must be `https://buy.stripe.com/...` or
   `https://donate.stripe.com/...`, with no port or credentials. The portal
   link must be `https://billing.stripe.com/...`.
@@ -780,9 +783,12 @@ They never go in the repo, the i18n catalogs, an issue or an analytics event.
 2026-12-01T00:00:00Z up to but not including 2027-01-01T00:00:00Z. The window is
 in UTC so the server and the browser agree without knowing where the visitor
 is; in Sydney it runs 11 am 1 Dec to 11 am 1 Jan. Outside the window the server
-renders nothing for it and the browser checks its own clock again. A close is
-stored in IndexedDB (`boardsesh-user-preferences`) under
-`supportBanner:december2026:dismissed`. The window lives in
+renders nothing for it and the browser checks its own clock again. It is a
+strip fixed to the bottom of the viewport, so it never moves the hero. It
+shows on at most 2 page loads per browser for the month
+(`supportBanner:december2026:views` in IndexedDB, `boardsesh-user-preferences`).
+A close, or reaching the thank-you state on `/support?thanks=1`, hides it for
+good (`supportBanner:december2026:dismissed`). The window lives in
 `packages/web/app/components/home/support-banner-window.ts`.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's

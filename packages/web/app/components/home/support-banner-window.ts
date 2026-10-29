@@ -22,7 +22,17 @@ export function isSupportBannerWindow(now: Date): boolean {
 export const SUPPORT_BANNER_HREF = '/support?src=web-home-banner';
 
 /**
- * The IndexedDB preference that hides it after a close. Named for this
- * campaign, so a later banner starts visible for everyone.
+ * The IndexedDB preference that hides it for good: set by the close button and
+ * by the thank-you state on `/support?thanks=1`, so someone who just gave is
+ * not asked again. Named for this campaign, so a later banner starts visible
+ * for everyone.
  */
 export const SUPPORT_BANNER_DISMISSED_KEY = 'supportBanner:december2026:dismissed';
+
+/**
+ * How many page loads have shown it, per browser. The campaign plan allows at
+ * most 2 views per person for all of December; the app's Home card keeps its
+ * own count on the phone, since the two surfaces share no storage.
+ */
+export const SUPPORT_BANNER_VIEWS_KEY = 'supportBanner:december2026:views';
+export const SUPPORT_BANNER_MAX_VIEWS = 2;

@@ -32,9 +32,10 @@ type SupportChooserProps = {
  * Monthly first, "Give once" beside it, in AUD or USD.
  *
  * Every href arrives finished from the server (env-read and tagged with `src`).
- * The labels are the env's own, so they are rendered as they came and never
- * sent to analytics: they name amounts. Monthly is the default whenever the
- * chosen currency has a monthly list.
+ * A label is the amount only, as typed into the env ("A$5"); the per-month
+ * wording around it comes from `support.chooser.perMonth`, so each locale reads
+ * in its own language. Labels are never sent to analytics: they name amounts.
+ * Monthly is the default whenever the chosen currency has a monthly list.
  */
 export default function SupportChooser({ options, src }: SupportChooserProps) {
   const { t } = useTranslation('marketing');
@@ -114,7 +115,7 @@ export default function SupportChooser({ options, src }: SupportChooserProps) {
                   trackSupportCta({ cadence: 'monthly', currency, src, option: index + 1, placement: 'options' })
                 }
               >
-                {link.label}
+                {t('support.chooser.perMonth', { amount: link.label })}
               </Button>
             ))}
           </Box>
