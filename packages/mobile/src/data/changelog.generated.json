@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-29T16:23:42.038Z",
+  "generatedAt": "2026-10-29T19:52:56.539Z",
   "entries": [
+    {
+      "prNumber": 7111,
+      "category": "fixed",
+      "title": "Filter chips on Android line up with the search bar and scroll all the way to the screen edge",
+      "mergedAt": "2026-10-29T19:49:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7111"
+    },
     {
       "prNumber": 7098,
       "category": "fixed",

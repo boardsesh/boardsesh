@@ -17,6 +17,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Filter chips on Android line up with the search bar and scroll all the way to the screen edge ([#7111](https://github.com/boardsesh/boardsesh/pull/7111))
 - With VoiceOver on, the bar at the bottom opens the full player, and VoiceOver can now read the board and its buttons. ([#7098](https://github.com/boardsesh/boardsesh/pull/7098))
 - Climb thumbnails on iPad stay put when you close the player ([#7096](https://github.com/boardsesh/boardsesh/pull/7096))
 - Friends who join your session on your home wall see and light your wall, not a copy. ([#7049](https://github.com/boardsesh/boardsesh/pull/7049))
