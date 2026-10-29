@@ -952,6 +952,37 @@ describe('ClimbTopChrome', () => {
     expect(onHeightChange).toHaveBeenLastCalledWith(88);
   });
 
+  it('runs the Material chip row and grade rail full-bleed so their own inset is the only gutter', () => {
+    ctrl.variant = 'material';
+    const { container, getByText } = render(
+      <ClimbTopChrome
+        {...makeProps({
+          gradeRailVisible: true,
+          gradeBound: { minGradeId: 10, maxGradeId: 12 },
+          onGradeChange: vi.fn(),
+          showPersistentChips: true,
+          filterChrome: (
+            <>
+              <span>Persistent filter chips</span>
+              <span>Sheet-only filter tokens</span>
+            </>
+          ),
+        })}
+      />,
+    );
+    const styleOf = (element: Element | null | undefined) =>
+      JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    const chipCarrier = getByText('Persistent filter chips').parentElement;
+    const railCarrier = container.querySelector('[data-grade-rail="true"]')?.parentElement;
+    expect(getByText('Sheet-only filter tokens').parentElement).toBe(chipCarrier);
+    expect(styleOf(chipCarrier)).not.toHaveProperty('paddingHorizontal');
+    expect(styleOf(railCarrier)).not.toHaveProperty('paddingHorizontal');
+    // Same vertical rhythm as when the chips sat inside the search stack: 8dp
+    // above and between the rows, 12dp below.
+    expect(styleOf(chipCarrier)).toMatchObject({ gap: 8, paddingBottom: 12 });
+    expect(styleOf(chipCarrier?.previousElementSibling)).toMatchObject({ paddingHorizontal: 16, paddingBottom: 8 });
+  });
+
   it('removes only the grade panel backing when floating native glass is allowed', () => {
     nativeChrome.glassGradeRail = true;
     const props = makeProps({

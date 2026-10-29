@@ -339,4 +339,27 @@ describe('boardRenderFailed — the config stage', () => {
       ms_waiting: 6001,
     });
   });
+
+  // Issue #7081: a blank iPad play board. The paint timeout says whether an
+  // image-cache sweep had just run and whether the board was under the bridge.
+  it('carries the sweep age and the bridge flag under an image_load paint_timeout', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      surface: 'play',
+      stage: 'image_load',
+      failure_kind: 'paint_timeout',
+      error_code: 'paint_timeout',
+      bridging: false,
+      ms_since_image_sweep: null,
+    });
+
+    expect(payload.properties).toMatchObject({
+      stage: 'image_load',
+      failure_kind: 'paint_timeout',
+      bridging: false,
+      ms_since_image_sweep: null,
+    });
+  });
 });

@@ -1,6 +1,92 @@
 {
-  "generatedAt": "2026-10-29T09:52:33.209Z",
+  "generatedAt": "2026-10-29T19:52:56.539Z",
   "entries": [
+    {
+      "prNumber": 7111,
+      "category": "fixed",
+      "title": "Filter chips on Android line up with the search bar and scroll all the way to the screen edge",
+      "mergedAt": "2026-10-29T19:49:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7111"
+    },
+    {
+      "prNumber": 7098,
+      "category": "fixed",
+      "title": "With VoiceOver on, the bar at the bottom opens the full player, and VoiceOver can now read the board and its buttons.",
+      "mergedAt": "2026-10-29T16:10:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7098"
+    },
+    {
+      "prNumber": 7096,
+      "category": "fixed",
+      "title": "Climb thumbnails on iPad stay put when you close the player",
+      "mergedAt": "2026-10-29T16:05:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7096"
+    },
+    {
+      "prNumber": 7049,
+      "category": "fixed",
+      "title": "Friends who join your session on your home wall see and light your wall, not a copy.",
+      "mergedAt": "2026-10-29T15:50:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7049"
+    },
+    {
+      "prNumber": 7080,
+      "category": "fixed",
+      "title": "Scrolling climb lists feels steadier: rows no longer slide open while you scroll",
+      "mergedAt": "2026-10-29T14:28:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7080"
+    },
+    {
+      "prNumber": 6946,
+      "category": "new",
+      "title": "Every Android tab now says where you are at the top, with your board or feed right under the title",
+      "mergedAt": "2026-10-29T13:00:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6946",
+      "body": "The top bar stays flat until you scroll, then shades in so the list reads cleanly underneath"
+    },
+    {
+      "prNumber": 7040,
+      "category": "fixed",
+      "title": "The Android session notification shows your climb's board again instead of a black box.",
+      "mergedAt": "2026-10-29T12:35:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7040"
+    },
+    {
+      "prNumber": 7044,
+      "category": "fixed",
+      "title": "Delete several logbook entries in a row without waiting",
+      "mergedAt": "2026-10-29T12:35:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7044",
+      "body": "Clear a whole day of entries for a climb with Delete all"
+    },
+    {
+      "prNumber": 7051,
+      "category": "fixed",
+      "title": "Mirror from the Live Activity now works on gym walls, too.",
+      "mergedAt": "2026-10-29T12:35:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7051"
+    },
+    {
+      "prNumber": 7072,
+      "category": "fixed",
+      "title": "On iPad, Log ascent opens with the climb's grade in view, not V0",
+      "mergedAt": "2026-10-29T12:34:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7072"
+    },
+    {
+      "prNumber": 7033,
+      "category": "fixed",
+      "title": "Un-liking your last climb offline now shows 0 climbs on your Liked list.",
+      "mergedAt": "2026-10-29T11:44:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7033"
+    },
+    {
+      "prNumber": 7034,
+      "category": "fixed",
+      "title": "Previous and Next in the Android notification now light the whole climb on your MoonBoard",
+      "mergedAt": "2026-10-29T11:44:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7034"
+    },
     {
       "prNumber": 7037,
       "category": "fixed",
@@ -8358,6 +8444,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-29T15:57:44+01:00",
+      "sha": "a939778806f20ab4f09ef4e7523d37a6d9fee2a4",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "8c7e53ae3839577b808b2fab884a1c0e6632d71a",
+        "ios": "e5884e15066b412224821ac7528e2a442a99bcef"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-27T11:28:21+01:00",

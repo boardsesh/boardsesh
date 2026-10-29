@@ -224,6 +224,7 @@ function ClimbTopChromeComponent({
     const shouldShowFilterSummary = showTopChromeFilters && filterSummary != null && hasNonGradeFilters;
     const visibleFilterSummary = shouldShowFilterSummary ? filterSummary : null;
     const visibleGradeLabel = gradeChip?.label ?? t('mobile.filter.grade');
+    const persistentChips = showPersistentChips ? filterChrome : null;
 
     return (
       <MaterialTopAppBar
@@ -246,7 +247,10 @@ function ClimbTopChromeComponent({
             means "let touches reach the controls". If an inner control ever adopts
             an RNGH gesture it needs no change — the outer container already stops
             the list's handlers from being recorded. */}
-            <View pointerEvents="box-none" style={styles.materialFilterStack}>
+            <View
+              pointerEvents="box-none"
+              style={[styles.materialFilterStack, persistentChips ? styles.materialFilterStackAboveChips : null]}
+            >
               {showTopChromeFilters ? (
                 <View pointerEvents="box-none" style={styles.materialControlRow}>
                   <GradeFilterControl
@@ -273,10 +277,6 @@ function ClimbTopChromeComponent({
                 </View>
               ) : null}
 
-              {/* The persistent native chip row owns filtering when the Material
-              default; it sits directly under the app bar, like Liquid Glass. */}
-              {showPersistentChips ? filterChrome : null}
-
               {/* The quick row carries the condensed summary when the persistent
               chip row is off. The angle rides the persistent chip row above. */}
               {visibleFilterSummary ? (
@@ -297,8 +297,15 @@ function ClimbTopChromeComponent({
                 </View>
               ) : null}
             </View>
+            {/* The persistent chip row runs full-bleed under the app bar: its own
+              16dp content inset is the gutter, and chips scroll to the screen edge. */}
+            {persistentChips ? (
+              <View pointerEvents="box-none" style={styles.materialChipRow}>
+                {persistentChips}
+              </View>
+            ) : null}
             {/* Measure the disclosed rail with the rest of the chrome so the first
-              result clears it. Keep the rail's own chip insets. */}
+              result clears it. Its own content inset is the gutter too. */}
             {gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
           </>
         }
@@ -402,6 +409,15 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[3],
     gap: spacing[2],
   },
+  materialFilterStackAboveChips: {
+    // The chip row follows outside the stack; keep the stack's gap above it.
+    paddingBottom: spacing[2],
+  },
+  materialChipRow: {
+    // `filterChrome` is a fragment (chip row + sheet-only filter tokens).
+    paddingBottom: spacing[3],
+    gap: spacing[2],
+  },
   materialControlRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -422,7 +438,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   materialGradeRail: {
-    paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
   },
   gradeRail: {

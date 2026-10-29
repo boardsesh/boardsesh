@@ -253,11 +253,20 @@ vi.mock('react-native', () => ({
     absoluteFill: {},
     hairlineWidth: 1,
   },
-  RefreshControl: ({ refreshing, progressViewOffset }: { refreshing?: boolean; progressViewOffset?: number }) =>
+  RefreshControl: ({
+    refreshing,
+    progressViewOffset,
+    onRefresh,
+  }: {
+    refreshing?: boolean;
+    progressViewOffset?: number;
+    onRefresh?: () => void;
+  }) =>
     createElement('div', {
       'data-refresh-control': 'true',
       'data-refreshing': String(!!refreshing),
       'data-progress-view-offset': progressViewOffset,
+      onClick: onRefresh,
     }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
   // The screen reads Platform.OS at module load (the iOS-only Tall/Wide lock).
@@ -1657,14 +1666,39 @@ describe('ClimbList previous results standing in for a loading search', () => {
     }
   });
 
-  it('still shows the spinner for a real pull-to-refresh', async () => {
+  it('keeps the pull-to-refresh spinner hidden during a background refetch', async () => {
     mocks.isRefetching = true;
     const { container, findByText } = render(<ClimbList />);
 
     await findByText('Moonage');
 
-    expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+    expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
   });
+
+  it.each(['success', 'error'] as const)(
+    'shows a user-pull spinner until the refresh settles with %s',
+    async (outcome) => {
+      let finishRefresh: () => void = () => undefined;
+      const pendingRefresh = new Promise<void>((resolve, reject) => {
+        finishRefresh = () => (outcome === 'success' ? resolve() : reject(new Error('offline')));
+      });
+      mocks.refetchClimbs.mockReturnValueOnce(pendingRefresh);
+      const { container, findByText } = render(<ClimbList />);
+      await findByText('Moonage');
+      const refreshControl = container.querySelector('[data-refresh-control]');
+      expect(refreshControl).not.toBeNull();
+
+      fireEvent.click(refreshControl!);
+      expect(mocks.refetchClimbs).toHaveBeenCalledOnce();
+      expect(refreshControl?.getAttribute('data-refreshing')).toBe('true');
+
+      await act(async () => {
+        finishRefresh();
+        await pendingRefresh.catch(() => undefined);
+      });
+      expect(refreshControl?.getAttribute('data-refreshing')).toBe('false');
+    },
+  );
 
   // Under the UIKit header the filter chips are pinned over the top of the list,
   // where the spinner appears: it is drawn below them, by their measured height.
@@ -2121,7 +2155,7 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
         view.rerender(<ClimbList />);
         expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
         if (busyFlag === 'isRefetching') {
-          expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+          expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
         }
 
         mocks[busyFlag] = false;

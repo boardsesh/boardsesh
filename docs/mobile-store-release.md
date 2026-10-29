@@ -129,6 +129,11 @@ git merge origin/main          # merge commit
 git push origin release/next
 ```
 
+When resolving the sync through a PR into `release/next`, preserve the merge
+commit. CI permits the generated changelog files only when they exactly match
+the new `main` ancestor brought into the train by that PR. The OTA workflow
+remains their sole writer; do not edit those files by hand.
+
 Only a reset or a rewrite of the train needs a force-push. For that, a repository
 admin pauses the ruleset (Settings → Rules) for the push and switches it back on
 afterwards.

@@ -6,8 +6,29 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-10-29
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Every Android tab now says where you are at the top, with your board or feed right under the title ([#6946](https://github.com/boardsesh/boardsesh/pull/6946))
+  The top bar stays flat until you scroll, then shades in so the list reads cleanly underneath
+
 ### Fixed
 
+- Filter chips on Android line up with the search bar and scroll all the way to the screen edge ([#7111](https://github.com/boardsesh/boardsesh/pull/7111))
+- With VoiceOver on, the bar at the bottom opens the full player, and VoiceOver can now read the board and its buttons. ([#7098](https://github.com/boardsesh/boardsesh/pull/7098))
+- Climb thumbnails on iPad stay put when you close the player ([#7096](https://github.com/boardsesh/boardsesh/pull/7096))
+- Friends who join your session on your home wall see and light your wall, not a copy. ([#7049](https://github.com/boardsesh/boardsesh/pull/7049))
+- Scrolling climb lists feels steadier: rows no longer slide open while you scroll ([#7080](https://github.com/boardsesh/boardsesh/pull/7080))
+- The Android session notification shows your climb's board again instead of a black box. ([#7040](https://github.com/boardsesh/boardsesh/pull/7040))
+- Delete several logbook entries in a row without waiting ([#7044](https://github.com/boardsesh/boardsesh/pull/7044))
+  Clear a whole day of entries for a climb with Delete all
+- Mirror from the Live Activity now works on gym walls, too. ([#7051](https://github.com/boardsesh/boardsesh/pull/7051))
+- On iPad, Log ascent opens with the climb's grade in view, not V0 ([#7072](https://github.com/boardsesh/boardsesh/pull/7072))
+- Un-liking your last climb offline now shows 0 climbs on your Liked list. ([#7033](https://github.com/boardsesh/boardsesh/pull/7033))
+- Previous and Next in the Android notification now light the whole climb on your MoonBoard ([#7034](https://github.com/boardsesh/boardsesh/pull/7034))
 - Joining a crew's session at a gym puts you on the same wall, with its history. ([#7037](https://github.com/boardsesh/boardsesh/pull/7037))
 - Your crew sees your name and photo when you host a session from an iPhone ([#7035](https://github.com/boardsesh/boardsesh/pull/7035))
 

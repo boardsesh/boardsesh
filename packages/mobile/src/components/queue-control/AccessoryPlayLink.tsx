@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Platform, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import { Link } from 'expo-router';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
 import { opacity } from '../../theme/tokens';
 
 type AccessoryPlayLinkProps = {
@@ -39,8 +40,12 @@ export function AccessoryPlayLink({
   accessibilityValue,
   onOpen,
   onPrepare,
-  zoomSourceRetained = false,
+  zoomSourceRetained: hostRetainsZoomSource = false,
 }: AccessoryPlayLinkProps) {
+  // UIKit's zoom leaves the presented player, and this source, out of the
+  // accessibility tree (#7082), so VoiceOver gets the climb row's open instead.
+  const screenReaderEnabled = useScreenReaderEnabled();
+  const zoomSourceRetained = hostRetainsZoomSource && !screenReaderEnabled;
   const reduceMotion = useReduceMotion();
   // iPad too: like Music's MiniPlayer, the accessory zooms into the full-screen player.
   const supportsZoom = zoomSourceRetained && Platform.OS === 'ios' && Number(Platform.Version) >= 18 && !reduceMotion;
