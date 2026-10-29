@@ -199,6 +199,40 @@ index 2434c61..fb36bbf 100644
 +}
 +
  @end
+diff --git a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
+index b806d38..23e7b66 100644
+--- a/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
++++ b/ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm
+@@ -2,6 +2,11 @@
+ 
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ 
++// Boardsesh: the widest the accessory glass gets on iPad, in points. Apple Music's
++// iPad mini player measures 689 pt wide, centred on the content column, in both
++// orientations of an iPad Pro 11" and 13" (iOS 26 and 27).
++static const CGFloat RNSTabsBottomAccessoryPadMaxWidth = 689.0;
++
+ @implementation RNSTabsBottomAccessoryWrapperView
+ 
+ - (CGSize)sizeThatFits:(CGSize)size
+@@ -14,6 +19,17 @@
+   // device). By returning the proposed size, we make sure that the accessory always
+   // takes full available width.
+   // See https://github.com/software-mansion/react-native-screens/issues/4728.
++  //
++  // Boardsesh: on iPad, cap the width at Music's 689 pt. UIKit centres a smaller
++  // answer on the content column. The cap still derives from the proposed size on
++  // every query, so the platter keeps tracking sidebar show/hide and rotation
++  // (#4728) whenever the column is narrower than the cap. The height always stays
++  // the proposed one: answering a smaller height shrinks the platter to 48 pt.
++  // Phone idiom keeps full width, including the open iPhone Duo, where the bar
++  // must cover the split player's small row.
++  if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
++    return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryPadMaxWidth), size.height);
++  }
+   return size;
+ }
+ 
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
 index 69bd2fc..66cd93c 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
