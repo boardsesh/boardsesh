@@ -93,13 +93,14 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 
 1. It forgets the physical frames the auto-sender's dedup compares against. Without that, a drain re-run that doesn't write (a crew FullSync with a new item object, the current-change clock moving) would confirm the turned-off climb and report it as lit.
 2. It forgets the last accepted report, so re-lighting the same climb reports it again.
-3. It calls `reportClearForBoard`, after any climb report still in flight, with one membership re-stamp and retry like a climb report. A climb report sent while the clear report is in flight waits for it. A climb written after the clear can't overtake it: the hook queues writes in order (`writeChainRef` in `use-board-bluetooth.ts`), and the clear report is registered as soon as its write lands, before the next climb's write can finish. The clearing phone keeps its own `wall-cleared-store`. A crewmate's player reads `usePresenceClearedClimbUuid()`, and `resolveWallBadge` shows "Not on the wall" when the current climb on screen is the cleared one. The phone holding the link ignores the feed's copy, because a re-light would otherwise flash "Not on the wall" until the echo arrives.
+3. It calls `reportClearForBoard`, after any climb report still in flight, with one membership re-stamp and retry like a climb report. Every climb report goes through one fence, `sendFencedClimbReport`: the auto-sender's, Undo's and the "Light this" relight's. A climb report sent while the clear report is in flight waits for it, and a clear waits for every climb report in flight. A climb written after the clear can't overtake it: the hook queues writes in order (`writeChainRef` in `use-board-bluetooth.ts`), and the clear report is registered as soon as its write lands, before the next climb's write can finish. The clearing phone keeps its own `wall-cleared-store`. A crewmate's player reads `usePresenceClearedClimbUuid()`, and `resolveWallBadge` shows "Not on the wall" when the current climb on screen is the cleared one. The phone holding the link ignores the feed's copy, because a re-light would otherwise flash "Not on the wall" until the echo arrives.
 
 **Not covered.**
 
 - Seqs are numbered in allocation order. `reportBoardClimb` does database reads before `nextBoardSeq`, so a set and a clear sent close together can be numbered in the opposite order. The app waits for an in-flight report before sending the other kind.
 - A seq-gap catch-up does not recover a missed clear. It re-reads history, which has no clear in it. Only a re-subscribe replays it: a socket reconnect re-subscribes, but a gap seen on a live socket does not.
 - A peer has no way to re-light a cleared climb. The holder re-lights it from the bulb.
+- A virtual hold (a wall taken with no Bluetooth) never reports a clear. The blanking write needs a radio, so with none `blankWallAndReportClear` stops before the report, and a spill skip on a virtual hold leaves the previous climb as the feed's lit climb.
 
 ## Known limitations
 

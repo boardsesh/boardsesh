@@ -991,6 +991,22 @@ export function BluetoothProvider({
   // set reports in flight; a set report waits for the clear in flight.
   const climbReportsInFlightRef = useRef(new Set<Promise<boolean>>());
   const clearReportInFlightRef = useRef<Promise<void> | null>(null);
+  // Every climb report goes through here: the auto-sender's, Undo's and the
+  // "Light this" relight's. It waits for a clear report in flight, drops the
+  // report when a clear, reconnect or board switch made it stale during that
+  // wait, and holds its place in `climbReportsInFlightRef` so a later clear
+  // waits for it in turn.
+  const sendFencedClimbReport = useCallback(
+    async (isCurrentOperation: () => boolean, send: () => Promise<boolean>): Promise<boolean> => {
+      await clearReportInFlightRef.current;
+      if (!isCurrentOperation()) return false;
+      const report = send();
+      climbReportsInFlightRef.current.add(report);
+      void report.finally(() => climbReportsInFlightRef.current.delete(report));
+      return report;
+    },
+    [],
+  );
   const wallCurrentClimbRef = useRef<BoardPresenceClimb | null>(wallCurrentClimb);
   wallCurrentClimbRef.current = wallCurrentClimb;
   const showUndoWallChangeSnackbarRef = useRef(showUndoWallChangeSnackbar);
@@ -1161,19 +1177,13 @@ export function BluetoothProvider({
       // flip never reaches `item.climb.mirrored`.
       const climbInput = { uuid: item.uuid, climb: { ...toClimbInput(item.climb), mirrored } };
       const angle = item.climb.angle ?? null;
-      const sendReport = async () => {
-        await clearReportInFlightRef.current;
-        // A second clear, a reconnect or a board switch during the wait makes this
-        // report stale. Once sent, the server numbers it after that change.
-        if (!isCurrentOperation()) return false;
-        const report = reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
-          console.warn('[board-presence] reportBoardClimb failed', error);
-          return false;
-        });
-        climbReportsInFlightRef.current.add(report);
-        void report.finally(() => climbReportsInFlightRef.current.delete(report));
-        return report;
-      };
+      const sendReport = () =>
+        sendFencedClimbReport(isCurrentOperation, () =>
+          reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
+            console.warn('[board-presence] reportBoardClimb failed', error);
+            return false;
+          }),
+        );
 
       pendingReportSignatureRef.current = reportSignature;
       let accepted = await sendReport();
@@ -1209,7 +1219,7 @@ export function BluetoothProvider({
       }
       return true;
     },
-    [consumeUndoWallChangeToastArm],
+    [consumeUndoWallChangeToastArm, sendFencedClimbReport],
   );
 
   const replayPendingWallReport = useCallback(
@@ -2143,12 +2153,14 @@ export function BluetoothProvider({
     }
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, undoMirrored);
 
-    const accepted = await reportClimbForBoardRef
-      .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
-      .catch((error: unknown) => {
-        console.warn('[board-presence] undo report failed', error);
-        return false;
-      });
+    const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+      reportClimbForBoardRef
+        .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
+        .catch((error: unknown) => {
+          console.warn('[board-presence] undo report failed', error);
+          return false;
+        }),
+    );
     if (!accepted || !isCurrentOperation()) {
       return false;
     }
@@ -2156,7 +2168,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget, undoMirrored);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [commitWallFrames, queueMirrorFor]);
+  }, [commitWallFrames, queueMirrorFor, sendFencedClimbReport]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -2196,12 +2208,14 @@ export function BluetoothProvider({
       }
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, relightMirrored);
 
-      const accepted = await reportClimbForBoardRef
-        .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
-        .catch((error: unknown) => {
-          console.warn('[board-presence] kiosk relight report failed', error);
-          return false;
-        });
+      const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+        reportClimbForBoardRef
+          .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
+          .catch((error: unknown) => {
+            console.warn('[board-presence] kiosk relight report failed', error);
+            return false;
+          }),
+      );
       if (!accepted || !isCurrentOperation()) {
         return false;
       }
@@ -2209,7 +2223,7 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb, relightMirrored);
       return true;
     },
-    [commitWallFrames, queueMirrorFor],
+    [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
   );
 
   const clearBoard = useCallback(

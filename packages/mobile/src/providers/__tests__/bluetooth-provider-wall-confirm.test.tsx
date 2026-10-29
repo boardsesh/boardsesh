@@ -2256,6 +2256,68 @@ describe('BluetoothProvider wall-confirm integration', () => {
         const relightOrder = presence.reportClimbForBoard.mock.invocationCallOrder[1];
         expect(clearOrder).toBeLessThan(relightOrder);
       });
+
+      // Fable re-review: "Light this" and Undo report directly, so they must sit
+      // behind the same set/clear fence as the auto-sender's reports.
+      const historyClimb = () =>
+        makePresenceClimb({ climbUuid: 'history-climb', queueItemUuid: 'queue-history-climb', frames: 'p2r12' });
+
+      it('holds a "Light this" report until the spill clear parked before it has gone', async () => {
+        // The first climb's report is still settling, so the clear waits behind it.
+        const firstReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => firstReport.promise);
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await settleReports();
+        // Sent now, the relight would be numbered before the clear, and every
+        // viewer would read "Not on the wall" over a lit wall.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          firstReport.resolve(true);
+        });
+        await expect(relit).resolves.toBe(true);
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
+        expect(presence.reportClearForBoard.mock.invocationCallOrder[0]).toBeLessThan(
+          presence.reportClimbForBoard.mock.invocationCallOrder[1],
+        );
+      });
+
+      it('holds the spill clear until a "Light this" report in flight has settled', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const rerender = renderSpillProvider();
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        const relightReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => relightReport.promise);
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+
+        const spill = makeSpillItem('spill');
+        queue.currentClimbQueueItem = spill;
+        queue.items = [spill];
+        rerender();
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        await act(async () => {
+          relightReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        // The spill clear bumped the wall-operation epoch, so the relight no longer owns the wall.
+        await expect(relit).resolves.toBe(false);
+      });
     });
 
     it('maps an unexpected hook end record to analytics and releases its snapshotted board', () => {
