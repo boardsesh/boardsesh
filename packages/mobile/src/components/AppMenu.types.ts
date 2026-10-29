@@ -26,6 +26,15 @@ export type AppMenuAction = {
    * on the first row, where there is nothing above it to separate from.
    */
   dividerBefore?: boolean;
+  /**
+   * iOS only: up to 3 consecutive leading `palette` rows draw as one icon-over-label
+   * row (a SwiftUI `ControlGroup`, UIKit's "medium" element size), as Music's ⋯ does
+   * for Download / Favourite / Share. Needs 2 or more such rows at the very top; a
+   * lone one, or one after a plain row, is drawn as a normal row. It never changes
+   * `onSelectIndex`: indices still count rows in `actions` order. Android and web
+   * draw a normal row.
+   */
+  palette?: true;
 };
 
 type AppMenuSharedProps = {

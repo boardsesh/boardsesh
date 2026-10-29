@@ -19,6 +19,20 @@ export type ResolvedMenuAction = {
   dividerBefore: boolean;
 };
 
+/** SwiftUI shows at most this many controls in a menu's icon row. */
+export const MAX_PALETTE_ROWS = 3;
+
+/**
+ * How many leading rows draw as one icon row on iOS: the run of consecutive
+ * `palette` rows from the top, capped at 3. A run of 0 or 1 draws as plain rows,
+ * because a one-item control group looks odd.
+ */
+export function paletteRowCount(actions: readonly AppMenuAction[]): number {
+  let count = 0;
+  while (count < actions.length && count < MAX_PALETTE_ROWS && actions[count].palette === true) count += 1;
+  return count >= 2 ? count : 0;
+}
+
 export function resolveMenuAction(action: AppMenuAction): ResolvedMenuAction {
   return {
     label: action.label,

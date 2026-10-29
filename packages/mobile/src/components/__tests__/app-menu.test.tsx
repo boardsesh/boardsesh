@@ -2,7 +2,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuAction, resolveMenuActions } from '../AppMenu.logic';
+import {
+  paletteRowCount,
+  anchorGlyphForIcon,
+  isMenuActionSelectable,
+  resolveMenuAction,
+  resolveMenuActions,
+} from '../AppMenu.logic';
 import type { AppMenuAction } from '../AppMenu.types';
 
 // AppMenu's per-platform rendering is native (@expo/ui SwiftUI `Menu` / Compose
@@ -221,5 +227,18 @@ describe('AppMenu stub — interaction contract', () => {
     expect(anchor.textContent).toBe('');
     // The rows are unaffected by which anchor the menu wears.
     expect(container.querySelectorAll('button[data-role="button"]').length).toBe(ACTIONS.length + 1);
+  });
+});
+
+describe('AppMenu.logic — paletteRowCount', () => {
+  const row = (palette?: true): AppMenuAction => ({ label: 'x', palette });
+  it('counts the leading run, capped at 3', () => {
+    expect(paletteRowCount([row(true), row(true), row(true), row(true)])).toBe(3);
+    expect(paletteRowCount([row(true), row(true), row()])).toBe(2);
+  });
+  it('is 0 for a lone row, a run not at the top, or no palette rows', () => {
+    expect(paletteRowCount([row(true), row()])).toBe(0);
+    expect(paletteRowCount([row(), row(true), row(true)])).toBe(0);
+    expect(paletteRowCount([row(), row()])).toBe(0);
   });
 });

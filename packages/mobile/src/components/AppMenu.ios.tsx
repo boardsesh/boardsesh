@@ -14,7 +14,7 @@
 // and a `headline` anchor (Material's title-menu) draws as flat title text.
 
 import { Host } from '@expo/ui';
-import { Menu, Button, Divider, HStack, VStack, Text, Image } from '@expo/ui/swift-ui';
+import { Menu, Button, ControlGroup, Divider, HStack, VStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
@@ -36,7 +36,7 @@ import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { topBarByVariant } from '../theme/top-bar';
-import { isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
+import { isMenuActionSelectable, paletteRowCount, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
 import { iconMap } from './icon-map';
 
@@ -55,6 +55,7 @@ export function AppMenu(props: AppMenuProps) {
   const { systemColors } = useTheme();
   const fillColor = systemColors.fill;
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
+  const paletteCount = useMemo(() => paletteRowCount(actions), [actions]);
   const iconName = props.iconName;
   const headline = props.iconName == null ? props.headline : undefined;
   const resolvedLabel = accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : undefined);
@@ -113,6 +114,24 @@ export function AppMenu(props: AppMenuProps) {
               ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
             ],
     [iconName, headline, anchorSize, plainIcon, fillColor, maxWidth, resolvedLabel, accessibilityHint],
+  );
+
+  const renderButton = (action: (typeof resolved)[number], index: number) => (
+    <Button
+      key={`${index}-${action.label}`}
+      label={action.label}
+      // `iosSystemImage` is a plain string; the Button's `systemImage` is the
+      // SFSymbol literal union. Derive the cast target from Button itself rather
+      // than importing `sf-symbols-typescript` (a transitive @expo/ui dep that
+      // isn't directly resolvable here).
+      systemImage={action.iosSystemImage as ComponentProps<typeof Button>['systemImage']}
+      role={action.isDestructive ? 'destructive' : undefined}
+      modifiers={action.isDisabled ? [disabledModifier(true)] : undefined}
+      onPress={() => {
+        if (!isMenuActionSelectable(resolved, index)) return;
+        onSelectIndex(index);
+      }}
+    />
   );
 
   // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
@@ -179,28 +198,25 @@ export function AppMenu(props: AppMenuProps) {
           )
         }
       >
-        {resolved.map((action, index) => (
-          // Composite key: scope entries can share a display name (two gyms named
-          // the same), so the label alone isn't unique — pair it with the position.
-          <Fragment key={`${index}-${action.label}`}>
-            {/* A UIMenu separator. Not a Button, so it takes no index. */}
-            {action.dividerBefore ? <Divider /> : null}
-            <Button
-              label={action.label}
-              // `iosSystemImage` is a plain string; the Button's `systemImage` is the
-              // SFSymbol literal union. Derive the cast target from Button itself rather
-              // than importing `sf-symbols-typescript` (a transitive @expo/ui dep that
-              // isn't directly resolvable here).
-              systemImage={action.iosSystemImage as ComponentProps<typeof Button>['systemImage']}
-              role={action.isDestructive ? 'destructive' : undefined}
-              modifiers={action.isDisabled ? [disabledModifier(true)] : undefined}
-              onPress={() => {
-                if (!isMenuActionSelectable(resolved, index)) return;
-                onSelectIndex(index);
-              }}
-            />
-          </Fragment>
-        ))}
+        {paletteCount > 0 ? (
+          // One icon-over-label row (UIKit's medium element size). Its rows keep their
+          // place in `resolved`, so `onSelectIndex` counts exactly as without it.
+          <ControlGroup>
+            {resolved.slice(0, paletteCount).map((action, index) => renderButton(action, index))}
+          </ControlGroup>
+        ) : null}
+        {resolved.slice(paletteCount).map((action, offset) => {
+          const index = paletteCount + offset;
+          return (
+            // Composite key: scope entries can share a display name (two gyms named
+            // the same), so the label alone isn't unique — pair it with the position.
+            <Fragment key={`${index}-${action.label}`}>
+              {/* A UIMenu separator. Not a Button, so it takes no index. */}
+              {action.dividerBefore ? <Divider /> : null}
+              {renderButton(action, index)}
+            </Fragment>
+          );
+        })}
       </Menu>
     </Host>
   );
