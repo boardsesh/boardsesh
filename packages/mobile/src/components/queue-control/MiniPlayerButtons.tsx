@@ -276,8 +276,6 @@ type MiniPlayerLeadingButtonsProps = {
   bluetoothConnected: boolean;
   slotWidth: number;
   rowHeight: number;
-  /** The space between the climber's other buttons and ⏮ ⏭. Zero on an iPhone, where every point goes to the name. */
-  groupGap: number;
 };
 
 /**
@@ -297,9 +295,7 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
   bluetoothConnected,
   slotWidth,
   rowHeight,
-  groupGap,
 }: MiniPlayerLeadingButtonsProps) {
-  const firstTransportIndex = buttonIds.findIndex((buttonId) => TRANSPORT.has(buttonId));
   const others = buttonIds.filter((buttonId) => !TRANSPORT.has(buttonId));
   const transport = buttonIds.filter((buttonId) => TRANSPORT.has(buttonId));
 
@@ -307,13 +303,7 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
     <View
       key={buttonId}
       testID={`mini-player-slot-${buttonId}`}
-      style={[
-        styles.slot,
-        { width: slotWidth, height: rowHeight },
-        buttonIds.indexOf(buttonId) === firstTransportIndex && firstTransportIndex > 0
-          ? { marginStart: groupGap }
-          : null,
-      ]}
+      style={[styles.slot, { width: slotWidth, height: rowHeight }]}
     >
       {button}
     </View>

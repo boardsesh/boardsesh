@@ -171,7 +171,6 @@ function renderButtons(
       bluetoothConnected: true,
       slotWidth: 44,
       rowHeight: 52,
-      groupGap: 12,
     }),
   );
 }

@@ -10,7 +10,6 @@ import { useMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-sto
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
-  ACCESSORY_GROUP_GAP,
   ACCESSORY_LABEL_TRAILING_PADDING,
   ACCESSORY_LEADING_INSET,
   ACCESSORY_PLATTER_THUMBNAIL_SIZE,
@@ -100,8 +99,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         workoutOutcome: false,
       });
   }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn]);
-  // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn. The group gap is wide-only, as on the bar.
-  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
+  // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn.
   const slotCountAt = useCallback(
     (placement: 'regular' | 'inline') =>
       miniPlayerSlotCount({
@@ -109,9 +107,8 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         rowWidth: measuredBar?.rowWidth ?? (wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH),
         widthBesideName: measuredBar?.widthBesideName ?? WIDTH_BESIDE_NAME,
         wide,
-        groupGap,
       }),
-    [wide, groupGap, measuredBar],
+    [wide, measuredBar],
   );
   const openControls = useMemo(() => resolve(slotCountAt('regular')), [resolve, slotCountAt]);
   const collapsedControls = useMemo(() => resolve(slotCountAt('inline')), [resolve, slotCountAt]);
@@ -171,8 +168,8 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
           <View style={[styles.name, { backgroundColor: systemColors.secondaryBackground }]} />
           {groups
             .filter((group) => group.slots.length > 0)
-            .map((group, index) => (
-              <View key={group.key} style={[styles.group, index > 0 ? { marginStart: groupGap } : null]}>
+            .map((group) => (
+              <View key={group.key} style={styles.group}>
                 {group.slots}
               </View>
             ))}
