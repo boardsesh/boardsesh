@@ -12,11 +12,11 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import {
-  SUPPORT_BANNER_DISMISSED_KEY,
+  SUPPORT_BANNER_CLOSED_MONTH_KEY,
   SUPPORT_BANNER_HREF,
-  SUPPORT_BANNER_MAX_VIEWS,
-  SUPPORT_BANNER_VIEWS_KEY,
+  SUPPORT_BANNER_SUPPORTER_KEY,
   isSupportBannerWindow,
+  supportBannerMonth,
 } from './support-banner-window';
 import styles from './home-support-banner.module.css';
 
@@ -26,8 +26,9 @@ const CTA_SX = brandCtaSx({ size: 'medium' });
 const STRIP_SX = { zIndex: (theme: { zIndex: { snackbar: number } }) => theme.zIndex.snackbar } as const;
 
 /**
- * The December ask on `/`, and only there: `app/page.tsx` is its one caller,
- * and it renders this only inside the window. Nothing the app opens (`/b/`,
+ * The monthly ask on `/`, and only there: `app/page.tsx` is its one caller,
+ * and it renders this only inside the window (days 1 to 7 of each month) and
+ * only once a monthly Payment Link is configured. Nothing the app opens (`/b/`,
  * `/gym/`, `/help/`, `/join/`, climb pages) shows it.
  *
  * It is a strip fixed to the bottom of the viewport that slides in, not a block
@@ -35,28 +36,27 @@ const STRIP_SX = { zIndex: (theme: { zIndex: { snackbar: number } }) => theme.zI
  * a block above the hero would push the hero down after first paint.
  *
  * It stays hidden until IndexedDB answers, so a visitor who closed it never
- * sees it flash back. It shows on at most `SUPPORT_BANNER_MAX_VIEWS` page loads
- * per browser for the whole campaign, and never again after a close or after
- * the thank-you page (`/support?thanks=1`) has run.
+ * sees it flash back. A close hides it for the rest of that month; it comes back
+ * on the 1st of the next. The thank-you page (`/support?thanks=1`) hides it for
+ * good in that browser.
  */
 export default function HomeSupportBanner() {
   const { t } = useTranslation('marketing');
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    // The browser's own clock, again: a page held in a cache past 31 Dec
+    // The browser's own clock, again: a page held in a cache past the 7th
     // must not show it.
-    if (!isSupportBannerWindow(new Date())) return;
+    const now = new Date();
+    if (!isSupportBannerWindow(now)) return;
     let cancelled = false;
-    void Promise.all([getPreference(SUPPORT_BANNER_DISMISSED_KEY), getPreference(SUPPORT_BANNER_VIEWS_KEY)]).then(
-      ([dismissed, views]) => {
-        if (cancelled || dismissed === true) return;
-        const seen = typeof views === 'number' && Number.isFinite(views) ? views : 0;
-        if (seen >= SUPPORT_BANNER_MAX_VIEWS) return;
-        setVisible(true);
-        void setPreference(SUPPORT_BANNER_VIEWS_KEY, seen + 1);
-      },
-    );
+    void Promise.all([
+      getPreference(SUPPORT_BANNER_SUPPORTER_KEY),
+      getPreference(SUPPORT_BANNER_CLOSED_MONTH_KEY),
+    ]).then(([supporter, closedMonth]) => {
+      if (cancelled || supporter === true || closedMonth === supportBannerMonth(now)) return;
+      setVisible(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -64,7 +64,7 @@ export default function HomeSupportBanner() {
 
   const close = () => {
     setVisible(false);
-    void setPreference(SUPPORT_BANNER_DISMISSED_KEY, true);
+    void setPreference(SUPPORT_BANNER_CLOSED_MONTH_KEY, supportBannerMonth(new Date()));
   };
 
   return (

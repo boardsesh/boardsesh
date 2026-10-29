@@ -10,8 +10,8 @@ const preferences = vi.hoisted(() => ({
   setPreference: vi.fn(async (_key: string, _value: unknown): Promise<void> => {}),
 }));
 
-const DISMISSED_KEY = 'supportBanner:december2026:dismissed';
-const VIEWS_KEY = 'supportBanner:december2026:views';
+const CLOSED_MONTH_KEY = 'supportBanner:closedMonth';
+const SUPPORTER_KEY = 'supportBanner:supporter';
 
 /** Answer the IndexedDB reads per key, as the real store would. */
 function storedPreferences(values: Record<string, unknown>) {
@@ -49,7 +49,7 @@ async function renderBanner() {
 describe('HomeSupportBanner', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-12-10T09:00:00Z'));
+    vi.setSystemTime(new Date('2026-12-03T09:00:00Z'));
     preferences.getPreference.mockReset();
     storedPreferences({});
     preferences.setPreference.mockClear();
@@ -67,41 +67,38 @@ describe('HomeSupportBanner', () => {
     expect(link?.getAttribute('href')).toBe('/support?src=web-home-banner');
   });
 
-  it('stays hidden for a visitor who closed it', async () => {
-    storedPreferences({ [DISMISSED_KEY]: true });
+  it('stays hidden for the rest of the month a visitor closed it in', async () => {
+    storedPreferences({ [CLOSED_MONTH_KEY]: '2026-12' });
     await renderBanner();
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();
   });
 
-  it('remembers a close in IndexedDB', async () => {
+  it('comes back at the start of the next month', async () => {
+    storedPreferences({ [CLOSED_MONTH_KEY]: '2026-11' });
+    await renderBanner();
+
+    expect(screen.getByTestId('home-support-banner')).toBeTruthy();
+  });
+
+  it('remembers the month of a close in IndexedDB', async () => {
     await renderBanner();
 
     fireEvent.click(screen.getByLabelText(tFromCatalog('marketing', 'home.supportBanner.close')));
 
-    expect(preferences.setPreference).toHaveBeenCalledWith(DISMISSED_KEY, true);
+    expect(preferences.setPreference).toHaveBeenCalledWith(CLOSED_MONTH_KEY, '2026-12');
   });
 
-  // At most 2 views per person for December (campaign plan, initiative 5).
-  it('counts each view', async () => {
-    storedPreferences({ [VIEWS_KEY]: 1 });
-    await renderBanner();
-
-    expect(screen.getByTestId('home-support-banner')).toBeTruthy();
-    expect(preferences.setPreference).toHaveBeenCalledWith(VIEWS_KEY, 2);
-  });
-
-  it('starts the count at one on a first visit', async () => {
-    await renderBanner();
-
-    expect(preferences.setPreference).toHaveBeenCalledWith(VIEWS_KEY, 1);
-  });
-
-  it('stops showing after the second view', async () => {
-    storedPreferences({ [VIEWS_KEY]: 2 });
+  it('never shows again for someone who reached the thank-you page', async () => {
+    storedPreferences({ [SUPPORTER_KEY]: true, [CLOSED_MONTH_KEY]: '2026-10' });
     await renderBanner();
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();
+  });
+
+  it('shows on every visit in the window until closed', async () => {
+    await renderBanner();
+    expect(screen.getByTestId('home-support-banner')).toBeTruthy();
     expect(preferences.setPreference).not.toHaveBeenCalled();
   });
 
@@ -113,9 +110,9 @@ describe('HomeSupportBanner', () => {
     expect(banner.parentElement?.className).toMatch(/strip/);
   });
 
-  // A homepage held in a cache past 31 Dec must not show it.
+  // A homepage held in a cache past the 7th must not show it.
   it('shows nothing once the browser clock is past the window', async () => {
-    vi.setSystemTime(new Date('2027-01-02T09:00:00Z'));
+    vi.setSystemTime(new Date('2026-12-08T09:00:00Z'));
     await renderBanner();
 
     expect(screen.queryByTestId('home-support-banner')).toBeNull();

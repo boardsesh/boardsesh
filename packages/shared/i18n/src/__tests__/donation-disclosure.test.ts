@@ -122,7 +122,7 @@ const SUPPORT_COPY_KEYS = [
   'home.support.chipIn',
   'home.support.source',
   'home.support.otherWays',
-  // The December banner on the homepage.
+  // The monthly banner on the homepage.
   'home.supportBanner.text',
   'home.supportBanner.cta',
 ];

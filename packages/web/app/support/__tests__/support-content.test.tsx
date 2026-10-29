@@ -271,12 +271,12 @@ describe('SupportContent', () => {
     expect(screen.getByTestId('support-thanks')).toBeTruthy();
   });
 
-  // Someone who just gave is not asked again by the homepage's December banner.
-  it('closes the December banner for good on the thank-you visit', () => {
+  // Someone who just gave is not asked again by the homepage's support banner.
+  it('closes the homepage banner for good on the thank-you visit', () => {
     preferences.setPreference.mockClear();
     renderPage(fallbackOptions(), true);
 
-    expect(preferences.setPreference).toHaveBeenCalledWith('supportBanner:december2026:dismissed', true);
+    expect(preferences.setPreference).toHaveBeenCalledWith('supportBanner:supporter', true);
   });
 
   it('shows no thank-you on a normal visit and leaves the banner alone', () => {

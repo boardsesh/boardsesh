@@ -53,8 +53,9 @@ type HomePageContentProps = {
   featureStrip?: React.ReactNode;
   supportBlock?: React.ReactNode;
   /**
-   * The December support banner. `page.tsx` passes it only inside its window
-   * (`support-banner-window.ts`), so outside December the slot is empty and
+   * The monthly support banner. `page.tsx` passes it only inside its window
+   * (`support-banner-window.ts`, days 1 to 7 of each month) and once a monthly
+   * Payment Link exists, so otherwise the slot is empty and
    * nothing about it is in the HTML. It is fixed to the viewport, so where it
    * sits here only sets its place in the reading order.
    */

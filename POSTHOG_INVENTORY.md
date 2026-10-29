@@ -792,7 +792,7 @@ Reading it:
 
 - **Clicks by source**: `Support CTA Clicked` broken down by `src`. Match a gift to its source in
   Stripe by the Payment's `client_reference_id`, which carries the same value.
-- **The December banner** (on `/` only, 1 to 31 Dec 2026 UTC) has no event of its own. Its visits
+- **The homepage banner** (on `/` only, days 1 to 7 of each month UTC) has no event of its own. Its visits
   are `$pageview` on `/support` with `src=web-home-banner` in `$current_url`, and its clicks are
   `Support CTA Clicked` with that `src`.
 - **The hero's "Go monthly"** scrolls to the options on the same page and fires nothing.
