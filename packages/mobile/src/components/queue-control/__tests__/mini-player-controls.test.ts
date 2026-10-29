@@ -12,6 +12,8 @@ import {
   miniPlayerPaneMode,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
+  trailingSlotFrame,
+  miniPlayerUsesWideLayout,
   type MiniPlayerControlsInput,
   type PaneCoveredButtonsInput,
 } from '../mini-player-controls';
@@ -196,6 +198,8 @@ function resolve(overrides: Partial<MiniPlayerControlsInput>) {
     bulbAvailable: true,
     paneMode: 'none',
     workoutOutcome: false,
+    wideLayout: false,
+    moreAvailable: true,
     ...overrides,
   });
 }
@@ -208,10 +212,11 @@ function layoutWith(order: MiniPlayerButtonId[], on: MiniPlayerButtonId[]): Mini
 }
 
 describe('resolveMiniPlayerControls', () => {
-  it('draws the defaults on a wide bar: Mirror and Favorite, then ⏮ ⏭, then the bulb and the tick', () => {
+  it('draws every default in the iPhone order when the bar has room: Mirror and Favorite, then ⏮ ⏭, then 💡 ✓', () => {
     expect(resolve({})).toEqual({
       leading: ['mirror', 'favorite', 'previous', 'next'],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -220,12 +225,18 @@ describe('resolveMiniPlayerControls', () => {
     expect(resolve({ isAvailable: (buttonId) => buttonId !== 'mirror' })).toEqual({
       leading: ['favorite', 'previous', 'next'],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
 
   it('gives an iPhone its one extra slot to the first button in the list: Next by default', () => {
-    expect(resolve({ slotCount: 3 })).toEqual({ leading: ['next'], workout: [], trailing: ['lightbulb', 'log'] });
+    expect(resolve({ slotCount: 3 })).toEqual({
+      leading: ['next'],
+      workout: [],
+      more: false,
+      trailing: ['lightbulb', 'log'],
+    });
   });
 
   it("follows the climber's order for who claims a short bar", () => {
@@ -236,6 +247,7 @@ describe('resolveMiniPlayerControls', () => {
     expect(resolve({ slotCount: 3, layout: mirrorFirst })).toEqual({
       leading: ['mirror'],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -249,19 +261,26 @@ describe('resolveMiniPlayerControls', () => {
   });
 
   it('keeps the one slot for the bulb while the board is free, the tick otherwise', () => {
-    expect(resolve({ slotCount: 1 })).toEqual({ leading: [], workout: [], trailing: ['lightbulb'] });
+    expect(resolve({ slotCount: 1 })).toEqual({ leading: [], workout: [], more: false, trailing: ['lightbulb'] });
     expect(resolve({ slotCount: 1, singleSlotShowsBulb: false })).toEqual({
       leading: [],
       workout: [],
+      more: false,
       trailing: ['log'],
     });
   });
 
   it('draws only the bulb and the tick with two slots, or when every button is off', () => {
-    expect(resolve({ slotCount: 2 })).toEqual({ leading: [], workout: [], trailing: ['lightbulb', 'log'] });
+    expect(resolve({ slotCount: 2 })).toEqual({
+      leading: [],
+      workout: [],
+      more: false,
+      trailing: ['lightbulb', 'log'],
+    });
     expect(resolve({ layout: layoutWith([...DEFAULT_MINI_PLAYER_BUTTONS.order], []) })).toEqual({
       leading: [],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -270,6 +289,7 @@ describe('resolveMiniPlayerControls', () => {
     expect(resolve({ slotCount: 3, isAvailable: (buttonId) => buttonId !== 'next' })).toEqual({
       leading: ['previous'],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -281,8 +301,118 @@ describe('resolveMiniPlayerControls', () => {
     ).toEqual({
       leading: ['favorite'],
       workout: [],
+      more: false,
       trailing: [],
     });
+  });
+});
+
+describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => {
+  const wideBar = (overrides: Partial<MiniPlayerControlsInput>) => resolve({ wideLayout: true, ...overrides });
+
+  it('draws ⏮ ⏭ first, then the others, and keeps ⋯ before 💡 ✓', () => {
+    expect(wideBar({})).toEqual({
+      leading: ['previous', 'next', 'mirror', 'favorite'],
+      workout: [],
+      more: true,
+      trailing: ['lightbulb', 'log'],
+    });
+  });
+
+  it("keeps the climber's claim order: a short bar drops the end of the list, ⋯ claims after 💡 ✓", () => {
+    expect(wideBar({ slotCount: 4 })).toMatchObject({ leading: ['next'], more: true });
+    expect(wideBar({ slotCount: 5 })).toMatchObject({ leading: ['previous', 'next'], more: true });
+    expect(wideBar({ slotCount: 3 })).toMatchObject({ leading: [], more: true, trailing: ['lightbulb', 'log'] });
+    expect(wideBar({ slotCount: 2 })).toMatchObject({ leading: [], more: false, trailing: ['lightbulb', 'log'] });
+    expect(wideBar({ slotCount: 1 })).toMatchObject({ leading: [], more: false, trailing: ['lightbulb'] });
+  });
+
+  it('puts ⏮ ⏭ first whatever order the climber chose', () => {
+    const shuffled = layoutWith(
+      ['next', 'favorite', 'previous', 'share', 'mirror', 'queue', 'angle'],
+      ['next', 'favorite', 'previous', 'share'],
+    );
+    expect(wideBar({ layout: shuffled }).leading).toEqual(['previous', 'next', 'favorite', 'share']);
+  });
+
+  it('gives the ⋯ slot back to a button while the player route is up', () => {
+    expect(wideBar({ slotCount: 4, moreAvailable: false })).toEqual({
+      leading: ['previous', 'next'],
+      workout: [],
+      more: false,
+      trailing: ['lightbulb', 'log'],
+    });
+  });
+
+  it('never offers ⋯ on an iPhone or an inline bar', () => {
+    expect(resolve({}).more).toBe(false);
+    expect(resolve({ slotCount: 3 }).more).toBe(false);
+    expect(miniPlayerUsesWideLayout({ wide: true, placement: 'inline' })).toBe(false);
+    expect(miniPlayerUsesWideLayout({ wide: false, placement: 'regular' })).toBe(false);
+    expect(miniPlayerUsesWideLayout({ wide: true, placement: 'regular' })).toBe(true);
+  });
+
+  it('in a timed block: Fell and Sent, then ⋯ 💡 ✓', () => {
+    expect(wideBar({ workoutOutcome: true })).toEqual({
+      leading: [],
+      workout: ['fell', 'sent'],
+      more: true,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(wideBar({ workoutOutcome: true, bulbAvailable: false })).toMatchObject({ more: true, trailing: ['log'] });
+    // ⋯ claims last: four slots keep Fell, Sent, 💡 ✓.
+    expect(wideBar({ workoutOutcome: true, slotCount: 4 })).toMatchObject({
+      more: false,
+      trailing: ['lightbulb', 'log'],
+    });
+  });
+
+  it("keeps ⋯ on the open Duo's bar in every pane mode", () => {
+    expect(wideBar({ paneMode: 'carry', paneCoveredButtons: ['favorite', 'share'] })).toEqual({
+      leading: ['favorite', 'share'],
+      workout: [],
+      more: true,
+      trailing: [],
+    });
+    expect(wideBar({ paneMode: 'stepAside' })).toEqual({
+      leading: [],
+      workout: [],
+      more: true,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(wideBar({ paneMode: 'carry', workoutOutcome: true })).toEqual({
+      leading: [],
+      workout: ['fell', 'sent'],
+      more: true,
+      trailing: [],
+    });
+  });
+});
+
+describe('trailingSlotFrame', () => {
+  const phoneSlots = ['lightbulb', 'log'] as const;
+  const wideSlots = ['more', 'lightbulb', 'log'] as const;
+  const showing =
+    (...shown: string[]) =>
+    (slot: string) =>
+      shown.includes(slot);
+
+  it("keeps the iPhone pair's frames: a lone bulb shifts one slot to the edge", () => {
+    expect(trailingSlotFrame(phoneSlots, showing('lightbulb', 'log'))).toEqual({ slotsShown: 2, trailingShift: 0 });
+    expect(trailingSlotFrame(phoneSlots, showing('lightbulb'))).toEqual({ slotsShown: 1, trailingShift: 1 });
+    expect(trailingSlotFrame(phoneSlots, showing('log'))).toEqual({ slotsShown: 1, trailingShift: 0 });
+    expect(trailingSlotFrame(phoneSlots, showing())).toEqual({ slotsShown: 0, trailingShift: 0 });
+  });
+
+  it('spans ⋯ 💡 ✓ on a wide bar, and shifts a lone ⋯ to the edge', () => {
+    expect(trailingSlotFrame(wideSlots, showing('more', 'lightbulb', 'log'))).toEqual({
+      slotsShown: 3,
+      trailingShift: 0,
+    });
+    expect(trailingSlotFrame(wideSlots, showing('lightbulb', 'log'))).toEqual({ slotsShown: 2, trailingShift: 0 });
+    expect(trailingSlotFrame(wideSlots, showing('more'))).toEqual({ slotsShown: 1, trailingShift: 2 });
+    // No board bound in a timed block: the bulb's slot stays empty between ⋯ and ✓.
+    expect(trailingSlotFrame(wideSlots, showing('more', 'log'))).toEqual({ slotsShown: 3, trailingShift: 0 });
   });
 });
 
@@ -294,7 +424,7 @@ describe('resolveMiniPlayerControls with the pane covered (iPhone Duo open)', ()
         paneMode: 'carry',
         paneCoveredButtons: ['favorite', 'angle', 'share'],
       }),
-    ).toEqual({ leading: ['favorite', 'angle', 'share'], workout: [], trailing: [] });
+    ).toEqual({ leading: ['favorite', 'angle', 'share'], workout: [], more: false, trailing: [] });
   });
 
   it('skips the covered buttons that cannot show here', () => {
@@ -323,6 +453,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
     expect(workout({ slotCount: wide(995) })).toEqual({
       leading: [],
       workout: ['fell', 'sent'],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -335,6 +466,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
     expect(workout({ slotCount: phone(370) })).toEqual({
       leading: [],
       workout: ['fell', 'sent'],
+      more: false,
       trailing: ['lightbulb'],
     });
   });
@@ -347,17 +479,18 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
     expect(workout({ slotCount: phone(370), bulbAvailable: false, singleSlotShowsBulb: false })).toEqual({
       leading: [],
       workout: ['fell', 'sent'],
+      more: false,
       trailing: ['log'],
     });
     expect(workout({ slotCount: wide(995), bulbAvailable: false }).trailing).toEqual(['log']);
   });
 
   it('keeps Fell and Sent on a two-slot bar', () => {
-    expect(workout({ slotCount: 2 })).toEqual({ leading: [], workout: ['fell', 'sent'], trailing: [] });
+    expect(workout({ slotCount: 2 })).toEqual({ leading: [], workout: ['fell', 'sent'], more: false, trailing: [] });
   });
 
   it('keeps Sent alone in one slot (the tab bar minimized), whatever the board state', () => {
-    const inline = { leading: [], workout: ['sent'], trailing: [] };
+    const inline = { leading: [], workout: ['sent'], more: false, trailing: [] };
     expect(workout({ slotCount: phone(370, 'inline') })).toEqual(inline);
     expect(workout({ slotCount: wide(995, 'inline'), singleSlotShowsBulb: false })).toEqual(inline);
     expect(workout({ slotCount: 1, paneMode: 'carry' })).toEqual(inline);
@@ -366,13 +499,14 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
   it("carries Fell and Sent on the Duo's pane row, without the bulb and tick the pane's big row shows", () => {
     expect(
       workout({ slotCount: wide(800), paneMode: 'carry', paneCoveredButtons: ['favorite', 'angle', 'share'] }),
-    ).toEqual({ leading: [], workout: ['fell', 'sent'], trailing: [] });
+    ).toEqual({ leading: [], workout: ['fell', 'sent'], more: false, trailing: [] });
   });
 
   it('keeps the step-aside bar (bulb and tick only) while the pane shows a preview', () => {
     expect(workout({ slotCount: wide(800), paneMode: 'stepAside' })).toEqual({
       leading: [],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -395,6 +529,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
     expect(resolve({ slotCount: wide(995), layout: allOn, isAvailable: signedOutInBlock })).toEqual({
       leading: ['mirror', 'share', 'angle'],
       workout: [],
+      more: false,
       trailing: ['lightbulb', 'log'],
     });
   });

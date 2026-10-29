@@ -968,6 +968,7 @@
       "addFavoriteAria": "Add favorite",
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
+      "moreActionsForAria": "More actions for {{name}}",
       "queueCountAria": "Queue, {{count}} climbs",
       "queueUpNextAria_zero": "Queue, nothing up next",
       "queueUpNextAria_one": "Queue, {{count}} climb up next",

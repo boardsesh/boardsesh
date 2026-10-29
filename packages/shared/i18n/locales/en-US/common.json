@@ -645,7 +645,8 @@
         "previewLabel": "Preview, {{shape}} bar: {{buttons}}",
         "footerWide": "On a wide screen the bar fits as many of these as it has room for: the first ones in the list win.",
         "shapeOpen": "open",
-        "shapeCollapsed": "collapsed"
+        "shapeCollapsed": "collapsed",
+        "more": "More"
       }
     },
     "sendRecovery": {

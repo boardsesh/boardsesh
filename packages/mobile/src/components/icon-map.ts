@@ -202,6 +202,9 @@ export const iconMap = {
   'leave.session': { ios: 'rectangle.portrait.and.arrow.right', android: 'exit-to-app' },
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
+  // The iPad MiniPlayer's transport, drawn filled as Music's is.
+  'skip.previous.fill': { ios: 'backward.end.fill', android: 'skip-previous' },
+  'skip.next.fill': { ios: 'forward.end.fill', android: 'skip-next' },
   'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },
   // Move a row one place up or down a list the climber orders.
   'arrow.up': { ios: 'arrow.up', android: 'arrow-up' },

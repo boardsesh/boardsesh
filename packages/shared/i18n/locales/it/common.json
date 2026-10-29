@@ -645,7 +645,8 @@
         "previewLabel": "Anteprima, barra {{shape}}: {{buttons}}",
         "footerWide": "Su uno schermo largo la barra tiene tutti quelli che ci stanno: vincono i primi della lista.",
         "shapeOpen": "aperta",
-        "shapeCollapsed": "ridotta"
+        "shapeCollapsed": "ridotta",
+        "more": "Altro"
       }
     },
     "sendRecovery": {

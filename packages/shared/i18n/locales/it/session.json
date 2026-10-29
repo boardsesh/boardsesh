@@ -968,6 +968,7 @@
       "addFavoriteAria": "Aggiungi ai preferiti",
       "removeFavoriteAria": "Rimuovi dai preferiti",
       "climbActionsAria": "Azioni del blocco",
+      "moreActionsForAria": "Altre azioni per {{name}}",
       "queueCountAria": "Coda, {{count}} blocchi",
       "queueUpNextAria_zero": "Coda, niente in arrivo",
       "queueUpNextAria_one": "Coda, {{count}} blocco in arrivo",

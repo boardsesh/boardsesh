@@ -968,6 +968,7 @@
       "addFavoriteAria": "Ajouter aux favoris",
       "removeFavoriteAria": "Retirer des favoris",
       "climbActionsAria": "Actions du bloc",
+      "moreActionsForAria": "Plus d’actions pour {{name}}",
       "queueCountAria": "File, {{count}} blocs",
       "queueUpNextAria_zero": "File d'attente, rien à suivre",
       "queueUpNextAria_one": "File, {{count}} bloc à suivre",

@@ -121,7 +121,7 @@ export const SHARED_EVENTS = {
   QueueNavigation: 'Queue Navigation',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
-  // 'snackbar', boardType }. On a side-by-side iPad player the queue button
+  // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button
   // shows Up next in the side panel instead of a sheet; it still fires, as
   // `player`, because the climber asked for the same thing.
   QueueSheetOpened: 'Queue Sheet Opened',

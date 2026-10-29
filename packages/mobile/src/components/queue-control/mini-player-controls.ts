@@ -236,16 +236,39 @@ export type MiniPlayerControlsInput = {
    * pair for the climb the wall just left (`useMiniPlayerWorkoutOutcome`).
    */
   workoutOutcome: boolean;
+  /**
+   * A wide bar (iPad, the open Duo) in its regular placement: it draws Apple
+   * Music's iPad layout, ⏮ ⏭ first at the leading edge and a ⋯ before 💡 ✓
+   * (`miniPlayerUsesWideLayout`). False on an iPhone and on every inline bar,
+   * which keep the layout they always had.
+   */
+  wideLayout: boolean;
+  /**
+   * The ⋯ menu can open: false while the `/play` route is up, whose sheets
+   * would present behind it (the player has its own ⋯).
+   */
+  moreAvailable: boolean;
 };
 
 export type MiniPlayerControls = {
-  /** Left to right: the climber's other buttons, then ⏮ ⏭. */
+  /**
+   * Left to right. On a wide bar ⏮ ⏭ first, then the climber's other buttons,
+   * all before the climb. Elsewhere the climber's other buttons, then ⏮ ⏭,
+   * after the climb.
+   */
   leading: readonly MiniPlayerButtonId[];
-  /** Left to right after them: Fell and Sent in a timed workout block, or Sent alone in one slot. */
+  /** Fell and Sent in a timed workout block, or Sent alone in one slot. Where `leading` is drawn. */
   workout: readonly MiniPlayerWorkoutButton[];
+  /** ⋯, in the slot just before 💡 ✓ on a wide bar. Never on an iPhone or an inline bar. */
+  more: boolean;
   /** Left to right at the trailing edge: 💡 ✓, or the one of them a single slot keeps. */
   trailing: readonly ('lightbulb' | 'log')[];
 };
+
+/** A wide bar in its regular placement draws Music's iPad layout (`wideLayout`). */
+export function miniPlayerUsesWideLayout({ wide, placement }: { wide: boolean; placement: 'regular' | 'inline' }) {
+  return wide && placement === 'regular';
+}
 
 const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
 
@@ -253,36 +276,40 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * What the bar holds, left to right (#6940).
  *
  * ```
- * iPad, Duo open    [thumb] Name ····· [⇄] [♡] · [⏮] [⏭] · [💡] [✓]
+ * iPad, Duo open    [⏮] [⏭] [⇄] [♡] · [thumb] Name ····· [⋯] [💡] [✓]
  * iPhone            [thumb] Name ················ [⏭] · [💡] [✓]
  * One slot          [thumb] Name ······················· [💡] or [✓]
  * ```
  *
  * Board light and Log claim their slots first and sit at the trailing edge, as
- * they always have. The climber's buttons that are on and can show here claim
- * the rest in the climber's order, so on a short bar the last ones in that list
- * are the ones left out (the player's ⋯ still has every action). Where a
- * claimed button is drawn does not follow that order: ⏮ ⏭ sit together just
- * before the bulb, and the others keep the climber's order before them.
+ * they always have. On a wide bar (iPad, the open Duo, regular placement) ⋯
+ * claims the next slot and sits just before them, as on Apple Music's iPad
+ * MiniPlayer; it holds every action the bar has no button for. The climber's
+ * buttons that are on and can show here claim the rest in the climber's order,
+ * so on a short bar the last ones in that list are the ones left out (⋯, or the
+ * player's ⋯, still has every action). Where a claimed button is drawn does not
+ * follow that order: on a wide bar ⏮ ⏭ lead the row and the others follow them,
+ * before the climb; on an iPhone the others come after the climb and ⏮ ⏭ sit
+ * together just before the bulb.
  *
  * In a timed workout block the bar logs each go instead (`workoutOutcome`), as
  * the player's small row does:
  *
  * ```
- * iPad, Duo open    [thumb] Name ··········· [Fell] [Sent] · [💡] [✓]
+ * iPad, Duo open    [Fell] [Sent] · [thumb] Name ··········· [⋯] [💡] [✓]
  * iPhone            [thumb] Name ···················· [Fell] [Sent] [💡]
  * One slot          [thumb] Name ································ [Sent]
- * Duo, pane carry   [thumb] Name ························ [Fell] [Sent]
+ * Duo, pane carry   [Fell] [Sent] · [thumb] Name ························ [⋯]
  * ```
  *
  * The climber's other buttons step aside for the block, so a mis-tap mid-4x4
  * never flips the wall or skips a rep. Fell and Sent claim their slots first,
- * then the bulb, then the tick: an iPhone's ✓ steps aside, since Fell and Sent
- * already log each go. With no board bound the bulb draws nothing, so the tick
- * takes its place. With the player in the Duo's pane (`carry`) the bar
+ * then the bulb, then the tick, then ⋯: an iPhone's ✓ steps aside, since Fell
+ * and Sent already log each go. With no board bound the bulb draws nothing, so
+ * the tick takes its place. With the player in the Duo's pane (`carry`) the bar
  * covers the pane's own Fell / Sent and the pane's big row shows 💡 ✓, so the
- * bar carries Fell and Sent only. While the pane shows a preview, or its
- * controls sit above the board (`stepAside`), the bar keeps 💡 ✓, as it does
+ * bar carries Fell and Sent, and ⋯. While the pane shows a preview, or its
+ * controls sit above the board (`stepAside`), the bar keeps ⋯ 💡 ✓, as it does
  * outside a block.
  */
 export function resolveMiniPlayerControls({
@@ -294,24 +321,34 @@ export function resolveMiniPlayerControls({
   paneMode,
   paneCoveredButtons,
   workoutOutcome,
+  wideLayout,
+  moreAvailable,
 }: MiniPlayerControlsInput): MiniPlayerControls {
   const carry = paneMode === 'carry';
+  const offersMore = wideLayout && moreAvailable;
   if (workoutOutcome && paneMode !== 'stepAside') {
-    if (slotCount <= 1) return { leading: [], workout: ['sent'], trailing: [] };
+    if (slotCount <= 1) return { leading: [], workout: ['sent'], more: false, trailing: [] };
     const room = carry ? 0 : slotCount - 2;
     // With no board bound the bulb draws nothing, so the tick keeps its slot.
     const fixed: ('lightbulb' | 'log')[] = bulbAvailable ? ['lightbulb', 'log'] : ['log'];
-    return { leading: [], workout: ['fell', 'sent'], trailing: fixed.slice(0, room) };
+    const trailing = fixed.slice(0, room);
+    return {
+      leading: [],
+      workout: ['fell', 'sent'],
+      more: offersMore && slotCount - 2 - trailing.length >= 1,
+      trailing,
+    };
   }
   const trailing: ('lightbulb' | 'log')[] = carry
     ? []
     : slotCount <= 1
       ? [singleSlotShowsBulb ? 'lightbulb' : 'log']
       : ['lightbulb', 'log'];
+  const more = offersMore && slotCount > trailing.length;
   // A preview in the pane, or its controls above the board: the covered buttons
   // would act on a climb the pane isn't showing, or repeat ones in plain view.
-  if (paneMode === 'stepAside') return { leading: [], workout: [], trailing };
-  const room = Math.max(0, slotCount - trailing.length);
+  if (paneMode === 'stepAside') return { leading: [], workout: [], more, trailing };
+  const room = Math.max(0, slotCount - trailing.length - (more ? 1 : 0));
   const canClaim = (buttonId: MiniPlayerButtonId) =>
     isAvailable(buttonId) && !(carry && TRANSPORT_ORDER.includes(buttonId));
   const claimed = (carry ? (paneCoveredButtons ?? []).filter(canClaim) : visibleSectionIds(layout, canClaim)).slice(
@@ -320,7 +357,33 @@ export function resolveMiniPlayerControls({
   );
   const others = claimed.filter((buttonId) => !TRANSPORT_ORDER.includes(buttonId));
   const transport = TRANSPORT_ORDER.filter((buttonId) => claimed.includes(buttonId));
-  return { leading: [...others, ...transport], workout: [], trailing };
+  return {
+    leading: wideLayout ? [...transport, ...others] : [...others, ...transport],
+    workout: [],
+    more,
+    trailing,
+  };
+}
+
+/** A fixed frame at the bar's trailing edge. */
+export type TrailingControlSlot = 'more' | 'lightbulb' | 'log';
+
+/**
+ * Where the trailing slots sit. The slots keep fixed frames inside one pair
+ * (see the comment at the render), so instead of resizing a slot the pair
+ * shifts right past the empty slots after the last control, and the frame
+ * around it spans the first control to the last. A lone bulb on an iPhone
+ * shifts one slot, as it always has.
+ */
+export function trailingSlotFrame(
+  slots: readonly TrailingControlSlot[],
+  shown: (slot: TrailingControlSlot) => boolean,
+): { slotsShown: number; trailingShift: number } {
+  const shownIndices = slots.flatMap((slot, index) => (shown(slot) ? [index] : []));
+  if (shownIndices.length === 0) return { slotsShown: 0, trailingShift: 0 };
+  const first = shownIndices[0];
+  const last = shownIndices[shownIndices.length - 1];
+  return { slotsShown: last - first + 1, trailingShift: slots.length - 1 - last };
 }
 
 /**

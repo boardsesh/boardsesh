@@ -77,7 +77,7 @@ export type ClimbActionItem = {
  * this hook tracks. Omitted, each event keeps the long-press menu's historical
  * source (`climb_actions_menu`, `mobile_climb_actions`, `climb_actions`).
  */
-export type ClimbActionsAnalyticsSource = 'play_drawer_menu';
+export type ClimbActionsAnalyticsSource = 'play_drawer_menu' | 'mini_player_menu';
 
 /**
  * A favourite the caller already owns. The player's heart keeps an optimistic

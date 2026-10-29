@@ -31,7 +31,18 @@ type MiniPlayerIconButtonProps = {
   selected?: boolean;
   size: number;
   iconColor?: ColorValue;
+  /** The glyph's point size. The iPhone bar draws every control at 22pt. */
+  iconSize?: number;
 };
+
+/**
+ * The glyphs on a wide bar (Music's iPad layout): ⏮ ⏭ filled and a size up,
+ * the climber's other buttons a size down in the secondary label colour, so
+ * the transport and ✓ carry the bar.
+ */
+export const WIDE_TRANSPORT_GLYPH_SIZE = 24;
+export const WIDE_SECONDARY_GLYPH_SIZE = 19;
+const PHONE_GLYPH_SIZE = 22;
 
 /** A borderless platter control, drawn like the tick beside it: UIKit supplies the glass. */
 function MiniPlayerIconButton({
@@ -42,6 +53,7 @@ function MiniPlayerIconButton({
   selected,
   size,
   iconColor,
+  iconSize = PHONE_GLYPH_SIZE,
 }: MiniPlayerIconButtonProps) {
   const { systemColors } = useTheme();
   return (
@@ -55,7 +67,7 @@ function MiniPlayerIconButton({
       accessibilityState={selected === undefined ? { disabled } : { disabled, selected }}
       style={[styles.action, { width: size, height: size }, disabled ? styles.disabled : null]}
     >
-      <Icon maxFontSizeMultiplier={1} name={iconName} size={22} color={iconColor ?? systemColors.label} />
+      <Icon maxFontSizeMultiplier={1} name={iconName} size={iconSize} color={iconColor ?? systemColors.label} />
     </PressableSurface>
   );
 }
@@ -65,41 +77,72 @@ type ClimbButtonProps = {
   /** The board the climb is drawn on, as the player resolves it. Its angle keys the favourite. */
   climbBoard: BoardConfig;
   size: number;
+  /** Music's iPad layout: a smaller glyph in the secondary label colour. */
+  wideLayout: boolean;
 };
 
 /**
- * The heart. It reads and writes the same `favoriteStatus` cache entry as the
- * player's heart (`useToggleFavorite` flips it optimistically), so the two agree
- * even side by side on the open Duo.
+ * The MiniPlayer's heart: its state and its toggle. It reads and writes the same
+ * `favoriteStatus` cache entry as the player's heart (`useToggleFavorite` flips
+ * it optimistically), so the two agree even side by side on the open Duo. The
+ * bar's button and the bar's ⋯ row both run this, so they never disagree.
  */
-function MiniPlayerFavoriteButton({
+export function useMiniPlayerFavorite({
   climb,
   climbBoard,
-  size,
   bluetoothConnected,
-}: ClimbButtonProps & { bluetoothConnected: boolean }) {
+  source,
+  enabled = true,
+}: {
+  climb: Climb;
+  climbBoard: BoardConfig;
+  bluetoothConnected: boolean;
+  /** `FavoriteToggle`'s `source`: the bar's button or its ⋯ menu. */
+  source: 'mini_player' | 'mini_player_menu';
+  /** False fetches nothing (a ⋯ with no Favorite row); a cached answer still reads. */
+  enabled?: boolean;
+}): { isFavorited: boolean; toggle: () => void } {
   const { t } = useTranslation('session');
-  const { actionColors } = useTheme();
   const { showToast } = useToast();
   const { boardName, layoutId, angle } = climbBoard;
-  const { data: serverFavorited } = useFavoriteStatus(boardName, climb.uuid, angle);
+  const { data: serverFavorited } = useFavoriteStatus(boardName, climb.uuid, angle, { enabled });
   const { mutate: toggleFavorite } = useToggleFavorite();
   const isFavorited = serverFavorited ?? false;
-  const handlePress = useCallback(() => {
+  const toggle = useCallback(() => {
     hapticSelection();
     toggleFavorite(
       {
         input: { boardName, climbUuid: climb.uuid, angle },
         currentlyFavorited: isFavorited,
-        tracking: { source: 'mini_player', layoutId, connected: bluetoothConnected },
+        tracking: { source, layoutId, connected: bluetoothConnected },
       },
       { onError: () => showToast(t('playView.favoriteError'), 'error') },
     );
-  }, [isFavorited, climb.uuid, boardName, layoutId, angle, bluetoothConnected, toggleFavorite, showToast, t]);
+  }, [isFavorited, climb.uuid, boardName, layoutId, angle, bluetoothConnected, source, toggleFavorite, showToast, t]);
+  return { isFavorited, toggle };
+}
+
+/** The heart on the bar. */
+function MiniPlayerFavoriteButton({
+  climb,
+  climbBoard,
+  size,
+  wideLayout,
+  bluetoothConnected,
+}: ClimbButtonProps & { bluetoothConnected: boolean }) {
+  const { t } = useTranslation('session');
+  const { actionColors, systemColors } = useTheme();
+  const { isFavorited, toggle: handlePress } = useMiniPlayerFavorite({
+    climb,
+    climbBoard,
+    bluetoothConnected,
+    source: 'mini_player',
+  });
   return (
     <MiniPlayerIconButton
       iconName={isFavorited ? 'favorite.fill' : 'favorite'}
-      iconColor={isFavorited ? actionColors.favoriteSelected : undefined}
+      iconColor={isFavorited ? actionColors.favoriteSelected : wideLayout ? systemColors.secondaryLabel : undefined}
+      iconSize={wideLayout ? WIDE_SECONDARY_GLYPH_SIZE : undefined}
       accessibilityLabel={
         isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
       }
@@ -110,8 +153,9 @@ function MiniPlayerFavoriteButton({
 }
 
 /** Share, through the same tap (and tracking) as the player's share button. */
-function MiniPlayerShareButton({ climb, climbBoard, size }: ClimbButtonProps) {
+function MiniPlayerShareButton({ climb, climbBoard, size, wideLayout }: ClimbButtonProps) {
   const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
   const handleShare = useShareClimbAction({
     // The queue's climb is the shared-schema climb the player shares.
     climb,
@@ -128,22 +172,28 @@ function MiniPlayerShareButton({ climb, climbBoard, size }: ClimbButtonProps) {
       accessibilityLabel={t('mobile.climbRow.share')}
       onPress={handleShare}
       size={size}
+      iconSize={wideLayout ? WIDE_SECONDARY_GLYPH_SIZE : undefined}
+      iconColor={wideLayout ? systemColors.secondaryLabel : undefined}
     />
   );
 }
 
-/** Mirror the exact committed occurrence shown by this retained accessory. */
-function MiniPlayerMirrorButton({
+/**
+ * Mirror the exact committed occurrence shown by this retained accessory. The
+ * bar's button and the bar's ⋯ row both run this toggle.
+ */
+export function useMiniPlayerMirrorToggle({
   climb,
   climbBoard,
-  size,
   queueItemUuid,
-}: ClimbButtonProps & { queueItemUuid?: string }) {
-  const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+}: {
+  climb: Climb;
+  climbBoard: BoardConfig;
+  queueItemUuid?: string;
+}): { isMirrored: boolean; toggle: () => void } {
   const { mirrorCurrentClimb, getQueueSnapshot } = useQueueActions();
   const isMirrored = climb.mirrored === true;
-  const handlePress = useCallback(() => {
+  const toggle = useCallback(() => {
     const snapshot = getQueueSnapshot();
     const headItem = snapshot.currentClimbQueueItem;
     if (!queueItemUuid || headItem?.uuid !== queueItemUuid || headItem.climb.uuid !== climb.uuid) return;
@@ -166,10 +216,24 @@ function MiniPlayerMirrorButton({
     });
     void mirrorCurrentClimb(mirrored, headItem.uuid);
   }, [getQueueSnapshot, queueItemUuid, climb.uuid, climbBoard, mirrorCurrentClimb]);
+  return { isMirrored, toggle };
+}
+
+function MiniPlayerMirrorButton({
+  climb,
+  climbBoard,
+  size,
+  wideLayout,
+  queueItemUuid,
+}: ClimbButtonProps & { queueItemUuid?: string }) {
+  const { t } = useTranslation('session');
+  const { brandColors, systemColors } = useTheme();
+  const { isMirrored, toggle: handlePress } = useMiniPlayerMirrorToggle({ climb, climbBoard, queueItemUuid });
   return (
     <MiniPlayerIconButton
       iconName="mirror"
-      iconColor={isMirrored ? brandColors.primary : undefined}
+      iconColor={isMirrored ? brandColors.primary : wideLayout ? systemColors.secondaryLabel : undefined}
+      iconSize={wideLayout ? WIDE_SECONDARY_GLYPH_SIZE : undefined}
       selected={isMirrored}
       accessibilityLabel={isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')}
       onPress={handlePress}
@@ -178,20 +242,28 @@ function MiniPlayerMirrorButton({
   );
 }
 
-function MiniPlayerQueueButton({ size }: { size: number }) {
-  const { t } = useTranslation('session');
+/** Open the queue sheet from the bar: its Queue button or its ⋯ row. */
+export function useOpenMiniPlayerQueue(surface: 'mini_player' | 'mini_player_menu'): () => void {
   const { openQueueSheet, boardConfig } = useDrawerHost();
   const boardType = boardConfig?.boardName;
-  const handlePress = useCallback(() => {
-    trackQueueSheetOpened({ surface: 'mini_player', boardType });
+  return useCallback(() => {
+    trackQueueSheetOpened({ surface, boardType });
     openQueueSheet();
-  }, [openQueueSheet, boardType]);
+  }, [openQueueSheet, boardType, surface]);
+}
+
+function MiniPlayerQueueButton({ size, wideLayout }: { size: number; wideLayout: boolean }) {
+  const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
+  const handlePress = useOpenMiniPlayerQueue('mini_player');
   return (
     <MiniPlayerIconButton
       iconName="queue"
       accessibilityLabel={t('mobile.queueSnackbar.openAria')}
       onPress={handlePress}
       size={size}
+      iconSize={wideLayout ? WIDE_SECONDARY_GLYPH_SIZE : undefined}
+      iconColor={wideLayout ? systemColors.secondaryLabel : undefined}
     />
   );
 }
@@ -220,10 +292,12 @@ function MiniPlayerTransportButtons({
   buttonIds,
   renderSlot,
   size,
+  wideLayout,
 }: {
   buttonIds: readonly MiniPlayerButtonId[];
   renderSlot: (buttonId: MiniPlayerButtonId, button: ReactNode) => ReactNode;
   size: number;
+  wideLayout: boolean;
 }) {
   const { t } = useTranslation('session');
   const navigation = useMiniPlayerNavigation();
@@ -238,19 +312,21 @@ function MiniPlayerTransportButtons({
           buttonId,
           buttonId === 'previous' ? (
             <MiniPlayerIconButton
-              iconName="skip.previous"
+              iconName={wideLayout ? 'skip.previous.fill' : 'skip.previous'}
               accessibilityLabel={t('playView.actionBar.previousAria')}
               onPress={navigation.onPrevious}
               disabled={!navigation.canPrevious}
               size={size}
+              iconSize={wideLayout ? WIDE_TRANSPORT_GLYPH_SIZE : undefined}
             />
           ) : (
             <MiniPlayerIconButton
-              iconName="skip.next"
+              iconName={wideLayout ? 'skip.next.fill' : 'skip.next'}
               accessibilityLabel={t('playView.actionBar.nextAria')}
               onPress={navigation.onNext}
               disabled={!navigation.canNext}
               size={size}
+              iconSize={wideLayout ? WIDE_TRANSPORT_GLYPH_SIZE : undefined}
             />
           ),
         ),
@@ -276,6 +352,12 @@ type MiniPlayerLeadingButtonsProps = {
   bluetoothConnected: boolean;
   slotWidth: number;
   rowHeight: number;
+  /**
+   * Music's iPad layout (`miniPlayerUsesWideLayout`): ⏮ ⏭ filled and first, the
+   * others smaller in the secondary label colour. The ids already arrive in
+   * that order.
+   */
+  wideLayout: boolean;
 };
 
 /**
@@ -295,6 +377,7 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
   bluetoothConnected,
   slotWidth,
   rowHeight,
+  wideLayout,
 }: MiniPlayerLeadingButtonsProps) {
   const others = buttonIds.filter((buttonId) => !TRANSPORT.has(buttonId));
   const transport = buttonIds.filter((buttonId) => TRANSPORT.has(buttonId));
@@ -317,13 +400,16 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
             climb={climb}
             climbBoard={climbBoard}
             size={slotWidth}
+            wideLayout={wideLayout}
             bluetoothConnected={bluetoothConnected}
           />
         ) : null;
       case 'share':
-        return climbBoard ? <MiniPlayerShareButton climb={climb} climbBoard={climbBoard} size={slotWidth} /> : null;
+        return climbBoard ? (
+          <MiniPlayerShareButton climb={climb} climbBoard={climbBoard} size={slotWidth} wideLayout={wideLayout} />
+        ) : null;
       case 'queue':
-        return <MiniPlayerQueueButton size={slotWidth} />;
+        return <MiniPlayerQueueButton size={slotWidth} wideLayout={wideLayout} />;
       case 'angle':
         return angle !== null ? <MiniPlayerAngleButton angle={angle} climbUuid={angleClimbUuid} /> : null;
       case 'mirror':
@@ -333,6 +419,7 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
             climb={climb}
             climbBoard={climbBoard}
             size={slotWidth}
+            wideLayout={wideLayout}
           />
         ) : null;
       // ⏮ ⏭ render below.
@@ -341,12 +428,21 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
     }
   };
 
+  // The resolver keeps ⏮ ⏭ together: first on a wide bar, last elsewhere.
+  const transportButtons =
+    transport.length > 0 ? (
+      <MiniPlayerTransportButtons
+        buttonIds={transport}
+        renderSlot={renderSlot}
+        size={slotWidth}
+        wideLayout={wideLayout}
+      />
+    ) : null;
   return (
     <>
+      {wideLayout ? transportButtons : null}
       {others.map((buttonId) => renderSlot(buttonId, renderButton(buttonId)))}
-      {transport.length > 0 ? (
-        <MiniPlayerTransportButtons buttonIds={transport} renderSlot={renderSlot} size={slotWidth} />
-      ) : null}
+      {wideLayout ? null : transportButtons}
     </>
   );
 });

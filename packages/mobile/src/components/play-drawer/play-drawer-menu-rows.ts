@@ -25,7 +25,15 @@ export type PlayDrawerMenuRowOptions = {
   boardMismatch: boolean;
   /** The displayed climb is the one on the wall, so "Play next" means nothing. */
   isActiveClimb: boolean;
+  /**
+   * The menu's order, one array per group, for a surface that orders its rows
+   * differently (the MiniPlayer's ⋯). Defaults to the player's.
+   */
+  groups?: ClimbMenuGroups;
 };
+
+/** A menu's order: one array per group, a divider before every group after the first that has a row. */
+export type ClimbMenuGroups = readonly (readonly ClimbActionId[])[];
 
 /**
  * The menu's fixed order, one array per group. A divider opens every group after
@@ -36,7 +44,7 @@ export type PlayDrawerMenuRowOptions = {
  * - `tick`: the hero button in the bar is always there for a member.
  * - `editEntry`: a logbook-only row.
  */
-const MENU_GROUPS: readonly (readonly ClimbActionId[])[] = [
+const MENU_GROUPS: ClimbMenuGroups = [
   ['playNext', 'queue', 'openQueue'],
   ['mirror', 'angle'],
   ['playlist', 'favorite', 'share'],
@@ -92,7 +100,7 @@ export function buildPlayDrawerMenuRows(
   const itemsById = new Map<ClimbActionId, ClimbActionItem>(items.map((item) => [item.id, item]));
   const rows: PlayDrawerMenuRow[] = [];
 
-  for (const group of MENU_GROUPS) {
+  for (const group of options.groups ?? MENU_GROUPS) {
     let opensGroup = rows.length > 0;
     for (const id of group) {
       const item = itemsById.get(id);

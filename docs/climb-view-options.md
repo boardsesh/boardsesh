@@ -254,14 +254,16 @@ climb).
   measured on this device (`mini-player-measured-bar-store.ts`, published by `NativeAccessoryClimbRow`; an iPhone
   Duo's closed display, ~290 pt, previews one slot) and the collapsed one, for the board on screen and the
   signed-in state. Before the bar has ever drawn it falls back to 995 pt for an iPad or open Duo and 343 pt for an
-  iPhone. Static glyphs; no Bluetooth component is mounted.
+  iPhone. On an iPad or open Duo the open bar is drawn in the wide layout below (⏮ ⏭ first, ⋯, the filled ✓).
+  Static glyphs; no Bluetooth component is mounted.
 - Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows. The
   tab's footer differs by device: on iPhone it says the bar has room for one button beside them; on a wide screen
   it says the bar fits as many as it has room for.
 
 ### Layout rules
 
-- Drawing order, left to right: the climber's others, then ⏮ ⏭, then 💡 ✓.
+- Drawing order, left to right, on an iPhone and on every collapsed bar: the climb, the climber's others, then ⏮ ⏭,
+  then 💡 ✓. On a wide bar (below): ⏮ ⏭, the others, the climb, then ⋯ 💡 ✓.
 - Slot count (`miniPlayerSlotCount`), Board light and Log included:
   - inline (tab bar minimized): 1;
   - iPhone: `min(3, floor((w − 68 − 140) / 44))`, at least 1, where `w` is the platter width and 68 pt is the
@@ -275,12 +277,60 @@ climb).
   From 56 pt up (iPad's open bar, ~62 pt) the artwork is 40 pt at a 12 pt inset, the trailing inset is 10 pt so ✓
   centres in the rounded end, and ✓ is 22 pt like its neighbours. Below that, an iPhone's 16 / 8 pt insets, 32 pt
   artwork and 24 pt ✓. The measured height only grows, so a squeezed hidden row never swaps the geometry back.
-- Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
-  has every action.
+- Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. On a wide bar the
+  bar's own ⋯ has it; on an iPhone the player's ⋯ does.
 - The open Duo's split (`miniPlayerPaneMode`): while the pane shows the committed climb with its controls below the
   board, the bar sits on the player's small row and carries those covered buttons (`miniPlayerPaneCoveredButtons`),
   dropping what the pane's big row already shows (⏮ ⏭ 💡 ✓). While the pane shows a preview, or its controls are
   above the board, the bar keeps Board light and Log only.
+
+### Wide bar (iPad, open Duo)
+
+The open bar on an iPad or the open Duo (`miniPlayerUsesWideLayout`: `isTablet || phoneSplit`, regular placement)
+copies Apple Music's iPad MiniPlayer:
+
+```
+[⏮][⏭] [⇄][♡] | [art 40] Name (17 pt) / V5 · 1.6k sends | [⋯] [💡] [✓]
+```
+
+- ⏮ ⏭ lead the row, filled (`skip.previous.fill` / `skip.next.fill`) at 24 pt. The climber's other buttons follow at
+  19 pt in the secondary label colour; a favourite stays red and a mirrored climb's ⇄ stays brand purple. The angle
+  pill is unchanged. 💡 stays 22 pt.
+- ✓ is the one large control: `checkmark.circle.fill`, 32 pt, brand purple (`LogAscentToolbarButton`'s
+  `appearance="hero"`, which logs and pops exactly as the plain one does).
+- The name is set in body (17 pt) instead of subheadline. The artwork stays 40 pt.
+- Claim order does not change, so saved layouts need no migration: 💡 ✓ first, then ⋯ (`MiniPlayerControls.more`),
+  then the climber's buttons in their order. A drawn order of ⏮ ⏭ first does not change which buttons win a short
+  bar.
+- ⋯ sits in a third fixed frame before 💡 ✓ inside the trailing pair (`trailingSlotFrame`), so it moves with them
+  when UIKit squeezes the hidden regular row. No ⋯ while the `/play` route is up (`moreAvailable`; the menu also
+  draws nothing there as a backstop), on an iPhone, or on any collapsed bar.
+- The open Duo keeps what it had, plus ⋯: in `carry` the covered small row then ⋯; in `stepAside` ⋯ 💡 ✓. In a
+  timed block Fell / Sent take the leading cluster before the climb, and ⋯ claims after 💡 ✓.
+- iPhone and every inline bar are unchanged.
+
+**The ⋯ menu** (`MiniPlayerActionsMenu`) is the player's ⋯ over the same `useClimbActions` and
+`buildPlayDrawerMenuRows`, in Music's order (`MINI_PLAYER_MENU_GROUPS`):
+
+1. Favourite, Add to playlist, Share
+2. Open queue
+3. Mirror, Change angle
+4. Add beta video, Edit, Fork
+5. View options
+6. Report, Delete
+
+- Favourite, Share, Open queue, Mirror and Change angle appear only while the bar is not showing that button and
+  could (`miniPlayerMenuHiddenButtons` over `isMiniPlayerButtonAvailable`): switched off, or no room. So signed out
+  there is no Favourite or Open queue, a draft has no Share, Kilter has no Mirror.
+- Play next, Play last and Log are never offered: the climb is on the wall and ✓ is beside ⋯. Edit, Delete and
+  Report keep `useClimbActions`' owner gating.
+- Favourite, Mirror and Open queue run the bar's own hooks (`useMiniPlayerFavorite`, `useMiniPlayerMirrorToggle`,
+  `useOpenMiniPlayerQueue`), so a row and a button never disagree. The other sheets open through the root openers
+  on `useDrawerHost()`, which present over the tab content; Change angle opens the host's angle sheet.
+- View options pushes Settings → Climb view in the tab the bar sits over (`climbViewSettingsHref`), which has the
+  Mini player switches. The player's View options sheet with its Mini player tab only exists inside `/play`.
+- Analytics: rows tag `mini_player_menu` (`ClimbActionsAnalyticsSource`, `FavoriteToggle`'s `source`, and
+  `Queue Sheet Opened`'s `surface`).
 
 ### Session states
 
@@ -299,12 +349,12 @@ climb).
 
     | Bar                                  | Holds                  |
     | ------------------------------------ | ---------------------- |
-    | iPad, open Duo (pane doesn't cover)  | Fell · Sent · 💡 ✓     |
+    | iPad, open Duo (pane doesn't cover)  | Fell · Sent · ⋯ 💡 ✓   |
     | iPhone (3 slots)                     | Fell · Sent · 💡       |
     | Two slots                            | Fell · Sent            |
     | Minimized / inline (1 slot)          | Sent                   |
-    | Open Duo, `carry`                    | Fell · Sent            |
-    | Open Duo, `stepAside` (pane preview) | 💡 ✓, as outside a block |
+    | Open Duo, `carry`                    | Fell · Sent · ⋯        |
+    | Open Duo, `stepAside` (pane preview) | ⋯ 💡 ✓, as outside a block |
 
     In `carry` the bar sits on the pane's small row, which shows Fell / Sent itself, and the pane's big row has 💡 ✓,
     so the bar carries the pair only. The iPhone's ✓ comes back when the block ends.
@@ -346,7 +396,8 @@ The defaults above were picked without data. Two events (#6940) let them be revi
   timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
   of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on
   `surface`.
-- `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `snackbar`) and `boardType`. The
+- `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `mini_player_menu`, `snackbar`) and
+  `boardType`. The
   side-by-side iPad player's queue button shows Up next in its panel instead of a sheet, and still counts as
   `player`.
 
@@ -381,6 +432,7 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 | Store, `useMiniPlayerButtonsEditor`    | `packages/mobile/src/lib/mini-player-buttons-preference.ts`                           |
 | Slot count and what the bar holds      | `packages/mobile/src/components/queue-control/mini-player-controls.ts`                |
 | The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
+| The wide bar's ⋯                       | `packages/mobile/src/components/queue-control/MiniPlayerActionsMenu.tsx`              |
 | Workout gate and hold, Fell / Sent     | `use-mini-player-workout-outcome.ts`, `MiniPlayerWorkoutButtons.tsx` (same folder)    |
 | Shared one-tap state, Duo pane cover   | `play-drawer/workout-one-tap-store.ts`, `play-drawer/pane-workout-row-cover-store.ts` |
 | Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
