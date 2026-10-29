@@ -303,7 +303,15 @@ copies Apple Music's iPad MiniPlayer:
   then the climber's buttons in their order. A drawn order of ⏮ ⏭ first does not change which buttons win a short
   bar.
 - ⋯ sits in a third fixed frame before 💡 ✓ inside the trailing pair (`trailingSlotFrame`), so it moves with them
-  when UIKit squeezes the hidden regular row. No ⋯ while the `/play` route is up (`moreAvailable`; the menu also
+  when UIKit squeezes the hidden regular row. With no board bound the bulb draws nothing, so the wide bar drops the
+  bulb's frame and ⋯ sits right beside ✓ (whether a board is bound is the same in both placements, so no frame moves
+  as the bar expands).
+- A wide bar counts its slots from the widest row width it measured under one window shape (`wideRowCapacityWidth`,
+  keyed on the window width and the tab content's side insets by `rowLayoutKey`). UIKit squeezes the hidden regular
+  row to the inline width while the bar is minimized; counting from that would drop the buttons before the climb and
+  bring them back mid-expand, sliding the art sideways and remounting ⋯. A rotation, a window resize or the sidebar
+  shown or hidden starts the record over. The iPad's top tab bar and the Duo's rail never minimize, so today this
+  matters only in a narrow iPad window, where the tab bar moves to the bottom. No ⋯ while the `/play` route is up (`moreAvailable`; the menu also
   draws nothing there as a backstop), on an iPhone, or on any collapsed bar.
 - The open Duo keeps what it had, plus ⋯: in `carry` the covered small row then ⋯; in `stepAside` ⋯ 💡 ✓. In a
   timed block Fell / Sent take the leading cluster before the climb, and ⋯ claims after 💡 ✓.
@@ -316,7 +324,7 @@ copies Apple Music's iPad MiniPlayer:
 2. Open queue
 3. Mirror, Change angle
 4. Add beta video, Edit, Fork
-5. View options
+5. Climb view (settings), Open in Kilter / Tension app
 6. Report, Delete
 
 - Favourite, Share, Open queue, Mirror and Change angle appear only while the bar is not showing that button and
@@ -327,8 +335,10 @@ copies Apple Music's iPad MiniPlayer:
 - Favourite, Mirror and Open queue run the bar's own hooks (`useMiniPlayerFavorite`, `useMiniPlayerMirrorToggle`,
   `useOpenMiniPlayerQueue`), so a row and a button never disagree. The other sheets open through the root openers
   on `useDrawerHost()`, which present over the tab content; Change angle opens the host's angle sheet.
-- View options pushes Settings → Climb view in the tab the bar sits over (`climbViewSettingsHref`), which has the
-  Mini player switches. The player's View options sheet with its Mini player tab only exists inside `/play`.
+- Climb view pushes Settings → Climb view in the tab the bar sits over (`climbViewSettingsHref`), which has the
+  Mini player switches, and is labelled with that screen's title. The player's View options sheet with its Mini
+  player tab only exists inside `/play`.
+- Open in Kilter / Tension app sits in the same group as on the player's ⋯, on Aurora boards only.
 - Analytics: rows tag `mini_player_menu` (`ClimbActionsAnalyticsSource`, `FavoriteToggle`'s `source`, and
   `Queue Sheet Opened`'s `surface`).
 

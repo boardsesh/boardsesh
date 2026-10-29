@@ -1026,6 +1026,42 @@ describe('NativeAccessoryClimbRow', () => {
       expectNumericAttribute(getCurrentThumbnail(container), 'data-board-height', 40);
     });
 
+    it("keeps a wide bar's buttons and ⋯ rows through the inline squeeze, and narrows on a new window", () => {
+      miniPlayer.isTablet = true;
+      miniPlayer.windowWidth = 1210;
+      layout.width = 995;
+      const { container, rerender } = renderRow('regular');
+      const row = container.firstElementChild as Element;
+      const onLayout = layout.callbacks.get(row);
+      expect(buttons(container)).toBe('previous,next,favorite');
+      // Inline, UIKit squeezes this hidden row to the collapsed bar's width.
+      act(() => onLayout?.({ nativeEvent: { layout: { width: 300, height: 62 } } }));
+      expect(buttons(container)).toBe('previous,next,favorite');
+      act(() => onLayout?.({ nativeEvent: { layout: { width: 995, height: 62 } } }));
+      expect(buttons(container)).toBe('previous,next,favorite');
+      // A narrow window really is narrower: the bar counts from it.
+      miniPlayer.windowWidth = 400;
+      layout.width = 300;
+      rerender(
+        <NativeAccessoryClimbRow climb={queue.state.currentClimbQueueItem?.climb as Climb} placement="regular" />,
+      );
+      act(() => layout.callbacks.get(row)?.({ nativeEvent: { layout: { width: 300, height: 62 } } }));
+      expect(buttons(container)).toBeNull();
+    });
+
+    it('closes the gap between ⋯ and ✓ when no board is bound', () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      connection.state = { ...connection.state, bluetooth: null };
+      const { container } = renderRow('regular');
+      const tick = container.querySelector('[data-tick="true"]');
+      const pair = tick?.parentElement?.parentElement;
+      expect(pair?.children.length).toBe(2);
+      expect(pair?.firstElementChild?.querySelector('[data-more-menu]')).not.toBeNull();
+      expect(pair?.getAttribute('data-width')).toBe('88');
+      expect(pair?.parentElement?.getAttribute('data-width')).toBe('88');
+    });
+
     it("keeps an iPad's collapsed platter on the short geometry", () => {
       miniPlayer.isTablet = true;
       const { container } = renderRow('inline');

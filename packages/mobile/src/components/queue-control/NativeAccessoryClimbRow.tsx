@@ -39,10 +39,15 @@ import {
   miniPlayerPaneMode,
   miniPlayerSlotCount,
   miniPlayerUsesWideLayout,
+  recordRowWidth,
   resolveMiniPlayerControls,
+  rowLayoutKey,
   trailingSlotFrame,
+  wideRowCapacityWidth,
+  type MeasuredRowWidth,
   type TrailingControlSlot,
 } from './mini-player-controls';
+import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../../lib/native-tab-content-inset-store';
 import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
@@ -75,6 +80,10 @@ type NativeAccessoryClimbRowProps = {
 // before the pair (Music's iPad layout); an iPhone keeps the pair it always had.
 const PHONE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['lightbulb', 'log'];
 const WIDE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['more', 'lightbulb', 'log'];
+// With no board bound the bulb draws nothing, so a wide bar drops its frame
+// rather than leave a gap between ⋯ and ✓. Whether a board is bound is the same
+// in both placements, so this never moves a frame as the bar expands.
+const WIDE_TRAILING_SLOTS_NO_BULB: readonly TrailingControlSlot[] = ['more', 'log'];
 // ✓ on a wide bar: Music's one large filled control.
 const WIDE_LOG_GLYPH_SIZE = 32;
 
@@ -220,17 +229,26 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // The width UIKit gave the platter. A narrow open platter (iPhone Duo's outer
   // display beside its side rail, a 320pt Display Zoom iPhone) keeps one control,
   // like the collapsed one, so the name has room to read (miniPlayerSlotCount).
-  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  // UIKit also squeezes the hidden regular row while the bar is inline, so a
+  // wide bar counts its slots from the widest width under this window shape
+  // (`wideRowCapacityWidth`); an iPhone counts from the window instead.
+  const sideInsetLeft = useNativeTabContentInsetLeft();
+  const sideInsetRight = useNativeTabContentInsetRight();
+  const layoutKey = rowLayoutKey({ windowWidth, sideInsetLeft, sideInsetRight });
+  const [measuredRowWidth, setMeasuredRowWidth] = useState<MeasuredRowWidth | null>(null);
   // And its height: ~62pt open on iPad against the iPhone's 48pt (#7048). Only
   // ever grows: UIKit also squeezes the hidden regular row while the bar is
   // inline, and swapping geometry back mid-expand is the doubled-text case.
   const [platterHeight, setPlatterHeight] = useState<number | null>(null);
-  const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
-    const measuredWidth = Math.round(event.nativeEvent.layout.width);
-    const measuredHeight = Math.round(event.nativeEvent.layout.height);
-    setRowWidth((previous) => (previous === measuredWidth ? previous : measuredWidth));
-    setPlatterHeight((previous) => (previous !== null && previous >= measuredHeight ? previous : measuredHeight));
-  }, []);
+  const handleRowLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const measuredWidth = Math.round(event.nativeEvent.layout.width);
+      const measuredHeight = Math.round(event.nativeEvent.layout.height);
+      setMeasuredRowWidth((previous) => recordRowWidth(previous, { layoutKey, measured: measuredWidth }));
+      setPlatterHeight((previous) => (previous !== null && previous >= measuredHeight ? previous : measuredHeight));
+    },
+    [layoutKey],
+  );
   // Before the first layout, guess the platter most bars measure, so the common
   // bar never redraws on its first measurement (the doubled-text snapshot case).
   const geometry = accessoryPlatterGeometry(
@@ -242,6 +260,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const wide = isTablet || phoneSplit;
   // The open wide bar draws Music's iPad layout: ⏮ ⏭ first, ⋯ before 💡 ✓.
   const wideLayout = miniPlayerUsesWideLayout({ wide, placement });
+  const rowWidth = wide ? wideRowCapacityWidth(measuredRowWidth, layoutKey) : (measuredRowWidth?.latest ?? null);
   const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });
   const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide });
   // Tell the View options preview what this device's open bar measures.
@@ -375,7 +394,11 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       ) : null}
     </>
   );
-  const trailingSlots = wideLayout ? WIDE_TRAILING_SLOTS : PHONE_TRAILING_SLOTS;
+  const trailingSlots = wideLayout
+    ? bulbAvailable
+      ? WIDE_TRAILING_SLOTS
+      : WIDE_TRAILING_SLOTS_NO_BULB
+    : PHONE_TRAILING_SLOTS;
   const slotShown = (slot: TrailingControlSlot) =>
     slot === 'more' ? controls.more && climbBoard !== null : controls.trailing.includes(slot);
   const { slotsShown, trailingShift } = trailingSlotFrame(trailingSlots, slotShown);
