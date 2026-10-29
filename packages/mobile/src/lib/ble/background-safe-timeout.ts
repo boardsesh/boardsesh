@@ -21,6 +21,7 @@ import { sessionPresenceNative } from '../../../modules/live-activity/src/index'
  */
 export function setBackgroundSafeTimeout(callback: () => void, delayMs: number): () => void {
   let done = false;
+  // Reads `jsTimer` before its const below: safe, only the native `.then` (a later microtask) calls this.
   const fire = () => {
     if (done) return;
     done = true;

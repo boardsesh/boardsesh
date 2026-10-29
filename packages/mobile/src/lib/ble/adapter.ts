@@ -107,7 +107,7 @@ export class RNBleAdapter implements BluetoothAdapter {
 
   // The scan/select flow mirrors NativeIosBleAdapter.requestAndConnect. Kept in lockstep
   // by hand; if you change one, change the other. The background guards (#7038:
-  // the grace window's AppState check, the native-clock scan timeout, the native
+  // no grace window for a background connect, the native-clock scan timeout, the native
   // connect timeout) are Android's alone: iOS keeps firing JS timers, and its
   // background reconnect runs in Swift. With a saved board (#5658) it
   // is a three-state machine:
@@ -140,6 +140,10 @@ export class RNBleAdapter implements BluetoothAdapter {
     });
 
     const hasTarget = Boolean(targetSerial || targetDeviceId);
+    // Decided once, at the tap (#7038): a connect started in the background (the
+    // session notification's bulb) never shows a list, so it auto-selects for
+    // the whole scan even if the climber opens the app part-way through.
+    const backgroundConnect = AppState.currentState !== 'active';
     // True only while we're still matching the saved board (`searching`). Flips
     // false the moment we auto-select (`found`) or the search ends (`list`), and
     // never flips back.
@@ -249,16 +253,11 @@ export class RNBleAdapter implements BluetoothAdapter {
 
       // Grace window: if the saved board hasn't matched by now, stop auto-selecting
       // and let the picker show the list. The scan keeps running, so the list
-      // live-updates. Not in the background (the session notification's bulb,
-      // #7038): nobody can pick from a list there, so the saved board keeps the
-      // whole scan to show up and connect. A plain JS timer is enough here: the
-      // check only has to hold whenever the timer does fire in the background.
-      pickerFallbackId = hasTarget
-        ? setTimeout(() => {
-            if (AppState.currentState !== 'active') return;
-            endTargetSearch();
-          }, SERIAL_RECONNECT_GRACE_MS)
-        : undefined;
+      // live-updates. Never for a background connect (#7038): its list is never
+      // shown, so ending auto-select would leave a board that turns up later in
+      // a list nobody can see.
+      pickerFallbackId =
+        hasTarget && !backgroundConnect ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
 
       // On the native clock as well as the JS one: Android stops firing JS timers
       // while the activity is paused, and a background connect would otherwise
