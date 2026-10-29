@@ -1252,7 +1252,11 @@ export function PlayCore({
   const selfHoldsBoard = wallLinked || wallHeldLocally;
   // This climber's profile: their face while they hold the board, and their id
   // while the busy-wall question is up, so it never names them as the holder.
-  const { data: wallSelfProfile } = useProfile({ enabled: (selfHoldsBoard || busyWallUp) && !isAnonymous });
+  // And while a session member holds it, so this account on another phone
+  // reads "On your other phone", not its own name.
+  const { data: wallSelfProfile } = useProfile({
+    enabled: (selfHoldsBoard || busyWallUp || lightbulbHolderIsAuthoritative) && !isAnonymous,
+  });
   const selfFace = useMemo(
     () =>
       wallSelfProfile
@@ -1286,6 +1290,8 @@ export function PlayCore({
         otherClimbLit: wallClimbUuid !== null && wallClimbUuid !== displayedClimbUuid,
         writing: wallWriting,
         autoDisconnectWarning: bluetooth?.autoDisconnectWarning ?? false,
+        // Driving the board: a swipe from here goes up on the wall (#7017).
+        navigationCommits: navigationCommits && !browseLatchActive,
       }),
     [
       commitButton,
@@ -1311,6 +1317,8 @@ export function PlayCore({
       displayedClimbUuid,
       wallWriting,
       bluetooth?.autoDisconnectWarning,
+      navigationCommits,
+      browseLatchActive,
     ],
   );
   const wallControlState: WallControlState = wallControl.state;
@@ -2107,7 +2115,8 @@ export function PlayCore({
   // climb. Parsed only while the climb on screen is lit on a board this phone or
   // a crewmate holds; a new input only when the climb, the frame, the mirror or
   // the colours change, so the glow does no work otherwise.
-  const wallGlowShown = !isAnonymous && (wallControl.state === 'lit' || (wallControl.state === 'crew' && displayedLit));
+  // Only while this climber drives the board (`wallControl.driving`, #7017).
+  const wallGlowShown = !isAnonymous && wallControl.driving;
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
       ? playback.currentFrameString

@@ -90,7 +90,9 @@ function WallControlButtonComponent({
     const { width, height } = event.nativeEvent.layout;
     setSize((current) => (current.w === width && current.h === height ? current : { w: width, h: height }));
   }, []);
-  const glowShown = model.state === 'lit' || model.state === 'crew' ? glow : null;
+  // The coloured lit look (the frost, or the amber fill) only while this
+  // climber is driving the board: the model's rule, not the view's (#7017).
+  const glowShown = model.driving ? glow : null;
   // Filled amber whenever this phone holds the board, in any state; the frost
   // (the glow) stays for the lit states only (Marco's QA).
   const holdsBoard = model.holder === 'self';
@@ -117,7 +119,9 @@ function WallControlButtonComponent({
     return <View style={styles.placeholder} testID="play-drawer-wall-control-empty" />;
   }
 
-  const lit = model.state === 'lit' || model.state === 'release_wall';
+  // In a crew the holder's lit climb keeps its label, filled bulb and face on
+  // the plain tonal look: their swipes browse, so they aren't driving it.
+  const lit = model.driving || model.state === 'release_wall';
   // Amber with white text in light; the dark scheme's amber is pale, so dark text.
   const litForeground = colorScheme === 'dark' ? brandColors.onAccent : brandColors.onPrimary;
   // On the wall per presence, with no link (QA #147): an amber outline on the

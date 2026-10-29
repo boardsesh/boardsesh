@@ -250,6 +250,7 @@ export type WallControlLabelKey =
   | 'youHaveBoard'
   | 'onBoard'
   | 'onCrewBoard'
+  | 'onOtherPhone'
   | 'takeWall'
   | 'releaseWall';
 
@@ -266,7 +267,8 @@ export type WallControlA11yHintKey =
   | 'lightAgainHint'
   | 'litHint'
   | 'relayHint'
-  | 'relayHintCrew';
+  | 'relayHintCrew'
+  | 'relayHintOtherPhone';
 
 /** The bulb's value, after its "Board lights" label. */
 export type WallControlBulbValueKey =
@@ -274,6 +276,7 @@ export type WallControlBulbValueKey =
   | 'onWall'
   | 'onBoard'
   | 'onCrewBoard'
+  | 'onOtherPhone'
   | 'valueOtherClimb'
   | 'valueOff';
 
@@ -301,6 +304,12 @@ export type WallControlInput = WallControlStateInput & {
   writing: boolean;
   /** Auto-disconnect is in its last ten seconds. */
   autoDisconnectWarning: boolean;
+  /**
+   * A swipe or Next from this screen commits to the wall: solo with lighting
+   * on swipes, and not a browse (`swipeStaysViewOnly` false). In a crew swipes
+   * open previews (#4281), so this is false there.
+   */
+  navigationCommits: boolean;
 };
 
 /**
@@ -327,6 +336,14 @@ export type WallControlModel = {
   look: WallBulbLook;
   /** The control reads as selected: You have the board. */
   selected: boolean;
+  /**
+   * This climber is driving the board: the climb on screen is lit on this
+   * phone's link, and a swipe from here changes what the wall shows. Only then
+   * does the wall button take its coloured lit look (the frost, or the amber
+   * fill) (#7017, Marco). In a crew the holder's lit button keeps its label,
+   * filled bulb and face on the plain tonal look.
+   */
+  driving: boolean;
   /** A connect or disconnect in flight: a spinner, and taps wait. */
   pending: boolean;
   writing: boolean;
@@ -338,6 +355,7 @@ function labelKeyOf(
   holder: WallHolder,
   holderName: string | null,
   commitLabel: 'putOnWall' | 'setActive',
+  holderIsSelfAccount: boolean,
 ): WallControlLabelKey | null {
   switch (state) {
     case 'connect':
@@ -352,6 +370,7 @@ function labelKeyOf(
     case 'lit':
       return 'youHaveBoard';
     case 'crew':
+      if (holderIsSelfAccount) return 'onOtherPhone';
       return holderName ? 'onBoard' : 'onCrewBoard';
     case 'take_wall':
       return 'takeWall';
@@ -362,7 +381,11 @@ function labelKeyOf(
   }
 }
 
-function hintKeyOf(action: WallControlAction, holderName: string | null): WallControlA11yHintKey | null {
+function hintKeyOf(
+  action: WallControlAction,
+  holderName: string | null,
+  holderIsSelfAccount: boolean,
+): WallControlA11yHintKey | null {
   switch (action) {
     case 'disconnect':
       return 'litHint';
@@ -372,6 +395,7 @@ function hintKeyOf(action: WallControlAction, holderName: string | null): WallCo
     case 'relight':
       return 'lightHint';
     case 'relay':
+      if (holderIsSelfAccount) return 'relayHintOtherPhone';
       return holderName ? 'relayHint' : 'relayHintCrew';
     default:
       return null;
@@ -393,13 +417,17 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     confirmArmed: input.confirmArmed,
     displayedIsOwnCurrent: input.displayedIsOwnCurrent,
   });
-  const labelKey = labelKeyOf(state, holder, holderName, input.commitLabel);
+  // Presence names this climber's own account holding the board through
+  // another device's link: "On your other phone", never their own name.
+  const onOtherPhone = state === 'crew' && input.holderIsSelfAccount;
+  const labelKey = labelKeyOf(state, holder, holderName, input.commitLabel, onOtherPhone);
   let a11yHolderKey: WallControlA11yHolderKey | null = null;
   if (holder === 'self') a11yHolderKey = 'youHaveBoard';
   else if (holder === 'crew') a11yHolderKey = holderName ? 'holderHasBoard' : 'crewHasBoard';
   let bulbValueKey: WallControlBulbValueKey = 'valueOff';
   if (state === 'lit') bulbValueKey = 'youHaveBoardLit';
   else if (state === 'on_wall_unlinked') bulbValueKey = 'onWall';
+  else if (onOtherPhone) bulbValueKey = 'onOtherPhone';
   else if (state === 'crew') bulbValueKey = holderName ? 'onBoard' : 'onCrewBoard';
   else if (input.localConnected && input.otherClimbLit) bulbValueKey = 'valueOtherClimb';
   return {
@@ -414,10 +442,14 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     a11yLabelKey: state === 'lit' ? 'youHaveBoardLit' : labelKey,
     a11yHolderKey: state === 'lit' ? null : a11yHolderKey,
     a11yHintKey:
-      state === 'on_wall_unlinked' && tapAction !== 'noop' ? 'lightAgainHint' : hintKeyOf(tapAction, holderName),
+      state === 'on_wall_unlinked' && tapAction !== 'noop'
+        ? 'lightAgainHint'
+        : hintKeyOf(tapAction, holderName, onOtherPhone),
     bulbValueKey,
     look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
     selected: state === 'lit',
+    // Driving: lit on this phone's link, and the next swipe moves the wall.
+    driving: state === 'lit' && holder === 'self' && input.navigationCommits,
     pending: input.pending,
     writing: input.writing,
     autoDisconnectWarning: input.autoDisconnectWarning,
@@ -439,6 +471,7 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   bulbValueKey: 'valueOff',
   look: 'off',
   selected: false,
+  driving: false,
   pending: false,
   writing: false,
   autoDisconnectWarning: false,

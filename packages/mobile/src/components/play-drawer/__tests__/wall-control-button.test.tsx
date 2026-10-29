@@ -127,6 +127,8 @@ type ModelOptions = {
   pending?: boolean;
   writing?: boolean;
   autoDisconnectWarning?: boolean;
+  /** A swipe from here goes up on the wall: solo by default; false in a crew (#7017). */
+  navigationCommits?: boolean;
 };
 
 /** The model the player builds for one state and holder. */
@@ -161,6 +163,7 @@ function modelFor(state: WallControlState, options: ModelOptions = {}): WallCont
     otherClimbLit: false,
     writing: options.writing ?? false,
     autoDisconnectWarning: options.autoDisconnectWarning ?? false,
+    navigationCommits: options.navigationCommits ?? true,
   });
 }
 
@@ -382,11 +385,30 @@ describe('WallControlButton', () => {
       },
     );
 
-    it("glows on a crewmate's lit board, and in the narrower workout button", () => {
-      const crew = renderButton(modelFor('crew', { holder: 'crew' }), { glow: GLOW });
+    // #7017: the coloured look only while this climber drives the board.
+    it("stays plain on a crewmate's lit board: tonal, the outline bulb, their face", () => {
+      const crew = renderButton(modelFor('crew', { holder: 'crew', navigationCommits: false }), { glow: GLOW });
       measure();
-      expect(crew.queryByTestId('wall-glow')).not.toBeNull();
-      cleanup();
+      expect(crew.queryByTestId('wall-glow')).toBeNull();
+      const style = crew.getByRole('button').getAttribute('data-style') ?? '';
+      expect(style).toContain('"backgroundColor":"#6D28D9"');
+      expect(crew.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb');
+      expect(crew.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Sam');
+    });
+
+    it('keeps the crew holder’s label, filled bulb and face on the plain look, no frost', () => {
+      const holder = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }), { glow: GLOW });
+      measure();
+      expect(holder.queryByTestId('wall-glow')).toBeNull();
+      const style = holder.getByRole('button').getAttribute('data-style') ?? '';
+      expect(style).toContain('"backgroundColor":"#6D28D9"');
+      expect(style).not.toContain('#B45309');
+      expect(holder.getAllByText('playView.wallControl.youHaveBoard').length).toBeGreaterThan(0);
+      expect(holder.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
+      expect(holder.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Me');
+    });
+
+    it('glows in the narrower workout button while driving', () => {
       const compact = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW, compact: true });
       measure(239, 44);
       expect(compact.queryByTestId('wall-glow')).not.toBeNull();
@@ -432,6 +454,7 @@ describe('WallControlButton', () => {
       otherClimbLit: false,
       writing: false,
       autoDisconnectWarning: false,
+      navigationCommits: false,
     });
     const { getByRole, container } = renderButton(model);
     const style = getByRole('button').getAttribute('data-style') ?? '';

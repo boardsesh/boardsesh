@@ -470,8 +470,13 @@ way it looks like this:
 
 - Tonal violet for what the climber can do: "Connect board", "Put on the wall", "On Sam's board". The fill is 20% of
   the brand fill, strong enough not to read as disabled and the most the violet label keeps 4.5:1 on.
-- **Lit: the climb's holds glow in it (look F1b).** "You have the board", and a crewmate's lit board ("On Sam's
-  board"), in the full-width and the workout button: every lit hold of the climb, turned a quarter clockwise so the
+- **Lit while you drive the board: the climb's holds glow in it (look F1b).** Only while this climber is driving: the
+  climb on screen is lit on this phone's link and a swipe from here changes what the wall shows (#7017, Marco: "The
+  special coloured state for the button should only be shown when the current user is driving the board"). That is
+  solo "You have the board". In a crew swipes browse, so the holder's "You have the board" keeps its filled bulb
+  and face on the plain tonal look, and a crewmate's "On Sam's board" is tonal with an outline bulb; the same
+  account on another device reads "On your other phone". The glow, in the full-width and the workout button: every
+  lit hold of the climb, turned a quarter clockwise so the
   climb reads start (left) to finish (right), as a soft blob of the colour the player draws its role (Aura or
   classic, with the climber's overrides). The blobs screen together on a near-black `#0E0D12` with an 8% white
   frost and a still 6% grain; the label is white with a soft shadow, over the smallest label-zone fade that keeps it

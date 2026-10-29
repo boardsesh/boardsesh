@@ -1861,6 +1861,22 @@ describe('PlayDrawer — reading the wall', () => {
     expect(lastActionBarProps().wallControlState).toBe('lit');
   });
 
+  // #7017, Marco: the coloured lit look only while this climber drives the
+  // board, i.e. the next swipe from this screen changes what the wall shows.
+  it('drives the board solo on its own lit climb, and not once a crew makes swipes browse', () => {
+    connectBoard();
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    const target = committedTargetFor(CLIMB);
+    const view = render(drawerElement('member', target));
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'lit', holder: 'self', driving: true });
+
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    view.rerender(drawerElement('member', target));
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'lit', holder: 'self', driving: false });
+  });
+
   // #7015: the crewmate holding the link turned all the lights off. This phone
   // has no link; it only hears it through board presence. The board control
   // stops reading their climb as lit (an amber outline, not filled), and a new
@@ -1876,7 +1892,8 @@ describe('PlayDrawer — reading the wall', () => {
     const view = render(drawerElement('member', committedTargetFor(CLIMB)));
     expect(lastActionBarProps().wallControlState).toBe('crew');
     // A crewmate's board is an outline whether lit or dark; filled means yours.
-    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'ready' });
+    // Not driving either: no frost on their board (#7017).
+    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'ready', driving: false });
 
     const pillsBeforeClear = recorded.wallPill.length;
     wall.uuid = null;

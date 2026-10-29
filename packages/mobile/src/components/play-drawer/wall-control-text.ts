@@ -48,6 +48,8 @@ function labelText(t: TFunction, tSettings: TFunction, key: WallControlLabelKey,
       return t('playView.wallControl.onBoard', { name });
     case 'onCrewBoard':
       return t('playView.wallControl.onCrewBoard');
+    case 'onOtherPhone':
+      return t('playView.wallControl.onOtherPhone');
     case 'takeWall':
       return tSettings('ble.takeWall');
     case 'releaseWall':
@@ -80,6 +82,8 @@ function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null
       return t('playView.wallControl.relayHint', { name });
     case 'relayHintCrew':
       return t('playView.wallControl.relayHintCrew');
+    case 'relayHintOtherPhone':
+      return t('playView.wallControl.relayHintOtherPhone');
   }
 }
 
@@ -93,6 +97,8 @@ function bulbValueText(t: TFunction, key: WallControlBulbValueKey, name: string 
       return t('playView.wallControl.onBoard', { name });
     case 'onCrewBoard':
       return t('playView.wallControl.onCrewBoard');
+    case 'onOtherPhone':
+      return t('playView.wallControl.onOtherPhone');
     case 'valueOtherClimb':
       return t('playView.wallControl.valueOtherClimb');
     case 'valueOff':

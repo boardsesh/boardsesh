@@ -27,6 +27,8 @@ const FREE: WallControlInput = {
   otherClimbLit: false,
   writing: false,
   autoDisconnectWarning: false,
+  // Solo with lighting on swipes: a swipe from here goes up on the wall.
+  navigationCommits: true,
 };
 const MINE: Partial<WallControlInput> = { localConnected: true, pressAction: 'disconnect' };
 const SAMS: Partial<WallControlInput> = { holderIsAuthoritative: true, pressAction: 'relay', crewFace: SAM };
@@ -260,6 +262,7 @@ const rows: Row[] = [
     },
   ],
   [
+    // This account's link on another device (a stale record of this phone is never authoritative).
     'presence names this climber, with no link',
     { holderIsAuthoritative: true, holderIsSelfAccount: true, crewFace: ME, pressAction: 'connect' },
     {
@@ -267,8 +270,8 @@ const rows: Row[] = [
       holder: null,
       tapAction: 'noop',
       longPress: null,
-      labelKey: 'onCrewBoard',
-      a11yLabelKey: 'onCrewBoard',
+      labelKey: 'onOtherPhone',
+      a11yLabelKey: 'onOtherPhone',
       a11yHintKey: null,
       look: 'ready',
     },
@@ -475,5 +478,61 @@ describe('resolveWallControl: presence freshness', () => {
       }
     }
     expect(combinations).toBe(2304);
+  });
+});
+
+// #7017, Marco: "The special coloured state for the button should only be
+// shown when the current user is driving the board, meaning that a swipe from
+// what they are currently seeing will change what's on the board."
+describe('resolveWallControl: driving the board', () => {
+  const LIT = { displayedLit: true };
+  // In a crew swipes open previews (#4281): nothing this climber swipes moves the wall.
+  const CREW = { navigationCommits: false };
+  it.each([
+    ['solo, lit on your link: the frost', { ...MINE, ...LIT }, { state: 'lit', holder: 'self', driving: true }],
+    [
+      'a crew, lit on your link: You have the board, no frost',
+      { ...MINE, ...LIT, ...CREW },
+      { state: 'lit', holder: 'self', driving: false, labelKey: 'youHaveBoard', look: 'lit' },
+    ],
+    [
+      'a crew member on the wall’s climb, Sam’s link: no frost',
+      { ...SAMS, ...LIT, ...CREW },
+      { state: 'crew', holder: 'crew', driving: false, labelKey: 'onBoard', look: 'ready' },
+    ],
+    [
+      'a preview of another climb on your link: no frost',
+      { ...MINE, commitButton: 'putOnWall' as const, otherClimbLit: true },
+      { state: 'put_on_wall', driving: false },
+    ],
+    ['your link, the climb on screen dark', { ...MINE }, { state: 'dark', driving: false }],
+    ['no board', {}, { state: 'connect', driving: false }],
+  ] as const)('%s', (_case, input, expected) => {
+    expect(resolveWallControl({ ...FREE, ...input })).toMatchObject(expected);
+  });
+
+  // The same account holds the board through another device: never "On Marco's
+  // board" with this climber's own name and face.
+  it('says On your other phone when this account holds the board on another device', () => {
+    const model = resolveWallControl({
+      ...FREE,
+      ...LIT,
+      ...CREW,
+      holderIsAuthoritative: true,
+      holderIsSelfAccount: true,
+      pressAction: 'relay',
+      crewFace: ME,
+    });
+    expect(model).toMatchObject({
+      state: 'crew',
+      holder: null,
+      holderName: null,
+      holderFace: null,
+      driving: false,
+      labelKey: 'onOtherPhone',
+      a11yLabelKey: 'onOtherPhone',
+      a11yHintKey: 'relayHintOtherPhone',
+      bulbValueKey: 'onOtherPhone',
+    });
   });
 });
