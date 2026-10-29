@@ -1870,7 +1870,7 @@ presence:board:{boardId}:user:{id}  # String - proof-of-presence stamp for repor
 
 Board presence is a separate pub/sub domain from party sessions. `resolveBoardForSerial` maps a BLE serial to one active `user_boards.id`; `resolveBoardForConfig` maps serial-less hardware to one hidden system-owned board per normalized `(boardType, layoutId, sizeId, setIds)` config. `reportBoardClimb` requires a live proof-of-presence stamp for that board before it publishes a `BoardClimbSet` event. The report path is pipelined: `pubsub.getBoardReportGate` reads membership + first-seen + the dedup marker + the current writer in one round trip, and `pubsub.commitBoardClimb` writes the history append, the writer hand-off (atomic `SET ... GET`), the dedup marker, and the session→board mapping in another. An identical retry (same emitter, climb, angle, and orientation) within the 10 s dedup window is accepted as a no-op while that emitter still holds the wall. `BoardPresenceClimb.mirrored` is the orientation the reporter says it wrote to the wall (the phone sends the orientation its auto-sender actually lit, which a solo drawer flip can make differ from the queue item). It is part of the dedup marker, so flipping a lit climb is a new report with its own history entry. Null means unknown: an older reporter that sent nothing, or a durable `board_climb_events` row, which has no orientation column. Undo prefers the recorded orientation; a kiosk relight prefers a standing flip on the relighting phone, then the recorded orientation, then un-mirrored.
 
-Redis-backed deployments keep the last 50 climbs for 1 week (`BOARD_HISTORY_TTL`) so late subscribers can backfill before listening to `boardsesh:board:{boardId}`; the seq counter shares that TTL and reseeds itself past the durable `board_climb_events` floor when it comes back small after expiry. Local-only deployments dispatch live board-presence events in process and keep proof-of-presence in memory with scheduled TTL cleanup; they do not provide board history backfill across process restarts.
+Redis-backed deployments keep the last 50 climbs for 1 week (`BOARD_HISTORY_TTL`) so late subscribers can backfill before listening to `boardsesh:board:{boardId}`; the Redis seq counter shares that TTL, but PostgreSQL `user_boards.presence_seq` is the production authority for every reservation, including stats and connection events without durable climb rows. Redis INCR only supplies a candidate; counter expiry, flush, or failover cannot regress the published sequence. Local-only deployments dispatch live board-presence events in process and keep proof-of-presence in memory with scheduled TTL cleanup; they do not provide board history backfill across process restarts.
 
 ### Graceful Shutdown
 
@@ -2583,3 +2583,14 @@ With `KILTER_LIVE_SYNC_ENABLED=1`, authenticated `boardNowPlaying` subscribers w
 `BoardHistoryUpdated { climbs, seq }` merges imported history without changing current climb, holder, queue, or statistics. `boardRecentHistory` merges recent native/imported history; `boardHistoryPage(boardId, limit, before)` returns durable chronological `entries` and opaque `nextCursor`. Both carry the same board access checks as existing presence reads. Legacy `boardRecentClimbs` and `boardHistory` remain native-only.
 
 The shared pagination hook loads one first durable page independently of Redis history, retries failures, and refreshes on reconnect/pull-to-refresh. See [Kilter live integration](kilter-live-history.md) for source matching, occurrence identity, credentials, and deployment order.
+
+### Board-presence subscription recovery
+
+The injected client auto-reconnects ordinary WebSocket interruptions. Once a
+subscription reports a terminal non-denial error, the shared presence hook releases
+it and retries after 1, 2, 4, 8, 16, then 30 seconds (capped at 30). A received
+event resets backoff. Reconnect, foreground, and manual refresh can retry immediately.
+Each attempt subscribes before catch-up and preserves loaded history and sequence
+cursors. Retired callbacks cannot alter the replacement reader. NOT_FOUND or a
+clean server completion retires the reader, clears its private caches, and stops
+recovery. Board, capability, client changes and unmount cancel pending retries.

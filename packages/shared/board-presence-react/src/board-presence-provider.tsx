@@ -9,12 +9,10 @@ import {
   type BoardPresenceCatchUpInfo,
   type BoardPresenceCurrentState,
   type BoardPresenceFeedState,
-  type UseBoardPresenceResult,
 } from './use-board-presence';
 import type { BoardPresenceClient } from './types';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
-const BoardPresenceContext = createContext<UseBoardPresenceResult | undefined>(undefined);
 const BoardPresenceActionsContext = createContext<BoardPresenceActions | undefined>(undefined);
 const BoardPresenceCurrentContext = createContext<BoardPresenceCurrentState | undefined>(undefined);
 const BoardPresenceFeedContext = createContext<BoardPresenceFeedState | undefined>(undefined);
@@ -135,32 +133,22 @@ export function BoardPresenceProvider({
   );
 
   return (
-    <BoardPresenceContext.Provider value={value}>
-      <BoardPresenceActionsContext.Provider value={actions}>
-        <BoardPresenceCurrentContext.Provider value={current}>
-          <BoardPresenceHasClimbContext.Provider value={hasClimb}>
-            <BoardPresenceWallClimbContext.Provider value={wallClimb}>
-              <BoardPresenceClearedClimbContext.Provider value={clearedClimbUuid}>
-                <BoardPresenceFeedContext.Provider value={feed}>
-                  <BoardPresenceClientContext.Provider value={clientValue}>
-                    {children}
-                  </BoardPresenceClientContext.Provider>
-                </BoardPresenceFeedContext.Provider>
-              </BoardPresenceClearedClimbContext.Provider>
-            </BoardPresenceWallClimbContext.Provider>
-          </BoardPresenceHasClimbContext.Provider>
-        </BoardPresenceCurrentContext.Provider>
-      </BoardPresenceActionsContext.Provider>
-    </BoardPresenceContext.Provider>
+    <BoardPresenceActionsContext.Provider value={actions}>
+      <BoardPresenceCurrentContext.Provider value={current}>
+        <BoardPresenceHasClimbContext.Provider value={hasClimb}>
+          <BoardPresenceWallClimbContext.Provider value={wallClimb}>
+            <BoardPresenceClearedClimbContext.Provider value={clearedClimbUuid}>
+              <BoardPresenceFeedContext.Provider value={feed}>
+                <BoardPresenceClientContext.Provider value={clientValue}>
+                  {children}
+                </BoardPresenceClientContext.Provider>
+              </BoardPresenceFeedContext.Provider>
+            </BoardPresenceClearedClimbContext.Provider>
+          </BoardPresenceWallClimbContext.Provider>
+        </BoardPresenceHasClimbContext.Provider>
+      </BoardPresenceCurrentContext.Provider>
+    </BoardPresenceActionsContext.Provider>
   );
-}
-
-export function useBoardPresenceContext(): UseBoardPresenceResult {
-  const context = useContext(BoardPresenceContext);
-  if (context === undefined) {
-    throw new Error('useBoardPresenceContext must be used within a BoardPresenceProvider');
-  }
-  return context;
 }
 
 export function useBoardPresenceActions(): BoardPresenceActions {
@@ -240,7 +228,6 @@ export function useBoardPresenceClient(): BoardPresenceClientValue {
 }
 
 export {
-  BoardPresenceContext,
   BoardPresenceActionsContext,
   BoardPresenceCurrentContext,
   BoardPresenceFeedContext,

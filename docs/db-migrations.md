@@ -280,3 +280,16 @@ both". Union merge is git's built-in answer for exactly this file shape.
 Without it the renumber bot blocks on nearly every table-adding PR, which is most of
 them. The failure mode is loud rather than silent: if both sides add the _same_ export,
 the union keeps both copies and TypeScript fails the build.
+
+## Historical board-presence serial index (#2713)
+
+The migration called 0121 in the original board-presence review was renumbered to
+`0124_majestic_pixie`. It trims serials, clears duplicate bindings, and creates
+`user_boards_unique_serial` inside the migrator transaction. Its lock duration was
+not measured; do not infer a sub-second bound. Later migration 0125 drops that
+global index, 0132 excludes system catalogue boards from owner uniqueness, and
+0207 scopes owner uniqueness by board type. Do not replay or edit the applied
+historical migration or build its obsolete global index concurrently. A populated
+database upgrading from before 0124 needs a separate maintenance assessment of
+the normalization updates and index build on a representative copy. Current
+hardening requires no schema change.

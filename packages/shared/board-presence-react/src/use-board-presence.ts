@@ -274,40 +274,32 @@ export function useBoardPresence(
       boardUuidRef.current === boardUuid &&
       clientRef.current === client;
 
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryAttempt = 0;
+    let streamGeneration = 0;
+    let streamFailed = false;
+    let unsubscribe: (() => void) | null = null;
+    const cancelRetry = () => {
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+    const disposeStream = () => {
+      streamGeneration += 1;
+      const release = unsubscribe;
+      unsubscribe = null;
+      release?.();
+    };
     const retireReader = () => {
       if (!isCurrent()) return;
       isActive = false;
+      cancelRetry();
+      disposeStream();
       catchUpRef.current = null;
       observedSeqRef.current = 0;
       dispatch({ type: 'RESET' });
       setUndoTarget(null);
       setIsLive(false);
       setIsDenied(true);
-    };
-    // Set by a stream error that was not a denial, so the completion graphql-ws
-    // delivers after an error result is not read as the server ending the stream.
-    let streamFailed = false;
-    const onStreamError = (error: unknown) => {
-      if (!isCurrent()) return;
-      if (isBoardReadDenied(error)) {
-        retireReader();
-        return;
-      }
-      // A transport failure (including graphql-ws giving up reconnecting) or a
-      // non-denial server error: keep the loaded wall, refresh and catch-ups,
-      // and only drop the live flag.
-      streamFailed = true;
-      setIsLive(false);
-    };
-    const onStreamComplete = () => {
-      if (!isCurrent()) return;
-      if (streamFailed) {
-        setIsLive(false);
-        return;
-      }
-      // The server ended the stream without an error: its per-event access
-      // recheck no longer admits this reader.
-      retireReader();
     };
 
     const runCatchUp = (reason: BoardPresenceCatchUpReason) => {
@@ -383,46 +375,81 @@ export function useBoardPresence(
           }
         });
     };
-    catchUpRef.current = runCatchUp;
-
-    // 1) Subscribe FIRST. Events arriving during the catch-up fetches below are
-    //    buffered straight into the reducer; the reducer's seq-dedup then keeps
-    //    a stale backfill from clobbering a newer live current.
-    const unsubscribe = client.subscribeNowPlaying(
-      boardId,
-      (event) => {
-        if (!isCurrent()) {
+    const attachStream = () => {
+      if (!isCurrent()) return;
+      cancelRetry();
+      disposeStream();
+      streamFailed = false;
+      const generation = streamGeneration;
+      const isCurrentStream = () => isCurrent() && generation === streamGeneration;
+      const onStreamError = (error: unknown) => {
+        if (!isCurrentStream()) return;
+        if (isBoardReadDenied(error)) {
+          retireReader();
           return;
         }
-        const eventSeq = boardPresenceEventSeq(event);
-        if (eventSeq !== null) {
-          const previousObservedSeq = observedSeqRef.current;
-          observedSeqRef.current = Math.max(previousObservedSeq, eventSeq);
-          if (hasSequenceBaseline && eventSeq > previousObservedSeq + 1) {
-            runCatchUp('gap');
-          }
-          hasSequenceBaseline = true;
+        streamFailed = true;
+        setIsLive(false);
+        // Invalidate callbacks before releasing: release can call complete.
+        disposeStream();
+        if (retryTimer === null) {
+          const delay = Math.min(1_000 * 2 ** Math.min(retryAttempt, 5), 30_000);
+          retryAttempt += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            attachStream();
+            runCatchUp('reconnect');
+          }, delay);
         }
-        const action = mapBoardPresenceEnvelopeToAction(event);
-        if (action) {
-          dispatch(action);
+      };
+      try {
+        const release = client.subscribeNowPlaying(
+          boardId,
+          (event) => {
+            if (!isCurrentStream()) return;
+            retryAttempt = 0;
+            const eventSeq = boardPresenceEventSeq(event);
+            if (eventSeq !== null) {
+              const previousObservedSeq = observedSeqRef.current;
+              observedSeqRef.current = Math.max(previousObservedSeq, eventSeq);
+              if (hasSequenceBaseline && eventSeq > previousObservedSeq + 1) runCatchUp('gap');
+              hasSequenceBaseline = true;
+            }
+            const action = mapBoardPresenceEnvelopeToAction(event);
+            if (action) dispatch(action);
+          },
+          onStreamError,
+          () => {
+            if (isCurrentStream()) retireReader();
+          },
+          ...capabilityArgs,
+        );
+        // An injected client may fail or complete before subscribe returns.
+        if (isCurrentStream()) {
+          unsubscribe = release;
+          setIsLive(true);
+        } else {
+          release();
         }
-      },
-      onStreamError,
-      onStreamComplete,
-      ...capabilityArgs,
-    );
-    setIsLive(isCurrent());
-    if (!isCurrent()) return unsubscribe;
+      } catch (error) {
+        onStreamError(error);
+      }
+    };
+    const refreshReader = (reason: BoardPresenceCatchUpReason) => {
+      if (!isCurrent()) return;
+      if (streamFailed) attachStream();
+      runCatchUp(reason);
+    };
+    catchUpRef.current = refreshReader;
 
-    // 1b) Catch up on every reconnect. graphql-ws transparently re-subscribes
-    //     after a dropped socket, but the live feed rides Redis pub/sub (no
-    //     replay), so any climb pushed during the gap window is lost for this
-    //     client and the seq-gap detector above only fires if a *later* event
-    //     happens to arrive. Proactively re-read the durable Redis history on
-    //     reconnect so a just-missed send shows up without waiting for the next
-    //     one. Optional on the client (web omits it); returns an unsubscribe.
-    const unsubscribeReconnect = client.onReconnect?.(() => runCatchUp('reconnect'));
+    // Subscribe before fetching so a stale backfill cannot replace a live set.
+    attachStream();
+    if (!isCurrent())
+      return () => {
+        cancelRetry();
+        disposeStream();
+      };
+    const unsubscribeReconnect = client.onReconnect?.(() => refreshReader('reconnect'));
 
     void client
       .fetchRecentHistory?.(boardId, ...capabilityArgs)
@@ -489,7 +516,8 @@ export function useBoardPresence(
       setIsLive(false);
       catchUpRef.current = null;
       unsubscribeReconnect?.();
-      unsubscribe();
+      cancelRetry();
+      disposeStream();
     };
   }, [boardId, boardUuid, client]);
 

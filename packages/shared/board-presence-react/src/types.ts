@@ -37,7 +37,9 @@ export interface BoardPresenceClient {
    * Subscribe to a board's live "now on the wall" feed. Each event is one
    * `BoardPresenceEvent` (set or cleared). Returns an unsubscribe function the
    * hook calls on board change / unmount. `onError` (optional) reports a
-   * transport-level failure without tearing down the hook's state.
+   * terminal failure without tearing down the hook's state. The transport is
+   * expected to auto-reconnect ordinary socket interruptions; the hook retries
+   * terminal non-denial failures with capped exponential backoff.
    */
   subscribeNowPlaying(
     boardId: number,

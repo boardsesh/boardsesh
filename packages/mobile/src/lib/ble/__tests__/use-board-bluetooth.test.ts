@@ -82,10 +82,9 @@ vi.mock('@boardsesh/ble-protocol/moonboard', () => ({
   isMoonboardDeviceName: vi.fn((name?: string) => !!name && name.startsWith('MoonBoard')),
 }));
 
+const mockTranslate = vi.hoisted(() => (key: string) => key);
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
+  useTranslation: () => ({ t: mockTranslate }),
 }));
 
 // The serial-recording path imports the GraphQL HTTP client, which transitively
@@ -1094,6 +1093,56 @@ describe('useBoardBluetooth', () => {
       climbLayoutId: 1,
       connectedViaMismatchOverride: true,
     });
+  });
+
+  it('keeps callbacks stable while using a board id resolved during connect', async () => {
+    let resolveRequest: ((connection: { deviceId: string; deviceName: string }) => void) | undefined;
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn(
+        () =>
+          new Promise<{ deviceId: string; deviceName: string }>((resolve) => {
+            resolveRequest = resolve;
+          }),
+      ),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x01]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+    const { result, rerender } = renderHook(
+      ({ boardId }: { boardId: number | null }) =>
+        useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, analyticsBoardId: boardId }),
+      { initialProps: { boardId: null as number | null } },
+    );
+    const initialConnect = result.current.connect;
+    const initialSend = result.current.sendFramesToBoard;
+    let pendingConnect: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      pendingConnect = initialConnect();
+    });
+    expect(resolveRequest).toBeDefined();
+    rerender({ boardId: 99 });
+    expect(result.current.connect).toBe(initialConnect);
+    expect(result.current.sendFramesToBoard).toBe(initialSend);
+    await act(async () => {
+      resolveRequest?.({ deviceId: 'device-1', deviceName: 'Kilter Board#123@3' });
+      expect(await pendingConnect).toBe(true);
+    });
+    expect(mockTrack).toHaveBeenCalledWith('Bluetooth Connection Success', expect.objectContaining({ boardId: 99 }));
+
+    rerender({ boardId: 100 });
+    expect(result.current.connect).toBe(initialConnect);
+    expect(result.current.sendFramesToBoard).toBe(initialSend);
+    await act(async () => {
+      await initialSend('p100r12');
+    });
+    expect(mockTrack).toHaveBeenCalledWith('Climb Sent to Board Success', expect.objectContaining({ boardId: 100 }));
   });
 
   it('attaches connectedViaMismatchOverride to the connection-success event', async () => {
