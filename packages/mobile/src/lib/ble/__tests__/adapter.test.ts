@@ -14,7 +14,28 @@ const mockBleManager = vi.hoisted(() => ({
   onStateChange: vi.fn(),
 }));
 
+// Platform + app state the adapter reads before each inter-chunk delay (#7025).
+// Defaults to a foregrounded iOS app, which keeps the delay the other tests
+// rely on; the #7025 tests flip it per case.
+const mockRuntime = vi.hoisted(() => ({
+  platformOs: 'ios' as 'ios' | 'android',
+  appState: 'active' as 'active' | 'background' | 'inactive',
+}));
+
 // ── Module mocks ────────────────────────────────────────────────────────
+
+vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return mockRuntime.platformOs;
+    },
+  },
+  AppState: {
+    get currentState() {
+      return mockRuntime.appState;
+    },
+  },
+}));
 
 vi.mock('react-native-ble-plx', () => ({
   BleManager: vi.fn(),
@@ -162,6 +183,8 @@ describe('RNBleAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+    mockRuntime.platformOs = 'ios';
+    mockRuntime.appState = 'active';
   });
 
   describe('isAvailable', () => {
@@ -1683,6 +1706,103 @@ describe('RNBleAdapter', () => {
         chunkSize: 244,
         chunkCount: 2,
       });
+    });
+  });
+
+  // #7025: Android stops firing JS timers while the activity is paused, so a
+  // send started from the session notification used to write chunk 1 and then
+  // wait in the inter-chunk setTimeout until the app came back. Fake timers
+  // that are never advanced stand in for those paused timers.
+  describe('write — inter-chunk delay while backgrounded (#7025)', () => {
+    // A 48-byte MoonBoard packet goes out as 20/20/8.
+    const moonChunks = [new Uint8Array(20).fill(1), new Uint8Array(20).fill(2), new Uint8Array(8).fill(3)];
+
+    async function connectMoonBoard() {
+      const harness = setupWriteDiagnosticsAdapter('moonboard', vi.fn().mockResolvedValue({ mtu: 247 }));
+      await harness.adapter.requestAndConnect();
+      vi.mocked(splitMessages).mockReturnValue(moonChunks);
+      return harness;
+    }
+
+    async function flushMicrotasks() {
+      for (let tick = 0; tick < 20; tick++) {
+        await Promise.resolve();
+      }
+    }
+
+    it('writes every chunk of a backgrounded Android send without waiting on a JS timer', async () => {
+      const { adapter, writeFn } = await connectMoonBoard();
+      mockRuntime.platformOs = 'android';
+      mockRuntime.appState = 'background';
+      vi.useFakeTimers();
+      try {
+        const writePromise = adapter.write(new Uint8Array(48));
+        await flushMicrotasks();
+
+        expect(writeFn).toHaveBeenCalledTimes(3);
+        expect(vi.getTimerCount()).toBe(0);
+        await writePromise;
+      } finally {
+        await vi.runAllTimersAsync();
+        vi.useRealTimers();
+      }
+    });
+
+    it('writes every chunk of a large Aurora send from the Android background too', async () => {
+      const { adapter, writeFn } = setupWriteDiagnosticsAdapter('aurora', vi.fn().mockResolvedValue({ mtu: 247 }));
+      await adapter.requestAndConnect();
+      vi.mocked(splitMessages).mockReturnValue([new Uint8Array(244), new Uint8Array(56)]);
+      mockRuntime.platformOs = 'android';
+      mockRuntime.appState = 'background';
+      vi.useFakeTimers();
+      try {
+        const writePromise = adapter.write(new Uint8Array(300));
+        await flushMicrotasks();
+
+        expect(writeFn).toHaveBeenCalledTimes(2);
+        await writePromise;
+      } finally {
+        await vi.runAllTimersAsync();
+        vi.useRealTimers();
+      }
+    });
+
+    it('still waits the inter-chunk delay for a foregrounded Android send', async () => {
+      const { adapter, writeFn } = await connectMoonBoard();
+      mockRuntime.platformOs = 'android';
+      mockRuntime.appState = 'active';
+      vi.useFakeTimers();
+      try {
+        const writePromise = adapter.write(new Uint8Array(48));
+        await flushMicrotasks();
+
+        expect(writeFn).toHaveBeenCalledTimes(1);
+
+        await vi.runAllTimersAsync();
+        await writePromise;
+        expect(writeFn).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still waits the inter-chunk delay on iOS whatever the app state', async () => {
+      const { adapter, writeFn } = await connectMoonBoard();
+      mockRuntime.platformOs = 'ios';
+      mockRuntime.appState = 'background';
+      vi.useFakeTimers();
+      try {
+        const writePromise = adapter.write(new Uint8Array(48));
+        await flushMicrotasks();
+
+        expect(writeFn).toHaveBeenCalledTimes(1);
+
+        await vi.runAllTimersAsync();
+        await writePromise;
+        expect(writeFn).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

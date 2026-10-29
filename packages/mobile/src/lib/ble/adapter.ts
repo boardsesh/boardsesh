@@ -1,3 +1,4 @@
+import { AppState, Platform } from 'react-native';
 import { type Device, type Characteristic, type BleError } from 'react-native-ble-plx';
 import {
   UART_SERVICE_UUID,
@@ -39,6 +40,24 @@ const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Whether the inter-chunk pacing timer will actually fire right now.
+ *
+ * On Android, React Native's JavaTimerManager stops firing JS timers once the
+ * activity pauses (`onHostPause`) unless a headless JS task is running, while
+ * the JS thread itself keeps running. So a send started from the session
+ * notification with the app in the background wrote chunk 1 and then sat in
+ * `setTimeout` until the app came back, by which point the board had thrown
+ * the partial packet away (#7025). With the app in the background, skip the
+ * pause between chunks: each ble-plx write already resolves only after the
+ * native GATT write completes, so the chunks still go out one at a time.
+ * Foreground sends keep the delay unchanged. iOS never pauses JS timers this
+ * way, and its store build writes natively anyway.
+ */
+function canPaceChunksWithJsTimer(): boolean {
+  return Platform.OS !== 'android' || AppState.currentState === 'active';
+}
 
 /**
  * Find a write characteristic by service + characteristic UUID, returning
@@ -417,7 +436,7 @@ export class RNBleAdapter implements BluetoothAdapter {
         throw new DOMException('Write aborted', 'AbortError');
       }
 
-      if (chunkIndex > 0) {
+      if (chunkIndex > 0 && canPaceChunksWithJsTimer()) {
         await delay(INTER_CHUNK_DELAY_MS);
         if (signal?.aborted) {
           throw new DOMException('Write aborted', 'AbortError');
