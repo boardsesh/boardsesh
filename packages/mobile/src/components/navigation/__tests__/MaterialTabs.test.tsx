@@ -67,7 +67,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
-import { MaterialTabs } from '../MaterialTabs';
+import { MaterialTabs, primaryIndicatorGeometry } from '../MaterialTabs';
 
 const OPTIONS = [
   { key: 'progress', label: 'Progress' },
@@ -118,5 +118,26 @@ describe('MaterialTabs', () => {
   it('exposes the group accessibility label on a tablist', () => {
     const { getByRole } = render(<MaterialTabs {...makeProps({ accessibilityLabel: 'Dashboard' })} />);
     expect(getByRole('tablist').getAttribute('aria-label')).toBe('Dashboard');
+  });
+});
+
+describe('primaryIndicatorGeometry', () => {
+  it('stays hidden until the slot and the active label are measured', () => {
+    expect(primaryIndicatorGeometry(0, 0, 60)).toBeNull();
+    expect(primaryIndicatorGeometry(120, 0, undefined)).toBeNull();
+    expect(primaryIndicatorGeometry(120, 0, 0)).toBeNull();
+  });
+
+  it('matches the label width and centres it in the active slot', () => {
+    expect(primaryIndicatorGeometry(120, 0, 60)).toEqual({ width: 60, offset: 30 });
+    expect(primaryIndicatorGeometry(120, 2, 70)).toEqual({ width: 70, offset: 265 });
+  });
+
+  it('never draws narrower than 24dp', () => {
+    expect(primaryIndicatorGeometry(120, 1, 10)).toEqual({ width: 24, offset: 168 });
+  });
+
+  it('never spills past its own slot', () => {
+    expect(primaryIndicatorGeometry(80, 1, 140)).toEqual({ width: 80, offset: 80 });
   });
 });
