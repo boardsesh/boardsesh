@@ -36,6 +36,7 @@ import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-co
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { handleCrewCadenceChange } from '../../lib/crew-rest-cadence';
 import { nowMs } from '../../lib/clock';
+import { noteRelayReceipt } from '../../lib/relay-receipt';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
@@ -744,6 +745,18 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
+            // #7014: stamp a server event that moves the wall, so the BLE
+            // auto-sender can time receipt → write. Read before the dispatch:
+            // the comparison is against what was current until now.
+            if (event.__typename === 'CurrentClimbChanged' || event.__typename === 'FullSync') {
+              noteRelayReceipt({
+                eventType: event.__typename,
+                incomingQueueItemUuid:
+                  event.__typename === 'FullSync' ? event.state.currentClimbQueueItem?.uuid : event.item?.uuid,
+                localQueueItemUuid: stateRef.current.currentClimbQueueItem?.uuid,
+                correlationId: event.__typename === 'CurrentClimbChanged' ? event.correlationId : null,
+              });
+            }
             dispatch({
               ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
               serverSequence: gateEvent.sequence ?? undefined,

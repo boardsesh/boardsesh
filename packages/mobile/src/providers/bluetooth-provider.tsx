@@ -38,6 +38,7 @@ import {
   type StaleCurrentHoldReleaseReason,
 } from '../lib/ble/stale-current-hold';
 import { nowMs } from '../lib/clock';
+import { relayClockMs, takeRelayReceipt } from '../lib/relay-receipt';
 import {
   resolveBleSerialNumbers,
   useResolvedBleDeviceBoards,
@@ -730,6 +731,13 @@ function BluetoothAutoSender({
             continue;
           }
 
+          // #7014: a crewmate's climb arriving over the queue stream carries its
+          // receipt time; this write is the end of that relay. Taken here, past
+          // every skip above, so only a write that actually goes out consumes it.
+          const relayReceipt = takeRelayReceipt(item.uuid);
+          const writeStartedAt = relayReceipt ? relayClockMs() : 0;
+          const appStateAtWrite = relayReceipt ? AppState.currentState : null;
+
           try {
             const result = await requestSendFramesToBoard(item.climb.frames, effectiveMirrored, signal, {
               sendSource: 'auto',
@@ -738,6 +746,7 @@ function BluetoothAutoSender({
               climbBoardType: item.climb.boardType,
               climbLayoutId: item.climb.layoutId,
             });
+            const writeFinishedAt = relayReceipt ? relayClockMs() : 0;
 
             // After the await, the AutoSender may have unmounted — skip
             // post-send side effects.
@@ -750,6 +759,18 @@ function BluetoothAutoSender({
               onStaleCurrentPassedRef.current(item);
               onWallConfirmedRef.current(item, effectiveMirrored);
               hapticSuccess();
+              if (relayReceipt) {
+                track(SHARED_EVENTS.ClimbRelayWriteTimed, {
+                  relayToWriteStartMs: Math.round(writeStartedAt - relayReceipt.receivedAt),
+                  writeDurationMs: Math.round(writeFinishedAt - writeStartedAt),
+                  appState: appStateAtWrite,
+                  eventType: relayReceipt.eventType,
+                  correlationId: relayReceipt.correlationId,
+                  climbUuid: item.climb.uuid,
+                  targetQueueItemUuid: item.uuid,
+                  climbBoardType: item.climb.boardType,
+                });
+              }
             }
           } catch (error) {
             if (signal?.aborted) return;

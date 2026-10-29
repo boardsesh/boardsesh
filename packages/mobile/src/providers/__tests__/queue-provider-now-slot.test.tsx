@@ -187,6 +187,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 
 import { QueueProvider, useQueue, useQueueSessionId } from '../queue-provider';
 import { resetQueueServerProbeReportForTests } from '../queue/now-slot-server';
+import { resetRelayReceiptForTests, takeRelayReceipt } from '../../lib/relay-receipt';
 
 type Queue = ReturnType<typeof useQueue>;
 type Snapshot = Pick<
@@ -716,6 +717,55 @@ describe('QueueProvider now-slot mode (F3)', () => {
       expect(analytics.track.mock.calls.some(([eventName]) => eventName === SHARED_EVENTS.QueueServerProbe)).toBe(
         false,
       );
+    });
+
+    // #7014: the BLE auto-sender times a crewmate's climb from the moment this
+    // stream hands it over, so a peer's move is stamped and this phone's own
+    // echo is not.
+    describe('relay receipt', () => {
+      function sendCurrentClimbChanged(item: ClimbQueueItem, clientId: string, correlationId: string) {
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'CurrentClimbChanged',
+                sequence: 2,
+                stateHash: 'hash-2',
+                item,
+                clientId,
+                correlationId,
+              },
+            },
+          });
+        });
+      }
+
+      it('stamps a crewmate moving the wall', async () => {
+        const latest = await renderSession([A, B, C], B);
+        resetRelayReceiptForTests();
+
+        sendCurrentClimbChanged(C, 'client-peer', 'corr-peer');
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({
+          queueItemUuid: 'c',
+          eventType: 'CurrentClimbChanged',
+          correlationId: 'corr-peer',
+        });
+      });
+
+      it('does not stamp the echo of this phone’s own move', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        resetRelayReceiptForTests();
+
+        sendCurrentClimbChanged(C, 'client-self', 'corr-self');
+
+        expect(takeRelayReceipt('c')).toBeNull();
+      });
     });
   });
 });

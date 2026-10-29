@@ -477,6 +477,18 @@ export const SHARED_EVENTS = {
   // Props: board config (boardName/layoutId/sizeId when known), climbUuid,
   // sendSource (when known), skipReason.
   ClimbSentToBoardSkipped: 'Climb Sent to Board Skipped',
+  // Stage timings for a crewmate's climb reaching the wall through this phone
+  // (#7014). Fired by the mobile BLE auto-sender after a successful write whose
+  // climb arrived as a server `CurrentClimbChanged` / `FullSync` that changed
+  // the current climb; never for this phone's own moves. Companion to
+  // `Climb Sent to Board Success` (same `climbUuid` / `targetQueueItemUuid`),
+  // kept separate because that event is tracked inside the BLE writer.
+  // Props: relayToWriteStartMs (event receipt → write call, covers the React
+  // render and the drain), writeDurationMs (write call → resolve, includes any
+  // wait behind an earlier write in the chain), appState ('active' |
+  // 'background' | 'inactive' at write start), eventType, correlationId,
+  // climbUuid, targetQueueItemUuid, climbBoardType. Instrumentation, not a KPI.
+  ClimbRelayWriteTimed: 'Climb Relay Write Timed',
   // Fired on a successful USER-INITIATED clear-all write (sendSource 'clear';
   // both Aurora and MoonBoard, the latter via its `l##` empty frame — #3420).
   // Internal clears (spill skip, auto-sent empty frames) are untagged and do
