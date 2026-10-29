@@ -599,8 +599,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
         simultaneousWith={fullSwipe.gesture}
         leftThreshold={SWIPE_REVEAL_THRESHOLD}
         rightThreshold={SWIPE_REVEAL_THRESHOLD}
-        dragOffsetFromLeftEdge={SWIPE_ACTIVATION_OFFSET}
-        dragOffsetFromRightEdge={SWIPE_ACTIVATION_OFFSET}
+        dragOffsetFromLeft={SWIPE_ACTIVATION_OFFSET}
+        dragOffsetFromRight={-SWIPE_ACTIVATION_OFFSET}
         overshootLeft
         overshootRight
         renderLeftActions={onPlayNext ? renderLeftActions : undefined}
