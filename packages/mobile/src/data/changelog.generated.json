@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-10-28T20:16:54.813Z",
+  "generatedAt": "2026-10-29T09:52:33.209Z",
   "entries": [
+    {
+      "prNumber": 7037,
+      "category": "fixed",
+      "title": "Joining a crew's session at a gym puts you on the same wall, with its history.",
+      "mergedAt": "2026-10-29T08:08:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7037"
+    },
+    {
+      "prNumber": 7035,
+      "category": "fixed",
+      "title": "Your crew sees your name and photo when you host a session from an iPhone",
+      "mergedAt": "2026-10-29T06:52:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7035"
+    },
     {
       "prNumber": 6969,
       "category": "fixed",

@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-29
+
+### Fixed
+
+- Joining a crew's session at a gym puts you on the same wall, with its history. ([#7037](https://github.com/boardsesh/boardsesh/pull/7037))
+- Your crew sees your name and photo when you host a session from an iPhone ([#7035](https://github.com/boardsesh/boardsesh/pull/7035))
+
 ## 2026-10-28
 
 ### New
