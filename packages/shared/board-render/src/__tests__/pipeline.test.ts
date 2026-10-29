@@ -412,6 +412,65 @@ describe('renderBoardImageBuffer with caches', () => {
     expect(resolveCalls).toEqual([lightRelPath, darkRelPath]);
   });
 
+  it('shares only the transparent board plane across climbs with different bokeh', async () => {
+    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('bokeh.png', { r: 90, g: 90, b: 90 }));
+    const ogBase = new BoundedLru<OgBaseResult>({
+      maxEntries: 2,
+      maxBytes: 8 * 1024 * 1024,
+      sizeOf: (entry) => entry.base.length,
+    });
+    const params = {
+      ...baseParams,
+      overlayBuffer: transparentOverlay(),
+      isOgVariant: true,
+      format: 'png' as const,
+      boardDetails: boardWithLayers(['layer-a.png']),
+      caches: { ogBase },
+    };
+    const first = await renderBoardImageBuffer({
+      ...params,
+      ogBokeh: { points: [{ x: 4, y: 6, color: '#FF0000' }], source: { w: SIZE, h: SIZE } },
+    });
+    const second = await renderBoardImageBuffer({
+      ...params,
+      ogBokeh: { points: [{ x: 4, y: 6, color: '#0000FF' }], source: { w: SIZE, h: SIZE } },
+    });
+    expect(first.cache).toBe('miss');
+    expect(second.cache).toBe('hit');
+    expect(ogBase.size).toBe(1);
+    expect(resolveCalls).toHaveLength(1);
+    const redCard = await sharp(first.buffer).ensureAlpha().raw().toBuffer();
+    const blueCard = await sharp(second.buffer).ensureAlpha().raw().toBuffer();
+    const center = (315 * 1200 + 300) * 4;
+    expect(redCard[center]).toBeGreaterThan(blueCard[center] + 50);
+    expect(blueCard[center + 2]).toBeGreaterThan(redCard[center + 2] + 50);
+  });
+
+  it.each([
+    { includeBackground: true, dimBackground: 0 },
+    { includeBackground: true, dimBackground: 0.2 },
+    { includeBackground: false, dimBackground: 0 },
+  ])('keeps bokeh and text in every OG composition path: %o', async (options) => {
+    filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('paths.png', { r: 90, g: 90, b: 90 }));
+    const text = await sharp({ create: { width: 3, height: 3, channels: 4, background: '#00FF00' } })
+      .png()
+      .toBuffer();
+    const result = await renderBoardImageBuffer({
+      ...baseParams,
+      ...options,
+      overlayBuffer: transparentOverlay(),
+      isOgVariant: true,
+      format: 'png',
+      boardDetails: boardWithLayers(['layer-a.png']),
+      ogBokeh: { points: [{ x: 4, y: 6, color: '#FF0000' }], source: { w: SIZE, h: SIZE } },
+      cardLayers: [{ input: text, left: 1190, top: 620 }],
+    });
+    const pixels = await sharp(result.buffer).ensureAlpha().raw().toBuffer();
+    const glow = (315 * 1200 + 300) * 4;
+    expect(pixels[glow]).toBeGreaterThan(pixels[glow + 2] + 50);
+    expect(readPixel(pixels, 620 * 1200 + 1190)).toEqual([0, 255, 0, 255]);
+  });
+
   it('coalesces concurrent OG base composition across different overlays', async () => {
     filesByRelPath.set(relPathFor('layer-a.png'), await writeLayer('og-coalesced.png', { r: 80, g: 90, b: 100 }));
     const ogBase = new BoundedLru<OgBaseResult>({

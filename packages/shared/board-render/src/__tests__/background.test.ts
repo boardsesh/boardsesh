@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  createOgBackgroundBuffer,
-  getBackgroundRelPaths,
-  resolveArtPath,
-  toDarkArtPath,
-  toWebpPath,
-} from '../background';
+import { createOgFrameBuffer, getBackgroundRelPaths, resolveArtPath, toDarkArtPath, toWebpPath } from '../background';
 
 describe('toWebpPath', () => {
   it('rewrites a .png filename to .webp under the given dir', () => {
@@ -111,26 +105,26 @@ describe('dark art', () => {
   });
 });
 
-describe('createOgBackgroundBuffer', () => {
+describe('createOgFrameBuffer', () => {
   const board = { left: 200, top: 65, width: 500, height: 500 };
 
   it('emits a deterministic 1200x630 SVG for the same board rect', () => {
-    const first = createOgBackgroundBuffer(board).toString('utf8');
-    const second = createOgBackgroundBuffer(board).toString('utf8');
+    const first = createOgFrameBuffer(board).toString('utf8');
+    const second = createOgFrameBuffer(board).toString('utf8');
 
     expect(first).toBe(second);
     expect(first).toContain('width="1200" height="630"');
   });
 
   it('frames the board where the board actually is', () => {
-    const svg = createOgBackgroundBuffer(board).toString('utf8');
+    const svg = createOgFrameBuffer(board).toString('utf8');
 
     // frame inset 14px around the rect: 200-14 = 186, 65-14 = 51.
     expect(svg).toContain('x="186" y="51"');
   });
 
   it('keeps the frame inside the canvas for a full-height board', () => {
-    const svg = createOgBackgroundBuffer({ left: 24, top: 14, width: 720, height: 602 }).toString('utf8');
+    const svg = createOgFrameBuffer({ left: 24, top: 14, width: 720, height: 602 }).toString('utf8');
     const frame = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="20"/.exec(svg);
 
     expect(frame).not.toBeNull();
@@ -142,6 +136,6 @@ describe('createOgBackgroundBuffer', () => {
   it('carries no text, so the composited base stays cacheable per board', () => {
     // A per-climb string in the backdrop would turn the per-board `ogBase`
     // cache into a per-climb one. The climb identity is composited separately.
-    expect(createOgBackgroundBuffer(board).toString('utf8')).not.toContain('<text');
+    expect(createOgFrameBuffer(board).toString('utf8')).not.toContain('<text');
   });
 });

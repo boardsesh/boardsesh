@@ -150,6 +150,7 @@ export default defineConfig({
       './packages/shared/spray-wall-geometry/vite.config.ts',
       './packages/shared/board-look/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
+      './packages/shared/frosted-bokeh/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
       './packages/shared/pr-body/vite.config.ts',
@@ -213,7 +214,7 @@ export default defineConfig({
     // seam crossfade, the veil buckets), and the traced-art shards are hashed
     // into the version directly — both change pixels without touching anything
     // else listed here.
-    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/frosted-bokeh/{src/**,assets/**},packages/backend/src/services/spray-og-card.ts,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
       () => 'vp run check:board-render-version',
   },
   run: {
@@ -892,6 +893,9 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/board-config run typecheck',
         dependsOn: ['codegen'],
       },
+      'typecheck:frosted-bokeh': {
+        command: 'pnpm --filter @boardsesh/frosted-bokeh run typecheck',
+      },
       'typecheck:board-render': {
         command: 'pnpm --filter @boardsesh/board-render run typecheck',
         dependsOn: ['build:constants'],
@@ -1043,6 +1047,7 @@ export default defineConfig({
           'typecheck:key-value-storage',
           'typecheck:board-config',
           'typecheck:board-render',
+          'typecheck:frosted-bokeh',
           'typecheck:board-art-geometry',
           'typecheck:hold-detection',
           'typecheck:hold-detector',

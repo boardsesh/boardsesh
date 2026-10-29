@@ -486,6 +486,10 @@ way it looks like this:
   draw normally, fainter. A new climb or playback frame cross-fades in over 200 ms (at once with Reduce Motion).
   With no holds the lit button falls back to the filled `live` amber with white text (dark text on the dark
   scheme's pale amber). The climber's own face sits at the trailing edge either way.
+  The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
+  the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
+  Climb-link previews reuse the dark preset behind the board/photo and details at 1200×630,
+  with blur and radii scaled by `1200 / 360`. Public spray-wall previews use photo-mapped hold colours.
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
 

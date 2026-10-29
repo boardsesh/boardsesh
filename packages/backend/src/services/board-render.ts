@@ -26,6 +26,7 @@ import {
   type RenderTimings,
 } from '@boardsesh/board-render/pipeline';
 import { createOverlayRenderer, type OverlayRenderer } from '@boardsesh/board-render/wasm';
+import { getOgBokehInput } from '@boardsesh/board-render/frosted-bokeh';
 import type { BoardName } from '@boardsesh/shared-schema';
 import sharp from 'sharp';
 import { logger } from '../utils/logger';
@@ -452,6 +453,7 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
       const rendered = await renderBoardImageBuffer({
         overlayBuffer,
         cardLayers,
+        ogBokeh: params.isOgVariant ? getOgBokehInput(prepared.config) : undefined,
         width: overlay.width,
         height: overlay.height,
         isOgVariant: params.isOgVariant,

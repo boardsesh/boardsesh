@@ -112,13 +112,34 @@ Every option that affects the output is part of the byte-cache key, so an aura
 render can never be served under a classic key. The base cache is keyed only by
 board config because overlay options do not change its board photo backdrop.
 
-**Every Boardsesh caller sends `render_mode` and `field_color` explicitly**, even
+**Every Boardsesh catalogue caller sends `render_mode` and `field_color` explicitly**, even
 though the endpoint would default to them. The query string is the Cloudflare
 cache key and a card is cached `immutable` for a year, so a response already at
 the edge under a bare URL cannot be re-drawn in place — changing the drawing has
 to change the URL. The default is for the callers we do not control: a store
 binary from before the change that prewarms a bare URL, and any third party
 embedding the endpoint.
+
+`v` is the generated `BOARD_RENDER_VERSION`, sent by both web and mobile URL
+builders, including spray-wall previews and share prewarming. It is a cache
+alias, not a rendering option; older unversioned URLs remain accepted. The version
+also hashes the shared bokeh engine and grain texture, the Sharp adapter, the
+text drawing and the spray compositor, so visual changes get new CDN URLs.
+
+### Reusable frosted backdrop
+
+Share cards use the same frosted bokeh as the player's lit board button. The
+pure `@boardsesh/frosted-bokeh` package owns point mapping, falloff, intensity,
+surface presets and the existing grain texture. Native draws those blobs with
+`FrostedBokeh`; `@boardsesh/board-render/frosted-bokeh` draws them through Sharp.
+Neither adapter duplicates the geometry or imports the other platform's renderer.
+
+The board's lit holds turn clockwise into a maximum of 15 soft coloured blobs
+on the full 1200×630 field. The card uses the dark surface, 8% white frost and
+6% still grain, with blur/radii scaled from a 360px control. Catalogue cards use
+the overlay's selected screen palette and effective frame, with a soft dark
+scrim under the details. Board photos, hold marks, framing and text sit above
+the bokeh. With no usable points, the field keeps its neutral frost and grain.
 
 An `aura` render here draws exactly what the app draws. The look's tuning —
 glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
@@ -148,18 +169,19 @@ in-app images at `/render/board` and the compatibility alias
    initialised at server boot, so requests never pay init. If boot init failed
    (transient I/O), requests re-attempt init at most every 30s; until it
    succeeds the endpoint returns 503.
-2. The 1200×630 backdrop + board photos are composited once per board config
-   and cached as raw RGBA (**base cache**, LRU, 24 entries by default). The
+2. The board photos and framing are composited onto a transparent 1200×630 plane once per board config
+   and cached as raw RGBA (**OG base cache**, LRU, 8 entries by default). The
    fallback preview config for every supported board is pre-warmed after boot.
    Warmups share the render cap but use a low-priority queue, so queued request
    work takes the next available slot between board warmups.
-3. Overlay is composited onto the base and encoded — JPEG by default
-   (mozjpeg, quality 85, 4:4:4 chroma), ~50–80KB.
+3. The climb-specific frosted backdrop is drawn underneath that cached plane;
+   the hold overlay and text are composited above it and encoded — JPEG by default
+   (mozjpeg, quality 85, 4:4:4 chroma). Local frosted examples were 61–85KB.
 4. Final bytes land in the **byte cache** (LRU, 32MB by default), so repeat
    fetches (FB, Twitter, WhatsApp, Slack each fetch independently) are served
    from memory.
 
-Steady-state timings: ~250ms for a new climb on a warm board config, ~0ms for
+Before the frosted backdrop, steady-state timings were ~250ms for a new climb on a warm board config, ~0ms for
 repeats, ~700ms worst-case first render of a never-seen board config.
 
 ## Env vars
@@ -292,7 +314,7 @@ answers 500.
 resolver is synchronous and reads the local filesystem, which a photograph
 fetched over HTTP can never satisfy, and its overlay draws a catalogue board's
 fixed geometry. So this path resizes the photo `fit: 'inside'` into the 1200×630
-field (`#181225`, the same play field), centres it, and composites one SVG mark
+frosted bokeh field, centres it, and composites one SVG mark
 per lit hold: the hold's traced silhouette as a polygon when
 `spray_wall_holds.outline` has one, a circle at its mapped radius when it does
 not — the same ring fallback the rest of the render path uses. Canonical
@@ -300,3 +322,7 @@ coordinates reach photo pixels through `invert()` of the version's stored
 homography; a matrix that turns out singular logs at `warn` and renders the photo
 with no overlay, because a card with no holds is a worse card and a 500 on a link
 somebody already posted is a broken one.
+
+Spray cards derive their frosted background from the same photo-mapped marks as
+the foreground overlay, after every public-visibility gate. A singular matrix
+still shows the photo, on neutral frost without coloured blobs.

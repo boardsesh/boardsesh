@@ -125,6 +125,22 @@ describe('renderSprayOgCard — the visibility gate', () => {
     }
   });
 
+  it('changes the frosted margins with the climb while preserving the wall photo', async () => {
+    const deps = makeDeps({}, await makePhotoJpeg());
+    const starting = await renderSprayOgCard({ layoutId: publicWall.layoutId, frames: 'p501r1', format: 'png' }, deps);
+    const finishing = await renderSprayOgCard({ layoutId: publicWall.layoutId, frames: 'p501r3', format: 'png' }, deps);
+    expect(starting.kind).toBe('card');
+    expect(finishing.kind).toBe('card');
+    if (starting.kind !== 'card' || finishing.kind !== 'card') return;
+    const green = await sharp(starting.buffer).ensureAlpha().raw().toBuffer();
+    const red = await sharp(finishing.buffer).ensureAlpha().raw().toBuffer();
+    const margin = (140 * 1200 + 900) * 4;
+    expect(green[margin + 1]).toBeGreaterThan(red[margin + 1] + 50);
+    expect(red[margin]).toBeGreaterThan(green[margin] + 50);
+    const photoCenter = (315 * 1200 + 600) * 4;
+    expect(green.subarray(photoCenter, photoCenter + 4)).toEqual(red.subarray(photoCenter, photoCenter + 4));
+  });
+
   // Every one of these answers the SAME not-found, and none of them may touch a
   // photo: a card that distinguished "no such wall" from "a wall you may not
   // see" would enumerate somebody's home wall from a sequential layout id.
