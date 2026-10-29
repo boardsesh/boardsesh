@@ -109,11 +109,6 @@ type PlayDrawerActionBarProps = {
    * climb on the wall.
    */
   workoutOutcomeWallLeftAtMs?: number | null;
-  /**
-   * The open Duo's MiniPlayer draws Fell / Sent over this row (#6940), so the
-   * row leaves the accessibility tree and VoiceOver finds one pair.
-   */
-  workoutOutcomeCovered?: boolean;
   /** Confirm only: the lit climb's name, for the question. */
   wallClimbName?: string | null;
   /** Confirm only: the lit climb's uuid, to name who put it up. */
@@ -195,7 +190,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   commitButton = null,
   workoutOutcome = null,
   workoutOutcomeWallLeftAtMs = null,
-  workoutOutcomeCovered = false,
   wallClimbName = null,
   wallClimbUuid = null,
   commitLabel = 'putOnWall',
@@ -436,7 +430,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             <WorkoutOutcomeRow
               target={workoutOutcome}
               wallLeftAtMs={workoutOutcomeWallLeftAtMs}
-              hiddenFromAccessibility={workoutOutcomeCovered}
               onOpenLogSheet={onTickPress}
             />
           ) : typeof layout.secondaryRow === 'string' ? null : (

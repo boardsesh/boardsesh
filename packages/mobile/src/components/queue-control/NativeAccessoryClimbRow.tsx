@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -35,8 +35,6 @@ import {
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
-  miniPlayerPaneCoveredButtons,
-  miniPlayerPaneMode,
   miniPlayerSlotCount,
   miniPlayerUsesWideLayout,
   recordRowWidth,
@@ -49,10 +47,8 @@ import {
 } from './mini-player-controls';
 import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../../lib/native-tab-content-inset-store';
 import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
-import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
-import { usePanePlayerShowsPreview } from '../play-drawer/pane-preview-store';
 import { useAuth } from '../../providers/auth-provider';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
@@ -64,10 +60,8 @@ import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
-import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
 import { MiniPlayerWorkoutButtons } from './MiniPlayerWorkoutButtons';
 import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
-import { reportBarCarriesPaneWorkoutRow } from '../play-drawer/pane-workout-row-cover-store';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -208,15 +202,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const angleAdjustable = playerAngle !== null;
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
-  const paneTaken = usePhoneSplitPaneTaken();
-  const paneShowsPreview = usePanePlayerShowsPreview();
-  const playerButtons = usePlayerButtonsPreference();
-  const paneMode = miniPlayerPaneMode({
-    phoneSplit,
-    paneTaken,
-    paneShowsPreview,
-    controlsPosition: playerButtons.position,
-  });
   // The board the climb is drawn on, resolved the way the player resolves it, so
   // the heart, the share and Fell / Sent point at the same climb, board and angle.
   const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, boardConfig), [climb, boardConfig]);
@@ -313,19 +298,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       }),
     [workout.inTimedBlock, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp, isTablet],
   );
-  const paneCoveredButtons = useMemo(
-    () =>
-      paneMode === 'carry'
-        ? miniPlayerPaneCoveredButtons({
-            buttons: playerButtons.buttons,
-            previousNext: playerButtons.previousNext,
-            supportsMirroring,
-            hasShare: !isDraft,
-            angleAvailable: angleAdjustable,
-          })
-        : undefined,
-    [paneMode, playerButtons, supportsMirroring, isDraft, angleAdjustable],
-  );
   const workoutOutcome = workout.shown !== null;
   const controls = useMemo(
     () =>
@@ -335,8 +307,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         isAvailable,
         singleSlotShowsBulb: collapsedSlotShowsBulb,
         bulbAvailable,
-        paneMode,
-        paneCoveredButtons,
         workoutOutcome,
         wideLayout,
         // ⋯'s sheets would present behind `/play`; the player has its own ⋯.
@@ -348,8 +318,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       isAvailable,
       collapsedSlotShowsBulb,
       bulbAvailable,
-      paneMode,
-      paneCoveredButtons,
       workoutOutcome,
       wideLayout,
       playerRouteUp,
@@ -357,16 +325,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   );
   // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
-  // The open Duo's pane hides its own Fell / Sent from VoiceOver while the bar
-  // draws the pair over it. UIKit mounts this row once per placement at the same
-  // time, so only the open placement, the one that sits on the pane, reports.
-  const carriesPaneWorkoutRow = !isInline && paneMode === 'carry' && controls.workout.length > 0;
-  const coverOwnerRef = useRef(Symbol('mini-player-pane-cover'));
-  useEffect(() => {
-    const owner = coverOwnerRef.current;
-    reportBarCarriesPaneWorkoutRow(owner, carriesPaneWorkoutRow);
-    return () => reportBarCarriesPaneWorkoutRow(owner, false);
-  }, [carriesPaneWorkoutRow]);
   const connectionValue =
     !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })

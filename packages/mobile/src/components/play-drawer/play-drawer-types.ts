@@ -137,9 +137,11 @@ export type PlayDrawerProps = {
    *  when the phone split replaced it (see route-player-handoff). Only the
    *  focused tab's pane accepts, so a background tab never consumes it. */
   acceptsScrollHandoff?: boolean;
-  /** Size the board from the viewport's height, with the tick row under it and
-   *  the rest below the fold. The phone split's pane and the landscape iPad
-   *  player set it; everywhere else keeps the usual first screen. */
+  /** Size the board from the viewport's height, with the sections below the
+   *  fold. The phone split's pane keeps every control row above its bottom
+   *  inset (the MiniPlayer capsule); the landscape iPad player hangs its
+   *  favourite / share row below the fold. Everywhere else keeps the usual
+   *  first screen. */
   fitBoardToHeight?: boolean;
   /**
    * The landscape iPad player's side panel (see `resolvePlayerArrangement`).

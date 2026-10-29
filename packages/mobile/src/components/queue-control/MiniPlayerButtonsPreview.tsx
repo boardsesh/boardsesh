@@ -103,7 +103,6 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         isAvailable,
         singleSlotShowsBulb: board.showLightbulb,
         bulbAvailable: board.showLightbulb,
-        paneMode: 'none',
         workoutOutcome: false,
         wideLayout: miniPlayerUsesWideLayout({ wide, placement }),
         moreAvailable: true,

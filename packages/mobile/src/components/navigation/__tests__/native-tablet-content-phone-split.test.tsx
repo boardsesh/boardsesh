@@ -15,10 +15,13 @@ const cfg = vi.hoisted(() => ({
   insets: { top: 0, bottom: 21, left: 0, right: 84 },
   windowWidth: 951,
   isPad: false,
+  // Where a docked footer sits above the bottom chrome: the MiniPlayer capsule
+  // plus its gap (bottom-chrome metrics' `fixedFooterBottom`).
+  fixedFooterBottom: 90,
 }));
 const captured = vi.hoisted(() => ({
   contentInsets: [] as Array<{ left: number; right: number }>,
-  paneInsets: null as { left: number; right: number } | null,
+  paneInsets: null as { left: number; right: number; bottom: number } | null,
   paneProps: null as Record<string, unknown> | null,
   stackMounts: 0,
 }));
@@ -51,12 +54,15 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => true }));
 vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => cfg.phoneSplit }));
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ fixedFooterBottom: cfg.fixedFooterBottom }),
+}));
 vi.mock('../../play-drawer/IpadPlayPane', async () => {
   const { useSafeAreaInsets } = await import('react-native-safe-area-context');
   return {
     IpadPlayPane: (props: Record<string, unknown>) => {
-      const { left, right } = useSafeAreaInsets();
-      captured.paneInsets = { left, right };
+      const { left, right, bottom } = useSafeAreaInsets();
+      captured.paneInsets = { left, right, bottom };
       captured.paneProps = props;
       return createElement('div', { 'data-pane': 'true' });
     },
@@ -85,6 +91,7 @@ describe('NativeTabletContent on iPhone, across the phone split', () => {
   beforeEach(() => {
     cfg.phoneSplit = false;
     cfg.isPad = false;
+    cfg.fixedFooterBottom = 90;
     captured.contentInsets = [];
     captured.paneInsets = null;
     captured.paneProps = null;
@@ -124,11 +131,24 @@ describe('NativeTabletContent on iPhone, across the phone split', () => {
   it('hands the leading pane zero side insets: the rail is on the far side', () => {
     cfg.phoneSplit = true;
     const view = renderTab();
-    expect(captured.paneInsets).toEqual({ left: 0, right: 0 });
+    expect(captured.paneInsets).toMatchObject({ left: 0, right: 0 });
     expect(captured.paneProps).toMatchObject({ variant: 'phoneSplit', acceptsScrollHandoff: true });
     const paneColumn = view.container.querySelector('[data-pane="true"]')?.parentElement;
     expect(paneColumn?.getAttribute('data-style')).toContain('"paddingLeft":0');
     expect(paneColumn?.getAttribute('data-style')).not.toContain('"paddingRight"');
+  });
+
+  it('docks the pane above the MiniPlayer capsule, so its ♡ / share row stays in view', () => {
+    cfg.phoneSplit = true;
+    renderTab();
+    expect(captured.paneInsets?.bottom).toBe(90);
+  });
+
+  it('keeps the tab inset when it already clears more than the bottom chrome', () => {
+    cfg.phoneSplit = true;
+    cfg.fixedFooterBottom = 0;
+    renderTab();
+    expect(captured.paneInsets?.bottom).toBe(21);
   });
 
   it("shows a screen's own content in the pane instead of the player, and the player again after", () => {

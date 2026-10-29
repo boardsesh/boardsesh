@@ -88,22 +88,28 @@ export function resolvePlayerArrangement({
 
 /**
  * Fits the board to the viewport's height: the first screen fills the viewport
- * down to the tick row and one more row (favourite, share) sits just below the
- * fold with the sections after it. The phone split's pane (iPhone Duo open in
- * landscape) and the landscape iPad player use it. On a 669pt pane that draws
- * the board about 1.8× larger than the usual first screen, which also holds that
- * row and a section header.
+ * down to the bottom inset and `belowFoldHeight` more hangs below it, with the
+ * sections after that. The usual first screen (`computeDrawerFirstScreenHeight`)
+ * ends a section peek above the viewport's bottom instead.
+ *
+ * - The landscape iPad player hangs its favourite / share row below the fold
+ *   (`ACTION_BAR_SECONDARY_ROW_HEIGHT`), which draws the board larger.
+ * - The phone split's pane (iPhone Duo open in landscape) passes its bottom
+ *   inset, which clears the MiniPlayer capsule (`PhoneSplitPane`), and pads the
+ *   first screen's bottom by it. Both control rows end above the capsule, the
+ *   band under it stays empty at rest, and the sections start below the fold
+ *   and scroll up under the capsule like any list.
  */
 export function computeFitToHeightFirstScreenHeight({
   viewport,
   bottomInset,
-  belowFoldRowHeight,
+  belowFoldHeight,
 }: {
   viewport: number;
   bottomInset: number;
-  belowFoldRowHeight: number;
+  belowFoldHeight: number;
 }): number {
-  return Math.max(0, viewport - bottomInset) + belowFoldRowHeight;
+  return Math.max(0, viewport - bottomInset) + belowFoldHeight;
 }
 
 /**
