@@ -302,14 +302,18 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
             </View>
           </View>
 
-          <Text
-            variant="caption1"
-            color={selectedDay ? chartColors.label : chartColors.secondaryLabel}
-            accessibilityLiveRegion="polite"
-            style={styles.detail}
-          >
-            {detailText}
-          </Text>
+          {/* Nothing to tap while a screen reader runs (the week labels read
+              every day out), so the hint and readout are sighted-only then. */}
+          {screenReaderEnabled ? null : (
+            <Text
+              variant="caption1"
+              color={selectedDay ? chartColors.label : chartColors.secondaryLabel}
+              accessibilityLiveRegion="polite"
+              style={styles.detail}
+            >
+              {detailText}
+            </Text>
+          )}
         </>
       ) : null}
 

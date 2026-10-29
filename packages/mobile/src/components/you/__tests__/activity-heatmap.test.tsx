@@ -11,16 +11,24 @@ vi.mock('react-native', () => ({
   View: ({
     children,
     onLayout,
+    accessible,
+    accessibilityRole,
     accessibilityLabel,
   }: {
     children?: ReactNode;
     onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
+    accessible?: boolean;
+    accessibilityRole?: string;
     accessibilityLabel?: string;
   }) => {
     useEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: GRID_WIDTH } } });
     }, [onLayout]);
-    return createElement('div', { 'aria-label': accessibilityLabel }, children);
+    return createElement(
+      'div',
+      { 'aria-label': accessibilityLabel, 'data-accessible': accessible ? 'true' : undefined, role: accessibilityRole },
+      children,
+    );
   },
   Pressable: ({
     accessibilityLabel,
@@ -134,9 +142,16 @@ describe('ActivityHeatmap', () => {
     screenReaderEnabled = true;
     try {
       render(createElement(ActivityHeatmap, { heatmap: makeHeatmap() }));
-      // No pressable columns at all, but every week keeps its label.
+      // No pressable columns at all, but every week is still a focusable text
+      // element with its label, and there's no "tap a day" hint to read out.
       expect(weekButtons()).toHaveLength(0);
-      expect(screen.getByLabelText(/^stats\.calendarWeekAria\(date=12 Oct/)).toBeTruthy();
+      const weekElements = screen.getAllByLabelText(/^stats\.calendarWeek(Empty)?Aria\(/);
+      expect(weekElements).toHaveLength(4);
+      for (const element of weekElements) {
+        expect(element.dataset.accessible).toBe('true');
+        expect(element.getAttribute('role')).toBe('text');
+      }
+      expect(screen.queryByText('stats.calendarTapHint')).toBeNull();
     } finally {
       screenReaderEnabled = false;
     }
