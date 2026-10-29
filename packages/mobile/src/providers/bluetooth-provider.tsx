@@ -104,6 +104,13 @@ type BluetoothContextValue = {
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
   /**
+   * "Turn off all lights" (#7015): blank the wall, keep the link, and tell every
+   * other viewer the climb is no longer lit. Resolves whether the LEDs went off.
+   * The spill skip reports its clear the same way, untagged (#7047). A bare
+   * `clearBoard` reports nothing.
+   */
+  turnOffAllLights: () => Promise<boolean>;
+  /**
    * Force the auto-sender to re-push the current climb to the wall once, even
    * when the rendered pixels are byte-identical to the last send (which it
    * normally dedups). The lightbulb tap calls this so re-taking control of an
@@ -901,6 +908,7 @@ export function BluetoothProvider({
     resolveAndBindBoardByUuid,
     reportClimbForBoard,
     reportDisconnectForBoard,
+    reportClearForBoard,
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
@@ -973,6 +981,8 @@ export function BluetoothProvider({
   reportClimbForBoardRef.current = reportClimbForBoard;
   const reportDisconnectForBoardRef = useRef(reportDisconnectForBoard);
   reportDisconnectForBoardRef.current = reportDisconnectForBoard;
+  const reportClearForBoardRef = useRef(reportClearForBoard);
+  reportClearForBoardRef.current = reportClearForBoard;
   const restampBoardMembershipByUuidRef = useRef(restampBoardMembershipByUuid);
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
@@ -983,6 +993,29 @@ export function BluetoothProvider({
   // `conn:{connectionId}` and loses membership on every socket reconnect, so the
   // first rejection is worth one retry — a second would just hammer.
   const restampedReportSignatureRef = useRef<string | null>(null);
+  // Presence reports in flight, so a set and a clear never overlap (#7015). The
+  // server numbers them in allocation order, and `reportBoardClimb` does database
+  // reads before it allocates, so a set sent just before a clear can be numbered
+  // after it and leave every viewer "lit" over a dark wall. A clear waits for the
+  // set reports in flight; a set report waits for the clear in flight.
+  const climbReportsInFlightRef = useRef(new Set<Promise<boolean>>());
+  const clearReportInFlightRef = useRef<Promise<void> | null>(null);
+  // Every climb report goes through here: the auto-sender's, Undo's and the
+  // "Light this" relight's. It waits for a clear report in flight, drops the
+  // report when a clear, reconnect or board switch made it stale during that
+  // wait, and holds its place in `climbReportsInFlightRef` so a later clear
+  // waits for it in turn.
+  const sendFencedClimbReport = useCallback(
+    async (isCurrentOperation: () => boolean, send: () => Promise<boolean>): Promise<boolean> => {
+      await clearReportInFlightRef.current;
+      if (!isCurrentOperation()) return false;
+      const report = send();
+      climbReportsInFlightRef.current.add(report);
+      void report.finally(() => climbReportsInFlightRef.current.delete(report));
+      return report;
+    },
+    [],
+  );
   const wallCurrentClimbRef = useRef<BoardPresenceClimb | null>(wallCurrentClimb);
   wallCurrentClimbRef.current = wallCurrentClimb;
   const showUndoWallChangeSnackbarRef = useRef(showUndoWallChangeSnackbar);
@@ -1154,10 +1187,12 @@ export function BluetoothProvider({
       const climbInput = { uuid: item.uuid, climb: { ...toClimbInput(item.climb), mirrored } };
       const angle = item.climb.angle ?? null;
       const sendReport = () =>
-        reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
-          console.warn('[board-presence] reportBoardClimb failed', error);
-          return false;
-        });
+        sendFencedClimbReport(isCurrentOperation, () =>
+          reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
+            console.warn('[board-presence] reportBoardClimb failed', error);
+            return false;
+          }),
+        );
 
       pendingReportSignatureRef.current = reportSignature;
       let accepted = await sendReport();
@@ -1193,7 +1228,7 @@ export function BluetoothProvider({
       }
       return true;
     },
-    [consumeUndoWallChangeToastArm],
+    [consumeUndoWallChangeToastArm, sendFencedClimbReport],
   );
 
   const replayPendingWallReport = useCallback(
@@ -1243,6 +1278,8 @@ export function BluetoothProvider({
   const handleConnectSuccess = useCallback(
     (serial: string | null, connection: BleConnectionHandle) => {
       wallOperationEpochRef.current += 1;
+      // A new link must not wait up to a mutation timeout on the old link's clear.
+      clearReportInFlightRef.current = null;
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
@@ -2204,12 +2241,14 @@ export function BluetoothProvider({
     }
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, undoMirrored);
 
-    const accepted = await reportClimbForBoardRef
-      .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
-      .catch((error: unknown) => {
-        console.warn('[board-presence] undo report failed', error);
-        return false;
-      });
+    const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+      reportClimbForBoardRef
+        .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
+        .catch((error: unknown) => {
+          console.warn('[board-presence] undo report failed', error);
+          return false;
+        }),
+    );
     if (!accepted || !isCurrentOperation()) {
       return false;
     }
@@ -2217,7 +2256,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget, undoMirrored);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [commitWallFrames, queueMirrorFor]);
+  }, [commitWallFrames, queueMirrorFor, sendFencedClimbReport]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -2257,12 +2296,14 @@ export function BluetoothProvider({
       }
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, relightMirrored);
 
-      const accepted = await reportClimbForBoardRef
-        .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
-        .catch((error: unknown) => {
-          console.warn('[board-presence] kiosk relight report failed', error);
-          return false;
-        });
+      const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+        reportClimbForBoardRef
+          .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
+          .catch((error: unknown) => {
+            console.warn('[board-presence] kiosk relight report failed', error);
+            return false;
+          }),
+      );
       if (!accepted || !isCurrentOperation()) {
         return false;
       }
@@ -2270,12 +2311,82 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb, relightMirrored);
       return true;
     },
-    [commitWallFrames, queueMirrorFor],
+    [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
   );
 
   const clearBoard = useCallback(
     () => sendFramesToBoardWithActivityReset('', false, undefined, { sendSource: 'clear' }),
     [sendFramesToBoardWithActivityReset],
+  );
+
+  // Blank the wall, keep the link, and tell the feed (#7015, #7047). The link
+  // stays up and the holder slot doesn't move, so without a report every other
+  // phone keeps the last climb "On the wall". `write` is the blanking write: the
+  // tagged `clearBoard` for "Turn off all lights", an untagged one for the spill
+  // skip. Resolves whether the LEDs went off.
+  const blankWallAndReportClear = useCallback(async (write: () => Promise<boolean | undefined>): Promise<boolean> => {
+    // Before the write: a report of the pre-clear wall, or its membership-restamp
+    // retry, checks this epoch before sending again, and must not land after the
+    // clear and put the dark climb back on peers' walls.
+    wallOperationEpochRef.current += 1;
+    pendingWallReportRef.current = null;
+    const operationEpoch = wallOperationEpochRef.current;
+    const operationBoardUuid = boardUuidRef.current;
+    const isCurrentOperation = () =>
+      operationEpoch === wallOperationEpochRef.current && operationBoardUuid === boardUuidRef.current;
+    const cleared = await write();
+    if (cleared !== true) return false;
+    // A reconnect, board switch or virtual take during the write owns the refs
+    // now; resetting them or reporting would act on the wrong wall.
+    if (!isCurrentOperation()) return false;
+    // The auto-sender's dedup still names the cleared climb. Any drain re-run that
+    // doesn't write (a crew FullSync with a new item object, the clock moving)
+    // would confirm and re-report it as lit over a dark board. Same as
+    // `invalidateWallState`, which is declared further down.
+    lastPhysicalFramesRef.current = null;
+    // The feed now reads the wall as dark, which the report dedup takes as "no
+    // conflict". Forget the last accepted report so re-lighting the same climb
+    // reports it again.
+    lastAcceptedReportSignatureRef.current = null;
+    lastAcceptedWallSignatureRef.current = null;
+    pendingReportSignatureRef.current = null;
+    if (!presenceEnabledRef.current) return true;
+    const boardId = presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current;
+    if (boardId === null) return true;
+
+    const reportClear = async () => {
+      // Waits for any set report in flight (see `climbReportsInFlightRef`).
+      await Promise.all(climbReportsInFlightRef.current);
+      if (!isCurrentOperation()) return;
+      let accepted = await reportClearForBoardRef.current(boardId);
+      // Same one re-stamp and retry as a climb report: an anonymous holder loses
+      // membership on every socket reconnect.
+      if (!accepted && operationBoardUuid && isCurrentOperation()) {
+        const stillTheSameBoard = await restampBoardMembershipByUuidRef
+          .current({ boardUuid: operationBoardUuid })
+          .catch(() => false);
+        if (stillTheSameBoard && isCurrentOperation()) accepted = await reportClearForBoardRef.current(boardId);
+      }
+      // Refused: another emitter holds the board (a half-open old socket can still
+      // hold it), or the backend predates the mutation. Viewers keep the climb lit.
+      if (!accepted) console.warn('[board-presence] reportBoardClear was not accepted', { boardId });
+    };
+    // Registered as soon as the write lands. The next climb's write queues
+    // behind this clear in the hook's write chain, so its report always finds
+    // this one here and waits for it.
+    const clearReport = reportClear()
+      .catch((error: unknown) => console.warn('[board-presence] reportBoardClear failed', error))
+      .finally(() => {
+        if (clearReportInFlightRef.current === clearReport) clearReportInFlightRef.current = null;
+      });
+    clearReportInFlightRef.current = clearReport;
+    return true;
+  }, []);
+
+  // "Turn off all lights" (#7015).
+  const turnOffAllLights = useCallback(
+    (): Promise<boolean> => blankWallAndReportClear(clearBoard),
+    [blankWallAndReportClear, clearBoard],
   );
 
   // Advance the queue past a "spill" climb (one set for a different board/layout
@@ -2305,8 +2416,18 @@ export function BluetoothProvider({
       // it stops showing the previous climb, and say nothing — the callout on
       // screen is the explanation, and counting this as a skip would poison the
       // spill metric with deliberate moves.
+      //
+      // Every clear below reports to the feed (#7047), or everyone watching this
+      // board keeps the previous climb "On the wall" over a dark board. The write
+      // stays untagged (no sendSource): the user didn't press Clear Lights, so it
+      // must not count towards Board Lights Cleared.
+      const clearWall = () => {
+        blankWallAndReportClear(() => sendFramesToBoard('')).catch((error: unknown) =>
+          console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
+        );
+      };
       if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) {
-        void sendFramesToBoard('');
+        clearWall();
         return;
       }
 
@@ -2333,19 +2454,17 @@ export function BluetoothProvider({
       // Party: never advance — the current climb is shared session state, and a
       // member whose wall can't light it must not hijack the queue for everyone.
       // Just clear this wall so it doesn't keep showing the previous climb.
-      // Untagged internal clear (no sendSource): the user didn't press Clear
-      // Lights, so this must not count towards Board Lights Cleared.
       if (sessionIdRef.current != null) {
-        void sendFramesToBoard('');
+        clearWall();
         return;
       }
       if (next) {
         setCurrentClimb(next);
       } else {
-        void sendFramesToBoard('');
+        clearWall();
       }
     },
-    [setCurrentClimb, showToast, sendFramesToBoard, t],
+    [blankWallAndReportClear, setCurrentClimb, showToast, sendFramesToBoard, t],
   );
 
   // The auto-sender reached the current climb but it has no frames yet — a
@@ -2555,6 +2674,7 @@ export function BluetoothProvider({
       disconnect: wrappedDisconnect,
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
       undoWallChange,
@@ -2587,6 +2707,7 @@ export function BluetoothProvider({
       wrappedDisconnect,
       sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
       undoWallChange,

@@ -48,10 +48,11 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
     bluetooth?.reassertWall();
   }, [bluetooth]);
 
-  // The player's wall badge can't see a clear any other way (#6939).
+  // This phone's badge reads the local store (#6939); every other viewer hears it
+  // through board presence (#7015).
   const handleClearLights = useCallback(() => {
     markWallCleared(activeClimbUuid);
-    void bluetooth?.clearBoard();
+    void bluetooth?.turnOffAllLights();
   }, [bluetooth, activeClimbUuid]);
 
   const handleToggleLightAdjacentHolds = useCallback(

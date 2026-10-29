@@ -78,7 +78,7 @@ import {
   resolveBrowseCaption,
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
-import { useWallClimb } from './use-wall-climb';
+import { usePresenceClearedClimbUuid, useWallClimb } from './use-wall-climb';
 import { claimJoinedBrowseNotice, claimSoloBrowseNotice } from './joined-browse-notice';
 import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-angle-anchor';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
@@ -1108,6 +1108,12 @@ export function PlayCore({
     displayedClimbUuid === wallClearedClimbUuid &&
     currentClimbQueueItem?.climb.uuid === wallClearedClimbUuid;
   const currentClimbDark = heldClimbOnScreen || clearedClimbOnScreen;
+  // The same clear seen from a crewmate's phone (#7015). Badge only: this phone
+  // has no link, so a Put on the wall reassert here would do nothing. The phone
+  // holding the link has its own store above, which a re-light resets at once;
+  // the feed's copy would wait for the echo and flash "Not on the wall".
+  const feedClearedClimbUuid = usePresenceClearedClimbUuid();
+  const presenceClearedClimbUuid = bluetoothConnected ? null : feedClearedClimbUuid;
   // The badge on the board art (#6939): the board draws the same glowing holds
   // whether or not they are lit, so this is what says which.
   const wallBadgeResolution = playerButtons.wallBadge
@@ -1123,6 +1129,7 @@ export function PlayCore({
         inCrew: isSharedSession,
         wallDriven: lightbulbActive,
         currentDark: currentClimbDark,
+        presenceClearedClimbUuid,
       })
     : null;
   // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,

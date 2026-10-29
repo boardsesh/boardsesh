@@ -116,6 +116,8 @@ const presence = vi.hoisted(() => ({
   resolveAndBindBoardByUuid: vi.fn(async (): Promise<TestResolvedBoard | null> => null),
   reportClimbForBoard: vi.fn(async () => true),
   reportDisconnectForBoard: vi.fn(async () => true),
+  reportClearForBoard: vi.fn(async () => true),
+  restampBoardMembershipByUuid: vi.fn(async () => true),
   showUndoWallChangeSnackbar: vi.fn(),
 }));
 
@@ -180,6 +182,8 @@ vi.mock('../board-presence-provider', () => ({
     resolveAndBindBoardByUuid: presence.resolveAndBindBoardByUuid,
     reportClimbForBoard: presence.reportClimbForBoard,
     reportDisconnectForBoard: presence.reportDisconnectForBoard,
+    reportClearForBoard: presence.reportClearForBoard,
+    restampBoardMembershipByUuid: presence.restampBoardMembershipByUuid,
   }),
 }));
 
@@ -446,6 +450,10 @@ describe('BluetoothProvider wall-confirm integration', () => {
     presence.reportClimbForBoard.mockResolvedValue(true);
     presence.reportDisconnectForBoard.mockClear();
     presence.reportDisconnectForBoard.mockResolvedValue(true);
+    presence.reportClearForBoard.mockClear();
+    presence.reportClearForBoard.mockResolvedValue(true);
+    presence.restampBoardMembershipByUuid.mockClear();
+    presence.restampBoardMembershipByUuid.mockResolvedValue(true);
     presence.showUndoWallChangeSnackbar.mockClear();
     capturedBluetooth = null;
     appState.current = 'active';
@@ -1530,6 +1538,20 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   describe('board-presence wiring (flag on)', () => {
+    async function settleReports() {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    }
+
+    function deferredBoolean() {
+      let resolve: (value: boolean) => void = () => {};
+      const promise = new Promise<boolean>((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      return { promise, resolve };
+    }
+
     it('resolves+binds the board on connect with the active board config', () => {
       presence.enabled = true;
       renderProvider();
@@ -1837,6 +1859,465 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
 
       expect(presence.showUndoWallChangeSnackbar).not.toHaveBeenCalled();
+    });
+
+    describe('Turn off all lights (#7015)', () => {
+      const litClimbOneEcho = () =>
+        makePresenceClimb({ climbUuid: 'climb-1', queueItemUuid: 'queue-climb-1', frames: 'p1r12', seq: 8 });
+
+      it('tells the feed the wall went dark once the LEDs are off, keeping the link', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        let cleared: boolean | undefined;
+        await act(async () => {
+          cleared = await capturedBluetooth?.turnOffAllLights();
+        });
+
+        expect(cleared).toBe(true);
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          '',
+          false,
+          undefined,
+          expect.objectContaining({ sendSource: 'clear' }),
+        );
+        expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99);
+        expect(presence.reportDisconnectForBoard).not.toHaveBeenCalled();
+        expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing when the clear never reached the board', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        bluetooth.state.sendFramesToBoard.mockResolvedValueOnce(false);
+
+        let cleared: boolean | undefined;
+        await act(async () => {
+          cleared = await capturedBluetooth?.turnOffAllLights();
+        });
+
+        expect(cleared).toBe(false);
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('reports the same climb again when it is put back on the wall', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        // The feed now reads the wall as dark.
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
+          40,
+        );
+      });
+
+      // Fable review, finding 1: the auto-sender's dedup still named the cleared
+      // climb, so a drain re-run that didn't write re-reported it as lit.
+      it('does not re-report the turned-off climb when the drain re-runs without writing', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const { rerender } = renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        presence.currentClimb = null;
+        wallConfirm.emitWallConfirm.mockClear();
+        queue.confirmClimbOnWall.mockClear();
+        const writesAfterClear = bluetooth.state.sendFramesToBoard.mock.calls.length;
+        // A crew FullSync hands the same occurrence back as a new object.
+        const current = queue.currentClimbQueueItem;
+        if (!current) throw new Error('Expected a current queue occurrence.');
+        queue.currentClimbQueueItem = { ...current, climb: { ...current.climb } };
+        rerenderProvider(rerender);
+        await settleReports();
+
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+        expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+        expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
+        // The wall stays dark: no write either.
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(writesAfterClear);
+      });
+
+      // Fable review, finding 2.
+      it('drops the clear report when the link changes while the clear is being written', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        const clearWrite = deferredBoolean();
+        bluetooth.state.sendFramesToBoard.mockImplementationOnce(() => clearWrite.promise);
+
+        let cleared: Promise<boolean> | undefined;
+        act(() => {
+          cleared = capturedBluetooth?.turnOffAllLights();
+        });
+        act(() => {
+          bluetooth.options?.onConnectSuccess?.('SN-2', makeConnectionHandle(2));
+        });
+        await act(async () => {
+          clearWrite.resolve(true);
+        });
+
+        await expect(cleared).resolves.toBe(false);
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      // Fable review, finding 3: an anonymous holder loses membership on a socket reconnect.
+      it('re-stamps membership once and retries a clear the server refused', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.reportClearForBoard.mockResolvedValueOnce(false);
+        render(
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            boardUuid: 'board-uuid-1',
+            children: createElement(BluetoothProbe),
+          }),
+        );
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.restampBoardMembershipByUuid).toHaveBeenCalledExactlyOnceWith({ boardUuid: 'board-uuid-1' });
+      });
+
+      // Backend review: seqs are numbered in allocation order, so a set and a
+      // clear must not be in flight together.
+      it('waits for a climb report in flight before reporting the clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const climbReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => climbReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        await act(async () => {
+          climbReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+      });
+
+      it('waits for the clear report in flight before reporting a re-light', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        const clearReport = deferredBoolean();
+        presence.reportClearForBoard.mockImplementationOnce(() => clearReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+        await waitFor(() =>
+          expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+            'p1r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ sendSource: 'auto' }),
+          ),
+        );
+        await settleReports();
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          clearReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+      });
+
+      // Fable re-review: a re-light report waiting on a clear can go stale.
+      it('drops a re-light report that went stale while it waited on a clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        const firstClearReport = deferredBoolean();
+        presence.reportClearForBoard.mockImplementationOnce(() => firstClearReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+        await waitFor(() =>
+          expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+            'p1r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ sendSource: 'auto' }),
+          ),
+        );
+        // The re-light report now waits on the first clear. A second Turn off all
+        // lights lands within that round trip and reports its own clear at once.
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(2));
+
+        await act(async () => {
+          firstClearReport.resolve(true);
+        });
+        await settleReports();
+        // Sent now, the re-light would be numbered after the second clear.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not let a report of the pre-clear wall settle after the clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        let acceptFirstReport: (accepted: boolean) => void = () => {};
+        presence.reportClimbForBoard.mockImplementationOnce(
+          () =>
+            new Promise<boolean>((resolve) => {
+              acceptFirstReport = resolve;
+            }),
+        );
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        // The report sent before the clear is accepted only now. Recording it as
+        // the wall's latest would make the re-light below look like a duplicate.
+        await act(async () => {
+          acceptFirstReport(true);
+        });
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+      });
+    });
+
+    // #7047: the spill skip blanks the wall when it can't light the current
+    // climb. Without a clear report, everyone watching the board kept the
+    // previous climb "On the wall" over a dark board.
+    describe('spill skip clear (#7047)', () => {
+      function makeSpillItem(uuid: string): ClimbQueueItem {
+        const item = makeQueueItem(uuid, `frames-${uuid}`);
+        return { ...item, climb: { ...item.climb, boardType: 'tension', layoutId: 1 } };
+      }
+
+      function makeKilterItem(uuid: string): ClimbQueueItem {
+        const item = makeQueueItem(uuid);
+        return { ...item, climb: { ...item.climb, boardType: 'kilter', layoutId: 1 } };
+      }
+
+      function renderSpillProvider(reachableBoardKeys?: ReadonlySet<string>) {
+        const providerElement = () =>
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            reachableBoardKeys,
+            children: createElement(BluetoothProbe),
+          });
+        const { rerender } = render(providerElement());
+        return () => {
+          act(() => {
+            rerender(providerElement());
+          });
+        };
+      }
+
+      function blankWrites() {
+        return bluetooth.state.sendFramesToBoard.mock.calls.filter(([frames]) => frames === '');
+      }
+
+      function taggedClearWrites() {
+        return bluetooth.state.sendFramesToBoard.mock.calls.filter(
+          ([, , , sendContext]) => (sendContext as { sendSource?: string } | undefined)?.sendSource === 'clear',
+        );
+      }
+
+      async function lightClimbOneThenMoveTo(spill: ClimbQueueItem, rest: ClimbQueueItem[] = [], reachable?: string) {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const rerender = renderSpillProvider(reachable ? new Set([reachable]) : undefined);
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        queue.currentClimbQueueItem = spill;
+        queue.items = [spill, ...rest];
+        rerender();
+        return rerender;
+      }
+
+      it('reports the clear in a party session, with an untagged write', async () => {
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        expect(blankWrites()).toHaveLength(1);
+        // Not a Clear Lights press: Board Lights Cleared must not count it.
+        expect(taggedClearWrites()).toHaveLength(0);
+        expect(bluetooth.state.sendFramesToBoard.mock.calls.some(([frames]) => frames === 'frames-spill')).toBe(false);
+      });
+
+      it.each([
+        ['a climb on another board at this gym', 'tension:1'],
+        ['nothing compatible left in a solo queue', undefined],
+      ])('reports the clear for %s', async (_case, reachable) => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [], reachable);
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        expect(blankWrites()).toHaveLength(1);
+        expect(taggedClearWrites()).toHaveLength(0);
+      });
+
+      it('reports no clear when a solo queue advances to a compatible climb', async () => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [makeKilterItem('next')]);
+        await settleReports();
+
+        expect(blankWrites()).toHaveLength(0);
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing when the blanking write fails', async () => {
+        bluetooth.state.sendFramesToBoard.mockImplementation(async (frames: string) => frames !== '');
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('lights and reports the previous climb again when the crew goes back to it', async () => {
+        const previous = queue.currentClimbQueueItem;
+        if (!previous) throw new Error('Expected a current queue occurrence.');
+        presence.currentClimb = makePresenceClimb({
+          climbUuid: 'climb-1',
+          queueItemUuid: 'queue-climb-1',
+          frames: 'p1r12',
+          seq: 8,
+        });
+        const rerender = await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        // The feed now reads the wall as dark.
+        presence.currentClimb = null;
+
+        queue.currentClimbQueueItem = previous;
+        queue.items = [previous];
+        rerender();
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
+          40,
+        );
+        // The clear went out before the re-light, so the server numbers them in that order.
+        const clearOrder = presence.reportClearForBoard.mock.invocationCallOrder[0];
+        const relightOrder = presence.reportClimbForBoard.mock.invocationCallOrder[1];
+        expect(clearOrder).toBeLessThan(relightOrder);
+      });
+
+      // Fable re-review: "Light this" and Undo report directly, so they must sit
+      // behind the same set/clear fence as the auto-sender's reports.
+      const historyClimb = () =>
+        makePresenceClimb({ climbUuid: 'history-climb', queueItemUuid: 'queue-history-climb', frames: 'p2r12' });
+
+      it('holds a "Light this" report until the spill clear parked before it has gone', async () => {
+        // The first climb's report is still settling, so the clear waits behind it.
+        const firstReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => firstReport.promise);
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await settleReports();
+        // Sent now, the relight would be numbered before the clear, and every
+        // viewer would read "Not on the wall" over a lit wall.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          firstReport.resolve(true);
+        });
+        await expect(relit).resolves.toBe(true);
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
+        expect(presence.reportClearForBoard.mock.invocationCallOrder[0]).toBeLessThan(
+          presence.reportClimbForBoard.mock.invocationCallOrder[1],
+        );
+      });
+
+      it('holds the spill clear until a "Light this" report in flight has settled', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const rerender = renderSpillProvider();
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        const relightReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => relightReport.promise);
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+
+        const spill = makeSpillItem('spill');
+        queue.currentClimbQueueItem = spill;
+        queue.items = [spill];
+        rerender();
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        await act(async () => {
+          relightReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        // The spill clear bumped the wall-operation epoch, so the relight no longer owns the wall.
+        await expect(relit).resolves.toBe(false);
+      });
     });
 
     it('maps an unexpected hook end record to analytics and releases its snapshotted board', () => {

@@ -45,6 +45,13 @@ export type WallBadgeInput = {
    * or its lights were turned off. The presence feed can still name it.
    */
   currentDark: boolean;
+  /**
+   * The climb the board-presence feed says was turned off and not lit since
+   * (#7015): the crewmate driving the wall used Turn off all lights. `null` when
+   * no clear was seen. Keyed on the climb, never "the wall is dark", so a queue
+   * that moved ahead of the presence echo isn't called dark.
+   */
+  presenceClearedClimbUuid: string | null;
 };
 
 export function resolveWallBadge({
@@ -59,6 +66,7 @@ export function resolveWallBadge({
   inCrew,
   wallDriven,
   currentDark,
+  presenceClearedClimbUuid,
 }: WallBadgeInput): WallBadgeResolution {
   if (isAnonymous || !boardHasLights || boardMismatch || displayedClimbUuid === null) return null;
   // A reachable board keeps the drawer and its navigation usable, but this
@@ -66,6 +74,9 @@ export function resolveWallBadge({
   // makes the retained artwork physically lit after a board switch.
   if (climbBoardMismatch) return 'notOnWall';
   if (currentDark && displayedClimbUuid === committedHeadUuid) return 'notOnWall';
+  // A crewmate's phone turned the lights off on this climb. Checked before the
+  // driven-wall fall-through below, which would otherwise call it lit.
+  if (displayedClimbUuid === presenceClearedClimbUuid && displayedClimbUuid === committedHeadUuid) return 'notOnWall';
   if (displayedClimbUuid === wallClimbUuid) return 'onWall';
   if (isPreview && displayedClimbUuid !== committedHeadUuid) {
     if (inCrew) return 'onlyYou';
