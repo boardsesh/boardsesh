@@ -317,6 +317,66 @@ describe('removeClimbFromLikedList', () => {
     expect(liked?.pages[0].climbs.map((climb) => climb.uuid)).toEqual(['c1']);
   });
 
+  it('drops the header count to zero with the last liked climb, on every page (#7024)', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['only']]);
+
+    removeClimbFromLikedList(client, 'only');
+
+    const liked = client.getQueryData<{ pages: { climbs: unknown[]; meta: { climbCount: number } }[] }>(likedKey);
+    expect(liked?.pages[0].climbs).toEqual([]);
+    expect(liked?.pages.map((page) => page.meta.climbCount)).toEqual([0]);
+  });
+
+  it('drops the unfiltered count of a filtered view and leaves a plain view without one (#7024)', () => {
+    const client = new QueryClient();
+    const plainKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const filteredKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u', view: HARDEST_FIRST });
+    seed(client, plainKey, [['a', 'b']]);
+    client.setQueryData(filteredKey, {
+      pages: [
+        { ...smartPage(['b']).smartPlaylist, meta: { ...smartPage(['b']).smartPlaylist.meta, climbCount: 5 } },
+      ].map((page) => ({ ...page, unfilteredCount: 5 })),
+      pageParams: [0],
+    });
+
+    removeClimbFromLikedList(client, 'b');
+
+    type CachedCounts = { pages: { meta: { climbCount: number }; unfilteredCount: number | null }[] };
+    const plain = client.getQueryData<CachedCounts>(plainKey);
+    expect(plain?.pages[0].meta.climbCount).toBe(1);
+    expect(plain?.pages[0].unfilteredCount).toBeNull();
+    const filtered = client.getQueryData<CachedCounts>(filteredKey);
+    expect(filtered?.pages[0].meta.climbCount).toBe(4);
+    expect(filtered?.pages[0].unfilteredCount).toBe(4);
+
+    restoreClimbToLikedList(client, 'b');
+
+    expect(client.getQueryData<CachedCounts>(plainKey)?.pages[0].meta.climbCount).toBe(2);
+    expect(client.getQueryData<CachedCounts>(plainKey)?.pages[0].unfilteredCount).toBeNull();
+    expect(client.getQueryData<CachedCounts>(filteredKey)?.pages[0].meta.climbCount).toBe(5);
+    expect(client.getQueryData<CachedCounts>(filteredKey)?.pages[0].unfilteredCount).toBe(5);
+  });
+
+  it('hands the screen a header count that follows an un-like and a re-like (#7024)', async () => {
+    const execute = vi.fn(async () => smartPage(['only']));
+    const { client, wrapper } = renderWithAdapter(execute);
+    const { result } = renderHook(() => useSmartPlaylist({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'climber' }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.meta?.climbCount).toBe(1));
+
+    removeClimbFromLikedList(client, 'only');
+    await waitFor(() => expect(result.current.allClimbs).toEqual([]));
+    expect(result.current.meta?.climbCount).toBe(0);
+
+    restoreClimbToLikedList(client, 'only');
+    await waitFor(() => expect(result.current.meta?.climbCount).toBe(1));
+    expect(execute).toHaveBeenCalledTimes(1);
+    client.clear();
+  });
+
   it('does nothing for a climb it never removed', () => {
     const client = new QueryClient();
     const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
