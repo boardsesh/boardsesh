@@ -753,13 +753,28 @@ jobs:
       # The Mobile OTA Production workflow is the SOLE writer of
       # changelog.generated.json: it regenerates and pushes it on every publish.
       # A PR must never hand-edit it (that would fight the OTA bot and could
-      # revert shipped entries). Fail if a PR touches the file.
+      # revert shipped entries). Only a train import carrying exact trusted main
+      # files may pass; importing generated files does not make the PR a writer.
       - name: changelog-owned (no manual changelog edits)
         id: changelog-owned
         if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true' }}
+        env:
+          PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          echo "::error::The changelog files (packages/mobile/src/data/changelog.generated.json and CHANGELOG.md) are owned by the Mobile OTA Production workflow (it regenerates and pushes them on every OTA). Revert your change — they're generated from PR Release Notes, never edited in a PR."
-          exit 1
+          if [ "$PR_BASE_BRANCH" != "release/next" ] || ! [[ "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ && "$PR_HEAD_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo '::error::Generated changelogs require a release/next import with exact PR commit SHAs.'
+            exit 1
+          fi
+          # Trust only configured origin's main history, never a PR-provided ref.
+          # Complete ancestry is needed to distinguish a new import from a copy.
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin "$PR_BASE_SHA" "$PR_HEAD_SHA" '+refs/heads/main:refs/remotes/origin/main'
+          else
+            git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA" '+refs/heads/main:refs/remotes/origin/main'
+          fi
+          vp exec tsx scripts/check-changelog-ownership.ts
 
       # No path gate on purpose. The version is derived from the whole board
       # catalogue plus the compiled renderer and every board photo the catalogue
