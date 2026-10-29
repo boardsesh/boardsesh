@@ -763,6 +763,15 @@ export function useSessionRealtime({
                   event.__typename === 'FullSync' ? event.state.currentClimbQueueItem?.uuid : event.item?.uuid,
                 localQueueItemUuid: stateRef.current.currentClimbQueueItem?.uuid,
                 correlationId: event.__typename === 'CurrentClimbChanged' ? event.correlationId : null,
+                // The reducer's own echo test (DELTA_UPDATE_CURRENT_CLIMB): a
+                // correlation id still pending here, or this connection's
+                // server-issued client id. Not the coordinator's id, which never
+                // reaches the server.
+                ownEcho:
+                  event.__typename === 'CurrentClimbChanged' &&
+                  ((!!event.correlationId &&
+                    stateRef.current.pendingCurrentClimbUpdates.includes(event.correlationId)) ||
+                    (!!event.clientId && event.clientId === sessionRuntimeStateRef.current?.clientId)),
               });
             }
             dispatch({

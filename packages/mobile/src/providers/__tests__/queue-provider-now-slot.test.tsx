@@ -794,6 +794,56 @@ describe('QueueProvider now-slot mode (F3)', () => {
         expect(takeRelayReceipt('c')).toMatchObject({ queueItemUuid: 'c', eventType: 'FullSync' });
       });
 
+      // #7039 review: the climber picks A, then C, before A's echo arrives. The
+      // echo names A while C is current, so the uuid check alone would stamp it.
+      it('does not stamp a late echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        const firstMoveCorrelationId = queueMutations.setCurrentClimb.mock.calls[0]?.[2];
+        expect(firstMoveCorrelationId).toEqual(expect.any(String));
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(A, 'client-self', firstMoveCorrelationId ?? '');
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
+      it('does not stamp the now-slot FullSync echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        clearRelayReceipt();
+        // clearRelayReceipt also forgets own moves, so re-arm them the way the
+        // provider's send seam does on a re-send.
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: A,
+                  historyCount: 0,
+                },
+              },
+            },
+          });
+        });
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
       it('does not stamp the echo of this phone’s own move', async () => {
         const latest = await renderSession([A, B, C], B);
         act(() => latest().setCurrentClimb(C));

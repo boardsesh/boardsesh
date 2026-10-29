@@ -72,6 +72,7 @@ import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { nowMs } from '../lib/clock';
+import { noteOwnMove } from '../lib/relay-receipt';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../lib/privacy/privacy-cache';
 import {
@@ -2672,6 +2673,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // (Re)start the echo's TTL: a re-send's echo can come well after the
       // first send's window opened.
       coordinator.trackPendingMutation(correlationId);
+      // #7014: this item's echo is never a crewmate's relay, even as a FullSync.
+      noteOwnMove(item.uuid);
       const sentAtSequence = stateRef.current.serverSequence;
       const sends = moveSendsRef.current;
       sends.delete(correlationId);

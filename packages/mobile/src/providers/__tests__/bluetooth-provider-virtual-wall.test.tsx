@@ -188,6 +188,7 @@ vi.mock('../../lib/board-details', () => ({
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
+import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
 
 // Must match VIRTUAL_WALL_SETTLE_MS in the provider.
 const SETTLE_MS = 600;
@@ -400,6 +401,29 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     await takeTheWall();
     await settle(2);
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  // #7039 review: a virtual hold's "write" is a 600 ms stand-in, so a
+  // crewmate's climb landing on it is no transport timing.
+  it('sends no relay timing for a crewmate’s climb on a virtual hold', async () => {
+    clearRelayReceipt();
+    const { rerender } = renderProvider();
+    await takeTheWall();
+    await settle();
+
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-climb-2',
+      localQueueItemUuid: 'queue-climb-1',
+    });
+    queue.currentClimbQueueItem = makeQueueItem('climb-2');
+    await act(async () => {
+      rerender(providerElement());
+    });
+    await settle(2);
+
+    expect(presence.reportClimbForBoard.mock.calls.map((call) => call[1].climb.uuid)).toContain('climb-2');
+    expect(analytics.track.mock.calls.filter(([eventName]) => eventName === 'Climb Relay Write Timed')).toEqual([]);
   });
 
   it('releases the holder slot and stops reporting when the wall is handed back', async () => {

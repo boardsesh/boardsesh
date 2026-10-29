@@ -35,34 +35,70 @@ export const RELAY_RECEIPT_MAX_AGE_MS = 30_000;
 
 let pendingReceipt: RelayReceipt | null = null;
 
+/**
+ * Queue items this phone put on the wall itself, with when. A now-slot open's
+ * echo is a `FullSync`, which carries no correlation id or client id, so this
+ * is the only way to tell that echo from a crewmate's move (#7014 review). A
+ * crewmate moving the wall back to the same item inside the window is missed:
+ * a lost sample, never a wrong one.
+ */
+const ownMoves = new Map<string, number>();
+const MAX_TRACKED_OWN_MOVES = 32;
+
+function isRecentOwnMove(queueItemUuid: string, now: number): boolean {
+  const movedAt = ownMoves.get(queueItemUuid);
+  return movedAt !== undefined && now - movedAt <= RELAY_RECEIPT_MAX_AGE_MS;
+}
+
+/** This phone sent a move to this queue item (a fresh send or a re-send). */
+export function noteOwnMove(queueItemUuid: string): void {
+  const now = relayClockMs();
+  ownMoves.delete(queueItemUuid);
+  ownMoves.set(queueItemUuid, now);
+  for (const [uuid, movedAt] of ownMoves) {
+    if (ownMoves.size <= MAX_TRACKED_OWN_MOVES && now - movedAt <= RELAY_RECEIPT_MAX_AGE_MS) break;
+    ownMoves.delete(uuid);
+  }
+  // The climber picked it here, so its write is not a relay any more.
+  if (pendingReceipt?.queueItemUuid === queueItemUuid) pendingReceipt = null;
+}
+
 export function relayClockMs(): number {
   return performance.now();
 }
 
 /**
  * Record a server event that changes which climb is current on this phone.
- * Only a change counts: the echo of this phone's own move finds the climb
- * already current (the local dispatch is optimistic), and a re-broadcast of the
- * climb already up writes nothing. Either would otherwise leave a stamp that a
- * later relight of the same item would read as a relay.
+ * Only a crewmate's change counts. Left out, so they cannot leave a stamp that
+ * a later write of the same item would read as a relay:
+ * - a re-broadcast of the climb already current (it writes nothing);
+ * - an echo the caller recognised as this phone's own (`ownEcho`: its
+ *   correlation id is still pending, or it names this connection's client id),
+ *   which matters when the climber moved on again before the echo arrived;
+ * - any event for an item this phone moved to itself in the last
+ *   `RELAY_RECEIPT_MAX_AGE_MS`, which covers the now-slot `FullSync` echo.
  */
 export function noteRelayReceipt({
   eventType,
   incomingQueueItemUuid,
   localQueueItemUuid,
   correlationId,
+  ownEcho = false,
 }: {
   eventType: RelayEventType;
   incomingQueueItemUuid: string | null | undefined;
   localQueueItemUuid: string | null | undefined;
   correlationId?: string | null;
+  ownEcho?: boolean;
 }): void {
-  if (!incomingQueueItemUuid || incomingQueueItemUuid === localQueueItemUuid) return;
+  if (!incomingQueueItemUuid || incomingQueueItemUuid === localQueueItemUuid || ownEcho) return;
+  const receivedAt = relayClockMs();
+  if (isRecentOwnMove(incomingQueueItemUuid, receivedAt)) return;
   pendingReceipt = {
     queueItemUuid: incomingQueueItemUuid,
     eventType,
     correlationId: correlationId ?? null,
-    receivedAt: relayClockMs(),
+    receivedAt,
   };
 }
 
@@ -83,7 +119,8 @@ export function takeRelayReceipt(queueItemUuid: string): RelayReceipt | null {
   return receipt;
 }
 
-/** Forget any pending receipt: the session ended or the climber signed out. */
+/** Forget everything: the session ended or the climber signed out. */
 export function clearRelayReceipt(): void {
   pendingReceipt = null;
+  ownMoves.clear();
 }
