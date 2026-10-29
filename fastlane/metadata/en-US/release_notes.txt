@@ -6,13 +6,15 @@ On iPad, your climbs get the whole screen and the climb on the wall sits in a mi
 
 Open your iPhone Duo and the board sits beside your list. Build a workout on an open Duo and see the planned climbs next to your blocks.
 
+Choose two columns for the Climbs list when there's room on iPad. Pick the mini player's buttons in View options, log a send without opening the player, and reach Favourite, Playlist and Share from its menu on wide screens.
+
 YOUR REST TIMER ON THE LOCK SCREEN
 
 Your rest countdown shows on the Lock Screen and in the Dynamic Island. A soft tick plays in the last seconds and a tone when rest ends, even with your phone on silent.
 
 WORKOUTS IN BLOCKS
 
-Build a session out of blocks: warm up, then a pyramid, then volume. Add a block mid-session, give each block its own climb filters, and see where you are at a glance. Workouts pick climbs you haven't sent first, can skip what you've sent or tried, and can fill from your Sent or Liked climbs. A recap shows when you finish.
+Build a session out of blocks: warm up, then a pyramid, then volume. Add a block mid-session, give each block its own climb filters, and see where you are at a glance. Workouts pick climbs you haven't sent first, can skip what you've sent or tried, and can fill from your Sent or Liked climbs. Mark Fell or Sent from the mini player. Your session recap keeps your workout blocks, reps and results together.
 
 PLAY FROM THE LIST YOU TAPPED
 
@@ -32,6 +34,9 @@ FIXES FOR YOUR NEXT SESSION
 - Your logbook, likes and playlists work with no signal, and downloaded boards no longer download again every week.
 - Board scans find MoonBoards and newer Kilter boxes, closest first. Boardsesh asks for Bluetooth at your first scan, not at launch.
 - Swiping down closes the player again. Lit holds stay visible while you browse.
+- At multi-board gyms, connecting follows the board your current climb is on. The board light button shows whether it's lit, connecting or off, including when a crewmate turns it off.
+- Mirrored climbs keep their orientation in your logbook and queue history.
+- Delete several logbook entries in a row, or a climb's grouped entries for one day.
 - Climbs you unlike leave Liked straight away.
 - Better VoiceOver and large text support.
 

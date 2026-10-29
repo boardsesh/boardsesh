@@ -6,13 +6,15 @@ Su iPad, i blocchi occupano tutto lo schermo e il blocco illuminato in parete re
 
 Apri il tuo iPhone Duo e il pannello affianca la lista. Crea un allenamento con il Duo aperto e vedi i blocchi previsti accanto alle fasi.
 
+Scegli due colonne per la lista Blocchi quando c'è spazio su iPad. Scegli i pulsanti del mini player nelle opzioni di visualizzazione, registra una ripetizione senza aprire il player e accedi a Preferito, Playlist e Condividi dal suo menu sugli schermi larghi.
+
 Il timer di recupero sulla schermata di blocco
 
 Il conto alla rovescia del recupero compare sulla schermata di blocco e nella Dynamic Island. Negli ultimi secondi senti un ticchettio e alla fine un segnale acustico, anche con il telefono in silenzioso.
 
 Allenamenti in fasi
 
-Crea una session in più fasi: riscaldamento, poi piramide, poi volume. Aggiungi una fase durante la session, scegli filtri diversi per ogni fase e vedi subito a che punto sei. Gli allenamenti scelgono prima i blocchi che non hai chiuso, possono escludere quelli già chiusi o tentati e possono attingere a Chiusi o Blocchi che ti piacciono. Alla fine compare un riepilogo.
+Crea una session in più fasi: riscaldamento, poi piramide, poi volume. Aggiungi una fase durante la session, scegli filtri diversi per ogni fase e vedi subito a che punto sei. Gli allenamenti scelgono prima i blocchi che non hai chiuso, possono escludere quelli già chiusi o tentati e possono attingere a Chiusi o Blocchi che ti piacciono. Segna una caduta o una ripetizione dal mini player. Il riepilogo della session riunisce fasi, ripetizioni e risultati.
 
 Scala dalla lista che hai toccato
 
@@ -32,6 +34,9 @@ Correzioni per la prossima session
 - Diario, Mi piace e playlist funzionano senza segnale. I pannelli scaricati non vengono più riscaricati ogni settimana.
 - La ricerca trova MoonBoard e centraline Kilter più recenti, iniziando da quelle più vicine. Boardsesh chiede il Bluetooth alla prima ricerca, non all'avvio.
 - Scorri verso il basso per chiudere il player. Le prese illuminate restano visibili mentre sfogli.
+- Nelle palestre con più pannelli, la connessione segue il pannello del blocco attuale. Il pulsante delle luci indica se è illuminato, in connessione o spento, anche quando qualcuno della crew lo spegne.
+- I blocchi specchiati mantengono l'orientamento nel diario e nella cronologia della coda.
+- Elimina più salite dal diario una dopo l'altra, oppure quelle di un blocco raggruppate nello stesso giorno.
 - Quando togli Mi piace a un blocco, sparisce subito da Blocchi che ti piacciono.
 - Migliore supporto per VoiceOver e testo grande.
 

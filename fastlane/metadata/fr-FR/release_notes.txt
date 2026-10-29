@@ -6,13 +6,15 @@ Sur iPad, tes blocs passent en plein écran et le bloc au mur reste dans un mini
 
 Ouvre ton iPhone Duo et la board se place à côté de ta liste. Crée un entraînement sur un Duo ouvert et vois les blocs prévus à côté de tes phases.
 
+Choisis deux colonnes pour la liste Blocs quand l'iPad a assez de place. Choisis les boutons du mini-lecteur dans Options d'affichage, fais la croix sans ouvrir le lecteur et accède à Favori, Playlist et Partager depuis son menu sur les écrans larges.
+
 TON MINUTEUR DE REPOS SUR L'ÉCRAN VERROUILLÉ
 
 Ton compte à rebours de repos s'affiche sur l'écran verrouillé et dans la Dynamic Island. Un tic doux retentit dans les dernières secondes et une tonalité à la fin du repos, même avec ton téléphone en silencieux.
 
 ENTRAÎNEMENTS PAR PHASES
 
-Compose une séance en phases : échauffement, puis une pyramide, puis du volume. Ajoute une phase en cours de séance, donne à chaque phase ses propres filtres de blocs et vois où tu en es d'un coup d'œil. Les entraînements choisissent d'abord les blocs que tu n'as pas enchaînés, peuvent ignorer ceux que tu as enchaînés ou essayés, et peuvent puiser dans tes blocs Enchaînés ou Aimés. Un bilan s'affiche à la fin.
+Compose une séance en phases : échauffement, puis une pyramide, puis du volume. Ajoute une phase en cours de séance, donne à chaque phase ses propres filtres de blocs et vois où tu en es d'un coup d'œil. Les entraînements choisissent d'abord les blocs que tu n'as pas enchaînés, peuvent ignorer ceux que tu as enchaînés ou essayés, et peuvent puiser dans tes blocs Enchaînés ou Aimés. Note une chute ou une croix depuis le mini-lecteur. Le bilan de séance réunit tes phases, répétitions et résultats.
 
 LANCE LES BLOCS DE LA LISTE QUE TU AS TOUCHÉE
 
@@ -32,6 +34,9 @@ CORRECTIONS POUR TA PROCHAINE SÉANCE
 - Ton carnet, tes likes et tes playlists fonctionnent sans réseau, et les boards téléchargées ne se retéléchargent plus chaque semaine.
 - Les scans de boards trouvent les MoonBoards et les boîtiers Kilter récents, les plus proches d'abord. Boardsesh demande le Bluetooth à ton premier scan, pas au lancement.
 - Balayer vers le bas ferme de nouveau le lecteur. Les prises allumées restent visibles pendant que tu navigues.
+- Dans les salles avec plusieurs boards, la connexion suit la board du bloc actuel. Le bouton des lumières indique si elle est allumée, en connexion ou éteinte, même quand ta crew l'éteint.
+- Les blocs en miroir gardent leur orientation dans ton carnet et l'historique de la file.
+- Supprime plusieurs entrées du carnet à la suite, ou celles d'un bloc regroupées sur une journée.
 - Les blocs que tu n'aimes plus quittent Aimées tout de suite.
 - Meilleure prise en charge de VoiceOver et du texte agrandi.
 

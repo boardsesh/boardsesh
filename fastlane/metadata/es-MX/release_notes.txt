@@ -6,13 +6,15 @@ En iPad, tus bloques ocupan toda la pantalla y el bloque del muro queda en un mi
 
 Abre tu iPhone Duo y el plafón queda junto a tu lista. Monta un entrenamiento en un Duo abierto y ve los bloques previstos junto a tus fases.
 
+Elige dos columnas para la lista de Bloques cuando haya espacio en iPad. Elige los botones del minirreproductor en Opciones de vista, registra un encadene sin abrir el reproductor y accede a Favorito, Playlist y Compartir desde su menú en pantallas anchas.
+
 TU TEMPORIZADOR DE DESCANSO EN LA PANTALLA BLOQUEADA
 
 Tu cuenta atrás de descanso aparece en la pantalla bloqueada y en la Dynamic Island. Suena un tictac suave en los últimos segundos y un tono cuando acaba el descanso, incluso con el móvil en silencio.
 
 ENTRENAMIENTOS POR FASES
 
-Monta una sesión con fases: calentamiento, luego una pirámide, luego volumen. Añade una fase a mitad de sesión, da a cada fase sus propios filtros de bloques y mira por dónde vas de un vistazo. Los entrenamientos eligen primero bloques que aún no has encadenado, pueden saltarse los que ya has encadenado o intentado, y pueden completarse con tus bloques Encadenados o Favoritos. Al terminar aparece un resumen.
+Monta una sesión con fases: calentamiento, luego una pirámide, luego volumen. Añade una fase a mitad de sesión, da a cada fase sus propios filtros de bloques y mira por dónde vas de un vistazo. Los entrenamientos eligen primero bloques que aún no has encadenado, pueden saltarse los que ya has encadenado o intentado, y pueden completarse con tus bloques Encadenados o Favoritos. Marca una caída o un encadene desde el minirreproductor. El resumen de la sesión reúne tus fases, repeticiones y resultados.
 
 REPRODUCE DESDE LA LISTA QUE TOCASTE
 
@@ -32,6 +34,9 @@ CORRECCIONES PARA TU PRÓXIMA SESIÓN
 - Tu logbook, tus favoritos y tus playlists funcionan sin cobertura, y los plafones descargados ya no se descargan de nuevo cada semana.
 - Los escaneos de plafones encuentran MoonBoards y cajas Kilter más nuevas, primero los más cercanos. Boardsesh pide Bluetooth en tu primer escaneo, no al abrir la app.
 - Deslizar hacia abajo vuelve a cerrar el reproductor. Las presas iluminadas siguen visibles mientras navegas.
+- En rocódromos con varios plafones, la conexión sigue al plafón del bloque actual. El botón de luces muestra si está iluminado, conectando o apagado, también cuando alguien de tu crew lo apaga.
+- Los bloques en espejo conservan su orientación en tu logbook y en el historial de la cola.
+- Borra varias entradas del logbook seguidas, o las de un bloque agrupadas en un mismo día.
 - Los bloques que quitas de Favoritos salen de la lista al instante.
 - Mejor soporte de VoiceOver y de texto grande.
 
