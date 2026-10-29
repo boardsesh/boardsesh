@@ -119,6 +119,15 @@ describe('resolveAppStackState', () => {
     expect(resolveAppStackState(deviceRoot)).toBe(appStack);
   });
 
+  it('finds __root by name while a dev-only route is focused above it', () => {
+    const devRoot = {
+      key: 'expo-root',
+      index: 1,
+      routes: [{ name: '__root', state: appStack }, { name: '_sitemap' }],
+    };
+    expect(resolveAppStackState(devRoot)).toBe(appStack);
+  });
+
   it('is null while the app Stack under __root has not mounted', () => {
     expect(resolveAppStackState({ key: 'expo-root', index: 0, routes: [{ name: '__root' }] })).toBeNull();
     expect(resolveAppStackState(undefined)).toBeNull();

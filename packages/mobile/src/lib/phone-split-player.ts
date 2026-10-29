@@ -64,16 +64,18 @@ function isStackStateLike(state: unknown): state is StackStateLike {
 
 /**
  * The app's root Stack from `navigationRef.getRootState()`. On a device that root
- * is expo-router's own wrapper stack (`ExpoRoot`'s `Content`), whose focused
- * route is `__root`, so reading `routes[index]` there never finds `play`. Steps
- * into `__root`'s nested state; null while that state has not mounted yet. A
- * root that is already the app stack (no wrapper) is returned as it is.
+ * is expo-router's own wrapper stack (`ExpoRoot`'s `Content`), holding `__root`
+ * (plus `+not-found` / `_sitemap` in development), so reading `routes[index]`
+ * there never finds `play`. Steps into `__root`'s nested state wherever it sits,
+ * even while a dev-only route is focused above it; null while that state has not
+ * mounted yet. Only a root with no `__root` route at all is already the app stack
+ * and is returned as it is.
  */
 export function resolveAppStackState(rootState: unknown): StackStateLike | null {
   if (!isStackStateLike(rootState)) return null;
-  const focused = rootState.routes[rootState.index];
-  if (focused?.name !== EXPO_ROUTER_ROOT_SLOT) return rootState;
-  return isStackStateLike(focused.state) ? focused.state : null;
+  const slot = rootState.routes.find((route) => route.name === EXPO_ROUTER_ROOT_SLOT);
+  if (!slot) return rootState;
+  return isStackStateLike(slot.state) ? slot.state : null;
 }
 
 /**

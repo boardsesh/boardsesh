@@ -2281,6 +2281,9 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
   it('uses the router if the mounted navigator does not own the player', async () => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
+    // Flat like the fast-path test above (#7069): wrapped, `navigateToPlayer`
+    // never sees `routeNames` and this would pass whatever they held.
+    nativeNavigation.wrappedInExpoRoot = false;
     nativeNavigation.routeNames = ['(tabs)'];
     const hosts: Array<HostValue> = [];
     renderHost((host) => hosts.push(host));
@@ -2409,7 +2412,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     splitCfg.phoneSplit = true;
     rerenderHost();
     await act(async () => {});
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
 
     act(() => publishRoutePlayerBusy('player', false));
     await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
@@ -2430,7 +2433,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     rerenderHost();
     act(() => publishRoutePlayerBusy('player', false));
     await act(async () => {});
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
 
     act(() => publishRoutePlayerBusy('route', false));
     await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
@@ -2452,7 +2455,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     rerenderHost();
     await act(async () => {});
 
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
   });
 
@@ -2520,7 +2523,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     act(() => publishRoutePlayerBusy('player', false));
     await act(async () => {});
 
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 
   it('leaves /play alone on an iPad crossing into its pane', async () => {
@@ -2533,6 +2536,6 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     rerenderHost();
     await act(async () => {});
 
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 });
