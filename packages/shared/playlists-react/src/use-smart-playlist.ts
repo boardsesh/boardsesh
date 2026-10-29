@@ -249,10 +249,28 @@ function removedRowsFor(queryClient: QueryClient): Map<string, RemovedLikedRow[]
 }
 
 /**
- * Drops one climb from every cached page of the Liked list, so an un-like shows
- * the moment it is tapped and a Play started right after drains a list without
- * it. No request: the cached pages are edited in place (#5304). The removed rows
- * are kept for `restoreClimbToLikedList`.
+ * One page with every list-wide count moved by `delta`: the total the rows
+ * page by, the header's `meta.climbCount`, and a filtering view's
+ * `unfilteredCount` (null on a plain view, and kept null). Each page carries
+ * all three, and the screen reads them off page one, so every page moves once
+ * even when the climb sat on a later page. Never below zero (#7024).
+ */
+function shiftLikedListCounts(page: SmartPlaylistResult, delta: number): SmartPlaylistResult {
+  const shift = (count: number) => Math.max(0, count + delta);
+  return {
+    ...page,
+    totalCount: shift(page.totalCount),
+    // A response without meta (an older test double) stays without one.
+    ...(page.meta ? { meta: { ...page.meta, climbCount: shift(page.meta.climbCount) } } : {}),
+    ...(page.unfilteredCount == null ? {} : { unfilteredCount: shift(page.unfilteredCount) }),
+  };
+}
+
+/**
+ * Drops one climb, and one from each list-wide count, from every cached page of
+ * the Liked list, so an un-like shows the moment it is tapped and a Play started
+ * right after drains a list without it. No request: the cached pages are edited
+ * in place (#5304). The removed rows are kept for `restoreClimbToLikedList`.
  */
 export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: string): void {
   const removed: RemovedLikedRow[] = [];
@@ -264,16 +282,15 @@ export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: st
       const climbIndex = page.climbs.findIndex((climb) => climb.uuid === climbUuid);
       if (climbIndex === -1) continue;
       removed.push({ queryKey, pageIndex, climbIndex, climb: page.climbs[climbIndex] });
-      // Every page carries the list-wide total, and the screen reads it off page one,
-      // so each page's total drops once even when the climb sat on a later page.
+      // The counts drop with the row, so the header never says "1 climb" over an
+      // empty list while the un-like waits offline (#7024).
       queryClient.setQueryData<InfiniteData<SmartPlaylistResult>>(queryKey, (current) =>
         current
           ? {
               ...current,
               pages: current.pages.map((cachedPage) => ({
-                ...cachedPage,
+                ...shiftLikedListCounts(cachedPage, -1),
                 climbs: cachedPage.climbs.filter((climb) => climb.uuid !== climbUuid),
-                totalCount: Math.max(0, cachedPage.totalCount - 1),
               })),
             }
           : current,
@@ -317,7 +334,7 @@ export function restoreClimbToLikedList(queryClient: QueryClient, climbUuid: str
             index === targetPage
               ? [...page.climbs.slice(0, climbIndex), climb, ...page.climbs.slice(climbIndex)]
               : page.climbs;
-          return { ...page, climbs, totalCount: page.totalCount + 1 };
+          return { ...shiftLikedListCounts(page, 1), climbs };
         }),
       };
     });
