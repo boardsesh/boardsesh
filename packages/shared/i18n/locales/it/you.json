@@ -110,6 +110,9 @@
       "deleteConfirm": "La salita registrata verrà eliminata. Non si può annullare.",
       "saveError": "Impossibile salvare le modifiche. Riprova.",
       "deleteError": "Impossibile eliminare la salita. Riprova.",
+      "deleteAll": "Elimina tutte",
+      "deleteAllTitle": "Elimina {{count}} salite",
+      "deleteAllConfirm": "Verranno eliminate tutte le {{count}} salite registrate in questo giorno. Non si può annullare.",
       "tries_one": "{{count}} tentativo",
       "tries_other": "{{count}} tentativi",
       "status": {
@@ -147,7 +150,8 @@
       },
       "chooser": {
         "editTitle": "Quale salita vuoi modificare?",
-        "deleteTitle": "Quale salita vuoi eliminare?"
+        "deleteTitle": "Quale salita vuoi eliminare?",
+        "deleteAll": "Elimina tutte e {{count}}"
       },
       "boardLabel": "Pannello",
       "boardNone": "Nessuno",
