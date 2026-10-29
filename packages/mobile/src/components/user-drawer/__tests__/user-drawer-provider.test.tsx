@@ -75,6 +75,10 @@ const profileState = vi.hoisted(() => ({ isTester: false }));
 // The moderation kill switch and the sign-in state, mutable per test.
 const drawerState = vi.hoisted(() => ({ climbModerationEnabled: true, isAuthenticated: true }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
+// The Account support row: the store rules and the Show support asks switch are
+// one answer from lib/support-asks.ts, covered by its own suite.
+const supportState = vi.hoisted(() => ({ allowed: false }));
+const supportAnalytics = vi.hoisted(() => ({ trackSupportLinkTapped: vi.fn() }));
 
 // The launch hold is covered by its own suite; here the screen renders as is.
 vi.mock('../../launch-update/hold-until-launch-ready', () => ({
@@ -149,6 +153,7 @@ vi.mock('react-i18next', () => ({
           'userDrawer.rateBoardsesh': 'Rate Boardsesh',
           'userDrawer.reportBug': 'Report a bug',
           'userDrawer.whatsNew': "What's New",
+          'mobile.supportAsks.accountRow': 'Support Boardsesh',
           'userDrawer.qa.pick': 'Test a PR preview',
           'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
           'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
@@ -227,6 +232,11 @@ vi.mock('../../../settings', () => ({
 vi.mock('../../../settings/hooks', () => ({
   useSetting: (key: string) => [key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null, vi.fn()],
 }));
+vi.mock('../../../lib/support-asks', () => ({ useSupportAsksAllowed: () => supportState.allowed }));
+// donation-links probes the Storefront native module at import; only its URL
+// builder runs here.
+vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
+vi.mock('../../../lib/analytics-support-link', () => supportAnalytics);
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: drawerState.isAuthenticated, signOut: signOutMock }),
 }));
@@ -347,6 +357,8 @@ beforeEach(() => {
   profileState.isTester = false;
   drawerState.climbModerationEnabled = true;
   drawerState.isAuthenticated = true;
+  supportState.allowed = false;
+  supportAnalytics.trackSupportLinkTapped.mockClear();
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
   changelogSeen.getLastSeenChangelogDate.mockResolvedValue('2026-01-01T00:00:00.000Z');
@@ -724,6 +736,36 @@ describe('user-drawer library rows', () => {
     const titles = rowTitles(container);
     expect(titles).not.toContain('Notifications');
     expect(titles).not.toContain('All playlists');
+  });
+});
+
+describe('user-drawer Support Boardsesh row', () => {
+  function rowTitles(container: HTMLElement): (string | null)[] {
+    return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
+  }
+
+  it('is absent wherever support asks are not allowed (Android, non-US iPhones, the switch off)', () => {
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container)).not.toContain('Support Boardsesh');
+  });
+
+  it('is the first row, above Change board, where support asks are allowed', () => {
+    supportState.allowed = true;
+    const { container } = render(<Harness showScreen />);
+    expect(rowTitles(container).slice(0, 2)).toEqual(['Support Boardsesh', 'Change board']);
+  });
+
+  it('counts the tap, then opens the support page tagged with Account once the route unmounts', () => {
+    supportState.allowed = true;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledWith('account');
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(browser.openBrowserAsync).toHaveBeenCalledWith('https://www.boardsesh.com/support?src=app-account');
   });
 });
 

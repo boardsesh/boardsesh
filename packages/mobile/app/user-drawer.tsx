@@ -23,6 +23,10 @@ import { useClimbModerationEnabled, useOfflineDownloadsEnabled } from '../src/pr
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useQaMenu } from '../src/lib/qa/use-qa-menu';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
+import { trackSupportLinkTapped } from '../src/lib/analytics-support-link';
+import { supportUrlFor } from '../src/lib/donation-links';
+import { openExternalUrl } from '../src/lib/open-url';
+import { useSupportAsksAllowed } from '../src/lib/support-asks';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -111,6 +115,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // without the marker the drawer would keep offering to finish testing something
   // already signed off.
   const { show: showQaRows, prNumber: qaPrNumber } = useQaMenu();
+  const supportAsksAllowed = useSupportAsksAllowed();
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -229,6 +234,12 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     close(() => presentFeedback());
   };
 
+  const handleSupport = () => {
+    // Counted on the tap, before the browser opens, like every support link.
+    trackSupportLinkTapped('account');
+    close(() => void openExternalUrl(supportUrlFor('account'), 'account-support'));
+  };
+
   const handleReportBug = () => {
     setFeedbackMode('bug');
     close(() => presentFeedback());
@@ -278,6 +289,20 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
           <ProfileHeaderBody avatarUrl={profile?.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
         </View>
       )}
+
+      {/* US iPhones and the browser app only, and only while "Show support
+              asks" is on (lib/support-asks.ts). Everywhere else, nothing. */}
+      {supportAsksAllowed ? (
+        <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+          <DrawerRow
+            icon="favorite.fill"
+            title={t('mobile.supportAsks.accountRow')}
+            tintColor={brandColors.primary}
+            onPress={handleSupport}
+            showSeparator={false}
+          />
+        </View>
+      ) : null}
 
       <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
         {/* One row, not two: "Change board" and "My Boards" were adjacent

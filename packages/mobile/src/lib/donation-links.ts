@@ -37,6 +37,12 @@
  * Screenshot mode always reads "not allowed", so App Store captures and the
  * replayed screenshot fixtures never show a donation ask.
  *
+ * The Expo browser app (`Platform.OS === 'web'`, served at /app) always reads
+ * "allowed", flag or no flag. It is a web page, not a store binary, so no store
+ * policy applies to it — the same reason boardsesh.com links /support from every
+ * page. The flag cannot stand in for it either: it is targeted to OS = iOS, so a
+ * browser would never see it on. Screenshot mode still wins there.
+ *
  * The storefront country is read ONCE per app run, by design. Changing the
  * Apple Account region mid-session therefore keeps the cached answer until the
  * next relaunch — acceptable in both directions, since the stale answer is
@@ -66,14 +72,22 @@ const US_STOREFRONT_COUNTRY = 'USA';
 export const SUPPORT_URL = 'https://www.boardsesh.com/support';
 
 /** Every in-app place a tappable support link can sit. */
-export type SupportLinkSurface = 'acknowledgements';
+export type SupportLinkSurface = 'acknowledgements' | 'account' | 'home-card';
+
+/**
+ * Which way of giving the climber picked, where a surface offers both (the Home
+ * card). The support page reads it to start on that option; it never changes
+ * what the page lets them do.
+ */
+export type SupportCadence = 'monthly' | 'once';
 
 /**
  * The support page with the tapping surface in `src`, so a visit (and, once the
  * page forwards it, a payment) can be traced back to the screen that sent it.
  */
-export function supportUrlFor(surface: SupportLinkSurface): string {
-  return `${SUPPORT_URL}?src=app-${surface}`;
+export function supportUrlFor(surface: SupportLinkSurface, cadence?: SupportCadence): string {
+  const url = `${SUPPORT_URL}?src=app-${surface}`;
+  return cadence ? `${url}&cadence=${cadence}` : url;
 }
 
 /**
@@ -150,11 +164,14 @@ export function useDonationLinksAllowed(): boolean {
     };
   }, [flagEnabled]);
 
-  if (!flagEnabled || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  // The Expo browser app: no store, so no store rule (see the header).
+  if (Platform.OS === 'web') return true;
+  if (!flagEnabled) return false;
   // QA: the maintainer's admin account, on a phone, whatever the region.
   if (isAdmin && (Platform.OS === 'ios' || Platform.OS === 'android')) return true;
   if (Platform.OS === 'ios') return storefrontCountry === US_STOREFRONT_COUNTRY;
-  // Android: never, whatever the flag says (see the header). Expo web and
-  // anything else: no way to know the reader's region. Stay on the unlinked copy.
+  // Android: never, whatever the flag says (see the header). Anything else: no
+  // way to know the reader's region. Stay on the unlinked copy.
   return false;
 }

@@ -447,6 +447,9 @@ since May 2025). Everywhere else the compliant surface is unlinked text that
 merely names the website — the pattern StreetComplete ships and Google
 sanctions. The Acknowledgements screen renders exactly one of those two, and
 `useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
+The same answer gates the Support Boardsesh row in Account and the December
+card on Home (`packages/mobile/src/lib/support-asks.ts`), which also need the
+climber's own "Show support asks" switch in Settings › General to be on.
 
 **The code enforces the platform and the region; the flag is only a kill
 switch.**
@@ -461,8 +464,12 @@ switch.**
   targeting, and Google threatened AnkiDroid with removal over a donation link
   in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
   withdrawn.
-- **Screenshot mode never shows it**, so App Store captures and the replayed
-  screenshot fixtures stay free of donation asks.
+- **The Expo browser app always shows it**, flag or no flag. At `/app` the app
+  is a web page, not a store binary, so no store rule applies — the same reason
+  boardsesh.com links /support from every page. The flag could not cover it
+  anyway: it is targeted to `OS = iOS`, so a browser never sees it on.
+- **Screenshot mode never shows it**, on any platform, so App Store captures and
+  the replayed screenshot fixtures stay free of donation asks.
 - **Admin accounts see it on any phone, for QA.** With the flag on, an admin
   (`useIsAdmin`) gets the link on iOS in any storefront and on Android, so the
   maintainer can check it from Australia. App Review never signs in as an admin.
@@ -497,8 +504,8 @@ build"). Mark any future flag the same way if flipping it wrong is a policy
 violation rather than an early look at a feature.
 
 Everything else about the flag is ordinary: a POSITIVE rollout flag read as
-`=== true`, so unresolved, absent and off all land on the unlinked text, which
-is the safe answer in every region. It deliberately does not wait on
+`=== true`, so unresolved, absent and off all land on the unlinked text on
+native, which is the safe answer in every region. It deliberately does not wait on
 `useFeatureFlagsResolved` — the first-frame render is already the compliant one.
 
 ### The board-render flags (issue #2202) — both retired

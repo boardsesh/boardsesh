@@ -49,4 +49,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playerButtonsPosition: 'below',
   homeSectionsV1: null,
   playlistSortsV1: null,
+  supportAsksShown: true,
+  supportCardV1: null,
 };

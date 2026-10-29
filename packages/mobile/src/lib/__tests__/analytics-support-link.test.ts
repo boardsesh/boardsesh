@@ -11,4 +11,10 @@ describe('trackSupportLinkTapped', () => {
 
     expect(analytics.track).toHaveBeenCalledWith('Support Link Tapped', { surface: 'acknowledgements' });
   });
+
+  it('adds the way of giving when the surface offered a choice', () => {
+    trackSupportLinkTapped('home-card', 'once');
+
+    expect(analytics.track).toHaveBeenCalledWith('Support Link Tapped', { surface: 'home-card', cadence: 'once' });
+  });
 });

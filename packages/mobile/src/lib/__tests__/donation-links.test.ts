@@ -236,9 +236,22 @@ describe('useDonationLinksAllowed', () => {
     expect(second.result.current).toBe(true);
   });
 
-  it('hides links on Expo web, where there is no storefront to read', async () => {
+  it('shows links in the Expo browser app with the flag off, since no store rule applies there', async () => {
+    platformMock.OS = 'web';
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('shows links in the Expo browser app with the flag on too', async () => {
     platformMock.OS = 'web';
     flagsMock['donation-links-v2'] = true;
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('hides links in the Expo browser app in screenshot mode', async () => {
+    platformMock.OS = 'web';
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
 
     expect(await renderAllowed()).toBe(false);
   });
@@ -255,5 +268,16 @@ describe('useDonationLinksAllowed', () => {
     const { supportUrlFor } = await loadDonationLinks();
 
     expect(supportUrlFor('acknowledgements')).toBe('https://www.boardsesh.com/support?src=app-acknowledgements');
+    expect(supportUrlFor('account')).toBe('https://www.boardsesh.com/support?src=app-account');
+    expect(supportUrlFor('home-card')).toBe('https://www.boardsesh.com/support?src=app-home-card');
+  });
+
+  it('carries the way of giving the climber picked, where a surface offers both', async () => {
+    const { supportUrlFor } = await loadDonationLinks();
+
+    expect(supportUrlFor('home-card', 'monthly')).toBe(
+      'https://www.boardsesh.com/support?src=app-home-card&cadence=monthly',
+    );
+    expect(supportUrlFor('home-card', 'once')).toBe('https://www.boardsesh.com/support?src=app-home-card&cadence=once');
   });
 });
