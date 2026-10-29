@@ -84,8 +84,8 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
 
   // "Today" via a LOCAL date string (NOT toISOString, which is UTC) so the
   // current-day ring lands on the right cell across time zones. Read every
-  // render, not memoised at mount: it also gates taps on future days, and the
-  // Progress tab can stay mounted past midnight.
+  // render rather than memoised at mount, so the Progress tab picks up a new
+  // day on its next render.
   const todayKey = localDayKey(nowDate());
 
   const colorForCount = useCallback(
@@ -177,10 +177,11 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
       );
       const day = week[rowIndex];
       // Days later this week haven't happened yet; there's nothing to report.
-      if (!day || day.date > todayKey) return;
+      // Read the clock at tap time: no render happens at midnight.
+      if (!day || day.date > localDayKey(nowDate())) return;
       setSelectedDayKey((current) => (current === day.date ? null : day.date));
     },
-    [shown, pitch, todayKey],
+    [shown, pitch],
   );
 
   const calendarAnchor = useShowcaseAnchor('activity-calendar');
