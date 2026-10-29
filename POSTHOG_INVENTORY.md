@@ -775,3 +775,24 @@ text, a grade, a date or a setter name.
 `surface` is new with the capsule row; events from older builds have only `fields` (Filter Changed)
 or only `preset` (Sort Changed). The sheet applies live, so each tap in it is its own event; there is no
 Apply to batch them.
+
+## Support page clicks (www)
+
+One www-only event from `/support`, built by `supportCtaClicked` in
+`packages/shared/analytics/src/support-events.ts` and sent through
+`packages/web/app/support/support-analytics.ts`. It goes through www's `track()`, so it is
+consent-gated and sends nothing on a dev or preview host. It never carries a button label, a
+link or an amount: labels come from runtime env and name amounts.
+
+| Event | Properties | Emit sites | When |
+| --- | --- | --- | --- |
+| `Support CTA Clicked` | `cadence` (`monthly` / `once` / `sponsors`), `currency` (`aud` / `usd` / `none` for GitHub Sponsors), `src` (the page's sanitised `?src=`, `web-support` by default; `web-home-banner` from the December banner, `app-<surface>` from the app), `option` (1-based position in the monthly list, 1 for a single button), `placement` (`hero` / `options`) | `support-content.tsx`, `support-chooser.tsx` | Every click on a button that opens Stripe or GitHub Sponsors in a new tab |
+
+Reading it:
+
+- **Clicks by source**: `Support CTA Clicked` broken down by `src`. Match a gift to its source in
+  Stripe by the Payment's `client_reference_id`, which carries the same value.
+- **The December banner** (on `/` only, 1 to 31 Dec 2026 UTC) has no event of its own. Its visits
+  are `$pageview` on `/support` with `src=web-home-banner` in `$current_url`, and its clicks are
+  `Support CTA Clicked` with that `src`.
+- **The hero's "Go monthly"** scrolls to the options on the same page and fires nothing.

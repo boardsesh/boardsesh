@@ -78,6 +78,16 @@ const SUPPORT_COPY_KEYS = [
   'support.sponsors.cta',
   'support.oneTime.body',
   'support.oneTime.cta',
+  // The monthly-first layout, shown once SUPPORT_MONTHLY_LINKS_* is set.
+  'support.hero.ctaMonthly',
+  'support.why.p1Monthly',
+  'support.chooser.monthly',
+  'support.chooser.once',
+  'support.chooser.monthlyBody',
+  'support.chooser.publicName',
+  'support.chooser.manage',
+  'support.thanksState.title',
+  'support.thanksState.body',
   // "Other ways to help" is the non-monetary column. It is the copy most likely
   // to drift into promising something back, so every string on it is listed.
   'support.otherWays.title',
@@ -96,6 +106,7 @@ const SUPPORT_COPY_KEYS = [
   'support.otherWays.discord.cta',
   'support.honesty.p1',
   'support.honesty.p2',
+  'support.honesty.p2Monthly',
   'support.thanks.body',
   // The homepage support block carries the same ask above the footer, so it
   // carries the same constraint. Its "not got money spare?" column reuses the
@@ -107,6 +118,9 @@ const SUPPORT_COPY_KEYS = [
   'home.support.chipIn',
   'home.support.source',
   'home.support.otherWays',
+  // The December banner on the homepage.
+  'home.supportBanner.text',
+  'home.supportBanner.cta',
 ];
 
 describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale) => {

@@ -12,6 +12,8 @@ import HomeGymSearch from './components/home/home-gym-search';
 import { cachedCommunityStats } from './lib/graphql/server-cached-client';
 import HomeFeatureStrip from './components/home/home-feature-strip';
 import HomeSupportBlock from './components/home/home-support-block';
+import HomeSupportBanner from './components/home/home-support-banner';
+import { isSupportBannerWindow } from './components/home/support-banner-window';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -64,6 +66,7 @@ export default async function Home() {
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}
         supportBlock={<HomeSupportBlock />}
+        supportBanner={isSupportBannerWindow(new Date()) ? <HomeSupportBanner /> : null}
       />
     </I18nProvider>
   );

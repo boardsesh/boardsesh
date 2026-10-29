@@ -165,6 +165,11 @@
       "chipIn": "Echa una mano",
       "source": "Mira el código",
       "otherWays": "¿No te sobra el dinero?"
+    },
+    "supportBanner": {
+      "text": "Boardsesh sigue gratis porque los escaladores echan una mano. Este diciembre, apoya cada mes y paga el tiempo que lleva construirlo.",
+      "cta": "Apoya cada mes",
+      "close": "Cerrar"
     }
   },
   "about": {
@@ -214,13 +219,15 @@
   "support": {
     "hero": {
       "title": "Mantén Boardsesh en marcha",
-      "subtitle": "Gratis, de código abierto y pagado por escaladores"
+      "subtitle": "Gratis, de código abierto y pagado por escaladores",
+      "ctaMonthly": "Apoya cada mes"
     },
     "promise": "Sin pantallas bloqueadas, sin segunda categoría, sin anuncios. Echar una mano paga la factura, nada más.",
     "why": {
       "title": "Por qué existe esta página",
       "p1": "Boardsesh es gratis y de código abierto, y siempre lo será. Pero mantenerlo cuesta dinero de verdad: el hosting, la base de datos y la infraestructura suman cada vez que se une más gente.",
-      "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas."
+      "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas.",
+      "p1Monthly": "Boardsesh es gratis y de código abierto, y siempre lo será. Construirlo lleva horas cada semana, y el apoyo mensual paga ese tiempo."
     },
     "rails": {
       "title": "Formas de echar una mano"
@@ -234,6 +241,17 @@
       "title": "Donación única",
       "body": "Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
       "cta": "Dona una vez"
+    },
+    "chooser": {
+      "cadenceLabel": "Con qué frecuencia",
+      "monthly": "Cada mes",
+      "once": "Dona una vez",
+      "currencyLabel": "Moneda",
+      "aud": "AUD",
+      "usd": "USD",
+      "monthlyBody": "El apoyo mensual paga el tiempo que lleva construir Boardsesh. Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
+      "publicName": "Si das un nombre al pagar, puede que lo mostremos públicamente al dar las gracias. Déjalo en blanco para apoyar de forma anónima.",
+      "manage": "¿Ya apoyas cada mes? Cámbialo o cancélalo en Stripe →"
     },
     "otherWays": {
       "title": "Otras formas de ayudar",
@@ -262,11 +280,16 @@
     "honesty": {
       "title": "La letra pequeña",
       "p1": "Las donaciones no son deducibles de impuestos. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
-      "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no."
+      "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no.",
+      "p2Monthly": "Tu dinero paga el tiempo que lleva construir Boardsesh. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, apoyes o no."
     },
     "thanks": {
       "title": "Gracias",
       "body": "A quienes ya patrocinan Boardsesh, abren issues, mandan parches o traducen una pantalla: gracias. Así es como esto sigue en marcha."
+    },
+    "thanksState": {
+      "title": "Gracias",
+      "body": "Tu apoyo se ha registrado. Va directo a construir Boardsesh."
     },
     "aboutLink": "Conoce más sobre el proyecto →",
     "docsLink": "Mira cómo está construido en la documentación →",
@@ -1014,7 +1037,7 @@
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "lastUpdated": "Última actualización: 17 de octubre de 2026",
+    "lastUpdated": "Última actualización: 29 de octubre de 2026",
     "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos.",
     "collect": {
@@ -1065,7 +1088,10 @@
       "expoLink": "la documentación de Expo Observe",
       "hostingBody": "Usamos Railway para alojar la aplicación y la base de datos, y Cloudflare para distribuir contenido, alojar la app del navegador y almacenar archivos multimedia. Estos proveedores procesan las solicitudes necesarias para ofrecer Boardsesh. Consulta ",
       "sentryBody": "Usamos Sentry para supervisar errores por interés legítimo y mantener Boardsesh funcionando. La recopilación predeterminada de información personal está desactivada; limitamos los informes de errores y eliminamos los campos sensibles. El servicio sigue activo si rechazas la analítica. Consulta ",
-      "expoBody": "Usamos Expo Observe para medir tiempos de rendimiento, información del dispositivo y la versión de la app y diagnósticos de errores en nuestro propio servidor, por interés legítimo para mantener Boardsesh funcionando. Los diagnósticos siguen activos si rechazas la analítica. Los identificadores de instalación y sesión del SDK sirven para comprobar el estado de las actualizaciones; no asignamos ninguna identidad de cuenta de Boardsesh a Observe. Consulta "
+      "expoBody": "Usamos Expo Observe para medir tiempos de rendimiento, información del dispositivo y la versión de la app y diagnósticos de errores en nuestro propio servidor, por interés legítimo para mantener Boardsesh funcionando. Los diagnósticos siguen activos si rechazas la analítica. Los identificadores de instalación y sesión del SDK sirven para comprobar el estado de las actualizaciones; no asignamos ninguna identidad de cuenta de Boardsesh a Observe. Consulta ",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Si apoyas a través de nuestra página de apoyo, Stripe gestiona el pago. Stripe recibe los datos de tu tarjeta o monedero, tu correo electrónico, tu país de facturación y cualquier nombre que indiques al pagar. Boardsesh nunca ve el número de tu tarjeta. Nosotros vemos el correo, el nombre, el importe y una etiqueta breve de la página de la que vienes, para enviar recibos, responder preguntas y dar las gracias a quienes apoyan. Consulta ",
+      "stripeLink": "la política de privacidad de Stripe"
     },
     "sharing": {
       "title": "Compartir de datos",

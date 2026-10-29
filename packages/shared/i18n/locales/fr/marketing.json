@@ -165,6 +165,11 @@
       "chipIn": "Participer",
       "source": "Lire le code",
       "otherWays": "Pas de budget ?"
+    },
+    "supportBanner": {
+      "text": "Boardsesh reste gratuit parce que des grimpeurs participent. En décembre, soutenez-le chaque mois et payez le temps qu'il faut pour le construire.",
+      "cta": "Soutenir chaque mois",
+      "close": "Fermer"
     }
   },
   "about": {
@@ -214,13 +219,15 @@
   "support": {
     "hero": {
       "title": "Gardez Boardsesh en vie",
-      "subtitle": "Gratuit, open source, et payé par des grimpeurs"
+      "subtitle": "Gratuit, open source, et payé par des grimpeurs",
+      "ctaMonthly": "Soutenir chaque mois"
     },
     "promise": "Pas d'écran verrouillé, pas de deuxième catégorie, pas de pub. Participer paie la facture, rien d'autre.",
     "why": {
       "title": "Pourquoi cette page",
       "p1": "Boardsesh est gratuit et open source, et le restera. Le faire tourner coûte pourtant de l'argent : l'hébergement, la base de données et l'infrastructure s'additionnent à chaque nouveau grimpeur.",
-      "p2": "On promet de ne pas gâcher Boardsesh, et l'auto-hébergement restera toujours possible. Si l'app vous sert et que vous pouvez vous le permettre, un coup de main garde les serveurs allumés."
+      "p2": "On promet de ne pas gâcher Boardsesh, et l'auto-hébergement restera toujours possible. Si l'app vous sert et que vous pouvez vous le permettre, un coup de main garde les serveurs allumés.",
+      "p1Monthly": "Boardsesh est gratuit et open source, et le restera. Le construire prend des heures chaque semaine, et le soutien mensuel paie ce temps."
     },
     "rails": {
       "title": "Façons de participer"
@@ -234,6 +241,17 @@
       "title": "Don unique",
       "body": "Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
       "cta": "Faire un don"
+    },
+    "chooser": {
+      "cadenceLabel": "Fréquence",
+      "monthly": "Chaque mois",
+      "once": "Une fois",
+      "currencyLabel": "Devise",
+      "aud": "AUD",
+      "usd": "USD",
+      "monthlyBody": "Le soutien mensuel paie le temps qu'il faut pour construire Boardsesh. Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
+      "publicName": "Si vous indiquez un nom au paiement, il peut apparaître publiquement quand on remercie nos soutiens. Laissez-le vide pour donner anonymement.",
+      "manage": "Vous donnez déjà chaque mois ? Modifiez ou arrêtez dans Stripe →"
     },
     "otherWays": {
       "title": "Autres façons d'aider",
@@ -262,11 +280,16 @@
     "honesty": {
       "title": "Les petits caractères",
       "p1": "Les dons ne sont pas déductibles des impôts. Boardsesh n'est pas une association, juste des grimpeurs qui paient la facture du serveur.",
-      "p2": "Votre argent part dans l'hébergement, la base de données et l'infrastructure. Il n'achète rien de plus dans l'app : tout Boardsesh reste ouvert à tout le monde, donateur ou pas."
+      "p2": "Votre argent part dans l'hébergement, la base de données et l'infrastructure. Il n'achète rien de plus dans l'app : tout Boardsesh reste ouvert à tout le monde, donateur ou pas.",
+      "p2Monthly": "Votre argent paie le temps qu'il faut pour construire Boardsesh. Il n'achète rien de plus dans l'app : tout Boardsesh reste ouvert à tout le monde, donateur ou pas."
     },
     "thanks": {
       "title": "Merci",
       "body": "À celles et ceux qui soutiennent déjà Boardsesh, signalent des bugs, proposent du code ou traduisent un écran : merci. C'est vous qui faites avancer le projet."
+    },
+    "thanksState": {
+      "title": "Merci",
+      "body": "Votre soutien est bien passé. Il sert directement à construire Boardsesh."
     },
     "aboutLink": "En savoir plus sur le projet →",
     "docsLink": "Voyez comment c'est construit dans la doc développeur →",
@@ -1014,7 +1037,7 @@
   },
   "privacy": {
     "title": "Politique de confidentialité",
-    "lastUpdated": "Dernière mise à jour : 17 octobre 2026",
+    "lastUpdated": "Dernière mise à jour : 29 octobre 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
     "collect": {
@@ -1065,7 +1088,10 @@
       "expoLink": "la documentation d’Expo Observe",
       "hostingBody": "Railway héberge l’application et la base de données. Cloudflare distribue le contenu, héberge l’app du navigateur et stocke les médias. Ces prestataires traitent les requêtes nécessaires au fonctionnement de Boardsesh. Voir ",
       "sentryBody": "Nous utilisons Sentry pour surveiller les erreurs au titre de l’intérêt légitime afin de maintenir Boardsesh en état de marche. La collecte par défaut d’informations personnelles est désactivée ; les rapports d’erreur sont limités et les champs sensibles supprimés. Ce service reste actif si tu refuses les statistiques. Voir ",
-      "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir "
+      "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir ",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Si vous donnez via notre page de soutien, Stripe traite le paiement. Stripe reçoit les données de votre carte ou de votre portefeuille, votre adresse e-mail, votre pays de facturation et tout nom saisi au paiement. Boardsesh ne voit jamais votre numéro de carte. Nous voyons l'e-mail, le nom, le montant et une courte étiquette de la page d'où vous venez, pour vous faire parvenir les reçus, répondre aux questions et remercier nos soutiens. Voir ",
+      "stripeLink": "la politique de confidentialité de Stripe"
     },
     "sharing": {
       "title": "Partage de données",

@@ -1,0 +1,33 @@
+/* The December support banner, first thing under the header on `/`.
+ * Colours are CSS vars from app/components/index.css. Never literals. */
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3) var(--spacing-6);
+  margin-top: var(--spacing-6);
+  padding: var(--spacing-4) var(--spacing-5);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--neutral-100);
+}
+
+.text {
+  flex: 1 1 320px;
+  min-width: 0;
+  color: var(--neutral-800);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+/* 44px target, like every other control on the page. */
+.close {
+  width: 44px;
+  height: 44px;
+}

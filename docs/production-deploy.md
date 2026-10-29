@@ -717,17 +717,73 @@ The table above is **build-time** configuration: GitHub reads it, and the
 set on the Railway `web` service itself is **runtime** configuration — read per
 request, changeable without a rebuild.
 
-| Name                 | Kind   | Purpose                                                                            |
-| -------------------- | ------ | ---------------------------------------------------------------------------------- |
-| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+| Name                        | Kind | Purpose                                                                                     |
+| --------------------------- | ---- | ------------------------------------------------------------------------------------------- |
+| `SUPPORT_MONTHLY_LINKS_AUD` | var  | Monthly Stripe Payment Links in AUD on `/support`, as a JSON list (below).                  |
+| `SUPPORT_MONTHLY_LINKS_USD` | var  | The same list in USD.                                                                       |
+| `STRIPE_DONATE_URL`         | var  | One-off Stripe Payment Link in AUD on `/support`. Unset hides it.                           |
+| `STRIPE_DONATE_URL_USD`     | var  | One-off Stripe Payment Link in USD on `/support`. Unset hides it.                           |
+| `STRIPE_BILLING_PORTAL_URL` | var  | Stripe customer-portal login link, shown to monthly supporters as "Change or stop it".      |
 
-`STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
+None of these has a `NEXT_PUBLIC_` prefix, on purpose. A prefixed name is
 inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
-passes one as a build arg — so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
-set in production at all. `/support` reads it from a server component, so the
-unprefixed name resolves from the service environment on every request. It must
-be an `https://` URL; anything else is treated as unset and the rail stays
-hidden rather than linking somewhere unintended.
+passes one as a build arg, so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
+set in production at all. `/support` reads them from a server component, so the
+unprefixed names resolve from the service environment on every request, and a
+change takes effect without a redeploy of the image.
+
+#### The `/support` link contract
+
+Amounts and prices live in Stripe and in the labels typed into these vars.
+They never go in the repo, the i18n catalogs, an issue or an analytics event.
+
+- **Monthly lists.** `SUPPORT_MONTHLY_LINKS_AUD` and `SUPPORT_MONTHLY_LINKS_USD`
+  each hold a JSON array of 1 to 6 `{ "label": "...", "url": "..." }` objects,
+  in the order the buttons show. A label is 1 to 40 characters and is shown
+  as typed, so write it in the currency it charges. Shape:
+  `[{"label":"<label>","url":"https://buy.stripe.com/<id>"}]`.
+- **Hosts.** Every Payment Link must be `https://buy.stripe.com/...` or
+  `https://donate.stripe.com/...`, with no port or credentials. The portal
+  link must be `https://billing.stripe.com/...`.
+- **Fail closed.** A value that is not JSON, has the wrong shape, or carries
+  one URL that fails the host check is treated as unset. A monthly list is all
+  or nothing: one bad entry hides the whole list rather than linking somewhere
+  unintended.
+- **Fallback.** With neither monthly var set, `/support` renders the page it
+  had before monthly links: GitHub Sponsors up top and the one-off card.
+  Setting either monthly var switches the page to monthly first, with "Give
+  once" beside it and GitHub Sponsors as the third option.
+- **Currency.** The page offers every currency that has a link. It opens on
+  USD for a visitor Cloudflare places in the US and on AUD for everyone else,
+  with a visible switch. The country comes only from `CF-IPCountry` on a
+  request whose last `X-Forwarded-For` hop is a Cloudflare address
+  (`@boardsesh/consent/edge-country`, the same ranges the backend trusts; see
+  [Cloudflare](./cloudflare.md#observe-country-header)). A request that did
+  not come through Cloudflare reads as "not the US". `?currency=aud` or
+  `?currency=usd` overrides the default, for a post aimed at one audience.
+  Because the default differs per visitor, `/support` must never join the www
+  HTML edge-cache rule.
+- **Attribution.** Every Payment Link gets `client_reference_id=<src>` and
+  `utm_source=<src>`, where `src` is the page's own `?src=` lowercased and cut
+  to `[a-z0-9-]`, at most 40 characters, and `web-support` when empty. The
+  app uses `app-<surface>`, the homepage banner `web-home-banner`.
+- **Thank-you state.** Set each Payment Link's after-payment redirect to
+  `https://www.boardsesh.com/support?thanks=1` (keep any `src`), and the page
+  opens with a short thank-you card.
+- **Names.** If a Payment Link asks for a name to credit, make that field
+  optional. The page tells givers a name given at checkout may be shown
+  publicly, and that leaving it blank gives anonymously.
+
+#### The December homepage banner
+
+`/` (and only `/`) shows a closable banner asking visitors to go monthly, from
+2026-12-01T00:00:00Z up to but not including 2027-01-01T00:00:00Z. The window is
+in UTC so the server and the browser agree without knowing where the visitor
+is; in Sydney it runs 11 am 1 Dec to 11 am 1 Jan. Outside the window the server
+renders nothing for it and the browser checks its own clock again. A close is
+stored in IndexedDB (`boardsesh-user-preferences`) under
+`supportBanner:december2026:dismissed`. The window lives in
+`packages/web/app/components/home/support-banner-window.ts`.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper
