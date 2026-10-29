@@ -477,12 +477,17 @@ describe('useTickSaver after a save', () => {
       { status: 'attempt', queueItemUuid: 'queue-7' },
       NOW_MS,
     );
-    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
-      queueItemUuid: 'queue-7',
-      status: 'attempt',
-      climbedAt: '2026-10-24T09:32:00.000Z',
-      tickUuid: 'tick-9',
-    });
+    // The tick names the item's climb, so a run that lost it gets it back (#6903).
+    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith(
+      'session-1',
+      {
+        queueItemUuid: 'queue-7',
+        status: 'attempt',
+        climbedAt: '2026-10-24T09:32:00.000Z',
+        tickUuid: 'tick-9',
+      },
+      { climbUuid: CLIMB_UUID, angle: ANGLE, isMirror: false },
+    );
     expect(callLog).toEqual(['track:Tick Logged', 'sessionTimer', 'restTimer', 'workoutRun', 'saved']);
   });
 
@@ -869,12 +874,16 @@ describe('useTickSaver queue item', () => {
     );
 
     expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'flash', queueItemUuid: 'queue-7' });
-    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
-      queueItemUuid: 'queue-7',
-      status: 'flash',
-      climbedAt: '2026-10-24T09:30:00.000Z',
-      tickUuid: 'tick-9',
-    });
+    expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith(
+      'session-1',
+      {
+        queueItemUuid: 'queue-7',
+        status: 'flash',
+        climbedAt: '2026-10-24T09:30:00.000Z',
+        tickUuid: 'tick-9',
+      },
+      { climbUuid: CLIMB_UUID, angle: ANGLE, isMirror: false },
+    );
     expect(sentInput()).not.toHaveProperty('queueItemUuid');
     expect(sentInput()).not.toHaveProperty('queueItem');
   });

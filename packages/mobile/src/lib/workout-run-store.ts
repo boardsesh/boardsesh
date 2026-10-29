@@ -440,12 +440,17 @@ export function setWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Recor
   persist(next);
 }
 
+/** The display fields a climb filled from a tick lacks; the queue item has them. */
+const CLIMB_DISPLAY_FIELDS = ['name', 'difficulty', 'boardType'] as const;
+
 /**
  * Bring the captured climbs up to date from queue items still in the queue: an
  * item the record has no climb for is filled in (a run written by an older
- * bundle, which drops `climbs`, gets them back this way), and an item mirrored
- * since it was captured takes its new mirror. The climb and angle a queue item
- * names never change, so nothing else is touched.
+ * bundle, which drops `climbs`, gets them back this way), an item mirrored
+ * since it was captured takes its new mirror, and a name, grade or board the
+ * kept climb lacks is added (a climb filled from a tick carries none, #6903).
+ * The climb and angle a queue item names never change, so they are never
+ * touched.
  */
 export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, WorkoutRunClimb>): void {
   if (state?.sessionId !== sessionId) return;
@@ -455,9 +460,22 @@ export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, Wo
     const kept = current[queueItemUuid];
     if (!kept) {
       updates.push([queueItemUuid, climb]);
-    } else if (climb.isMirror !== undefined && kept.isMirror !== climb.isMirror) {
-      updates.push([queueItemUuid, { ...kept, isMirror: climb.isMirror }]);
+      continue;
     }
+    const updated: WorkoutRunClimb = { ...kept };
+    let changed = false;
+    if (climb.isMirror !== undefined && kept.isMirror !== climb.isMirror) {
+      updated.isMirror = climb.isMirror;
+      changed = true;
+    }
+    for (const field of CLIMB_DISPLAY_FIELDS) {
+      const incoming = climb[field];
+      if (kept[field] === undefined && incoming !== undefined) {
+        updated[field] = incoming;
+        changed = true;
+      }
+    }
+    if (changed) updates.push([queueItemUuid, updated]);
   }
   if (updates.length === 0) return;
   const next: WorkoutRunRecord = { ...state, climbs: { ...current, ...Object.fromEntries(updates) } };
@@ -520,8 +538,17 @@ export function forgetWorkoutRunTick(tickUuid: string): void {
  * another session's run or none, or when the climb is in no stage of it, so a
  * hand-queued climb's tick never reaches the log. Keeps the newest
  * `MAX_WORKOUT_TICK_LOG` entries.
+ *
+ * `climb` is the climb the tick was logged on, which is the queue item's climb
+ * at its angle (`attributeTickToQueueItem`). It fills in an item the record has
+ * no climb for, and never replaces one it has. Without it the server copy and
+ * the recap leave the item out, and a run whose climbs were all lost (written
+ * by a bundle that predates `climbs`, or rewritten by one after an OTA
+ * rollback) is never sent at all unless the climber ends the session on this
+ * phone: Leave, an End on another phone and a relaunch onto an ended session
+ * have no queue to fill it from (#6903).
  */
-export function noteWorkoutRunTick(sessionId: string, entry: WorkoutTickLogEntry): void {
+export function noteWorkoutRunTick(sessionId: string, entry: WorkoutTickLogEntry, climb?: WorkoutRunClimb): void {
   if (state?.sessionId !== sessionId) return;
   const inRun = state.run.stages.some((stage) => stage.itemUuids.includes(entry.queueItemUuid));
   if (!inRun) return;
@@ -530,6 +557,9 @@ export function noteWorkoutRunTick(sessionId: string, entry: WorkoutTickLogEntry
     ...state,
     log: log.length > MAX_WORKOUT_TICK_LOG ? log.slice(log.length - MAX_WORKOUT_TICK_LOG) : log,
   };
+  if (climb && !state.climbs?.[entry.queueItemUuid]) {
+    next.climbs = { ...state.climbs, [entry.queueItemUuid]: { ...climb } };
+  }
   setState(next);
   persist(next);
 }

@@ -29,7 +29,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
-import { reportHandledError } from '../lib/error-reporting';
+import { addErrorBreadcrumb, reportHandledError } from '../lib/error-reporting';
 import { nowMs } from '../lib/clock';
 import {
   buildSessionWorkoutContent,
@@ -70,6 +70,22 @@ export type SessionWorkoutWriteOptions = {
    */
   queueItems?: readonly ClimbQueueItem[];
 };
+
+/**
+ * Why a write that should have gone out was dropped: the run has no climb the
+ * server can store (`no-plan`), or no account to file it under (`no-owner`:
+ * the token names nobody, or the outbox is stamped for someone else). Both
+ * leave the session without its workout and used to leave no trace (#6903), so
+ * they go on the Sentry trail. Low-cardinality on purpose: no ids.
+ */
+function noteSkippedWrite(reason: 'no-plan' | 'no-owner', path: 'live' | 'ended'): void {
+  addErrorBreadcrumb({
+    category: 'session-workout',
+    message: `write skipped: ${reason}`,
+    level: 'warning',
+    data: { path },
+  });
+}
 
 const offlineSyncFetch: GraphQLFetch = (query, variables) => getOfflineSyncHttpClient().request(query, variables);
 
@@ -115,22 +131,31 @@ async function queueWrite(
   input: RecordSessionWorkoutInput,
   queryClient: QueryClient,
   ownerUserId: string | null,
+  path: 'live' | 'ended',
 ): Promise<SessionWorkoutWriteOutcome> {
-  if (!ownerUserId) return 'skipped';
+  if (!ownerUserId) {
+    noteSkippedWrite('no-owner', path);
+    return 'skipped';
+  }
   const db = getDatabaseHandle();
   if (!db) return sendDirectly(input);
   const { sessionId, revision } = input;
   let queued = false;
+  let ownerMismatch = false;
   try {
     await runLocalWriteWithRetry(
       async (attempt) => {
         queued = false;
+        ownerMismatch = false;
         await db.withExclusiveTransactionAsync(async (txn) => {
           await beginImmediateWrite(
             txn,
             attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
           );
-          if ((await getLocalUserId(txn)) !== ownerUserId) return;
+          if ((await getLocalUserId(txn)) !== ownerUserId) {
+            ownerMismatch = true;
+            return;
+          }
           // Safe to re-run: a retry after a COMMIT that landed finds its own
           // row at this revision and queues nothing more. A write that lost a
           // race to a newer one leaves that one alone and queues nothing.
@@ -152,6 +177,7 @@ async function queueWrite(
     reportHandledError(error, { tags: { source: 'session-workout', kind: 'enqueue' } });
     return 'failed';
   }
+  if (ownerMismatch) noteSkippedWrite('no-owner', path);
   if (!queued) return 'skipped';
   notifyOutboxChanged();
   drainMutationQueue(db, queryClient, offlineSyncFetch).catch((error: unknown) => {
@@ -218,7 +244,10 @@ export async function enqueueSessionWorkoutWrite(
   }
   const ownerUserId = await readSignedInUserIdOrNull();
   const before = currentContent(sessionId);
-  if (!before) return 'skipped';
+  if (!before) {
+    noteSkippedWrite('no-plan', 'live');
+    return 'skipped';
+  }
   if (await lastCopyCovers(before.record, before.digest)) {
     // Covered, unless the run moved on while the outbox was read.
     const after = currentContent(sessionId);
@@ -231,7 +260,7 @@ export async function enqueueSessionWorkoutWrite(
   const { content, digest } = latest;
   const revision = nextWorkoutRunRevision(sessionId, nowMs());
   if (revision === null) return 'skipped';
-  const outcome = await queueWrite({ ...content, revision }, queryClient, ownerUserId);
+  const outcome = await queueWrite({ ...content, revision }, queryClient, ownerUserId, 'live');
   if (outcome === 'queued' || outcome === 'sent') noteWorkoutRunSent(sessionId, revision, digest);
   return outcome;
 }
@@ -254,6 +283,15 @@ export async function enqueueEndedSessionWorkout(
 ): Promise<SessionWorkoutWriteOutcome> {
   if (!isServerSessionId(record.sessionId) || isScreenshotCapture()) return 'skipped';
   const content = buildSessionWorkoutContent(record);
-  if (!content || (await lastCopyCovers(record, sessionWorkoutDigest(content)))) return 'skipped';
-  return queueWrite({ ...content, revision: revisionAfter(record.revision, nowMs()) }, queryClient, ownerUserId);
+  if (!content) {
+    noteSkippedWrite('no-plan', 'ended');
+    return 'skipped';
+  }
+  if (await lastCopyCovers(record, sessionWorkoutDigest(content))) return 'skipped';
+  return queueWrite(
+    { ...content, revision: revisionAfter(record.revision, nowMs()) },
+    queryClient,
+    ownerUserId,
+    'ended',
+  );
 }

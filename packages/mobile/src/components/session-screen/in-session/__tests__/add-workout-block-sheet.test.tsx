@@ -544,6 +544,8 @@ describe('AddWorkoutBlockSheet', () => {
       { stages: [{ id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }] },
       { p1: { climbUuid: 'climb-p1', angle: 40 } },
     );
+    // The earlier block's climb is still queued.
+    queue.queued = [{ uuid: 'p1', climb: { uuid: 'climb-p1' } }];
     readyPreview(['l1', 'l2']);
     renderSheet(true);
 
@@ -554,7 +556,11 @@ describe('AddWorkoutBlockSheet', () => {
       l1: { climbUuid: 'climb-l1', angle: 40, name: 'Climb l1', difficulty: '6a/V3' },
       l2: { climbUuid: 'climb-l2', angle: 40, name: 'Climb l2', difficulty: '6a/V3' },
     });
-    expect(workoutOutbox.enqueueSessionWorkoutWrite).toHaveBeenCalledExactlyOnceWith('session-1', expect.anything());
+    // With the live queue, so the earlier blocks' climbs a run lost are filled in (#6903).
+    expect(workoutOutbox.enqueueSessionWorkoutWrite).toHaveBeenCalledExactlyOnceWith('session-1', {
+      queryClient: expect.anything(),
+      queueItems: [{ uuid: 'p1', climb: { uuid: 'climb-p1' } }],
+    });
   });
 
   it('turns a session without a workout into one', async () => {

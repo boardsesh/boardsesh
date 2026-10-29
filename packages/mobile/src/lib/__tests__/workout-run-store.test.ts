@@ -32,6 +32,7 @@ import {
   hydrateWorkoutRun,
   isWorkoutRunPendingStart,
   markWorkoutRunStarted,
+  addWorkoutRunClimbs,
   noteWorkoutRunTick,
   prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
@@ -134,6 +135,45 @@ describe('workout-run-store', () => {
 
     setWorkoutRun('session-2', run);
     expect(isWorkoutRunPendingStart('session-2')).toBe(false);
+  });
+
+  it('fills a climb the run lost from the tick logged on it, and never replaces one it kept (#6903)', async () => {
+    // A run an older bundle wrote: no climbs.
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-other', angle: 25, isMirror: true });
+    // A climb outside the run is never logged, so its climb is not kept either.
+    noteWorkoutRunTick('session-1', tick('hand-queued'), { climbUuid: 'climb-x', angle: 40 });
+
+    expect(getWorkoutRunState()?.climbs).toEqual({ w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } });
+    await flushStorageWrites();
+    expect(storedRecord()).toMatchObject({ climbs: { w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } } });
+  });
+
+  it('lets the queue name a climb a tick filled in, never moving its climb or angle (#6903)', () => {
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+
+    // The local End fills from the live queue: its name, grade and board are new.
+    addWorkoutRunClimbs('session-1', {
+      w1: {
+        climbUuid: 'climb-other',
+        angle: 25,
+        isMirror: true,
+        name: 'Crimp City',
+        difficulty: '6a/V3',
+        boardType: 'kilter',
+      },
+    });
+
+    expect(getWorkoutRunState()?.climbs?.w1).toEqual({
+      climbUuid: 'climb-w1',
+      angle: 40,
+      isMirror: true,
+      name: 'Crimp City',
+      difficulty: '6a/V3',
+      boardType: 'kilter',
+    });
   });
 
   it('preserves preparation while joining split storage slots and clears it with the session', async () => {
