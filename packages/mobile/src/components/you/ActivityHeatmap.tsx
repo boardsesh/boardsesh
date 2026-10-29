@@ -28,6 +28,10 @@ const TARGET_COLUMN = 16;
 const WEEKDAY_GUTTER = 28;
 const WEEKDAY_GUTTER_GAP = spacing[1];
 const TODAY_SWATCH_BORDER = 1.5;
+// The axis labels sit in a fixed gutter and a ~3-column slot, so they stop
+// scaling at 1.2x; the tap readout and the week labels carry the same dates at
+// any text size.
+const AXIS_LABEL_MAX_SCALE = 1.2;
 
 // Hoisted so every label shares one formatter cache key (#3155).
 const MONTH_OPTIONS: Intl.DateTimeFormatOptions = { month: 'short' };
@@ -200,7 +204,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
           >
             {/* Invisible line of caption2 so the row grows with the text size;
                 the real labels are absolutely placed over their columns. */}
-            <Text variant="caption2" style={styles.monthRowSizer}>
+            <Text variant="caption2" maxFontSizeMultiplier={AXIS_LABEL_MAX_SCALE} style={styles.monthRowSizer}>
               {' '}
             </Text>
             {monthLabels.map(({ columnIndex, dayKey, label }) => (
@@ -209,6 +213,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
                 variant="caption2"
                 color={chartColors.secondaryLabel}
                 numberOfLines={1}
+                maxFontSizeMultiplier={AXIS_LABEL_MAX_SCALE}
                 style={[styles.monthLabel, { left: columnIndex * pitch }]}
               >
                 {label}
@@ -224,7 +229,12 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
             >
               {weekdayLabels.map(({ rowIndex, label }) => (
                 <View key={rowIndex} style={[styles.weekdayLabel, { top: rowIndex * pitch, height: cell }]}>
-                  <Text variant="caption2" color={chartColors.secondaryLabel} numberOfLines={1}>
+                  <Text
+                    variant="caption2"
+                    color={chartColors.secondaryLabel}
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={AXIS_LABEL_MAX_SCALE}
+                  >
                     {label}
                   </Text>
                 </View>
@@ -238,7 +248,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
                     const cellX = columnIndex * pitch;
                     const cellY = rowIndex * pitch;
                     const ringColor =
-                      day.date === selectedDayKey
+                      day.date === selectedDay?.date
                         ? chartColors.label
                         : day.date === todayKey
                           ? brandColors.accent
@@ -359,11 +369,23 @@ const WeekHitArea = memo(function WeekHitArea({
     (event: GestureResponderEvent) => onPress(columnIndex, event),
     [onPress, columnIndex],
   );
+  // A plain View when read-only: even without onPress, a Pressable is a
+  // clickable native view on Android and TalkBack offers "double-tap to activate".
+  if (readOnly) {
+    return (
+      <View
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={accessibilityLabel}
+        style={[styles.weekHitArea, { left, width }]}
+      />
+    );
+  }
   return (
     <Pressable
       accessibilityRole="text"
       accessibilityLabel={accessibilityLabel}
-      onPress={readOnly ? undefined : handlePress}
+      onPress={handlePress}
       style={[styles.weekHitArea, { left, width }]}
     />
   );

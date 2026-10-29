@@ -134,10 +134,9 @@ describe('ActivityHeatmap', () => {
     screenReaderEnabled = true;
     try {
       render(createElement(ActivityHeatmap, { heatmap: makeHeatmap() }));
-      const lastWeek = weekButtons()[3];
-      lastWeek.dataset.locationY = '100';
-      fireEvent.click(lastWeek);
-      expect(screen.getByText('stats.calendarTapHint')).toBeTruthy();
+      // No pressable columns at all, but every week keeps its label.
+      expect(weekButtons()).toHaveLength(0);
+      expect(screen.getByLabelText(/^stats\.calendarWeekAria\(date=12 Oct/)).toBeTruthy();
     } finally {
       screenReaderEnabled = false;
     }
