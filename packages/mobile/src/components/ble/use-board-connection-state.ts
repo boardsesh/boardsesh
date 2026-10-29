@@ -52,7 +52,7 @@ export type BoardConnectionState = {
    * would leave a climber unable to connect at all. The one widening is
    * `useLightbulbControl`'s crewmate whose hold presence hasn't confirmed yet
    * (`deriveCrewHolderUnconfirmed`): fresh presence only, and it ends at the
-   * first holder event or catch-up.
+   * first holder event, or 10 s without one.
    */
   holderIsAuthoritative: boolean;
 };

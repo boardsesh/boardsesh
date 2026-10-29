@@ -157,7 +157,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   } = useBoardConnectionState();
   // A crewmate's board that presence hasn't confirmed yet reads as theirs: a
   // tap relays and never connects, so it can't both move the crew's climb and
-  // open the picker (#7017 QA). The catch-up it asks for settles it quickly.
+  // open the picker (#7017 QA). Its owner confirms it, or lets it go in 10 s.
   const crewHolderUnconfirmed = useCrewHolderUnconfirmed({
     localConnected,
     holderIsAuthoritative: holderConfirmed,

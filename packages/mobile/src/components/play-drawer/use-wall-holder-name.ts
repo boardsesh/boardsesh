@@ -6,6 +6,8 @@ export type WallHolderIdentity = {
   /** Who board presence says holds the board, or put its climb up. Null when nobody is known. */
   face: WallControlFace | null;
   userId: string | null;
+  /** Presence's named holder only, without the climb's sender: who holds the link, as far as presence knows. */
+  holderUserId: string | null;
 };
 
 /**
@@ -22,9 +24,10 @@ export function useWallHolderIdentity(): WallHolderIdentity {
   const climb = current?.currentClimb ?? null;
   const name = holder?.displayName ?? climb?.sentByDisplayName ?? null;
   const avatarUrl = holder?.avatarUrl ?? climb?.sentByAvatarUrl ?? null;
-  const userId = holder?.userId ?? climb?.sentByUserId ?? null;
+  const holderUserId = holder?.userId ?? null;
+  const userId = holderUserId ?? climb?.sentByUserId ?? null;
   return useMemo(
-    () => ({ face: name === null && avatarUrl === null ? null : { name, avatarUrl }, userId }),
-    [name, avatarUrl, userId],
+    () => ({ face: name === null && avatarUrl === null ? null : { name, avatarUrl }, userId, holderUserId }),
+    [name, avatarUrl, userId, holderUserId],
   );
 }

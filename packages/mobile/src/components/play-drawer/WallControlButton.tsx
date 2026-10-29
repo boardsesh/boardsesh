@@ -119,9 +119,10 @@ function WallControlButtonComponent({
     return <View style={styles.placeholder} testID="play-drawer-wall-control-empty" />;
   }
 
-  // In a crew the holder's lit climb keeps its label, filled bulb and face on
-  // the plain tonal look: their swipes browse, so they aren't driving it.
-  const lit = model.driving || model.state === 'release_wall';
+  // In a crew the holder's lit climb (or held wall with no lights) keeps its
+  // label, filled bulb and face on the plain tonal look: their swipes browse,
+  // so they aren't driving it.
+  const lit = model.driving;
   // Amber with white text in light; the dark scheme's amber is pale, so dark text.
   const litForeground = colorScheme === 'dark' ? brandColors.onAccent : brandColors.onPrimary;
   // On the wall per presence, with no link (QA #147): an amber outline on the

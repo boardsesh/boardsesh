@@ -53,28 +53,17 @@ export function derivePlayDrawerLightbulbPressAction(args: {
 }
 
 /**
- * A crewmate is very likely driving the wall, but board presence hasn't
- * confirmed a holder yet: this phone joined a session (or bound the board)
- * and its feed names a climb a session member lit under an hour ago, with no
- * holder event since (#7017 QA). A live `BoardConnectionChanged`, or a
- * catch-up's holder refresh, confirms one or the other and ends this.
- *
- * Without it the bulb read an unknown holder as a free board: the crewmate's
- * Put on the wall both moved the crew's climb (the commit, which their phone
- * lit) and connected (the Select Board picker, which could take the board off
- * the holder). While this is true the tap relays, like an authoritative
- * holder, and never connects.
- *
- * Bounded on purpose, since a wrong `true` blocks a connect: only in a
- * session, only on fresh presence, only for a session member's climb, never
- * this phone's own stale hold, and never once a holder event says the board
- * is free (`lastConnectionSeq > 0` with no holder).
+ * Board presence suggests a crewmate is driving the wall but hasn't confirmed
+ * a holder yet: this phone joined a session (or bound the board) and its feed
+ * names a climb a session member lit under an hour ago, with no holder event
+ * since (#7017 QA). Presence inputs only, so one owner
+ * (`CrewHolderSuspicionSync`) reads it once for the whole app and asks the
+ * feed to confirm. Any holder event (`lastConnectionSeq > 0`: a live
+ * `BoardConnectionChanged`, or a catch-up's holder refresh), named, anonymous
+ * or free, ends it.
  */
-export function deriveCrewHolderUnconfirmed(args: {
+export function deriveCrewHolderSuspected(args: {
   inSession: boolean;
-  localConnected: boolean;
-  /** A session member holds the board per presence's holder (already a relay). */
-  holderIsAuthoritative: boolean;
   /** Presence's holder, if any; `userId` null for an anonymous one. */
   holder: { userId?: string | null } | null;
   /** Presence's latest holder event; 0 until a live event or a catch-up names one. */
@@ -84,19 +73,47 @@ export function deriveCrewHolderUnconfirmed(args: {
   /** That climb was lit under an hour ago (`isPresenceFresh`). */
   wallPresenceFresh: boolean;
   sessionMemberUserIds: ReadonlySet<string>;
+  /**
+   * The signed-in climber (`useViewerUserId`). Their own climb, lit on this
+   * phone before a relaunch or on another device, is never a crewmate's hold;
+   * unknown is never read as somebody else.
+   */
+  viewerUserId: string | null;
+}): boolean {
+  if (!args.inSession || args.viewerUserId === null) return false;
+  // A named holder is presence's answer: a crewmate's is authoritative, and
+  // anyone else's (a stranger, this phone's stale hold) keeps today's rules.
+  if (args.holder?.userId != null) return false;
+  // Any holder event is presence's answer too, whatever it says.
+  if (args.lastConnectionSeq > 0) return false;
+  const sender = args.wallSenderUserId;
+  if (sender === null || sender === args.viewerUserId || !args.wallPresenceFresh) return false;
+  return args.sessionMemberUserIds.has(sender);
+}
+
+/**
+ * This phone's bulb treats the board as the suspected crewmate's
+ * ({@link deriveCrewHolderSuspected}): a tap relays or waits and never
+ * connects. Without it an unknown holder read as a free board, and a
+ * crewmate's Put on the wall both moved the crew's climb and opened the
+ * Select Board picker that could take the board off the holder.
+ *
+ * A wrong `true` blocks a connect, so the owner releases the suspicion after
+ * `CREW_HOLDER_CONFIRM_MS` without a confirmation, and this never applies to
+ * this phone's own link or its own stale hold.
+ */
+export function deriveCrewHolderUnconfirmed(args: {
+  /** The suspicion, after the owner's release. */
+  suspected: boolean;
+  localConnected: boolean;
+  /** A session member holds the board per presence's holder (already a relay). */
+  holderIsAuthoritative: boolean;
+  wallSenderUserId: string | null;
   /** The account this phone last held the board as: its own stale hold, never a crewmate. */
   lastLocalHolderUserId: string | null;
 }): boolean {
-  if (!args.inSession || args.localConnected || args.holderIsAuthoritative) return false;
-  // A named holder is presence's answer: a crewmate's is authoritative above,
-  // and anyone else's (a stranger, this phone's stale hold) keeps today's rules.
-  if (args.holder?.userId != null) return false;
-  // A holder event said the board is free.
-  if (args.holder === null && args.lastConnectionSeq > 0) return false;
-  const sender = args.wallSenderUserId;
-  if (sender === null || !args.wallPresenceFresh) return false;
-  if (sender === args.lastLocalHolderUserId) return false;
-  return args.sessionMemberUserIds.has(sender);
+  if (!args.suspected || args.localConnected || args.holderIsAuthoritative) return false;
+  return args.wallSenderUserId !== null && args.wallSenderUserId !== args.lastLocalHolderUserId;
 }
 
 /**

@@ -236,6 +236,16 @@ export function isWallControlDrawn(
   return state === 'connect' && (layout.trailingSlot === 'lightbulb' || layout.primaryCenter === 'none');
 }
 
+/**
+ * Board presence names this climber's own account as the holder: another
+ * device's link, or this phone's own hold from before a relaunch. Keyed on
+ * presence's NAMED holder only, never on whoever lit the climb, and never on
+ * an unknown viewer (#7017 review).
+ */
+export function isHolderSelfAccount(holderUserId: string | null, viewerUserId: string | null): boolean {
+  return holderUserId !== null && viewerUserId !== null && holderUserId === viewerUserId;
+}
+
 /** A face at the control's trailing edge. */
 export type WallControlFace = { name: string | null; avatarUrl: string | null };
 
@@ -338,7 +348,8 @@ export type WallControlModel = {
   selected: boolean;
   /**
    * This climber is driving the board: the climb on screen is lit on this
-   * phone's link, and a swipe from here changes what the wall shows. Only then
+   * phone's link (or this phone holds a wall with no lights), and a swipe from
+   * here changes what the wall shows. Only then
    * does the wall button take its coloured lit look (the frost, or the amber
    * fill) (#7017, Marco). In a crew the holder's lit button keeps its label,
    * filled bulb and face on the plain tonal look.
@@ -448,8 +459,9 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     bulbValueKey,
     look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
     selected: state === 'lit',
-    // Driving: lit on this phone's link, and the next swipe moves the wall.
-    driving: state === 'lit' && holder === 'self' && input.navigationCommits,
+    // Driving: lit on this phone's link (or its hold on a wall with no
+    // lights), and the next swipe moves the wall.
+    driving: (state === 'lit' || state === 'release_wall') && holder === 'self' && input.navigationCommits,
     pending: input.pending,
     writing: input.writing,
     autoDisconnectWarning: input.autoDisconnectWarning,

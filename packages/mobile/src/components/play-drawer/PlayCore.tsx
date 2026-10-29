@@ -139,6 +139,7 @@ import {
 } from './PlayCoreEnhancements';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { useTabletopFoldTop } from '../../hooks/use-tabletop-fold-top';
 import { PHONE_SPLIT_FOLD_GUTTER } from '../../theme/size-class';
@@ -161,7 +162,7 @@ import { swipeStaysViewOnly } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
-import { isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
+import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
 import { useWallControl } from './use-wall-control';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
@@ -1247,16 +1248,15 @@ export function PlayCore({
   // this. A face needs a live link: presence alone never puts one up.
   const wallWriting = useBluetoothWriteInProgress();
   const wallHolderIdentity = useWallHolderIdentity();
+  // The signed-in climber, from the profile or the device's stored identity, so
+  // a second phone on this account knows itself before its profile loads.
+  // Unknown (signed out, nothing loaded yet) is never read as somebody else.
+  const viewerUserId = useViewerUserId();
   // A story can say this phone holds the board (`ScenarioOverrides.player.selfHoldsBoard`).
   const wallLinked = scenarioPlayer?.selfHoldsBoard === true || bluetoothConnected;
   const selfHoldsBoard = wallLinked || wallHeldLocally;
-  // This climber's profile: their face while they hold the board, and their id
-  // while the busy-wall question is up, so it never names them as the holder.
-  // And while a session member holds it, so this account on another phone
-  // reads "On your other phone", not its own name.
-  const { data: wallSelfProfile } = useProfile({
-    enabled: (selfHoldsBoard || busyWallUp || lightbulbHolderIsAuthoritative) && !isAnonymous,
-  });
+  // This climber's profile: their face while they hold the board.
+  const { data: wallSelfProfile } = useProfile({ enabled: selfHoldsBoard && !isAnonymous });
   const selfFace = useMemo(
     () =>
       wallSelfProfile
@@ -1282,7 +1282,9 @@ export function PlayCore({
         presenceFresh: wallPresenceFresh,
         displayedIsOwnCurrent:
           displayedClimbUuid != null && displayedClimbUuid === (currentClimbQueueItem?.climb.uuid ?? null),
-        holderIsSelfAccount: wallHolderIdentity.userId !== null && wallSelfProfile?.id === wallHolderIdentity.userId,
+        // Presence's named holder only, never whoever lit the climb: this phone's
+        // own climb from before a relaunch is not "On your other phone".
+        holderIsSelfAccount: isHolderSelfAccount(wallHolderIdentity.holderUserId, viewerUserId),
         selfFace,
         crewFace: wallHolderIdentity.face,
         confirmArmed: busyWallUp,
@@ -1309,7 +1311,7 @@ export function PlayCore({
       wallPresenceFresh,
       currentClimbQueueItem?.climb.uuid,
       wallHolderIdentity,
-      wallSelfProfile?.id,
+      viewerUserId,
       selfFace,
       busyWallUp,
       commitBarModel.commitLabel,
@@ -1698,8 +1700,6 @@ export function PlayCore({
   // The busy-wall question (#7017): who put the lit climb up, and the one
   // handler behind its pair, which drops taps for the first 500 ms and speaks
   // the caption once. Its words replace the browse caption while it is up.
-  // Unknown (signed out, the profile still loading) is never read as somebody else.
-  const viewerUserId = wallSelfProfile?.id ?? null;
   const busyWallHolder = useMemo(
     () =>
       scenarioBusyWall
@@ -2116,7 +2116,8 @@ export function PlayCore({
   // a crewmate holds; a new input only when the climb, the frame, the mirror or
   // the colours change, so the glow does no work otherwise.
   // Only while this climber drives the board (`wallControl.driving`, #7017).
-  const wallGlowShown = !isAnonymous && wallControl.driving;
+  // A wall with no lights has no lit holds to frost.
+  const wallGlowShown = !isAnonymous && wallControl.driving && wallControl.state === 'lit';
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
       ? playback.currentFrameString

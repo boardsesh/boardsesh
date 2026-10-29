@@ -472,6 +472,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   },
 }));
 vi.mock('../../../hooks/use-display-grade', () => ({ useDisplayGrade: () => ({ boardseshActive: false }) }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => null }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => vi.fn() }));
 vi.mock('../../../hooks/use-mounted-on-first-open', () => ({ useMountedOnFirstOpen: (open: boolean) => open }));
 vi.mock('../use-mobile-playback', () => ({

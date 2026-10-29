@@ -41,8 +41,10 @@ import type { BoardPresenceClient } from './types';
  * - `foreground`: the app returned to the foreground (socket may have been
  *   suspended by the OS without a clean reconnect).
  * - `manual`: an explicit user refresh (pull-to-refresh).
+ * - `crew-holder-unconfirmed`: a session member lit the wall but no holder
+ *   event has named one yet, so the holder is re-read to confirm it.
  */
-export type BoardPresenceCatchUpReason = 'gap' | 'reconnect' | 'foreground' | 'manual';
+export type BoardPresenceCatchUpReason = 'gap' | 'reconnect' | 'foreground' | 'manual' | 'crew-holder-unconfirmed';
 
 /** Telemetry payload emitted after a catch-up completes. */
 export type BoardPresenceCatchUpInfo = {

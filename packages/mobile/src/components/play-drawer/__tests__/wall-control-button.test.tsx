@@ -408,6 +408,16 @@ describe('WallControlButton', () => {
       expect(holder.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Me');
     });
 
+    it('fills a held wall with no lights amber only while your swipe moves it', () => {
+      const solo = renderButton(modelFor('release_wall', { holder: 'self' }));
+      expect(solo.getByRole('button').getAttribute('data-style')).toContain('"backgroundColor":"#B45309"');
+      cleanup();
+      const crew = renderButton(modelFor('release_wall', { holder: 'self', navigationCommits: false }));
+      const style = crew.getByRole('button').getAttribute('data-style') ?? '';
+      expect(style).not.toContain('#B45309');
+      expect(crew.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
+    });
+
     it('glows in the narrower workout button while driving', () => {
       const compact = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW, compact: true });
       measure(239, 44);

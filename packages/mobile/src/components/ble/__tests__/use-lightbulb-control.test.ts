@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { renderHook, waitFor } from '@testing-library/react';
+import { createElement, Fragment, type ReactNode } from 'react';
 import {
   BoardPresenceActionsContext,
   BoardPresenceCurrentContext,
@@ -59,11 +59,13 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
 }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
 // The hook fires a light haptic on take/release; the real module pulls in
 // react-native (Flow-typed), which this jsdom suite can't parse.
 vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 
 import { useLightbulbControl } from '../use-lightbulb-control';
+import { CrewHolderSuspicionSync } from '../../../providers/crew-holder-suspicion';
 
 function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullable<BluetoothCtx> {
   return {
@@ -103,7 +105,11 @@ const wrapper = ({ children }: { children: ReactNode }) =>
           ? ({ refresh: ctrl.refreshPresence } as unknown as BoardPresenceActions)
           : undefined,
       },
-      createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children),
+      createElement(
+        BoardPresenceCurrentContext.Provider,
+        { value: ctrl.presence },
+        createElement(Fragment, null, createElement(CrewHolderSuspicionSync), children),
+      ),
     ),
   );
 
@@ -759,7 +765,7 @@ describe('useLightbulbControl with a crewmate presence has not confirmed as hold
     await expect(result.current.connect('put_on_wall')).resolves.toBe(false);
     expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
     // And the feed is asked to confirm the holder now, not at the next wall event.
-    expect(ctrl.refreshPresence).toHaveBeenCalledWith('gap');
+    await waitFor(() => expect(ctrl.refreshPresence).toHaveBeenCalledWith('crew-holder-unconfirmed'));
   });
 
   it('does nothing on the crew climb itself rather than open the picker', () => {
@@ -778,10 +784,9 @@ describe('useLightbulbControl with a crewmate presence has not confirmed as hold
     const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
     expect(result.current.pressAction).toBe('connect');
     expect(result.current.holderIsAuthoritative).toBe(false);
-    expect(ctrl.refreshPresence).not.toHaveBeenCalled();
   });
 
-  it('connects as before when this phone lit that climb itself', () => {
+  it('connects as before when this phone held the board as that account', () => {
     arrangeJoinedCrewBeforeHolder();
     ctrl.bluetooth = makeBluetooth({ lastLocalHolderUserId: 'liz' });
     const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });

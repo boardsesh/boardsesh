@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { resolveWallControl, type WallControlInput } from '../wall-control';
+import { isHolderSelfAccount, resolveWallControl, type WallControlInput } from '../wall-control';
 import { wallControlText } from '../wall-control-text';
 
 // The one model behind every view of the board control (#7000): the wall
@@ -506,6 +506,23 @@ describe('resolveWallControl: driving the board', () => {
       { state: 'put_on_wall', driving: false },
     ],
     ['your link, the climb on screen dark', { ...MINE }, { state: 'dark', driving: false }],
+    // Solo with Light the board as I swipe off: a swipe browses, so no frost (#7017 review).
+    [
+      'solo with lighting on swipes off, lit on your link: no frost',
+      { ...MINE, ...LIT, navigationCommits: false },
+      { state: 'lit', holder: 'self', driving: false, labelKey: 'youHaveBoard' },
+    ],
+    // A wall with no lights you hold: amber only while your swipe moves it.
+    [
+      'solo, holding a wall with no lights: amber',
+      { pressAction: 'releaseWall' as const, wallHeldLocally: true, offWall: true },
+      { state: 'release_wall', holder: 'self', driving: true },
+    ],
+    [
+      'a crew, holding a wall with no lights: no amber',
+      { pressAction: 'releaseWall' as const, wallHeldLocally: true, offWall: true, ...CREW },
+      { state: 'release_wall', holder: 'self', driving: false, labelKey: 'releaseWall', look: 'lit' },
+    ],
     ['no board', {}, { state: 'connect', driving: false }],
   ] as const)('%s', (_case, input, expected) => {
     expect(resolveWallControl({ ...FREE, ...input })).toMatchObject(expected);
@@ -534,5 +551,22 @@ describe('resolveWallControl: driving the board', () => {
       a11yHintKey: 'relayHintOtherPhone',
       bulbValueKey: 'onOtherPhone',
     });
+  });
+});
+
+// "On your other phone" keys on presence's named holder and the signed-in id,
+// never on whoever lit the climb, and never on a profile still loading (#7017 review).
+describe('isHolderSelfAccount', () => {
+  it.each([
+    ['presence names this account as the holder', 'me', 'me', true],
+    ['presence names a crewmate', 'liz', 'me', false],
+    // Only the sender fallback named this account: this phone's own climb from
+    // before a relaunch, with no holder. Not another phone.
+    ['no named holder (the climb was lit by this account)', null, 'me', false],
+    // The profile still loading and no stored id yet: never "somebody else's
+    // board" with this climber's own name, and never a guess either.
+    ['the signed-in id not known yet', 'me', null, false],
+  ] as const)('%s', (_case, holderUserId, viewerUserId, expected) => {
+    expect(isHolderSelfAccount(holderUserId, viewerUserId)).toBe(expected);
   });
 });
