@@ -75,6 +75,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: onDisconnect,
                 onConnected: nil
@@ -101,6 +102,71 @@ final class BoardBleDisconnectTests: XCTestCase {
             }
             timer.fire()
         }
+    }
+
+    // MARK: - Event handler ownership across a JS reload (#7023)
+
+    /// A reload creates the new runtime's BoardBleModule, which installs its
+    /// handlers, before the old runtime's module is destroyed. The old module's
+    /// destroy must leave the new module's handlers alone; when it cleared them,
+    /// scan results and connection events stopped reaching JS until a restart.
+    func testDestroyingOlderModuleKeepsNewerModuleHandlers() {
+        let peripheral = FakeWritablePeripheral()
+        let olderModuleOwner = UUID()
+        let newerModuleOwner = UUID()
+        var olderModuleDisconnects: [String] = []
+        var newerModuleDisconnects: [String] = []
+        manager.testHooks.sync {
+            manager.testHooks.setConfiguration(moonboardConfiguration())
+            manager.setEventHandlers(
+                owner: olderModuleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in olderModuleDisconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.setEventHandlers(
+                owner: newerModuleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in newerModuleDisconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.clearEventHandlers(owner: olderModuleOwner)
+            manager.testHooks.setConnection(
+                peripheral: peripheral,
+                characteristic: makeWriteCharacteristic()
+            )
+        }
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(newerModuleDisconnects, [peripheral.identifier.uuidString])
+        XCTAssertTrue(olderModuleDisconnects.isEmpty)
+    }
+
+    /// The module that installed the current handlers still clears them on its
+    /// own destroy, so a torn-down runtime never receives events.
+    func testDestroyingCurrentModuleClearsItsHandlers() {
+        let peripheral = FakeWritablePeripheral()
+        let moduleOwner = UUID()
+        var disconnects: [String] = []
+        manager.testHooks.sync {
+            manager.testHooks.setConfiguration(moonboardConfiguration())
+            manager.setEventHandlers(
+                owner: moduleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in disconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.clearEventHandlers(owner: moduleOwner)
+            manager.testHooks.setConnection(
+                peripheral: peripheral,
+                characteristic: makeWriteCharacteristic()
+            )
+        }
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertTrue(disconnects.isEmpty)
     }
 
     func testIntentionalDisconnectConsumesMarkerAndSuppressesEvent() {
@@ -472,6 +538,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -553,6 +620,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var connectedEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: { _, _ in connectedEventCount += 1 }
@@ -660,6 +728,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -728,6 +797,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -794,6 +864,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -847,6 +918,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil

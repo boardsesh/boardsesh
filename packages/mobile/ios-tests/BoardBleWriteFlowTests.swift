@@ -1000,6 +1000,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
 
         hooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { deviceId, body in
                     disconnectDeviceId = deviceId
@@ -1390,6 +1391,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
 
         hooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 }
             )

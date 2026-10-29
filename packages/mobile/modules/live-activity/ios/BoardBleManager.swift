@@ -533,6 +533,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// natively-established connections so the in-app lightbulb matches the
     /// wall. Payload: (deviceId, deviceName).
     private var onConnected: ((String, String?) -> Void)?
+    /// Which `BoardBleModule` instance installed the three handlers above, so
+    /// only that instance can clear them (#7023). See `setEventHandlers`.
+    private var eventHandlerOwner: UUID?
 
     /// `private` keeps the singleton compiler-enforced: a second live instance
     /// would register a second `CBCentralManager` with the same restoration
@@ -762,15 +765,42 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// Install the handlers that carry scan results and connection events to
+    /// JS. `owner` names the module instance installing them, and only that
+    /// owner can clear them later (`clearEventHandlers(owner:)`).
+    ///
+    /// This manager outlives the JS runtime, and each runtime gets its own
+    /// `BoardBleModule`. A reload (an OTA `reloadAsync`) starts the new runtime
+    /// while the old one is still tearing down: Expo creates the new module, and
+    /// its `OnCreate` installs handlers, before the old runtime finalises and
+    /// the old module's `OnDestroy` runs. When that destroy cleared the handlers
+    /// unconditionally, it wiped the new module's handlers too. The scan still
+    /// ran, but no result reached JS, so the picker said "No boards found
+    /// nearby" until the app was restarted (#7023).
     func setEventHandlers(
+        owner: UUID,
         onScanResult: ((BoardBleScanResult) -> Void)?,
         onDisconnect: ((String, [String: Any]?) -> Void)?,
         onConnected: ((String, String?) -> Void)? = nil
     ) {
         runOnBleQueue { [weak self] in
+            self?.eventHandlerOwner = owner
             self?.onScanResult = onScanResult
             self?.onDisconnect = onDisconnect
             self?.onConnected = onConnected
+        }
+    }
+
+    /// Clear the event handlers, but only when `owner` installed the current
+    /// ones. A module destroyed after a newer module took over leaves the newer
+    /// module's handlers in place (#7023).
+    func clearEventHandlers(owner: UUID) {
+        runOnBleQueue { [weak self] in
+            guard let self, self.eventHandlerOwner == owner else { return }
+            self.eventHandlerOwner = nil
+            self.onScanResult = nil
+            self.onDisconnect = nil
+            self.onConnected = nil
         }
     }
 

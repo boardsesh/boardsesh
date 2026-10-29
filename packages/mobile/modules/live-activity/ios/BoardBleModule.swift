@@ -35,6 +35,10 @@ public class BoardBleModule: Module {
     /// queue; the serial FIFO still orders that stash before any
     /// `getLastWriteDiagnostics` read that follows the promise rejection.
     private var lastFailedWriteDiagnostics: [String: Any]?
+    /// Names this instance's event handlers on the shared manager. Each JS
+    /// runtime gets its own module, so after a reload the old instance's
+    /// `OnDestroy` must not clear the handlers the new one installed (#7023).
+    private let eventHandlerOwner = UUID()
 
     public func definition() -> ModuleDefinition {
         Name("BoardBle")
@@ -58,6 +62,7 @@ public class BoardBleModule: Module {
         // scan creates it. See BoardBleManager.shouldCreateCentralManagerAtLaunch.
         OnCreate {
             BoardBleManager.shared.setEventHandlers(
+                owner: self.eventHandlerOwner,
                 onScanResult: { [weak self] result in
                     var body: [String: Any] = [
                         "device": [
@@ -96,8 +101,11 @@ public class BoardBleModule: Module {
             )
         }
 
+        // A reload can destroy this module after the next runtime's module has
+        // installed its own handlers, so clear only the handlers this instance
+        // installed (#7023). See BoardBleManager.setEventHandlers.
         OnDestroy {
-            BoardBleManager.shared.setEventHandlers(onScanResult: nil, onDisconnect: nil, onConnected: nil)
+            BoardBleManager.shared.clearEventHandlers(owner: self.eventHandlerOwner)
         }
 
         OnStartObserving {
