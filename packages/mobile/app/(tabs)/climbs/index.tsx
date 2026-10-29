@@ -919,6 +919,9 @@ function ClimbListInner() {
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
     visibleRowsStore.set(0, 0);
+    // A place saved for a column change belongs to the previous search too. An
+    // empty list never loads, so it would otherwise wait for the next results.
+    columnChangeTopIndexRef.current = null;
     // And an end-reached report from the previous search is not this one's.
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;

@@ -1193,6 +1193,20 @@ describe('ClimbList columns follow the list width', () => {
     act(() => mocks.listOnLoad?.());
     expect(mocks.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 100, animated: false, viewOffset: -160 });
   });
+
+  // An empty list never loads, so nothing spends the saved place. A new search
+  // must drop it, or the next results would open on the old search's row.
+  it('drops the saved climb when a new search lands before the list loads', async () => {
+    const { findByText, rerender } = render(<ClimbList />);
+    await findByText('Climb 0');
+    layoutTo(1086);
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 100 }, { index: 107 }] }));
+    chooseColumns('one');
+    mocks.searchState = { filters: { minGrade: 14, maxGrade: 14 }, boardFilters: {}, name: '' };
+    rerender(<ClimbList />);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
 });
 
 describe('ClimbList second tap on the Climbs tab', () => {
