@@ -1,4 +1,4 @@
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
+import { climbListThumbnailSize, type ClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
 import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
@@ -68,18 +68,26 @@ export const CLIMB_ROW_DIRECTION_STATUS = {
   inlineGap: spacing[2],
 } as const;
 
+/** The one-column cell: what every host outside a two-column Climbs list draws. */
+const ONE_COLUMN_THUMBNAIL = climbListThumbnailSize(1);
+
 /**
  * Where a row's separator starts, so it sits under the text column: 104pt on a
- * plain row with a thumbnail (gutter + thumbnail + gap), the gutter alone
- * without one.
+ * plain row with the one-column thumbnail (gutter + thumbnail + gap), the gutter
+ * alone without one. `thumbnailWidth` is the row's cell width
+ * (`useClimbListThumbnailSize`); hosts that never go two-column leave it out.
  *
  * `leadingInset` is where the row's first column starts, measured from the row's
  * leading edge. It defaults to the gutter. A host that puts a slot in front of
  * the thumbnail (the queue's position number, the playlist editor's remove
  * button) or pads tighter than the gutter passes its own figure.
  */
-export function climbRowSeparatorInset(showThumbnail: boolean, leadingInset: number = CLIMB_ROW_GUTTER): number {
-  return leadingInset + (showThumbnail ? THUMBNAIL_WIDTH + CLIMB_ROW_COLUMN_GAP : 0);
+export function climbRowSeparatorInset(
+  showThumbnail: boolean,
+  leadingInset: number = CLIMB_ROW_GUTTER,
+  thumbnailWidth: number = ONE_COLUMN_THUMBNAIL.width,
+): number {
+  return leadingInset + (showThumbnail ? thumbnailWidth + CLIMB_ROW_COLUMN_GAP : 0);
 }
 
 /**
@@ -136,6 +144,8 @@ export type ClimbRowLayoutInput = {
    * differ by a point or two.
    */
   typeScale?: Readonly<Partial<Record<ClimbRowTextVariant, { lineHeight?: number }>>>;
+  /** The row's thumbnail cell (`useClimbListThumbnailSize`). Left out, the one-column 76×96. */
+  thumbnailSize?: ClimbListThumbnailSize;
 };
 
 export type ClimbRowLayout = {
@@ -182,6 +192,7 @@ function estimateClimbRowHeight(
   fontScale: number,
   typeScale: ClimbRowLayoutInput['typeScale'],
   allowNameWrapping: boolean,
+  thumbnailHeight: number,
 ): number {
   const lineHeight = (variant: ClimbRowTextVariant, maxFontScale = Infinity): number =>
     (typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) * Math.min(fontScale, maxFontScale);
@@ -210,7 +221,7 @@ function estimateClimbRowHeight(
   const tallestColumn = Math.max(
     textColumnHeight,
     lineHeight('title3'),
-    layout.hasThumbnail ? THUMBNAIL_HEIGHT : CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
+    layout.hasThumbnail ? thumbnailHeight : CLIMB_ROW_MIN_TEXT_COLUMN_HEIGHT,
   );
   return Math.ceil(tallestColumn + 2 * CLIMB_ROW_VERTICAL_PADDING);
 }
@@ -229,6 +240,7 @@ export function climbRowLayout({
   fontScale = 1,
   allowNameWrapping = true,
   typeScale,
+  thumbnailSize = ONE_COLUMN_THUMBNAIL,
 }: ClimbRowLayoutInput): ClimbRowLayout {
   const hasThumbnail = display.thumbnail;
   // Sends, rating and setter are the detail line's own tokens. The community
@@ -258,10 +270,13 @@ export function climbRowLayout({
     hasTagsLine: surface.showPlaylistChips && display.playlistTags,
     reservesLateLines: !hasThumbnail,
     minHeight: CLIMB_ROW_MIN_HEIGHT,
-    separatorInset: climbRowSeparatorInset(hasThumbnail, surface.leadingInset),
+    separatorInset: climbRowSeparatorInset(hasThumbnail, surface.leadingInset, thumbnailSize.width),
   } satisfies Omit<ClimbRowLayout, 'estimatedHeight'>;
 
-  return { ...structure, estimatedHeight: estimateClimbRowHeight(structure, fontScale, typeScale, allowNameWrapping) };
+  return {
+    ...structure,
+    estimatedHeight: estimateClimbRowHeight(structure, fontScale, typeScale, allowNameWrapping, thumbnailSize.height),
+  };
 }
 
 export type ClimbRowReorderRow = {
@@ -318,14 +333,24 @@ export function climbRowReorderHeight({
   return Math.ceil(minimumHeight);
 }
 
+/** The height of a row whose thumbnail sets it: the cell plus the row's padding (112pt in one column). */
+export function climbRowThumbnailRowHeight(thumbnailSize: ClimbListThumbnailSize = ONE_COLUMN_THUMBNAIL): number {
+  return thumbnailSize.height + 2 * CLIMB_ROW_VERTICAL_PADDING;
+}
+
 /**
  * How many skeleton rows it takes to cover what `defaultCount` rows of the
- * default height did. The counts in the app were picked for the 112pt row with
- * a thumbnail; a row without one is as short as 44pt, and the same count would
- * leave most of the screen empty. Never fewer than `defaultCount`.
+ * default height did. The counts in the app were picked for the row with a
+ * thumbnail (112pt in one column, 128pt in two); a row without one is as short
+ * as 44pt, and the same count would leave most of the screen empty. Never fewer
+ * than `defaultCount`. Rows, not climbs: a two-column list draws two per row.
  */
-export function climbRowSkeletonCount(defaultCount: number, estimatedRowHeight: number): number {
-  const defaultRowHeight = THUMBNAIL_HEIGHT + 2 * CLIMB_ROW_VERTICAL_PADDING;
+export function climbRowSkeletonCount(
+  defaultCount: number,
+  estimatedRowHeight: number,
+  thumbnailSize: ClimbListThumbnailSize = ONE_COLUMN_THUMBNAIL,
+): number {
+  const defaultRowHeight = climbRowThumbnailRowHeight(thumbnailSize);
   if (!(estimatedRowHeight > 0)) return defaultCount;
   return Math.max(defaultCount, Math.ceil((defaultCount * defaultRowHeight) / estimatedRowHeight));
 }

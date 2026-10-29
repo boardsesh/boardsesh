@@ -72,7 +72,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../../ClimbListItemContent', () => ({ ClimbListItemContent: () => null }));
-vi.mock('../../../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 64 }));
+vi.mock('../../../ClimbListThumbnail', () => ({}));
 vi.mock('../../../Icon', () => ({ Icon: () => createElement('span', { 'data-testid': 'refresh-icon' }) }));
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),

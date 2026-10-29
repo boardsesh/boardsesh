@@ -2,6 +2,7 @@ import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { SectionLayoutRecord } from '../lib/section-layout';
 import type { PlayerButtonsPosition } from '../lib/player-buttons';
+import type { ClimbListLayoutPreference } from '../components/climb-list-thumbnail-metrics';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
@@ -251,6 +252,13 @@ export type AppSettings = {
    * re-render. Bump the `V1` suffix on an incompatible shape change.
    */
   climbRowDisplayV1: StoredClimbRowDisplay | null;
+  /**
+   * One or two columns in the Climbs list where the list is wide enough for two
+   * (a regular-width iPad). Read through `useClimbListLayout`, which sanitises it.
+   * In this store, not AsyncStorage, because the column count has to be known
+   * before the first row paints.
+   */
+  climbListLayout: ClimbListLayoutPreference;
   /**
    * The player's buttons (#6229): their order and switches, `null` while they
    * match the defaults so a later release's defaults still apply. Read and

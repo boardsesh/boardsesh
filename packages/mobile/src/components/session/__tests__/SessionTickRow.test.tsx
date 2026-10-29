@@ -86,8 +86,6 @@ vi.mock('../../ClimbListItemContent', () => ({
 // Mocking ClimbListThumbnail stops Rolldown from traversing into those packages.
 vi.mock('../../ClimbListThumbnail', () => ({
   ClimbListThumbnail: () => null,
-  THUMBNAIL_WIDTH: 76,
-  THUMBNAIL_HEIGHT: 96,
 }));
 vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#000' }));
 vi.mock('../../../hooks/use-grade-format', () => ({

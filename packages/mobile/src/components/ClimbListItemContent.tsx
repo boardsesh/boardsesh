@@ -4,7 +4,8 @@ import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
-import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
+import { ClimbListThumbnail } from './ClimbListThumbnail';
+import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
@@ -979,6 +980,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail ?? ClimbListThumbnail;
+  // 88×112 in a two-column Climbs list, 76×96 in every other host.
+  const thumbnailSize = useClimbListThumbnailSize();
+  const thumbnailContainerStyle = useMemo(() => [styles.thumbnailContainer, thumbnailSize], [thumbnailSize]);
   const Progress = leaves.Progress ?? ClimbProgressLine;
   // The row's one subscription to the Climb list settings. Its snapshot keeps its
   // identity until a switch changes, so this never re-renders a row on its own.
@@ -998,8 +1002,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       detailLine: primarySubtitleOverride === undefined ? 'computed' : primarySubtitleOverride ? 'replaced' : 'hidden',
     },
     supportsMirroring,
+    thumbnailSize,
   });
-  // With a thumbnail, its 96pt is the row's floor and a line that loads late
+  // With a thumbnail, its height is the row's floor and a line that loads late
   // grows inside it. Without one the text column carries the floor, and a late
   // line holds its space from the first paint (`layout.reservesLateLines`).
   const textColumnStyle = layout.hasThumbnail
@@ -1021,7 +1026,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   if (!climb || !isClimbResolved(climb)) {
     return (
       <>
-        {layout.hasThumbnail ? <View style={styles.thumbnailContainer} /> : null}
+        {layout.hasThumbnail ? <View style={thumbnailContainerStyle} /> : null}
         <View style={textColumnStyle}>
           <Text variant="body" numberOfLines={nameLines} style={nameStyle}>
             {tSession('mobile.queue.unknownClimb')}
@@ -1137,7 +1142,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     <>
       {/* Left: portrait thumbnail with ascent badge */}
       {layout.hasThumbnail ? (
-        <View style={styles.thumbnailContainer}>
+        <View style={thumbnailContainerStyle}>
           <Thumbnail
             climbUuid={climb.uuid}
             readyBoardArtRef={readyBoardArtRef}
@@ -1213,9 +1218,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
 export { ClimbListItemContent };
 
 const styles = StyleSheet.create({
+  // Sized at the call site from `useClimbListThumbnailSize`.
   thumbnailContainer: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
     flexShrink: 0,
     position: 'relative',
   },

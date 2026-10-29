@@ -23,9 +23,8 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
 }));
-vi.mock('../climb-list-thumbnail-metrics', () => ({ THUMBNAIL_WIDTH: 48 }));
-
-import { CLIMB_ROW_GUTTER, climbListRowStyles } from '../climb-list-row-styles';
+import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from '../climb-list-row-styles';
+import { climbListThumbnailSize } from '../climb-list-thumbnail-metrics';
 
 // HIG Layout: 16pt side margins on iPhone; M3 Lists: 16dp item padding. The row
 // used 8pt, so the thumbnails sat closer to the edge than every header above.
@@ -36,6 +35,21 @@ describe('climb list row margins', () => {
   });
 
   it('starts the separator at the text column, after the gutter, thumbnail and gap', () => {
-    expect(climbListRowStyles.separator.marginLeft).toBe(16 + 48 + 12);
+    expect(climbRowSeparatorInsetStyle(true, climbListThumbnailSize(1).width)).toEqual({ marginLeft: 16 + 76 + 12 });
+    expect(climbRowSeparatorInsetStyle(true, climbListThumbnailSize(2).width)).toEqual({ marginLeft: 16 + 88 + 12 });
+  });
+
+  it('starts the separator at the gutter on a row without a thumbnail, whatever the cell', () => {
+    expect(climbRowSeparatorInsetStyle(false, 76)).toEqual({ marginLeft: 16 });
+    expect(climbRowSeparatorInsetStyle(false, 88)).toEqual({ marginLeft: 16 });
+  });
+
+  it('hands every row the same style object for the same inset', () => {
+    expect(climbRowSeparatorInsetStyle(true, 88)).toBe(climbRowSeparatorInsetStyle(true, 88));
+    expect(climbRowSeparatorInsetStyle(false, 76)).toBe(climbRowSeparatorInsetStyle(false, 88));
+  });
+
+  it('leaves the hairline itself without an inset', () => {
+    expect(climbListRowStyles.separator).toEqual({ height: 0.5 });
   });
 });

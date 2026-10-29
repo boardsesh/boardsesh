@@ -21,14 +21,29 @@ export const climbListRowStyles = StyleSheet.create({
     paddingVertical: CLIMB_ROW_VERTICAL_PADDING,
     gap: spacing[3],
   },
-  // Separator inset to start at the text column (after the thumbnail).
+  // The hairline itself. Where it starts depends on the row's thumbnail, so the
+  // inset comes from `climbRowSeparatorInsetStyle`.
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: climbRowSeparatorInset(true),
-  },
-  // Laid over `separator` on a row whose thumbnail is switched off: the text
-  // column then starts at the gutter, and so does the line under it.
-  separatorWithoutThumbnail: {
-    marginLeft: climbRowSeparatorInset(false),
   },
 });
+
+// One style object per inset, made once: a style built during render would be a
+// new object for every row on every render.
+const separatorInsetStyles = new Map<number, { marginLeft: number }>();
+
+/**
+ * The separator's leading margin, so the line starts at the text column: after
+ * the gutter, the thumbnail and the gap on a row with a thumbnail, at the gutter
+ * on one without. `thumbnailWidth` is the row's cell (`useClimbListThumbnailSize`):
+ * 76 in one column, 88 in a two-column Climbs list.
+ */
+export function climbRowSeparatorInsetStyle(hasThumbnail: boolean, thumbnailWidth: number): { marginLeft: number } {
+  const marginLeft = climbRowSeparatorInset(hasThumbnail, CLIMB_ROW_GUTTER, thumbnailWidth);
+  let style = separatorInsetStyles.get(marginLeft);
+  if (!style) {
+    style = { marginLeft };
+    separatorInsetStyles.set(marginLeft, style);
+  }
+  return style;
+}

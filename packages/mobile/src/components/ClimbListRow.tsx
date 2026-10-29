@@ -38,7 +38,8 @@ import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
-import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
+import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
+import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
@@ -321,6 +322,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // around it keeps the geometry of a row that has one.
   const thumbnailEnabled = useClimbRowField('thumbnail');
   const hasThumbnail = thumbnailEnabled || renderContent !== undefined;
+  // 88pt in a two-column Climbs list, 76pt everywhere else: where the separator starts.
+  const thumbnailSize = useClimbListThumbnailSize();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
   // + accent stay visible in dark (lifted #A78BFA) as well as light.
   const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
@@ -656,7 +659,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
         <View
           style={[
             climbListRowStyles.separator,
-            hasThumbnail ? null : climbListRowStyles.separatorWithoutThumbnail,
+            climbRowSeparatorInsetStyle(hasThumbnail, thumbnailSize.width),
             { backgroundColor: systemColors.separator },
             separatorStyle,
           ]}

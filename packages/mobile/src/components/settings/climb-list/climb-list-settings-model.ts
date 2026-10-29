@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { MoreFormModel, MoreToggleRow } from '../../MoreForm.types';
 import type { ClimbRowDisplay, ClimbRowFieldId, ClimbRowPresetId } from '../../../lib/climb-row-display';
+import type { ClimbListLayoutPreference } from '../../climb-list-thumbnail-metrics';
 
 type Translation = (key: string, options?: Record<string, unknown>) => string;
 export function climbRowPresetLabel(preset: ClimbRowPresetId | 'custom', t: Translation): string {
@@ -12,8 +13,13 @@ export function buildClimbListSettingsModel(input: {
   t: Translation;
   preview: ReactNode;
   previewHeight: number;
+  /**
+   * The One column / Two columns choice. `null` on a device that can never draw
+   * two columns (every iPhone but the open Duo), where the section is left out.
+   */
+  layout: { value: ClimbListLayoutPreference; onChange: (value: ClimbListLayoutPreference) => void } | null;
 }): MoreFormModel {
-  const { display, setField, t } = input;
+  const { display, setField, t, layout } = input;
   const toggle = (field: ClimbRowFieldId, label: string, subtitle?: string): MoreToggleRow => ({
     kind: 'toggle',
     key: field,
@@ -37,6 +43,28 @@ export function buildClimbListSettingsModel(input: {
           },
         ],
       },
+      ...(layout === null
+        ? []
+        : [
+            {
+              key: 'layout',
+              title: t('mobile.settings.climbList.layout.title'),
+              footer: t('mobile.settings.climbList.layout.footer'),
+              rows: [
+                {
+                  kind: 'segmented' as const,
+                  key: 'climbListLayout',
+                  label: t('mobile.settings.climbList.layout.title'),
+                  options: [
+                    { key: 'one', label: t('mobile.settings.climbList.layout.one') },
+                    { key: 'two', label: t('mobile.settings.climbList.layout.two') },
+                  ],
+                  selectedKey: layout.value,
+                  onSelect: (key: string) => layout.onChange(key === 'one' ? 'one' : 'two'),
+                },
+              ],
+            },
+          ]),
       {
         key: 'picture',
         title: t('mobile.settings.climbList.picture'),

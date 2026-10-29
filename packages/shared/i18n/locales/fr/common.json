@@ -514,6 +514,12 @@
         "underName": "Sous le nom",
         "yourClimbing": "Ta grimpe",
         "actions": "Actions",
+        "layout": {
+          "title": "Colonnes",
+          "one": "Une colonne",
+          "two": "Deux colonnes",
+          "footer": "Les deux colonnes s'affichent quand la liste a la place, comme sur un iPad à l'horizontale."
+        },
         "gradesTitle": "Cotations",
         "previewFooter": "Exemple. Les croix, favoris et étiquettes apparaissent sur les blocs qui en ont.",
         "gradeFooter": "Choisis la cotation principale dans Réglages → Blocs et cotations.",

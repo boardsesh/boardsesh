@@ -514,6 +514,12 @@
         "underName": "Under the name",
         "yourClimbing": "Your climbing",
         "actions": "Actions",
+        "layout": {
+          "title": "Layout",
+          "one": "One column",
+          "two": "Two columns",
+          "footer": "Two columns show when the list has room, like on an iPad in landscape."
+        },
         "gradesTitle": "Grades",
         "previewFooter": "Example. Sends, saves and tags show on climbs that have them.",
         "gradeFooter": "Choose which grade is big in Settings → Climbs & grades.",

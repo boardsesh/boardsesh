@@ -514,6 +514,12 @@
         "underName": "Sotto il nome",
         "yourClimbing": "Le tue arrampicate",
         "actions": "Azioni",
+        "layout": {
+          "title": "Colonne",
+          "one": "Una colonna",
+          "two": "Due colonne",
+          "footer": "Le due colonne compaiono quando l'elenco ha spazio, come su un iPad in orizzontale."
+        },
         "gradesTitle": "Gradi",
         "previewFooter": "Esempio. Ripetizioni, salvataggi e tag compaiono sui blocchi che ne hanno.",
         "gradeFooter": "Scegli quale grado mostrare in grande in Impostazioni → Blocchi e gradi.",

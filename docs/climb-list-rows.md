@@ -27,6 +27,16 @@ Queue and playlist edit lists give every indexed drag row the same minimum heigh
 
 The preview window reserves the tallest supported row at the current font scale and theme, with a 117 pt minimum, so switches stay in place and large-text tags stay visible. It uses the list's full width and action gutter, including in the browser form. It uses the active board's most-climbed row and stages a favorite, direction statuses, two playlists and a differing personal grade. Without board geometry its picture is a neutral block. A second, unmarked row appears when both fit.
 
+## One or two columns
+
+The Climbs tab draws two climbs side by side when its list is at least 900pt wide (`climbListColumns` in `packages/mobile/src/components/climb-list-thumbnail-metrics.ts`). The width is the list's own frame, measured with `onLayout`, so the iPad sidebar (280pt in landscape) and the iPhone Duo's player pane and tab rail are already left out. That gives two columns on an 11" iPad in landscape (914pt) and a 13" iPad either way up (1032pt and 1086pt). An 11" iPad in portrait (834pt), an iPad mini with its sidebar open (853pt), a ⅓ split, every iPhone and the iPhone Duo stay on one column. On the open Duo the player takes half the window, so the list measures about 391pt, or 475pt with the rail collapsed. The closed Duo is 466pt wide.
+
+Two columns use an 88×112 thumbnail; one column keeps 76×96. The list provides the size through `ClimbListThumbnailSizeContext`, and every row, placeholder, separator and height estimate reads it from there (`useClimbListThumbnailSize`, the `thumbnailSize` input of `climbRowLayout`, `climbRowSeparatorInsetStyle`). Every other host, including the queue, playlists, sheets and the Settings preview, sits outside the provider and keeps 76×96. Playlist detail, profile climbs and setter pages stay on one column.
+
+List cells render their overlay at `max(400, ceil(width × pixel ratio × 1.25))`. On a phone and on an iPad this is 400 for both cell sizes, so the list and the MiniPlayer share the `_w400_` cache entry. Callers that pass their own `size` (feed cards, notifications, the session hero) keep the older `max(400, 5 × width)`.
+
+Settings → Climb list → Layout offers One column or Two columns, with Two columns as the default. The choice is shown only where two columns can happen: a tablet whose screen is at least 900pt on its long side, or the Duo's open inner display. It is stored as `climbListLayout` in the synchronous settings store, so the column count is known before the first row paints. Pagination and thumbnail prewarming count climbs, not rows; in two columns the prewarm window reaches twice as many climbs so it covers the same distance down the screen.
+
 ## Frame counts and personal progress
 
 Climbs with multiple frames show a stack-and-count pip over the picture. With the picture hidden, it joins the name badges. Single-frame climbs keep the same row.

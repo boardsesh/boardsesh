@@ -514,6 +514,12 @@
         "underName": "Unter dem Namen",
         "yourClimbing": "Dein Klettern",
         "actions": "Aktionen",
+        "layout": {
+          "title": "Spalten",
+          "one": "Eine Spalte",
+          "two": "Zwei Spalten",
+          "footer": "Zwei Spalten erscheinen, wenn die Liste Platz hat, etwa auf einem iPad im Querformat."
+        },
         "gradesTitle": "Schwierigkeitsgrade",
         "previewFooter": "Beispiel. Begehungen, Favoriten und Tags erscheinen bei Bouldern, die sie haben.",
         "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Boulder & Grade.",
