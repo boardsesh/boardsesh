@@ -264,7 +264,7 @@
       "dismiss": "Non ora"
     },
     "loadError": {
-      "sessions": "Impossibile caricare le tue sessioni",
+      "sessions": "Impossibile caricare le tue session",
       "progress": "Impossibile caricare i tuoi progressi"
     }
   }
