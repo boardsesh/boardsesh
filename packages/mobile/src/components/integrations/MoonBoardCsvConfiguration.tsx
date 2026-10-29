@@ -15,7 +15,6 @@ import {
   type ParsedMoonBoardExportResult,
 } from '@boardsesh/shared-schema/moonboard-import';
 import type { MoonBoardCollectionPreview, MoonBoardCollectionImportResult } from '@boardsesh/shared-schema';
-import { GET_ALL_USER_PLAYLISTS } from '@boardsesh/graphql/operations/playlists';
 import { AppMenu } from '../AppMenu';
 import { AccessibleBottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { Button } from '../Button';
@@ -24,19 +23,14 @@ import { Text } from '../Text';
 import { SheetTopBar } from '../SheetTopBar';
 import { ModalSheet } from '../ModalSheet';
 import { useTheme } from '../../providers/theme-provider';
-import { getHttpClient } from '../../lib/graphql/client';
 import { invalidateOwnDataAfterImport } from '../../lib/integrations/board-import-completion';
-import { importMoonBoardCollection, previewMoonBoardCollection } from '../../lib/integrations/moonboard-collection';
+import {
+  importMoonBoardCollection,
+  previewMoonBoardCollection,
+  getMoonBoardCollectionDestinations,
+} from '../../lib/integrations/moonboard-collection';
 import { spacing } from '../../theme/tokens';
 
-type PrivatePlaylist = {
-  id: string;
-  uuid: string;
-  name: string;
-  isPublic: boolean;
-  userRole: string;
-  layoutId: number | null;
-};
 type Props = {
   csv: string;
   initialOptions?: MoonBoardCsvParseOptions;
@@ -121,20 +115,7 @@ export function MoonBoardCsvConfiguration({ csv, initialOptions, onParsed, onClo
   const playlistQuery = useQuery({
     queryKey: ['moonBoardImportDestinations', layoutId],
     enabled: mode === 'collection' && layoutId != null,
-    queryFn: async () => {
-      const response = await getHttpClient().request<{ allUserPlaylists: { playlists: PrivatePlaylist[] } }>(
-        GET_ALL_USER_PLAYLISTS,
-        {
-          input: { boardType: 'moonboard', layoutId, pageSize: 500 },
-        },
-      );
-      return response.allUserPlaylists.playlists.filter(
-        (playlist) =>
-          !playlist.isPublic &&
-          playlist.userRole === 'owner' &&
-          (playlist.layoutId == null || playlist.layoutId === layoutId),
-      );
-    },
+    queryFn: () => getMoonBoardCollectionDestinations(layoutId!),
   });
   const destinations = Array.isArray(playlistQuery.data) ? playlistQuery.data : [];
   const destination = destinations.find((playlist) => playlist.id === destinationId);

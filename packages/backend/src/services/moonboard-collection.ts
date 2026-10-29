@@ -1,10 +1,11 @@
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import { refreshPlaylistGradeSummariesFor } from '@boardsesh/db/queries';
 import type {
   MoonBoardCollectionImportInput,
+  MoonBoardCollectionDestination,
   MoonBoardCollectionImportResult,
   MoonBoardCollectionMatch,
   MoonBoardCollectionPreview,
@@ -18,6 +19,45 @@ import {
 import { logger } from '../utils/logger';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/** Read effective item privacy rather than the legacy public switch alone. */
+export async function listMoonBoardCollectionDestinations(
+  database: DrizzleDb,
+  userId: string,
+  layoutId: number,
+): Promise<MoonBoardCollectionDestination[]> {
+  const playlists = await database
+    .select({
+      id: schema.playlists.id,
+      uuid: schema.playlists.uuid,
+      name: schema.playlists.name,
+      layoutId: schema.playlists.layoutId,
+    })
+    .from(schema.playlists)
+    .innerJoin(
+      schema.playlistOwnership,
+      and(
+        eq(schema.playlistOwnership.playlistId, schema.playlists.id),
+        eq(schema.playlistOwnership.userId, userId),
+        eq(schema.playlistOwnership.role, 'owner'),
+      ),
+    )
+    .leftJoin(
+      schema.contentPrivacy,
+      and(eq(schema.contentPrivacy.entityType, 'playlist'), eq(schema.contentPrivacy.entityId, schema.playlists.uuid)),
+    )
+    .where(
+      and(
+        eq(schema.playlists.boardType, 'moonboard'),
+        eq(schema.playlists.isPublic, false),
+        or(isNull(schema.playlists.layoutId), eq(schema.playlists.layoutId, layoutId)),
+        or(isNull(schema.contentPrivacy.entityId), eq(schema.contentPrivacy.audience, 'only_me')),
+      ),
+    )
+    .orderBy(asc(schema.playlists.name), asc(schema.playlists.id))
+    .limit(500);
+  return playlists.map((playlist) => ({ ...playlist, id: playlist.id.toString() }));
+}
 
 /** Read-only catalogue resolution. The returned rows deliberately contain no candidate details for misses. */
 export async function previewMoonBoardCollection(
@@ -121,6 +161,22 @@ export async function importMoonBoardCollection(
             await transaction
               .insert(schema.playlistOwnership)
               .values({ playlistId: created.id, userId, role: 'owner' });
+            // This transaction just created the owned destination. Record its
+            // private audience explicitly so privacy reads never infer a wider
+            // account default, including when a deleted UUID is reused.
+            const privacy = {
+              ownerId: userId,
+              audience: 'only_me' as const,
+              publicConsentRevision: null,
+              updatedAt: now,
+            };
+            await transaction
+              .insert(schema.contentPrivacy)
+              .values({ entityType: 'playlist', entityId: input.playlistUuid, ...privacy })
+              .onConflictDoUpdate({
+                target: [schema.contentPrivacy.entityType, schema.contentPrivacy.entityId],
+                set: privacy,
+              });
           }
         }
 
@@ -195,6 +251,13 @@ export async function importMoonBoardCollection(
           .from(schema.playlists)
           .where(eq(schema.playlists.id, playlist.id))
           .for('no key update');
+        const [lockedPrivacy] = await transaction
+          .select({ audience: schema.contentPrivacy.audience })
+          .from(schema.contentPrivacy)
+          .where(
+            and(eq(schema.contentPrivacy.entityType, 'playlist'), eq(schema.contentPrivacy.entityId, playlist.uuid)),
+          )
+          .for('share');
         const [lockedOwnership] = await transaction
           .select({ id: schema.playlistOwnership.id })
           .from(schema.playlistOwnership)
@@ -210,6 +273,7 @@ export async function importMoonBoardCollection(
           !lockedPlaylist ||
           !lockedOwnership ||
           lockedPlaylist.isPublic ||
+          (lockedPrivacy != null && lockedPrivacy.audience !== 'only_me') ||
           lockedPlaylist.boardType !== 'moonboard' ||
           (lockedPlaylist.layoutId != null && lockedPlaylist.layoutId !== input.layoutId)
         ) {

@@ -27,7 +27,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('expo-crypto', () => ({ randomUUID: mocks.randomUUID }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: mocks.clipboard }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
-vi.mock('../../../lib/integrations/moonboard-collection', () => ({
+vi.mock('../../../lib/integrations/moonboard-collection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/integrations/moonboard-collection')>()),
   previewMoonBoardCollection: mocks.preview,
   importMoonBoardCollection: mocks.importCollection,
 }));
@@ -223,7 +224,7 @@ beforeEach(() => {
   mocks.preview.mockResolvedValue(PREVIEW);
   mocks.importCollection.mockResolvedValue(IMPORT_RESULT);
   mocks.clipboard.mockResolvedValue(undefined);
-  mocks.request.mockResolvedValue({ allUserPlaylists: { playlists: [] } });
+  mocks.request.mockResolvedValue({ moonBoardCollectionDestinations: [] });
 });
 
 afterEach(() => {
@@ -381,12 +382,14 @@ describe('MoonBoardCsvConfiguration', () => {
     expect(mocks.preview.mock.calls[0][0].rows.some((row) => row.name === 'Deleted')).toBe(false);
   });
 
-  it('offers only compatible private playlists owned by the signed-in user', async () => {
+  it('uses the authoritative private destinations instead of the legacy public switch', async () => {
     mocks.request.mockResolvedValue({
+      moonBoardCollectionDestinations: [{ id: '10', uuid: 'owned-private', name: 'Owned private', layoutId: 2 }],
       allUserPlaylists: {
         playlists: [
           { id: '10', uuid: 'owned-private', name: 'Owned private', isPublic: false, userRole: 'owner', layoutId: 2 },
           { id: '11', uuid: 'public', name: 'Public playlist', isPublic: true, userRole: 'owner', layoutId: 2 },
+          { id: '14', uuid: 'followers', name: 'Followers playlist', isPublic: false, userRole: 'owner', layoutId: 2 },
           { id: '12', uuid: 'viewer', name: 'Shared read-only', isPublic: false, userRole: 'viewer', layoutId: 2 },
           { id: '13', uuid: 'wrong-layout', name: 'Another layout', isPublic: false, userRole: 'owner', layoutId: 3 },
         ],
@@ -397,7 +400,11 @@ describe('MoonBoardCsvConfiguration', () => {
 
     const destinations = view.getByRole('combobox', { name: key('newPlaylist') });
     await waitFor(() => expect(within(destinations).getByRole('option', { name: 'Owned private' })).toBeTruthy());
+    expect(mocks.request).toHaveBeenCalledWith(expect.stringContaining('moonBoardCollectionDestinations'), {
+      layoutId: 2,
+    });
     expect(within(destinations).queryByRole('option', { name: 'Public playlist' })).toBeNull();
+    expect(within(destinations).queryByRole('option', { name: 'Followers playlist' })).toBeNull();
     expect(within(destinations).queryByRole('option', { name: 'Shared read-only' })).toBeNull();
     expect(within(destinations).queryByRole('option', { name: 'Another layout' })).toBeNull();
 

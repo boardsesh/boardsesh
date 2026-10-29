@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import * as schema from '@boardsesh/db/schema';
 import type {
   ConnectionContext,
@@ -7,7 +7,11 @@ import type {
   MoonBoardCollectionPreviewInput,
 } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { importMoonBoardCollection, previewMoonBoardCollection } from '../services/moonboard-collection';
+import {
+  importMoonBoardCollection,
+  previewMoonBoardCollection,
+  listMoonBoardCollectionDestinations,
+} from '../services/moonboard-collection';
 import {
   moonBoardCollectionMutations,
   moonBoardCollectionQueries,
@@ -97,6 +101,9 @@ describe('MoonBoard collection validation', () => {
       moonBoardCollectionQueries.previewMoonBoardCollectionImport(null, { input: previewInput() }, unauthenticated),
     ).rejects.toThrow();
     await expect(
+      moonBoardCollectionQueries.moonBoardCollectionDestinations(null, { layoutId: 2 }, unauthenticated),
+    ).rejects.toThrow();
+    await expect(
       moonBoardCollectionMutations.importMoonBoardCollection(null, { input: importInput() }, unauthenticated),
     ).rejects.toThrow();
   });
@@ -125,10 +132,20 @@ describeWithDatabase('MoonBoard collection recovery', () => {
 
   afterAll(async () => {
     const ownedPlaylists = await db
-      .select({ playlistId: schema.playlistOwnership.playlistId })
+      .select({ playlistId: schema.playlistOwnership.playlistId, playlistUuid: schema.playlists.uuid })
       .from(schema.playlistOwnership)
+      .innerJoin(schema.playlists, eq(schema.playlists.id, schema.playlistOwnership.playlistId))
       .where(inArray(schema.playlistOwnership.userId, [ownerId, otherUserId]));
     if (ownedPlaylists.length > 0) {
+      await db.delete(schema.contentPrivacy).where(
+        and(
+          eq(schema.contentPrivacy.entityType, 'playlist'),
+          inArray(
+            schema.contentPrivacy.entityId,
+            ownedPlaylists.map((playlist) => playlist.playlistUuid),
+          ),
+        ),
+      );
       await db.delete(schema.playlists).where(
         inArray(
           schema.playlists.id,
@@ -221,6 +238,11 @@ describeWithDatabase('MoonBoard collection recovery', () => {
     expect(second).toMatchObject({ imported: 0, skipped: 3, playlistId: first.playlistId });
     const [playlist] = await db.select().from(schema.playlists).where(eq(schema.playlists.uuid, input.playlistUuid));
     expect(playlist.isPublic).toBe(false);
+    const [privacy] = await db
+      .select()
+      .from(schema.contentPrivacy)
+      .where(and(eq(schema.contentPrivacy.entityType, 'playlist'), eq(schema.contentPrivacy.entityId, playlist.uuid)));
+    expect(privacy.audience).toBe('only_me');
     const memberships = await db
       .select()
       .from(schema.playlistClimbs)
@@ -319,6 +341,68 @@ describeWithDatabase('MoonBoard collection recovery', () => {
     await expect(
       importMoonBoardCollection(db, otherUserId, { ...input, playlistId: created.playlistId }),
     ).rejects.toThrow('owned private MoonBoard');
+  });
+
+  it.each(['followers', 'public'] as const)(
+    'rejects a %s policy even when the legacy public switch is false',
+    async (audience) => {
+      const original = importInput([namedClimbs.unique]);
+      const target = await importMoonBoardCollection(db, ownerId, original);
+      await db
+        .update(schema.contentPrivacy)
+        .set({ audience })
+        .where(
+          and(
+            eq(schema.contentPrivacy.entityType, 'playlist'),
+            eq(schema.contentPrivacy.entityId, target.playlistUuid),
+          ),
+        );
+      const [playlist] = await db.select().from(schema.playlists).where(eq(schema.playlists.uuid, target.playlistUuid));
+      expect(playlist.isPublic).toBe(false);
+      await expect(
+        importMoonBoardCollection(db, ownerId, {
+          ...original,
+          rows: previewInput([namedClimbs.apostrophe]).rows,
+          playlistId: target.playlistId,
+        }),
+      ).rejects.toThrow('owned private MoonBoard');
+      const memberships = await db
+        .select()
+        .from(schema.playlistClimbs)
+        .where(eq(schema.playlistClimbs.playlistId, BigInt(target.playlistId)));
+      expect(memberships.map((row) => row.climbUuid)).toEqual([uniqueUuid]);
+    },
+  );
+
+  it('lists only owned private destinations with an eligible effective audience', async () => {
+    const legacy = await importMoonBoardCollection(db, ownerId, importInput());
+    await db
+      .delete(schema.contentPrivacy)
+      .where(
+        and(eq(schema.contentPrivacy.entityType, 'playlist'), eq(schema.contentPrivacy.entityId, legacy.playlistUuid)),
+      );
+    const onlyMe = await importMoonBoardCollection(db, ownerId, importInput());
+    const followers = await importMoonBoardCollection(db, ownerId, importInput());
+    await db
+      .update(schema.contentPrivacy)
+      .set({ audience: 'followers' })
+      .where(
+        and(
+          eq(schema.contentPrivacy.entityType, 'playlist'),
+          eq(schema.contentPrivacy.entityId, followers.playlistUuid),
+        ),
+      );
+    const otherOwner = await importMoonBoardCollection(db, otherUserId, importInput());
+    const wrongLayout = await importMoonBoardCollection(db, ownerId, importInput());
+    await db.update(schema.playlists).set({ layoutId: 3 }).where(eq(schema.playlists.uuid, wrongLayout.playlistUuid));
+    const publicFlag = await importMoonBoardCollection(db, ownerId, importInput());
+    await db.update(schema.playlists).set({ isPublic: true }).where(eq(schema.playlists.uuid, publicFlag.playlistUuid));
+    const destinations = await listMoonBoardCollectionDestinations(db, ownerId, 2);
+    const ids = destinations.map((playlist) => playlist.uuid);
+    expect(ids).toContain(legacy.playlistUuid);
+    expect(ids).toContain(onlyMe.playlistUuid);
+    for (const excluded of [followers, otherOwner, wrongLayout, publicFlag])
+      expect(ids).not.toContain(excluded.playlistUuid);
   });
 
   it('rechecks catalogue visibility before importing and rolls back empty destinations', async () => {

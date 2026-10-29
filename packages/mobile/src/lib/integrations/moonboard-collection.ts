@@ -4,8 +4,28 @@ import type {
   MoonBoardCollectionImportResult,
   MoonBoardCollectionPreview,
   MoonBoardCollectionPreviewInput,
+  MoonBoardCollectionDestination,
 } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+
+export const GET_MOONBOARD_COLLECTION_DESTINATIONS = gql`
+  query MoonBoardCollectionDestinations($layoutId: Int!) {
+    moonBoardCollectionDestinations(layoutId: $layoutId) {
+      id
+      uuid
+      name
+      layoutId
+    }
+  }
+`;
+
+export async function getMoonBoardCollectionDestinations(layoutId: number): Promise<MoonBoardCollectionDestination[]> {
+  const response = await getHttpClient().request<{ moonBoardCollectionDestinations: MoonBoardCollectionDestination[] }>(
+    GET_MOONBOARD_COLLECTION_DESTINATIONS,
+    { layoutId },
+  );
+  return response.moonBoardCollectionDestinations;
+}
 
 const COLLECTION_PREVIEW_FIELDS = `
   matched missing ambiguous duplicates

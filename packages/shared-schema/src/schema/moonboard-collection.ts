@@ -1,4 +1,11 @@
 export const moonBoardCollectionTypeDefs = /* GraphQL */ `
+  type MoonBoardCollectionDestination {
+    id: ID!
+    uuid: ID!
+    name: String!
+    layoutId: Int
+  }
+
   input MoonBoardCollectionRowInput {
     lineNumber: Int!
     name: String!
@@ -48,6 +55,8 @@ export const moonBoardCollectionTypeDefs = /* GraphQL */ `
   }
 
   extend type Query {
+    "Owned MoonBoard playlists with an effective private audience, for this layout."
+    moonBoardCollectionDestinations(layoutId: Int!): [MoonBoardCollectionDestination!]!
     "Match exported MoonBoard problem names against the public catalogue without saving anything."
     previewMoonBoardCollectionImport(input: MoonBoardCollectionPreviewInput!): MoonBoardCollectionPreview!
   }

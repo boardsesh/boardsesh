@@ -4149,6 +4149,14 @@ export type MoonBoardClimbDuplicateMatch = {
   exists: Scalars['Boolean']['output'];
 };
 
+export type MoonBoardCollectionDestination = {
+  __typename?: 'MoonBoardCollectionDestination';
+  id: Scalars['ID']['output'];
+  layoutId?: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
 export type MoonBoardCollectionImportInput = {
   angle: Scalars['Int']['input'];
   layoutId: Scalars['Int']['input'];
@@ -7264,6 +7272,8 @@ export type Query = {
   isFollowing: Scalars['Boolean']['output'];
   /** Current release context. Available without signing in. */
   mobileReleaseStatus: ReleaseContext;
+  /** Owned MoonBoard playlists with an effective private audience, for this layout. */
+  moonBoardCollectionDestinations: Array<MoonBoardCollectionDestination>;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -8128,6 +8138,11 @@ export type QueryIsFollowingArgs = {
 /** Root query type for all read operations. */
 export type QueryMobileReleaseStatusArgs = {
   input: MobileReleaseStatusInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryMoonBoardCollectionDestinationsArgs = {
+  layoutId: Scalars['Int']['input'];
 };
 
 /** Root query type for all read operations. */

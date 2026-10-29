@@ -6,6 +6,13 @@ export type MoonBoardCollectionRow = {
   setter?: string;
 };
 
+export type MoonBoardCollectionDestination = {
+  id: string;
+  uuid: string;
+  name: string;
+  layoutId: number | null;
+};
+
 export type MoonBoardCollectionPreviewInput = {
   layoutId: number;
   angle: number;

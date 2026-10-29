@@ -34,6 +34,13 @@ type ProposalReportReleaseContext {
   releaseContext: ReleaseContext!
 }
 
+type MoonBoardCollectionDestination {
+  id: ID!
+  uuid: ID!
+  name: String!
+  layoutId: Int
+}
+
 input MoonBoardCollectionRowInput {
   lineNumber: Int!
   name: String!
@@ -83,6 +90,8 @@ type MoonBoardCollectionImportResult {
 }
 
 extend type Query {
+  "Owned MoonBoard playlists with an effective private audience, for this layout."
+  moonBoardCollectionDestinations(layoutId: Int!): [MoonBoardCollectionDestination!]!
   "Match exported MoonBoard problem names against the public catalogue without saving anything."
   previewMoonBoardCollectionImport(input: MoonBoardCollectionPreviewInput!): MoonBoardCollectionPreview!
 }

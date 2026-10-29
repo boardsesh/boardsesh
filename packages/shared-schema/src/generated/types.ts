@@ -4152,6 +4152,14 @@ export type MoonBoardClimbDuplicateMatch = {
   exists: Scalars['Boolean']['output'];
 };
 
+export type MoonBoardCollectionDestination = {
+  __typename?: 'MoonBoardCollectionDestination';
+  id: Scalars['ID']['output'];
+  layoutId?: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
 export type MoonBoardCollectionImportInput = {
   angle: Scalars['Int']['input'];
   layoutId: Scalars['Int']['input'];
@@ -7267,6 +7275,8 @@ export type Query = {
   isFollowing: Scalars['Boolean']['output'];
   /** Current release context. Available without signing in. */
   mobileReleaseStatus: ReleaseContext;
+  /** Owned MoonBoard playlists with an effective private audience, for this layout. */
+  moonBoardCollectionDestinations: Array<MoonBoardCollectionDestination>;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -8131,6 +8141,11 @@ export type QueryIsFollowingArgs = {
 /** Root query type for all read operations. */
 export type QueryMobileReleaseStatusArgs = {
   input: MobileReleaseStatusInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryMoonBoardCollectionDestinationsArgs = {
+  layoutId: Scalars['Int']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -12846,6 +12861,7 @@ export type ResolversTypes = ResolversObject<{
   MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
+  MoonBoardCollectionDestination: ResolverTypeWrapper<MoonBoardCollectionDestination>;
   MoonBoardCollectionImportInput: MoonBoardCollectionImportInput;
   MoonBoardCollectionImportResult: ResolverTypeWrapper<MoonBoardCollectionImportResult>;
   MoonBoardCollectionMatch: ResolverTypeWrapper<MoonBoardCollectionMatch>;
@@ -13401,6 +13417,7 @@ export type ResolversParentTypes = ResolversObject<{
   MobileReleaseStatusInput: MobileReleaseStatusInput;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: MoonBoardClimbDuplicateMatch;
+  MoonBoardCollectionDestination: MoonBoardCollectionDestination;
   MoonBoardCollectionImportInput: MoonBoardCollectionImportInput;
   MoonBoardCollectionImportResult: MoonBoardCollectionImportResult;
   MoonBoardCollectionMatch: MoonBoardCollectionMatch;
@@ -15813,6 +15830,18 @@ export type MoonBoardClimbDuplicateMatchResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type MoonBoardCollectionDestinationResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MoonBoardCollectionDestination'] =
+    ResolversParentTypes['MoonBoardCollectionDestination'],
+> = ResolversObject<{
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type MoonBoardCollectionImportResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['MoonBoardCollectionImportResult'] =
@@ -17790,6 +17819,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryMobileReleaseStatusArgs, 'input'>
+  >;
+  moonBoardCollectionDestinations?: Resolver<
+    Array<ResolversTypes['MoonBoardCollectionDestination']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryMoonBoardCollectionDestinationsArgs, 'layoutId'>
   >;
   myAnalyticsConsent?: Resolver<Maybe<ResolversTypes['AnalyticsConsent']>, ParentType, ContextType>;
   myBoardSerialConfigs?: Resolver<
@@ -20255,6 +20290,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   LoggedSetter?: LoggedSetterResolvers<ContextType>;
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
+  MoonBoardCollectionDestination?: MoonBoardCollectionDestinationResolvers<ContextType>;
   MoonBoardCollectionImportResult?: MoonBoardCollectionImportResultResolvers<ContextType>;
   MoonBoardCollectionMatch?: MoonBoardCollectionMatchResolvers<ContextType>;
   MoonBoardCollectionPreview?: MoonBoardCollectionPreviewResolvers<ContextType>;

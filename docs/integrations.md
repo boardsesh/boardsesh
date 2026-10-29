@@ -246,7 +246,10 @@ allowlist.
 
   `importMoonBoardCollection` resolves the rows again before writing. It saves
   unique matched climbs in source order to a new private playlist or an existing
-  private playlist owned by the caller. The destination's ownership, privacy and
+  private playlist owned by the caller. `moonBoardCollectionDestinations` supplies
+  eligible destinations using the stored item audience as well as the legacy
+  public switch; followers-only playlists are excluded. New collections receive
+  an explicit `only_me` policy. The destination's ownership, privacy and
   board/layout compatibility are checked at write time. Retry UUIDs and unique
   playlist memberships prevent duplicate writes to the same destination. The
   result reports unmatched rows, which can be copied for a follow-up data

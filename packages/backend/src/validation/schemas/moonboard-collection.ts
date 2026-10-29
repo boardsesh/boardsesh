@@ -34,6 +34,8 @@ function supportedConfiguration(input: { layoutId: number; angle: number }): boo
   return input.angle === 40 || [2, 3, 4, 5].includes(input.layoutId);
 }
 
+export const MoonBoardCollectionDestinationInputSchema = z.object({ layoutId: moonBoardCollectionFields.layoutId });
+
 export const MoonBoardCollectionPreviewInputSchema = z
   .object(moonBoardCollectionFields)
   .refine(supportedConfiguration, 'This MoonBoard layout only supports 40 degrees');
