@@ -172,7 +172,8 @@ these grants. A table the appliers start writing fails that test first.
 
 The export family adds SELECT on account email/creation date, tick notes and
 other archived climbing fields, authored climb frames/drafts, aliases, grade
-labels, favorites, and owned-playlist collections. It adds no credential access
+labels, favorites, owned-playlist collections, and the project news email
+opt-in history (`user_project_news_email_events`). It adds no credential access
 or application-table writes. The lists in `packages/db/src/job-queue-schema.ts`
 are authoritative and a restricted-role export test proves them. Supply this
 worker with `PRIVATE_*` storage configuration before the backend deploys with
