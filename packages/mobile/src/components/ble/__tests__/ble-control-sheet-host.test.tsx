@@ -14,6 +14,7 @@ const mockBluetooth = {
   reassertWall: mockReassertWall,
   armUndoWallChangeToast: vi.fn(),
   clearBoard: vi.fn(),
+  turnOffAllLights: vi.fn(),
 };
 const mockBluetoothContext = vi.hoisted(() => ({
   current: null as typeof mockBluetooth | null,
@@ -112,7 +113,9 @@ describe('BleControlSheetHost', () => {
 
     mockBleControlSheet.props?.onClearLights();
     cleared.rerender();
-    expect(mockBluetooth.clearBoard).toHaveBeenCalledTimes(1);
+    // #7015: through the path that also tells every other viewer.
+    expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
+    expect(mockBluetooth.clearBoard).not.toHaveBeenCalled();
     expect(cleared.result.current).toBe('climb-on-the-wall');
 
     mockBleControlSheet.props?.onReassert();

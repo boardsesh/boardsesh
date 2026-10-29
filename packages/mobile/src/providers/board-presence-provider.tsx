@@ -200,6 +200,12 @@ type BoardPresenceControlsValue = {
    * Resolves false when no transport is available.
    */
   reportDisconnectForBoard: (boardId: number) => Promise<boolean>;
+  /**
+   * Tell every viewer this client turned off all the wall's lights but kept its
+   * link (#7015). Resolves false when no transport is available, the backend is
+   * older than the mutation, or another emitter holds the board.
+   */
+  reportClearForBoard: (boardId: number) => Promise<boolean>;
   /** Clear the current board binding and force the shared presence hook inert. */
   resetPresence: () => void;
 };
@@ -709,6 +715,19 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     }
   }, []);
 
+  const reportClearForBoard = useCallback(async (targetBoardId: number): Promise<boolean> => {
+    const activeClient = clientRef.current;
+    if (!enabledRef.current || activeClient?.reportClear == null) {
+      return false;
+    }
+    try {
+      return await activeClient.reportClear(targetBoardId);
+    } catch (error) {
+      console.warn('[board-presence] reportBoardClear failed', error);
+      return false;
+    }
+  }, []);
+
   // Confirm the board the user picked from the disambiguation prompt: remember
   // the choice server-side and bind it as the active wall.
   const chooseDisambiguatedBoard = useCallback(
@@ -819,6 +838,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       restampBoardMembershipByUuid,
       reportClimbForBoard,
       reportDisconnectForBoard,
+      reportClearForBoard,
       resetPresence,
     }),
     [
@@ -831,6 +851,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       restampBoardMembershipByUuid,
       reportClimbForBoard,
       reportDisconnectForBoard,
+      reportClearForBoard,
       resetPresence,
     ],
   );
@@ -896,6 +917,7 @@ const DISABLED_CONTROLS: BoardPresenceControlsValue = {
   restampBoardMembershipByUuid: async () => false,
   reportClimbForBoard: async () => false,
   reportDisconnectForBoard: async () => false,
+  reportClearForBoard: async () => false,
   resetPresence: () => {},
 };
 

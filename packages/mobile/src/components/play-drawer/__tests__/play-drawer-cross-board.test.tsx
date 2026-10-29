@@ -461,7 +461,10 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
 // The lit-climb read reaches board presence → the ws client → secure storage;
 // none of that is under test here, and the wall is dark for every case.
-vi.mock('../use-wall-climb', () => ({ useWallClimb: () => ({ uuid: null, name: null, sentAt: null }) }));
+vi.mock('../use-wall-climb', () => ({
+  useWallClimb: () => ({ uuid: null, name: null, sentAt: null }),
+  usePresenceClearedClimbUuid: () => null,
+}));
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: { canRelay?: boolean; onRelayToHolder?: () => void }) => {
     recorded.lightbulb.push(options);

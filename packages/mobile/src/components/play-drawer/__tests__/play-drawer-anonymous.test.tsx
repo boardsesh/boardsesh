@@ -126,6 +126,8 @@ const wall = vi.hoisted(() => ({
   // Server-stamped. Only the cold-start cases set it: it is how a read that
   // merely ARRIVED late is told from a climb a peer lit mid-browse.
   sentAt: null as string | null,
+  // The climb a crewmate's Turn off all lights left dark, per the feed (#7015).
+  clearedClimbUuid: null as string | null,
 }));
 // The BLE link. Null (no transport) unless a case needs to watch what does and
 // doesn't reach the board.
@@ -432,7 +434,10 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.current }));
 // Board presence, read continuously so the pill can say "On the wall" after any
 // navigation and the confirm has a before-and-after to compare.
-vi.mock('../use-wall-climb', () => ({ useWallClimb: () => wall }));
+vi.mock('../use-wall-climb', () => ({
+  useWallClimb: () => wall,
+  usePresenceClearedClimbUuid: () => wall.clearedClimbUuid,
+}));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
@@ -632,6 +637,7 @@ beforeEach(() => {
   lightbulb.lit = false;
   wall.name = null;
   wall.sentAt = null;
+  wall.clearedClimbUuid = null;
   ble.current = null;
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
@@ -1776,6 +1782,33 @@ describe('PlayDrawer — reading the wall', () => {
     expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
 
     act(() => resetWallCleared());
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+  });
+
+  // #7015: the crewmate holding the link turned all the lights off. This phone
+  // has no link; it only hears it through board presence.
+  it("stops calling a crewmate's turned-off climb lit, and lets a new climb be lit", () => {
+    // A crewmate drives the wall; this phone's Bluetooth is up but not linked.
+    lightbulb.lit = true;
+    ble.current = { isConnected: false, sendFramesToBoard: vi.fn(async () => true) };
+    session.isShared = true;
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    const view = render(drawerElement('member', committedTargetFor(CLIMB)));
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+
+    const pillsBeforeClear = recorded.wallPill.length;
+    wall.uuid = null;
+    wall.clearedClimbUuid = CLIMB.uuid;
+    view.rerender(drawerElement('member', committedTargetFor(CLIMB)));
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
+    expect(recorded.wallPill.slice(pillsBeforeClear).map((pill) => pill.state)).not.toContain('onWall');
+    // Known limitation: no relight from here, the holder relights from the bulb.
+    expect(lastActionBarProps().commitButton).toBeNull();
+
+    // The queue moves on before the feed's echo: the new climb is not called dark.
+    session.currentItem = { uuid: 'queue-item-next', climb: SIMILAR_CLIMB };
+    view.rerender(drawerElement('member', committedTargetFor(SIMILAR_CLIMB)));
     expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
   });
 

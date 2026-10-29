@@ -95,6 +95,13 @@ type BluetoothContextValue = {
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
   /**
+   * "Turn off all lights" (#7015): blank the wall, keep the link, and tell every
+   * other viewer the climb is no longer lit. Resolves whether the LEDs went off.
+   * Other blanking paths (light-show stop, spill skip) keep calling `clearBoard`
+   * and report nothing.
+   */
+  turnOffAllLights: () => Promise<boolean>;
+  /**
    * Force the auto-sender to re-push the current climb to the wall once, even
    * when the rendered pixels are byte-identical to the last send (which it
    * normally dedups). The lightbulb tap calls this so re-taking control of an
@@ -892,6 +899,7 @@ export function BluetoothProvider({
     resolveAndBindBoardByUuid,
     reportClimbForBoard,
     reportDisconnectForBoard,
+    reportClearForBoard,
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
@@ -964,6 +972,8 @@ export function BluetoothProvider({
   reportClimbForBoardRef.current = reportClimbForBoard;
   const reportDisconnectForBoardRef = useRef(reportDisconnectForBoard);
   reportDisconnectForBoardRef.current = reportDisconnectForBoard;
+  const reportClearForBoardRef = useRef(reportClearForBoard);
+  reportClearForBoardRef.current = reportClearForBoard;
   const restampBoardMembershipByUuidRef = useRef(restampBoardMembershipByUuid);
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
@@ -2190,6 +2200,28 @@ export function BluetoothProvider({
     [sendFramesToBoardWithActivityReset],
   );
 
+  // "Turn off all lights" (#7015). The link stays up and the holder slot doesn't
+  // move, so without a report every other phone keeps the climb "On the wall".
+  const turnOffAllLights = useCallback(async (): Promise<boolean> => {
+    // Before the write: a report of the pre-clear wall, or its membership-restamp
+    // retry, checks this epoch before sending again, and must not land after the
+    // clear and put the dark climb back on peers' walls.
+    wallOperationEpochRef.current += 1;
+    pendingWallReportRef.current = null;
+    const cleared = await clearBoard();
+    if (cleared !== true) return false;
+    // The feed now reads the wall as dark, which the report dedup takes as "no
+    // conflict". Forget the last accepted report so re-lighting the same climb
+    // reports it again.
+    lastAcceptedReportSignatureRef.current = null;
+    lastAcceptedWallSignatureRef.current = null;
+    pendingReportSignatureRef.current = null;
+    if (!presenceEnabledRef.current) return true;
+    const boardId = presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current;
+    if (boardId !== null) void reportClearForBoardRef.current(boardId);
+    return true;
+  }, [clearBoard]);
+
   // Advance the queue past a "spill" climb (one set for a different board/layout
   // than the connected board) instead of dark-firing the wall, and tell the user.
   // The auto-sender detects the mismatch (and dedups repeat reports for the same
@@ -2465,6 +2497,7 @@ export function BluetoothProvider({
       disconnect: wrappedDisconnect,
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
       undoWallChange,
@@ -2496,6 +2529,7 @@ export function BluetoothProvider({
       wrappedDisconnect,
       sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
       undoWallChange,

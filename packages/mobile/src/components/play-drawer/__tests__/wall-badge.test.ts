@@ -23,6 +23,7 @@ const base: WallBadgeInput = {
   inCrew: false,
   wallDriven: false,
   currentDark: false,
+  presenceClearedClimbUuid: null,
 };
 
 describe('resolveWallBadge', () => {
@@ -68,6 +69,28 @@ describe('resolveWallBadge', () => {
         currentDark: true,
       },
       'onWall',
+    ],
+    // #7015: a crewmate turned all the lights off. This phone has no link.
+    [
+      'crewmate turned the lights off on your current climb',
+      { inCrew: true, wallDriven: true, presenceClearedClimbUuid: MY_CLIMB },
+      'notOnWall',
+    ],
+    [
+      'your queue moved on before the presence echo: the new climb is not called dark',
+      { inCrew: true, wallDriven: true, presenceClearedClimbUuid: THEIR_CLIMB },
+      'onWall',
+    ],
+    [
+      'a preview of the turned-off climb reads as a preview',
+      {
+        inCrew: true,
+        wallDriven: true,
+        isPreview: true,
+        displayedClimbUuid: THEIR_CLIMB,
+        presenceClearedClimbUuid: THEIR_CLIMB,
+      },
+      'onlyYou',
     ],
     ['anonymous reader', { isAnonymous: true }, null],
     ['a wall with no lights', { boardHasLights: false }, null],

@@ -89,6 +89,8 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 
 **Client.** The reducer already applied `APPLY_CLIMB_CLEARED` (wall to `null`, history kept). It now also keeps `lastClearedClimbUuid`: the event's `climbUuid`, or the climb that was current when an older server sends none. `selectClearedClimbUuid` returns it only while nothing has been lit since, and the provider exposes it as `useBoardPresenceClearedClimbUuid()`. Compare it with the climb on screen. Never read it as "the wall is dark": a peer's queue moves before the presence echo, and its new climb must not read as turned off.
 
+**Mobile.** The controls sheet's "Turn off all lights" calls `BluetoothProvider.turnOffAllLights()`. It bumps the wall-operation epoch before the write, so a report of the pre-clear wall (or its membership-restamp retry) can't settle afterwards. Once the write succeeds it forgets the last accepted report, so re-lighting the same climb reports it again, then calls `reportClearForBoard`. The clearing phone keeps its own `wall-cleared-store`. A crewmate's player reads `usePresenceClearedClimbUuid()`, and `resolveWallBadge` shows "Not on the wall" when the current climb on screen is the cleared one. The phone holding the link ignores the feed's copy, because a re-light would otherwise flash "Not on the wall" until the echo arrives.
+
 **Not covered.**
 
 - Seqs are numbered in allocation order. `reportBoardClimb` does database reads before `nextBoardSeq`, so a set and a clear sent close together can be numbered in the opposite order. The app waits for an in-flight report before sending the other kind.
