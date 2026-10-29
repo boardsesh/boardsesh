@@ -3,6 +3,7 @@ import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
+import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
@@ -1137,8 +1138,9 @@ function ClimbListInner() {
 
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
-    void refetch();
+    return refetch();
   }, [refetch]);
+  const pullRefresh = usePullRefresh(handleRefresh, isRefetching);
 
   // Pagination state read by `maybeFetchNextPage`, which is called from list
   // callbacks and must not change identity (a new one re-renders the FlashList).
@@ -2464,10 +2466,10 @@ function ClimbListInner() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               refreshControl={
-                // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
+                // Background refetches keep the list current without opening UIKit's pull spinner.
                 <RefreshControl
-                  refreshing={isRefetching && !isPlaceholderData}
-                  onRefresh={handleRefresh}
+                  refreshing={pullRefresh.refreshing}
+                  onRefresh={pullRefresh.onRefresh}
                   tintColor={brandColors.primary}
                   // Under the UIKit header the filter chips are pinned over the top of
                   // the list, where the spinner appears. Draw it below them. Android
