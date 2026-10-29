@@ -23,16 +23,17 @@ import { useMiniPlayerFavorite, useMiniPlayerMirrorToggle, useOpenMiniPlayerQueu
 /**
  * The MiniPlayer ⋯'s order, as Music orders its own: what you keep (Favourite,
  * Add to playlist, Share), the queue, the wall (Mirror, Change angle), the
- * climb itself (Add beta video, Edit, Fork), View options, then Report and
- * Delete. Play next, Play last and Log are never offered: the climb is already
- * on the wall, and ✓ is right beside ⋯.
+ * climb itself (Add beta video, Edit, Fork), Climb view settings and Open in
+ * the Kilter / Tension app (the player's ⋯ groups those two the same way), then
+ * Report and Delete. Play next, Play last and Log are never offered: the climb
+ * is already on the wall, and ✓ is right beside ⋯.
  */
 export const MINI_PLAYER_MENU_GROUPS: ClimbMenuGroups = [
   ['favorite', 'playlist', 'share'],
   ['openQueue'],
   ['mirror', 'angle'],
   ['betaVideo', 'edit', 'fork'],
-  ['viewOptions'],
+  ['viewOptions', 'openInApp'],
   ['report', 'delete'],
 ];
 
@@ -119,6 +120,7 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   size,
 }: MiniPlayerActionsMenuProps) {
   const { t } = useTranslation('session');
+  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const segments = useSegments();
   const { openAddToPlaylist, openAnglePicker } = useDrawerHost();
@@ -171,10 +173,18 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   });
 
   const isActiveClimb = climb.uuid === activeClimbUuid;
+  // Off `/play` the row pushes Settings → Climb view, not the player's View
+  // options sheet, so it is named after the screen it opens.
+  const climbViewTitle = tCommon('mobile.settings.climbView.title');
   const rows = useMemo(
     () =>
-      buildPlayDrawerMenuRows(items, { hidden, boardMismatch: false, isActiveClimb, groups: MINI_PLAYER_MENU_GROUPS }),
-    [items, hidden, isActiveClimb],
+      buildPlayDrawerMenuRows(items, {
+        hidden,
+        boardMismatch: false,
+        isActiveClimb,
+        groups: MINI_PLAYER_MENU_GROUPS,
+      }).map((row) => (row.id === 'viewOptions' ? { ...row, label: climbViewTitle } : row)),
+    [items, hidden, isActiveClimb, climbViewTitle],
   );
   const handleSelectIndex = useCallback(
     (index: number) => {

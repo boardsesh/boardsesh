@@ -172,7 +172,8 @@ describe('MiniPlayerActionsMenu', () => {
       'session:playView.actionBar.changeAngle',
       'mobile.climbActions.addBetaVideo',
       'mobile.climbActions.fork',
-      'common:mobile.settings.climbDrawer.sheetTitle',
+      'mobile.settings.climbView.title',
+      'mobile.climbActions.openInApp',
       'mobile.climbActions.report',
     ]);
     // A divider opens each group after the first.
@@ -183,9 +184,16 @@ describe('MiniPlayerActionsMenu', () => {
       'mobile.climbActions.openQueue',
       'session:playView.actionBar.mirrorAria',
       'mobile.climbActions.addBetaVideo',
-      'common:mobile.settings.climbDrawer.sheetTitle',
+      'mobile.settings.climbView.title',
       'mobile.climbActions.report',
     ]);
+  });
+
+  it("opens the climb in the Kilter or Tension app, as the player's ⋯ does", async () => {
+    const { openBrowserAsync } = await import('expo-web-browser');
+    tap(renderMenu().container, 'mobile.climbActions.openInApp');
+    expect(openBrowserAsync).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(openBrowserAsync).mock.calls[0]?.[0])).toContain('climb-1');
   });
 
   it('never offers Play next, Play last or Log: the climb is on the wall and ✓ is beside ⋯', () => {
@@ -201,7 +209,8 @@ describe('MiniPlayerActionsMenu', () => {
       'actions.playlist.popover.title',
       'mobile.climbActions.addBetaVideo',
       'mobile.climbActions.fork',
-      'common:mobile.settings.climbDrawer.sheetTitle',
+      'mobile.settings.climbView.title',
+      'mobile.climbActions.openInApp',
       'mobile.climbActions.report',
     ]);
     // With the heart on the bar, the menu reads no favourite of its own.
@@ -267,7 +276,7 @@ describe('MiniPlayerActionsMenu', () => {
 
   it('opens Climb view settings in the tab the bar sits over', () => {
     route.segments = ['(tabs)', 'home'];
-    tap(renderMenu().container, 'common:mobile.settings.climbDrawer.sheetTitle');
+    tap(renderMenu().container, 'mobile.settings.climbView.title');
     expect(route.push).toHaveBeenCalledWith('/(tabs)/home/settings/climb-view');
     expect(climbViewSettingsHref(['(tabs)', 'climbs', 'search'])).toBe('/(tabs)/climbs/settings/climb-view');
     expect(climbViewSettingsHref(['wall-display'])).toBe('/settings/climb-view');

@@ -106,6 +106,75 @@ export function miniPlayerCapacityWidth({
   return wide || verticalTabBar ? rowWidth : Math.max(0, windowWidth - PHONE_ACCESSORY_CONTENT_GUTTER);
 }
 
+/**
+ * The open row's measured width, as `NativeAccessoryClimbRow` records it: the
+ * widest and the latest measurement under one window shape (`rowLayoutKey`).
+ */
+export type MeasuredRowWidth = {
+  /** The window shape the row was measured under. */
+  layoutKey: string;
+  widest: number;
+  latest: number;
+};
+
+/**
+ * What a wide row's width follows besides the bar itself: the window width
+ * (rotation, Split View, Stage Manager) and the tab content's side insets (the
+ * iPad sidebar shown or hidden, the Duo's rail). Null insets are "not measured
+ * yet".
+ */
+export function rowLayoutKey({
+  windowWidth,
+  sideInsetLeft,
+  sideInsetRight,
+}: {
+  windowWidth: number;
+  sideInsetLeft: number | null;
+  sideInsetRight: number | null;
+}): string {
+  return `${Math.round(windowWidth)}|${sideInsetLeft === null ? '-' : Math.round(sideInsetLeft)}|${
+    sideInsetRight === null ? '-' : Math.round(sideInsetRight)
+  }`;
+}
+
+/** Folds one `onLayout` width into the record. A new window shape starts it over. */
+export function recordRowWidth(
+  previous: MeasuredRowWidth | null,
+  { layoutKey, measured }: { layoutKey: string; measured: number },
+): MeasuredRowWidth {
+  if (previous === null || previous.layoutKey !== layoutKey) {
+    return { layoutKey, widest: measured, latest: measured };
+  }
+  if (previous.widest >= measured && previous.latest === measured) return previous;
+  return { layoutKey, widest: Math.max(previous.widest, measured), latest: measured };
+}
+
+/**
+ * The row width a wide bar (iPad, the open Duo) counts its slots from.
+ *
+ * UIKit keeps the regular row mounted while the bar is inline and squeezes it
+ * to the inline width. Counting slots from that width would drop the leading
+ * cluster, which sits before the art on a wide bar, and bring it back
+ * mid-expand: the art and the name slide sideways while UIKit snapshots the
+ * platter (the doubled-text case), and ⋯ remounts on its new row set. So under
+ * one window shape the wide bar keeps the widest width it measured:
+ *
+ * - a shrink under the same shape is the squeeze, and is ignored;
+ * - a new shape (rotation, a window resize, the sidebar shown or hidden) counts
+ *   from the latest measurement, and the first measurement under it starts the
+ *   record over, so the bar narrows when its platter really does.
+ *
+ * Measured on the iPad Pro 11" simulator (iOS 27, 2026-10-29): the iPad's top
+ * tab bar never minimizes in either orientation, and the Duo's rail is set to
+ * `never`, so today the squeeze needs a narrow iPad window (Split View, Slide
+ * Over, Stage Manager), where the tab bar moves to the bottom and minimizes on
+ * scroll.
+ */
+export function wideRowCapacityWidth(record: MeasuredRowWidth | null, layoutKey: string): number | null {
+  if (record === null) return null;
+  return record.layoutKey === layoutKey ? record.widest : record.latest;
+}
+
 /** How the bar is drawn right now. */
 /** Everything in the row that is not the name or a slot: insets, the artwork and its gap, the label padding. */
 export function accessoryWidthBesideName(geometry: AccessoryPlatterGeometry, hasThumbnail: boolean): number {

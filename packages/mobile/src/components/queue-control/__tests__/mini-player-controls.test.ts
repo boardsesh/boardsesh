@@ -14,6 +14,10 @@ import {
   resolveMiniPlayerControls,
   trailingSlotFrame,
   miniPlayerUsesWideLayout,
+  recordRowWidth,
+  rowLayoutKey,
+  wideRowCapacityWidth,
+  type MeasuredRowWidth,
   type MiniPlayerControlsInput,
   type PaneCoveredButtonsInput,
 } from '../mini-player-controls';
@@ -93,6 +97,48 @@ describe('miniPlayerCapacityWidth', () => {
 
   it('keeps a phone capacity nonnegative when the window is narrower than its insets', () => {
     expect(miniPlayerCapacityWidth({ windowWidth: 32, rowWidth: null, wide: false, verticalTabBar: false })).toBe(0);
+  });
+});
+
+describe('wideRowCapacityWidth', () => {
+  const landscape = rowLayoutKey({ windowWidth: 1210, sideInsetLeft: 0, sideInsetRight: 0 });
+  const measure = (widths: readonly number[], layoutKey: string, start: MeasuredRowWidth | null = null) =>
+    widths.reduce<MeasuredRowWidth | null>(
+      (record, measured) => recordRowWidth(record, { layoutKey, measured }),
+      start,
+    );
+
+  it('counts nothing before the first layout', () => {
+    expect(wideRowCapacityWidth(null, landscape)).toBeNull();
+  });
+
+  it('ignores the squeeze UIKit gives the hidden regular row while the bar is inline', () => {
+    expect(wideRowCapacityWidth(measure([889, 320], landscape), landscape)).toBe(889);
+    expect(wideRowCapacityWidth(measure([889, 320, 889], landscape), landscape)).toBe(889);
+  });
+
+  it('narrows when the window does, and once the row measures under it', () => {
+    const before = measure([889], landscape);
+    const portrait = rowLayoutKey({ windowWidth: 834, sideInsetLeft: 0, sideInsetRight: 0 });
+    // The window changed first: the latest measurement stands in.
+    expect(wideRowCapacityWidth(before, portrait)).toBe(889);
+    const after = measure([794], portrait, before);
+    expect(wideRowCapacityWidth(after, portrait)).toBe(794);
+    // The row measured before the window reported: the latest still counts.
+    const early = measure([794], landscape, before);
+    expect(wideRowCapacityWidth(early, portrait)).toBe(794);
+  });
+
+  it('narrows when the sidebar shows, with the window width unchanged', () => {
+    const sidebar = rowLayoutKey({ windowWidth: 1210, sideInsetLeft: 320, sideInsetRight: 0 });
+    expect(sidebar).not.toBe(landscape);
+    const after = measure([689], sidebar, measure([889], landscape));
+    expect(wideRowCapacityWidth(after, sidebar)).toBe(689);
+  });
+
+  it('returns the same record for a repeat measurement', () => {
+    const record = measure([889, 320], landscape);
+    expect(recordRowWidth(record, { layoutKey: landscape, measured: 320 })).toBe(record);
   });
 });
 
