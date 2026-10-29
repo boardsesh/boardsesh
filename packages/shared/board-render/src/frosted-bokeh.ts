@@ -3,8 +3,6 @@ import sharp from 'sharp';
 import {
   BOKEH_DARK_SURFACE,
   BOKEH_FALLOFF,
-  FROST_ALPHA,
-  GRAIN_ALPHA,
   buildBokehBlobs,
   type BokehPoint,
   type BokehSize,
@@ -36,10 +34,20 @@ export function getOgBokehInput(config: WasmRenderConfig): OgBokehInput {
 const require = createRequire(import.meta.url);
 let grainTile: Promise<Buffer> | undefined;
 
+// The card is viewed much larger than the native control: broad, subdued light
+// sits behind the actual holds, with less white veil and finer-looking grain.
+// These are OG-only choices; the shared engine's native preset stays intact.
+const OG_BOKEH_REFERENCE_WIDTH = 225;
+const OG_BOKEH_OPACITY = 0.45;
+const OG_FROST_ALPHA = 0.05;
+const OG_GRAIN_ALPHA = 0.03;
+const DETAILS_SCRIM_WIDTH = 240;
+const DETAILS_SCRIM_OPACITY = 0.9;
+
 function getGrainTile(): Promise<Buffer> {
   grainTile ??= sharp(require.resolve('@boardsesh/frosted-bokeh/grain.png'))
     .toColourspace('srgb')
-    .ensureAlpha(GRAIN_ALPHA)
+    .ensureAlpha(OG_GRAIN_ALPHA)
     .png()
     .toBuffer()
     .catch((error: unknown) => {
@@ -62,11 +70,11 @@ export async function renderFrostedBokehBuffer({
     source,
     target: { w: width, h: height },
     rotation: 'clockwise',
-    effectScale: width / 360,
+    effectScale: width / OG_BOKEH_REFERENCE_WIDTH,
   });
   const composites: sharp.OverlayOptions[] = blobs.map((blob) => {
-    // Rasterise just the visible disc, keeping fifteen layers below a few MB
-    // instead of allocating a full 1200×630 plane for every point.
+    // Rasterise just the visible disc instead of allocating a full 1200×630
+    // plane for every point.
     const left = Math.max(0, Math.floor(blob.x - blob.r));
     const top = Math.max(0, Math.floor(blob.y - blob.r));
     const discWidth = Math.min(width, Math.ceil(blob.x + blob.r)) - left;
@@ -75,7 +83,8 @@ export async function renderFrostedBokehBuffer({
     // the guard also makes this reusable adapter safe for other point sources.
     const color = /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(blob.color) ? blob.color : '#FFFFFF';
     const stops = BOKEH_FALLOFF.map(
-      ([offset, share]) => `<stop offset="${offset}" stop-color="${color}" stop-opacity="${blob.peak * share}"/>`,
+      ([offset, share]) =>
+        `<stop offset="${offset}" stop-color="${color}" stop-opacity="${blob.peak * share * OG_BOKEH_OPACITY}"/>`,
     ).join('');
     return {
       input: Buffer.from(
@@ -87,14 +96,14 @@ export async function renderFrostedBokehBuffer({
     };
   });
   composites.push({
-    input: { create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: FROST_ALPHA } } },
+    input: { create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: OG_FROST_ALPHA } } },
   });
   composites.push({ input: await getGrainTile(), tile: true });
   if (protectDetails) {
     const columnLeft = OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width + OG_CARD_COLUMN_GAP;
     composites.push({
       input: Buffer.from(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><linearGradient id="scrim"><stop offset="0" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="0"/><stop offset="1" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="0.9"/></linearGradient></defs><rect x="${columnLeft - 80}" width="80" height="${height}" fill="url(#scrim)"/><rect x="${columnLeft}" width="${width - columnLeft}" height="${height}" fill="${BOKEH_DARK_SURFACE.base}" fill-opacity="0.9"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><linearGradient id="scrim"><stop offset="0" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="0"/><stop offset="1" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="${DETAILS_SCRIM_OPACITY}"/></linearGradient></defs><rect x="${columnLeft - DETAILS_SCRIM_WIDTH}" width="${DETAILS_SCRIM_WIDTH}" height="${height}" fill="url(#scrim)"/><rect x="${columnLeft}" width="${width - columnLeft}" height="${height}" fill="${BOKEH_DARK_SURFACE.base}" fill-opacity="${DETAILS_SCRIM_OPACITY}"/></svg>`,
       ),
     });
   }

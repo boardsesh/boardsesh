@@ -135,11 +135,18 @@ surface presets and the existing grain texture. Native draws those blobs with
 Neither adapter duplicates the geometry or imports the other platform's renderer.
 
 The board's lit holds turn clockwise into a maximum of 15 soft coloured blobs
-on the full 1200×630 field. The card uses the dark surface, 8% white frost and
-6% still grain, with blur/radii scaled from a 360px control. Catalogue cards use
+on the full 1200×630 field. The card uses the dark surface with 5% white frost
+and 3% still grain. Its OG-only preset scales blur/radii from a 225px reference
+and draws the blobs at 45% opacity, for broad colour behind the actual lit holds.
+The native control retains its original 8% frost, 6% grain and strength. Catalogue cards use
 the overlay's selected screen palette and effective frame, with a soft dark
 scrim under the details. Board photos, hold marks, framing and text sit above
 the bokeh. With no usable points, the field keeps its neutral frost and grain.
+
+The details use a 240px transition into the protected text column. The grade is
+52pt and the climb name 32pt; supporting labels and the wordmark clear 4.5:1 even
+over crowded white bokeh. Only a subtle board hairline remains, without an outer
+canvas outline. Board placement and the centre-square crop remain unchanged.
 
 An `aura` render here draws exactly what the app draws. The look's tuning —
 glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
