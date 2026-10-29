@@ -639,35 +639,46 @@ export function LogbookTab({
   // both platforms; this flag makes single-flight true by construction rather
   // than by dialog behaviour.
   const deleteFlowActiveRef = useRef(false);
-  // The guarded core, shared by direct deletes and chooser picks: confirm
-  // dialog, then DELETE_TICK. Callers own the single-flight flag transitions
-  // into this function; it owns them out.
+  // The guarded core, shared by direct deletes, chooser picks and the chooser's
+  // Delete all: confirm dialog, then DELETE_TICK per entry. Callers own the
+  // single-flight flag transitions into this function; it owns them out.
   const startGuardedDelete = useCallback(
-    (targetUuid: string, method: 'swipe' | 'a11y', viaChooser = false) => {
+    (targetUuids: readonly string[], method: 'swipe' | 'a11y', viaChooser = false) => {
       const originScope = getDeleteScope();
+      const count = targetUuids.length;
       const runGuardedDelete = async () => {
-        const confirmed = await confirmDialog({
-          title: t('mobile.logbook.deleteTitle'),
-          message: t('mobile.logbook.deleteConfirm'),
-          confirmLabel: t('mobile.logbook.delete'),
-          cancelLabel: t('mobile.cancel'),
-          destructive: true,
-        });
+        const confirmed = await confirmDialog(
+          count > 1
+            ? {
+                title: t('mobile.logbook.deleteAllTitle', { count }),
+                message: t('mobile.logbook.deleteAllConfirm', { count }),
+                confirmLabel: t('mobile.logbook.deleteAll'),
+                cancelLabel: t('mobile.cancel'),
+                destructive: true,
+              }
+            : {
+                title: t('mobile.logbook.deleteTitle'),
+                message: t('mobile.logbook.deleteConfirm'),
+                confirmLabel: t('mobile.logbook.delete'),
+                cancelLabel: t('mobile.cancel'),
+                destructive: true,
+              },
+        );
         deleteFlowActiveRef.current = false;
         if (!confirmed) return;
         scheduleDelete({
           originScope,
-          uuid: targetUuid,
+          uuids: targetUuids,
           method,
           viaChooser,
-          onSuccess: () => {
+          onSuccess: (deletedUuid) => {
             // Sequential-delete flow: prune the committed entry from the
             // chooser's snapshot. Entries still in their Undo window are
             // already filtered out of the sheet by visibleChooserEntries.
             if (viaChooser) {
               setChooser((current) => {
                 if (!current) return current;
-                const remainingEntries = current.entries.filter((chooserEntry) => chooserEntry.uuid !== targetUuid);
+                const remainingEntries = current.entries.filter((chooserEntry) => chooserEntry.uuid !== deletedUuid);
                 return remainingEntries.length > 0 ? { ...current, entries: remainingEntries } : null;
               });
             }
@@ -695,7 +706,7 @@ export function LogbookTab({
         return;
       }
       deleteFlowActiveRef.current = true;
-      startGuardedDelete(ascent.uuid, method);
+      startGuardedDelete([ascent.uuid], method);
     },
     [startGuardedDelete],
   );
@@ -717,10 +728,23 @@ export function LogbookTab({
       }
       if (deleteFlowActiveRef.current) return;
       deleteFlowActiveRef.current = true;
-      startGuardedDelete(entry.uuid, active.method, true);
+      startGuardedDelete([entry.uuid], active.method, true);
     },
     [chooser, openEditSheet, startGuardedDelete],
   );
+
+  // Chooser Delete all → every entry still on the sheet, behind one confirm and
+  // one Undo. The sheet closes itself once they are all pending.
+  const handleChooserDeleteAll = useCallback(() => {
+    if (!chooser || chooser.intent !== 'delete' || deleteFlowActiveRef.current) return;
+    if (visibleChooserEntries.length === 0) return;
+    deleteFlowActiveRef.current = true;
+    startGuardedDelete(
+      visibleChooserEntries.map((chooserEntry) => chooserEntry.uuid),
+      chooser.method,
+      true,
+    );
+  }, [chooser, visibleChooserEntries, startGuardedDelete]);
 
   // Long press → open the climb actions sheet. For the owner it carries an
   // "Edit entry" row wired back to the tick editor. No-op when the board can't
@@ -960,6 +984,7 @@ export function LogbookTab({
           entries={visibleChooserEntries}
           intent={chooser.intent}
           onPick={handleChooserPick}
+          onDeleteAll={handleChooserDeleteAll}
           onDismiss={closeChooser}
         />
       ) : null}

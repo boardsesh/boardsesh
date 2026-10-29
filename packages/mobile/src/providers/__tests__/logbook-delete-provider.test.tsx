@@ -67,7 +67,7 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      expect(actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe' })).toBe(true);
+      expect(actions.scheduleDelete({ originScope: 'account:board', uuids: ['tick'], method: 'swipe' })).toBe(true);
     });
     expect(hidden.has('tick')).toBe(true);
     expect(state.mutation).not.toHaveBeenCalled();
@@ -85,7 +85,7 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'a11y' });
+      actions.scheduleDelete({ originScope: 'account:board', uuids: ['tick'], method: 'a11y' });
     });
     act(() => {
       (state.snackbar?.onDismiss as () => void)();
@@ -95,7 +95,11 @@ describe('persistent logbook delete Undo', () => {
     expect(state.mutation).not.toHaveBeenCalled();
     await act(() => vi.advanceTimersByTimeAsync(1));
     expect(state.mutation).toHaveBeenCalledExactlyOnceWith('tick');
-    expect(state.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y', viaChooser: false });
+    expect(state.track).toHaveBeenCalledWith('Logbook Entry Deleted', {
+      method: 'a11y',
+      viaChooser: false,
+      bulk: false,
+    });
   });
   it('holds two deletes at once: Undo restores the latest, the first commits on its own deadline', async () => {
     render(
@@ -104,11 +108,11 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      expect(actions.scheduleDelete({ originScope: 'account:board', uuid: 'first', method: 'swipe' })).toBe(true);
+      expect(actions.scheduleDelete({ originScope: 'account:board', uuids: ['first'], method: 'swipe' })).toBe(true);
     });
     await act(() => vi.advanceTimersByTimeAsync(1000));
     act(() => {
-      expect(actions.scheduleDelete({ originScope: 'account:board', uuid: 'second', method: 'swipe' })).toBe(true);
+      expect(actions.scheduleDelete({ originScope: 'account:board', uuids: ['second'], method: 'swipe' })).toBe(true);
     });
     expect([...hidden].sort()).toEqual(['first', 'second']);
     act(() => {
@@ -119,6 +123,35 @@ describe('persistent logbook delete Undo', () => {
     expect(state.mutation).toHaveBeenCalledExactlyOnceWith('first');
     expect(hidden.size).toBe(0);
   });
+  it('Delete all: one Undo restores every entry, and an untouched batch commits each one', async () => {
+    render(
+      <LogbookDeleteProvider>
+        <Route />
+      </LogbookDeleteProvider>,
+    );
+    act(() => {
+      actions.scheduleDelete({ originScope: 'account:board', uuids: ['one', 'two'], method: 'swipe' });
+    });
+    expect([...hidden].sort()).toEqual(['one', 'two']);
+    expect(state.snackbar?.message).toBe('undoDelete.removedMany');
+    act(() => {
+      (state.snackbar?.onUndo as () => void)();
+    });
+    expect(hidden.size).toBe(0);
+    await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
+    expect(state.mutation).not.toHaveBeenCalled();
+
+    act(() => {
+      actions.scheduleDelete({ originScope: 'account:board', uuids: ['one', 'two'], method: 'swipe' });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
+    expect(state.mutation.mock.calls.map(([uuid]) => uuid).sort()).toEqual(['one', 'two']);
+    expect(state.track).toHaveBeenCalledWith('Logbook Entry Deleted', {
+      method: 'swipe',
+      viaChooser: false,
+      bulk: true,
+    });
+  });
   it('cancels pending deletion on scope change and reports that the entry was kept', async () => {
     const screen = render(
       <LogbookDeleteProvider>
@@ -126,7 +159,7 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe' });
+      actions.scheduleDelete({ originScope: 'account:board', uuids: ['tick'], method: 'swipe' });
     });
     state.scope = 'other-account:other-board';
     screen.rerender(
@@ -147,7 +180,7 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      expect(actions.scheduleDelete({ originScope: 'old-scope', uuid: 'tick', method: 'swipe' })).toBe(false);
+      expect(actions.scheduleDelete({ originScope: 'old-scope', uuids: ['tick'], method: 'swipe' })).toBe(false);
     });
     expect(hidden.size).toBe(0);
     expect(state.mutation).not.toHaveBeenCalled();
@@ -161,7 +194,7 @@ describe('persistent logbook delete Undo', () => {
       </LogbookDeleteProvider>,
     );
     act(() => {
-      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe' });
+      actions.scheduleDelete({ originScope: 'account:board', uuids: ['tick'], method: 'swipe' });
     });
     await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
     expect(hidden.has('tick')).toBe(false);

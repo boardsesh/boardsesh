@@ -1193,6 +1193,7 @@
   },
   "undoDelete": {
     "removed": "Entry removed",
+    "removedMany": "{{count}} entries removed",
     "undo": "Undo",
     "cancelled": "Deletion cancelled. Your entry was kept."
   }

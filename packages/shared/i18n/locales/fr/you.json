@@ -106,8 +106,11 @@
       "reset": "Réinitialiser",
       "editTitle": "Modifier la croix",
       "delete": "Supprimer",
+      "deleteAll": "Tout supprimer",
       "deleteTitle": "Supprimer la croix",
+      "deleteAllTitle": "Supprimer {{count}} entrées",
       "deleteConfirm": "Cela supprime la croix enregistrée et est irréversible.",
+      "deleteAllConfirm": "Cela supprime les {{count}} entrées de ce jour et est irréversible.",
       "saveError": "Impossible d'enregistrer tes modifications. Réessaie.",
       "deleteError": "Impossible de supprimer la croix. Réessaie.",
       "tries_one": "{{count}} essai",
@@ -147,7 +150,8 @@
       },
       "chooser": {
         "editTitle": "Quelle entrée modifier ?",
-        "deleteTitle": "Quelle entrée supprimer ?"
+        "deleteTitle": "Quelle entrée supprimer ?",
+        "deleteAll": "Tout supprimer ({{count}})"
       },
       "boardLabel": "Board",
       "boardNone": "Aucune",

@@ -1193,6 +1193,7 @@
   },
   "undoDelete": {
     "removed": "Eintrag gelöscht",
+    "removedMany": "{{count}} Einträge gelöscht",
     "undo": "Rückgängig",
     "cancelled": "Löschen abgebrochen. Dein Eintrag bleibt erhalten."
   }

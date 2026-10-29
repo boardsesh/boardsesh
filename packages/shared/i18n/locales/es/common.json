@@ -1193,6 +1193,7 @@
   },
   "undoDelete": {
     "removed": "Registro eliminado",
+    "removedMany": "{{count}} registros eliminados",
     "undo": "Deshacer",
     "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
   }

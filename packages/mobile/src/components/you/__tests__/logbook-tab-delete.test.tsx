@@ -205,7 +205,7 @@ describe('LogbookTab guarded delete', () => {
       render(createElement(LogbookTab, { userId: 'user-1' }));
       await fireDeleteRequest(method);
       expect(owner.scheduleDelete).toHaveBeenCalledWith(
-        expect.objectContaining({ uuid: 'tick-1', method, viaChooser: false }),
+        expect.objectContaining({ uuids: ['tick-1'], method, viaChooser: false }),
       );
       expect(analytics.track).not.toHaveBeenCalled();
     },
@@ -253,7 +253,7 @@ describe('LogbookTab guarded delete', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(owner.scheduleDelete).toHaveBeenCalledWith(
-      expect.objectContaining({ uuid: 'tick-1', originScope: 'scope' }),
+      expect.objectContaining({ uuids: ['tick-1'], originScope: 'scope' }),
     );
   });
 

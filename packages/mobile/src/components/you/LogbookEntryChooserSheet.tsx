@@ -27,6 +27,8 @@ type LogbookEntryChooserSheetProps = {
    *  tapping an entry will do. */
   intent: 'edit' | 'delete';
   onPick: (entry: AscentFeedItem) => void;
+  /** Delete intent only: shown under the list while it holds two or more entries. */
+  onDeleteAll?: () => void;
   onDismiss: () => void;
 };
 
@@ -44,11 +46,16 @@ const STATUS_ICON: Record<AscentFeedItem['status'], IconName> = {
 /**
  * Day-entries chooser for a grouped logbook row: swipe-edit or swipe-delete on
  * a row that collapses several same-day entries must act on ONE tick, so the
- * climber picks which. There is deliberately no act-on-all option — DELETE is
- * a real server-side, Aurora-synced mutation and never fans out from one
- * gesture (PR #3350 thread).
+ * climber picks which. Delete also offers "Delete all" under the list; it
+ * goes through its own confirm dialog and one Undo restores every entry.
  */
-export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }: LogbookEntryChooserSheetProps) {
+export function LogbookEntryChooserSheet({
+  entries,
+  intent,
+  onPick,
+  onDeleteAll,
+  onDismiss,
+}: LogbookEntryChooserSheetProps) {
   const { t, i18n } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
@@ -115,6 +122,28 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
     [brandColors, systemColors, i18n.language, t, intent, handlePick],
   );
 
+  const showDeleteAll = intent === 'delete' && onDeleteAll != null && entries.length > 1;
+  const deleteAllFooter = showDeleteAll ? (
+    <PressableSurface
+      onPress={() => {
+        hapticSelection();
+        onDeleteAll();
+      }}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.entryRow,
+        styles.deleteAllRow,
+        { backgroundColor: systemColors.secondaryBackground },
+        pressed && styles.entryRowPressed,
+      ]}
+    >
+      <Icon name="delete" size={18} color={brandColors.error} />
+      <Text variant="body" color={brandColors.error} style={styles.entryTime}>
+        {t('mobile.logbook.chooser.deleteAll', { count: entries.length })}
+      </Text>
+    </PressableSurface>
+  ) : null;
+
   return (
     <BottomSheetModal
       ref={sheetRef}
@@ -136,6 +165,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
           </Text>
         }
         renderItem={renderEntry}
+        ListFooterComponent={deleteAllFooter}
       />
     </BottomSheetModal>
   );
@@ -156,6 +186,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   entryRowPressed: { opacity: 0.7 },
+  deleteAllRow: {
+    justifyContent: 'center',
+    gap: spacing[2],
+    marginTop: spacing[2],
+  },
   entryText: {
     flex: 1,
     minWidth: 0,

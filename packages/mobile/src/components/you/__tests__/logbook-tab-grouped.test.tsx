@@ -11,14 +11,16 @@ vi.mock('../../../providers/logbook-delete-provider', () => ({
   usePendingLogbookDeletes: () => new Set(pendingDeletes.uuids),
   useLogbookDeleteActions: () => ({
     getDeleteScope: () => 'scope',
-    scheduleDelete: (request: { uuid: string; onSuccess?: () => void }) => {
-      pendingDeletes.uuids.add(request.uuid);
-      deleteTick.mutate(request.uuid, {
-        onSuccess: () => {
-          pendingDeletes.uuids.delete(request.uuid);
-          request.onSuccess?.();
-        },
-      });
+    scheduleDelete: (request: { uuids: readonly string[]; onSuccess?: (uuid: string) => void }) => {
+      for (const uuid of request.uuids) {
+        pendingDeletes.uuids.add(uuid);
+        deleteTick.mutate(uuid, {
+          onSuccess: () => {
+            pendingDeletes.uuids.delete(uuid);
+            request.onSuccess?.(uuid);
+          },
+        });
+      }
       return true;
     },
   }),
@@ -341,6 +343,43 @@ describe('LogbookTab grouped mode', () => {
     chooser.props = null;
     rerender(createElement(LogbookTab, { userId: 'user-1' }));
     expect(chooser.props).toBeNull();
+  });
+
+  it('Delete all confirms once with the count, then deletes every entry and closes the chooser', async () => {
+    deleteTick.mutate.mockImplementation(() => {});
+    const { rerender } = render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await fireDeleteRequest('swipe');
+    const onDeleteAll = chooser.props?.onDeleteAll as (() => void) | undefined;
+    expect(onDeleteAll).toBeDefined();
+    await act(async () => {
+      onDeleteAll?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(dialog.confirm).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        title: 'mobile.logbook.deleteAllTitle',
+        confirmLabel: 'mobile.logbook.deleteAll',
+        destructive: true,
+      }),
+    );
+    expect(deleteTick.mutate.mock.calls.map(([uuid]) => uuid)).toEqual(['tick-send', 'tick-burn']);
+
+    chooser.props = null;
+    rerender(createElement(LogbookTab, { userId: 'user-1' }));
+    expect(chooser.props).toBeNull();
+  });
+
+  it('Delete all deletes nothing when the confirm is declined', async () => {
+    dialog.confirm.mockImplementationOnce(async () => false);
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    await fireDeleteRequest('swipe');
+    await act(async () => {
+      (chooser.props?.onDeleteAll as () => void)();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(deleteTick.mutate).not.toHaveBeenCalled();
+    expect((chooser.props?.entries as Array<{ uuid: string }>).length).toBe(2);
   });
 
   it('routes edit on a multi-entry group through the chooser to the edit sheet', async () => {
