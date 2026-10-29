@@ -19,6 +19,7 @@ import {
   boardPresenceReducer,
   initialBoardPresenceState,
   mapBoardPresenceEnvelopeToAction,
+  selectClearedClimbUuid,
   type BoardPresenceState,
 } from '@boardsesh/board-presence';
 import type {
@@ -77,6 +78,7 @@ export type UseBoardPresenceResult = {
   undoTarget: BoardPresenceCurrentState['undoTarget'];
   holder: BoardPresenceCurrentState['holder'];
   lastConnectionSeq: BoardPresenceCurrentState['lastConnectionSeq'];
+  clearedClimbUuid: BoardPresenceCurrentState['clearedClimbUuid'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
@@ -90,6 +92,7 @@ export type UseBoardPresenceResult = {
   reportClimb: BoardPresenceActions['reportClimb'];
   reportClimbWithUndoTarget: BoardPresenceActions['reportClimbWithUndoTarget'];
   reportDisconnect: BoardPresenceActions['reportDisconnect'];
+  reportClear: BoardPresenceActions['reportClear'];
   getUndoTarget: BoardPresenceActions['getUndoTarget'];
   refresh: BoardPresenceActions['refresh'];
 };
@@ -116,6 +119,13 @@ export type BoardPresenceCurrentState = {
   holder: BoardConnectionHolder | null;
   /** Sequence of the latest holder event; initial backfill keeps this at zero. */
   lastConnectionSeq: number;
+  /**
+   * The climb a "Turn off all lights" left dark, while nothing has been lit
+   * since (#7015); `null` otherwise. Compare it with the climb on screen, never
+   * read it as "the wall is dark": a peer's queue moves before the presence
+   * echo, and its new climb must not read as turned off.
+   */
+  clearedClimbUuid: string | null;
   /** True while a live subscription is attached for the active board. */
   isLive: boolean;
 };
@@ -141,6 +151,12 @@ export type BoardPresenceActions = {
    * injected client does not implement `reportDisconnect`.
    */
   reportDisconnect: () => Promise<boolean>;
+  /**
+   * Tell every viewer this client turned off all the wall's lights (#7015).
+   * Resolves `false` when inert, when another emitter holds the board, or when
+   * the injected client does not implement `reportClear`.
+   */
+  reportClear: () => Promise<boolean>;
   /** Latest captured undo target for action-only consumers that need a ref-like read. */
   getUndoTarget: () => BoardPresenceClimb | null;
   /**
@@ -530,6 +546,17 @@ export function useBoardPresence(
     return activeClient.reportDisconnect(activeBoardId);
   }, []);
 
+  const reportClear = useCallback(async (): Promise<boolean> => {
+    const activeBoardId = boardIdRef.current;
+    const activeClient = clientRef.current;
+    if (activeBoardId === null || activeClient?.reportClear == null) {
+      return false;
+    }
+    return activeClient.reportClear(activeBoardId);
+  }, []);
+
+  const clearedClimbUuid = selectClearedClimbUuid(visibleState);
+
   return useMemo<UseBoardPresenceResult>(
     () => ({
       currentClimb: visibleState.currentClimb,
@@ -537,6 +564,7 @@ export function useBoardPresence(
       undoTarget: visibleUndoTarget,
       holder: visibleState.holder,
       lastConnectionSeq: visibleState.lastConnectionSeq,
+      clearedClimbUuid,
       history: visibleState.history,
       stats: visibleState.stats,
       isLive: visibleIsLive,
@@ -544,6 +572,7 @@ export function useBoardPresence(
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
+      reportClear,
       getUndoTarget,
       refresh,
     }),
@@ -553,6 +582,7 @@ export function useBoardPresence(
       visibleUndoTarget,
       visibleState.holder,
       visibleState.lastConnectionSeq,
+      clearedClimbUuid,
       visibleState.history,
       visibleState.stats,
       visibleIsLive,
@@ -560,6 +590,7 @@ export function useBoardPresence(
       reportClimb,
       reportClimbWithUndoTarget,
       reportDisconnect,
+      reportClear,
       getUndoTarget,
       refresh,
     ],

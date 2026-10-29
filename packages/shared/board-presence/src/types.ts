@@ -32,6 +32,13 @@ export type BoardPresenceState = {
   /** Latest accepted native clear, used to reject imports displayed before it. */
   lastClearedAt: string | null;
   /**
+   * The climb the latest accepted clear turned off: the event's `climbUuid`, else
+   * whatever was current when it landed. Kept after a later set, like
+   * `lastClearedAt`; read it through `selectClearedClimbUuid`, which only answers
+   * while the wall is still dark.
+   */
+  lastClearedClimbUuid: string | null;
+  /**
    * The board's durable stat snapshot (sends/climbers/hardest/top), pushed live
    * over the same subscription as climb events. Null until the first seed/push.
    */
@@ -62,7 +69,7 @@ export type BoardPresenceState = {
 
 export type BoardPresenceAction =
   | { type: 'APPLY_CLIMB_SET'; payload: BoardPresenceClimb }
-  | { type: 'APPLY_CLIMB_CLEARED'; payload: { clearedAt: string; seq: number } }
+  | { type: 'APPLY_CLIMB_CLEARED'; payload: { clearedAt: string; seq: number; climbUuid?: string | null } }
   | { type: 'BACKFILL_HISTORY'; payload: BoardPresenceClimb[] }
   | { type: 'MERGE_HISTORY'; payload: BoardPresenceClimb[] }
   // Live stats push from the subscription (the freshly recomputed snapshot).

@@ -20,6 +20,7 @@ export type {
 export {
   BoardPresenceProvider,
   useBoardPresenceActions,
+  useBoardPresenceClearedClimbUuid,
   useBoardPresenceClient,
   useBoardPresenceContext,
   useBoardPresenceCurrent,
@@ -27,6 +28,7 @@ export {
   useBoardPresenceHasClimb,
   useBoardPresenceWallClimb,
   BoardPresenceActionsContext,
+  BoardPresenceClearedClimbContext,
   BoardPresenceClientContext,
   BoardPresenceContext,
   BoardPresenceCurrentContext,

@@ -50,7 +50,8 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 
 // Subscription — the live "now on the wall" feed for a board. Emits a
 // BoardPresenceEvent union discriminated by __typename: a BoardClimbSet carries
-// the full climb, a BoardClimbCleared carries only the clear timestamp + seq,
+// the full climb, a BoardClimbCleared carries the clear timestamp + seq (the
+// newer `climbUuid` field is selected by the app once every backend serves it),
 // a BoardStatsUpdated carries the recomputed stat tiles (pushed when a tick
 // lands on the wall) so the tiles update live instead of re-fetching, and a
 // BoardConnectionChanged carries the current connection holder (or null when the
@@ -311,6 +312,11 @@ export const BOARD_CONNECTION = `query BoardConnection($boardId: Int!, $boardUui
 // Mutation — release this client's hold on a board (e.g. on BLE disconnect).
 // Returns Boolean! (accepted).
 export const REPORT_BOARD_DISCONNECT = `mutation ReportBoardDisconnect($boardId: Int!) { reportBoardDisconnect(boardId: $boardId) }`;
+
+// Mutation — this client turned off all the wall's lights but kept its link
+// (#7015). Publishes BoardClimbCleared to every viewer. Returns Boolean!
+// (accepted; false when another emitter holds the board).
+export const REPORT_BOARD_CLEAR = `mutation ReportBoardClear($boardId: Int!) { reportBoardClear(boardId: $boardId) }`;
 
 // All fields of a redacted BoardQueuePreview (gym-kiosk "Up next"). Items
 // deliberately carry ONLY climb-catalog display fields — never who added or

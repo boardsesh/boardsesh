@@ -21,9 +21,10 @@ const climb = {
   sentByDisplayName: 'Private identity',
   sentAt: '2026-09-19T00:00:00Z',
 };
-const snapshot = (overrides: Record<string, unknown> = {}, writer = 'holder-one') => [
+const snapshot = (overrides: Record<string, unknown> = {}, writer = 'holder-one', clearedSeq = '0') => [
   writer,
   [JSON.stringify({ ...climb, ...overrides })],
+  clearedSeq,
 ];
 
 beforeEach(() => {
@@ -73,15 +74,17 @@ describe('board discovery presence snapshot', () => {
     });
     expect(evaluate).toHaveBeenCalledWith(
       expect.stringContaining("'lrange', KEYS[2], 0, 49"),
-      2,
+      3,
       'board:42:writer',
       'board:42:history',
+      'board:42:cleared',
     );
   });
 
   it.each([
     ['cleared or expired writer', []],
-    ['writer without history', ['holder-one', []]],
+    ['writer without history', ['holder-one', [], '0']],
+    ['lights turned off after the newest climb', snapshot({}, 'holder-one', '11')],
     ['different writer', snapshot({}, 'holder-two')],
     ['anonymous writer', snapshot({ sentByUserId: null }, 'conn:anonymous')],
     ['imported history', snapshot({ source: 'kilter' })],
@@ -89,17 +92,23 @@ describe('board discovery presence snapshot', () => {
     ['missing angle', snapshot({ angle: null })],
     ['invalid angle', snapshot({ angle: 40.5 })],
     ['missing climb identity', snapshot({ climbUuid: '' })],
-    ['malformed history', ['holder-one', ['not-json']]],
+    ['malformed history', ['holder-one', ['not-json'], '0']],
     ['invalid sequence', snapshot({ seq: '10' })],
   ])('returns no lit preview for %s', async (_name, redisSnapshot) => {
     evaluate.mockResolvedValue(redisSnapshot);
     expect(await store.getBoardDiscoveryClimb('42')).toBeNull();
   });
 
+  it('keeps the preview when the lights went off before the newest climb was lit', async () => {
+    evaluate.mockResolvedValue(snapshot({}, 'holder-one', '9'));
+    expect(await store.getBoardDiscoveryClimb('42')).toEqual(expect.objectContaining({ uuid: 'climb-one' }));
+  });
+
   it('selects newest sequence rather than arrival order', async () => {
     evaluate.mockResolvedValue([
       'holder-one',
       [JSON.stringify({ ...climb, seq: 9, climbUuid: 'older' }), JSON.stringify(climb)],
+      '0',
     ]);
     expect(await store.getBoardDiscoveryClimb('42')).toEqual(expect.objectContaining({ uuid: 'climb-one' }));
   });
@@ -107,7 +116,7 @@ describe('board discovery presence snapshot', () => {
   it.each(['not-json', 'null', '[]', '{"seq":"10"}'])(
     'reports corrupt history without falling back: %s',
     async (entry) => {
-      evaluate.mockResolvedValue(['holder-one', [entry, JSON.stringify(climb)]]);
+      evaluate.mockResolvedValue(['holder-one', [entry, JSON.stringify(climb)], '0']);
       expect(await store.getBoardDiscoveryClimb('42')).toBeNull();
       expect(warn).toHaveBeenCalledExactlyOnceWith(
         expect.any(String),
@@ -122,6 +131,7 @@ describe('board discovery presence snapshot', () => {
     evaluate.mockResolvedValue([
       'holder-one',
       [JSON.stringify(climb), JSON.stringify({ ...climb, seq: 11, sentByUserId: 'new-holder' })],
+      '0',
     ]);
     expect(await store.getBoardDiscoveryClimb('42')).toBeNull();
   });

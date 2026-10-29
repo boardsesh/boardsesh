@@ -109,6 +109,14 @@ export interface BoardPresenceClient {
   reportDisconnect?(boardId: number): Promise<boolean>;
 
   /**
+   * Tell every viewer this client turned off all the wall's lights while keeping
+   * its link (#7015). Resolves to the server's accepted flag: false when another
+   * emitter holds the board. Optional so a read-only client still satisfies the
+   * interface.
+   */
+  reportClear?(boardId: number): Promise<boolean>;
+
+  /**
    * Report the climb just lit on the wall. `angle` is the wall angle (null =
    * unspecified). Resolves to the server's accepted flag.
    */

@@ -18,13 +18,19 @@ import {
   type BoardReportGate,
   type CommitBoardClimbInput,
   type CommitBoardClimbResult,
+  type StoredBoardClear,
 } from './board-presence-store';
 import { logger } from '../utils/logger';
 
 // Board-presence gate/commit types live with their implementation in
 // board-presence-store.ts; re-exported here so consumers keep importing them
 // from the pubsub entry point.
-export type { BoardReportGate, CommitBoardClimbInput, CommitBoardClimbResult } from './board-presence-store';
+export type {
+  BoardReportGate,
+  CommitBoardClimbInput,
+  CommitBoardClimbResult,
+  StoredBoardClear,
+} from './board-presence-store';
 export { boardReportDedupMarker } from './board-presence-store';
 
 type QueueSubscriber = ChannelSubscriber<QueueEvent>;
@@ -629,6 +635,14 @@ class PubSub {
   }
 
   /** Clear the board's holder only if `emitterId` still holds it (atomic compare-and-delete). */
+  async commitBoardClear(boardId: string, clear: StoredBoardClear): Promise<boolean> {
+    return this.boardPresenceStore.commitBoardClear(boardId, clear);
+  }
+
+  async getActiveBoardClear(boardId: string): Promise<StoredBoardClear | null> {
+    return this.boardPresenceStore.getActiveBoardClear(boardId);
+  }
+
   async clearBoardWriterIf(boardId: string, emitterId: string): Promise<boolean> {
     return this.boardPresenceStore.clearBoardWriterIf(boardId, emitterId);
   }

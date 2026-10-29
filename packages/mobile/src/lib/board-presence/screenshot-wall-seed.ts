@@ -331,6 +331,9 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
     async reportDisconnect() {
       return true;
     },
+    async reportClear() {
+      return true;
+    },
     async reportClimb(_boardId, climb, angle) {
       if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
         recordScreenshotWallReport(climb, angle);

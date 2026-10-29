@@ -29,6 +29,7 @@ import {
   CHOOSE_BOARD_FOR_SERIAL,
   REPORT_BOARD_CLIMB,
   REPORT_BOARD_DISCONNECT,
+  REPORT_BOARD_CLEAR,
   RESOLVE_BOARD_CANDIDATES_FOR_SERIAL,
   RESOLVE_BOARD_FOR_CONFIG,
   RESOLVE_BOARD_FOR_SERIAL,
@@ -55,6 +56,7 @@ type BoardPresenceStatsData = { boardPresenceStats: BoardPresenceStats };
 type BoardConnectionData = { boardConnection: BoardConnectionHolder | null };
 type ReportBoardClimbData = { reportBoardClimb: boolean };
 type ReportBoardDisconnectData = { reportBoardDisconnect: boolean };
+type ReportBoardClearData = { reportBoardClear: boolean };
 type ResolveBoardForSerialData = { resolveBoardForSerial: ResolvedBoard };
 type ResolveBoardForUuidData = { resolveBoardForUuid: ResolvedBoard };
 type ResolveBoardForConfigData = { resolveBoardForConfig: ResolvedBoard };
@@ -259,6 +261,14 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
         variables: { boardId },
       });
       return data.reportBoardDisconnect === true;
+    },
+
+    async reportClear(boardId) {
+      const data = await transport.execute<ReportBoardClearData>({
+        query: REPORT_BOARD_CLEAR,
+        variables: { boardId },
+      });
+      return data.reportBoardClear === true;
     },
 
     async resolveBoardForSerial(args) {

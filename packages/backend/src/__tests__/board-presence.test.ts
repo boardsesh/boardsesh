@@ -8,6 +8,7 @@ import type {
   ConnectionContext,
   BoardPresenceEvent,
   BoardClimbSet,
+  BoardClimbCleared,
   BoardConnectionChanged,
   BoardStatsUpdated,
   BoardPresenceClimb,
@@ -4201,6 +4202,163 @@ describe('board-presence connection holder', () => {
         await roomManager.removeClient(holderConnectionId);
         await roomManager.removeClient(otherConnectionId);
       }
+    });
+
+    describe('reportBoardClear — "Turn off all lights" (#7015)', () => {
+      async function boardLitByHolder(): Promise<number> {
+        const boardId = await makeHolderBoard(authCtx());
+        await boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: 40 },
+          authCtx(),
+        );
+        return boardId;
+      }
+
+      async function collectPresenceEvents(boardId: number): Promise<{
+        events: BoardPresenceEvent[];
+        unsubscribe: () => void;
+      }> {
+        const events: BoardPresenceEvent[] = [];
+        const unsubscribe = await pubsub.subscribeBoardPresence(String(boardId), (event) => {
+          events.push(event);
+        });
+        return { events, unsubscribe };
+      }
+
+      it("tells every viewer the holder's wall went dark, naming the climb, and keeps history and the holder", async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        const { events, unsubscribe } = await collectPresenceEvents(boardId);
+        try {
+          expect(await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx())).toBe(true);
+          const cleared = events.filter(
+            (event): event is BoardClimbCleared => event.__typename === 'BoardClimbCleared',
+          );
+          expect(cleared).toHaveLength(1);
+          expect(cleared[0].climbUuid).toBe(TEST_CLIMB_UUID);
+          const [lit] = await pubsub.getRecentBoardClimbs(String(boardId));
+          expect(cleared[0].seq).toBeGreaterThan(lit.seq);
+          // History keeps the send, and the phone is still connected.
+          expect(lit.climbUuid).toBe(TEST_CLIMB_UUID);
+          expect(await pubsub.getBoardWriter(String(boardId))).toBe(TEST_USER_ID);
+          expect(events.some((event) => event.__typename === 'BoardConnectionChanged')).toBe(false);
+          // Kept for a week, like the history it masks, not the 12 h membership window.
+          const { publisher } = redisClientManager.getClients();
+          expect(await publisher.ttl(`board:${boardId}:cleared`)).toBeGreaterThan(BOARD_MEMBERSHIP_TTL_MS / 1000);
+        } finally {
+          unsubscribe();
+        }
+      });
+
+      it('refuses a clear from a member while someone else holds the board', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        await pubsub.stampBoardMembership(String(boardId), SECOND_USER_ID);
+        const { events, unsubscribe } = await collectPresenceEvents(boardId);
+        try {
+          expect(
+            await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx({ userId: SECOND_USER_ID })),
+          ).toBe(false);
+          expect(events).toHaveLength(0);
+          expect(await pubsub.getActiveBoardClear(String(boardId))).toBeNull();
+        } finally {
+          unsubscribe();
+        }
+      });
+
+      it('accepts a member clear on a free board (the crash backstop freed it while BLE stayed up)', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        const { publisher } = redisClientManager.getClients();
+        await publisher.del(`board:${boardId}:writer`);
+        expect(await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx())).toBe(true);
+        expect(await pubsub.getActiveBoardClear(String(boardId))).toEqual(
+          expect.objectContaining({ climbUuid: TEST_CLIMB_UUID }),
+        );
+      });
+
+      it('rejects a clear from a caller that never connected to the board', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        await expect(
+          boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx({ userId: SECOND_USER_ID })),
+        ).rejects.toThrow('Not connected to this board');
+      });
+
+      it('publishes a fresh set when the same climb is re-lit inside the dedup window', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx());
+        const { events, unsubscribe } = await collectPresenceEvents(boardId);
+        try {
+          await boardPresenceMutations.reportBoardClimb(
+            undefined,
+            { boardId, climb: makeQueueItemInput(), angle: 40 },
+            authCtx(),
+          );
+          expect(events.filter((event) => event.__typename === 'BoardClimbSet')).toHaveLength(1);
+          // The relit climb supersedes the clear for late joiners.
+          expect(await pubsub.getActiveBoardClear(String(boardId))).toBeNull();
+        } finally {
+          unsubscribe();
+        }
+      });
+
+      it('replays the clear to a late subscriber, and stops once a climb is lit again', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx());
+
+        const lateJoiner = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, authCtx());
+        const replayed = await lateJoiner.next();
+        expect(replayed.done).toBe(false);
+        const replayedEvent = (replayed.value as { boardNowPlaying: BoardPresenceEvent }).boardNowPlaying;
+        expect(replayedEvent).toEqual(
+          expect.objectContaining({ __typename: 'BoardClimbCleared', climbUuid: TEST_CLIMB_UUID }),
+        );
+        await lateJoiner.return?.(undefined);
+
+        await boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput({ uuid: OTHER_TEST_CLIMB_UUID }), angle: 40 },
+          authCtx(),
+        );
+        const afterRelight = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, authCtx());
+        const firstEvent = afterRelight.next();
+        handleLater(firstEvent);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Nothing was replayed: the first event is the next live one.
+        await boardPresenceMutations.reportBoardClimb(
+          undefined,
+          { boardId, climb: makeQueueItemInput(), angle: 40 },
+          authCtx(),
+        );
+        const live = await firstEvent;
+        expect((live.value as { boardNowPlaying: BoardPresenceEvent }).boardNowPlaying.__typename).toBe(
+          'BoardClimbSet',
+        );
+        await afterRelight.return?.(undefined);
+      });
+
+      it('keeps the newer of two racing clears', async () => {
+        if (!redisOn) return;
+        // The store alone: a fresh key, so no earlier run's clear can outrank these seqs.
+        const boardId = `clear-race-${uuidv4()}`;
+        expect(await pubsub.commitBoardClear(boardId, { seq: 90, clearedAt: 'newer', climbUuid: null })).toBe(true);
+        expect(await pubsub.commitBoardClear(boardId, { seq: 80, clearedAt: 'older', climbUuid: null })).toBe(false);
+        expect(await pubsub.getActiveBoardClear(boardId)).toEqual({ seq: 90, clearedAt: 'newer', climbUuid: null });
+      });
+
+      it('hides the discovery preview once the holder turned the lights off', async () => {
+        if (!redisOn) return;
+        const boardId = await boardLitByHolder();
+        expect(await pubsub.getBoardDiscoveryClimb(String(boardId))).toEqual(
+          expect.objectContaining({ uuid: TEST_CLIMB_UUID }),
+        );
+        await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx());
+        expect(await pubsub.getBoardDiscoveryClimb(String(boardId))).toBeNull();
+      });
     });
   });
 });

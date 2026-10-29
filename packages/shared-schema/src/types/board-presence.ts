@@ -47,6 +47,8 @@ export type BoardClimbCleared = {
   __typename: 'BoardClimbCleared';
   clearedAt: string;
   seq: number;
+  /** The climb that was on the wall when it was cleared; absent from older servers. */
+  climbUuid?: string | null;
 };
 
 export type BoardStatsUpdated = {
