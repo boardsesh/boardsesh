@@ -64,9 +64,10 @@ in exactly that state, so its watchdogs cannot rely on `setTimeout` alone (#7038
   before. Cancelling is a JS flag; the native delay is never cancelled.
 - **Connect timeout (12 s)** also goes to ble-plx as `connectToDevice(id, { timeout })`,
   which runs on an RxJava timer. The JS race stays.
-- **Grace window (10 s)** does nothing while the app is not `active`: nobody can
-  pick from a list in the background, so the saved board keeps the whole scan to
-  show up and auto-connect.
+- **Grace window (10 s)** is never scheduled for a connect that started while the
+  app was not `active`. That is decided once, at the tap: such a connect never
+  shows a list, so the saved board keeps the whole scan to show up and
+  auto-connect, even if the climber opens the app part-way through.
 - **The picker** of a connect that started in the background is never shown. If
   its scan ends without the saved board, it rejects with `No boards found`, so
   `connect()` shows the standard "board not found" alert and clears its in-flight
@@ -76,7 +77,9 @@ in exactly that state, so its watchdogs cannot rely on `setTimeout` alone (#7038
 
 Limits: the native clock stops in deep sleep, so with the screen locked the scan
 ends, and the alert is raised, after the phone wakes. Android keeps one pending
-alert, with no age limit, and a process death loses it. The other JS timers on
+alert, with no age limit. A process death loses it, and so does an activity that
+is gone (the app swiped away while the foreground service keeps the process):
+`DialogModule` then has no fragment manager and drops the alert. The other JS timers on
 this path (the queue's move re-send fallback, the presence update retry, the
 WebSocket's reconnect) still pause with the activity.
 

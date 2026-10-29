@@ -5111,6 +5111,31 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 
+  // #7038 review: the background decision is made once, at the tap. Opening the
+  // app mid-search must not let the grace window end auto-select behind a list
+  // nobody can see, or a board that shows up at 12 s reads as "not found".
+  it('keeps auto-selecting a background tap after the app opens mid-search', async () => {
+    mockAppState.currentState = 'background';
+    mockBleManager.connectToDevice.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    mockAppState.currentState = 'active';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_000);
+    });
+
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
   it('closes the sheet by dismissal, not by unmount, when the saved board is found', async () => {
     // The found board's link fails, so the catch in connect() runs against a
     // sheet that is already closing: it must leave that dismissal alone.
