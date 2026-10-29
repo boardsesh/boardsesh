@@ -292,6 +292,12 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     expect(screen.getByRole('button', { name: 'mobile.climbActions.playNext:es' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'actions.playlist.popover.title:es' })).toBeTruthy();
   });
+
+  it('waits for a deliberate sideways drag so a vertical scroll never slides the row', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPlayNext={vi.fn()} onOpenPlaylist={vi.fn()} />);
+    expect(panels.props?.dragOffsetFromLeftEdge).toBe(30);
+    expect(panels.props?.dragOffsetFromRightEdge).toBe(30);
+  });
 });
 
 describe('ClimbListRow screen-reader activation', () => {
