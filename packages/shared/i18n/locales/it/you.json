@@ -262,6 +262,10 @@
       "moonboardBody": "Richiedi i tuoi dati a MoonBoard, poi importa qui il file per portare con te il tuo storico.",
       "moonboardCta": "Importa il mio diario MoonBoard",
       "dismiss": "Non ora"
+    },
+    "loadError": {
+      "sessions": "Impossibile caricare le tue session",
+      "progress": "Impossibile caricare i tuoi progressi"
     }
   }
 }
