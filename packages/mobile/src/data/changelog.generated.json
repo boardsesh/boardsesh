@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-29T19:52:56.539Z",
+  "generatedAt": "2026-10-29T22:12:38.339Z",
   "entries": [
+    {
+      "prNumber": 7118,
+      "category": "fixed",
+      "title": "Browse climbs without a refresh spinner appearing between goes.",
+      "mergedAt": "2026-10-29T22:07:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7118"
+    },
     {
       "prNumber": 7111,
       "category": "fixed",
