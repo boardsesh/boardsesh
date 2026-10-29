@@ -15,6 +15,7 @@ import {
   onOverlayCacheHydrated,
   overlayCacheEntryExists,
   deleteOverlayCacheEntry,
+  rendererOverlayUri,
 } from './overlay-cache-warmup';
 import { isSprayOverlayCurrent, sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import { RENDERER_VERSION } from './renderer-version';
@@ -998,7 +999,9 @@ function warmupRenderedOverlaysOnce(): void {
         continue;
       }
       const cacheKey = name.slice(0, -'.png'.length);
-      cacheRenderedOverlay(cacheKey, entry.uri);
+      // The listing's URI is percent-encoded on Android (`1,2,3` -> `1%2C2%2C3`);
+      // index the form the renderer returns, so one file has one URI (#7026).
+      cacheRenderedOverlay(cacheKey, rendererOverlayUri(entry.uri));
     }
   } catch {
     // Filesystem errors at startup shouldn't break the app — the hook's

@@ -7,6 +7,7 @@ import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
 import type { LiveActivityBoardRenderMode } from '../../../modules/live-activity/src/index';
 import { getAuthToken } from '../auth-store';
+import { decodeFileUri } from '../file-uri';
 import { BACKEND_URL } from '../env';
 import { startLiveActivitySession, endLiveActivitySession, isLiveActivityAvailable } from './live-activity-plugin';
 import { useSessionPresenceUpdates } from './use-session-presence-updates';
@@ -216,11 +217,18 @@ export function useLiveActivity({
     currentClimbRef,
     queueRef,
   });
+  // Both thumbnail inputs leave here as plain paths, never percent-encoded URIs:
+  // the notification service strips `file://` and opens the rest with
+  // BitmapFactory.decodeFile, so a `%2C` in a set-ids segment names a file that
+  // doesn't exist and the artwork slot stays black (#7026). Decoded AFTER the
+  // validator, which compares the hook's own URI string.
   const getCurrentAndroidOverlayPath = useCallback(() => {
     const path = overlayPathRef.current ?? null;
     const validator = overlayValidatorRef.current;
-    return validator ? validator(path, overlayLoadKeyRef.current ?? null) : path;
+    const validatedPath = validator ? validator(path, overlayLoadKeyRef.current ?? null) : path;
+    return validatedPath ? decodeFileUri(validatedPath) : validatedPath;
   }, []);
+  const getCurrentAndroidBackgroundPaths = useCallback(() => backgroundPathsRef.current?.map(decodeFileUri), []);
 
   // Memoize queue serialization so it only recomputes when the queue array
   // changes, not on every currentClimbQueueItem navigation.
@@ -389,7 +397,7 @@ export function useLiveActivity({
               holderDisplayName: holderDisplayNameRef.current,
               renderMode: renderModeRef.current,
               androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-              androidThumbnailBackgroundPaths: backgroundPathsRef.current,
+              androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
             },
           });
         })
@@ -496,7 +504,7 @@ export function useLiveActivity({
         holderDisplayName,
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-        androidThumbnailBackgroundPaths,
+        androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
       },
     });
   }, [
@@ -507,6 +515,7 @@ export function useLiveActivity({
     // backgrounds arrive (the array is read at effect time).
     backgroundsKey,
     boardConnection,
+    getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
     isPartySession,
@@ -553,7 +562,7 @@ export function useLiveActivity({
         holderDisplayName,
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
-        androidThumbnailBackgroundPaths,
+        androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
       },
     });
   }, [
@@ -564,6 +573,7 @@ export function useLiveActivity({
     boardConnection,
     currentClimbQueueItem,
     sendUpdate,
+    getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
     isPartySession,

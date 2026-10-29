@@ -242,6 +242,38 @@ describe('useLiveActivity start-failure contract', () => {
     expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
   });
 
+  // #7026: the notification service strips `file://` and hands the rest to
+  // BitmapFactory.decodeFile, so a percent-encoded `%2C` names a file that does
+  // not exist and the artwork slot stays black. The validator still sees the
+  // hook's own URI; only what crosses to native is decoded.
+  it('hands the Android notification decoded file paths, after validating the original URI', async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const encodedOverlay = 'file:///data/user/0/app/cache/board-thumbnails/v16_f_w384_moonboard_2_1_1%2C2%2C3_ab.png';
+    const validateAndroidThumbnailOverlay = vi
+      .fn<(path: string | null, loadKey: string | null) => string | null>()
+      .mockImplementation((path) => path);
+    render(
+      <Harness
+        {...activeProps({
+          androidThumbnailOverlayPath: encodedOverlay,
+          androidThumbnailOverlayLoadKey: '1:0',
+          validateAndroidThumbnailOverlay,
+          androidThumbnailBackgroundPaths: ['/data/user/0/app/cache/Exponent%20Asset-ab.webp'],
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
+    expect(validateAndroidThumbnailOverlay).toHaveBeenCalledWith(encodedOverlay, '1:0');
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        androidThumbnailOverlayPath:
+          'file:///data/user/0/app/cache/board-thumbnails/v16_f_w384_moonboard_2_1_1,2,3_ab.png',
+        androidThumbnailBackgroundPaths: ['/data/user/0/app/cache/Exponent Asset-ab.webp'],
+      }),
+    );
+  });
+
   it('revalidates the Android overlay immediately before a later notification push', async () => {
     plugin.startLiveActivitySession.mockResolvedValue(undefined);
     const validateAndroidThumbnailOverlay = vi
