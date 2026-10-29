@@ -469,24 +469,20 @@ export const RULES: readonly PatchRule[] = [
       },
     ],
   },
-  // The iPad MiniPlayer width cap (#7083). A dropped hunk only shows on an iPad:
-  // the glass fills the whole content column again instead of Music's 689 pt.
-  // The ordered sentinels keep the cap behind the pad-idiom check, so the iPhone
-  // and the open iPhone Duo keep a full-width bar. The negative assertion keeps
-  // the answer derived from the proposed size: answering from the view's own
-  // bounds or super's default brings back the stale width after a sidebar hide
-  // or rotation (react-native-screens #4728).
+  // The MiniPlayer width cap (#7083). A dropped hunk only shows on an iPad or the
+  // open iPhone Duo: the glass fills the whole content column again instead of
+  // Music's 689 pt capsule. A portrait iPhone is always narrower than the cap, so
+  // the cap applies on every device; the forbidden idiom check stops a pad-only
+  // gate from coming back and leaving the open Duo with a full-width bar. The
+  // other forbidden reads keep the answer derived from the proposed size:
+  // answering from the view's own bounds or super's default brings back the stale
+  // width after a sidebar hide or rotation (react-native-screens #4728).
   {
     package: 'react-native-screens',
     file: 'ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm',
     sentinels: [
-      'static const CGFloat RNSTabsBottomAccessoryPadMaxWidth = 689.0;',
-      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryPadMaxWidth), size.height);',
-    ],
-    orderedSentinels: [
-      'if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {',
-      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryPadMaxWidth), size.height);',
-      'return size;',
+      'static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;',
+      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);',
     ],
     patchedKey: 'react-native-screens@4.30.0',
     forbiddenInMethod: [
@@ -497,6 +493,13 @@ export const RULES: readonly PatchRule[] = [
           'the answer must derive from the proposed size on every query. The view keeps its old bounds after a ' +
           'sidebar hide or rotation, so answering from them strands the accessory at a stale width ' +
           '(react-native-screens #4728).',
+      },
+      {
+        method: 'sizeThatFits',
+        substrings: ['userInterfaceIdiom', 'return size;'],
+        why:
+          'the 689 pt cap must apply on every device. A pad-only gate, or an early full-size return, leaves the ' +
+          'open iPhone Duo with a full-width bar instead of the centred capsule (#7083).',
       },
     ],
   },

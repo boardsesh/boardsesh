@@ -1103,6 +1103,78 @@ describe('the shipped react-native-screens tab-host rule', () => {
   });
 });
 
+describe('the shipped MiniPlayer width cap rule (#7083)', () => {
+  const ACCESSORY_FILE = 'ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm';
+  const shippedRule = REAL_RULES.find((rule) => rule.package === PKG && rule.file === ACCESSORY_FILE);
+
+  const wrap = (body: string, preamble = 'static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;') => `
+#import "RNSTabsBottomAccessoryWrapperView.h"
+
+${preamble}
+
+@implementation RNSTabsBottomAccessoryWrapperView
+
+- (CGSize)sizeThatFits:(CGSize)size
+{
+  // By returning the proposed size, we make sure that the accessory always
+  // takes full available width.
+${body}
+}
+
+@end
+`;
+
+  const CAPPED_SOURCE = wrap('  return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);');
+
+  const check = (source: string) =>
+    checkPatchesApplied(
+      [shippedRule as PatchRule],
+      makeEnv({
+        patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
+        versions: { [PKG]: '4.30.0' },
+        files: { [`${PKG}::${ACCESSORY_FILE}`]: source },
+      }),
+    );
+
+  it('is present', () => {
+    expect(shippedRule).toBeDefined();
+  });
+
+  it('passes the cap applied on every device', () => {
+    expect(check(CAPPED_SOURCE).errors).toEqual([]);
+  });
+
+  it('rejects the unpatched upstream full-width answer', () => {
+    const result = check(wrap('  return size;', ''));
+
+    expect(result.errors.join('\n')).toContain('RNSTabsBottomAccessoryMaxWidth');
+  });
+
+  it('rejects a pad-only gate that leaves the open iPhone Duo full width', () => {
+    const result = check(
+      wrap(
+        [
+          '  if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {',
+          '    return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);',
+          '  }',
+          '  return size;',
+        ].join('\n'),
+      ),
+    );
+
+    expect(result.errors.join('\n')).toContain('userInterfaceIdiom');
+    expect(result.errors.join('\n')).toContain('iPhone Duo');
+  });
+
+  it('rejects an answer read from the stale bounds (#4728)', () => {
+    const result = check(
+      wrap('  return CGSizeMake(MIN(self.bounds.size.width, RNSTabsBottomAccessoryMaxWidth), size.height);'),
+    );
+
+    expect(result.errors.join('\n')).toContain('self.bounds');
+  });
+});
+
 describe('checkPatchInventory', () => {
   const base = {
     patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
