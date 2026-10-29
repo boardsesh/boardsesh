@@ -1,10 +1,11 @@
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Svg, { Rect } from 'react-native-svg';
 import type { RawActivityDay, RawActivityHeatmap } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { nowDate } from '../../lib/clock';
 import { getCachedDateTimeFormat } from '../../lib/intl-formatter-cache';
@@ -15,6 +16,7 @@ import {
   buildCalendarRamp,
   chunkIntoWeeks,
   localDateFromDayKey,
+  localDayKey,
   monthLabelColumns,
   stepIndexForCount,
 } from './activity-heatmap-model';
@@ -25,8 +27,6 @@ const TARGET_COLUMN = 16;
 // Left gutter for the Mon / Wed / Fri labels ("lun." is the widest we ship).
 const WEEKDAY_GUTTER = 28;
 const WEEKDAY_GUTTER_GAP = spacing[1];
-// caption2's line height, so the absolutely placed month labels get a row.
-const MONTH_ROW_HEIGHT = 13;
 const TODAY_SWATCH_BORDER = 1.5;
 
 // Hoisted so every label shares one formatter cache key (#3155).
@@ -79,13 +79,10 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
   );
 
   // "Today" via a LOCAL date string (NOT toISOString, which is UTC) so the
-  // current-day ring lands on the right cell across time zones.
-  const todayKey = useMemo(() => {
-    const now = nowDate();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const dayOfMonth = String(now.getDate()).padStart(2, '0');
-    return `${now.getFullYear()}-${month}-${dayOfMonth}`;
-  }, []);
+  // current-day ring lands on the right cell across time zones. Read every
+  // render, not memoised at mount: it also gates taps on future days, and the
+  // Progress tab can stay mounted past midnight.
+  const todayKey = localDayKey(nowDate());
 
   const colorForCount = useCallback(
     (count: number): string => {
@@ -149,21 +146,37 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
     });
   }, [shown, locale, t, describeCount]);
 
-  const selectedDay = useMemo<RawActivityDay | null>(
-    () => (selectedDayKey ? (heatmap.days.find((day) => day.date === selectedDayKey) ?? null) : null),
-    [heatmap.days, selectedDayKey],
-  );
+  // Only a visible cell can stay selected: a narrower layout or a refetch that
+  // slides the window drops the readout rather than describing a hidden day.
+  const selectedDay = useMemo<RawActivityDay | null>(() => {
+    if (!selectedDayKey) return null;
+    for (const week of shown) {
+      const match = week.find((day) => day.date === selectedDayKey);
+      if (match) return match;
+    }
+    return null;
+  }, [shown, selectedDayKey]);
+
+  // A screen reader's double-tap lands on the column's centre, which would pick
+  // Thursday whatever the climber meant; the week label already reads out
+  // every day, so the columns are read-only while one is running.
+  const screenReaderEnabled = useScreenReaderEnabled();
 
   const handleWeekPress = useCallback(
-    (week: RawActivityDay[], event: GestureResponderEvent) => {
-      if (pitch <= 0) return;
-      const rowIndex = Math.min(CALENDAR_ROWS - 1, Math.max(0, Math.floor(event.nativeEvent.locationY / pitch)));
+    (columnIndex: number, event: GestureResponderEvent) => {
+      const week = shown[columnIndex];
+      if (!week || pitch <= 0) return;
+      // Each row owns its cell plus half the gap on either side.
+      const rowIndex = Math.min(
+        CALENDAR_ROWS - 1,
+        Math.max(0, Math.floor((event.nativeEvent.locationY + CELL_GAP / 2) / pitch)),
+      );
       const day = week[rowIndex];
       // Days later this week haven't happened yet; there's nothing to report.
       if (!day || day.date > todayKey) return;
       setSelectedDayKey((current) => (current === day.date ? null : day.date));
     },
-    [pitch, todayKey],
+    [shown, pitch, todayKey],
   );
 
   const calendarAnchor = useShowcaseAnchor('activity-calendar');
@@ -185,6 +198,11 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
             accessibilityLabel={t('stats.calendarAria', { days: totals.activeDays, count: totals.totalClimbs })}
             style={styles.monthRow}
           >
+            {/* Invisible line of caption2 so the row grows with the text size;
+                the real labels are absolutely placed over their columns. */}
+            <Text variant="caption2" style={styles.monthRowSizer}>
+              {' '}
+            </Text>
             {monthLabels.map(({ columnIndex, dayKey, label }) => (
               <Text
                 key={dayKey}
@@ -258,14 +276,17 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
                   }),
                 )}
               </Svg>
-              {/* One hit area per week column, centred on its cells: taps pick
-                  the row from locationY, screen readers read the whole week. */}
+              {/* One hit area per week column: taps pick the row from
+                  locationY, screen readers read the whole week. */}
               {shown.map((week, columnIndex) => (
-                <Pressable
+                <WeekHitArea
                   key={week[0].date}
+                  columnIndex={columnIndex}
+                  left={columnIndex * pitch}
+                  width={columnIndex === shown.length - 1 ? cell : pitch}
                   accessibilityLabel={weekAccessibilityLabels[columnIndex]}
-                  onPress={(event) => handleWeekPress(week, event)}
-                  style={[styles.weekHitArea, { left: columnIndex * pitch - CELL_GAP / 2, width: pitch }]}
+                  readOnly={screenReaderEnabled}
+                  onPress={handleWeekPress}
                 />
               ))}
             </View>
@@ -303,8 +324,9 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
                 { backgroundColor: emptyFill, borderColor: chartColors.separator },
               ]}
             />
-            {stepFills.map((fill) => (
-              <View key={fill} style={[styles.swatch, { backgroundColor: fill }]} />
+            {stepFills.map((fill, stepIndex) => (
+              // oxlint-disable-next-line react/no-array-index-key -- a fixed four-step ramp; fills can repeat if the search hits its cap
+              <View key={stepIndex} style={[styles.swatch, { backgroundColor: fill }]} />
             ))}
           </View>
           <Text variant="caption2" color={chartColors.secondaryLabel}>
@@ -316,11 +338,44 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
   );
 }
 
+type WeekHitAreaProps = {
+  columnIndex: number;
+  left: number;
+  width: number;
+  accessibilityLabel: string;
+  readOnly: boolean;
+  onPress: (columnIndex: number, event: GestureResponderEvent) => void;
+};
+
+const WeekHitArea = memo(function WeekHitArea({
+  columnIndex,
+  left,
+  width,
+  accessibilityLabel,
+  readOnly,
+  onPress,
+}: WeekHitAreaProps) {
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => onPress(columnIndex, event),
+    [onPress, columnIndex],
+  );
+  return (
+    <Pressable
+      accessibilityRole="text"
+      accessibilityLabel={accessibilityLabel}
+      onPress={readOnly ? undefined : handlePress}
+      style={[styles.weekHitArea, { left, width }]}
+    />
+  );
+});
+
 const styles = StyleSheet.create({
   monthRow: {
-    height: MONTH_ROW_HEIGHT,
     marginLeft: WEEKDAY_GUTTER + WEEKDAY_GUTTER_GAP,
     marginBottom: spacing[1],
+  },
+  monthRowSizer: {
+    opacity: 0,
   },
   monthLabel: {
     position: 'absolute',

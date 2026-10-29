@@ -72,6 +72,8 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { sm: 4 },
 }));
 vi.mock('../../../lib/clock', () => ({ nowDate: () => new Date(2026, 9, 15, 12) }));
+let screenReaderEnabled = false;
+vi.mock('../../../hooks/use-screen-reader-enabled', () => ({ useScreenReaderEnabled: () => screenReaderEnabled }));
 vi.mock('../../../lib/showcase-anchor', () => ({ useShowcaseAnchor: () => ({ ref: undefined }) }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -98,7 +100,8 @@ function weekButtons(): HTMLElement[] {
 describe('ActivityHeatmap', () => {
   it('labels the months along the top and Mon / Wed / Fri down the side', () => {
     render(createElement(ActivityHeatmap, { heatmap: makeHeatmap() }));
-    expect(screen.getByText('Oct')).toBeTruthy();
+    // Oct starts two columns from the right edge, so September keeps the row.
+    expect(screen.getByText(/^Sept?$/)).toBeTruthy();
     for (const weekday of ['Mon', 'Wed', 'Fri']) expect(screen.getByText(weekday)).toBeTruthy();
     expect(screen.getByText('stats.calendarToday')).toBeTruthy();
   });
@@ -125,6 +128,19 @@ describe('ActivityHeatmap', () => {
 
     fireEvent.click(lastWeek);
     expect(screen.getByText('stats.calendarTapHint')).toBeTruthy();
+  });
+
+  it('keeps the columns read-only while a screen reader is running', () => {
+    screenReaderEnabled = true;
+    try {
+      render(createElement(ActivityHeatmap, { heatmap: makeHeatmap() }));
+      const lastWeek = weekButtons()[3];
+      lastWeek.dataset.locationY = '100';
+      fireEvent.click(lastWeek);
+      expect(screen.getByText('stats.calendarTapHint')).toBeTruthy();
+    } finally {
+      screenReaderEnabled = false;
+    }
   });
 
   it('ignores taps on days that have not happened yet', () => {

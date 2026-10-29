@@ -76,7 +76,9 @@ export function chunkIntoWeeks(days: readonly RawActivityDay[]): RawActivityDay[
  * Which visible columns carry a month label: a column whose Monday falls in a
  * different month from the previous column's. The leftmost column always
  * starts a month run, but its label is dropped when the next month begins
- * within MIN_MONTH_LABEL_GAP columns, so the two never overlap.
+ * within MIN_MONTH_LABEL_GAP columns, so the two never overlap. A month that
+ * starts in the last MIN_MONTH_LABEL_GAP - 1 columns goes unlabelled until it
+ * has room, rather than running off the right edge of the card.
  */
 export function monthLabelColumns(weeks: readonly RawActivityDay[][]): number[] {
   const columns: number[] = [];
@@ -85,8 +87,17 @@ export function monthLabelColumns(weeks: readonly RawActivityDay[][]): number[] 
     const previousMonthKey = columnIndex > 0 ? weeks[columnIndex - 1][0]?.date.slice(0, 7) : undefined;
     if (monthKey && monthKey !== previousMonthKey) columns.push(columnIndex);
   }
-  if (columns.length > 1 && columns[1] - columns[0] < MIN_MONTH_LABEL_GAP) columns.shift();
-  return columns;
+  const lastRoomyColumn = weeks.length - MIN_MONTH_LABEL_GAP + 1;
+  const roomy = columns.filter((columnIndex) => columnIndex === 0 || columnIndex < lastRoomyColumn);
+  if (roomy.length > 1 && roomy[1] - roomy[0] < MIN_MONTH_LABEL_GAP) roomy.shift();
+  return roomy;
+}
+
+/** The LOCAL `YYYY-MM-DD` key for a Date (toISOString would give the UTC day). */
+export function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${dayOfMonth}`;
 }
 
 /**

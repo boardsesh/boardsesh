@@ -9,6 +9,7 @@ import {
   buildCalendarRamp,
   chunkIntoWeeks,
   localDateFromDayKey,
+  localDayKey,
   monthLabelColumns,
   stepIndexForCount,
 } from '../activity-heatmap-model';
@@ -78,16 +79,40 @@ describe('chunkIntoWeeks', () => {
 
 describe('monthLabelColumns', () => {
   it('labels each column whose Monday starts a new month', () => {
-    const weeks = ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].map(
-      weekStarting,
-    );
+    const weeks = [
+      '2026-09-07',
+      '2026-09-14',
+      '2026-09-21',
+      '2026-09-28',
+      '2026-10-05',
+      '2026-10-12',
+      '2026-10-19',
+    ].map(weekStarting);
     // Sep 28's week holds Oct 1, but its Monday is still September.
     expect(monthLabelColumns(weeks)).toEqual([0, 4]);
   });
 
+  it('leaves a month that starts in the last two columns unlabelled until it has room', () => {
+    const weeks = ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].map(
+      weekStarting,
+    );
+    expect(monthLabelColumns(weeks)).toEqual([0]);
+  });
+
   it('drops the leftmost label when the next month starts too close to it', () => {
-    const weeks = ['2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].map(weekStarting);
+    const weeks = ['2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19'].map(weekStarting);
     expect(monthLabelColumns(weeks)).toEqual([2]);
+  });
+
+  it('keeps the leftmost label when the only other one is too close to the right edge', () => {
+    const weeks = ['2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].map(weekStarting);
+    expect(monthLabelColumns(weeks)).toEqual([0]);
+  });
+});
+
+describe('localDayKey', () => {
+  it('reads the local calendar day', () => {
+    expect(localDayKey(new Date(2026, 0, 5, 23, 30))).toBe('2026-01-05');
   });
 });
 
