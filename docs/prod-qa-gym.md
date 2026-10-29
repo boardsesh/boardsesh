@@ -4,7 +4,7 @@
 
 The shared production fixture is [Boardsesh QA gym](https://www.boardsesh.com/gym/boardsesh-qa), UUID `ef8b823e-8d2e-4840-8218-761369f9c059`. This UUID is the firmware startup default. Its three boards use the configurations and serials below. All three BLE identities have been observed on a phone; connection routing, payload handling, and display QA remain to be verified on the device.
 
-The gym is public by direct link and has `isListed: false`. Its description identifies it as simulated QA hardware, not a climbing venue. No address, location name, latitude, or longitude is invented. The linked boards remain public and listed individually so maintainers opening the gym link can enumerate them; inherited gym listing keeps them off global discovery and indexing.
+The gym is public by direct link and has `isListed: false`. Its description identifies it as simulated QA hardware, not a climbing venue. No address, location name, latitude, or longitude is invented. The linked boards remain public and listed individually so maintainers opening the gym link can enumerate them; inherited gym listing keeps them off global discovery and indexing. Listing is about discovery only: a party session on one of these walls still hands every joiner the wall's named `/b/{slug}` path, so the crew lands on the same wall and its history (#7013).
 
 | Fixture | Layout | Size | Hold sets | Angle | Preferred serial |
 | --- | --- | --- | --- | --- | --- |
