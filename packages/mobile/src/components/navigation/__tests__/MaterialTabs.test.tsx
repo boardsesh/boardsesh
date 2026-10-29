@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -156,6 +156,11 @@ function layout(handler: LayoutHandler | undefined, width: number) {
 }
 
 describe('MaterialTabs indicator', () => {
+  beforeEach(() => {
+    layoutHandlers.container = undefined;
+    layoutHandlers.labels.clear();
+  });
+
   it('appears only once the container and the active label are measured', () => {
     const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'sessions' })} />);
     expect(queryByTestId('material-tabs-indicator')).toBeNull();
@@ -169,6 +174,20 @@ describe('MaterialTabs indicator', () => {
     // 360 / 3 = 120dp slots; a 64dp label centred in slot 1 starts at 120 + 28.
     expect(indicator?.getAttribute('data-width')).toBe('64');
     expect(indicator?.getAttribute('data-offset')).toBe('148');
+  });
+
+  it('moves to the newly selected label', () => {
+    const { queryByTestId, rerender } = render(<MaterialTabs {...makeProps({ selectedKey: 'sessions' })} />);
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    layout(layoutHandlers.labels.get('Sessions'), 64);
+    layout(layoutHandlers.labels.get('Logbook'), 58);
+
+    rerender(<MaterialTabs {...makeProps({ selectedKey: 'logbook' })} />);
+    const indicator = queryByTestId('material-tabs-indicator');
+    // Slot 2 starts at 240; a 58dp label centred in 120dp adds 31.
+    expect(indicator?.getAttribute('data-width')).toBe('58');
+    expect(indicator?.getAttribute('data-offset')).toBe('271');
   });
 
   it('falls back to the first tab when selectedKey is not an option', () => {
