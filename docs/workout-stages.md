@@ -310,7 +310,9 @@ build without the engine) the write goes straight to the server, best effort.
 the time most writes go out. Start and "Add a block" capture each item's climb from the
 queue. Every tick on a run item also fills in that item's climb from the tick, which is
 the item's climb at its angle (`attributeTickToQueueItem`), and never replaces one the
-run already has (`noteWorkoutRunTick`). The tick is the backstop for a run that lost its
+run already has (`noteWorkoutRunTick`). A climb filled from a tick has no name, grade or
+board; a later fill from the queue (`addWorkoutRunClimbs`) adds them, never changing
+its climb or angle. The tick is the backstop for a run that lost its
 climbs: one an older bundle wrote (before `climbs` existed) or rewrote after an OTA
 rollback. Only a local End can fill them from the queue at the end, and a crew guest
 never presses End. They Leave, or the host ends the session. Before this backstop, a
