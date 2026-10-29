@@ -455,8 +455,10 @@ class BoardSessionService : Service() {
         val overlay = overlayPath?.takeIf { it.isNotBlank() }
         val key = overlay?.let { imageKey(it, backgroundPaths, mirrored) }
         val bitmap = key?.let { bitmapCache.get(it) }
-            // Same climb, new variant composing (mirror toggled, backgrounds resolved
-            // late): keep its last board up rather than flash the placeholder.
+            // Same climb, new variant (mirror toggled, backgrounds resolved late):
+            // keep its last board up while that variant composes, rather than flash
+            // the placeholder, and keep it if the variant's compose fails, since the
+            // climb's own board beats a hidden slot.
             ?: lastShownThumbnail?.takeIf { it.first == overlay }?.second
         if (overlay != null && bitmap != null) {
             lastShownThumbnail = overlay to bitmap
@@ -466,9 +468,9 @@ class BoardSessionService : Service() {
         }
         // Resource 0 clears the drawable, leaving the dark rounded background.
         views.setImageViewResource(R.id.session_image, 0)
-        // The placeholder holds the slot while this climb's compose runs. With no
-        // overlay, or once the compose failed, hide it: an empty black box reads as
-        // a broken picture.
+        // Nothing of this climb to show. The placeholder holds the slot while its
+        // compose runs. With no overlay, or once the compose failed, hide it: an
+        // empty black box reads as a broken picture.
         val composing = key != null && key != failedImageKey
         views.setViewVisibility(R.id.session_image, if (composing) View.VISIBLE else View.GONE)
     }
@@ -672,6 +674,7 @@ class BoardSessionService : Service() {
         if (bitmapCache.get(key) != null) return
         if (!inFlight.add(key)) return
         imageExecutor.execute {
+            var composeError: Throwable? = null
             val bitmap = try {
                 imageComposer(overlay, backgrounds)?.let { orientThumbnail(it, imageMirrored) }
             } catch (error: Throwable) {
@@ -679,7 +682,7 @@ class BoardSessionService : Service() {
                 // OutOfMemoryError on low-memory devices, which is an Error — catching
                 // only Exception would let it kill this background thread noisily.
                 // Degrade to no thumbnail (the notification still posts without art).
-                Log.w(TAG, "thumbnail compose failed: ${error.message}")
+                composeError = error
                 null
             } finally {
                 inFlight.remove(key)
@@ -689,7 +692,11 @@ class BoardSessionService : Service() {
                 // failure logs and re-posts (the re-post hides the placeholder).
                 if (failedImageKey == key) return@execute
                 failedImageKey = key
-                Log.w(TAG, "thumbnail overlay did not decode (file exists: ${File(localFilePath(overlay)).exists()})")
+                if (composeError != null) {
+                    Log.w(TAG, "thumbnail compose failed: ${composeError.javaClass.simpleName}: ${composeError.message}")
+                } else {
+                    Log.w(TAG, "thumbnail overlay did not decode (file exists: ${File(localFilePath(overlay)).exists()})")
+                }
             } else {
                 bitmapCache.put(key, bitmap)
                 if (failedImageKey == key) failedImageKey = null
