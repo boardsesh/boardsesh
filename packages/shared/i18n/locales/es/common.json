@@ -786,6 +786,12 @@
         "underName": "Bajo el nombre",
         "yourClimbing": "Tu escalada",
         "actions": "Acciones",
+        "layout": {
+          "title": "Columnas",
+          "one": "Una columna",
+          "two": "Dos columnas",
+          "footer": "Las dos columnas aparecen cuando la lista tiene sitio, como en un iPad en horizontal."
+        },
         "gradesTitle": "Grados",
         "previewFooter": "Ejemplo. Los encadenes, guardados y etiquetas aparecen en los bloques que los tienen.",
         "gradeFooter": "Elige el grado principal en Ajustes → Bloques y grados.",

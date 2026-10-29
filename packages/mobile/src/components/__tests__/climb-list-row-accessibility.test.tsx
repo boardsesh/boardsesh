@@ -225,6 +225,7 @@ vi.mock('../ClimbListItemContent', () => ({
 vi.mock('../climb-list-row-styles', () => ({
   CLIMB_ROW_GUTTER: 16,
   climbListRowStyles: { contentRow: {}, separator: {} },
+  climbRowSeparatorInsetStyle: () => ({}),
 }));
 
 vi.mock('../climb-list-row-colors', () => ({

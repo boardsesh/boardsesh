@@ -101,8 +101,6 @@ vi.mock('../../components/Icon', () => ({
 }));
 vi.mock('../../components/ClimbListThumbnail', () => ({
   ClimbListThumbnail: controls.thumbnailRender,
-  THUMBNAIL_WIDTH: 60,
-  THUMBNAIL_HEIGHT: 80,
 }));
 vi.mock('../../components/ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
 vi.mock('../../components/ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));

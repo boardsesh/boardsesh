@@ -1,5 +1,5 @@
 import { View, StyleSheet, useWindowDimensions, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { ClimbRowReservedLine } from './ClimbRowReservedLine';
 import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 import type { TextVariant } from './Text';
@@ -15,6 +15,7 @@ import {
   DEFAULT_CLIMB_ROW_SURFACE,
   climbRowLayout,
   climbRowNameLines,
+  climbRowThumbnailRowHeight,
 } from './climb-row-layout';
 
 type ClimbListRowSkeletonProps = {
@@ -64,12 +65,15 @@ export function ClimbListRowSkeleton({
   const display = useClimbRowDisplay();
   const { fontScale } = useWindowDimensions();
   const { textStyles } = useTheme();
+  // The size of the rows it stands in for: 88×112 in a two-column Climbs list.
+  const thumbnailSize = useClimbListThumbnailSize();
   const layout = climbRowLayout({
     display,
     surface: { ...DEFAULT_CLIMB_ROW_SURFACE, showPlaylistChips, showProgress },
     supportsMirroring,
     fontScale,
     typeScale: textStyles,
+    thumbnailSize,
   });
   const blockColor = systemColors.fill;
 
@@ -79,12 +83,14 @@ export function ClimbListRowSkeleton({
         style={[
           styles.contentRow,
           { backgroundColor: systemColors.background },
-          layout.hasThumbnail && layout.estimatedHeight === 112 ? null : { minHeight: layout.estimatedHeight },
+          layout.hasThumbnail && layout.estimatedHeight === climbRowThumbnailRowHeight(thumbnailSize)
+            ? null
+            : { minHeight: layout.estimatedHeight },
         ]}
       >
         {layout.hasThumbnail ? (
           <>
-            <View style={[styles.thumbnail, { backgroundColor: blockColor }]} />
+            <View style={[styles.thumbnail, thumbnailSize, { backgroundColor: blockColor }]} />
             {/* Beside a thumbnail the row's height is the thumbnail's, so two
                 bars centred on it are enough: the lines that load late grow
                 inside that height in the row too. */}
@@ -140,9 +146,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     gap: spacing[3],
   },
+  // Sized at the call site from `useClimbListThumbnailSize`.
   thumbnail: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
     borderRadius: borderRadius.md,
     opacity: 0.55,
   },

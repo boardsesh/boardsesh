@@ -81,7 +81,7 @@ vi.mock('../ClimbListItemContent', () => ({
     return createElement('span');
   },
 }));
-vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 96 }));
+vi.mock('../ClimbListThumbnail', () => ({}));
 vi.mock('../board-presence/BoardDriverAvatar', () => ({ BoardDriverAvatar: () => createElement('span') }));
 vi.mock('../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },

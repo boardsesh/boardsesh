@@ -182,7 +182,11 @@ import { WorkoutPreviewRow } from '../session-screen/pre-session/WorkoutPreviewR
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { ClimbPreviewCard } from '../ClimbPreviewCard';
-import { THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { ClimbListThumbnailSizeContext, climbListThumbnailSize } from '../climb-list-thumbnail-metrics';
+
+// The one-column cell every host below draws outside a two-column Climbs list.
+const THUMBNAIL_WIDTH = climbListThumbnailSize(1).width;
+const TWO_COLUMNS = climbListThumbnailSize(2);
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
 
 const HAIRLINE = 0.5;
@@ -269,6 +273,49 @@ describe('where each climb row host starts its separator', () => {
 
     const none = render(<ClimbListRow {...listRowProps} showSeparator={false} />);
     expect(separatorInsets(none.container)).toEqual([]);
+  });
+
+  it('the Climbs list row in two columns: 116, past the 88pt thumbnail', () => {
+    const { container } = render(
+      <ClimbListThumbnailSizeContext.Provider value={TWO_COLUMNS}>
+        <ClimbListRow {...listRowProps} />
+      </ClimbListThumbnailSizeContext.Provider>,
+    );
+    const row = drawnRow(container);
+
+    expect(separatorInsets(container)).toEqual([116]);
+    expect(row.leadingPadding + TWO_COLUMNS.width + row.columnGap).toBe(116);
+  });
+
+  it('a two-column grid cell: the row fills the cell and the separator sits on its bottom', () => {
+    const { container } = render(
+      <ClimbListThumbnailSizeContext.Provider value={TWO_COLUMNS}>
+        <ClimbListRow {...listRowProps} fillCell />
+      </ClimbListThumbnailSizeContext.Provider>,
+    );
+    const styles = drawnStyles(container) as Array<DrawnStyle & { flexGrow?: number; marginTop?: string }>;
+    expect(styles.filter((style) => style.flexGrow === 1).length).toBeGreaterThanOrEqual(2);
+    const separator = styles.find((style) => style.height === HAIRLINE);
+    expect(separator?.marginTop).toBe('auto');
+    expect(separator?.marginLeft).toBe(116);
+  });
+
+  it('a one-column row neither grows nor pins its separator', () => {
+    const { container } = render(<ClimbListRow {...listRowProps} />);
+    const styles = drawnStyles(container) as Array<DrawnStyle & { flexGrow?: number; marginTop?: string }>;
+    expect(styles.some((style) => style.flexGrow === 1)).toBe(false);
+    expect(styles.find((style) => style.height === HAIRLINE)?.marginTop).toBeUndefined();
+  });
+
+  it('the loading placeholder in two columns: 116 and an 88×112 picture, like the row', () => {
+    const { container } = render(
+      <ClimbListThumbnailSizeContext.Provider value={TWO_COLUMNS}>
+        <ClimbListRowSkeleton />
+      </ClimbListThumbnailSizeContext.Provider>,
+    );
+
+    expect(separatorInsets(container)).toEqual([116]);
+    expect(drawnStyles(container).some((style) => style.width === 88 && style.height === 112)).toBe(true);
   });
 
   it('the loading placeholder: 104, the same as the row it stands in for', () => {

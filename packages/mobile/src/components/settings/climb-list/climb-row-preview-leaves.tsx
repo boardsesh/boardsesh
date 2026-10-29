@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from '../../ClimbListThumbnail';
+import { ClimbListThumbnail } from '../../ClimbListThumbnail';
+import { useClimbListThumbnailSize } from '../../climb-list-thumbnail-metrics';
 import { borderRadius } from '../../../theme/tokens';
 import { useTranslation } from 'react-i18next';
 import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
@@ -135,11 +136,12 @@ const PreviewPlaylists = memo(function PreviewPlaylists({ reserveLine }: ClimbRo
 });
 const PreviewThumbnail = memo(function PreviewThumbnail(props: ClimbRowThumbnailLeafProps) {
   const { systemColors } = useTheme();
+  const thumbnailSize = useClimbListThumbnailSize();
   if (props.layoutId === 0)
     return (
       <View
         testID="climb-preview-neutral-picture"
-        style={[styles.neutralPicture, { backgroundColor: systemColors.fill }]}
+        style={[styles.neutralPicture, thumbnailSize, { backgroundColor: systemColors.fill }]}
       />
     );
   return <ClimbListThumbnail {...props} />;
@@ -191,5 +193,6 @@ export const CLIMB_ROW_PLAIN_PREVIEW_LEAVES: ClimbRowLeaves = {
 };
 
 const styles = StyleSheet.create({
-  neutralPicture: { width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT, borderRadius: borderRadius.sm },
+  // Sized at the call site, like the thumbnail it stands in for.
+  neutralPicture: { borderRadius: borderRadius.sm },
 });

@@ -38,7 +38,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ActiveAwareClimbListRow } from '../ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { useClimbListThumbnailSize } from '../climb-list-thumbnail-metrics';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
@@ -1140,6 +1140,8 @@ function UnrenderablePlaylistClimbRow({
   // thumbnails off it has no thumbnail-sized frame and its text starts at the
   // gutter, like theirs.
   const hasThumbnail = useClimbRowField('thumbnail');
+  // The cell its neighbours draw (one column here, so 76×96).
+  const thumbnailSize = useClimbListThumbnailSize();
   const subtitle = t('detail.unrenderableClimb.subtitle');
   const accessibilityLabel = `${climb.name}. ${subtitle}`;
 
@@ -1164,6 +1166,7 @@ function UnrenderablePlaylistClimbRow({
             <View
               style={[
                 styles.unrenderableThumbnail,
+                thumbnailSize,
                 { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
               ]}
             >
@@ -1194,7 +1197,10 @@ function UnrenderablePlaylistClimbRow({
       <View
         style={[
           styles.unrenderableSeparator,
-          { marginStart: climbRowSeparatorInset(hasThumbnail), backgroundColor: systemColors.separator },
+          {
+            marginStart: climbRowSeparatorInset(hasThumbnail, undefined, thumbnailSize.width),
+            backgroundColor: systemColors.separator,
+          },
         ]}
       />
     </View>
@@ -1411,9 +1417,8 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       gap: spacing[3],
     },
+    // Sized at the call site from `useClimbListThumbnailSize`.
     unrenderableThumbnail: {
-      width: THUMBNAIL_WIDTH,
-      height: THUMBNAIL_HEIGHT,
       borderRadius: borderRadius.md,
       borderWidth: StyleSheet.hairlineWidth,
       alignItems: 'center',

@@ -68,6 +68,12 @@ type ClimbListThumbnailPrewarmWindowProps = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  /**
+   * Climbs side by side in the list (2 in a two-column iPad list). The window is
+   * counted in screen rows, so it reaches as far down the screen in two columns
+   * as in one. The step stays in climbs: one row in two columns is two climbs.
+   */
+  climbsPerRow?: number;
 };
 
 /**
@@ -82,6 +88,7 @@ export const ClimbListThumbnailPrewarmWindow = React.memo(function ClimbListThum
   layoutId,
   sizeId,
   setIds,
+  climbsPerRow = 1,
 }: ClimbListThumbnailPrewarmWindowProps) {
   const latestFirstStep = useSyncExternalStore(store.subscribe, () => toStep(store.getFirst()));
   const latestLastStep = useSyncExternalStore(store.subscribe, () => toStep(store.getLast()));
@@ -93,8 +100,8 @@ export const ClimbListThumbnailPrewarmWindow = React.memo(function ClimbListThum
   const loadedClimbs = useDeferredValue(climbs);
   // One step of slack below, so the window still reaches a full
   // PREWARM_ROWS_BELOW past the real last row whatever the coarsening dropped.
-  const below = loadedClimbs.slice(lastStep + 1, lastStep + 1 + PREWARM_STEP_ROWS + PREWARM_ROWS_BELOW);
-  const above = loadedClimbs.slice(Math.max(0, firstStep - PREWARM_ROWS_ABOVE), firstStep);
+  const below = loadedClimbs.slice(lastStep + 1, lastStep + 1 + PREWARM_STEP_ROWS + PREWARM_ROWS_BELOW * climbsPerRow);
+  const above = loadedClimbs.slice(Math.max(0, firstStep - PREWARM_ROWS_ABOVE * climbsPerRow), firstStep);
   return (
     <>
       {[...above, ...below].map((climb) => (

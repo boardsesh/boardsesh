@@ -38,7 +38,8 @@ import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
-import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
+import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
+import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
@@ -258,6 +259,13 @@ type ClimbListRowProps = {
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
   /**
+   * The row is a cell of a FlashList grid (the two-column Climbs list). The grid
+   * gives the shorter cell of a row the taller one's height as a minimum, so the
+   * row grows to fill it: the highlight and the touch area reach the cell's
+   * bottom, and the separator sits on it, level with its neighbour's.
+   */
+  fillCell?: boolean;
+  /**
    * Show the playlist-membership tag row in the default content layout. Only the
    * main filtered climb list opts in; the content still needs the user setting,
    * and the tags their fetched data. Ignored when `renderContent` supplies a
@@ -308,6 +316,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   contentRowStyle,
   separatorStyle,
   showSeparator = true,
+  fillCell = false,
   showPlaylistChips = false,
   showProgress = false,
   showFavorite = false,
@@ -321,6 +330,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // around it keeps the geometry of a row that has one.
   const thumbnailEnabled = useClimbRowField('thumbnail');
   const hasThumbnail = thumbnailEnabled || renderContent !== undefined;
+  // 88pt in a two-column Climbs list, 76pt everywhere else: where the separator starts.
+  const thumbnailSize = useClimbListThumbnailSize();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
   // + accent stay visible in dark (lifted #A78BFA) as well as light.
   const highlight = useMemo(() => selectedRowColors(brand.primary), [brand.primary]);
@@ -576,8 +587,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   return (
-    <View style={[styles.outerContainer, containerStyle, unsupported && styles.unsupported]}>
+    <View
+      style={[styles.outerContainer, fillCell && styles.fillCell, containerStyle, unsupported && styles.unsupported]}
+    >
       <ReanimatedSwipeable
+        containerStyle={fillCell ? styles.fillCell : undefined}
+        childrenContainerStyle={fillCell ? styles.fillCell : undefined}
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
         simultaneousWith={fullSwipe.gesture}
@@ -601,7 +616,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
             ref={contentViewRef}
             collapsable={false}
             testID={testID}
-            style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
+            style={[
+              climbListRowStyles.contentRow,
+              fillCell && styles.fillCell,
+              { backgroundColor: systemColors.background },
+              contentRowStyle,
+            ]}
             accessible
             accessibilityRole="button"
             // Let React Native compose the name, grade and status from the
@@ -656,7 +676,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
         <View
           style={[
             climbListRowStyles.separator,
-            hasThumbnail ? null : climbListRowStyles.separatorWithoutThumbnail,
+            climbRowSeparatorInsetStyle(hasThumbnail, thumbnailSize.width),
+            fillCell && styles.separatorAtCellBottom,
             { backgroundColor: systemColors.separator },
             separatorStyle,
           ]}
@@ -675,6 +696,13 @@ const styles = StyleSheet.create({
   },
   unsupported: {
     opacity: 0.5,
+  },
+  // A grid cell's row grows into the height the grid gave the cell.
+  fillCell: {
+    flexGrow: 1,
+  },
+  separatorAtCellBottom: {
+    marginTop: 'auto',
   },
   // Active-climb wash + left accent bar. The COLOUR is applied inline from the
   // scheme-aware brand (see `highlight` / selectedRowColors) so dark mode uses the
