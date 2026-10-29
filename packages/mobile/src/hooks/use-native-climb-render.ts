@@ -110,7 +110,7 @@ import {
   subscribeToUnsupportedSignatures,
 } from './marker-renderer-support';
 import { getPlayOverlayWidth } from '../lib/board-render/play-board-prewarm';
-import { isBoardArtInMemory } from '../lib/board-render/board-art-memory-index';
+import { isBoardArtInMemory, msSinceImageMemorySweep } from '../lib/board-render/board-art-memory-index';
 import {
   captureReadyBoardArt,
   type ReadyBoardArtIdentity,
@@ -196,6 +196,13 @@ type NativeClimbRenderParams = {
    *    climber is waiting on.
    */
   playSurface?: boolean;
+  /**
+   * The play board's own view layer writes here whether its live stack is held
+   * invisible under the opening-art bridge (`BoardImageNative`). Read only when
+   * the paint watchdog fires, and reported as `bridging` on `paint_timeout`.
+   * Left out, the event says `false`.
+   */
+  paintBridgingRef?: { readonly current: boolean };
   /**
    * A render nobody is looking at yet — the play drawer warming the next few
    * queue items. Requests at the scheduler's `prefetch` rank (runs only when
@@ -603,6 +610,8 @@ type RenderFailureNote = {
   holdMatch?: { litCount: number; unmatchedCount: number };
   /** `render_stalled` only: where the render was waiting when the watchdog fired. */
   stall?: RenderQueueSnapshot;
+  /** `paint_timeout` only: what the board looked like when the watchdog fired. */
+  paint?: { bridging: boolean; msSinceImageSweep: number | null };
 } & (
   | { stage: 'native'; failureKind: BoardRenderNativeFailureKind }
   | { stage: 'image_load'; failureKind: BoardRenderImageLoadFailureKind }
@@ -682,6 +691,8 @@ function noteRenderFailure(note: RenderFailureNote): number {
           ms_waiting: note.stall.msWaiting,
         }
       : {}),
+    // And for the paint watchdog's two fields (#7081).
+    ...(note.paint ? { bridging: note.paint.bridging, ms_since_image_sweep: note.paint.msSinceImageSweep } : {}),
   };
   // Branch rather than spread a `{ stage, failure_kind }` pair: the two are one
   // discriminated pair in `BoardRenderFailedInput`, and keeping the branch is
@@ -1842,6 +1853,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
     extraHoldStates,
@@ -2791,8 +2803,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
    *
    * Arming on the mount rather than on `overlayUri` is the whole correctness
    * argument. `LayeredClimbImage` renders a bare `<View>` and no image at all
-   * while the app is backgrounded or the tab's board art is released (opening
-   * `/play` does exactly that to every other surface). Nothing then fires
+   * while the app is backgrounded or the tab's board art is released (an
+   * inactive iPad tab, including any tab the player is not open over). Nothing then fires
    * `onLoad` — there is nothing there to fire it — so a watchdog armed on the
    * URI would report silence from a surface that was never asked to paint, and
    * a backgrounded app's timers would land on resume before the remount.
@@ -2808,6 +2820,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
    */
   const playSurfaceRef = useRef(playSurface);
   playSurfaceRef.current = playSurface;
+  // Through a ref like the telemetry context above, so the watchdog's callback
+  // keeps one identity and reads whatever the view layer wrote last.
+  const paintBridgingSourceRef = useRef(paintBridgingRef);
+  paintBridgingSourceRef.current = paintBridgingRef;
   // The overlay image that is mounted now, and whether expo-image has answered
   // for it. The view layer reports a mount from a layout effect, inside the
   // commit that mounts the image, so nothing that image fires can reach JS
@@ -2828,6 +2844,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         failureKind: 'paint_timeout',
         errorCode: 'paint_timeout',
         context: failureTelemetryContextRef.current,
+        paint: {
+          bridging: paintBridgingSourceRef.current?.current ?? false,
+          msSinceImageSweep: msSinceImageMemorySweep(),
+        },
       });
     }, OVERLAY_PAINT_TIMEOUT_MS);
     paintWatchdogRef.current = { loadKey, timer };

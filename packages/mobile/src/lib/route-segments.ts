@@ -211,3 +211,26 @@ export function isAccessoryHiddenRoute(segments: Segments): boolean {
 export function tabsActiveSegment(segments: Segments): string | null {
   return isTabsRoute(segments) ? (segments[1] ?? null) : null;
 }
+
+/**
+ * The last tab the climber was on: the focused tab on a tab route, otherwise
+ * `previousTab` unchanged. Root routes (the player, and the pages the player
+ * pushes over itself, like a crew member's profile or the moderation page) sit
+ * on top of the live tabs, so the tab beneath them is still the one they were
+ * opened from. `null` until the first tab route.
+ */
+export function rememberBoardArtTab(segments: Segments, previousTab: string | null): string | null {
+  return tabsActiveSegment(segments) ?? previousTab;
+}
+
+/**
+ * The tab whose board art is on screen, given the remembered tab
+ * (`rememberBoardArtTab`). That is the focused tab, except under the player
+ * (`/play`): the player is a `transparentModal` over the live tabs, and its
+ * open and close animations show the tab beneath it, so that tab still counts
+ * as on screen (issue #7081). Any other root route answers `null`, so no tab
+ * counts while it is up.
+ */
+export function boardArtFocusedTab(segments: Segments, rememberedTab: string | null): string | null {
+  return isPlayerRoute(segments) ? rememberedTab : tabsActiveSegment(segments);
+}

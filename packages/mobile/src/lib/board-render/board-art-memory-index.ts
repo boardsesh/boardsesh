@@ -22,7 +22,28 @@ export function isBoardArtInMemory(uri: string | null | undefined, generation?: 
   );
 }
 
+// When the last forget ran, on the monotonic clock: a device clock set back
+// must not make an old sweep read as one that just ran. Every image-memory
+// sweep (app background, memory warning, iPad tab switch) forgets here in the
+// same breath as it clears expo-image's memory cache, so this is also when that
+// cache was last emptied.
+let lastForgottenAtMs: number | null = null;
+
+function monotonicNowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
 export function forgetBoardArtInMemory(): void {
   inMemoryUris.clear();
   displayedGenerations.clear();
+  lastForgottenAtMs = monotonicNowMs();
+}
+
+/**
+ * Milliseconds since the image memory cache was last swept, or `null` when no
+ * sweep has run this JS lifetime. Reported on the play board's paint timeout,
+ * to tell a board that went blank right after a sweep from one that did not.
+ */
+export function msSinceImageMemorySweep(): number | null {
+  return lastForgottenAtMs === null ? null : Math.max(0, Math.round(monotonicNowMs() - lastForgottenAtMs));
 }

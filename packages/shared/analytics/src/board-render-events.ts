@@ -407,6 +407,17 @@ export type BoardRenderFailureFields = {
   dispatched_count?: number;
   /** `render_stalled` only: milliseconds since this surface asked for the render. */
   ms_waiting?: number;
+  /**
+   * `paint_timeout` only, absent elsewhere: whether the play board was still
+   * held invisible under the opening-art bridge (the list thumbnail's art shown
+   * in its place) when the watchdog fired.
+   */
+  bridging?: boolean;
+  /**
+   * `paint_timeout` only: milliseconds since the image memory cache was last
+   * swept, or `null` when no sweep had run this JS lifetime (issue #7081).
+   */
+  ms_since_image_sweep?: number | null;
 };
 
 /**

@@ -226,6 +226,45 @@ describe('useIpadTabSwitchImageCacheSweep', () => {
     expect(clearMemoryCache).toHaveBeenCalledTimes(2);
   });
 
+  // Issue #7081. The player is a root route over the live tabs, so its segments
+  // name no tab. Read naively, every open and close was a tab change: two sweeps
+  // per visit, and the list under the player came back with nothing decoded.
+  it('does not sweep when the player opens over a tab and closes back onto it', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { rerender } = renderHook(() => useIpadTabSwitchImageCacheSweep());
+    for (let cycle = 0; cycle < 3; cycle++) {
+      segments.value = ['play'];
+      rerender();
+      segments.value = ['(tabs)', 'climbs'];
+      rerender();
+    }
+    expect(clearMemoryCache).not.toHaveBeenCalled();
+  });
+
+  // Review of #7096: the player pushes root routes of its own (a crew member's
+  // profile, the moderation page). Coming back through one must not read as a
+  // tab switch either, or the close sweeps twice again.
+  it('does not sweep through a root route pushed from the player', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { rerender } = renderHook(() => useIpadTabSwitchImageCacheSweep());
+    for (const nextSegments of [['play'], ['moderation'], ['play'], ['(tabs)', 'climbs']]) {
+      segments.value = nextSegments;
+      rerender();
+    }
+    expect(clearMemoryCache).not.toHaveBeenCalled();
+  });
+
+  it('sweeps once when the player closes onto a different tab', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { rerender } = renderHook(() => useIpadTabSwitchImageCacheSweep());
+    segments.value = ['play'];
+    rerender();
+    expect(clearMemoryCache).not.toHaveBeenCalled();
+    segments.value = ['(tabs)', 'discover'];
+    rerender();
+    expect(clearMemoryCache).toHaveBeenCalledTimes(1);
+  });
+
   it('seeds a null active tab on a root-modal cold start, then sweeps on the first tab nav', () => {
     // Cold-start straight into a root modal / player (segment 0 is not `(tabs)`),
     // so tabsActiveSegment is null. The seed must record that null without sweeping,

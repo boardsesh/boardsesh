@@ -16,7 +16,11 @@ import { cloneElement, createElement, type ReactElement, type ReactNode } from '
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const settings = vi.hoisted(() => ({ platform: { OS: 'ios', Version: 26, isPad: false }, reduceMotion: false }));
+const settings = vi.hoisted(() => ({
+  platform: { OS: 'ios', Version: 26, isPad: false },
+  reduceMotion: false,
+  screenReader: false,
+}));
 vi.mock('react-native', () => ({
   Platform: settings.platform,
   StyleSheet: { flatten: (style: unknown) => style },
@@ -35,6 +39,9 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { subtle: 0.7 } }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => settings.reduceMotion }));
+vi.mock('../../../hooks/use-screen-reader-enabled', () => ({
+  useScreenReaderEnabled: () => settings.screenReader,
+}));
 vi.mock('expo-router', () => {
   const Link = Object.assign(
     ({
@@ -64,6 +71,7 @@ beforeEach(() => {
   settings.platform.Version = 26;
   settings.platform.isPad = false;
   settings.reduceMotion = false;
+  settings.screenReader = false;
 });
 
 function renderLink(zoomSourceRetained = true) {
@@ -120,6 +128,24 @@ describe('accessory player navigation', () => {
     if (mode === 'android' || mode === 'web') settings.platform.OS = mode;
     if (mode === 'older-ios') settings.platform.Version = 17;
     if (mode === 'reduce-motion') settings.reduceMotion = true;
+    const callbacks = renderLink();
+    fireEvent.click(screen.getByRole('button', { name: 'My project' }));
+    expect(callbacks.onOpen).toHaveBeenCalledOnce();
+    expect(callbacks.onPrepare).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('native-zoom-source')).toBeNull();
+  });
+});
+
+// UIKit's zoom leaves the presented player, and the zoom source in the tab
+// accessory, out of the accessibility tree (#7082). A screen reader gets the
+// same open as a climb row, which keeps both in the tree.
+describe('accessory player navigation with a screen reader', () => {
+  it.each([
+    ['iPhone', false],
+    ['iPad', true],
+  ])('opens the player without the zoom on %s', (_device, isPad) => {
+    settings.platform.isPad = isPad;
+    settings.screenReader = true;
     const callbacks = renderLink();
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));
     expect(callbacks.onOpen).toHaveBeenCalledOnce();

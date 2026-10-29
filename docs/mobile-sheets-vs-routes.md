@@ -1034,6 +1034,11 @@ instead. The player's native interactive dismissal stays
 disabled; its existing vertical swipe owns dismissal, so two gestures cannot
 compete. Keep the lightbulb and tick controls outside the zoom source.
 
+While VoiceOver runs, the accessory uses the existing opener too (#7082). After UIKit's zoom, the
+player's whole subtree and the zoom source itself are missing from the accessibility tree, while
+the row-style open keeps both. iOS tells React Native nothing about Voice Control, Switch Control or
+Full Keyboard Access, so those users still get the zoom and its missing tree.
+
 ## See also
 
 - `docs/contributing-to-screens.md` — how to propose and ship a change to an existing screen.
