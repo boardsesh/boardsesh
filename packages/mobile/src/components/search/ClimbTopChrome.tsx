@@ -220,6 +220,7 @@ function ClimbTopChromeComponent({
     const shouldShowFilterSummary = showTopChromeFilters && filterSummary != null && hasNonGradeFilters;
     const visibleFilterSummary = shouldShowFilterSummary ? filterSummary : null;
     const visibleGradeLabel = gradeChip?.label ?? t('mobile.filter.grade');
+    const persistentChips = showPersistentChips ? filterChrome : null;
 
     return (
       <MaterialTopAppBar
@@ -243,7 +244,10 @@ function ClimbTopChromeComponent({
             an RNGH gesture it needs no change — the outer container already stops
             the list's handlers from being recorded. */}
             {usesCustomSearch ? (
-              <View pointerEvents="box-none" style={styles.materialSearchStack}>
+              <View
+                pointerEvents="box-none"
+                style={[styles.materialSearchStack, persistentChips ? styles.materialSearchStackAboveChips : null]}
+              >
                 <View pointerEvents="box-none" style={styles.materialSearchRow}>
                   <View pointerEvents="box-none" style={styles.materialSearchSlot}>
                     <SearchHeader
@@ -281,10 +285,6 @@ function ClimbTopChromeComponent({
                   ) : null}
                 </View>
 
-                {/* The persistent native chip row owns filtering when the Material
-                default; it sits directly under the search field, like Liquid Glass. */}
-                {showPersistentChips ? filterChrome : null}
-
                 {/* The quick row carries the condensed summary when the persistent
                 chip row is off. The angle rides the persistent chip row above. */}
                 {visibleFilterSummary ? (
@@ -306,8 +306,18 @@ function ClimbTopChromeComponent({
                 ) : null}
               </View>
             ) : null}
+            {/* The persistent native chip row owns filtering when the Material
+            default; it sits directly under the search field, like Liquid Glass. It
+            runs full-bleed: the row's own 16dp content inset lines the first chip up
+            with the search field, and the chips scroll out to the screen edge. */}
+            {usesCustomSearch && persistentChips ? (
+              <View pointerEvents="box-none" style={styles.materialChipRow}>
+                {persistentChips}
+              </View>
+            ) : null}
             {/* Measure the disclosed rail with the rest of the chrome so the first
-              result clears it. Keep the search gutter and rail's own chip insets. */}
+              result clears it. Full-bleed like the chip row: the rail's own 16dp
+              content inset is the gutter, so its chips also scroll to the edge. */}
             {usesCustomSearch && gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
           </>
         }
@@ -442,6 +452,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[3],
     gap: spacing[2],
   },
+  materialSearchStackAboveChips: {
+    // The chip row follows outside the stack; keep the stack's gap above it.
+    paddingBottom: spacing[2],
+  },
+  materialChipRow: {
+    // `filterChrome` is a fragment (chip row + sheet-only filter tokens); keep the
+    // stack's gap between its rows.
+    paddingBottom: spacing[3],
+    gap: spacing[2],
+  },
   materialSearchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -467,7 +487,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   materialGradeRail: {
-    paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
   },
   gradeRail: {
