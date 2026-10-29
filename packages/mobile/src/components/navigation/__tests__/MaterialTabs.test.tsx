@@ -33,10 +33,21 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-native-reanimated', () => ({
   default: {
-    View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-      createElement('div', { 'data-testid': testID }, children),
+    // Flattens the style array and exposes the indicator's width / translateX
+    // as data attributes, so tests can read where it landed.
+    View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: unknown }) => {
+      const flat = Object.assign({}, ...(Array.isArray(style) ? style : [style])) as {
+        width?: number;
+        transform?: { translateX: number }[];
+      };
+      return createElement(
+        'div',
+        { 'data-testid': testID, 'data-width': flat.width, 'data-offset': flat.transform?.[0]?.translateX },
+        children,
+      );
+    },
   },
-  useAnimatedStyle: () => ({}),
+  useAnimatedStyle: (updater: () => unknown) => updater(),
   useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
   withTiming: (value: number) => value,
 }));
@@ -154,14 +165,19 @@ describe('MaterialTabs indicator', () => {
     expect(queryByTestId('material-tabs-indicator')).toBeNull();
 
     layout(layoutHandlers.labels.get('Sessions'), 64);
-    expect(queryByTestId('material-tabs-indicator')).not.toBeNull();
+    const indicator = queryByTestId('material-tabs-indicator');
+    // 360 / 3 = 120dp slots; a 64dp label centred in slot 1 starts at 120 + 28.
+    expect(indicator?.getAttribute('data-width')).toBe('64');
+    expect(indicator?.getAttribute('data-offset')).toBe('148');
   });
 
   it('falls back to the first tab when selectedKey is not an option', () => {
     const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'missing' })} />);
     layout(layoutHandlers.container, 360);
     layout(layoutHandlers.labels.get('Progress'), 60);
-    expect(queryByTestId('material-tabs-indicator')).not.toBeNull();
+    const indicator = queryByTestId('material-tabs-indicator');
+    expect(indicator?.getAttribute('data-width')).toBe('60');
+    expect(indicator?.getAttribute('data-offset')).toBe('30');
   });
 });
 
