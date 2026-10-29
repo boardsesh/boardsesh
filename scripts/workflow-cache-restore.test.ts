@@ -52,8 +52,12 @@ const RESTORE_ALLOWLIST: Record<string, string> = {
     'prebuilt simulator .app; follow-up: hand over as a verified artifact from ios-build',
   'mobile-screenshots-ios.yml#cpp-capture#ios-screenshot-shard > Restore prebuilt simulator app':
     'prebuilt simulator .app; follow-up: hand over as a verified artifact from ios-build',
-  'mobile-store-videos.yml#record#Restore screenshot dev-client':
+  'mobile-store-videos-measure.yml#record#Restore screenshot dev-client':
     'prebuilt simulator .app; follow-up: build in a secret-free job and hand over as a verified artifact',
+  'mobile-store-videos-pipeline.yml#record#ios-store-video-tools > actions/cache/restore@v4':
+    'prebuilt simulator .app; follow-up: hand over as a verified artifact from app',
+  'mobile-store-videos-pipeline.yml#crew#ios-store-video-tools > actions/cache/restore@v4':
+    'prebuilt simulator .app; follow-up: hand over as a verified artifact from app',
   // Not a speed cache: the resumable bootstrap checkpoint that lets a failed
   // custom-product-page bootstrap resume. Follow-up: move it out of the cache.
   // anthropics/claude-code-action installs Bun through oven-sh/setup-bun, which

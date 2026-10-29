@@ -1,190 +1,130 @@
 name: Mobile Store Videos
 
-# Phase 0: dispatch-only MoonBoard measurement. No R2 or store writes.
 on:
+  workflow_run:
+    workflows: [Mobile Store Draft Submission]
+    types: [completed]
+    # Draft runs report main as head_branch. Their title and source artifact
+    # identify release/next; a branches filter would drop version-only releases.
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Four-locale measurement, filter diagnostic, progress take, or English sequence
-        type: choice
-        options: [measure, diagnose-profile-filter, record-profile, record-english]
-        default: measure
 
 permissions:
   contents: read
   actions: read
-
-concurrency:
-  group: store-videos-measure-${{ github.ref }}
-  cancel-in-progress: true
+  pull-requests: read
 
 jobs:
-  record:
-    runs-on: macos-26
-    # Three locale children already measured 91 minutes; four plus setup can
-    # exceed two hours. Diagnostic/single-take modes get 45 minutes; English gets 60.
-    timeout-minutes: ${{ inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile') && 45 || 180 }}
-    env:
-      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
-      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
-      EXPO_PUBLIC_USE_RN_FETCH: '1'
-      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
-      MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+  train:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.STORE_VIDEOS_ENABLED == 'true' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.display_title == 'Mobile Store Draft (release/next)' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      open: ${{ steps.train.outputs.open }}
+      version: ${{ steps.train.outputs.version }}
+      source_sha: ${{ steps.train.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: voidzero-dev/setup-vp@v1
+      - name: Checkout trusted workflow tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/store-videos-gate.ts
+            scripts/release-train-sync.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          cache: false
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Compute screenshot app cache key
-        id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
-      - name: Restore screenshot dev-client
-        id: app-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: packages/mobile/.app-cache
-          key: ${{ steps.appkey.outputs.key }}
-      - name: Build dev-client on cache miss
-        if: steps.app-cache.outputs.cache-hit != 'true'
-        run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
-      - name: Save screenshot dev-client
-        if: steps.app-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: packages/mobile/.app-cache
-          key: ${{ steps.appkey.outputs.key }}
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Install pinned Maestro and ffmpeg
-        env:
-          MAESTRO_VERSION: 2.6.1
-          MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
-        run: |
-          set -euo pipefail
-          curl -fsSL --retry 5 --retry-all-errors "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip" -o "$RUNNER_TEMP/maestro.zip"
-          echo "${MAESTRO_SHA256}  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -
-          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$HOME/.maestro-dist"
-          echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
-          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
-      - name: Record MoonBoard in four locales
-        if: inputs.mode == 'measure'
-        env:
-          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
-          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          vp exec tsx scripts/store-video-measure.ts record metrics/record.json -- vp run video:record -- --kind moonboard --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
-      - name: Diagnose one English profile-filter tap
-        if: inputs.mode == 'diagnose-profile-filter'
-        env:
-          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
-          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          vp exec tsx scripts/store-video-measure.ts diagnose-profile-filter metrics/diagnose-profile-filter.json -- vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path packages/mobile/.app-cache/Boardsesh.app
-      - name: Record one English profile progress take
-        if: inputs.mode == 'record-profile'
-        env:
-          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
-          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          vp exec tsx scripts/store-video-measure.ts record-profile metrics/record-profile.json -- vp run video:record -- --kind moonboard --locale en-US --only log --app-path packages/mobile/.app-cache/Boardsesh.app
-      - name: Record the English MoonBoard sequence
-        if: inputs.mode == 'record-english'
-        env:
-          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
-          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          vp exec tsx scripts/store-video-measure.ts record-english metrics/record-english.json -- vp run video:record -- --kind moonboard --locale en-US --app-path packages/mobile/.app-cache/Boardsesh.app
-      - name: Hand off frames for one day
-        if: inputs.mode != 'diagnose-profile-filter'
-        uses: actions/upload-artifact@v4
-        with:
-          name: store-video-frames-moonboard
-          path: .boardsesh/showcase-video/work/boards/moonboard
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-      - name: Retain measurement and debug logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: store-video-record-metrics
-          path: |
-            metrics/
-            .boardsesh/showcase-video/work/logs/
-          include-hidden-files: true
-          retention-days: 7
-
-  render:
-    needs: record
-    if: inputs.mode == 'measure'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: true
-      - run: vp install --frozen-lockfile
-      - name: Install Chromium and ffmpeg
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          vp exec playwright install --with-deps chromium
-        working-directory: packages/web
-      - uses: actions/download-artifact@v4
-        with:
-          name: store-video-frames-moonboard
-          path: .boardsesh/showcase-video/work/boards/moonboard
-      - name: Render and validate four Apple search videos
-        run: |
-          set -euo pipefail
-          for locale in en-US es fr de; do
-            vp exec tsx scripts/store-video-measure.ts "render-$locale" "metrics/render-$locale.json" -- vp run video:render -- --target store-search --variant moonboard --locale "$locale"
-          done
-          test "$(find .boardsesh/app-store-creatives/moonboard -name search-results.mp4 | wc -l)" -eq 4
-      - name: Retain four validated videos, posters and provenance
-        uses: actions/upload-artifact@v4
-        with:
-          name: store-videos-moonboard
-          path: .boardsesh/app-store-creatives/moonboard
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 14
-      - name: Retain render measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: store-video-render-metrics
-          path: metrics/
-          retention-days: 7
-
-  timings:
-    if: always()
-    needs: [record, render]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Collect per-step minutes
+      - name: Find the successful iOS draft source
+        if: github.event_name == 'workflow_run'
+        id: source
         env:
           GH_TOKEN: ${{ github.token }}
+          DRAFT_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > steps.json
-          jq -r '["| Job | Step | Minutes | Result |", "| --- | --- | ---: | --- |"], (.[] .jobs[] | .name as $job | .steps[] | select(.started_at != null and .completed_at != null) | ["| \($job) | \(.name) | \((((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) / 60 * 100 | round) / 100) | \(.conclusion) |"] ) | .[]' steps.json | tee timings.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+          count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAFT_RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "store-video-source" and .expired == false)] | length')"
+          if [ "$count" -eq 1 ]; then
+            echo 'found=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::No successful iOS draft source; skipping store video recording.'
+          fi
+      - name: Download the exact draft source
+        if: steps.source.outputs.found == 'true'
+        uses: actions/download-artifact@v4
         with:
-          name: store-video-step-timings
-          path: |
-            timings.md
-            steps.json
-          retention-days: 14
+          name: store-video-source
+          path: ${{ runner.temp }}/store-video-source
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Skip a closed or superseded train before dependencies or environment approval
+        if: github.event_name == 'workflow_dispatch' || steps.source.outputs.found == 'true'
+        id: train
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_DRAFT_SOURCE: ${{ steps.source.outputs.found }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$HAS_DRAFT_SOURCE" = true ]; then args+=("$RUNNER_TEMP/store-video-source/source.json"); fi
+          node --experimental-strip-types scripts/store-videos-gate.ts gate "${args[@]}" --train-only
+
+  editable:
+    needs: train
+    if: needs.train.outputs.open == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: Production
+    outputs:
+      open: ${{ steps.draft.outputs.open }}
+      version: ${{ steps.draft.outputs.version }}
+      source_sha: ${{ steps.draft.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/store-videos-gate.ts
+            scripts/release-train-sync.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Retain the automatic run's exact draft source
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: store-video-source
+          path: ${{ runner.temp }}/store-video-source
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Require an editable App Store version and recheck the train
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          HAS_DRAFT_SOURCE: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$HAS_DRAFT_SOURCE" = true ]; then args+=("$RUNNER_TEMP/store-video-source/source.json"); fi
+          node --experimental-strip-types scripts/store-videos-gate.ts gate "${args[@]}"
+
+  pipeline:
+    needs: editable
+    if: needs.editable.outputs.open == 'true'
+    uses: ./.github/workflows/mobile-store-videos-pipeline.yml
+    with:
+      source_sha: ${{ needs.editable.outputs.source_sha }}
+      version: ${{ needs.editable.outputs.version }}
+    secrets: inherit

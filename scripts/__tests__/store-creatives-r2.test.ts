@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -16,7 +16,7 @@ afterEach(() => {
   for (const directory of directories) rmSync(directory, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'store-r2-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'store-r2-')));
   directories.push(root);
   const manifest = JSON.parse(readFileSync('app-stores/apple/creative-assets.json', 'utf8')) as CreativeManifest;
   const file = '.boardsesh/app-store-creatives/moonboard/en-US/search-results.mp4';

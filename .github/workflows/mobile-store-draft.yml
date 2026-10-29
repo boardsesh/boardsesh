@@ -510,6 +510,27 @@ jobs:
           [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
           bundle exec fastlane ios draft_submission
 
+      - name: Pin the successful iOS draft for store video recording
+        if: steps.draft.outcome == 'success' && env.RELEASE_BRANCH == 'release/next'
+        env:
+          SOURCE_SHA: ${{ needs.release-candidate.outputs.sha }}
+          SOURCE_VERSION: ${{ needs.release-candidate.outputs.version }}
+          SOURCE_IOS_BUILD: ${{ needs.release-candidate.outputs.ios_build_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/store-video-source"
+          jq -n --arg sourceSha "$SOURCE_SHA" --arg sourceBranch "$RELEASE_BRANCH" --arg version "$SOURCE_VERSION" --arg iosBuild "$SOURCE_IOS_BUILD" \
+            '{sourceSha:$sourceSha,sourceBranch:$sourceBranch,version:$version,iosBuild:$iosBuild}' > "$RUNNER_TEMP/store-video-source/source.json"
+
+      - name: Hand off the successful draft source
+        if: steps.draft.outcome == 'success' && env.RELEASE_BRANCH == 'release/next'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-source
+          path: ${{ runner.temp }}/store-video-source/source.json
+          if-no-files-found: error
+          retention-days: 7
+
       # Surface a best-effort failure loudly (continue-on-error keeps the job
       # green otherwise, which would hide a broken draft submission).
       # deliver can only write listing text onto an EDITABLE App Store version,

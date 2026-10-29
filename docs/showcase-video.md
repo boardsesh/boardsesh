@@ -22,7 +22,7 @@ the moment the app changes.
 
 ### CI measurement (Phase 0)
 
-Dispatch **Mobile Store Videos** to record MoonBoard in en-US, es, fr and de
+Dispatch **Mobile Store Videos (Measure)** to record MoonBoard in en-US, es, fr and de
 on one macOS 26 runner, then render on Ubuntu. It reuses the screenshot
 dev-client cache and checksum-pinned Maestro. Set `SCREENSHOT_USER_EMAIL` and
 `SCREENSHOT_USER_PASSWORD` in the same scope as the screenshot workflow.
@@ -40,6 +40,52 @@ samples are every five seconds, so brief peaks may be higher.
 Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
 green dispatch. Those measurements decide Phase 5 optimizations; estimates
 are not recorded as measurements. This dispatch does not write to R2 or Apple.
+
+### Open-train Search Results pipeline
+
+**Mobile Store Videos** stays dormant for automatic runs until the repository
+variable `STORE_VIDEOS_ENABLED` is exactly `true`. Keep it unset while retained
+footage, the dedicated crew account or video storage credentials are missing.
+Manual dispatch remains available and runs the same strict prerequisite checks.
+
+Once enabled, it follows successful **Mobile Store Draft Submission** runs for
+`release/next`, including version-only releases. The draft publishes
+its pinned iOS source, marketing version and build as an Actions artifact.
+The dependent workflow uses that artifact rather than the fingerprint tag or
+the draft run's `head_branch` (which is `main` for a chained workflow run).
+Dispatching by hand checks the current train instead.
+
+A sparse, dependency-free Ubuntu job checks `isVersionTaken` and
+`readMarketingVersion` before Production environment approval. A closed train
+skips recording. The next gate requires an editable iOS version with that exact
+marketing version. Reviewed Kilter and Tension physical source ZIPs and both
+recording accounts and all three `STORE_CREATIVES_R2_AWS_*` secrets must exist
+before any macOS job starts. After importing and reviewing both physical takes,
+configuring those credentials, and verifying a manual twenty-video run, enable
+automatic recording with `gh variable set STORE_VIDEOS_ENABLED --body true`.
+Unset the variable or set it to `false` to suspend automatic recording.
+
+Five variant jobs record the required ordinary takes in all four locales,
+with at most three macOS jobs running together. One crew job then records
+default, Kilter and Tension serially; a global crew concurrency group also
+prevents account conflicts between train versions. Twenty Ubuntu cells hydrate
+the physical endings where needed, render and validate the MP4s, and retain
+the posters and provenance. Simulator frame artifacts expire after one day.
+
+The publisher rechecks the open draft, finalizes only search entries using
+Apple's current placement specifications, and uploads SHA-addressed candidates
+to R2. It refreshes one draft PR on `store-videos/v<version>` with all twenty
+posters and MP4 links. Ordinary same-version train syncs retain the pinned
+recording source; rewritten history or a changed version is rejected. A newer
+draft run cancels the older pipeline for that version. An already merged
+video PR prevents another review PR for the same train.
+
+Merge that review PR to promote and upload the exact hashes. See
+[the creative upload contract](app-store-creative-assets.md) for guards,
+manual live-version recovery and the separate Apple asset-review submission.
+Header PNG generation and App Preview uploads retain their manual paths.
+
+### Local recording prerequisites
 
 - Xcode with an iOS 26 simulator runtime.
 - Maestro (`curl -Ls "https://get.maestro.mobile.dev" | bash`) and a JDK 21 at
@@ -67,12 +113,24 @@ The default backend is **prod**, for real content. Two accounts sign in:
 | Phone | Account | Env vars |
 | --- | --- | --- |
 | Primary (recorded) | `test@boardsesh.com`, the App Store account | `SCREENSHOT_USER_PASSWORD`; `SCREENSHOT_USER_EMAIL` overrides the email (default `test@boardsesh.com`) |
-| Secondary (crew take only) | Marco's own account | `SHOWCASE_SECONDARY_EMAIL`, `SHOWCASE_SECONDARY_PASSWORD` |
+| Secondary (crew take only) | Dedicated production crew account, with a real photo avatar and display name | `SHOWCASE_SECONDARY_EMAIL`, `SHOWCASE_SECONDARY_PASSWORD` |
 
 The recorder reads these from the environment, and from `--env-file`
 (default `~/.config/boardsesh/showcase-secrets.env`, mode 600, outside the
 repo). The file may only set those four keys; anything else in it is ignored.
 Never commit either password, and never paste them into a PR.
+
+Create the dedicated crew account before enabling the full train pipeline.
+Use the same GitHub secret scope as `SCREENSHOT_USER_*` (repository secrets,
+or add `--env Production` to both commands if those accounts are environment-scoped):
+
+```sh
+gh secret set SHOWCASE_SECONDARY_EMAIL
+gh secret set SHOWCASE_SECONDARY_PASSWORD
+```
+
+Each command prompts for its value. The pipeline records crew takes serially
+after the ordinary app takes; the shared account cannot run two live sessions.
 
 To fill the env file from 1Password without the values touching disk, keep
 `op://` references in a file and let `op run` resolve them:
@@ -80,8 +138,8 @@ To fill the env file from 1Password without the values touching disk, keep
 ```sh
 cat > ~/.config/boardsesh/showcase-secrets.op.env <<'EOF'
 SCREENSHOT_USER_PASSWORD=op://<vault>/<App Store test account item>/password
-SHOWCASE_SECONDARY_EMAIL=op://<vault>/Boardsesh Login/username
-SHOWCASE_SECONDARY_PASSWORD=op://<vault>/Boardsesh Login/password
+SHOWCASE_SECONDARY_EMAIL=op://<vault>/<dedicated crew account item>/username
+SHOWCASE_SECONDARY_PASSWORD=op://<vault>/<dedicated crew account item>/password
 EOF
 op run --env-file ~/.config/boardsesh/showcase-secrets.op.env -- vp run video:record
 ```
@@ -145,7 +203,7 @@ error screen. Navigation links still use the primed custom-scheme dialog.
 
 To inspect the profile filter without recording any takes, run
 `vp run video:record -- --kind moonboard --locale en-US --diagnose-profile-filter --app-path <Boardsesh.app>`
-on macOS, or dispatch **Mobile Store Videos** with mode
+on macOS, or dispatch **Mobile Store Videos (Measure)** with mode
 `diagnose-profile-filter`. This diagnostic requires the MoonBoard variant. It
 uses one iOS simulator and one locale, primes the
 profile as the progress take does, taps its filter once, and saves a screenshot

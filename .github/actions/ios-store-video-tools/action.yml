@@ -1,0 +1,36 @@
+name: Prepare iOS store video recording
+description: Restore the screenshot dev-client and install the pinned recorder tools.
+inputs:
+  app-cache-key:
+    description: Exact screenshot native app cache key from the app job.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: '22.x'
+        cache: false
+    - shell: bash
+      run: vp install --frozen-lockfile
+    - uses: actions/cache/restore@v4
+      with:
+        path: packages/mobile/.app-cache
+        key: ${{ inputs.app-cache-key }}
+        fail-on-cache-miss: true
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Install pinned Maestro and ffmpeg
+      shell: bash
+      env:
+        MAESTRO_VERSION: 2.6.1
+        MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
+      run: |
+        set -euo pipefail
+        curl -fsSL --retry 5 --retry-all-errors "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip" -o "$RUNNER_TEMP/maestro.zip"
+        echo "${MAESTRO_SHA256}  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -
+        unzip -q "$RUNNER_TEMP/maestro.zip" -d "$HOME/.maestro-dist"
+        echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+        brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
