@@ -3,6 +3,9 @@ import {
   ACCESSORY_MIN_NAME_WIDTH,
   ACCESSORY_SLOT_WIDTH,
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
+  TALL_PLATTER_MIN_HEIGHT,
+  accessoryPlatterGeometry,
+  accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
@@ -22,10 +25,8 @@ import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout }
 // 16pt leading inset + 32pt artwork + 8pt gap + 4pt label padding + 8pt trailing inset.
 const WIDTH_BESIDE_NAME = 68;
 
-const GROUP_GAP = 12;
-
 function phone(rowWidth: number | null, placement: 'regular' | 'inline' = 'regular') {
-  return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: false, groupGap: 0 });
+  return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: false });
 }
 function wide(rowWidth: number | null, placement: 'regular' | 'inline' = 'regular') {
   return miniPlayerSlotCount({
@@ -33,7 +34,6 @@ function wide(rowWidth: number | null, placement: 'regular' | 'inline' = 'regula
     rowWidth,
     widthBesideName: WIDTH_BESIDE_NAME,
     wide: true,
-    groupGap: GROUP_GAP,
   });
 }
 
@@ -136,7 +136,6 @@ describe('miniPlayerSlotCount', () => {
         rowWidth,
         widthBesideName: WIDTH_BESIDE_NAME - 40,
         wide: false,
-        groupGap: 0,
       });
     expect(withoutArtwork(290)).toBe(2);
     expect(withoutArtwork(370)).toBe(3);
@@ -147,11 +146,42 @@ describe('miniPlayerSlotCount', () => {
     expect(wide(800)).toBeGreaterThanOrEqual(9);
   });
 
-  it('counts a wide bar against the name floor and both group gaps', () => {
-    const exactlyFour = WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH + 2 * GROUP_GAP + 4 * ACCESSORY_SLOT_WIDTH;
+  it('counts a wide bar against the name floor, its slots at one even pitch (#7048)', () => {
+    const exactlyFour = WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH + 4 * ACCESSORY_SLOT_WIDTH;
     expect(wide(exactlyFour)).toBe(4);
     expect(wide(exactlyFour - 1)).toBe(3);
     expect(wide(100)).toBe(1);
+  });
+});
+
+describe('accessoryPlatterGeometry', () => {
+  it("keeps the iPhone's 48pt platter as measured against Music", () => {
+    expect(accessoryPlatterGeometry(48)).toEqual({
+      leadingInset: 16,
+      trailingInset: 8,
+      thumbnailSize: 32,
+      logGlyphSize: 24,
+    });
+  });
+
+  it("centres larger artwork and a 22pt ✓ in iPad's ~62pt platter (#7048)", () => {
+    expect(accessoryPlatterGeometry(62)).toEqual({
+      leadingInset: 12,
+      trailingInset: 10,
+      thumbnailSize: 40,
+      logGlyphSize: 22,
+    });
+  });
+
+  it('sums the row beside the name from the geometry', () => {
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(48), true)).toBe(WIDTH_BESIDE_NAME);
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(62), true)).toBe(74);
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(62), false)).toBe(26);
+  });
+
+  it('switches at the tall-platter threshold', () => {
+    expect(accessoryPlatterGeometry(TALL_PLATTER_MIN_HEIGHT - 1).thumbnailSize).toBe(32);
+    expect(accessoryPlatterGeometry(TALL_PLATTER_MIN_HEIGHT).thumbnailSize).toBe(40);
   });
 });
 

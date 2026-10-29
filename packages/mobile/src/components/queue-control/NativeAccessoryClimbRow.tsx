@@ -28,12 +28,11 @@ import {
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import {
-  ACCESSORY_GROUP_GAP,
   ACCESSORY_LABEL_TRAILING_PADDING,
-  ACCESSORY_LEADING_INSET,
-  ACCESSORY_PLATTER_THUMBNAIL_SIZE,
   ACCESSORY_THUMBNAIL_GAP,
-  ACCESSORY_TRAILING_INSET,
+  TALL_PLATTER_MIN_HEIGHT,
+  accessoryPlatterGeometry,
+  accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
@@ -204,27 +203,33 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   });
 
   const isInline = placement === 'inline';
+  // The controls' height. The row itself fills the platter, which is taller on iPad.
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
-  const thumbnailSize = boardConfig === null ? null : ACCESSORY_PLATTER_THUMBNAIL_SIZE;
   // The width UIKit gave the platter. A narrow open platter (iPhone Duo's outer
   // display beside its side rail, a 320pt Display Zoom iPhone) keeps one control,
   // like the collapsed one, so the name has room to read (miniPlayerSlotCount).
   const [rowWidth, setRowWidth] = useState<number | null>(null);
+  // And its height: ~62pt open on iPad against the iPhone's 48pt (#7048). Only
+  // ever grows: UIKit also squeezes the hidden regular row while the bar is
+  // inline, and swapping geometry back mid-expand is the doubled-text case.
+  const [platterHeight, setPlatterHeight] = useState<number | null>(null);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.round(event.nativeEvent.layout.width);
+    const measuredHeight = Math.round(event.nativeEvent.layout.height);
     setRowWidth((previous) => (previous === measuredWidth ? previous : measuredWidth));
+    setPlatterHeight((previous) => (previous !== null && previous >= measuredHeight ? previous : measuredHeight));
   }, []);
-  const widthBesideName =
-    ACCESSORY_LEADING_INSET +
-    (thumbnailSize === null ? 0 : thumbnailSize + ACCESSORY_THUMBNAIL_GAP) +
-    ACCESSORY_LABEL_TRAILING_PADDING +
-    ACCESSORY_TRAILING_INSET;
+  // Before the first layout, guess the platter most bars measure, so the common
+  // bar never redraws on its first measurement (the doubled-text snapshot case).
+  const geometry = accessoryPlatterGeometry(
+    platterHeight ?? (isTablet && !isInline ? TALL_PLATTER_MIN_HEIGHT : rowHeight),
+  );
+  const thumbnailSize = boardConfig === null ? null : geometry.thumbnailSize;
+  const widthBesideName = accessoryWidthBesideName(geometry, thumbnailSize !== null);
   // iPad and the open Duo: as many as fit. An iPhone: three at most.
   const wide = isTablet || phoneSplit;
-  // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
-  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
   const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });
-  const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide, groupGap });
+  const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide });
   // Tell the View options preview what this device's open bar measures.
   useEffect(() => {
     if (placement === 'regular' && capacityWidth !== null) {
@@ -329,7 +334,12 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       // the accessory root natively). A width worked out from the screen overshot
       // the real platter: open, by ~10pt, cramming the tick into the edge; collapsed,
       // where the bar also holds the selected and prominent tabs, by far more.
-      style={[styles.row, { height: rowHeight }]}
+      // The height fills too, so the controls centre in iPad's taller platter
+      // instead of hanging from its top (#7048).
+      style={[
+        styles.row,
+        { minHeight: rowHeight, paddingStart: geometry.leadingInset, paddingEnd: geometry.trailingInset },
+      ]}
       onLayout={handleRowLayout}
       testID={testID}
       accessible={testID ? true : undefined}
@@ -377,7 +387,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
           bluetoothConnected={bluetooth?.isConnected ?? false}
           slotWidth={glassSize.inline}
           rowHeight={rowHeight}
-          groupGap={groupGap}
         />
       ) : null}
       {controls.workout.length > 0 && workout.shown !== null ? (
@@ -390,13 +399,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       ) : null}
       <View
         pointerEvents="box-none"
-        style={[
-          styles.trailingSlot,
-          { width: controls.trailing.length * glassSize.inline, height: rowHeight },
-          controls.trailing.length > 0 && (controls.leading.length > 0 || controls.workout.length > 0)
-            ? { marginStart: groupGap }
-            : null,
-        ]}
+        style={[styles.trailingSlot, { width: controls.trailing.length * glassSize.inline, height: rowHeight }]}
       >
         {/* UIKit also resizes the hidden regular row while the bar is inline.
             Keep both native slot frames fixed inside one pair so expansion moves
@@ -438,7 +441,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
                     queueItemUuid={queueItemUuid}
                     climb={climb}
                     size={glassSize.inline}
-                    iconSize={24}
+                    iconSize={geometry.logGlyphSize}
                     placement={placement}
                   />
                 )
@@ -455,8 +458,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingStart: ACCESSORY_LEADING_INSET,
-    paddingEnd: ACCESSORY_TRAILING_INSET,
+    height: '100%',
   },
   tapClip: {
     flex: 1,

@@ -933,6 +933,37 @@ describe('NativeAccessoryClimbRow', () => {
       expect(buttons(container)).toBe('favorite,previous,next');
     });
 
+    it("centres in iPad's taller platter with 40pt artwork and a 22pt ✓ (#7048)", () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      const { container } = renderRow('regular');
+      const row = container.firstElementChild as Element;
+      act(() => layout.callbacks.get(row)?.({ nativeEvent: { layout: { width: 995, height: 62 } } }));
+      expect(row.getAttribute('data-height')).toBe('100%');
+      expect(row.getAttribute('data-padding-end')).toBe('10');
+      expectNumericAttribute(getCurrentThumbnail(container), 'data-board-height', 40);
+      expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-icon-size')).toBe('22');
+    });
+
+    it('keeps the tall geometry when UIKit squeezes the hidden regular row while inline', () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      const { container } = renderRow('regular');
+      const row = container.firstElementChild as Element;
+      const onLayout = layout.callbacks.get(row);
+      act(() => onLayout?.({ nativeEvent: { layout: { width: 995, height: 62 } } }));
+      act(() => onLayout?.({ nativeEvent: { layout: { width: 995, height: 40 } } }));
+      expect(row.getAttribute('data-padding-end')).toBe('10');
+      expectNumericAttribute(getCurrentThumbnail(container), 'data-board-height', 40);
+    });
+
+    it("keeps an iPad's collapsed platter on the short geometry", () => {
+      miniPlayer.isTablet = true;
+      const { container } = renderRow('inline');
+      expect(container.firstElementChild?.getAttribute('data-padding-end')).toBe('8');
+      expectNumericAttribute(getCurrentThumbnail(container), 'data-board-height', 32);
+    });
+
     it('adds nothing inline or on a narrow platter', () => {
       miniPlayer.isTablet = true;
       expect(buttons(renderRow('inline').container)).toBeNull();

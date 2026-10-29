@@ -31,8 +31,41 @@ export const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
 // `labelInner`'s gap after the artwork and its trailing padding.
 export const ACCESSORY_THUMBNAIL_GAP = 8;
 export const ACCESSORY_LABEL_TRAILING_PADDING = 4;
-// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
-export const ACCESSORY_GROUP_GAP = 12;
+
+/**
+ * iPadOS gives the open accessory a ~62pt platter, not the iPhone's 48pt
+ * (#7048). From this height up the platter counts as tall: the artwork grows to
+ * sit concentric with the rounded end, and ✓ centres in the other end.
+ */
+export const TALL_PLATTER_MIN_HEIGHT = 56;
+const TALL_PLATTER_THUMBNAIL_SIZE = 40;
+const TALL_PLATTER_LEADING_INSET = 12;
+const TALL_PLATTER_TRAILING_INSET = 10;
+
+export type AccessoryPlatterGeometry = {
+  leadingInset: number;
+  trailingInset: number;
+  thumbnailSize: number;
+  /** ✓'s glyph. The iPhone bar draws it a size up; the tall bar matches its neighbours' 22pt. */
+  logGlyphSize: number;
+};
+
+/** The row's insets and artwork size for the platter height UIKit gave it. */
+export function accessoryPlatterGeometry(platterHeight: number): AccessoryPlatterGeometry {
+  return platterHeight >= TALL_PLATTER_MIN_HEIGHT
+    ? {
+        leadingInset: TALL_PLATTER_LEADING_INSET,
+        trailingInset: TALL_PLATTER_TRAILING_INSET,
+        thumbnailSize: TALL_PLATTER_THUMBNAIL_SIZE,
+        logGlyphSize: 22,
+      }
+    : {
+        leadingInset: ACCESSORY_LEADING_INSET,
+        trailingInset: ACCESSORY_TRAILING_INSET,
+        thumbnailSize: ACCESSORY_PLATTER_THUMBNAIL_SIZE,
+        logGlyphSize: 24,
+      };
+}
 
 /** One control's tap target. Every slot on the bar is this wide. */
 export const ACCESSORY_SLOT_WIDTH = 44;
@@ -74,6 +107,16 @@ export function miniPlayerCapacityWidth({
 }
 
 /** How the bar is drawn right now. */
+/** Everything in the row that is not the name or a slot: insets, the artwork and its gap, the label padding. */
+export function accessoryWidthBesideName(geometry: AccessoryPlatterGeometry, hasThumbnail: boolean): number {
+  return (
+    geometry.leadingInset +
+    (hasThumbnail ? geometry.thumbnailSize + ACCESSORY_THUMBNAIL_GAP : 0) +
+    ACCESSORY_LABEL_TRAILING_PADDING +
+    geometry.trailingInset
+  );
+}
+
 export type MiniPlayerBarShape = {
   placement: 'regular' | 'inline';
   /** Regular capacity width, or a live measured width for rails/wide layouts. */
@@ -82,8 +125,6 @@ export type MiniPlayerBarShape = {
   widthBesideName: number;
   /** iPad, or iPhone Duo open: no cap but the width. Otherwise an iPhone, capped at three. */
   wide: boolean;
-  /** What a wide bar spends between its groups (others · ⏮ ⏭ · 💡 ✓), at most twice. */
-  groupGap: number;
 };
 
 /** Before the first layout a wide bar is taken to fit everything: no wide bar measured so far is short of that. */
@@ -97,23 +138,18 @@ const UNMEASURED_WIDE_SLOTS = 99;
  * - An iPhone holds as many as fit beside a 140pt name, three at most, Board
  *   light and Log included: three at 360pt, two at 333pt, one on the Duo's
  *   closed display and a 320pt Display Zoom iPhone.
- * - iPad and the open Duo hold as many as fit beside a 160pt name and the two
- *   group gaps, which is every button the climber has on.
+ * - iPad and the open Duo hold as many as fit beside a 160pt name, which is
+ *   every button the climber has on. The slots sit at one even pitch, as on
+ *   Music's bar (#7048).
  * - Before the first layout the row guesses the answer most bars measure (three
  *   on an iPhone, everything when wide), so the common bar never redraws on its
  *   first measurement: UIKit snapshots the platter, and a redraw then is the
  *   doubled-text case.
  */
-export function miniPlayerSlotCount({
-  placement,
-  rowWidth,
-  widthBesideName,
-  wide,
-  groupGap,
-}: MiniPlayerBarShape): number {
+export function miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide }: MiniPlayerBarShape): number {
   if (placement === 'inline') return 1;
   if (rowWidth === null) return wide ? UNMEASURED_WIDE_SLOTS : PHONE_MINI_PLAYER_MAX_SLOTS;
-  const nameFloor = wide ? ACCESSORY_MIN_NAME_WIDTH + 2 * groupGap : PHONE_ACCESSORY_MIN_NAME_WIDTH;
+  const nameFloor = wide ? ACCESSORY_MIN_NAME_WIDTH : PHONE_ACCESSORY_MIN_NAME_WIDTH;
   const fit = Math.max(1, Math.floor((rowWidth - widthBesideName - nameFloor) / ACCESSORY_SLOT_WIDTH));
   return wide ? fit : Math.min(PHONE_MINI_PLAYER_MAX_SLOTS, fit);
 }
