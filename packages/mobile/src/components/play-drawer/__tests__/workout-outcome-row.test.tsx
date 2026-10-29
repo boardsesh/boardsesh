@@ -137,17 +137,11 @@ describe('WorkoutOutcomeRow', () => {
     expect(sent.getAttribute('data-hint')).toBe('playView.workoutOutcome.sentHint');
   });
 
-  it("stays in the accessibility tree unless the open Duo's MiniPlayer carries it", () => {
-    const shown = render(createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn() }));
-    expect(shown.getByTestId('workout-outcome-row').getAttribute('data-a11y-hidden')).toBeNull();
-    shown.unmount();
-
-    const covered = render(
-      createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn(), hiddenFromAccessibility: true }),
-    );
-    const row = covered.getByTestId('workout-outcome-row');
-    expect(row.getAttribute('data-a11y-hidden')).toBe('true');
-    expect(row.getAttribute('data-important-for-a11y')).toBe('no-hide-descendants');
+  it('stays in the accessibility tree: nothing draws over it any more', () => {
+    const { getByTestId } = render(createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn() }));
+    const row = getByTestId('workout-outcome-row');
+    expect(row.getAttribute('data-a11y-hidden')).toBeNull();
+    expect(row.getAttribute('data-important-for-a11y')).toBeNull();
   });
 
   it('caps the labels like the rest of the row and offers them in the Large Content Viewer', () => {

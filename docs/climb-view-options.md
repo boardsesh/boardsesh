@@ -282,10 +282,12 @@ climb).
   artwork and 24 pt ✓. The measured height only grows, so a squeezed hidden row never swaps the geometry back.
 - Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. On a wide bar the
   bar's own ⋯ has it; on an iPhone the player's ⋯ does.
-- The open Duo's split (`miniPlayerPaneMode`): while the pane shows the committed climb with its controls below the
-  board, the bar sits on the player's small row and carries those covered buttons (`miniPlayerPaneCoveredButtons`),
-  dropping what the pane's big row already shows (⏮ ⏭ 💡 ✓). While the pane shows a preview, or its controls are
-  above the board, the bar keeps Board light and Log only.
+- The open Duo's split: the bar is a centred capsule (UIKit's accessory glass, capped at 689 pt by the
+  react-native-screens patch), about 47 pt tall, spanning both halves left of the rail. It never covers the player
+  pane: the pane docks its controls above it (`PhoneSplitPane` gives its subtree a bottom inset of the bottom-chrome
+  metrics' `fixedFooterBottom`, the accessory's height plus its gap), and fits the board to the height that leaves
+  (`computeFitToHeightFirstScreenHeight`), so the big row and the ♡ / share row both stay in view. The list on the
+  right pads for the bar through `scrollBottomPadding`, as every tab list does.
 
 ### Wide bar (iPad, open Duo)
 
@@ -317,8 +319,9 @@ Duo open  [⏮][⏭] [⇄][♡] | [art 40] Name (17 pt) / V5 · 1.6k sends | [�
   shown or hidden starts the record over. The iPad's top tab bar and the Duo's rail never minimize, so today this
   matters only in a narrow iPad window, where the tab bar moves to the bottom. No ⋯ while the `/play` route is up (`moreAvailable`; the menu also
   draws nothing there as a backstop), on an iPhone, or on any collapsed bar.
-- The open Duo keeps what it had, plus ⋯: in `carry` the covered small row then ⋯; in `stepAside` ⋯ 💡 ✓. In a
-  timed block Fell / Sent take the leading cluster before the climb, and ⋯ claims after 💡 ✓.
+- The open Duo draws exactly this bar, whatever the pane shows. Its buttons act on the climb the bar names, as on
+  an iPad, so they repeat the pane's when both show the current climb, and stay the bar's own while the pane shows a
+  preview. In a timed block Fell / Sent take the leading cluster before the climb, and ⋯ claims after 💡 ✓.
 - iPhone and every inline bar are unchanged.
 
 **Wall display (tablets).** ⛶ opens the full-screen Wall display (`router.push(WALL_DISPLAY_HREF)`, the board
@@ -380,18 +383,15 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
     mis-tap mid-4x4 never flips the wall or skips a rep. Fell and Sent claim slots first, then the bulb, then the
     tick. With no board bound the bulb draws nothing, so the tick takes its place (an iPhone shows Fell · Sent · ✓):
 
-    | Bar                                  | Holds                  |
-    | ------------------------------------ | ---------------------- |
-    | iPad                                 | Fell · Sent · ⋯ ⛶ 💡 ✓ |
-    | Open Duo (pane doesn't cover)        | Fell · Sent · ⋯ 💡 ✓   |
-    | iPhone (3 slots)                     | Fell · Sent · 💡       |
-    | Two slots                            | Fell · Sent            |
-    | Minimized / inline (1 slot)          | Sent                   |
-    | Open Duo, `carry`                    | Fell · Sent · ⋯        |
-    | Open Duo, `stepAside` (pane preview) | ⋯ 💡 ✓, as outside a block |
+    | Bar                         | Holds                  |
+    | --------------------------- | ---------------------- |
+    | iPad                        | Fell · Sent · ⋯ ⛶ 💡 ✓ |
+    | Open Duo                    | Fell · Sent · ⋯ 💡 ✓   |
+    | iPhone (3 slots)            | Fell · Sent · 💡       |
+    | Two slots                   | Fell · Sent            |
+    | Minimized / inline (1 slot) | Sent                   |
 
-    In `carry` the bar sits on the pane's small row, which shows Fell / Sent itself, and the pane's big row has 💡 ✓,
-    so the bar carries the pair only. The iPhone's ✓ comes back when the block ends.
+    The iPhone's ✓ comes back when the block ends.
   - The 2 s hold: when the wall leaves the block, the bar keeps Fell / Sent for the climb it left through
     `useWorkoutOutcomeHold` (`WALL_MOVED_GRACE_MS`), so a finger on its way to Fell never lands on Next, and a tap
     there logs for that climb, as in the player. Its hints name it.
@@ -407,10 +407,9 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
     they share no state, so there are two `MiniPlayerWorkoutButtons`. Everything a tap depends on is in the shared
     store above, so a Sent on the open bar and one on the minimized bar within 700 ms log once, and both bars show the
     same check. Slots are keyed `fell` / `sent`, so a change of buttons swaps slots and neither row remounts.
-  - VoiceOver on the open Duo: in `carry` the bar covers the pane's own Fell / Sent, so the pane's row leaves the
-    accessibility tree while the open placement reports it carries it (`pane-workout-row-cover-store.ts`). The
-    inline bar never shows there: the open Duo's tab bar is the vertical rail, which never minimizes
-    (`tabBarMinimizeBehavior` in `packages/mobile/app/(tabs)/_layout.tsx`).
+  - The open Duo: the pane's own Fell / Sent row stays in view above the capsule, so VoiceOver finds both pairs,
+    each on its own surface. The inline bar never shows there: the open Duo's tab bar is the vertical rail, which
+    never minimizes (`tabBarMinimizeBehavior` in `packages/mobile/app/(tabs)/_layout.tsx`).
   - Where the climber can't log the block (signed out, a draft, another board), the bar keeps its usual buttons
     but still drops ⏮ ⏭ (`isMiniPlayerButtonAvailable`'s `inTimedBlock`): the stage moves the wall on its own beat.
   - The Settings preview draws no workout: it shows the bar the climber set up.
@@ -468,7 +467,7 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 | The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
 | The wide bar's ⋯                       | `packages/mobile/src/components/queue-control/MiniPlayerActionsMenu.tsx`              |
 | Workout gate and hold, Fell / Sent     | `use-mini-player-workout-outcome.ts`, `MiniPlayerWorkoutButtons.tsx` (same folder)    |
-| Shared one-tap state, Duo pane cover   | `play-drawer/workout-one-tap-store.ts`, `play-drawer/pane-workout-row-cover-store.ts` |
+| Shared one-tap state                   | `play-drawer/workout-one-tap-store.ts` |
 | Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
 | Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
 | View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |

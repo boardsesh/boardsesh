@@ -1,12 +1,5 @@
 import { visibleSectionIds } from '../../lib/section-layout';
 import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini-player-buttons';
-import {
-  PLAYER_BUTTON_IDS,
-  type PlayerButtonId,
-  type PlayerButtonsLayout,
-  type PlayerButtonsPosition,
-} from '../../lib/player-buttons';
-import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
 
 /**
  * The least room the climb name keeps before a wide bar gives up a slot. About
@@ -297,18 +290,6 @@ export type MiniPlayerControlsInput = {
    */
   bulbAvailable: boolean;
   /**
-   * How the open Duo's bar relates to the player in the split's pane
-   * (`miniPlayerPaneMode`); `none` everywhere else. In `carry` the pane's big
-   * row has ⏮ ⏭ 💡 ✓ right above the bar, so the bar does not repeat them.
-   */
-  paneMode: MiniPlayerPaneMode;
-  /**
-   * In `carry`, claim from these, in this order, instead of the climber's
-   * MiniPlayer list: the player's small row, which the bar covers
-   * (`miniPlayerPaneCoveredButtons`). Ignored in the other modes.
-   */
-  paneCoveredButtons?: readonly MiniPlayerButtonId[];
-  /**
    * The bar offers one-tap Fell / Sent: the climb on the wall is in a timed
    * workout block and the climber can log it here, or the bar is holding the
    * pair for the climb the wall just left (`useMiniPlayerWorkoutOutcome`).
@@ -360,10 +341,10 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * What the bar holds, left to right (#6940).
  *
  * ```
- * iPad              [⏮] [⏭] [⇄] [♡] · [thumb] Name ··· [⋯] [⛶] [💡] [✓]
- * Duo open          [⏮] [⏭] [⇄] [♡] · [thumb] Name ········ [⋯] [💡] [✓]
- * iPhone            [thumb] Name ················ [⏭] · [💡] [✓]
- * One slot          [thumb] Name ······················· [💡] or [✓]
+ * iPad              [⏮] [⏭] [♡] [⇋] · [art] Name ··· [⋯] [⛶] [💡] [✓]
+ * Duo open          [⏮] [⏭] [♡] [⇋] · [art] Name ········ [⋯] [💡] [✓]
+ * iPhone            [art] Name ················ [⏭] · [💡] [✓]
+ * One slot          [art] Name ······················· [💡] or [✓]
  * ```
  *
  * Board light and Log claim their slots first and sit at the trailing edge, as
@@ -378,27 +359,27 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * together just before the bulb. Wall display (tablets only, so only ever on a
  * wide bar) claims in the same order but is drawn after ⋯ (`wallDisplay`).
  *
+ * The open Duo draws the same bar as an iPad. Its platter is a centred capsule
+ * (at most 689pt, as Music's) that the split's player pane sits above, not under,
+ * so the bar repeats what the pane shows rather than standing in for it, and
+ * every button acts on the climb the bar names.
+ *
  * In a timed workout block the bar logs each go instead (`workoutOutcome`), as
  * the player's small row does:
  *
  * ```
- * iPad              [Fell] [Sent] · [thumb] Name ······· [⋯] [⛶] [💡] [✓]
- * Duo open          [Fell] [Sent] · [thumb] Name ··········· [⋯] [💡] [✓]
- * iPhone            [thumb] Name ···················· [Fell] [Sent] [💡]
- * One slot          [thumb] Name ································ [Sent]
- * Duo, pane carry   [Fell] [Sent] · [thumb] Name ························ [⋯]
+ * iPad              [Fell] [Sent] · [art] Name ······· [⋯] [⛶] [💡] [✓]
+ * Duo open          [Fell] [Sent] · [art] Name ··········· [⋯] [💡] [✓]
+ * iPhone            [art] Name ···················· [Fell] [Sent] [💡]
+ * One slot          [art] Name ································ [Sent]
  * ```
  *
  * The climber's other buttons step aside for the block, so a mis-tap mid-4x4
  * never flips the wall or skips a rep. Fell and Sent claim their slots first,
  * then the bulb, then the tick, then ⋯, then Wall display while it is on: an
  * iPhone's ✓ steps aside, since Fell and Sent already log each go. Wall display
- * stays because it changes neither the wall nor the queue. With no board bound the bulb draws nothing, so
- * the tick takes its place. With the player in the Duo's pane (`carry`) the bar
- * covers the pane's own Fell / Sent and the pane's big row shows 💡 ✓, so the
- * bar carries Fell and Sent, and ⋯. While the pane shows a preview, or its
- * controls sit above the board (`stepAside`), the bar keeps ⋯ 💡 ✓, as it does
- * outside a block.
+ * stays because it changes neither the wall nor the queue. With no board bound
+ * the bulb draws nothing, so the tick takes its place.
  */
 export function resolveMiniPlayerControls({
   slotCount,
@@ -406,22 +387,18 @@ export function resolveMiniPlayerControls({
   isAvailable,
   singleSlotShowsBulb,
   bulbAvailable,
-  paneMode,
-  paneCoveredButtons,
   workoutOutcome,
   wideLayout,
   moreAvailable,
 }: MiniPlayerControlsInput): MiniPlayerControls {
-  const carry = paneMode === 'carry';
   const offersMore = wideLayout && moreAvailable;
   // Drawn only in a wide bar's trailing cluster; an iPhone or an inline bar never claims it.
-  const wallDisplayOn = wideLayout && !carry && layout.visible.wallDisplay && isAvailable('wallDisplay');
-  if (workoutOutcome && paneMode !== 'stepAside') {
+  const wallDisplayOn = wideLayout && layout.visible.wallDisplay && isAvailable('wallDisplay');
+  if (workoutOutcome) {
     if (slotCount <= 1) return { leading: [], workout: ['sent'], more: false, wallDisplay: false, trailing: [] };
-    const room = carry ? 0 : slotCount - 2;
     // With no board bound the bulb draws nothing, so the tick keeps its slot.
     const fixed: ('lightbulb' | 'log')[] = bulbAvailable ? ['lightbulb', 'log'] : ['log'];
-    const trailing = fixed.slice(0, room);
+    const trailing = fixed.slice(0, slotCount - 2);
     const more = offersMore && slotCount - 2 - trailing.length >= 1;
     return {
       leading: [],
@@ -431,24 +408,13 @@ export function resolveMiniPlayerControls({
       trailing,
     };
   }
-  const trailing: ('lightbulb' | 'log')[] = carry
-    ? []
-    : slotCount <= 1
-      ? [singleSlotShowsBulb ? 'lightbulb' : 'log']
-      : ['lightbulb', 'log'];
+  const trailing: ('lightbulb' | 'log')[] =
+    slotCount <= 1 ? [singleSlotShowsBulb ? 'lightbulb' : 'log'] : ['lightbulb', 'log'];
   const more = offersMore && slotCount > trailing.length;
-  // A preview in the pane, or its controls above the board: the covered buttons
-  // would act on a climb the pane isn't showing, or repeat ones in plain view.
-  if (paneMode === 'stepAside') return { leading: [], workout: [], more, wallDisplay: false, trailing };
   const room = Math.max(0, slotCount - trailing.length - (more ? 1 : 0));
   const canClaim = (buttonId: MiniPlayerButtonId) =>
-    buttonId === 'wallDisplay'
-      ? wallDisplayOn
-      : isAvailable(buttonId) && !(carry && TRANSPORT_ORDER.includes(buttonId));
-  const claimed = (carry ? (paneCoveredButtons ?? []).filter(canClaim) : visibleSectionIds(layout, canClaim)).slice(
-    0,
-    room,
-  );
+    buttonId === 'wallDisplay' ? wallDisplayOn : isAvailable(buttonId);
+  const claimed = visibleSectionIds(layout, canClaim).slice(0, room);
   const others = claimed.filter((buttonId) => !TRANSPORT_ORDER.includes(buttonId) && buttonId !== 'wallDisplay');
   const transport = TRANSPORT_ORDER.filter((buttonId) => claimed.includes(buttonId));
   return {
@@ -479,85 +445,4 @@ export function trailingSlotFrame(
   const first = shownIndices[0];
   const last = shownIndices[shownIndices.length - 1];
   return { slotsShown: last - first + 1, trailingShift: slots.length - 1 - last };
-}
-
-/**
- * How the open Duo's bar relates to the player in the split's pane (#6940).
- *
- * - `none`: no pane player above the bar (no split, or a screen fills the pane).
- *   The bar is itself.
- * - `carry`: the pane shows the queue's current climb with its controls below the
- *   board, so the bar sits on the small row. It drops what the pane's big row
- *   shows right above (⏮ ⏭ 💡 ✓) and carries the covered buttons instead.
- * - `stepAside`: the pane shows a preview (a browse, a view-only swipe, a feed
- *   climb), or its controls sit above the board where nothing is covered. The
- *   covered buttons would act on a climb the pane isn't showing, or repeat ones
- *   in plain view, so the bar keeps only Board light and Log for the climb it
- *   names, as it did before the split carried anything.
- */
-export type MiniPlayerPaneMode = 'none' | 'carry' | 'stepAside';
-
-export function miniPlayerPaneMode({
-  phoneSplit,
-  paneTaken,
-  paneShowsPreview,
-  controlsPosition,
-}: {
-  phoneSplit: boolean;
-  paneTaken: boolean;
-  paneShowsPreview: boolean;
-  controlsPosition: PlayerButtonsPosition;
-}): MiniPlayerPaneMode {
-  if (!phoneSplit || paneTaken) return 'none';
-  return !paneShowsPreview && controlsPosition === 'below' ? 'carry' : 'stepAside';
-}
-
-function isPlayerButtonId(item: string): item is PlayerButtonId {
-  return (PLAYER_BUTTON_IDS as readonly string[]).includes(item);
-}
-
-export type PaneCoveredButtonsInput = {
-  /** The climber's player buttons (`usePlayerButtonsPreference`), not their MiniPlayer ones. */
-  buttons: PlayerButtonsLayout;
-  previousNext: boolean;
-  supportsMirroring: boolean;
-  /** The climb can be shared: not a draft. */
-  hasShare: boolean;
-  /** The board's angle can change. */
-  angleAvailable: boolean;
-};
-
-/**
- * What the open Duo's bar carries while the player fills the split's pane
- * (#6940): the buttons of the player's small row, which the bar sits on top of,
- * left to right. The pane's big row (its lead ⇄ or ☰, ⏮ ⏭, the bulb and the
- * tick) stays in view above the bar, so none of those repeat.
- *
- * It is the player's own layout for the climber's player buttons, in its plain
- * state: no connect pill, no Put on the wall, no workout Fell / Sent. Those
- * come and go with the moment, and the bar keeps its buttons through them,
- * except in a timed workout block, when it carries Fell / Sent in their place
- * (`resolveMiniPlayerControls`).
- */
-export function miniPlayerPaneCoveredButtons({
-  buttons,
-  previousNext,
-  supportsMirroring,
-  hasShare,
-  angleAvailable,
-}: PaneCoveredButtonsInput): PlayerButtonId[] {
-  const { secondaryRow } = resolveActionBarLayout({
-    supportsMirroring,
-    isAnonymous: false,
-    connectPill: false,
-    commitButton: null,
-    workoutOutcome: false,
-    showLightbulb: true,
-    hasShare,
-    angleAvailable,
-    buttons,
-    previousNext,
-  });
-  if (typeof secondaryRow === 'string') return [];
-  return secondaryRow.filter(isPlayerButtonId);
 }

@@ -4,6 +4,7 @@ import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area
 import { useIsFocused } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { useHingePartiallyOpen } from '../../lib/device-hinge-store';
 import { resolvePhoneSplitColumns } from '../../theme/size-class';
@@ -74,7 +75,13 @@ function PhoneSplitPane({ content }: { content: ReactNode | null }) {
   // Only the focused tab's pane takes over the full-screen player's scroll
   // position; the other visited tabs' panes mount in the same commit.
   const isFocused = useIsFocused();
-  const paneInsets = useMemo(() => ({ ...insets, left: 0, right: 0 }), [insets]);
+  // The MiniPlayer is a centred capsule that spans both halves of the split, so
+  // the pane docks its controls above it like a fixed footer: the accessory's
+  // height plus its gap, and the rest-timer pill when it floats there too. The
+  // in-tab inset alone ends flush with the capsule's top edge.
+  const { fixedFooterBottom } = useBottomChromeMetrics();
+  const paneBottom = Math.max(insets.bottom, fixedFooterBottom);
+  const paneInsets = useMemo(() => ({ ...insets, left: 0, right: 0, bottom: paneBottom }), [insets, paneBottom]);
   return (
     <>
       <View

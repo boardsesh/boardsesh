@@ -55,7 +55,7 @@ import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
-import { ACTION_BAR_SECONDARY_ROW_HEIGHT, PlayDrawerActionBar } from './PlayDrawerActionBar';
+import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { LastOnWallNote } from './LastOnWallNote';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
@@ -141,8 +141,6 @@ import { useTabletopFoldTop } from '../../hooks/use-tabletop-fold-top';
 import { PHONE_SPLIT_FOLD_GUTTER } from '../../theme/size-class';
 import { playContentSideInsets } from './play-content-side-insets';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
-import { reportPanePreview } from './pane-preview-store';
-import { useBarCarriesPaneWorkoutRow } from './pane-workout-row-cover-store';
 import { resolvePlayerAngle } from './player-angle';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
@@ -503,15 +501,6 @@ export function PlayCore({
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
-  // A pane's player says when it shows a preview, so the MiniPlayer below it
-  // stops standing in for its buttons (#6940): they'd act on another climb.
-  const panePreviewOwnerRef = useRef(Symbol('pane-player'));
-  useEffect(() => {
-    if (!isPane) return undefined;
-    const owner = panePreviewOwnerRef.current;
-    reportPanePreview(owner, isPreview);
-    return () => reportPanePreview(owner, false);
-  }, [isPane, isPreview]);
 
   // #5099: the shown climb does not have to belong to the board the climber has
   // selected. A queue item left over from a board switch, a party peer on
@@ -1185,10 +1174,6 @@ export function PlayCore({
     canLog: isAuthenticated && !isAnonymous && !showBoardMismatch,
   });
   const workoutOutcome = workoutOutcomeShown?.target ?? null;
-  // On the open Duo the MiniPlayer draws Fell / Sent over the pane's row (#6940):
-  // the pane's own pair leaves the accessibility tree so VoiceOver finds one.
-  const barCarriesPaneWorkoutRow = useBarCarriesPaneWorkoutRow();
-  const workoutOutcomeCovered = isPane && barCarriesPaneWorkoutRow;
   // What the browse latch puts in the second row: one button in the middle of
   // the usual row, or the busy-wall question in place of it.
   const commitButton: ActionBarCommitButton = resolveCommitButton({
@@ -1974,20 +1959,13 @@ export function PlayCore({
 
   // Reserve only the first eligible section's header. Without sections, content
   // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  // The phone split's pane and the landscape iPad player fit the board to the
-  // viewport's height instead: the tick row stays right under the board, and the
-  // favourite/share row and the sections sit just below the fold. Only with
-  // sections to scroll to, with the controls under the board, and with a plain
-  // second row (Put on the wall or Fell / Sent keep their place on screen). In
-  // the split's pane `insets.bottom` is the tab's own inset, which UIKit grows
-  // by the bottom accessory spanning the split, so the board and the tick row
-  // end above the accessory and the rest scrolls clear of it.
-  const fitsBoardToHeight =
-    fitBoardToHeight &&
-    hasVisibleSections &&
-    !controlsAbove &&
-    Array.isArray(actionBarLayout.secondaryRow) &&
-    actionBarLayout.secondaryRow.length > 0;
+  // The phone split's pane fits the board to the viewport's height instead,
+  // whatever its rows hold: the first screen ends at the pane's bottom inset,
+  // which clears the MiniPlayer capsule (`PhoneSplitPane`), so every button
+  // stays in view above it and the sections scroll clear of it. The usual first
+  // screen ends a section peek above the viewport's bottom, inside that inset,
+  // which would leave the last row under the capsule.
+  const fitsBoardToHeight = fitBoardToHeight;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
   // In tabletop the controls sit between the first screen and the sections.
   const [tabletopControlsHeight, setTabletopControlsHeight] = useState(0);
@@ -2000,7 +1978,6 @@ export function PlayCore({
       ? computeFitToHeightFirstScreenHeight({
           viewport: firstScreenViewport,
           bottomInset: insets.bottom,
-          belowFoldRowHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
         })
       : computeDrawerFirstScreenHeight({
           viewport: firstScreenViewport,
@@ -2177,7 +2154,6 @@ export function PlayCore({
       // A timed workout block: the second row is one-tap Fell / Sent.
       workoutOutcome={workoutOutcome}
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
-      workoutOutcomeCovered={workoutOutcomeCovered}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
       commitLabel={currentClimbDark ? 'putOnWall' : commitBarModel.commitLabel}

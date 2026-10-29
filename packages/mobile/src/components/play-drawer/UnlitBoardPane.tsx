@@ -12,13 +12,14 @@ import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { computeContainedBoardSize } from './play-drawer-layout';
+import { ACTION_BAR_SECONDARY_ROW_HEIGHT } from './PlayDrawerActionBar';
 import type { BoardConfig } from './play-drawer-types';
 
 // The split player's first screen around the board (fit to the pane's height,
 // see computeFitToHeightFirstScreenHeight), approximated so the board sits where
 // the player will draw it and opening a climb only lights holds. The header row
-// (avatar, name, grade) is where the hint goes; the tick row stays empty below,
-// and everything after it is below the fold.
+// (avatar, name, grade) is where the hint goes; the tick row and the favourite /
+// share row below it stay empty, and everything after them is below the fold.
 const HEADER_HEIGHT_ESTIMATE = 64;
 const TICK_ROW_HEIGHT_ESTIMATE = 72;
 
@@ -110,5 +111,5 @@ const styles = StyleSheet.create({
   },
   hint: { textAlign: 'center' },
   boardArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  controls: { height: TICK_ROW_HEIGHT_ESTIMATE },
+  controls: { height: TICK_ROW_HEIGHT_ESTIMATE + ACTION_BAR_SECONDARY_ROW_HEIGHT },
 });

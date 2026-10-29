@@ -54,35 +54,15 @@ describe('resolvePlayerArrangement', () => {
 });
 
 describe('computeFitToHeightFirstScreenHeight', () => {
-  // The iPhone Duo's split pane: 669pt tall, a 21pt home-indicator inset, and the
-  // 64pt favourite/share row.
-  const pane = { viewport: 669, bottomInset: 21, belowFoldRowHeight: 64 };
-
-  it('fills the pane down to the tick row and puts the next row just below the fold', () => {
-    const firstScreen = computeFitToHeightFirstScreenHeight(pane);
-    expect(firstScreen).toBe(712);
-    expect(firstScreen - pane.belowFoldRowHeight).toBe(pane.viewport - pane.bottomInset);
-  });
-
-  it('gives the board far more room than the usual first screen on the same pane', () => {
-    const usual = computeDrawerFirstScreenHeight({
-      viewport: pane.viewport,
-      bottomInset: pane.bottomInset,
-      firstSectionHeaderHeight: 52,
-      sectionTopPadding: 12,
-      sectionMargin: 8,
-    });
-    // Both first screens hold the same header, tick row and favourite/share row.
-    // The usual one ends above the Logbook peek (72pt reserved); the fit one ends
-    // with that row hanging just below the fold. The board gets the difference:
-    // 64 + 72 - 21 = 115pt more height.
-    const usualBoardRoom = usual - pane.belowFoldRowHeight;
-    const fitBoardRoom = computeFitToHeightFirstScreenHeight(pane) - pane.belowFoldRowHeight;
-    expect(fitBoardRoom - usualBoardRoom).toBe(115);
+  // The iPhone Duo's split pane: 669pt tall, with a 90pt bottom inset that clears
+  // the MiniPlayer capsule (34pt home indicator + 56pt accessory and gap).
+  const pane = { viewport: 669, bottomInset: 90 };
+  it('fills the pane down to the capsule, with both control rows above it', () => {
+    expect(computeFitToHeightFirstScreenHeight(pane)).toBe(579);
   });
 
   it('never goes negative before the viewport is measured', () => {
-    expect(computeFitToHeightFirstScreenHeight({ viewport: 0, bottomInset: 21, belowFoldRowHeight: 64 })).toBe(64);
+    expect(computeFitToHeightFirstScreenHeight({ viewport: 0, bottomInset: 90 })).toBe(0);
   });
 });
 
