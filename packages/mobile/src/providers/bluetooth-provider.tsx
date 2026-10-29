@@ -97,8 +97,8 @@ type BluetoothContextValue = {
   /**
    * "Turn off all lights" (#7015): blank the wall, keep the link, and tell every
    * other viewer the climb is no longer lit. Resolves whether the LEDs went off.
-   * Other blanking paths (light-show stop, spill skip) keep calling `clearBoard`
-   * and report nothing.
+   * The spill skip reports its clear the same way, untagged (#7047). A bare
+   * `clearBoard` reports nothing.
    */
   turnOffAllLights: () => Promise<boolean>;
   /**
@@ -2217,9 +2217,12 @@ export function BluetoothProvider({
     [sendFramesToBoardWithActivityReset],
   );
 
-  // "Turn off all lights" (#7015). The link stays up and the holder slot doesn't
-  // move, so without a report every other phone keeps the climb "On the wall".
-  const turnOffAllLights = useCallback(async (): Promise<boolean> => {
+  // Blank the wall, keep the link, and tell the feed (#7015, #7047). The link
+  // stays up and the holder slot doesn't move, so without a report every other
+  // phone keeps the last climb "On the wall". `write` is the blanking write: the
+  // tagged `clearBoard` for "Turn off all lights", an untagged one for the spill
+  // skip. Resolves whether the LEDs went off.
+  const blankWallAndReportClear = useCallback(async (write: () => Promise<boolean | undefined>): Promise<boolean> => {
     // Before the write: a report of the pre-clear wall, or its membership-restamp
     // retry, checks this epoch before sending again, and must not land after the
     // clear and put the dark climb back on peers' walls.
@@ -2229,7 +2232,7 @@ export function BluetoothProvider({
     const operationBoardUuid = boardUuidRef.current;
     const isCurrentOperation = () =>
       operationEpoch === wallOperationEpochRef.current && operationBoardUuid === boardUuidRef.current;
-    const cleared = await clearBoard();
+    const cleared = await write();
     if (cleared !== true) return false;
     // A reconnect, board switch or virtual take during the write owns the refs
     // now; resetting them or reporting would act on the wrong wall.
@@ -2266,6 +2269,9 @@ export function BluetoothProvider({
       // hold it), or the backend predates the mutation. Viewers keep the climb lit.
       if (!accepted) console.warn('[board-presence] reportBoardClear was not accepted', { boardId });
     };
+    // Registered as soon as the write lands. The next climb's write queues
+    // behind this clear in the hook's write chain, so its report always finds
+    // this one here and waits for it.
     const clearReport = reportClear()
       .catch((error: unknown) => console.warn('[board-presence] reportBoardClear failed', error))
       .finally(() => {
@@ -2273,7 +2279,13 @@ export function BluetoothProvider({
       });
     clearReportInFlightRef.current = clearReport;
     return true;
-  }, [clearBoard]);
+  }, []);
+
+  // "Turn off all lights" (#7015).
+  const turnOffAllLights = useCallback(
+    (): Promise<boolean> => blankWallAndReportClear(clearBoard),
+    [blankWallAndReportClear, clearBoard],
+  );
 
   // Advance the queue past a "spill" climb (one set for a different board/layout
   // than the connected board) instead of dark-firing the wall, and tell the user.
@@ -2301,8 +2313,18 @@ export function BluetoothProvider({
       // it stops showing the previous climb, and say nothing — the callout on
       // screen is the explanation, and counting this as a skip would poison the
       // spill metric with deliberate moves.
+      //
+      // Every clear below reports to the feed (#7047), or everyone watching this
+      // board keeps the previous climb "On the wall" over a dark board. The write
+      // stays untagged (no sendSource): the user didn't press Clear Lights, so it
+      // must not count towards Board Lights Cleared.
+      const clearWall = () => {
+        blankWallAndReportClear(() => sendFramesToBoard('')).catch((error: unknown) =>
+          console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
+        );
+      };
       if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) {
-        void sendFramesToBoard('');
+        clearWall();
         return;
       }
 
@@ -2329,19 +2351,17 @@ export function BluetoothProvider({
       // Party: never advance — the current climb is shared session state, and a
       // member whose wall can't light it must not hijack the queue for everyone.
       // Just clear this wall so it doesn't keep showing the previous climb.
-      // Untagged internal clear (no sendSource): the user didn't press Clear
-      // Lights, so this must not count towards Board Lights Cleared.
       if (sessionIdRef.current != null) {
-        void sendFramesToBoard('');
+        clearWall();
         return;
       }
       if (next) {
         setCurrentClimb(next);
       } else {
-        void sendFramesToBoard('');
+        clearWall();
       }
     },
-    [setCurrentClimb, showToast, sendFramesToBoard, t],
+    [blankWallAndReportClear, setCurrentClimb, showToast, sendFramesToBoard, t],
   );
 
   // The auto-sender reached the current climb but it has no frames yet — a
