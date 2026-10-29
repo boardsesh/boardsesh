@@ -36,6 +36,7 @@ import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-co
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { handleCrewCadenceChange } from '../../lib/crew-rest-cadence';
 import { nowMs } from '../../lib/clock';
+import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
@@ -744,6 +745,35 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
+            // #7014: stamp a server event that moves the wall, so the BLE
+            // auto-sender can time receipt → write. Read before the dispatch:
+            // the comparison is against what was current until now. A FullSync
+            // counts only on a stream that was already live: the one that opens
+            // a stream (join, reconnect, auth re-join) is a catch-up, not a
+            // crewmate's move. Under now-slot rules a crewmate's open IS a
+            // FullSync on the live stream (its trailing CurrentClimbChanged is
+            // dropped as same-sequence stale), so those still count.
+            if (
+              event.__typename === 'CurrentClimbChanged' ||
+              (event.__typename === 'FullSync' && queueStreamLiveRef.current)
+            ) {
+              noteRelayReceipt({
+                eventType: event.__typename,
+                incomingQueueItemUuid:
+                  event.__typename === 'FullSync' ? event.state.currentClimbQueueItem?.uuid : event.item?.uuid,
+                localQueueItemUuid: stateRef.current.currentClimbQueueItem?.uuid,
+                correlationId: event.__typename === 'CurrentClimbChanged' ? event.correlationId : null,
+                // The reducer's own echo test (DELTA_UPDATE_CURRENT_CLIMB): a
+                // correlation id still pending here, or this connection's
+                // server-issued client id. Not the coordinator's id, which never
+                // reaches the server.
+                ownEcho:
+                  event.__typename === 'CurrentClimbChanged' &&
+                  ((!!event.correlationId &&
+                    stateRef.current.pendingCurrentClimbUpdates.includes(event.correlationId)) ||
+                    (!!event.clientId && event.clientId === sessionRuntimeStateRef.current?.clientId)),
+              });
+            }
             dispatch({
               ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
               serverSequence: gateEvent.sequence ?? undefined,
@@ -1096,6 +1126,8 @@ export function useSessionRealtime({
       disposed = true;
       subscriptionStartToken++;
       restartJoinedSubscriptionsRef.current = null;
+      // #7014: a receipt from the session being left is no relay for the next.
+      clearRelayReceipt();
       cleanupSubscriptions();
       unbindClientEvents?.();
       unbindClientEvents = null;

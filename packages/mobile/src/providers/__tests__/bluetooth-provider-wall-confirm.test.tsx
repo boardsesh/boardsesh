@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, waitFor, cleanup, fireEvent } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -52,6 +52,8 @@ const analytics = vi.hoisted(() => ({
 const alert = vi.hoisted(() => ({
   alert: vi.fn(),
 }));
+
+const appState = vi.hoisted(() => ({ current: 'active' as string }));
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
@@ -135,7 +137,12 @@ vi.mock('react-native', () => ({
   // branches on Platform.OS; 'ios' short-circuits it to null without needing a
   // PermissionsAndroid stub here.
   Platform: { OS: 'ios', Version: 0 },
-  AppState: { addEventListener: () => ({ remove: vi.fn() }) },
+  AppState: {
+    addEventListener: () => ({ remove: vi.fn() }),
+    get currentState() {
+      return appState.current;
+    },
+  },
 }));
 
 vi.mock('../../settings', async () => {
@@ -289,6 +296,7 @@ vi.mock('../../lib/board-details', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
+import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -440,6 +448,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     presence.reportDisconnectForBoard.mockResolvedValue(true);
     presence.showUndoWallChangeSnackbar.mockClear();
     capturedBluetooth = null;
+    appState.current = 'active';
+    clearRelayReceipt();
   });
 
   afterEach(() => {
@@ -516,6 +526,158 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect.any(AbortSignal),
         expect.objectContaining({ sendSource: 'auto', targetQueueItemUuid: 'queue-climb-2' }),
       );
+    });
+  });
+
+  // #7014: a crewmate's climb reaching the wall through this phone reports how
+  // long the app took between hearing about it and writing it, and how long the
+  // write took, so a pocketed holder's delay can be split into stages.
+  describe('relay stage timings', () => {
+    const relayTimedEvents = () =>
+      analytics.track.mock.calls.filter(([eventName]) => eventName === 'Climb Relay Write Timed');
+
+    function rerenderKilter(rerender: (ui: ReactNode) => void) {
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement('div', null),
+        }),
+      );
+    }
+
+    it('times receipt to write start and the write for a crewmate’s climb', async () => {
+      const clock = { now: 0 };
+      const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+      onTestFinished(() => performanceNow.mockRestore());
+      const { rerender } = renderProvider();
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+
+      let finishWrite: (succeeded: boolean) => void = () => {};
+      bluetooth.state.sendFramesToBoard.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finishWrite = resolve;
+          }),
+      );
+
+      clock.now = 100;
+      noteRelayReceipt({
+        eventType: 'CurrentClimbChanged',
+        incomingQueueItemUuid: 'queue-climb-2',
+        localQueueItemUuid: 'queue-climb-1',
+        correlationId: 'corr-peer',
+      });
+      clock.now = 350;
+      appState.current = 'background';
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      rerenderKilter(rerender);
+      await waitFor(() =>
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+          'p1r12',
+          false,
+          expect.any(AbortSignal),
+          expect.objectContaining({ targetQueueItemUuid: 'queue-climb-2' }),
+        ),
+      );
+
+      clock.now = 400;
+      await act(async () => finishWrite(true));
+
+      await waitFor(() => expect(relayTimedEvents()).toHaveLength(1));
+      expect(relayTimedEvents()[0][1]).toEqual({
+        relayToWriteStartMs: 250,
+        writeDurationMs: 50,
+        appState: 'background',
+        eventType: 'CurrentClimbChanged',
+        correlationId: 'corr-peer',
+        climbUuid: 'climb-2',
+        targetQueueItemUuid: 'queue-climb-2',
+        climbBoardType: undefined,
+      });
+    });
+
+    it('reports nothing for a write this phone started itself', async () => {
+      const { rerender } = renderProvider();
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+
+      // A receipt for a different item is not this write's relay.
+      noteRelayReceipt({
+        eventType: 'FullSync',
+        incomingQueueItemUuid: 'queue-climb-9',
+        localQueueItemUuid: 'queue-climb-1',
+      });
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      rerenderKilter(rerender);
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
+
+      expect(relayTimedEvents()).toHaveLength(0);
+    });
+
+    // The auto-sender can skip a relayed climb (here the off-screen adopt gate)
+    // and write it much later on Put on the wall. That wait is the climber's,
+    // so it must not come back as relay time.
+    it('reports nothing for a relayed climb written long after a skip', async () => {
+      const clock = { now: 0 };
+      const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+      onTestFinished(() => performanceNow.mockRestore());
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+
+      clock.now = 100;
+      noteRelayReceipt({
+        eventType: 'CurrentClimbChanged',
+        incomingQueueItemUuid: 'queue-climb-2',
+        localQueueItemUuid: 'queue-climb-1',
+      });
+      bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(true);
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement(BluetoothProbe),
+        }),
+      );
+      await waitFor(() =>
+        expect(analytics.track).toHaveBeenCalledWith(
+          'BLE Implicit Relight Suppressed',
+          expect.objectContaining({ climbUuid: 'climb-2' }),
+        ),
+      );
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+
+      // A minute later the climber taps Put on the wall.
+      clock.now = 60_100;
+      bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(false);
+      act(() => {
+        capturedBluetooth?.reassertWall();
+      });
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
+
+      expect(relayTimedEvents()).toHaveLength(0);
+    });
+
+    it('reports nothing when the relayed write fails', async () => {
+      const { rerender } = renderProvider();
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+
+      bluetooth.state.sendFramesToBoard.mockResolvedValueOnce(false);
+      noteRelayReceipt({
+        eventType: 'CurrentClimbChanged',
+        incomingQueueItemUuid: 'queue-climb-2',
+        localQueueItemUuid: 'queue-climb-1',
+      });
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      rerenderKilter(rerender);
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+      await act(async () => {});
+
+      expect(relayTimedEvents()).toHaveLength(0);
     });
   });
 

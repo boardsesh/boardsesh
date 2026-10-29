@@ -1,8 +1,10 @@
 import { createHmac } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { parseNamedBoardPath } from '@boardsesh/board-config';
 import {
   ownedOrPublicClimbCondition,
+  resourceAccessCondition,
   sessionCoMemberCondition,
   sprayClimbVisibilityCondition,
 } from '@boardsesh/db/queries';
@@ -22,7 +24,9 @@ import {
   boardClimbs,
   boardSessions,
   contentPrivacy,
+  gyms,
   resourceGrants,
+  sprayWalls,
   userBoards,
   users as accounts,
 } from '@boardsesh/db/schema';
@@ -35,8 +39,8 @@ import {
   anonymousOnBoardUserIdsByBoard,
   visibleActivityUserIds,
   visibleActivityUserIdsByBoard,
-  visibleBoardIdentityIds,
 } from './privacy';
+import { gymVisibleCondition } from '../graphql/resolvers/social/gym-visibility';
 import { resolveSessionBoards, type SessionBoardSource } from './session-board';
 
 type ViewerId = string | null | undefined;
@@ -402,11 +406,18 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
  * that link still opens the board. Creating the session is no proof for its
  * mutable current path, which another member may have selected. Snapshots use
  * ordinary current board standing, or return geometry on reconnect.
+ *
+ * A gym's listing is not part of that standing (`sessionMayNameLiveBoard`): a
+ * public board at an unlisted gym is named to the crew climbing on it, or every
+ * joiner lands on a private board of their own (#7013). A discovery listing
+ * (`discovery: true`, nearby sessions) is the exception: there the viewer holds
+ * no session, so an unlisted gym's walls stay unnamed, as on every other
+ * discovery surface.
  */
 export async function projectSessionBoardPath(
   boardPath: string,
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean } = {},
+  linkHolders: { presentedByViewer?: boolean; discovery?: boolean } = {},
 ): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
@@ -438,11 +449,89 @@ export async function projectSessionBoardPath(
   const board = live ?? deleted;
   if (!board) return '';
   const mayName = live
-    ? (await visibleBoardIdentityIds([live.id], viewerId)).has(Number(live.id)) ||
+    ? (await sessionMayNameLiveBoard(live.id, viewerId, linkHolders.discovery === true)) ||
       (await holdsLiveBoardLink(live, viewerId, linkHolders))
     : await holdsDeletedBoard(board, viewerId);
   if (mayName) return boardPath;
   return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
+}
+
+/**
+ * Whether a session may name this live board to this viewer.
+ *
+ * Deliberately not `visibleBoardIdentityIds`. That rule is for logs and
+ * listings, and since #6985 it also hides every board at an unlisted gym from
+ * everyone, owner included. An unlisted gym only stays out of discovery: its
+ * public boards still open by link and `gymBoards` lists them to anyone holding
+ * the gym's link. Applied to a session path, that rule handed every joiner the
+ * positional tuple, which mints them a private board row instead of the wall the
+ * crew is on: an empty history, and a "Different saved board" warning when they
+ * connect to the wall's own controller (#7013).
+ *
+ * What still withholds the name:
+ * - the board's own audience, without the unlisted link: an invite is not the
+ *   board's link, so an unlisted board is named only to its holders;
+ * - a deleted gym, or a private gym the viewer cannot see. The board's owner
+ *   always keeps it, and so do the people `gymVisibleCondition` admits to a
+ *   private gym (its owner, admins and editors, covering moderators);
+ * - an admin-hidden spray wall, to everyone but its owner, the same rule
+ *   `sessionBoardLocationCondition` applies to the session's place;
+ * - with `discovery`, an unlisted gym too, to everyone but the board's owner
+ *   and the gym's owner, editors and moderators. A stranger browsing nearby
+ *   sessions holds no session, and discovery never names an unlisted gym's
+ *   walls (`toVisibleBoard` in live-sessions.ts).
+ */
+async function sessionMayNameLiveBoard(
+  boardId: number,
+  viewerId: string | null | undefined,
+  discovery: boolean,
+): Promise<boolean> {
+  const gym = alias(gyms, 'session_path_gym');
+  const viewerOwnsBoard = viewerId ? eq(userBoards.ownerId, viewerId) : undefined;
+  const [row] = await db
+    .select({ id: userBoards.id })
+    .from(userBoards)
+    .where(
+      and(
+        eq(userBoards.id, boardId),
+        isNull(userBoards.deletedAt),
+        resourceAccessCondition('board', userBoards.uuid, viewerId, { allowUnlistedLink: false }),
+        or(
+          isNull(userBoards.gymId),
+          viewerOwnsBoard,
+          exists(
+            db
+              .select({ id: gym.id })
+              .from(gym)
+              .where(
+                and(
+                  eq(gym.id, userBoards.gymId),
+                  isNull(gym.deletedAt),
+                  gymVisibleCondition(
+                    { id: gym.id, ownerId: gym.ownerId, isPublic: gym.isPublic, isListed: gym.isListed },
+                    viewerId,
+                    discovery,
+                  ),
+                ),
+              ),
+          ),
+        ),
+        notExists(
+          db
+            .select({ id: sprayWalls.id })
+            .from(sprayWalls)
+            .where(
+              and(
+                eq(sprayWalls.boardUuid, userBoards.uuid),
+                isNotNull(sprayWalls.hiddenAt),
+                viewerId ? ne(userBoards.ownerId, viewerId) : undefined,
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 /** The viewer presented this live board's link, and it still opens the board for them. */

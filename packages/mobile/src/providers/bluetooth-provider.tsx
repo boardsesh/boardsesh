@@ -38,6 +38,7 @@ import {
   type StaleCurrentHoldReleaseReason,
 } from '../lib/ble/stale-current-hold';
 import { nowMs } from '../lib/clock';
+import { relayClockMs, takeRelayReceipt } from '../lib/relay-receipt';
 import {
   resolveBleSerialNumbers,
   useResolvedBleDeviceBoards,
@@ -348,6 +349,7 @@ function BluetoothAutoSender({
   staleCurrentHoldEnabled,
   onStaleCurrentHeld,
   onStaleCurrentPassed,
+  physicalLink,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -406,6 +408,9 @@ function BluetoothAutoSender({
   // standing is over. Not called for a write that failed, so a failure does not
   // end the hold and the next drain does not start a second one.
   onStaleCurrentPassed: (item: ClimbQueueItem | null) => void;
+  // True when this mount writes over Bluetooth, false on a virtual hold, whose
+  // "write" is a 600 ms stand-in. Fixed per mount: the mount is keyed on it.
+  physicalLink: boolean;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -690,6 +695,13 @@ function BluetoothAutoSender({
             continue;
           }
 
+          // #7014: a crewmate's climb arriving over the queue stream carries its
+          // receipt time; this write is the end of that relay. Taken here, past
+          // every skip above, so only a write that actually goes out consumes it.
+          const relayReceipt = takeRelayReceipt(item.uuid);
+          const writeStartedAt = relayReceipt ? relayClockMs() : 0;
+          const appStateAtWrite = relayReceipt ? AppState.currentState : null;
+
           try {
             const result = await requestSendFramesToBoard(item.climb.frames, effectiveMirrored, signal, {
               sendSource: 'auto',
@@ -698,6 +710,7 @@ function BluetoothAutoSender({
               climbBoardType: item.climb.boardType,
               climbLayoutId: item.climb.layoutId,
             });
+            const writeFinishedAt = relayReceipt ? relayClockMs() : 0;
 
             // After the await, the AutoSender may have unmounted — skip
             // post-send side effects.
@@ -710,6 +723,20 @@ function BluetoothAutoSender({
               onStaleCurrentPassedRef.current(item);
               onWallConfirmedRef.current(item, effectiveMirrored);
               hapticSuccess();
+              // A virtual hold still takes the receipt (it is that climb's), but
+              // its synthetic delay is no transport timing (#7039 review).
+              if (relayReceipt && physicalLink) {
+                track(SHARED_EVENTS.ClimbRelayWriteTimed, {
+                  relayToWriteStartMs: Math.round(writeStartedAt - relayReceipt.receivedAt),
+                  writeDurationMs: Math.round(writeFinishedAt - writeStartedAt),
+                  appState: appStateAtWrite,
+                  eventType: relayReceipt.eventType,
+                  correlationId: relayReceipt.correlationId,
+                  climbUuid: item.climb.uuid,
+                  targetQueueItemUuid: item.uuid,
+                  climbBoardType: item.climb.boardType,
+                });
+              }
             }
           } catch (error) {
             if (signal?.aborted) return;
@@ -739,6 +766,8 @@ function BluetoothAutoSender({
     // again) must re-run the gate, which the item alone would not. The clock
     // keeps its identity until it changes, so this adds no runs otherwise.
     lastCurrentChange,
+    // Fixed per mount (the mount is keyed on it), so this adds no runs.
+    physicalLink,
   ]);
 
   return null;
@@ -2541,6 +2570,7 @@ export function BluetoothProvider({
             activeConfig={currentBoardConfig}
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
+            physicalLink={isConnected}
           />
         )}
         {/* Reconciles a virtual hold with the server's single holder slot, and

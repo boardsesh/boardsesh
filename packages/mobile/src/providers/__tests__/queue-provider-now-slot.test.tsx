@@ -187,6 +187,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 
 import { QueueProvider, useQueue, useQueueSessionId } from '../queue-provider';
 import { resetQueueServerProbeReportForTests } from '../queue/now-slot-server';
+import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
 
 type Queue = ReturnType<typeof useQueue>;
 type Snapshot = Pick<
@@ -716,6 +717,143 @@ describe('QueueProvider now-slot mode (F3)', () => {
       expect(analytics.track.mock.calls.some(([eventName]) => eventName === SHARED_EVENTS.QueueServerProbe)).toBe(
         false,
       );
+    });
+
+    // #7014: the BLE auto-sender times a crewmate's climb from the moment this
+    // stream hands it over, so a peer's move is stamped and this phone's own
+    // echo is not.
+    describe('relay receipt', () => {
+      function sendCurrentClimbChanged(item: ClimbQueueItem, clientId: string, correlationId: string) {
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'CurrentClimbChanged',
+                sequence: 2,
+                stateHash: 'hash-2',
+                item,
+                clientId,
+                correlationId,
+              },
+            },
+          });
+        });
+      }
+
+      it('stamps a crewmate moving the wall', async () => {
+        const latest = await renderSession([A, B, C], B);
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(C, 'client-peer', 'corr-peer');
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({
+          queueItemUuid: 'c',
+          eventType: 'CurrentClimbChanged',
+          correlationId: 'corr-peer',
+        });
+      });
+
+      it('does not stamp the FullSync that opens the stream', async () => {
+        clearRelayReceipt();
+
+        // The join's FullSync makes B current on a phone that had nothing.
+        const latest = await renderSession([A, B, C], B);
+
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('b');
+        expect(takeRelayReceipt('b')).toBeNull();
+      });
+
+      it('stamps a crewmate’s open that arrives as a FullSync on the live stream', async () => {
+        const latest = await renderSession([A, B, C], B);
+        clearRelayReceipt();
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: C,
+                  historyCount: 2,
+                },
+              },
+            },
+          });
+        });
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({ queueItemUuid: 'c', eventType: 'FullSync' });
+      });
+
+      // #7039 review: the climber picks A, then C, before A's echo arrives. The
+      // echo names A while C is current, so the uuid check alone would stamp it.
+      it('does not stamp a late echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        const firstMoveCorrelationId = queueMutations.setCurrentClimb.mock.calls[0]?.[2];
+        expect(firstMoveCorrelationId).toEqual(expect.any(String));
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(A, 'client-self', firstMoveCorrelationId ?? '');
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
+      it('does not stamp the now-slot FullSync echo of an earlier move of this phone', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        clearRelayReceipt();
+        // clearRelayReceipt also forgets own moves, so re-arm them the way the
+        // provider's send seam does on a re-send.
+        act(() => latest().setCurrentClimb(A));
+        act(() => latest().setCurrentClimb(C));
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: A,
+                  historyCount: 0,
+                },
+              },
+            },
+          });
+        });
+
+        expect(takeRelayReceipt('a')).toBeNull();
+      });
+
+      it('does not stamp the echo of this phone’s own move', async () => {
+        const latest = await renderSession([A, B, C], B);
+        act(() => latest().setCurrentClimb(C));
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+        clearRelayReceipt();
+
+        sendCurrentClimbChanged(C, 'client-self', 'corr-self');
+
+        expect(takeRelayReceipt('c')).toBeNull();
+      });
     });
   });
 });
