@@ -469,6 +469,37 @@ export const RULES: readonly PatchRule[] = [
       },
     ],
   },
+  // The iPad MiniPlayer width cap (#7083). A dropped hunk only shows on an iPad:
+  // the glass fills the whole content column again instead of Music's 689 pt.
+  // The ordered sentinels keep the cap behind the pad-idiom check, so the iPhone
+  // and the open iPhone Duo keep a full-width bar. The negative assertion keeps
+  // the answer derived from the proposed size: answering from the view's own
+  // bounds or super's default brings back the stale width after a sidebar hide
+  // or rotation (react-native-screens #4728).
+  {
+    package: 'react-native-screens',
+    file: 'ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm',
+    sentinels: [
+      'static const CGFloat RNSTabsBottomAccessoryPadMaxWidth = 689.0;',
+      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryPadMaxWidth), size.height);',
+    ],
+    orderedSentinels: [
+      'if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {',
+      'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryPadMaxWidth), size.height);',
+      'return size;',
+    ],
+    patchedKey: 'react-native-screens@4.30.0',
+    forbiddenInMethod: [
+      {
+        method: 'sizeThatFits',
+        substrings: ['self.bounds', 'self.frame', 'super sizeThatFits'],
+        why:
+          'the answer must derive from the proposed size on every query. The view keeps its old bounds after a ' +
+          'sidebar hide or rotation, so answering from them strands the accessory at a stale width ' +
+          '(react-native-screens #4728).',
+      },
+    ],
+  },
   // The Android sheet guards are the one hunk NOTHING else can see: they only
   // swallow a native AsyncFunction rejection at runtime when Compose content is
   // unavailable or the native ExpoUI layer predates expand()/partialExpand()/hide().
