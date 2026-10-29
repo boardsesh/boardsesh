@@ -1184,11 +1184,14 @@ export const boardPresenceMutations = {
       return false;
     }
 
+    const seq = await pubsub.nextBoardSeq(boardKey);
     // Name the climb that went dark so a viewer can say which one is no longer
     // lit, even when this clear reaches it before its history backfill does.
-    const [newestClimb] = await pubsub.getRecentBoardClimbs(boardKey);
-    const climbUuid = newestClimb && newestClimb.source !== 'kilter' ? newestClimb.climbUuid : null;
-    const seq = await pubsub.nextBoardSeq(boardKey);
+    // Read after the seq is allocated, and only below it: a set that commits in
+    // between with a higher seq outranks this clear and must not be named.
+    const recentClimbs = await pubsub.getRecentBoardClimbs(boardKey);
+    const clearedClimb = recentClimbs.find((climb) => climb.seq < seq && climb.source !== 'kilter');
+    const climbUuid = clearedClimb?.climbUuid ?? null;
     const clearedAt = new Date().toISOString();
     await pubsub.commitBoardClear(boardKey, { seq, clearedAt, climbUuid });
     pubsub.publishBoardPresenceEvent(boardKey, { __typename: 'BoardClimbCleared', clearedAt, seq, climbUuid });

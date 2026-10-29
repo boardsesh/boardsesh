@@ -580,6 +580,12 @@ export class BoardPresenceStore {
    * above every climb in the history buffer. Null when there is no clear, a later
    * climb superseded it, or Redis is unavailable. Never throws — a replay is a
    * convenience on top of the live feed, and must not fail a subscription.
+   *
+   * Also stale when the seq counter is missing or below the clear's seq. Both
+   * keys live a week, but the counter's TTL is set first, and an eviction or a
+   * durable-floor reseed (the floor never counts clears) can take it back. Every
+   * new climb would then number below the clear, and a late joiner would see a
+   * lit wall as dark for up to a week.
    */
   async getActiveBoardClear(boardId: string): Promise<StoredBoardClear | null> {
     if (!this.deps.isRedisAvailable()) return null;
@@ -589,12 +595,14 @@ export class BoardPresenceStore {
         .pipeline()
         .hgetall(`board:${boardId}:cleared`)
         .lrange(`board:${boardId}:history`, 0, BOARD_HISTORY_SIZE - 1)
+        .get(`board:${boardId}:seq`)
         .exec();
       if (!results) return null;
-      const [[clearError, clearRaw], [historyError, historyRaw]] = results;
-      if (clearError || historyError) return null;
+      const [[clearError, clearRaw], [historyError, historyRaw], [seqError, seqRaw]] = results;
+      if (clearError || historyError || seqError) return null;
       const clear = parseStoredBoardClear(clearRaw);
       if (!clear) return null;
+      if (!(Number(seqRaw) >= clear.seq)) return null;
       const newestHistorySeq = Array.isArray(historyRaw) ? newestStoredClimbSeq(historyRaw) : 0;
       return clear.seq > newestHistorySeq ? clear : null;
     } catch (error) {
@@ -625,11 +633,16 @@ export class BoardPresenceStore {
       const snapshot: unknown = await publisher.eval(
         "local writer = redis.call('get', KEYS[1]); " +
           'if not writer then return {} end; ' +
-          "return {writer, redis.call('lrange', KEYS[2], 0, 49), redis.call('hget', KEYS[3], 'seq') or '0'}",
-        3,
+          // A clear only counts while the seq counter has reached it (see
+          // getActiveBoardClear): a counter that went back makes it stale.
+          "local cleared = tonumber(redis.call('hget', KEYS[3], 'seq') or '0'); " +
+          "if cleared > tonumber(redis.call('get', KEYS[4]) or '0') then cleared = 0 end; " +
+          "return {writer, redis.call('lrange', KEYS[2], 0, 49), tostring(cleared)}",
+        4,
         `board:${boardId}:writer`,
         `board:${boardId}:history`,
         `board:${boardId}:cleared`,
+        `board:${boardId}:seq`,
       );
       if (!Array.isArray(snapshot) || snapshot.length !== 3) return null;
       const [writer, entries, clearedSeqRaw] = snapshot;
@@ -857,7 +870,23 @@ export class BoardPresenceStore {
       const writerCommandIndex = commandLabels.length;
       pipeline.set(writerKey, input.emitterId, 'EX', BOARD_MEMBERSHIP_TTL, 'GET');
       commandLabels.push('writer-set');
-      pipeline.set(lastReportKey, lastReportValue, 'PX', REPORT_DEDUP_WINDOW_MS);
+      // Seq-gated against a stored clear (#7015): when a clear with a higher seq
+      // already ran its Lua (which deletes this marker), setting it again would
+      // make a re-light of this same climb inside the window read as a retry,
+      // and viewers would stay dark over a lit wall. Both scripts are atomic, so
+      // whichever order they run in, the marker ends up absent after a newer clear.
+      pipeline.eval(
+        "local cleared = tonumber(redis.call('hget', KEYS[2], 'seq') or '0'); " +
+          'if cleared > tonumber(ARGV[2]) then return 0 end; ' +
+          "redis.call('set', KEYS[1], ARGV[1], 'PX', ARGV[3]); " +
+          'return 1',
+        2,
+        lastReportKey,
+        `board:${input.boardId}:cleared`,
+        lastReportValue,
+        input.climb.seq,
+        REPORT_DEDUP_WINDOW_MS,
+      );
       commandLabels.push('last-report-set');
       let boardSessionCommandIndex = -1;
       let sessionBoardCommandIndex = -1;

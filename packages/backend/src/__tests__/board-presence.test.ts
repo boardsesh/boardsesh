@@ -4229,6 +4229,13 @@ describe('board-presence connection holder', () => {
       it("tells every viewer the holder's wall went dark, naming the climb, and keeps history and the holder", async () => {
         if (!redisOn) return;
         const boardId = await boardLitByHolder();
+        const history = await pubsub.getRecentBoardClimbs(String(boardId));
+        // A set that commits between the clear's seq and its history read is
+        // numbered after the clear; the clear must name the climb below its own seq.
+        vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValueOnce([
+          { ...history[0], climbUuid: OTHER_TEST_CLIMB_UUID, seq: history[0].seq + 1000 },
+          ...history,
+        ]);
         const { events, unsubscribe } = await collectPresenceEvents(boardId);
         try {
           expect(await boardPresenceMutations.reportBoardClear(undefined, { boardId }, authCtx())).toBe(true);
@@ -4345,9 +4352,64 @@ describe('board-presence connection holder', () => {
         if (!redisOn) return;
         // The store alone: a fresh key, so no earlier run's clear can outrank these seqs.
         const boardId = `clear-race-${uuidv4()}`;
-        expect(await pubsub.commitBoardClear(boardId, { seq: 90, clearedAt: 'newer', climbUuid: null })).toBe(true);
-        expect(await pubsub.commitBoardClear(boardId, { seq: 80, clearedAt: 'older', climbUuid: null })).toBe(false);
-        expect(await pubsub.getActiveBoardClear(boardId)).toEqual({ seq: 90, clearedAt: 'newer', climbUuid: null });
+        const { publisher } = redisClientManager.getClients();
+        await publisher.set(`board:${boardId}:seq`, 90, 'EX', 60);
+        try {
+          expect(await pubsub.commitBoardClear(boardId, { seq: 90, clearedAt: 'newer', climbUuid: null })).toBe(true);
+          expect(await pubsub.commitBoardClear(boardId, { seq: 80, clearedAt: 'older', climbUuid: null })).toBe(false);
+          expect(await pubsub.getActiveBoardClear(boardId)).toEqual({ seq: 90, clearedAt: 'newer', climbUuid: null });
+        } finally {
+          await publisher.del(`board:${boardId}:seq`, `board:${boardId}:cleared`);
+        }
+      });
+
+      it('treats a clear as stale once the seq counter went back below it', async () => {
+        if (!redisOn) return;
+        const boardId = `clear-stale-${uuidv4()}`;
+        const { publisher } = redisClientManager.getClients();
+        try {
+          await pubsub.commitBoardClear(boardId, { seq: 50, clearedAt: 'cleared', climbUuid: null });
+          // The counter expired first (it is set a few ms earlier) or was reseeded.
+          expect(await pubsub.getActiveBoardClear(boardId)).toBeNull();
+          await publisher.set(`board:${boardId}:seq`, 12, 'EX', 60);
+          expect(await pubsub.getActiveBoardClear(boardId)).toBeNull();
+          await publisher.set(`board:${boardId}:seq`, 50, 'EX', 60);
+          expect(await pubsub.getActiveBoardClear(boardId)).toEqual(expect.objectContaining({ seq: 50 }));
+        } finally {
+          await publisher.del(`board:${boardId}:seq`, `board:${boardId}:cleared`);
+        }
+      });
+
+      it('does not let a set that loses the race to a clear leave its dedup marker behind', async () => {
+        if (!redisOn) return;
+        const boardId = `clear-marker-${uuidv4()}`;
+        const { publisher } = redisClientManager.getClients();
+        const commitSet = (seq: number) =>
+          pubsub.commitBoardClimb({
+            boardId,
+            emitterId: TEST_USER_ID,
+            climb: { climbUuid: TEST_CLIMB_UUID, sentAt: new Date().toISOString(), seq },
+            climbUuid: TEST_CLIMB_UUID,
+            effectiveAngle: 40,
+            mirrored: false,
+            sessionId: null,
+          });
+        try {
+          await pubsub.commitBoardClear(boardId, { seq: 20, clearedAt: 'cleared', climbUuid: null });
+          // A set numbered before the clear, whose pipeline runs after it.
+          await commitSet(19);
+          expect(await publisher.get(`board:${boardId}:lastReport`)).toBeNull();
+          // A set numbered after the clear keeps its retry dedup.
+          await commitSet(21);
+          expect(await publisher.get(`board:${boardId}:lastReport`)).not.toBeNull();
+        } finally {
+          await publisher.del(
+            `board:${boardId}:cleared`,
+            `board:${boardId}:lastReport`,
+            `board:${boardId}:history`,
+            `board:${boardId}:writer`,
+          );
+        }
       });
 
       it('hides the discovery preview once the holder turned the lights off', async () => {

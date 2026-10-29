@@ -64,6 +64,29 @@ describe('board discovery presence snapshot', () => {
     }
   });
 
+  it('hides a climb a newer clear turned off, unless the seq counter went back below the clear (#7015)', async () => {
+    const publisher = new Redis(process.env.REDIS_URL || 'redis://localhost:6380', { maxRetriesPerRequest: 1 });
+    const boardId = `discovery-clear-${uuidv4()}`;
+    const keys = ['writer', 'history', 'cleared', 'seq'].map((suffix) => `board:${boardId}:${suffix}`);
+    const [writerKey, historyKey, clearedKey, seqKey] = keys;
+    vi.spyOn(redisClientManager, 'getClients').mockReturnValue({ publisher } as unknown as ReturnType<
+      typeof redisClientManager.getClients
+    >);
+    try {
+      await publisher.set(writerKey, 'holder-one', 'EX', 60);
+      await publisher.lpush(historyKey, JSON.stringify(climb));
+      await publisher.hset(clearedKey, 'seq', 11, 'clearedAt', 'cleared', 'climbUuid', 'climb-one');
+      await publisher.set(seqKey, 11, 'EX', 60);
+      expect(await store.getBoardDiscoveryClimb(boardId)).toBeNull();
+      // A counter below the clear (expired first, or reseeded) makes the clear stale.
+      await publisher.set(seqKey, 5, 'EX', 60);
+      expect(await store.getBoardDiscoveryClimb(boardId)).toEqual(expect.objectContaining({ uuid: 'climb-one' }));
+    } finally {
+      await publisher.del(...keys);
+      await publisher.quit();
+    }
+  });
+
   it('atomically reads a bounded snapshot and strips sender identity', async () => {
     evaluate.mockResolvedValue(snapshot());
     expect(await store.getBoardDiscoveryClimb('42')).toEqual({
@@ -74,10 +97,11 @@ describe('board discovery presence snapshot', () => {
     });
     expect(evaluate).toHaveBeenCalledWith(
       expect.stringContaining("'lrange', KEYS[2], 0, 49"),
-      3,
+      4,
       'board:42:writer',
       'board:42:history',
       'board:42:cleared',
+      'board:42:seq',
     );
   });
 
