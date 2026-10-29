@@ -516,6 +516,18 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
+    fun `localFilePath reads raw paths first and decodes an encoded file URI`() {
+        val onDisk = setOf("/data/o_1,2,3_ab.png", "/data/o_100%25_ab.png")
+        val exists = { path: String -> path in onDisk }
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("/data/o_1,2,3_ab.png", exists))
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("file:///data/o_1,2,3_ab.png", exists))
+        assertEquals("/data/o_1,2,3_ab.png", BoardSessionService.localFilePath("file:///data/o_1%2C2%2C3_ab.png", exists))
+        // A literal % in a real file name is never decoded a second time.
+        assertEquals("/data/o_100%25_ab.png", BoardSessionService.localFilePath("file:///data/o_100%25_ab.png", exists))
+    }
+
+    @Test
+    @Config(sdk = [30])
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun `decodes an overlay handed over as a percent-encoded file URI`() {
         every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
