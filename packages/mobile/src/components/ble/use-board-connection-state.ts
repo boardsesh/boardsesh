@@ -49,7 +49,10 @@ export type BoardConnectionState = {
    *
    * Only this signal is allowed to suppress the lightbulb's connect
    * (`derivePlayDrawerLightbulbPressAction`): acting on the stuck-prone flag
-   * would leave a climber unable to connect at all.
+   * would leave a climber unable to connect at all. The one widening is
+   * `useLightbulbControl`'s crewmate whose hold presence hasn't confirmed yet
+   * (`deriveCrewHolderUnconfirmed`): fresh presence only, and it ends at the
+   * first holder event or catch-up.
    */
   holderIsAuthoritative: boolean;
 };

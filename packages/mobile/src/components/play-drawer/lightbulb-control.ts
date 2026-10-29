@@ -53,6 +53,53 @@ export function derivePlayDrawerLightbulbPressAction(args: {
 }
 
 /**
+ * A crewmate is very likely driving the wall, but board presence hasn't
+ * confirmed a holder yet: this phone joined a session (or bound the board)
+ * and its feed names a climb a session member lit under an hour ago, with no
+ * holder event since (#7017 QA). A live `BoardConnectionChanged`, or a
+ * catch-up's holder refresh, confirms one or the other and ends this.
+ *
+ * Without it the bulb read an unknown holder as a free board: the crewmate's
+ * Put on the wall both moved the crew's climb (the commit, which their phone
+ * lit) and connected (the Select Board picker, which could take the board off
+ * the holder). While this is true the tap relays, like an authoritative
+ * holder, and never connects.
+ *
+ * Bounded on purpose, since a wrong `true` blocks a connect: only in a
+ * session, only on fresh presence, only for a session member's climb, never
+ * this phone's own stale hold, and never once a holder event says the board
+ * is free (`lastConnectionSeq > 0` with no holder).
+ */
+export function deriveCrewHolderUnconfirmed(args: {
+  inSession: boolean;
+  localConnected: boolean;
+  /** A session member holds the board per presence's holder (already a relay). */
+  holderIsAuthoritative: boolean;
+  /** Presence's holder, if any; `userId` null for an anonymous one. */
+  holder: { userId?: string | null } | null;
+  /** Presence's latest holder event; 0 until a live event or a catch-up names one. */
+  lastConnectionSeq: number;
+  /** Who presence says lit the wall's climb. */
+  wallSenderUserId: string | null;
+  /** That climb was lit under an hour ago (`isPresenceFresh`). */
+  wallPresenceFresh: boolean;
+  sessionMemberUserIds: ReadonlySet<string>;
+  /** The account this phone last held the board as: its own stale hold, never a crewmate. */
+  lastLocalHolderUserId: string | null;
+}): boolean {
+  if (!args.inSession || args.localConnected || args.holderIsAuthoritative) return false;
+  // A named holder is presence's answer: a crewmate's is authoritative above,
+  // and anyone else's (a stranger, this phone's stale hold) keeps today's rules.
+  if (args.holder?.userId != null) return false;
+  // A holder event said the board is free.
+  if (args.holder === null && args.lastConnectionSeq > 0) return false;
+  const sender = args.wallSenderUserId;
+  if (sender === null || !args.wallPresenceFresh) return false;
+  if (sender === args.lastLocalHolderUserId) return false;
+  return args.sessionMemberUserIds.has(sender);
+}
+
+/**
  * Tri-state board-connection ownership from THIS device's point of view. Drives
  * both the in-app lightbulb and the Live Activity (lock screen + Dynamic
  * Island), so the two never disagree:

@@ -11,6 +11,7 @@ import {
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
+import { useCrewHolderUnconfirmed } from './use-crew-holder-unconfirmed';
 import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
 import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
 
@@ -109,7 +110,9 @@ export type LightbulbControl = {
    */
   pressAction: PlayDrawerLightbulbPressAction;
   /**
-   * A session peer authoritatively holds the board. Exposed alongside
+   * A session peer holds the board: presence's authoritative holder, or, while
+   * presence has confirmed no holder yet, the session member it says lit the
+   * wall under an hour ago (`deriveCrewHolderUnconfirmed`). Exposed alongside
    * `pressAction` because `'noop'` is ambiguous on its own — it also covers "no
    * board selected" and "a connect is in flight" — and only this pairing tells a
    * label the difference between "nothing to do" and "someone else is driving".
@@ -143,8 +146,24 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   const { surface, placement, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
-    useBoardConnectionState();
+  const {
+    bluetooth,
+    lit,
+    localConnected,
+    pending,
+    ledless,
+    wallHeldLocally,
+    holderIsAuthoritative: holderConfirmed,
+  } = useBoardConnectionState();
+  // A crewmate's board that presence hasn't confirmed yet reads as theirs: a
+  // tap relays and never connects, so it can't both move the crew's climb and
+  // open the picker (#7017 QA). The catch-up it asks for settles it quickly.
+  const crewHolderUnconfirmed = useCrewHolderUnconfirmed({
+    localConnected,
+    holderIsAuthoritative: holderConfirmed,
+    lastLocalHolderUserId: bluetooth?.lastLocalHolderUserId ?? null,
+  });
+  const holderIsAuthoritative = holderConfirmed || crewHolderUnconfirmed;
   const climbBoardConnect = useClimbBoardConnect();
 
   const pressAction = useMemo(

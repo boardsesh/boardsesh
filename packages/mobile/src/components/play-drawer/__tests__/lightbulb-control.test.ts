@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveBoardConnection,
+  deriveCrewHolderUnconfirmed,
   deriveInAppBoardConnection,
   deriveLightbulbLit,
   derivePlayDrawerLightbulbPressAction,
@@ -520,5 +521,36 @@ describe('deriveBoardConnection is the Live Activity contract', () => {
       }
     }
     expect(Object.keys(expected)).toHaveLength(32);
+  });
+});
+
+describe('deriveCrewHolderUnconfirmed (#7017 QA)', () => {
+  // A crewmate joined Liz's session: presence names the climb Liz lit, no holder yet.
+  const joined = {
+    inSession: true,
+    localConnected: false,
+    holderIsAuthoritative: false,
+    holder: null,
+    lastConnectionSeq: 0,
+    wallSenderUserId: 'liz',
+    wallPresenceFresh: true,
+    sessionMemberUserIds: new Set(['me', 'liz']),
+    lastLocalHolderUserId: null,
+  };
+
+  it.each([
+    ['no holder confirmed yet, a crewmate lit the wall', {}, true],
+    ['an anonymous holder, a crewmate lit the wall', { holder: { userId: null }, lastConnectionSeq: 5 }, true],
+    ['solo', { inSession: false }, false],
+    ['this phone holds the link', { localConnected: true }, false],
+    ['already authoritative', { holderIsAuthoritative: true }, false],
+    ['a named holder', { holder: { userId: 'stranger' } }, false],
+    ['a holder event said the board is free', { lastConnectionSeq: 5 }, false],
+    ['presence over an hour old', { wallPresenceFresh: false }, false],
+    ['nobody named for the climb', { wallSenderUserId: null }, false],
+    ['the sender is not in the session', { wallSenderUserId: 'stranger' }, false],
+    ["this phone's own stale hold", { lastLocalHolderUserId: 'liz' }, false],
+  ])('%s', (_case, over, expected) => {
+    expect(deriveCrewHolderUnconfirmed({ ...joined, ...over })).toBe(expected);
   });
 });
