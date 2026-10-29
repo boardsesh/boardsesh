@@ -114,7 +114,7 @@ const rows: Row[] = [
       labelKey: 'putOnWall',
       a11yLabelKey: 'putOnWall',
       a11yHintKey: 'lightHint',
-      look: 'ready',
+      look: 'lit',
     },
   ],
   [
@@ -128,7 +128,7 @@ const rows: Row[] = [
       labelKey: 'putOnWall',
       a11yLabelKey: 'putOnWall',
       a11yHintKey: 'lightHint',
-      look: 'ready',
+      look: 'lit',
     },
   ],
   [
@@ -213,7 +213,7 @@ const rows: Row[] = [
       labelKey: null,
       a11yLabelKey: null,
       a11yHintKey: null,
-      look: 'ready',
+      look: 'lit',
     },
   ],
   [

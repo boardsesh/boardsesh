@@ -19,8 +19,9 @@ type WallControlBulbProps = {
 
 /**
  * The board control as the first row's bulb (#7000): grey outline with no
- * board, amber outline when linked but the climb on screen is dark, filled
- * amber when lit or a crewmate holds the board, and the holder's face on its
+ * board, filled amber whenever this phone holds the board (any state) or a
+ * crewmate's climb is lit, amber outline when the board is on the wall but not
+ * this phone's, and the holder's face on its
  * corner. It draws a `WallControlModel` and nothing else; the face comes from
  * `model.holderFace`, never from board presence, so it goes the moment the
  * link does. Taps and holds go to `useWallControl`, which buzzes and logs.

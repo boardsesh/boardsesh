@@ -195,24 +195,21 @@ export function resolveWallControlAction({
 }
 
 /**
- * The bulb's look: grey outline with no board, amber outline when a link is up
- * but the climb on screen is dark, filled amber when it is lit (on this
- * phone's link or a crewmate's), or when this phone holds a wall with no
- * lights. A crewmate's board after they turned the lights off (#7015, heard
- * through presence) reads dark, not lit.
+ * The bulb's look: grey outline with no board, filled amber whenever this phone
+ * holds the board, in any state (Marco's QA: "Put on the wall" on a preview
+ * with the link up, and "You have the board", fill too), or when a crewmate's
+ * climb is lit. Amber outline when the board is on the wall but not this
+ * phone's (no link, or a crewmate's board after they turned the lights off,
+ * #7015, heard through presence).
  */
 export type WallBulbLook = 'off' | 'ready' | 'lit';
 
-export function resolveWallBulbLook(
-  state: WallControlState,
-  localConnected: boolean,
-  displayedLit = true,
-): WallBulbLook {
-  if (state === 'lit' || state === 'release_wall') return 'lit';
+export function resolveWallBulbLook(state: WallControlState, selfHolds: boolean, displayedLit = true): WallBulbLook {
+  if (state === 'lit' || state === 'release_wall' || selfHolds) return 'lit';
   if (state === 'crew') return displayedLit ? 'lit' : 'ready';
   // On the wall but not this phone's: an outline, never the filled "you have it".
   if (state === 'on_wall_unlinked') return 'ready';
-  return localConnected ? 'ready' : 'off';
+  return 'off';
 }
 
 /** Wall Control Shown fires only for the states that ask the climber to act. */
@@ -419,7 +416,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     a11yHintKey:
       state === 'on_wall_unlinked' && tapAction !== 'noop' ? 'lightAgainHint' : hintKeyOf(tapAction, holderName),
     bulbValueKey,
-    look: resolveWallBulbLook(state, input.localConnected, input.displayedLit),
+    look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
     selected: state === 'lit',
     pending: input.pending,
     writing: input.writing,

@@ -216,14 +216,27 @@ describe('WallControlButton', () => {
     },
   );
 
-  // The bulb is the same in every state, and lights up (filled) only while this
-  // climber has the board (#7000, Marco).
-  it('shows the same bulb in every state, filled only while you have the board', () => {
-    const holders: Record<string, WallHolder> = { dark: 'self', lit: 'self', crew: 'crew', release_wall: 'self' };
-    for (const state of ['connect', 'put_on_wall', 'dark', 'lit', 'crew', 'take_wall', 'release_wall'] as const) {
-      const { container } = renderButton(modelFor(state, { holder: holders[state] ?? null }));
+  // The bulb is the same in every state, and fills whenever this phone holds the
+  // board, whatever the state (#7000, Marco's QA): "Put on the wall" on a
+  // preview with the link up, and "You have the board", fill too.
+  it('shows the same bulb in every state, filled whenever you hold the board, an outline otherwise', () => {
+    const cases: Array<[WallControlState, WallHolder]> = [
+      ['connect', null],
+      ['put_on_wall', null],
+      ['put_on_wall', 'self'],
+      ['put_on_wall', 'crew'],
+      ['dark', 'self'],
+      ['lit', 'self'],
+      ['crew', 'crew'],
+      ['take_wall', null],
+      ['release_wall', 'self'],
+    ];
+    for (const [state, holder] of cases) {
+      const model = modelFor(state, { holder });
+      expect(model.holder).toBe(holder);
+      const { container } = renderButton(model);
       expect([...container.querySelectorAll('[data-icon]')].map((node) => node.getAttribute('data-icon'))).toEqual([
-        state === 'lit' ? 'lightbulb.fill' : 'lightbulb',
+        holder === 'self' ? 'lightbulb.fill' : 'lightbulb',
       ]);
       cleanup();
     }

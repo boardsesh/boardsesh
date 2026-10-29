@@ -66,14 +66,16 @@ describe('the bulb’s look, back in the first row', () => {
     ['connect', false, 'off'],
     [null, false, 'off'],
     ['put_on_wall', false, 'off'],
-    ['put_on_wall', true, 'ready'],
-    ['dark', true, 'ready'],
+    // Marco's QA: filled whenever this phone holds the board, a preview included.
+    ['put_on_wall', true, 'lit'],
+    ['dark', true, 'lit'],
     ['lit', true, 'lit'],
     ['crew', false, 'lit'],
+    ['on_wall_unlinked', false, 'ready'],
     ['take_wall', false, 'off'],
     ['release_wall', false, 'lit'],
-  ] as Array<[WallControlState, boolean, string]>)('%s, linked %s → %s', (state, localConnected, expected) => {
-    expect(resolveWallBulbLook(state, localConnected)).toBe(expected);
+  ] as Array<[WallControlState, boolean, string]>)('%s, this phone holds %s → %s', (state, selfHolds, expected) => {
+    expect(resolveWallBulbLook(state, selfHolds)).toBe(expected);
   });
 
   // #7015: a crewmate turned the lights off; presence says the climb is dark.

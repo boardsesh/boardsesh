@@ -91,7 +91,9 @@ function WallControlButtonComponent({
     setSize((current) => (current.w === width && current.h === height ? current : { w: width, h: height }));
   }, []);
   const glowShown = model.state === 'lit' || model.state === 'crew' ? glow : null;
-  const holdsBoard = model.state === 'lit' && model.holder === 'self';
+  // Filled amber whenever this phone holds the board, in any state; the frost
+  // (the glow) stays for the lit states only (Marco's QA).
+  const holdsBoard = model.holder === 'self';
   const glowLayer = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';

@@ -209,9 +209,14 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   down before the adapter lets go, so a double tap's second tap would otherwise start a connect. "Board
   disconnected" is announced when the link actually drops. A dropped link, or the wall coming back to the cleared
   climb, forgets a Turn off all lights.
-- The bulb reads the same model as the wall button: grey outline with no board, amber outline when linked and this
-  climb is dark, filled amber when lit or a crewmate holds it, the holder's face on its corner (only from
-  `model.holder`), and "Board lights" plus the state and what a tap does for screen readers.
+- **The bulb fills whenever this phone holds the board.** In the wall button and in Lightbulb mode, the 💡 glyph is
+  filled amber while `model.holder === 'self'`, in any state: "Put on the wall" on a preview with the link up,
+  "You have the board", a dark climb. Otherwise it is an outline. The frost (the lit glow) still shows only for the
+  lit states, so a preview has none: swiping through previews doesn't change the board.
+- The bulb reads the same model as the wall button: grey outline with no board, filled amber while this phone holds
+  the board or a crewmate's climb is lit, amber outline when the board is on the wall but not this phone's. The
+  holder's face sits on its corner (only from `model.holder`). Screen readers hear "Board lights", the state, and
+  what a tap does.
 - **A preview in a block.** Fell / Sent only ever shows for the climb on the wall and on screen
   (`shouldShowWorkoutOutcome`), so a preview of another climb gets Put on the wall in the second row in both modes,
   and its Fell / Sent comes back with the climb on the wall. Showing Fell / Sent there would log a climb the
