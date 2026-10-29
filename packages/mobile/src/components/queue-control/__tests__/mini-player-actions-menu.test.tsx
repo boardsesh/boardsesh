@@ -376,6 +376,24 @@ describe('MiniPlayerActionsMenu', () => {
         ['mirror', true],
       ]);
     });
+
+    it('follows the icon row, which keeps Favourite and Share', () => {
+      const row = { label: 'Wall display', systemIcon: 'expand', run: vi.fn() };
+      const climbRows = (['favorite', 'share', 'mirror'] as const).map((id) => ({
+        id,
+        label: id,
+        run: vi.fn(),
+        dividerBefore: id === 'mirror',
+      }));
+      expect(
+        withPaletteRows(withWallDisplayRow(climbRows, row)).map(({ id, palette }) => [id, palette === true]),
+      ).toEqual([
+        ['favorite', true],
+        ['share', true],
+        ['wallDisplay', false],
+        ['mirror', false],
+      ]);
+    });
   });
 
   it('draws nothing while the /play route is up: its sheets would present behind the player', () => {
