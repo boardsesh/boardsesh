@@ -60,8 +60,7 @@ const question = (overrides: Partial<BusyWallQuestionInput> = {}) =>
   });
 
 const VARIANTS: readonly { label: string; input: Partial<BusyWallQuestionInput>; width?: number }[] = [
-  { label: 'Put mine up leads (default)', input: {} },
-  { label: 'Keep leads (the alternative)', input: { primary: 'keep' } },
+  { label: 'Put mine up leads', input: {} },
   { label: 'nobody to name', input: { holder: null } },
   { label: 'a long name: Keep theirs', input: { holder: { name: 'Bartholomew-Alexander', avatarUrl: null } } },
   { label: 'no room: stacked, Put mine up on top', input: {}, width: 220 },

@@ -80,9 +80,9 @@ function BusyWallQuestionGroupComponent({ model, onKeep, onPut }: BusyWallQuesti
   const keepLabel = fit.keepLabel === 'full' ? text.keepLabel : text.keepShortLabel;
   const order = fit.stacked ? BUSY_WALL_STACK_ORDER : BUSY_WALL_ROW_ORDER;
 
-  // The primary takes Put on the wall's look; the other the neutral tonal one.
+  // Put mine up takes Put on the wall's look; Keep the neutral tonal one.
   const looks = (segment: BusyWallSegmentId) =>
-    model.primary === segment
+    segment === 'put'
       ? {
           background: withAlpha(brandColors.primaryFill, WALL_CONTROL_TONAL_ALPHA),
           foreground: brandColors.primary,

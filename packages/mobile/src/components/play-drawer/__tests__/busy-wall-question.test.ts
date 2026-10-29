@@ -1,9 +1,7 @@
-// The busy-wall question's rule (#7017): who it names, which segment leads,
-// and how the pair fits the row.
+// The busy-wall question's rule (#7017): who it names and how the pair fits the row.
 import { describe, expect, it } from 'vitest';
 import type { QueueItemUser } from '@boardsesh/queue';
 import {
-  BUSY_WALL_PRIMARY,
   BUSY_WALL_ROW_ORDER,
   BUSY_WALL_STACK_ORDER,
   resolveBusyWallFit,
@@ -56,12 +54,6 @@ describe('resolveBusyWallQuestion', () => {
       ready: true,
       ...overrides,
     });
-
-  it('leads with Put mine up by default: it confirms the tap the climber just made', () => {
-    expect(BUSY_WALL_PRIMARY).toBe('put');
-    expect(question().primary).toBe('put');
-    expect(question({ primary: 'keep' }).primary).toBe('keep');
-  });
 
   it('fills Put mine up’s bulb only while this phone holds the board, as the wall button does', () => {
     expect(question().putBulbFilled).toBe(true);

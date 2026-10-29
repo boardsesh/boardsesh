@@ -194,9 +194,8 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   The first row stays as it was in both Board control modes; Put mine up carries the bulb, so the wall button's bulb
   doesn't come back. Taps on either segment in the question's first 500 ms are dropped (`useBusyWallQuestion`), so
   a thumb already on its way to the wall button doesn't answer a question it never read. Browsing on still
-  cancels it. The rule (`resolveBusyWallQuestion`, `resolveBusyWallFit`) decides the labels, the primary and the
-  disabled state; the view only draws. `BUSY_WALL_PRIMARY` in `busy-wall-question.ts` is a temporary dev switch
-  that makes Keep the primary, for comparing the two.
+  cancels it. The rule (`resolveBusyWallQuestion`, `resolveBusyWallFit`) decides the labels and the disabled
+  state; the view only draws.
 - **Fell / Sent** (`workoutOutcome: true`) keeps the climber's chosen look; it never switches icon language mid-block.
   With the wall button, the top row becomes `⏮ [wall button] ⏭` (`primaryCenter: 'wallControl'`): the same button,
   `compact`, about 239 pt wide on a 375 pt phone, same height, radius and colours, its label shrinking to 85% for

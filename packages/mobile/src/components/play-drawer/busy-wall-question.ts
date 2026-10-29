@@ -7,21 +7,15 @@
 //   [ 💡       Put mine up                    ]      stacked, when either label
 //   [ (T)      Keep Test2's                   ]      won't fit in half the row
 //
-// This file is the rule: who to name, the labels, which segment is primary,
-// when a tap counts, and when the pair stacks. The view (`BusyWallQuestionGroup`)
+// Put mine up is the primary: it confirms the tap the climber just made.
+//
+// This file is the rule: who to name, the labels, when a tap counts, and when the pair stacks. The view (`BusyWallQuestionGroup`)
 // only draws it; the handler (`use-busy-wall-question`) runs the taps.
 
 import type { QueueItemUser } from '@boardsesh/queue';
 import type { WallControlFace } from './wall-control';
 
 export type BusyWallSegmentId = 'keep' | 'put';
-
-/**
- * TEMPORARY dev-only switch (#7017): the designers split 2:1 on which answer
- * leads. `'put'` (the default) draws Put mine up as the primary segment; flip
- * it to `'keep'` to shoot the alternative. Delete once Marco picks.
- */
-export const BUSY_WALL_PRIMARY: BusyWallSegmentId = 'put';
 
 /**
  * Taps on either segment are dropped this long after the question appears. The
@@ -62,8 +56,6 @@ export type BusyWallQuestionInput = {
   selfHoldsBoard: boolean;
   /** The question has been up for `BUSY_WALL_TAP_DEBOUNCE_MS`: taps count. */
   ready: boolean;
-  /** Which segment leads. Defaults to `BUSY_WALL_PRIMARY`. */
-  primary?: BusyWallSegmentId;
 };
 
 export type BusyWallQuestionModel = {
@@ -72,8 +64,6 @@ export type BusyWallQuestionModel = {
   /** The face on Keep's leading edge, or null for none. */
   holderFace: WallControlFace | null;
   wallClimbName: string;
-  /** The segment drawn as the answer this question expects. */
-  primary: BusyWallSegmentId;
   /** Put mine up's bulb: filled amber while this phone holds the board. */
   putBulbFilled: boolean;
   /** False for the first `BUSY_WALL_TAP_DEBOUNCE_MS`: both segments read disabled and drop taps. */
@@ -86,14 +76,12 @@ export function resolveBusyWallQuestion({
   wallClimbName,
   selfHoldsBoard,
   ready,
-  primary = BUSY_WALL_PRIMARY,
 }: BusyWallQuestionInput): BusyWallQuestionModel {
   const holderName = holder?.name?.trim() ? holder.name.trim() : null;
   return {
     holderName,
     holderFace: holder,
     wallClimbName: wallClimbName?.trim() ?? '',
-    primary,
     putBulbFilled: selfHoldsBoard,
     ready,
   };

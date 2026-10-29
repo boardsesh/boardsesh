@@ -192,18 +192,6 @@ describe('BusyWallQuestionGroup', () => {
     expect(visibleLabel(keep)).toBe(KEEP_NAMED);
   });
 
-  it('swaps the looks, not the places, when Keep is the primary (the dev switch)', () => {
-    const { container } = renderGroup(model({ primary: 'keep' }));
-    expect(segments(container)).toEqual(['busy-wall-keep', 'busy-wall-put']);
-    expect(styleOf(container.querySelector('[data-testid="busy-wall-keep"]'))).toMatchObject({
-      backgroundColor: '#6D28D9/0.2',
-    });
-    expect(styleOf(container.querySelector('[data-testid="busy-wall-put"]'))).toMatchObject({
-      backgroundColor: '#EEE',
-      borderWidth: 0.5,
-    });
-  });
-
   it('runs each answer’s own handler', () => {
     const { container, onKeep, onPut } = renderGroup();
     act(() => (container.querySelector('[data-testid="busy-wall-put"]') as HTMLButtonElement).click());

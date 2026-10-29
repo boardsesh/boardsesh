@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import {
-  BUSY_WALL_TAP_DEBOUNCE_MS,
-  resolveBusyWallQuestion,
-  type BusyWallQuestionModel,
-  type BusyWallSegmentId,
-} from './busy-wall-question';
+import { BUSY_WALL_TAP_DEBOUNCE_MS, resolveBusyWallQuestion, type BusyWallQuestionModel } from './busy-wall-question';
 import { formatBusyWallCaption } from './busy-wall-question-text';
 import type { WallControlFace } from './wall-control';
 
@@ -22,8 +17,6 @@ export type UseBusyWallQuestionOptions = {
   onKeep: () => void;
   /** Put the climb on screen up over theirs. */
   onPut: () => void;
-  /** Which segment leads; the dev switch's default when left out. */
-  primary?: BusyWallSegmentId;
 };
 
 export type BusyWallQuestion = {
@@ -53,7 +46,6 @@ export function useBusyWallQuestion({
   selfHoldsBoard,
   onKeep,
   onPut,
-  primary,
 }: UseBusyWallQuestionOptions): BusyWallQuestion {
   const { t } = useTranslation('session');
   const [ready, setReady] = useState(false);
@@ -62,8 +54,8 @@ export function useBusyWallQuestion({
   const armedAtRef = useRef<number | null>(null);
 
   const model = useMemo(
-    () => (armed ? resolveBusyWallQuestion({ holder, wallClimbName, selfHoldsBoard, ready, primary }) : null),
-    [armed, holder, wallClimbName, selfHoldsBoard, ready, primary],
+    () => (armed ? resolveBusyWallQuestion({ holder, wallClimbName, selfHoldsBoard, ready }) : null),
+    [armed, holder, wallClimbName, selfHoldsBoard, ready],
   );
   const latest = useRef({ model, onKeep, onPut });
   latest.current = { model, onKeep, onPut };
