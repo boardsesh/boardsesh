@@ -1109,12 +1109,13 @@ describe('ClimbList columns follow the list width', () => {
     act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 100 }, { index: 107 }] }));
     layoutTo(834);
     act(() => mocks.listOnLoad?.());
-    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 100, animated: false });
+    // Below the 100pt header and the 60pt controls over the list, not behind them.
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 100, animated: false, viewOffset: -160 });
 
     act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 60 }, { index: 64 }] }));
     layoutTo(914);
     act(() => mocks.listOnLoad?.());
-    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 60, animated: false });
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 60, animated: false, viewOffset: -160 });
     // Spent: a later load of the same list does not jump back.
     act(() => mocks.listOnLoad?.());
     expect(mocks.scrollToIndex).toHaveBeenCalledTimes(2);

@@ -909,6 +909,10 @@ function ClimbListInner() {
     listRef: climbListRef,
     onScroll: scrollEdge.list?.listProps.onScroll,
   });
+  // What covers the list's top edge: the native header's inset, plus the filter
+  // controls when they sit over the list instead of above its clip.
+  const restoreTopClearanceRef = useRef(0);
+  restoreTopClearanceRef.current = -listTopOffset + (filterInTopChrome ? 0 : searchBarHeight);
   useEffect(() => {
     if (!hasSeenSearchKeyRef.current) {
       hasSeenSearchKeyRef.current = true;
@@ -1150,12 +1154,18 @@ function ClimbListInner() {
     [visibleRowsStore],
   );
 
-  // The remounted list has laid out: put the climb that was at the top back there.
+  // The remounted list has laid out: put the climb that was at the top back there,
+  // below the header and controls the list draws under (`useListTopOffset`), not
+  // behind them. scrollToIndex adds `viewOffset` to the item's offset.
   const handleListLoad = useCallback(() => {
     const index = columnChangeTopIndexRef.current;
     columnChangeTopIndexRef.current = null;
     if (index === null || index >= paginationStateRef.current.loadedCount) return;
-    void climbListRef.current?.scrollToIndex({ index, animated: false });
+    void climbListRef.current?.scrollToIndex({
+      index,
+      animated: false,
+      viewOffset: -restoreTopClearanceRef.current,
+    });
   }, []);
 
   const handleViewableItemsChanged = useCallback(
