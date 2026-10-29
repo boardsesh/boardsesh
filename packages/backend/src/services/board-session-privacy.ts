@@ -36,6 +36,7 @@ import {
   canAccessResource,
   canViewActivityIdentity,
   canViewContent,
+  isLiveSessionMemberOnHomeWall,
   anonymousOnBoardUserIdsByBoard,
   visibleActivityUserIds,
   visibleActivityUserIdsByBoard,
@@ -450,7 +451,10 @@ export async function projectSessionBoardPath(
   if (!board) return '';
   const mayName = live
     ? (await sessionMayNameLiveBoard(live.id, viewerId, linkHolders.discovery === true)) ||
-      (await holdsLiveBoardLink(live, viewerId, linkHolders))
+      (await holdsLiveBoardLink(live, viewerId, linkHolders)) ||
+      // The crew of a live session on a home wall holds its link (#7013).
+      // Discovery holds no session.
+      (linkHolders.discovery !== true && (await isLiveSessionMemberOnHomeWall(live.uuid, viewerId)))
     : await holdsDeletedBoard(board, viewerId);
   if (mayName) return boardPath;
   return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
