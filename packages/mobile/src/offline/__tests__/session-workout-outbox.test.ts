@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   drainMutationQueue: vi.fn(() => Promise.resolve()),
   request: vi.fn(async () => ({ recordSessionWorkout: true })),
   reportHandledError: vi.fn(),
+  addErrorBreadcrumb: vi.fn(),
   now: Date.UTC(2026, 0, 2),
   account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
   accountReadFails: false,
@@ -37,7 +38,10 @@ const storage = vi.hoisted(() => {
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }));
 vi.mock('../../db', () => ({ getDatabaseHandle: () => mocks.db }));
 vi.mock('../../lib/graphql/client', () => ({ getOfflineSyncHttpClient: () => ({ request: mocks.request }) }));
-vi.mock('../../lib/error-reporting', () => ({ reportHandledError: mocks.reportHandledError }));
+vi.mock('../../lib/error-reporting', () => ({
+  reportHandledError: mocks.reportHandledError,
+  addErrorBreadcrumb: mocks.addErrorBreadcrumb,
+}));
 vi.mock('../../lib/clock', () => ({ nowMs: () => mocks.now }));
 vi.mock('../offline-sync-adapter', () => ({
   drainMutationQueue: mocks.drainMutationQueue,
@@ -96,6 +100,7 @@ beforeEach(async () => {
   mocks.drainMutationQueue.mockClear();
   mocks.request.mockClear();
   mocks.reportHandledError.mockClear();
+  mocks.addErrorBreadcrumb.mockClear();
   vi.unstubAllEnvs();
 });
 
@@ -387,5 +392,71 @@ describe('enqueueEndedSessionWorkout (the session ended some other way)', () => 
     expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('skipped');
     expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: null })).toBe('skipped');
     expect(await queued()).toEqual([]);
+    // Neither drop is silent any more: both leave a trail for the next report.
+    expect(mocks.addErrorBreadcrumb.mock.calls.map(([crumb]) => crumb)).toEqual([
+      expect.objectContaining({
+        category: 'session-workout',
+        message: 'write skipped: no-owner',
+        data: { path: 'ended' },
+      }),
+      expect.objectContaining({
+        category: 'session-workout',
+        message: 'write skipped: no-owner',
+        data: { path: 'ended' },
+      }),
+    ]);
+  });
+
+  // QA 2.7.0 (#6903): a crew guest added a 4x4 under a bundle that kept no
+  // climbs with the run, logged its reps, and left after an OTA. Leave has no
+  // queue to fill the climbs from, so the copy used to be dropped.
+  it("sends a guest's run that kept no climbs, from the climbs its ticks named", async () => {
+    prepareWorkoutRun(SESSION_ID, run);
+    noteWorkoutRunTick(
+      SESSION_ID,
+      { queueItemUuid: 'q1', status: 'flash', climbedAt: '2026-10-28T10:00:00Z', tickUuid: 'tick-1' },
+      { climbUuid: 'climb-1', angle: 40, isMirror: false },
+    );
+    noteWorkoutRunTick(
+      SESSION_ID,
+      { queueItemUuid: 'q2', status: 'attempt', climbedAt: '2026-10-28T10:04:00Z', tickUuid: 'tick-2' },
+      { climbUuid: 'climb-2', angle: 40, isMirror: false },
+    );
+    // Leave: the run is cleared, no End and no queue.
+    const record = await clearedRecord();
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('queued');
+
+    const rows = await queued();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.input.stages).toEqual([
+      {
+        id: 'main',
+        kind: 'volume',
+        items: [
+          { queueItemUuid: 'q1', climbUuid: 'climb-1', angle: 40, isMirror: false },
+          { queueItemUuid: 'q2', climbUuid: 'climb-2', angle: 40, isMirror: false },
+        ],
+      },
+    ]);
+    expect(rows[0]?.input.ticks).toEqual([
+      { tickUuid: 'tick-1', queueItemUuid: 'q1' },
+      { tickUuid: 'tick-2', queueItemUuid: 'q2' },
+    ]);
+  });
+
+  it('leaves a trail when a run with no climb at all cannot be sent', async () => {
+    prepareWorkoutRun(SESSION_ID, run);
+    const record = await clearedRecord();
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('skipped');
+
+    expect(await queued()).toEqual([]);
+    expect(mocks.addErrorBreadcrumb).toHaveBeenCalledExactlyOnceWith({
+      category: 'session-workout',
+      message: 'write skipped: no-plan',
+      level: 'warning',
+      data: { path: 'ended' },
+    });
   });
 });

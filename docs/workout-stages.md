@@ -255,7 +255,8 @@ in `packages/shared/offline-sync/src/mutation-queue/handlers.ts`). It writes at 
 points:
 
 1. At Start, right after `prepareWorkoutRun`.
-2. At "Add a block", right after `setWorkoutRun`.
+2. At "Add a block", right after `setWorkoutRun`, with the live queue, so the earlier
+   blocks' climbs are filled in if the run lost them.
 3. Before END_SESSION, inside `endSession`'s `beforeEnd`, after the wait for the
    session's queued ticks (`waitForSessionTicksToSync`). The live queue is still there,
    so a climb the run never captured is filled in from it first, and a climb mirrored
@@ -304,6 +305,23 @@ Nothing is sent for a session id the server never minted (`isServerSessionId`: s
 and fakes use readable ids, daily cards are `daily:…`), in a screenshot capture, or when
 the store holds no run for the session. Without the offline database (flag off, the web
 build without the engine) the write goes straight to the server, best effort.
+
+**Where the climbs come from.** A plan item needs its climb, and the queue is gone by
+the time most writes go out. Start and "Add a block" capture each item's climb from the
+queue. Every tick on a run item also fills in that item's climb from the tick, which is
+the item's climb at its angle (`attributeTickToQueueItem`), and never replaces one the
+run already has (`noteWorkoutRunTick`). The tick is the backstop for a run that lost its
+climbs: one an older bundle wrote (before `climbs` existed) or rewrote after an OTA
+rollback. Only a local End can fill them from the queue at the end, and a crew guest
+never presses End. They Leave, or the host ends the session. Before this backstop, a
+guest's workout written that way never reached the server (QA 2.7.0, #6903). A climb
+the run lost and nobody ticked still stays off the plan.
+
+**Dropped writes leave a trail.** A write with no plan to send (`no-plan`) or no account
+to file it under (`no-owner`: the token names nobody, or the outbox is stamped for
+someone else) is still skipped, and adds a Sentry breadcrumb (`session-workout`,
+"write skipped: …", with `path: live | ended`), so the next report from that phone
+shows it.
 
 **After an OTA rollback across this change**, with a workout write still queued, the
 older bundle cannot dispatch the row: it throws `Unknown table`, which its drainer

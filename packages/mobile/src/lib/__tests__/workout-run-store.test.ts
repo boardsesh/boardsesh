@@ -136,6 +136,19 @@ describe('workout-run-store', () => {
     expect(isWorkoutRunPendingStart('session-2')).toBe(false);
   });
 
+  it('fills a climb the run lost from the tick logged on it, and never replaces one it kept (#6903)', async () => {
+    // A run an older bundle wrote: no climbs.
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-other', angle: 25, isMirror: true });
+    // A climb outside the run is never logged, so its climb is not kept either.
+    noteWorkoutRunTick('session-1', tick('hand-queued'), { climbUuid: 'climb-x', angle: 40 });
+
+    expect(getWorkoutRunState()?.climbs).toEqual({ w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } });
+    await flushStorageWrites();
+    expect(storedRecord()).toMatchObject({ climbs: { w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } } });
+  });
+
   it('preserves preparation while joining split storage slots and clears it with the session', async () => {
     await storage.setItem(
       WORKOUT_RUN_V2_STORAGE_KEY,

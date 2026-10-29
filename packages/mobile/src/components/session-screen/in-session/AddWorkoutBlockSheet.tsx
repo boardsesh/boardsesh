@@ -262,8 +262,10 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       return;
     }
     setWorkoutRun(sessionId, result.run, captureWorkoutRunClimbs(blockItems));
-    // The server's copy gains the block (#6903).
-    void enqueueSessionWorkoutWrite(sessionId, { queryClient });
+    // The server's copy gains the block (#6903). The live queue fills in the
+    // earlier blocks' climbs if the run lost them (a run an older bundle wrote).
+    // Otherwise only a local End fills them in, and a crew guest never presses End.
+    void enqueueSessionWorkoutWrite(sessionId, { queryClient, queueItems: getQueueSnapshot().queue });
     // The added block's own pacing, not the run's: adding a volume block to a
     // workout that once had a 4x4 must not turn back on a timer the climber
     // switched off.
