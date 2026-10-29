@@ -7,10 +7,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Chronometer
+import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -37,6 +41,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
+import java.io.File
 import java.util.concurrent.Executor
 
 /**
@@ -121,9 +126,10 @@ class BoardSessionServiceTest {
     }
 
     // Starts a service wiring the image seams to run on the calling thread
-    // (deterministic async) with an injectable composer.
+    // (deterministic async) with an injectable composer. A null composer keeps the
+    // real one (decode the files on disk and composite them).
     private fun startWithImageSeams(
-        imageComposer: (String, List<String>) -> Bitmap?,
+        imageComposer: ((String, List<String>) -> Bitmap?)?,
         executor: Executor = Executor { it.run() },
     ): BoardSessionService {
         val intent = Intent(context, BoardSessionService::class.java).apply {
@@ -133,7 +139,7 @@ class BoardSessionServiceTest {
         val service = controller.get()
         service.imageExecutor = executor
         service.postToMain = { it.run() }
-        service.imageComposer = imageComposer
+        imageComposer?.let { service.imageComposer = it }
         controller.startCommand(0, 1)
         return service
     }
@@ -497,6 +503,148 @@ class BoardSessionServiceTest {
         // An already-small render is returned untouched (no needless re-alloc).
         val small = Bitmap.createBitmap(100, 120, Bitmap.Config.ARGB_8888)
         assertSame(small, service.downscale(small))
+    }
+
+    // --- Thumbnail slot (#7041) ---
+
+    private fun renderThumbnail(service: BoardSessionService, layout: Int): ImageView =
+        service.buildContentView(layout).apply(context, FrameLayout(context)).findViewById(R.id.session_image)
+
+    private fun shownBitmap(view: ImageView): Bitmap? = (view.drawable as? BitmapDrawable)?.bitmap
+
+    private val thumbnailLayouts = listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)
+
+    @Test
+    @Config(sdk = [30])
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `decodes an overlay handed over as a percent-encoded file URI`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        // Overlay names join the set ids with commas; Uri.fromFile encodes them as %2C.
+        val overlay = File(context.cacheDir, "overlay_moonboard_2_1_1,2,3_cafef00d.png")
+        overlay.outputStream().use {
+            Bitmap.createBitmap(8, 10, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+        val encodedUri = Uri.fromFile(overlay).toString()
+        assertTrue(encodedUri.contains("%2C"))
+
+        val service = startWithImageSeams(imageComposer = null)
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = encodedUri), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertNotNull(shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a failed compose hides the thumbnail slot in both layouts and re-posts`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startWithImageSeams(imageComposer = { _, _ -> null })
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/missing.png"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            assertEquals(View.GONE, renderThumbnail(service, layout).visibility)
+        }
+        // startForeground is mocked, so a posted notification can only be the
+        // failure re-post that carries the hidden slot to SystemUI.
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertNotNull(shadowOf(manager).getNotification(BoardSessionService.NOTIFICATION_ID))
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `no overlay hides the thumbnail slot`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val service = startWithImageSeams(imageComposer = { _, _ -> error("nothing to compose") })
+
+        service.onStartCommand(updateIntent("connectedByMe"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            assertEquals(View.GONE, renderThumbnail(service, layout).visibility)
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `a composed thumbnail is shown in both layouts`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val stub = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val service = startWithImageSeams(imageComposer = { _, _ -> stub })
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertSame(stub, shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the next climb never keeps the previous climb's board when SystemUI reapplies the views`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val boardA = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val held = mutableListOf<Runnable>()
+        var holdComposes = false
+        val service = startWithImageSeams(
+            imageComposer = { _, _ -> boardA },
+            executor = Executor { if (holdComposes) held.add(it) else it.run() },
+        )
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+        val shown = thumbnailLayouts.associateWith { layout ->
+            service.buildContentView(layout).apply(context, FrameLayout(context))
+        }
+        for (view in shown.values) {
+            assertSame(boardA, shownBitmap(view.findViewById(R.id.session_image)))
+        }
+
+        // Climb B's compose is still running when the notification re-posts.
+        holdComposes = true
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/B.png"), 0, 3)
+        assertEquals(1, held.size)
+
+        for ((layout, view) in shown) {
+            service.buildContentView(layout).reapply(context, view)
+            val image = view.findViewById<ImageView>(R.id.session_image)
+            // The dark placeholder holds the slot while B composes; A's board is gone.
+            assertEquals(View.VISIBLE, image.visibility)
+            assertNull(shownBitmap(image))
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun `the same climb keeps its board while a late-background compose runs`() {
+        every { ServiceCompat.startForeground(any(), any(), any(), any()) } just Runs
+        val holdsOnly = Bitmap.createBitmap(4, 5, Bitmap.Config.ARGB_8888)
+        val held = mutableListOf<Runnable>()
+        var holdComposes = false
+        val service = startWithImageSeams(
+            imageComposer = { _, _ -> holdsOnly },
+            executor = Executor { if (holdComposes) held.add(it) else it.run() },
+        )
+
+        service.onStartCommand(updateIntent("connectedByMe", overlayPath = "file:///cache/A.png"), 0, 2)
+        assertSame(holdsOnly, shownBitmap(renderThumbnail(service, R.layout.notification_session_expanded)))
+
+        // Same overlay, backgrounds now resolved: a new key whose compose is running.
+        holdComposes = true
+        service.onStartCommand(
+            updateIntent("connectedByMe", overlayPath = "file:///cache/A.png", backgroundPaths = listOf("/assets/bg.png")),
+            0,
+            3,
+        )
+        assertEquals(1, held.size)
+        for (layout in thumbnailLayouts) {
+            val image = renderThumbnail(service, layout)
+            assertEquals(View.VISIBLE, image.visibility)
+            assertSame(holdsOnly, shownBitmap(image))
+        }
     }
 
     @Test
