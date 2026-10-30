@@ -525,16 +525,6 @@ type UseBoardBluetoothOptions = {
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
 
-export type BluetoothConnectOptions = {
-  /**
-   * Look for the saved board out of sight (#7076): no picker, and no alert if
-   * it doesn't answer. Only for a connect nobody tapped, the auto-follow of a
-   * climber driving a wall onto another board at the gym. Ignored without a
-   * saved board to look for.
-   */
-  quiet?: boolean;
-};
-
 /**
  * Identity of the board a live connection was opened against.
  *
@@ -741,10 +731,6 @@ export function useBoardBluetooth({
   // the singleton BLE manager, and the first attempt's scan teardown kills
   // the second attempt's scan, stranding the picker.
   const connectInFlightRef = useRef(false);
-  // The running connect is quiet (`BluetoothConnectOptions.quiet`): its picker
-  // never shows and its failure says nothing. Read by `devicePicker` when the
-  // connect opens it.
-  const quietConnectRef = useRef(false);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -921,11 +907,7 @@ export function useBoardBluetooth({
       // Whether the climber has seen this sheet decides how the scan ends
       // (#7038): a sheet they saw waits with its empty state, one they never
       // saw ends the connect with "board not found".
-      // A quiet connect (#7076, the auto-follow) is never seen either: it looks
-      // for the saved board out of sight and ends as "board not found" if it
-      // doesn't answer, with no alert (see the catch in `connect`).
-      const quiet = quietConnectRef.current;
-      const presentedAtOpen = !quiet && (mode === 'list' || isAppActive());
+      const presentedAtOpen = mode === 'list' || isAppActive();
 
       // Every write is scoped to this session: a late callback from an earlier
       // connect must never change, or clear, a newer picker.
@@ -1019,15 +1001,6 @@ export function useBoardBluetooth({
           ? {
               onTargetSearchEnded: () => {
                 if (settled || mode !== 'searching') return;
-                // A quiet connect has no list to fall back to: nobody will pick
-                // from it. End it now as "board not found" rather than scanning
-                // a hidden list for the rest of the scan window, which would
-                // hold the radio (and every tap) for 30 s.
-                if (quiet) {
-                  cleanup();
-                  rejectPicker(new Error('No boards found'));
-                  return;
-                }
                 mode = 'list';
                 updateSession((current) => ({
                   ...current,
@@ -1587,13 +1560,7 @@ export function useBoardBluetooth({
   );
 
   const connect = useCallback(
-    async (
-      initialFrames?: string,
-      mirrored?: boolean,
-      targetSerial?: string,
-      targetDeviceId?: string,
-      options?: BluetoothConnectOptions,
-    ) => {
+    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1606,10 +1573,6 @@ export function useBoardBluetooth({
         return false;
       }
       connectInFlightRef.current = true;
-      // Quiet only with a saved board to look for: without one the connect is
-      // the picker's list, which can't be quiet.
-      const quiet = options?.quiet === true && (targetSerial !== undefined || targetDeviceId !== undefined);
-      quietConnectRef.current = quiet;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
@@ -2036,9 +1999,7 @@ export function useBoardBluetooth({
         // "Operation was cancelled", so those real failures showed nothing — the
         // connect just looked like a dead tap. Only an explicit user-cancel stays
         // silent now. Literal-key switch (the i18n linter forbids `t(variable)`).
-        // A quiet connect (#7076) fails without a word: the climber didn't tap
-        // anything, and the player's Put on {board} is still there to try.
-        switch (quiet ? 'user_cancelled' : failureCategory) {
+        switch (failureCategory) {
           case 'user_cancelled':
             break;
           case 'unavailable':
@@ -2089,7 +2050,6 @@ export function useBoardBluetooth({
         }
       } finally {
         connectInFlightRef.current = false;
-        quietConnectRef.current = false;
         setLoading(false);
       }
 

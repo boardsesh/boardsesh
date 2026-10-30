@@ -25,7 +25,6 @@ import {
   type BleConnectInitialSend,
   type BleConnectionHandle,
   type BleConnectionEnded,
-  type BluetoothConnectOptions,
   type BluetoothDisconnectReason,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
@@ -100,7 +99,7 @@ type BluetoothContextValue = {
    * the picker for it. Resolves with the connect's result, or false when the
    * switch never arrives or a newer connect request replaces this one.
    */
-  connectAfterBoardSwitch: (board: UserBoard, options?: BluetoothConnectOptions) => Promise<boolean>;
+  connectAfterBoardSwitch: (board: UserBoard) => Promise<boolean>;
   /**
    * This phone has connected to `board` before and still remembers it (#7076):
    * a connect there reconnects instead of opening the picker. Forgotten by a
@@ -1849,8 +1848,6 @@ export function BluetoothProvider({
      * when the request fires, once the provider is on that board (#7001).
      */
     useRememberedBoard?: boolean;
-    /** Look for the remembered board out of sight (`BluetoothConnectOptions.quiet`). */
-    quiet?: boolean;
   } | null>(null);
   // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
   // promise. Kept beside the slot rather than in it, so a request that is
@@ -1912,7 +1909,7 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, armUndoToast, useRememberedBoard, quiet } = pendingAutoConnect;
+    const { serial, armUndoToast, useRememberedBoard } = pendingAutoConnect;
     setPendingAutoConnect(null);
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
@@ -1924,21 +1921,12 @@ export function BluetoothProvider({
     // remembered target is read now: the props describe the switched-to board,
     // so it is that board's own, never the one just left. A MoonBoard is
     // remembered by device id, not serial.
-    // A quiet connect is only ever for a board this phone knows. If the handle
-    // went away between the follow's decision and now (a forget, a failed
-    // read), opening the board list for a connect nobody tapped is the one
-    // thing it must not do: end it instead.
-    if (quiet && !reconnectSerialForCurrentBoard && !reconnectDeviceIdForCurrentBoard) {
-      waiter?.resolve(false);
-      return;
-    }
     const connecting = useRememberedBoard
       ? connect(
           undefined,
           undefined,
           reconnectSerialForCurrentBoard ?? undefined,
           reconnectDeviceIdForCurrentBoard ?? undefined,
-          { quiet },
         )
       : connect(undefined, undefined, serial);
     if (waiter) {
@@ -1964,18 +1952,16 @@ export function BluetoothProvider({
   // a board at this gym that draws the current climb. Queue the connect in the
   // slot above, which holds it until the switch reaches these props.
   const connectAfterBoardSwitch = useCallback(
-    (board: UserBoard, options?: BluetoothConnectOptions) =>
+    (board: UserBoard) =>
       new Promise<boolean>((resolve) => {
         settlePendingConnectWaiter(false);
         pendingConnectWaiterRef.current = { resolve, board };
         setPendingAutoConnect({
           configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
           setIds: board.setIds,
-          // The bulb tap that got here is a deliberate take of the wall. The
-          // auto-follow is the climber's own next climb, not a take: no undo.
-          armUndoToast: options?.quiet !== true,
+          // The bulb tap that got here is a deliberate take of the wall.
+          armUndoToast: true,
           useRememberedBoard: true,
-          quiet: options?.quiet === true,
         });
       }),
     [settlePendingConnectWaiter],
@@ -2448,11 +2434,10 @@ export function BluetoothProvider({
       // counting it would poison the spill metric with deliberate moves.
       //
       // The write is still refused: this wall can't draw it. The wall keeps
-      // what it shows rather than going dark (#7076). The climber is either on
-      // their way to the board that draws it (the drawer host follows a driving
-      // climber there on its own) or about to tap Put on {board}; blanking first
-      // would leave them with two dark walls if that board doesn't answer, and
-      // the box keeps its LEDs after the move's disconnect anyway.
+      // what it shows rather than going dark (#7076). The player offers Put on
+      // {board} for it; blanking first would leave two dark walls if that board
+      // doesn't answer, and the box keeps its LEDs after the move's disconnect
+      // anyway.
       if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) return;
 
       // The wall is cleared (rather than advanced to a compatible climb) in a

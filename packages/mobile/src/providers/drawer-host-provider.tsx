@@ -50,7 +50,6 @@ import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-p
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { findGymBoardForClimb, findGymBoardToConnectForClimb } from '../lib/boards/gym-board-for-climb';
-import { useGymBoardAutoFollow } from '../lib/boards/use-gym-board-auto-follow';
 import {
   ClimbBoardConnectContext,
   type ClimbBoardConnectValue,
@@ -1173,34 +1172,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [getQueueSnapshot, switchBoard],
   );
   const climbBoardConnectValue = useMemo<ClimbBoardConnectValue>(() => ({ moveToClimbBoard }), [moveToClimbBoard]);
-
-  // A solo climber driving a wall who moves onto a climb on another board at
-  // this gym is followed there (#7076): the same move and connect as Put on
-  // {board}, quietly, and only to a board this phone already knows.
-  const getCurrentClimbForFollow = useCallback(
-    () => getQueueSnapshot().currentClimbQueueItem?.climb ?? null,
-    [getQueueSnapshot],
-  );
-  const hasRememberedDeviceForBoard = useCallback(
-    (board: UserBoard) => bluetooth?.hasRememberedDeviceForBoard(board) ?? false,
-    [bluetooth],
-  );
-  const connectAfterBoardSwitchForFollow = useCallback(
-    (board: UserBoard, options: { quiet: true }) =>
-      bluetooth ? bluetooth.connectAfterBoardSwitch(board, options) : Promise.resolve(false),
-    [bluetooth],
-  );
-  useGymBoardAutoFollow({
-    currentClimbUuid: activeClimbUuid,
-    getCurrentClimb: getCurrentClimbForFollow,
-    activeBoard,
-    gymBoards,
-    connected: bluetooth?.isConnected ?? false,
-    sharedSession: isSharedSession,
-    hasRememberedDeviceForBoard,
-    moveToClimbBoard,
-    connectAfterBoardSwitch: connectAfterBoardSwitchForFollow,
-  });
 
   // The switch-board gate fires only when the drawer is showing a climb from a
   // genuinely DIFFERENT board model (board name + layout) than the user's stored

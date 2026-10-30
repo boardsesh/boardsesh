@@ -1324,9 +1324,7 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
     rerenderOn(rerender, MOON_PROPS);
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device', {
-        quiet: false,
-      });
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device');
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
     await expect(connected).resolves.toBe(true);
@@ -1349,36 +1347,7 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
 
     await expect(connected).resolves.toBe(false);
     // Nothing remembered for the MoonBoard: the picker opens for it.
-    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, { quiet: false });
-  });
-
-  it('passes a quiet connect through, and arms no undo for it (#7076)', async () => {
-    const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
-    act(() => {
-      void capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD, { quiet: true });
-    });
-    bluetooth.state.reconnectDeviceIdForCurrentBoard = 'moon-device';
-    rerenderOn(rerender, MOON_PROPS);
-
-    await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device', {
-        quiet: true,
-      });
-    });
-  });
-
-  it('ends a quiet connect without opening the board list when the board is no longer remembered (#7076)', async () => {
-    bluetooth.state.reconnectSerialForCurrentBoard = null;
-    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
-    const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
-    let connected: Promise<boolean> | undefined;
-    act(() => {
-      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD, { quiet: true });
-    });
-    rerenderOn(rerender, MOON_PROPS);
-
-    await expect(connected).resolves.toBe(false);
-    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
   });
 
   it('resolves false and never connects when the switch never reaches the provider', async () => {

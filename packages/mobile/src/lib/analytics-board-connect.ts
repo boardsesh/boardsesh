@@ -26,10 +26,6 @@ export type BoardConnectSurface =
   // The player's Put on {board}: a climb on another board at this gym, so the
   // tap moves to that board first (#7076).
   | 'move_to_board'
-  // A solo climber driving the wall moved onto a climb on another board at this
-  // gym, and the app followed it there on its own (#7076). Not a tap, but the
-  // same connect, so it is counted here rather than left out.
-  | 'auto_follow'
   // The Climbs header's "You have the board" capsule: a tap disconnects, a
   // long-press opens the controls sheet. It never connects (it only shows while
   // you hold the board, and a tap that would connect is dropped), but it shares

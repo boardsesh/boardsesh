@@ -9,8 +9,8 @@
 //
 // Same rules as the single record:
 //   - A handle is a `serial` (Aurora) or a `deviceId` (MoonBoard), never both.
-//   - It is only a reconnect *target* for a deliberate connect (a tap, or the
-//     auto-follow of a climber already driving a wall). Nothing here connects.
+//   - It is only a reconnect *target* for a deliberate connect (a tap). Nothing
+//     here connects.
 //   - A deliberate disconnect forgets that board (`forgetKnownBoardDevice`): it
 //     frees the board for the next climber.
 //   - Keyed by `boardConfigKey(boardName, layoutId, sizeId, boardUuid)`, so a
