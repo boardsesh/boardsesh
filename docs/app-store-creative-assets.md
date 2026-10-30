@@ -248,7 +248,10 @@ stops before any R2 or ASC step. For the changed variants only, the path
 promotes their immutable candidate objects to `approved/`, then downloads and
 verifies every SHA256 before exposing ASC credentials to the upload lane. It
 uploads those search videos, waits up to 7.5 minutes for Apple's processing
-precondition, and places them on the editable version.
+precondition, and places them on the editable version. If that merge run fails,
+re-run it: a later manifest push compares against the failed merge, so it sees
+those variants as unchanged and will not retry them. A missing manifest at the
+previous commit stops the run rather than shipping every variant.
 
 A manual dispatch with `variant:all` and `placement:search` skips variants that
 have no search entries yet, the same way. With `placement:all`, or when a page

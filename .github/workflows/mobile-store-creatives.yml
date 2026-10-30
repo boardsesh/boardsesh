@@ -102,10 +102,12 @@ jobs:
           previous=()
           if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
             git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
-            if git cat-file -e "$BEFORE_SHA:$manifest" 2>/dev/null; then
-              git show "$BEFORE_SHA:$manifest" > "$RUNNER_TEMP/previous-creative-assets.json"
-              previous=(--previous "$RUNNER_TEMP/previous-creative-assets.json")
+            if ! git cat-file -e "$BEFORE_SHA:$manifest"; then
+              echo "::error::$manifest is missing at $BEFORE_SHA; refusing to ship every variant without a baseline."
+              exit 1
             fi
+            git show "$BEFORE_SHA:$manifest" > "$RUNNER_TEMP/previous-creative-assets.json"
+            previous=(--previous "$RUNNER_TEMP/previous-creative-assets.json")
           else
             echo "::error::Push has no previous commit to compare the manifest against."
             exit 1
@@ -192,6 +194,7 @@ jobs:
       - name: Summarize creative results
         if: always()
         env:
+          SEARCH_OUTCOME: ${{ steps.search.outcome }}
           CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
           SHIPPED_VARIANTS: ${{ steps.search.outputs.variants }}
         run: |
@@ -235,7 +238,9 @@ jobs:
           const uploads = report('creative-assets-upload-report.json');
           const placements = report('creative-assets-place-report.json');
           const lines = ['### Store creative results', ''];
-          if (process.env.CREATIVE_ACTION === 'upload-and-place' && !shipped.length) {
+          if (process.env.CREATIVE_ACTION === 'upload-and-place' && process.env.SEARCH_OUTCOME !== 'success') {
+            lines.push('Search video validation did not pass; nothing was promoted, uploaded or placed.', '');
+          } else if (process.env.CREATIVE_ACTION === 'upload-and-place' && !shipped.length) {
             lines.push('No search video entries changed in this push; nothing was promoted, uploaded or placed.', '');
           } else if (process.env.CREATIVE_ACTION === 'upload-and-place') {
             lines.push(`| Search videos | Count |`, '| --- | ---: |', `| Promoted or already approved | ${storageCount(promoted)} |`, `| Downloaded and SHA256 verified | ${storageCount(fetched, true)} |`, `| Uploaded or already in Asset Library | ${unique(uploads)} |`, `| Placed or already assigned | ${unique(placements)} |`, '');

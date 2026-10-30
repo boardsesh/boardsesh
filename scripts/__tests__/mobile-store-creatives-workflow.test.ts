@@ -60,7 +60,7 @@ function manifestFixture(root: string) {
   writeFileSync(join(root, 'app-stores/apple/creative-assets.json'), JSON.stringify(manifest));
   return manifest;
 }
-function summarize(root: string, shipped = 'default,kilter,tension,moonboard,spray') {
+function summarize(root: string, shipped = 'default,kilter,tension,moonboard,spray', searchOutcome = 'success') {
   const output = join(root, 'summary');
   const result = spawnSync('bash', ['-c', step('Summarize creative results').run!], {
     cwd: root,
@@ -68,6 +68,7 @@ function summarize(root: string, shipped = 'default,kilter,tension,moonboard,spr
     env: {
       ...process.env,
       CREATIVE_ACTION: 'upload-and-place',
+      SEARCH_OUTCOME: searchOutcome,
       SHIPPED_VARIANTS: shipped,
       RUNNER_TEMP: root,
       GITHUB_STEP_SUMMARY: output,
@@ -327,7 +328,8 @@ describe('merged store video upload workflow', () => {
     for (const action of ['promotion', 'fetch'])
       writeFileSync(join(root, `creative-${action}-report.json`), JSON.stringify({ objects: 12, changed: 12 }));
     expect(summarize(root, 'kilter')).toContain('| Promoted or already approved | 4 |');
-    expect(summarize(root, '')).toContain('nothing was promoted, uploaded or placed');
+    expect(summarize(root, '')).toContain('No search video entries changed in this push');
+    expect(summarize(root, '', 'failure')).toContain('Search video validation did not pass');
   });
   it('passes a shipped subset to the lane with unchanged guards', () => {
     const result = lane('upload-and-place', { CREATIVE_VARIANT: 'default,spray' });
