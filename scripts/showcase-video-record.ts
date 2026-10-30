@@ -109,6 +109,7 @@ import {
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   showcaseQueuePattern,
+  recordTakeWithRetry,
   crewPeerRowFallbackPoint,
   crewPeerRowPattern,
   ensureCaptureSessionClosed,
@@ -2055,24 +2056,36 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return context.session.open ? 1 : 0;
     }
     for (const take of takes) {
-      try {
-        results.push(await recordTake(context, take));
-      } catch (error) {
-        results.push({
-          takeId: take.id,
-          problems: [`[${take.id}] ${error instanceof Error ? error.message : String(error)}`],
-          frames: 0,
-          seconds: 0,
-        });
-      }
-      // Setup can fail after Start. Clean up immediately while JS still owns
-      // the session, rather than letting the next take cold-launch over it.
-      try {
-        await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-cleanup`));
-      } catch (error) {
-        results[results.length - 1].problems.push(error instanceof Error ? error.message : String(error));
-        break;
-      }
+      const { result, cleanupProblem } = await recordTakeWithRetry(
+        async (): Promise<TakeResult> => {
+          try {
+            return await recordTake(context, take);
+          } catch (error) {
+            return {
+              takeId: take.id,
+              problems: [`[${take.id}] ${error instanceof Error ? error.message : String(error)}`],
+              frames: 0,
+              seconds: 0,
+            };
+          }
+        },
+        // Setup can fail after Start. Clean up immediately while JS still owns
+        // the session, rather than letting the next take cold-launch over it.
+        async () => {
+          try {
+            await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-cleanup`));
+            return null;
+          } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+          }
+        },
+        (failed, attemptNumber) =>
+          console.warn(
+            `${LOG} ${take.id}: attempt ${attemptNumber} failed (${failed.problems.join('; ')}); recording it again.`,
+          ),
+      );
+      results.push(cleanupProblem ? { ...result, problems: [...result.problems, cleanupProblem] } : result);
+      if (cleanupProblem) break;
     }
   } catch (error) {
     console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);

@@ -1045,3 +1045,22 @@ export function checkTake(input: TakeCheckInput): string[] {
   }
   return problems;
 }
+
+/** Simulator takes flake (a deep link that never opens, a wall roster that loads late); one locale
+ * of twenty takes failing threw away a whole CI recording. Retry a failed take, but never after a
+ * failed cleanup: a live session that would not end must stop the run. */
+export const SHOWCASE_TAKE_ATTEMPTS = 2;
+
+export async function recordTakeWithRetry<Result extends { problems: readonly string[] }>(
+  attempt: () => Promise<Result>,
+  cleanup: () => Promise<string | null>,
+  onRetry: (failed: Result, attemptNumber: number) => void,
+  attempts = SHOWCASE_TAKE_ATTEMPTS,
+): Promise<{ result: Result; cleanupProblem: string | null }> {
+  for (let attemptNumber = 1; ; attemptNumber++) {
+    const result = await attempt();
+    const cleanupProblem = await cleanup();
+    if (cleanupProblem || result.problems.length === 0 || attemptNumber >= attempts) return { result, cleanupProblem };
+    onRetry(result, attemptNumber);
+  }
+}
