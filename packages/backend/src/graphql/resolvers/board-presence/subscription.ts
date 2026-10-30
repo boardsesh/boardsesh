@@ -6,7 +6,6 @@ import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
-import { isForThisViewer } from './handoff';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -94,9 +93,6 @@ export const boardPresenceSubscriptions = {
       // page — no error naming a wall the caller may no longer see.
       const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId, boardUuid, db);
       for await (const event of asyncIterator) {
-        // A hand-off request (#7113) is addressed to one holder: it names the
-        // crewmate asking, and asks that phone to let go. Nobody else sees it.
-        if (!isForThisViewer(event, ctx.userId)) continue;
         await requireAnonReadableBoard(boardId, ctx.userId, boardUuid);
         if (gate && !(await gate())) return;
         yield { boardNowPlaying: await redactBoardEvent(event, ctx.userId, boardId, boardUuid) };

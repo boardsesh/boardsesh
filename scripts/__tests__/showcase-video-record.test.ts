@@ -33,6 +33,8 @@ import {
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
   showcaseQueuePattern,
+  recordTakeWithRetry,
+  SHOWCASE_TAKE_ATTEMPTS,
   crewPeerRowPattern,
   crewPeerRowFallbackPoint,
   ensureCaptureSessionClosed,
@@ -1447,5 +1449,40 @@ describe('showcaseQueuePattern', () => {
     expect(pattern.test('Favorite')).toBe(false);
     expect(showcaseQueuePattern({ queueCountAria: "File d'attente (.)" })).toBe("File d'attente \\(\\.\\)");
     expect(() => showcaseQueuePattern({})).toThrow('No Queue button label');
+  });
+});
+
+describe('recordTakeWithRetry', () => {
+  const ok = { problems: [] as string[] };
+  const bad = { problems: ['[boards-moonboard] wrong wall'] };
+
+  it('records a failed take once more and keeps the second result', async () => {
+    const attempt = vi.fn().mockResolvedValueOnce(bad).mockResolvedValueOnce(ok);
+    const onRetry = vi.fn();
+    const { result, cleanupProblem } = await recordTakeWithRetry(attempt, async () => null, onRetry);
+    expect(result).toBe(ok);
+    expect(cleanupProblem).toBeNull();
+    expect(attempt).toHaveBeenCalledTimes(2);
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(bad, 1);
+  });
+
+  it('gives up after the last attempt and reports its problems', async () => {
+    const attempt = vi.fn().mockResolvedValue(bad);
+    const { result } = await recordTakeWithRetry(attempt, async () => null, vi.fn());
+    expect(result).toBe(bad);
+    expect(attempt).toHaveBeenCalledTimes(SHOWCASE_TAKE_ATTEMPTS);
+  });
+
+  it('never retries after a cleanup that left a live session open', async () => {
+    const attempt = vi.fn().mockResolvedValue(bad);
+    const { cleanupProblem } = await recordTakeWithRetry(attempt, async () => 'session did not end', vi.fn());
+    expect(cleanupProblem).toBe('session did not end');
+    expect(attempt).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry a clean take', async () => {
+    const attempt = vi.fn().mockResolvedValue(ok);
+    await recordTakeWithRetry(attempt, async () => null, vi.fn());
+    expect(attempt).toHaveBeenCalledOnce();
   });
 });
