@@ -732,6 +732,45 @@ export type BoardDiscoveryInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/**
+ * Event: a crewmate in the holder's party session asked to take the board
+ * (#7113). Delivered only to subscribers signed in as `holderUserId`; every
+ * other viewer of the feed never sees it. The holder's phone lets go of its
+ * Bluetooth link (an Aurora or MoonBoard box takes one phone at a time), and the
+ * requester connects once `BoardConnectionChanged` shows the board free.
+ * Clients that don't know this member ignore it.
+ */
+export type BoardHandoffRequested = {
+  __typename?: 'BoardHandoffRequested';
+  /** The holder this request is addressed to. */
+  holderUserId: Scalars['ID']['output'];
+  /**
+   * Identifies this request, for de-duplication. Not a board sequence number:
+   * the event reaches the holder alone, so taking a number from the board's
+   * shared counter would read as a missed event on every other phone.
+   */
+  requestId: Scalars['ID']['output'];
+  /** ISO 8601 timestamp when the server accepted the request. */
+  requestedAt: Scalars['String']['output'];
+  /** Who asked. */
+  requester: BoardHandoffRequester;
+};
+
+/**
+ * The crewmate asking to take the board (`requestBoardHandoff`). Always a
+ * signed-in member of the holder's party session, so the holder's phone can say
+ * who took it.
+ */
+export type BoardHandoffRequester = {
+  __typename?: 'BoardHandoffRequester';
+  /** Profile avatar URL, falling back to the account image. */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name. */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Boardsesh user id of the crewmate asking. */
+  userId: Scalars['ID']['output'];
+};
+
 export type BoardHistoryPage = {
   __typename?: 'BoardHistoryPage';
   entries: Array<BoardPresenceClimb>;
@@ -857,6 +896,7 @@ export type BoardPresenceEvent =
   | BoardClimbCleared
   | BoardClimbSet
   | BoardConnectionChanged
+  | BoardHandoffRequested
   | BoardHistoryUpdated
   | BoardStatsUpdated;
 
@@ -4613,6 +4653,15 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  /**
+   * Ask the crewmate whose phone holds `boardId` to let go of it, so the caller can
+   * connect (#7113, the wall button's swipe on a crewmate's board). Publishes
+   * `BoardHandoffRequested` to the holder alone. Requires sign-in, board membership,
+   * and that the caller and the holder are in the same party session. Returns true
+   * when the holder was asked, false when there is nobody to ask (the board is free,
+   * or the caller already holds it). Rate-limited.
+   */
+  requestBoardHandoff: Scalars['Boolean']['output'];
   requestFollow: PrivacyRelationship;
   /**
    * Request ownership of a gym. With a matching work email at the gym's website
@@ -5446,6 +5495,11 @@ export type MutationReportGymDuplicateArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportSprayWallArgs = {
   input: ReportSprayWallInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestBoardHandoffArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
