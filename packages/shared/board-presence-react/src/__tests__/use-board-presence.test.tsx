@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type {
   BoardConnectionHolder,
@@ -1378,4 +1378,102 @@ it('keeps the live reader and loaded wall data through an ordinary transport rec
   act(() => harness.emit(setEvent(climb('after-reconnect', 2))));
   expect(snapshot.current?.currentClimb?.climbUuid).toBe('after-reconnect');
   expect(snapshot.current?.isLive).toBe(true);
+});
+
+describe('terminal subscription recovery (#2713)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('backs off, ignores retired callbacks, and preserves loaded history', () => {
+    vi.useFakeTimers();
+    const harness = makeClient();
+    const { result, unmount } = renderHook(() => useBoardPresence(1, harness.client));
+    act(() => harness.emit(setEvent(climb('loaded', 10))));
+    const retiredHandler = harness.subscribeNowPlaying.mock.calls[0][1];
+    const retiredComplete = harness.subscribeNowPlaying.mock.calls[0][3];
+    act(() => harness.emitError(new Error('offline')));
+    expect(result.current.isLive).toBe(false);
+    expect(result.current.currentClimb?.climbUuid).toBe('loaded');
+    act(() => vi.advanceTimersByTime(999));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    act(() => {
+      retiredComplete?.();
+      retiredHandler(setEvent(climb('stale', 100)));
+    });
+    expect(result.current.isDenied).toBe(false);
+    expect(result.current.currentClimb?.climbUuid).toBe('loaded');
+    act(() => harness.emitError(new Error('still offline')));
+    act(() => vi.advanceTimersByTime(1999));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    act(() => vi.advanceTimersByTime(1));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(3);
+    act(() => harness.emit(setEvent(climb('recovered', 11))));
+    expect(result.current.currentClimb?.climbUuid).toBe('recovered');
+    act(() => harness.emitError(new Error('new outage')));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(4);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['manual', 'foreground', 'reconnect'] as const)('retries immediately on %s', (reason) => {
+    vi.useFakeTimers();
+    const harness = makeClient();
+    const { result, unmount } = renderHook(() => useBoardPresence(1, harness.client));
+    act(() => harness.emitError(new Error('offline')));
+    act(() => {
+      if (reason === 'reconnect') harness.triggerReconnect();
+      else result.current.refresh(reason);
+    });
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('handles synchronous failures and stops after access denial', () => {
+    vi.useFakeTimers();
+    const harness = makeClient();
+    harness.subscribeNowPlaying.mockImplementationOnce(() => {
+      throw new Error('offline');
+    });
+    const { result, unmount } = renderHook(() => useBoardPresence(1, harness.client));
+    expect(result.current.isLive).toBe(false);
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => harness.emitError(NOT_FOUND_ERROR));
+    expect(result.current.isDenied).toBe(true);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('caps repeated failures at thirty seconds', () => {
+    vi.useFakeTimers();
+    const harness = makeClient();
+    const { unmount } = renderHook(() => useBoardPresence(1, harness.client));
+    for (const delay of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+      const attempts = harness.subscribeNowPlaying.mock.calls.length;
+      act(() => harness.emitError(new Error('offline')));
+      act(() => vi.advanceTimersByTime(delay - 1));
+      expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(attempts);
+      act(() => vi.advanceTimersByTime(1));
+      expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(attempts + 1);
+    }
+    unmount();
+  });
+
+  it('cancels retries when switching boards', () => {
+    vi.useFakeTimers();
+    const harness = makeClient();
+    const { rerender, unmount } = renderHook(({ boardId }) => useBoardPresence(boardId, harness.client), {
+      initialProps: { boardId: 1 },
+    });
+    act(() => harness.emitError(new Error('offline')));
+    rerender({ boardId: 2 });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(harness.subscribeNowPlaying).toHaveBeenCalledTimes(2);
+    expect(harness.getSubscribedBoardId()).toBe(2);
+    unmount();
+  });
 });

@@ -8,6 +8,7 @@ import type {
   BoardPresenceClimb,
 } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
+import { getGradeColor } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -224,7 +225,7 @@ async function bindOrCreateOwnBoardForSerial(
       }
     } catch (error) {
       if (isDuplicateBoardSerialError(error)) {
-        logger.warn(`[board-presence] bind race on own board: ${String(error)}`);
+        logger.warn('[board-presence] bind race on own board');
         const winner = await findOwnActiveBoardByConfig(
           userId,
           config.boardType,
@@ -288,7 +289,7 @@ async function bindOrCreateOwnBoardForSerial(
     return created;
   } catch (error) {
     if (isDuplicateBoardSerialError(error)) {
-      logger.warn(`[board-presence] create race on own board: ${String(error)}`);
+      logger.warn('[board-presence] create race on own board');
       const winner = await findOwnActiveBoardByConfig(
         userId,
         config.boardType,
@@ -470,7 +471,7 @@ async function resolveSelectedBoardForSerial(
         if (updated) board = { ...selected, serialNumber: updated.serialNumber };
       } catch (error) {
         if (!isDuplicateBoardSerialError(error)) throw error;
-        logger.warn(`[board-presence] serial claim skipped, already bound elsewhere: ${String(error)}`);
+        logger.warn('[board-presence] serial claim skipped, already bound elsewhere');
       }
     }
     await rememberBoardForSerial(userId, serial, board, tx);
@@ -1010,9 +1011,7 @@ export const boardPresenceMutations = {
       queueItemUuid: validatedClimb.uuid,
       name: catalogClimb.name ?? null,
       grade: catalogClimb.grade ?? null,
-      // Grade palettes are still client/theme-specific, so the server leaves
-      // this nullable until a shared color contract exists.
-      gradeColor: null,
+      gradeColor: getGradeColor(catalogClimb.grade) ?? null,
       frames: catalogClimb.frames ?? null,
       angle: effectiveAngle,
       mirrored: reportedMirrored,
