@@ -848,6 +848,23 @@ export function crewPeerRowFallbackPoint(
 }
 
 /** Measured family-specific iOS queue targets when the native drawer omits accessibility controls. */
+/**
+ * The player's Queue button label, as a Maestro full-match pattern. Walking a list it reads
+ * "Queue, N up next" (zero/one/other plural forms); otherwise "Queue, N climbs".
+ */
+export function showcaseQueuePattern(actionBar: Readonly<Record<string, string>>): string {
+  const labels = Object.entries(actionBar)
+    .filter(([key]) => /^queue(CountAria|UpNextAria)(_[a-z]+)?$/.test(key))
+    .map(([, label]) =>
+      label
+        .split('{{count}}')
+        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*'),
+    );
+  if (labels.length === 0) throw new Error('No Queue button label in the session catalog');
+  return labels.length === 1 ? labels[0] : `(${labels.join('|')})`;
+}
+
 export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: ShowcasePlatform, logText: string): string {
   if (platform !== 'ios') return '';
   // Tension mirrors: its genuine Queue button is in the lower-right utility
@@ -862,7 +879,8 @@ export function crewQueueFallbackPoint(kind: ShowcaseVariantKind, platform: Show
     return /\bL10 S\d+ @-?[\d.]+°, tension\)\s*$/.test(lastTensionSlotResolution ?? '') ? '91%,90%' : '';
   }
   if (kind !== 'default' && kind !== 'kilter') return '';
-  return findBoardSlotProblem(logText, 0, 'kilter') === null ? '10%,84%' : '';
+  // The default action bar ends Favorite, Previous, Tick, Next, Queue; Queue is the last slot.
+  return findBoardSlotProblem(logText, 0, 'kilter') === null ? '87%,84%' : '';
 }
 
 /**
