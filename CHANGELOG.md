@@ -10,6 +10,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 - Your climbing calendar now shows months and weekdays, and tapping a day shows how many climbs you logged ([#7112](https://github.com/boardsesh/boardsesh/pull/7112))
 
+### Improved
+
+- Rename your gym's boards and correct their settings from gym management. Boardsesh admins can also find registered boards in one searchable list. ([#7123](https://github.com/boardsesh/boardsesh/pull/7123))
+
 ### Fixed
 
 - Scrolling climb lists no longer stops and slides a row open halfway through ([#7108](https://github.com/boardsesh/boardsesh/pull/7108))

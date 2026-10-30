@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-30T13:18:43.668Z",
+  "generatedAt": "2026-10-30T19:51:41.712Z",
   "entries": [
+    {
+      "prNumber": 7123,
+      "category": "improved",
+      "title": "Rename your gym's boards and correct their settings from gym management. Boardsesh admins can also find registered boards in one searchable list.",
+      "mergedAt": "2026-10-30T19:39:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7123"
+    },
     {
       "prNumber": 7112,
       "category": "new",
