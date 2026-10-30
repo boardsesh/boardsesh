@@ -32,6 +32,7 @@ import {
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
+  showcaseQueuePattern,
   crewPeerRowPattern,
   crewPeerRowFallbackPoint,
   ensureCaptureSessionClosed,
@@ -1131,8 +1132,8 @@ describe('observed native crew queue fallback', () => {
   const tensionResolved = '[screenshot] board[0] "Tension" -> "Tension" (L7 S12 @40°, tension)';
 
   it('enables the observed iOS first-slot target only for a verified Kilter capture', () => {
-    expect(crewQueueFallbackPoint('kilter', 'ios', kilterResolved)).toBe('10%,84%');
-    expect(crewQueueFallbackPoint('default', 'ios', kilterResolved)).toBe('10%,84%');
+    expect(crewQueueFallbackPoint('kilter', 'ios', kilterResolved)).toBe('87%,84%');
+    expect(crewQueueFallbackPoint('default', 'ios', kilterResolved)).toBe('87%,84%');
     expect(crewQueueFallbackPoint('kilter', 'android', kilterResolved)).toBe('');
     for (const kind of SHOWCASE_VARIANT_KINDS.filter((kind) => kind !== 'default' && kind !== 'kilter')) {
       expect(crewQueueFallbackPoint(kind, 'ios', kilterResolved), kind).toBe('');
@@ -1426,5 +1427,25 @@ describe('native MoonBoard filter recovery', () => {
       expect(simulate(true, undefined, missing)).toEqual({ ready: true, actions: ['close', 'reopen'], failed: false });
       expect(simulate(false, missing)).toEqual({ ready: false, actions: ['close', 'reopen'], failed: true });
     }
+  });
+});
+
+describe('showcaseQueuePattern', () => {
+  it('matches the Queue button whether it counts climbs or what is up next', () => {
+    const pattern = new RegExp(
+      `^${showcaseQueuePattern({
+        queueCountAria: 'Queue, {{count}} climbs',
+        queueUpNextAria_zero: 'Queue, nothing up next',
+        queueUpNextAria_one: 'Queue, {{count}} climb up next',
+        queueUpNextAria_other: 'Queue, {{count}} climbs up next',
+        favoriteAria: 'Favorite',
+      })}$`,
+    );
+    expect(pattern.test('Queue, 3 climbs')).toBe(true);
+    expect(pattern.test('Queue, 1 climb up next')).toBe(true);
+    expect(pattern.test('Queue, nothing up next')).toBe(true);
+    expect(pattern.test('Favorite')).toBe(false);
+    expect(showcaseQueuePattern({ queueCountAria: "File d'attente (.)" })).toBe("File d'attente \\(\\.\\)");
+    expect(() => showcaseQueuePattern({})).toThrow('No Queue button label');
   });
 });

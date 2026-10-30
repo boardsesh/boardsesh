@@ -108,6 +108,7 @@ import {
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
+  showcaseQueuePattern,
   crewPeerRowFallbackPoint,
   crewPeerRowPattern,
   ensureCaptureSessionClosed,
@@ -1225,9 +1226,9 @@ function showcaseQueueLabel(locale: ShowcaseRecordArgs['locales'][number]): stri
   const catalog = JSON.parse(
     readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
   ) as {
-    playView: { actionBar: { queueCountAria: string } };
+    playView: { actionBar: Record<string, string> };
   };
-  return catalog.playView.actionBar.queueCountAria.replace('{{count}}', '.*');
+  return showcaseQueuePattern(catalog.playView.actionBar);
 }
 
 function showcaseBoardHistoryLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
