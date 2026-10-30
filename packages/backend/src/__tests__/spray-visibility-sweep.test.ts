@@ -691,6 +691,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   // spray-wall-moderation.test.ts, which asserts the non-admin rejection.
   'Query.sprayWallReports':
     'admin-only — requireAdmin runs before any read, so the non-admin owner is rejected — and it answers with report rows (wall uuid, layout id, reason), never a climb name or frames',
+  'Query.adminBoard':
+    'global-admin-only stored board metadata; requireAdmin rejects the non-admin owner before any read. The admin registry deliberately includes private boards, but returns no climbs, photographs, frames or activity. admin-boards.test.ts pins global-admin access, raw metadata and owner-only credentials',
 
   // --- beta links -------------------------------------------------------------
   // The seeded link is not an Instagram or TikTok URL, because those enrich
