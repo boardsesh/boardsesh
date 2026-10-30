@@ -4,7 +4,8 @@ import {
   effectiveStatsSql,
   isDetailCrossAngleStats,
   mapRowToClimb,
-  withLocalSprayGrades,
+  localSprayGradeJoin,
+  effectiveDisplayDifficultySql,
   type LocalClimbRow,
 } from './search-climbs-local';
 
@@ -56,6 +57,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       ON s_set.climb_uuid = c.uuid AND s_set.board_type = ? AND s_set.angle = c.angle`
     : '';
   const gradeAngleSql = crossAngle ? 'COALESCE(s.angle, s_set.angle, ?)' : '?';
+  const localGrade = localSprayGradeJoin(boardName, angle, viewerId);
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
@@ -64,7 +66,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
-      ${eff('display_difficulty')} AS display_difficulty,
+      ${effectiveDisplayDifficultySql(boardName, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,
       ${eff('quality_average')} AS quality_average,
       ${eff('benchmark_difficulty')} AS benchmark_difficulty,
@@ -83,6 +85,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     ${setAngleJoin}
     LEFT JOIN board_climb_grades g
       ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ${gradeAngleSql}
+    ${localGrade.sql}
     WHERE c.uuid = ? AND c.board_type = ?
       AND (COALESCE(c.is_draft, 0) = 0 OR c.user_id = ?
         OR (c.board_type = 'spray' AND EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)))
@@ -102,6 +105,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     ...(crossAngle ? [boardName] : []),
     boardName,
     angle,
+    ...localGrade.binds,
     climbUuid,
     boardName,
     viewerId,
@@ -109,8 +113,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   const row = await db.getFirstAsync<LocalClimbRow>(query, binds);
   if (!row) return null;
 
-  const [gradedRow] = await withLocalSprayGrades(db, [row], boardName, angle, viewerId);
-  const climb = mapRowToClimb(gradedRow!, boardName, layoutId, angle);
+  const climb = mapRowToClimb(row, boardName, layoutId, angle);
   // `description` now comes straight out of mapRowToClimb (the search read
   // carries it too since #4494), so only `mirrored` is patched on here.
   return { ...climb, mirrored: false };

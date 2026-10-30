@@ -38,31 +38,35 @@ import { tickOnCurrentHoldsLocalSql } from './climb-revisions-local';
 
 export type LocalSearchResult = { climbs: Climb[]; hasMore: boolean };
 
-/** An offline first ascent grades an ungraded wall climb until canonical stats arrive. */
-export async function withLocalSprayGrades(
-  db: OfflineDatabase,
-  rows: LocalClimbRow[],
+/** One owner/angle-scoped first graded ascent, before filtering or pagination. */
+export function localSprayGradeJoin(
   boardName: string,
   angle: number,
   viewerId: string | null,
-): Promise<LocalClimbRow[]> {
-  if (boardName !== 'spray' || !viewerId) return rows;
-  const ungraded = rows.filter((row) => row.display_difficulty == null).map((row) => row.uuid);
-  if (ungraded.length === 0) return rows;
-  const grades = await db.getAllAsync<{ climb_uuid: string; difficulty: number }>(
-    `SELECT climb_uuid, difficulty FROM (
-    SELECT climb_uuid, difficulty, ROW_NUMBER() OVER (PARTITION BY climb_uuid ORDER BY climbed_at ASC, uuid ASC) AS position
-    FROM boardsesh_ticks WHERE board_type = 'spray' AND angle = ? AND user_id = ? AND status IN ('send', 'flash')
-      AND difficulty IS NOT NULL AND climb_uuid IN (${ungraded.map(() => '?').join(', ')})
-    ) WHERE position = 1`,
-    [angle, viewerId, ...ungraded],
-  );
-  const byClimb = new Map(grades.map((tick) => [tick.climb_uuid, tick.difficulty]));
-  return rows.map((row) =>
-    row.display_difficulty == null && byClimb.has(row.uuid)
-      ? { ...row, display_difficulty: byClimb.get(row.uuid)! }
-      : row,
-  );
+): {
+  sql: string;
+  binds: (string | number | null)[];
+} {
+  if (boardName !== 'spray') return { sql: '', binds: [] };
+  return {
+    sql: `LEFT JOIN boardsesh_ticks local_first_ascent ON local_first_ascent.uuid = (
+      SELECT first_tick.uuid FROM boardsesh_ticks first_tick
+      WHERE first_tick.climb_uuid = c.uuid AND first_tick.board_type = 'spray'
+        AND first_tick.angle = ? AND first_tick.user_id = ?
+        AND first_tick.status IN ('send', 'flash') AND first_tick.difficulty IS NOT NULL
+      ORDER BY first_tick.climbed_at ASC, first_tick.uuid ASC LIMIT 1
+    )`,
+    binds: [angle, viewerId],
+  };
+}
+
+/** Canonical stats and grade estimates take precedence over an offline first ascent. */
+export function effectiveDisplayDifficultySql(boardName: string, crossAngle: boolean): string {
+  const canonical = effectiveStatsSql('display_difficulty', crossAngle);
+  return boardName === 'spray'
+    ? `COALESCE(${canonical}, CASE WHEN COALESCE(g.universal_grade, g.local_grade) IS NULL
+        THEN local_first_ascent.difficulty END)`
+    : canonical;
 }
 
 // `null` is a real bind value here, not an absence: with no `local_user_id`
@@ -420,7 +424,7 @@ export function buildJoinAndWhere(
   const joinBinds: Bind[] = crossAngle
     ? [boardType, angle, boardType, boardType, angle]
     : [boardType, angle, boardType, angle];
-  const joinSql = crossAngle
+  let joinSql = crossAngle
     ? `${BROWSED_STATS_JOIN}
     LEFT JOIN board_climb_stats s_set
     ON s_set.climb_uuid = c.uuid AND s_set.board_type = ? AND s_set.angle = c.angle
@@ -428,6 +432,11 @@ export function buildJoinAndWhere(
     ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = COALESCE(s.angle, s_set.angle, ?)`
     : `${BROWSED_STATS_JOIN}
     ${BROWSED_GRADES_JOIN}`;
+  if (context === 'catalogue') {
+    const localGrade = localSprayGradeJoin(boardType, angle, ownerUserId);
+    joinSql += ` ${localGrade.sql}`;
+    joinBinds.push(...localGrade.binds);
+  }
 
   const conditions: string[] = [];
   const whereBinds: Bind[] = [];
@@ -555,7 +564,9 @@ export function buildJoinAndWhere(
   // Personal grades (#4828) wrap this same value: COALESCE(my grade, it). One
   // plain range test, the same shape the server uses — the EXISTS/NOT EXISTS
   // halves under an OR it replaced measured a 7.1x regression server-side.
-  const gradeRangeValue = gradeValueSql(eff('display_difficulty'), input.gradeSource);
+  const displayDifficulty =
+    context === 'catalogue' ? effectiveDisplayDifficultySql(boardType, crossAngle) : eff('display_difficulty');
+  const gradeRangeValue = gradeValueSql(displayDifficulty, input.gradeSource);
   const personalGradeBinds = usesMyGrades(input) ? myGradeBinds(boardType, angle, ownerUserId) : [];
   const rangeValue = usesMyGrades(input) ? effectiveGradeExpr(gradeRangeValue) : gradeRangeValue;
   if (!isDraftQuery && input.minGrade && input.maxGrade) {
@@ -580,10 +591,7 @@ export function buildJoinAndWhere(
   if (!isDraftQuery && Number.isFinite(gradeAccuracy)) {
     // Always the upstream-first value, whatever the grade source: accuracy measures
     // how far the crowd average sits from the upstream grade.
-    push(
-      `ABS(${gradeValueSql(eff('display_difficulty'), 'UPSTREAM')} - ${eff('difficulty_average')}) <= ?`,
-      gradeAccuracy,
-    );
+    push(`ABS(${gradeValueSql(displayDifficulty, 'UPSTREAM')} - ${eff('difficulty_average')}) <= ?`, gradeAccuracy);
   }
 
   // Benchmarks only: a real number above zero, the rule the server applies
@@ -712,17 +720,21 @@ export function sortColumnSql(
   crossAngle: boolean,
   gradeSource: ClimbSearchInput['gradeSource'],
   useMyGrades: boolean,
+  boardName?: string,
 ): string {
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
   switch (sortBy) {
     case 'ascents':
       return eff('ascensionist_count');
     case 'difficulty':
-      // Under the Boardsesh source the sort keys on the grade the row is labelled
-      // with, as the server's does. The upstream sort has no fallback, unchanged.
+      // Spray sorts by its canonical grade or local first ascent. Catalogue
+      // boards retain their upstream sort without a grade-estimate fallback.
+      const displayDifficulty = boardName
+        ? effectiveDisplayDifficultySql(boardName, crossAngle)
+        : eff('display_difficulty');
       const crowdSort =
-        gradeSource === 'BOARDSESH'
-          ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
+        gradeSource === 'BOARDSESH' || boardName === 'spray'
+          ? gradeValueSql(displayDifficulty, gradeSource)
           : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
       // With personal grades on, a climb the climber re-graded to V10 sorts among
       // the V10s rather than staying with the V0s (#4828).
@@ -1078,6 +1090,7 @@ function canWalkAscentsRanking(
 
 type RankedWalkQuery = {
   boardType: string;
+  ownerUserId: string | null;
   layoutId: number;
   angle: number;
   selectSql: string;
@@ -1094,6 +1107,7 @@ type RankedWalkQuery = {
  */
 async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): Promise<LocalClimbRow[] | null> {
   const { boardType, layoutId, angle, pageSize, offset } = walk;
+  const localGrade = localSprayGradeJoin(boardType, angle, walk.ownerUserId);
   const wantedRows = offset + pageSize + 1;
   const layoutClimbs = layoutClimbCountFor(db, boardType, layoutId);
   const budgetByDepth = Math.max(RANKED_WALK_MIN_BUDGET, wantedRows * RANKED_WALK_BUDGET_PER_WANTED_ROW);
@@ -1136,6 +1150,7 @@ async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): P
     FROM board_climb_stats s INDEXED BY ${RANKED_WALK_INDEX}
     CROSS JOIN board_climbs c ON c.uuid = s.climb_uuid
     ${BROWSED_GRADES_JOIN}
+    ${localGrade.sql}
     WHERE s.board_type = ? AND s.angle = ? ${edgeSql} AND s.ascensionist_count > 0
       AND ${walk.whereSql}
     ORDER BY s.ascensionist_count DESC, s.climb_uuid DESC
@@ -1148,6 +1163,7 @@ async function readRankedWalkRows(db: OfflineDatabase, walk: RankedWalkQuery): P
     ...walk.selectBinds,
     boardType,
     angle,
+    ...localGrade.binds,
     boardType,
     angle,
     ...edgeBinds,
@@ -1212,7 +1228,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
-      ${eff('display_difficulty')} AS display_difficulty,
+      ${effectiveDisplayDifficultySql(boardType, crossAngle)} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,
       ${eff('quality_average')} AS quality_average,
       ${eff('benchmark_difficulty')} AS benchmark_difficulty,
@@ -1234,6 +1250,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
     if (!hasRecentWalkMiss(db, missKey, page)) {
       const rankedRows = await readRankedWalkRows(db, {
         boardType,
+        ownerUserId,
         layoutId: input.layoutId,
         angle,
         selectSql,
@@ -1257,7 +1274,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource, useMyGrades)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource, useMyGrades, boardType)} ${sortOrder}, c.uuid DESC`;
 
   const query = `
     SELECT
@@ -1275,9 +1292,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // rather than repeating that subquery and its three binds here.
   const orderBinds: Bind[] = isRandom ? [randomSeedBind] : [];
   const binds: Bind[] = [...selectBinds, ...joinBinds, ...whereBinds, ...orderBinds, pageSize + 1, page * pageSize];
-  return toResult(
-    await withLocalSprayGrades(db, await db.getAllAsync<LocalClimbRow>(query, binds), boardType, angle, ownerUserId),
-  );
+  return toResult(await db.getAllAsync<LocalClimbRow>(query, binds));
 }
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {

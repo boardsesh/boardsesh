@@ -4360,6 +4360,8 @@ The mutation outbox orders each climb's operations and holds dependent ticks unt
 
 Favorite and playlist additions also wait for the queued climb write, including a rejected write that needs repair. Deleting a draft or published climb checks this device's pending climb writes and ticks first, then removes the downloaded copy after the server accepts the deletion.
 
+An offline first ascent supplies an ungraded spray climb's local grade before search filtering, counting, sorting and pagination. The fallback uses this account's first graded send at the browsed angle; canonical stats and grade estimates take precedence when available.
+
 `climb_mutation_receipts` reserves client-created climb UUIDs beyond the sync feed's 90-day tombstone retention. Update receipts use `UpdateClimbInput.clientMutationId` to acknowledge an already committed edit without overwriting later changes or rejecting its retry after the 24-hour edit window. Replays still check current ownership and wall access. Editing a rejected operation creates a fresh update identity; retrying it unchanged keeps the original identity. Receipts contain identifiers and acknowledgment metadata, never climb content; account erasure clears their user attribution.
 
 A network create retry returns `SaveClimbResult.replayed` when that UUID already exists. The shared save hook then applies the currently submitted form through the update path before reporting success, so changes made after a lost response are not silently discarded. Deploy the compatible backend and migrations 0285–0287 before this mobile update.
