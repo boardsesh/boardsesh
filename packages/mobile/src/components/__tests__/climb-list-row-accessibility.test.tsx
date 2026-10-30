@@ -102,7 +102,7 @@ vi.mock('react-native-reanimated', () => {
 });
 
 type GestureCapture = {
-  kind: 'tap' | 'longPress' | 'pan';
+  kind: 'tap' | 'longPress' | 'pan' | 'manual';
   maxDuration?: number;
   minDuration?: number;
   onStart?: () => void;
@@ -137,6 +137,8 @@ vi.mock('react-native-gesture-handler', () => {
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
     usePanGesture: () => makeBuilder('pan'),
+    useManualGesture: () => makeBuilder('manual'),
+    GestureStateManager: { fail: () => {}, deactivate: () => {} },
     useTapGesture: (config: { maxDuration?: number; onActivate?: () => void; block?: unknown[] }) => {
       const gesture = makeBuilder('tap');
       const capture = rowGestures.captures.get(gesture)!;
@@ -165,6 +167,7 @@ vi.mock('react-native-gesture-handler', () => {
 
     Gesture: {
       Pan: () => makeBuilder('pan'),
+      Manual: () => makeBuilder('manual'),
       Simultaneous: (...gestures: unknown[]) => gestures[0],
       Tap: () => makeBuilder('tap'),
       LongPress: () => makeBuilder('longPress'),
@@ -297,6 +300,7 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPlayNext={vi.fn()} onOpenPlaylist={vi.fn()} />);
     expect(panels.props?.dragOffsetFromLeft).toBe(30);
     expect(panels.props?.dragOffsetFromRight).toBe(-30);
+    expect(panels.props?.requireToFail).toBeTruthy();
   });
 });
 

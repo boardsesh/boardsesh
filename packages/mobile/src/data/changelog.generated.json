@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-10-30T06:53:53.037Z",
+  "generatedAt": "2026-10-30T13:18:43.668Z",
   "entries": [
+    {
+      "prNumber": 7112,
+      "category": "new",
+      "title": "Your climbing calendar now shows months and weekdays, and tapping a day shows how many climbs you logged",
+      "mergedAt": "2026-10-30T13:14:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7112"
+    },
+    {
+      "prNumber": 7108,
+      "category": "fixed",
+      "title": "Scrolling climb lists no longer stops and slides a row open halfway through",
+      "mergedAt": "2026-10-30T07:42:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7108"
+    },
     {
       "prNumber": 7089,
       "category": "fixed",

@@ -98,6 +98,10 @@ vi.mock('react-native-gesture-handler', () => {
       'failOffsetY',
       'activeOffsetX',
       'enabled',
+      'onTouchesDown',
+      'onTouchesMove',
+      'onTouchesUp',
+      'onTouchesCancelled',
     ]) {
       builder[method] = (callback?: unknown) => {
         if (track && method === 'onEnd') tracker.end = callback as typeof tracker.end;
@@ -121,12 +125,15 @@ vi.mock('react-native-gesture-handler', () => {
     },
     useTapGesture: gestureChain,
     useLongPressGesture: gestureChain,
+    useManualGesture: gestureChain,
+    GestureStateManager: { fail: () => {}, deactivate: () => {} },
     useExclusiveGestures: (...gestures: unknown[]) => gestures[0],
     useSimultaneousGestures: (...gestures: unknown[]) => gestures[0],
     Gesture: {
       Tap: gestureChain,
       LongPress: gestureChain,
       Pan: () => gestureChain(true),
+      Manual: gestureChain,
       Simultaneous: (...gestures: unknown[]) => gestures[0],
       Exclusive: (...g: unknown[]) => g[0],
     },

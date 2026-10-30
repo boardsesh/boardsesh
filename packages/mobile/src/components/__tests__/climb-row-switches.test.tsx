@@ -101,6 +101,8 @@ vi.mock('react-native-gesture-handler', () => {
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => children,
     usePanGesture: makeGesture,
+    useManualGesture: makeGesture,
+    GestureStateManager: { fail: () => {}, deactivate: () => {} },
     useTapGesture: makeGesture,
     useLongPressGesture: makeGesture,
     useExclusiveGestures: makeGesture,

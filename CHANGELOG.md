@@ -6,8 +6,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-10-30
 
+### New
+
+- Your climbing calendar now shows months and weekdays, and tapping a day shows how many climbs you logged ([#7112](https://github.com/boardsesh/boardsesh/pull/7112))
+
 ### Fixed
 
+- Scrolling climb lists no longer stops and slides a row open halfway through ([#7108](https://github.com/boardsesh/boardsesh/pull/7108))
 - Keep your wall feed updating after a connection failure, without switching boards. ([#7089](https://github.com/boardsesh/boardsesh/pull/7089))
 - The tab underline on your Android profile now fits the tab name ([#7110](https://github.com/boardsesh/boardsesh/pull/7110))
 
