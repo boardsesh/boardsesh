@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Keep your wall feed updating after a connection failure, without switching boards. ([#7089](https://github.com/boardsesh/boardsesh/pull/7089))
 - The tab underline on your Android profile now fits the tab name ([#7110](https://github.com/boardsesh/boardsesh/pull/7110))
 
 ## 2026-10-29
