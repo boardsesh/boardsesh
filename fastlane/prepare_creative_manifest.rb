@@ -21,8 +21,10 @@ manifest_path = File.join(root, "app-stores", "apple", "creative-assets.json")
 manifest = JSON.parse(File.read(manifest_path))
 refdata = JSON.parse(File.read(options.fetch(:refdata)))
 attributes = refdata.map { |datum| datum.fetch("attributes") }
-selected = options[:variant] == "all" ? manifest.fetch("variants").keys : [options[:variant]]
-abort "Unknown creative variant" unless selected.all? { |variant| manifest.fetch("variants").key?(variant) }
+# A comma list finalizes only those variants; every other variant keeps its committed entries.
+selected = options[:variant] == "all" ? manifest.fetch("variants").keys : options[:variant].split(",", -1)
+abort "Unknown creative variant" unless !selected.empty? && selected.all? { |variant| manifest.fetch("variants").key?(variant) }
+abort "Repeated creative variant" unless selected.uniq.length == selected.length
 abort "Placement must be all or search" unless %w[all search].include?(options[:placement])
 selected.each do |variant|
   assets = manifest.fetch("locales").keys.flat_map do |locale|
