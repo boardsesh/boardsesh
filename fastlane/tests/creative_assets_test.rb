@@ -472,6 +472,26 @@ class CreativeAssetsTest < Minitest::Test
     refute @client.placements.any? { |placement| placement.fetch("relationships").key?("appStoreVersionLocalization") }
   end
 
+  def test_comma_list_reconciles_only_shipped_variants_and_rejects_bad_lists
+    @manifest.fetch("variants")["spray"] = { "cpp" => "spray", "assets" => [] }
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload", placement: "search") }
+    assert_match(/Unfinalized creative variants: spray/, error.message)
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload", variant: "default,spray", placement: "search") }
+    assert_match(/Unfinalized creative variants: spray/, error.message)
+    ["default,default", "default,", ",default", "default,kilterx", ""].each do |variant|
+      assert_raises(BoardseshCreatives::Error) { runner.run(action: "upload", variant: variant, placement: "search") }
+    end
+    assert_empty @client.writes
+    assert_equal 5, runner.run(action: "upload", variant: "default", placement: "search").length
+    @client.assets.each { |asset| asset["attributes"]["state"] = "PREPARE_FOR_SUBMISSION" }
+    @manifest["marketingVersion"] = "2.6.0"
+    @client.versions = [{ "id" => "newer", "attributes" => { "versionString" => "2.7.0", "appStoreState" => "PREPARE_FOR_SUBMISSION" } }]
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", variant: "default", placement: "search") }
+    assert_includes error.message, "marketing version 2.6.0"
+    assert_empty @client.writes
+  end
+
   def test_pending_manifest_is_not_an_upload_success
     @manifest.fetch("variants").fetch("default")["assets"] = []
     assert_equal "pending", runner.run(action: "plan").first.fetch("action")

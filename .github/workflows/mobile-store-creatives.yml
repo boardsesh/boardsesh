@@ -89,38 +89,35 @@ jobs:
           vp exec ruby fastlane/tests/creative_assets_test.rb
           vp exec ruby fastlane/tests/creative_download_test.rb
           vp exec ruby fastlane/tests/prepare_creative_manifest_test.rb
-      - name: Validate complete search video matrix
+      - name: Validate each shipped search video matrix
+        id: search
         if: github.event_name == 'push'
+        # Variants with no search entries are still pending and stay out of every later step.
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const manifest = JSON.parse(fs.readFileSync('app-stores/apple/creative-assets.json', 'utf8'));
-          if (typeof manifest.marketingVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(manifest.marketingVersion)) throw new Error('Merged video manifest needs its reviewed marketingVersion');
-          for (const variant of ['default', 'kilter', 'tension', 'moonboard', 'spray']) {
-            const assets = manifest.variants[variant]?.assets.filter((asset) => asset.placement === 'search-results') ?? [];
-            if (assets.length !== 4 || ['en-US', 'es', 'fr', 'de'].some((locale) => assets.filter((asset) => asset.locale === locale).length !== 1) || assets.some((asset) => !asset.poster || !asset.posterSha256)) {
-              throw new Error(`${variant} needs four search videos with posters before promotion`);
-            }
-          }
-          NODE
+          set -euo pipefail
+          variants="$(vp exec tsx scripts/store-creatives-r2.ts ready-search-variants)"
+          echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          echo "Shipping search videos for: $variants" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Promote reviewed search videos
         if: github.event_name == 'push'
         env:
           STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
           STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
           STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+          SEARCH_VARIANTS: ${{ steps.search.outputs.variants }}
         run: |
           set -euo pipefail
-          vp exec tsx scripts/store-creatives-r2.ts promote --placement search | tee "$RUNNER_TEMP/creative-promotion-report.json"
+          vp exec tsx scripts/store-creatives-r2.ts promote --placement search --variant "$SEARCH_VARIANTS" | tee "$RUNNER_TEMP/creative-promotion-report.json"
       - name: Fetch verified approved search videos
         if: github.event_name == 'push'
         env:
           STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
           STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
           STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
+          SEARCH_VARIANTS: ${{ steps.search.outputs.variants }}
         run: |
           set -euo pipefail
-          vp exec tsx scripts/store-creatives-r2.ts fetch --placement search | tee "$RUNNER_TEMP/creative-fetch-report.json"
+          vp exec tsx scripts/store-creatives-r2.ts fetch --placement search --variant "$SEARCH_VARIANTS" | tee "$RUNNER_TEMP/creative-fetch-report.json"
       - name: Download finalized approved assets for manual operation
         if: github.event_name == 'workflow_dispatch' && inputs.action != 'refdata'
         env:
@@ -131,7 +128,8 @@ jobs:
         working-directory: fastlane
         env:
           CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
-          CREATIVE_VARIANT: ${{ steps.operation.outputs.variant }}
+          # A merge uploads and places only the variants whose search matrix it shipped.
+          CREATIVE_VARIANT: ${{ github.event_name == 'push' && steps.search.outputs.variants || steps.operation.outputs.variant }}
           CREATIVE_PLACEMENT: ${{ steps.operation.outputs.placement }}
           ALLOW_LIVE: ${{ inputs.allow_live || false }}
           ALLOW_REPLACE: ${{ inputs.allow_replace || false }}

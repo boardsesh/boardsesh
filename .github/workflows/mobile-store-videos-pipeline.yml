@@ -9,6 +9,11 @@ on:
       version:
         required: true
         type: string
+      variants:
+        description: 'all, or a comma list of page variants. Each one renders in all four locales.'
+        required: false
+        type: string
+        default: all
 
 permissions:
   contents: read
@@ -30,14 +35,20 @@ env:
 jobs:
   preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     environment: Production
+    outputs:
+      variants: ${{ steps.plan.outputs.variants }}
+      variants_csv: ${{ steps.plan.outputs.variants_csv }}
+      crew: ${{ steps.plan.outputs.crew }}
+      live_activity: ${{ steps.plan.outputs.live_activity }}
+      exports: ${{ steps.plan.outputs.exports }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
-      - name: Require reviewed physical sources and both recording accounts
+      - name: Require both recording accounts and video storage
         env:
           SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
@@ -51,7 +62,17 @@ jobs:
           for name in SCREENSHOT_USER_EMAIL SCREENSHOT_USER_PASSWORD SHOWCASE_SECONDARY_EMAIL SHOWCASE_SECONDARY_PASSWORD STORE_CREATIVES_R2_AWS_ENDPOINT_URL STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY; do
             [ -n "${!name:-}" ] || { echo "::error::Missing $name; configure recording accounts and video storage before dispatch."; exit 1; }
           done
-          node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync("app-stores/apple/live-activity-captures/manifest.json","utf8")); for(const target of ["kilter","tension"]) { const source=manifest.footage?.[target]; if(!source || source.boardFamily!==target || !/^[a-f0-9]{64}$/.test(source.sha256) || source.key!==`sources/live-activity/${source.sha256}.zip`) throw new Error(`Missing reviewed retained ${target} footage; import one physical take before recording.`); }'
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Resolve the selected variants and require their reviewed physical sources
+        id: plan
+        env:
+          VARIANTS: ${{ inputs.variants }}
+        # Only selected cuts that end on the Live Activity need retained footage, read from the source's storyboards.
+        run: vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"
 
   app:
     needs: preflight
@@ -97,7 +118,7 @@ jobs:
           retention-days: 7
 
   record:
-    needs: app
+    needs: [preflight, app]
     runs-on: macos-26
     # Measured English MoonBoard recording: 38.45 min x 4 locales + setup exceeds 120 min.
     timeout-minutes: 180
@@ -106,7 +127,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        kind: [default, kilter, tension, spray, moonboard]
+        kind: ${{ fromJSON(needs.preflight.outputs.variants) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -147,7 +168,8 @@ jobs:
   crew:
     # Finish ordinary recordings first. Each crew kind and locale is serial so
     # the shared recording account participates in only one live session.
-    needs: [app, record]
+    needs: [preflight, app, record]
+    if: needs.preflight.outputs.crew != '[]'
     runs-on: macos-26
     timeout-minutes: 240
     environment: Production
@@ -162,15 +184,16 @@ jobs:
       - uses: ./.github/actions/ios-store-video-tools
         with:
           app-cache-key: ${{ needs.app.outputs.cache-key }}
-      - name: Record the three crew stories serially
+      - name: Record the selected crew stories serially
         env:
+          CREW_KINDS: ${{ needs.preflight.outputs.crew }}
           SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
           SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
           SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
         run: |
           set -euo pipefail
-          for kind in default kilter tension; do
+          for kind in $(jq -r '.[]' <<< "$CREW_KINDS"); do
             vp exec tsx scripts/store-video-measure.ts "crew-$kind" "metrics/crew-$kind.json" -- vp run video:record -- --kind "$kind" --only crew --locales all --app-path packages/mobile/.app-cache/Boardsesh.app
           done
       - name: Hand off crew frames for one day
@@ -194,13 +217,15 @@ jobs:
           retention-days: 7
 
   render:
-    needs: [record, crew]
+    needs: [preflight, record, crew]
+    # A selection without crew stories skips the crew job; that must not skip rendering.
+    if: ${{ !cancelled() && needs.record.result == 'success' && (needs.crew.result == 'success' || needs.crew.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        kind: [default, kilter, tension, spray, moonboard]
+        kind: ${{ fromJSON(needs.preflight.outputs.variants) }}
         locale: [en-US, es, fr, de]
     steps:
       - uses: actions/checkout@v4
@@ -222,12 +247,12 @@ jobs:
           name: store-video-frames-${{ matrix.kind }}
           path: .boardsesh/showcase-video/work/boards/${{ matrix.kind }}
       - uses: actions/download-artifact@v4
-        if: matrix.kind == 'default' || matrix.kind == 'kilter' || matrix.kind == 'tension'
+        if: contains(fromJSON(needs.preflight.outputs.crew), matrix.kind)
         with:
           name: store-video-frames-crew
           path: .boardsesh/showcase-video/work/boards
       - name: Hydrate the retained ending in its actual source language
-        if: matrix.kind == 'default' || matrix.kind == 'kilter' || matrix.kind == 'tension'
+        if: contains(fromJSON(needs.preflight.outputs.live_activity), matrix.kind)
         env:
           KIND: ${{ matrix.kind }}
           LOCALE: ${{ matrix.locale }}
@@ -258,7 +283,9 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: render
+    needs: [preflight, render]
+    # A skipped crew job would otherwise skip every later job through the implicit success() check.
+    if: ${{ !cancelled() && needs.render.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: Production
@@ -299,17 +326,22 @@ jobs:
         if: steps.final-gate.outputs.open == 'true'
         with:
           ruby-version: '3.4'
-      - name: Collect the twenty rendered exports
+      - name: Collect the selected rendered exports
         if: steps.final-gate.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VARIANTS: ${{ needs.preflight.outputs.variants }}
+          EXPECTED_EXPORTS: ${{ needs.preflight.outputs.exports }}
         run: |
           set -euo pipefail
-          for kind in default kilter tension spray moonboard; do
+          collected=0
+          for kind in $(jq -r '.[]' <<< "$VARIANTS"); do
             for locale in en-US es fr de; do
               gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "store-video-$kind-$locale" --dir ".boardsesh/app-store-creatives/$kind/$locale"
+              collected=$((collected + 1))
             done
           done
+          [ "$collected" -gt 0 ] && [ "$collected" -eq "$EXPECTED_EXPORTS" ] || { echo "::error::Collected $collected exports, expected $EXPECTED_EXPORTS."; exit 1; }
       - name: Read current Apple placement specifications
         if: steps.final-gate.outputs.open == 'true'
         env:
@@ -319,14 +351,17 @@ jobs:
         run: vp exec tsx scripts/store-videos-gate.ts refdata "$RUNNER_TEMP/store-creative-refdata.json"
       - name: Finalize search entries while retaining reviewed headers
         if: steps.final-gate.outputs.open == 'true'
-        run: vp exec ruby fastlane/prepare_creative_manifest.rb --placement search --refdata "$RUNNER_TEMP/store-creative-refdata.json"
+        env:
+          VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+        run: vp exec ruby fastlane/prepare_creative_manifest.rb --placement search --variant "$VARIANTS" --refdata "$RUNNER_TEMP/store-creative-refdata.json"
       - name: Upload immutable review candidates
         if: steps.final-gate.outputs.open == 'true'
         env:
           STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
           STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
           STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
-        run: vp exec tsx scripts/store-creatives-r2.ts upload-candidates --placement search
+          VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+        run: vp exec tsx scripts/store-creatives-r2.ts upload-candidates --placement search --variant "$VARIANTS"
       - name: Mint the review PR token
         if: steps.final-gate.outputs.open == 'true'
         id: bot
@@ -343,7 +378,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VIDEO_VERSION: ${{ inputs.version }}
           VIDEO_SOURCE_SHA: ${{ inputs.source_sha }}
-        run: vp exec tsx scripts/store-videos-publish.ts "$VIDEO_VERSION" "$VIDEO_SOURCE_SHA"
+          VIDEO_VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+        run: vp exec tsx scripts/store-videos-publish.ts "$VIDEO_VERSION" "$VIDEO_SOURCE_SHA" "$VIDEO_VARIANTS"
 
   timings:
     if: always()

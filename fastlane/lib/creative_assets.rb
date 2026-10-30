@@ -32,8 +32,10 @@ module BoardseshCreatives
       @selected_placements = placement == "search" ? %w[search-results] : PLACEMENTS.keys
       refdata = @client.list("/v1/appAssetLibraryRefData")
       return refdata if action == "refdata"
-      selected = variant == "all" ? @manifest.fetch("variants").keys : [variant]
-      raise Error, "Unknown creative variant" unless selected.all? { |name| @manifest.fetch("variants").key?(name) }
+      # A merged subset review passes a comma list of the variants it shipped.
+      selected = variant == "all" ? @manifest.fetch("variants").keys : variant.split(",", -1)
+      raise Error, "Unknown creative variant" unless !selected.empty? && selected.all? { |name| @manifest.fetch("variants").key?(name) }
+      raise Error, "Repeated creative variant" unless selected.uniq.length == selected.length
       placement_types = refdata.flat_map { |datum| datum.dig("attributes", "placementTypes") || [] }
       @selected_placements.map { |selected| PLACEMENTS.fetch(selected) }.each do |placement_type|
         raise Error, "Apple refdata does not advertise #{placement_type}; no writes performed" unless placement_types.any? { |entry| entry["placementTypeId"] == placement_type }

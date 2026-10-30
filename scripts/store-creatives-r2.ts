@@ -147,12 +147,39 @@ export function parseCreativeManifest(input: unknown): CreativeManifest {
     variants,
   };
 }
+/** `all`, one variant, or a comma list; each name must exist and appear once. */
+export function selectCreativeVariants(manifest: CreativeManifest, variant = 'all'): string[] {
+  if (variant === 'all') return Object.keys(manifest.variants);
+  const selected = variant.split(',');
+  if (selected.some((name) => !manifest.variants[name])) throw new Error('Unknown creative variant');
+  if (new Set(selected).size !== selected.length) throw new Error('Repeated creative variant');
+  return selected;
+}
+/**
+ * Variants a merged review is ready to ship. A variant with no search entries is still pending and is skipped;
+ * one with any search entry must have exactly one video and poster per app locale. At least one must be ready.
+ */
+export function readySearchVariants(manifest: CreativeManifest): string[] {
+  if (!manifest.marketingVersion) throw new Error('Merged video manifest needs its reviewed marketingVersion');
+  const locales = Object.keys(manifest.locales);
+  const ready = Object.entries(manifest.variants).flatMap(([variant, configuration]) => {
+    const assets = configuration.assets.filter((asset) => asset.placement === 'search-results');
+    if (!assets.length) return [];
+    if (
+      assets.length !== locales.length ||
+      locales.some((locale) => assets.filter((asset) => asset.locale === locale).length !== 1) ||
+      assets.some((asset) => !asset.poster || !asset.posterSha256)
+    )
+      throw new Error(`${variant} needs four search videos with posters before promotion`);
+    return [variant];
+  });
+  if (!ready.length) throw new Error('No variant has a complete search video set to promote');
+  return ready;
+}
 export function creativeObjects(manifest: CreativeManifest, variant = 'all', placement = 'all'): CreativeObject[] {
   if (!['all', 'search', 'header'].includes(placement)) throw new Error('Unknown creative placement');
-  const selected = variant === 'all' ? Object.keys(manifest.variants) : [variant];
   const objects = new Map<string, CreativeObject>();
-  for (const name of selected) {
-    if (!manifest.variants[name]) throw new Error('Unknown creative variant');
+  for (const name of selectCreativeVariants(manifest, variant)) {
     for (const asset of manifest.variants[name].assets) {
       if (placement !== 'all' && asset.placement !== (placement === 'search' ? 'search-results' : 'header')) continue;
       const entries = [
@@ -329,9 +356,9 @@ function lstatExists(path: string): boolean {
 }
 async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2).filter((argument) => argument !== '--');
-  if (!['upload-candidates', 'promote', 'fetch'].includes(action))
+  if (!['upload-candidates', 'promote', 'fetch', 'ready-search-variants'].includes(action))
     throw new Error(
-      'Usage: store-creatives-r2.ts upload-candidates|promote|fetch --manifest PATH [--root PATH] [--output PATH] [--variant all|NAME] [--placement all|search|header] [--dry-run]',
+      'Usage: store-creatives-r2.ts upload-candidates|promote|fetch --manifest PATH [--root PATH] [--output PATH] [--variant all|NAME[,NAME...]] [--placement all|search|header] [--dry-run] | ready-search-variants [--manifest PATH]',
     );
   const flags = new Map<string, string>();
   for (let index = 0; index < args.length; index++) {
@@ -352,6 +379,10 @@ async function main(): Promise<void> {
   const manifest = parseCreativeManifest(
     JSON.parse(readFileSync(flags.get('--manifest') ?? 'app-stores/apple/creative-assets.json', 'utf8')),
   );
+  if (action === 'ready-search-variants') {
+    console.log(readySearchVariants(manifest).join(','));
+    return;
+  }
   const dryRun = flags.has('--dry-run');
   const store =
     dryRun && action !== 'promote'

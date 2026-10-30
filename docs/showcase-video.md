@@ -58,24 +58,47 @@ Dispatching by hand checks the current train instead.
 A sparse, dependency-free Ubuntu job checks `isVersionTaken` and
 `readMarketingVersion` before Production environment approval. A closed train
 skips recording. The next gate requires an editable iOS version with that exact
-marketing version. Reviewed Kilter and Tension physical source ZIPs and both
-recording accounts and all three `STORE_CREATIVES_R2_AWS_*` secrets must exist
-before any macOS job starts. After importing and reviewing both physical takes,
-configuring those credentials, and verifying a manual twenty-video run, enable
-automatic recording with `gh variable set STORE_VIDEOS_ENABLED --body true`.
+marketing version. Both recording accounts and all three
+`STORE_CREATIVES_R2_AWS_*` secrets must exist before any macOS job starts, and so
+must the reviewed physical source ZIP for every selected cut that ends on the
+Live Activity (Kilter's for the default page while its storyboard still has that
+ending, Tension's for Tension). After importing and reviewing both physical
+takes, configuring those credentials, and verifying a manual twenty-video run,
+enable automatic recording with `gh variable set STORE_VIDEOS_ENABLED --body true`.
 Unset the variable or set it to `false` to suspend automatic recording.
 
-Five variant jobs record the required ordinary takes in all four locales,
-with at most three macOS jobs running together. One crew job then records
-default, Kilter and Tension serially; a global crew concurrency group also
-prevents account conflicts between train versions. Twenty Ubuntu cells hydrate
-the physical endings where needed, render and validate the MP4s, and retain
-the posters and provenance. Simulator frame artifacts expire after one day.
+#### Recording a subset of pages
 
-The publisher rechecks the open draft, finalizes only search entries using
-Apple's current placement specifications, and uploads SHA-addressed candidates
-to R2. It refreshes one draft PR on `store-videos/v<version>` with all twenty
-posters and MP4 links. Ordinary same-version train syncs retain the pinned
+A manual dispatch takes a `variants` input: `all` (the default, and what every
+automatic run uses) or a comma list of `default`, `kilter`, `tension`,
+`moonboard` and `spray`. Each selected page renders in all four locales, so
+`default` alone makes 4 videos. To ship only the default page:
+
+```bash
+gh workflow run mobile-store-videos.yml --ref release/next -f variants=default
+```
+
+The preflight job resolves the list against the recording source's own
+storyboards (`store-videos-gate.ts plan`). It decides which pages need a crew
+take and which end on the Live Activity, and it checks physical footage only for
+those endings. A typo or an unknown name fails there, before any macOS minute.
+
+One record job per selected page records the ordinary takes in all four
+locales, with at most three macOS jobs running together. One crew job then
+records the selected pages that have a crew take, serially; it is skipped when
+none do. A global crew concurrency group also prevents account conflicts
+between train versions. One Ubuntu cell per selected page and locale hydrates
+the physical ending where needed, renders and validates the MP4, and retains
+the poster and provenance. Simulator frame artifacts expire after one day.
+
+The publisher rechecks the open draft, collects exactly the selected exports,
+finalizes only their search entries using Apple's current placement
+specifications, and uploads SHA-addressed candidates to R2. It refreshes one
+draft PR on `store-videos/v<version>` with the posters and MP4 links for the
+pages under review. Pages this run did not record keep main's entries
+untouched; an earlier subset run of the same train that is still on the open
+review branch is carried forward, so recording Kilter later does not drop the
+default page from the PR. Ordinary same-version train syncs retain the pinned
 recording source; rewritten history or a changed version is rejected. A newer
 draft run cancels the older pipeline for that version. An already merged
 video PR prevents another review PR for the same train.

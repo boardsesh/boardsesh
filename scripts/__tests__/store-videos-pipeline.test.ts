@@ -1,8 +1,18 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { appleList, appleToken, editableVersion, parseVideoSource, sourceStillOnTrain } from '../store-videos-gate';
-import { mergeVideoManifest, videoReviewBody } from '../store-videos-publish';
+import {
+  appleList,
+  appleToken,
+  editableVersion,
+  missingLiveActivityFootage,
+  parseVariantSelection,
+  parseVideoSource,
+  sourceStillOnTrain,
+  storeVideoSelection,
+} from '../store-videos-gate';
+import { carryOpenReview, mergeVideoManifest, videoReviewBody } from '../store-videos-publish';
+import { STORE_SEARCH_VARIANTS, storeSearchTakeIds } from '../lib/showcase-video/store-search';
 import { parseCreativeManifest, type CreativeManifest } from '../store-creatives-r2';
 
 function renderedManifest(): CreativeManifest {
@@ -148,5 +158,126 @@ describe('video review manifest', () => {
     expect(body.match(/\[Play video\]/g)).toHaveLength(20);
     expect(body).toContain(`/candidates/${'a'.repeat(64)}.mp4`);
     expect(body).toContain('Apple asset-review submission remains manual');
+  });
+});
+
+describe('store video variant selection', () => {
+  const known = ['default', 'kilter', 'tension', 'moonboard', 'spray'];
+  it('expands all or nothing to every variant and keeps canonical order for a list', () => {
+    expect(parseVariantSelection('all', known)).toEqual(known);
+    expect(parseVariantSelection(undefined, known)).toEqual(known);
+    expect(parseVariantSelection('', known)).toEqual(known);
+    expect(parseVariantSelection('default', known)).toEqual(['default']);
+    expect(parseVariantSelection(' spray , default ', known)).toEqual(['default', 'spray']);
+  });
+  it.each(['kilterx', 'default,', ',default', 'default,default', 'all,default', 'Default'])(
+    'rejects %j before any recording',
+    (input) => {
+      expect(() => parseVariantSelection(input, known)).toThrow();
+    },
+  );
+  it('derives crew, Live Activity endings and footage families from the storyboards', () => {
+    const takes: Record<string, string[]> = {
+      default: ['boards', 'crew', 'spray', 'log'],
+      kilter: ['boards-kilter', 'crew', 'lock-screen'],
+      tension: ['boards-tension', 'crew', 'lock-screen'],
+      moonboard: ['boards-moonboard'],
+      spray: ['spray'],
+    };
+    expect(storeVideoSelection('default', known, (variant) => takes[variant])).toEqual({
+      variants: ['default'],
+      crew: ['default'],
+      liveActivity: [],
+      footage: [],
+    });
+    expect(storeVideoSelection('spray,moonboard', known, (variant) => takes[variant])).toEqual({
+      variants: ['moonboard', 'spray'],
+      crew: [],
+      liveActivity: [],
+      footage: [],
+    });
+    takes.default.push('lock-screen');
+    expect(storeVideoSelection('all', known, (variant) => takes[variant]).footage).toEqual(['kilter', 'tension']);
+    expect(storeVideoSelection('default', known, (variant) => takes[variant]).footage).toEqual(['kilter']);
+  });
+  it('matches the current storyboards for every variant', () => {
+    const selection = storeVideoSelection('all', STORE_SEARCH_VARIANTS, (variant) =>
+      storeSearchTakeIds(variant as (typeof STORE_SEARCH_VARIANTS)[number]),
+    );
+    expect(selection.variants).toEqual([...STORE_SEARCH_VARIANTS]);
+    for (const variant of STORE_SEARCH_VARIANTS) {
+      const takes = storeSearchTakeIds(variant);
+      expect(selection.crew.includes(variant)).toBe(takes.includes('crew'));
+      expect(selection.liveActivity.includes(variant)).toBe(takes.includes('lock-screen'));
+    }
+  });
+  it('checks reviewed footage only for the families a selection needs', () => {
+    const sha = 'e'.repeat(64);
+    const kilter = { boardFamily: 'kilter', sha256: sha, key: `sources/live-activity/${sha}.zip` };
+    expect(missingLiveActivityFootage({ footage: {} }, [])).toEqual([]);
+    expect(missingLiveActivityFootage({ footage: {} }, ['kilter', 'tension'])).toEqual(['kilter', 'tension']);
+    expect(missingLiveActivityFootage({ footage: { kilter } }, ['kilter', 'tension'])).toEqual(['tension']);
+    expect(
+      missingLiveActivityFootage({ footage: { kilter: { ...kilter, boardFamily: 'tension' } } }, ['kilter']),
+    ).toEqual(['kilter']);
+    expect(
+      missingLiveActivityFootage({ footage: { kilter: { ...kilter, key: 'elsewhere.zip' } } }, ['kilter']),
+    ).toEqual(['kilter']);
+    expect(missingLiveActivityFootage(null, ['kilter'])).toEqual(['kilter']);
+  });
+});
+
+describe('subset video review manifest', () => {
+  const search = (manifest: CreativeManifest, variant: string) =>
+    manifest.variants[variant].assets.filter((asset) => asset.placement === 'search-results');
+  it('replaces only the recorded variants and leaves the others exactly as main has them', () => {
+    const current = renderedManifest();
+    const shipped = structuredClone(current.variants.kilter);
+    current.variants.default.assets = [];
+    current.variants.tension.assets = [];
+    const rendered = renderedManifest();
+    for (const variant of ['kilter', 'tension', 'moonboard', 'spray']) rendered.variants[variant].assets = [];
+    rendered.variants.default.assets[0].sha256 = 'f'.repeat(64);
+    const merged = mergeVideoManifest(current, rendered, ['default']);
+    expect(search(merged, 'default')).toHaveLength(4);
+    expect(search(merged, 'default')[0].sha256).toBe('f'.repeat(64));
+    expect(merged.variants.kilter).toEqual(shipped);
+    expect(merged.variants.tension.assets).toEqual([]);
+    rendered.variants.default.assets.pop();
+    expect(() => mergeVideoManifest(current, rendered, ['default'])).toThrow(
+      'Incomplete video/poster matrix for default',
+    );
+    expect(() => mergeVideoManifest(current, renderedManifest(), [])).toThrow('non-empty');
+    expect(() => mergeVideoManifest(current, renderedManifest(), ['header'])).toThrow('non-empty');
+  });
+  it('carries an earlier subset run of the same train on the open review branch', () => {
+    const main = renderedManifest();
+    for (const configuration of Object.values(main.variants)) configuration.assets = [];
+    const header = {
+      ...renderedManifest().variants.spray.assets[0],
+      placement: 'header' as const,
+      file: '.boardsesh/app-store-creatives/spray/en-US/header.png',
+    };
+    main.variants.spray.assets = [header];
+    const review = { ...renderedManifest(), marketingVersion: '2.7.0' };
+    for (const variant of ['kilter', 'tension', 'moonboard']) review.variants[variant].assets = [];
+    const { manifest, carried } = carryOpenReview(main, review, '2.7.0', ['kilter']);
+    expect(carried).toEqual(['default', 'spray']);
+    expect(manifest.variants.spray.assets[0]).toEqual(header);
+    expect(search(manifest, 'spray')).toHaveLength(4);
+    expect(manifest.variants.kilter.assets).toEqual([]);
+    expect(carryOpenReview(main, { ...review, marketingVersion: '2.6.0' }, '2.7.0', ['kilter']).carried).toEqual([]);
+    expect(carryOpenReview(main, undefined, '2.7.0', ['kilter']).manifest).toBe(main);
+  });
+  it('lists only the reviewed variants in the PR body', () => {
+    const manifest = renderedManifest();
+    const body = videoReviewBody(manifest, '2.7.0', 'd'.repeat(40), 'https://example.com/run', ['default']);
+    expect(body).toContain('Review 4 Search Results videos (default) for train v2.7.0.');
+    expect(body).toContain('Not in this review: kilter, tension, moonboard, spray.');
+    expect(body.match(/\[Play video\]/g)).toHaveLength(4);
+    expect(body).not.toContain('| kilter |');
+    expect(videoReviewBody(manifest, '2.7.0', 'd'.repeat(40), 'https://example.com/run')).not.toContain(
+      'Not in this review',
+    );
   });
 });

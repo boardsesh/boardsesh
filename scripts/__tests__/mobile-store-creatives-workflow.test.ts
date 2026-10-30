@@ -152,7 +152,9 @@ describe('merged store video upload workflow', () => {
     expect(promote.run).toContain('promote --placement search');
     expect(fetch.run).toContain('fetch --placement search');
     expect(Object.keys(promote.env!)).toEqual(Object.keys(fetch.env!));
-    expect(Object.keys(promote.env!).every((name) => name.startsWith('STORE_CREATIVES_R2_'))).toBe(true);
+    expect(
+      Object.keys(promote.env!).every((name) => name.startsWith('STORE_CREATIVES_R2_') || name === 'SEARCH_VARIANTS'),
+    ).toBe(true);
     expect(Object.keys(upload.env!).some((name) => name.startsWith('STORE_CREATIVES_R2_'))).toBe(false);
     expect(upload.env?.ALLOW_LIVE).toBe('${{ inputs.allow_live || false }}');
     expect(upload.env?.ALLOW_REPLACE).toBe('${{ inputs.allow_replace || false }}');
@@ -178,19 +180,43 @@ describe('merged store video upload workflow', () => {
     expect(guarded.status).toBe(19);
     expect(guarded.trace).toHaveLength(2);
   });
-  it('requires a complete locale matrix with posters before any promotion', () => {
-    const root = directory();
-    const manifest = manifestFixture(root);
-    const run = () =>
-      spawnSync('bash', ['-c', step('Validate complete search video matrix').run!], { cwd: root, encoding: 'utf8' });
-    expect(run().status).toBe(0);
-    manifest.variants.kilter.assets[3].locale = 'en-US';
-    writeFileSync(join(root, 'app-stores/apple/creative-assets.json'), JSON.stringify(manifest));
-    expect(run().status).toBe(1);
-    manifest.variants.kilter.assets[3].locale = 'de';
-    manifest.variants.kilter.assets[3].poster = '';
-    writeFileSync(join(root, 'app-stores/apple/creative-assets.json'), JSON.stringify(manifest));
-    expect(run().status).toBe(1);
+  it('ships only the variants with a complete search matrix and fails before promotion otherwise', () => {
+    const validate = step('Validate each shipped search video matrix');
+    expect(validate.if).toBe("github.event_name == 'push'");
+    expect(validate.run).toContain('vp exec tsx scripts/store-creatives-r2.ts ready-search-variants');
+    const run = (vp: string) => {
+      const root = directory();
+      writeFileSync(join(root, 'vp'), `#!/bin/bash\n${vp}\n`, { mode: 0o755 });
+      const result = spawnSync('bash', ['-c', validate.run!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH}`,
+          GITHUB_OUTPUT: join(root, 'output'),
+          GITHUB_STEP_SUMMARY: join(root, 'summary'),
+        },
+      });
+      return { status: result.status, output: result.status === 0 ? readFileSync(join(root, 'output'), 'utf8') : '' };
+    };
+    expect(run('echo default')).toEqual({ status: 0, output: 'variants=default\n' });
+    expect(run("echo 'spray needs four search videos with posters before promotion' >&2; exit 1").status).toBe(1);
+    for (const name of ['Promote reviewed search videos', 'Fetch verified approved search videos']) {
+      expect(step(name).env?.SEARCH_VARIANTS).toBe('${{ steps.search.outputs.variants }}');
+      expect(step(name).run).toContain('--placement search --variant "$SEARCH_VARIANTS"');
+      expect(steps.indexOf(validate)).toBeLessThan(steps.indexOf(step(name)));
+    }
+    expect(step('Run creative lane with ephemeral API key').env?.CREATIVE_VARIANT).toBe(
+      "${{ github.event_name == 'push' && steps.search.outputs.variants || steps.operation.outputs.variant }}",
+    );
+  });
+  it('passes a shipped subset to the lane with unchanged guards', () => {
+    const result = lane('upload-and-place', { CREATIVE_VARIANT: 'default,spray' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(
+      result.trace.every((entry) =>
+        entry.includes('variant:default,spray allow_live:false allow_replace:false|search|key-present'),
+      ),
+    ).toBe(true);
   });
   it('counts unique videos in summaries rather than objects or Spanish storefront copies', () => {
     const root = directory();
