@@ -119,6 +119,52 @@ function fullNotificationCenterProvenance(): LiveActivityFixture {
 }
 
 describe('reviewed native Live Activity fixtures', () => {
+  it.each(['TestFlight2.6.0(18)', 'Development2.7.0(7)'])(
+    'preserves the explicit build label without inferring its source commit: %s',
+    (sourceBuild) => {
+      const candidate = { ...fullNotificationCenterProvenance(), sourceBuild };
+      expect(validateLiveActivityFixture(candidate, 'kilter', 'en-US')).toMatchObject({
+        sourceBuild,
+        appSourceCommit: null,
+        device: 'iPhone13Pro',
+        nativePixels: { width: 1170, height: 2532 },
+      });
+    },
+  );
+  it.each([
+    'Development',
+    'Development2.7.0',
+    'Development2.7(7)',
+    'Development2.7.0()',
+    'Development2.7.0(7.1)',
+    'development2.7.0(7)',
+    'Development 2.7.0(7)',
+    'Development2.7.0(7)TestFlight',
+    'TestFlightDevelopment2.7.0(7)',
+    'TestFlight2.7.0(7)-development',
+    'AppStore2.7.0(7)',
+    'Development2.7.0(7)\n',
+    ['Development2.7.0(7)'],
+    null,
+  ])('rejects malformed or unsupported source build labels: %j', (sourceBuild) => {
+    expect(() =>
+      validateLiveActivityFixture({ ...fullNotificationCenterProvenance(), sourceBuild }, 'kilter', 'en-US'),
+    ).toThrow('Invalid native');
+  });
+  it.each([
+    { cropRect: { x: 0, y: 0, width: 1170, height: 2600 } },
+    { sha256: 'invalid' },
+    { review: { ...provenance().review, nativePixelsUnmodified: false } },
+    { controller: { ...provenance().controller, connection: 'simulated' } },
+  ])('keeps native provenance gates for development captures: %j', (override) => {
+    expect(() =>
+      validateLiveActivityFixture(
+        { ...fullNotificationCenterProvenance(), sourceBuild: 'Development2.7.0(7)', ...override },
+        'kilter',
+        'en-US',
+      ),
+    ).toThrow('Invalid native');
+  });
   it('retains a reviewed complete Lock Screen byte-for-byte for CI framing', async () => {
     const root = directory();
     const source = await sharp({ create: { width: 1170, height: 2532, channels: 3, background: '#112233' } })
@@ -463,7 +509,7 @@ describe('reviewed native Live Activity fixtures', () => {
   });
   it('pins four full Kilter Notification Center captures without inferring lock state or a source commit', () => {
     const approvedSourceHashes = {
-      'en-US': 'ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8',
+      'en-US': 'f2c87d0d4d3d885b548ea8e67b8d545d83543eebc4dc52c3bfd4e590bcc1b2a5',
       es: 'c7b727d98ee23d09476b38985e6d081e1b38581758693183f51f61080680da5c',
       fr: 'e1991c81e5d03457b9fc2e5f14371b73091918e734efb11286a5a64284774acd',
       de: 'cb509013ab5b85d184d4feb0e20929b534ad8848ad74f645a358d1e796c403a4',
@@ -475,7 +521,7 @@ describe('reviewed native Live Activity fixtures', () => {
         appLocale: locale,
         widgetLocale: 'en',
         device: 'iPhone13Pro',
-        sourceBuild: 'TestFlight2.6.0(18)',
+        sourceBuild: locale === 'en-US' ? 'Development2.7.0(7)' : 'TestFlight2.6.0(18)',
         appSourceCommit: null,
         captureFraming: 'full-screen',
         captureSurface: 'notification-center',
@@ -483,7 +529,10 @@ describe('reviewed native Live Activity fixtures', () => {
         screenPoints: { width: 390, height: 844 },
         cropRect: { x: 0, y: 0, width: 1170, height: 2532 },
         notificationCenterContext: {
-          wallpaper: 'iOS stock Astronomy Earth',
+          wallpaper:
+            locale === 'en-US'
+              ? 'iOS stock Astronomy Earth, dimmed by existing Personal Focus'
+              : 'iOS stock Astronomy Earth',
           unrelatedNotificationsDismissed: true,
           entryFromAuthenticatedApp: true,
           authenticationState: 'not-established',
@@ -506,9 +555,9 @@ describe('reviewed native Live Activity fixtures', () => {
     }
     expect(sourceHashes.size).toBe(4);
   });
-  it('pins four full Tension captures with honest development-controller compatibility', () => {
+  it('pins Tension captures with actual family identity and legacy compatibility', () => {
     const approvedSourceHashes = {
-      'en-US': '5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03',
+      'en-US': '79e1878b9a1895661d7923b3890945fc00ceee1adb843ea41565ceaa31d6870c',
       es: 'cb8b07a6b1258db12893ff655cf74fbea976a8717de6ac9a88cec4c32d6b1f56',
       fr: 'f7b205e4d3ccac58d472ddb8223df34db6ac79ceb92b4bae09d03e26799cf913',
       de: '66e3d5dcf2add3ffb47a80ce1f02858cf6ec1c32847cae4d572bb7cc2948364c',
@@ -520,7 +569,7 @@ describe('reviewed native Live Activity fixtures', () => {
         boardFamily: 'tension',
         appLocale: locale,
         widgetLocale: 'en',
-        sourceBuild: 'TestFlight2.6.0(18)',
+        sourceBuild: locale === 'en-US' ? 'Development2.7.0(7)' : 'TestFlight2.6.0(18)',
         appSourceCommit: null,
         captureFraming: 'full-screen',
         captureSurface: 'notification-center',
@@ -532,20 +581,24 @@ describe('reviewed native Live Activity fixtures', () => {
         },
         content: {
           climbName: 'Masquerade',
-          grade: locale === 'es' ? 'V3' : '6a/V3',
+          grade: locale === 'en-US' || locale === 'es' ? 'V3' : '6a/V3',
           currentIndex: 1,
           totalClimbs: 2,
           nextEnabled: true,
         },
         controller: {
-          presentedBoardFamily: 'kilter',
+          presentedBoardFamily: locale === 'en-US' ? 'tension' : 'kilter',
           physicalWallLightingVerified: false,
-          compatibility: {
-            protocol: 'aurora-uart',
-            targetBoardFamily: 'tension',
-            serialMismatchAccepted: true,
-            verification: 'native-next-and-received-led-payload',
-          },
+          ...(locale === 'en-US'
+            ? {}
+            : {
+                compatibility: {
+                  protocol: 'aurora-uart',
+                  targetBoardFamily: 'tension',
+                  serialMismatchAccepted: true,
+                  verification: 'native-next-and-received-led-payload',
+                },
+              }),
         },
       });
       expect(loaded.provenance.sha256).toBe(approvedSourceHashes[locale]);
