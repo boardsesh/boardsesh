@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -31,7 +31,7 @@ interface Workflow {
   name: string;
   on: Record<string, Record<string, unknown>>;
   jobs: Record<string, Job>;
-  concurrency?: { group: string; 'cancel-in-progress': boolean };
+  concurrency?: { group: string; 'cancel-in-progress': boolean | string };
 }
 const workflow = (name: string): Workflow => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8')) as Workflow;
 
@@ -128,7 +128,14 @@ describe('store video workflow handoff', () => {
 
   it('excludes all live-session takes from the parallel matrix and serializes crew', () => {
     const pipeline = workflow('mobile-store-videos-pipeline');
-    expect(pipeline.concurrency).toEqual({ group: 'store-videos-v${{ inputs.version }}', 'cancel-in-progress': true });
+    expect(pipeline.concurrency?.group).toBe('store-videos-v${{ inputs.version }}');
+    const cancels = (eventName: string) =>
+      runInNewContext(String(pipeline.concurrency?.['cancel-in-progress']).replace(/^\$\{\{\s*|\s*\}\}$/g, ''), {
+        github: { event_name: eventName },
+      }) as boolean;
+    // A newer automatic draft supersedes the old pipeline; manual subset runs for one train queue instead.
+    expect(cancels('workflow_run')).toBe(true);
+    expect(cancels('workflow_dispatch')).toBe(false);
     const { preflight, app, record, crew, render } = pipeline.jobs;
     expect(app.needs).toBe('preflight');
     const prerequisites = preflight.steps?.find((step) => step.run?.includes('for name in'));
@@ -174,8 +181,7 @@ describe('store video workflow handoff', () => {
     const { preflight, record, crew, render } = workflow('mobile-store-videos-pipeline').jobs;
     const plan = preflight.steps?.find((step) => step.name?.startsWith('Resolve the selected variants'));
     expect(plan?.env?.VARIANTS).toBe('${{ inputs.variants }}');
-    expect(plan?.run).toBe('vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"');
-    expect(JSON.stringify(preflight)).not.toContain('for(const target of ["kilter","tension"])');
+    expect(plan?.run).toContain('vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"');
     for (const output of ['variants', 'variants_csv', 'crew', 'live_activity', 'exports'])
       expect(preflight.outputs?.[output]).toBe(`\u0024{{ steps.plan.outputs.${output} }}`);
     expect(record.needs).toEqual(['preflight', 'app']);
@@ -188,6 +194,72 @@ describe('store video workflow handoff', () => {
       (step) => step.name === 'Hydrate the retained ending in its actual source language',
     );
     expect(hydrate?.if).toBe('contains(fromJSON(needs.preflight.outputs.live_activity), matrix.kind)');
+  });
+
+  describe('preflight plan on a recording source', () => {
+    const sha = 'e'.repeat(64);
+    const footage = (target: string) => ({
+      boardFamily: target,
+      sha256: sha,
+      key: `sources/live-activity/${sha}.zip`,
+    });
+    function preflight(options: { hasPlan: boolean; variants: string; footage: string[] }) {
+      const step = workflow('mobile-store-videos-pipeline').jobs.preflight.steps?.find((entry) =>
+        entry.name?.startsWith('Resolve the selected variants'),
+      );
+      const root = mkdtempSync(join(tmpdir(), 'store-video-preflight-'));
+      try {
+        for (const directory of ['scripts', 'app-stores/apple/live-activity-captures', 'bin'])
+          mkdirSync(join(root, directory), { recursive: true });
+        writeFileSync(
+          join(root, 'scripts/store-videos-gate.ts'),
+          options.hasPlan ? "if (command === 'plan') {}" : "if (command === 'takes') {}",
+        );
+        writeFileSync(
+          join(root, 'app-stores/apple/live-activity-captures/manifest.json'),
+          JSON.stringify({ footage: Object.fromEntries(options.footage.map((target) => [target, footage(target)])) }),
+        );
+        writeFileSync(join(root, 'bin/vp'), '#!/bin/bash\necho "vp $*" >> "$GITHUB_OUTPUT"\n', { mode: 0o755 });
+        const result = spawnSync('bash', ['-c', step!.run!], {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${join(root, 'bin')}:${process.env.PATH}`,
+            VARIANTS: options.variants,
+            GITHUB_OUTPUT: join(root, 'output'),
+          },
+        });
+        return {
+          status: result.status,
+          stderr: result.stderr + result.stdout,
+          output: result.status === 0 ? readFileSync(join(root, 'output'), 'utf8') : '',
+        };
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+    it('uses the source plan when it has one', () => {
+      expect(preflight({ hasPlan: true, variants: 'default', footage: [] })).toMatchObject({
+        status: 0,
+        output: 'vp exec tsx scripts/store-videos-gate.ts plan default\n',
+      });
+    });
+    it('falls back to the full matrix and both physical takes on an older source', () => {
+      const result = preflight({ hasPlan: false, variants: 'all', footage: ['kilter', 'tension'] });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toContain('variants=["default","kilter","tension","moonboard","spray"]\n');
+      expect(result.output).toContain('crew=["default","kilter","tension"]\n');
+      expect(result.output).toContain('exports=20\n');
+      const missing = preflight({ hasPlan: false, variants: 'all', footage: ['kilter'] });
+      expect(missing.status).not.toBe(0);
+      expect(missing.stderr).toContain('Missing reviewed retained tension footage');
+    });
+    it('refuses a subset on an older source', () => {
+      const result = preflight({ hasPlan: false, variants: 'default', footage: ['kilter', 'tension'] });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('predates variant subsets');
+    });
   });
 
   it.each([
@@ -270,6 +342,8 @@ describe('store video workflow handoff', () => {
     const review = byName("Refresh the train's review PR with public posters and video links");
     expect(review?.env?.VIDEO_VARIANTS).toBe('${{ needs.preflight.outputs.variants_csv }}');
     expect(review?.run).toContain('"$VIDEO_VERSION" "$VIDEO_SOURCE_SHA" "$VIDEO_VARIANTS"');
+    // Carried candidates are HEAD-checked before the review branch is pushed.
+    expect(review?.env?.STORE_CREATIVES_R2_AWS_ENDPOINT_URL).toBe('${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}');
   });
 
   it('uses the screenshot cache and Maestro pin, and publishes only finalized search exports', () => {

@@ -22,7 +22,9 @@ permissions:
 
 concurrency:
   group: store-videos-v${{ inputs.version }}
-  cancel-in-progress: true
+  # A newer automatic draft supersedes the older pipeline. Manual subset runs queue instead, so recording
+  # kilter after default never cancels default; GitHub keeps one waiting run per group (a third replaces it).
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
@@ -72,7 +74,26 @@ jobs:
         env:
           VARIANTS: ${{ inputs.variants }}
         # Only selected cuts that end on the Live Activity need retained footage, read from the source's storyboards.
-        run: vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"
+        # A source commit from before subset support has no `plan`: it can only record every page, and needs
+        # both physical takes exactly as it always did.
+        run: |
+          set -euo pipefail
+          if grep -q "command === 'plan'" scripts/store-videos-gate.ts; then
+            vp exec tsx scripts/store-videos-gate.ts plan "$VARIANTS"
+            exit 0
+          fi
+          if [ "${VARIANTS:-all}" != all ]; then
+            echo "::error::Recording source predates variant subsets; dispatch variants=all or record from a newer release/next."
+            exit 1
+          fi
+          node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync("app-stores/apple/live-activity-captures/manifest.json","utf8")); for(const target of ["kilter","tension"]) { const source=manifest.footage?.[target]; if(!source || source.boardFamily!==target || !/^[a-f0-9]{64}$/.test(source.sha256) || source.key!==`sources/live-activity/${source.sha256}.zip`) throw new Error(`Missing reviewed retained ${target} footage; import one physical take before recording.`); }'
+          {
+            echo 'variants=["default","kilter","tension","moonboard","spray"]'
+            echo 'variants_csv=default,kilter,tension,moonboard,spray'
+            echo 'crew=["default","kilter","tension"]'
+            echo 'live_activity=["default","kilter","tension"]'
+            echo 'exports=20'
+          } >> "$GITHUB_OUTPUT"
 
   app:
     needs: preflight
@@ -379,6 +400,10 @@ jobs:
           VIDEO_VERSION: ${{ inputs.version }}
           VIDEO_SOURCE_SHA: ${{ inputs.source_sha }}
           VIDEO_VARIANTS: ${{ needs.preflight.outputs.variants_csv }}
+          # Read-only HEAD checks that carried candidates have not expired.
+          STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
+          STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
+          STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY }}
         run: vp exec tsx scripts/store-videos-publish.ts "$VIDEO_VERSION" "$VIDEO_SOURCE_SHA" "$VIDEO_VARIANTS"
 
   timings:

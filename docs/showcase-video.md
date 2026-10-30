@@ -82,6 +82,14 @@ The preflight job resolves the list against the recording source's own
 storyboards (`store-videos-gate.ts plan`). It decides which pages need a crew
 take and which end on the Live Activity, and it checks physical footage only for
 those endings. A typo or an unknown name fails there, before any macOS minute.
+A source commit from before subset support has no `plan`; preflight then falls
+back to the old rules (every page, both physical takes) and refuses any list
+other than `all`.
+
+Run subsets for one train one at a time. A manual run waits for the running
+pipeline of the same version instead of cancelling it. GitHub keeps only one
+waiting run per version, so a third dispatch replaces the second while it
+waits. An automatic run from a newer draft still cancels whatever is running.
 
 One record job per selected page records the ordinary takes in all four
 locales, with at most three macOS jobs running together. One crew job then
@@ -96,9 +104,16 @@ finalizes only their search entries using Apple's current placement
 specifications, and uploads SHA-addressed candidates to R2. It refreshes one
 draft PR on `store-videos/v<version>` with the posters and MP4 links for the
 pages under review. Pages this run did not record keep main's entries
-untouched; an earlier subset run of the same train that is still on the open
+untouched. An earlier subset run of the same train that is still on the open
 review branch is carried forward, so recording Kilter later does not drop the
-default page from the PR. Ordinary same-version train syncs retain the pinned
+default page from the PR. Only pages the branch itself changed against its
+merge-base with main are carried, so a fix that landed on main since is never
+reverted. Each review commit records every page's source commit in a
+`Store-Video-Source:` trailer; the PR body names each carried page, the review
+commit it came from and its source. Before pushing, the publisher HEAD-checks
+the carried pages' R2 candidates and stops if any expired (after 30 days):
+re-record those pages in the same run. The PR body also says exactly which
+pages merging will place. Ordinary same-version train syncs retain the pinned
 recording source; rewritten history or a changed version is rejected. A newer
 draft run cancels the older pipeline for that version. An already merged
 video PR prevents another review PR for the same train.

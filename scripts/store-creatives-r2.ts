@@ -155,15 +155,24 @@ export function selectCreativeVariants(manifest: CreativeManifest, variant = 'al
   if (new Set(selected).size !== selected.length) throw new Error('Repeated creative variant');
   return selected;
 }
+const searchEntries = (manifest: CreativeManifest | undefined, variant: string): CreativeAsset[] =>
+  manifest?.variants[variant]?.assets.filter((asset) => asset.placement === 'search-results') ?? [];
+/** Variants whose search entries differ between two manifests; `previous` undefined means none existed. */
+export function changedSearchVariants(previous: CreativeManifest | undefined, current: CreativeManifest): string[] {
+  return Object.keys(current.variants).filter(
+    (variant) => JSON.stringify(searchEntries(current, variant)) !== JSON.stringify(searchEntries(previous, variant)),
+  );
+}
 /**
- * Variants a merged review is ready to ship. A variant with no search entries is still pending and is skipped;
- * one with any search entry must have exactly one video and poster per app locale. At least one must be ready.
+ * Variants a merge ships: only those whose search entries changed against the parent manifest. A variant
+ * unchanged since then is never promoted, uploaded or placed again, so an earlier train's entries cannot
+ * land on a later version. A changed variant must have exactly one video and poster per app locale; one
+ * whose entries were removed is skipped. An empty result means the merge ships nothing.
  */
-export function readySearchVariants(manifest: CreativeManifest): string[] {
-  if (!manifest.marketingVersion) throw new Error('Merged video manifest needs its reviewed marketingVersion');
+export function readySearchVariants(manifest: CreativeManifest, previous?: CreativeManifest): string[] {
   const locales = Object.keys(manifest.locales);
-  const ready = Object.entries(manifest.variants).flatMap(([variant, configuration]) => {
-    const assets = configuration.assets.filter((asset) => asset.placement === 'search-results');
+  const ready = changedSearchVariants(previous, manifest).flatMap((variant) => {
+    const assets = searchEntries(manifest, variant);
     if (!assets.length) return [];
     if (
       assets.length !== locales.length ||
@@ -173,7 +182,8 @@ export function readySearchVariants(manifest: CreativeManifest): string[] {
       throw new Error(`${variant} needs four search videos with posters before promotion`);
     return [variant];
   });
-  if (!ready.length) throw new Error('No variant has a complete search video set to promote');
+  if (ready.length && !manifest.marketingVersion)
+    throw new Error('Merged video manifest needs its reviewed marketingVersion');
   return ready;
 }
 export function creativeObjects(manifest: CreativeManifest, variant = 'all', placement = 'all'): CreativeObject[] {
@@ -358,7 +368,7 @@ async function main(): Promise<void> {
   const [action, ...args] = process.argv.slice(2).filter((argument) => argument !== '--');
   if (!['upload-candidates', 'promote', 'fetch', 'ready-search-variants'].includes(action))
     throw new Error(
-      'Usage: store-creatives-r2.ts upload-candidates|promote|fetch --manifest PATH [--root PATH] [--output PATH] [--variant all|NAME[,NAME...]] [--placement all|search|header] [--dry-run] | ready-search-variants [--manifest PATH]',
+      'Usage: store-creatives-r2.ts upload-candidates|promote|fetch --manifest PATH [--root PATH] [--output PATH] [--variant all|NAME[,NAME...]] [--placement all|search|header] [--dry-run] | ready-search-variants [--manifest PATH] [--previous PATH]',
     );
   const flags = new Map<string, string>();
   for (let index = 0; index < args.length; index++) {
@@ -368,7 +378,7 @@ async function main(): Promise<void> {
       continue;
     }
     if (
-      !['--manifest', '--root', '--output', '--variant', '--placement'].includes(flag) ||
+      !['--manifest', '--root', '--output', '--variant', '--placement', '--previous'].includes(flag) ||
       !args[index + 1] ||
       args[index + 1].startsWith('--') ||
       flags.has(flag)
@@ -380,7 +390,13 @@ async function main(): Promise<void> {
     JSON.parse(readFileSync(flags.get('--manifest') ?? 'app-stores/apple/creative-assets.json', 'utf8')),
   );
   if (action === 'ready-search-variants') {
-    console.log(readySearchVariants(manifest).join(','));
+    const previous = flags.get('--previous');
+    console.log(
+      readySearchVariants(
+        manifest,
+        previous ? parseCreativeManifest(JSON.parse(readFileSync(previous, 'utf8'))) : undefined,
+      ).join(','),
+    );
     return;
   }
   const dryRun = flags.has('--dry-run');

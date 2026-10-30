@@ -60,12 +60,18 @@ function manifestFixture(root: string) {
   writeFileSync(join(root, 'app-stores/apple/creative-assets.json'), JSON.stringify(manifest));
   return manifest;
 }
-function summarize(root: string) {
+function summarize(root: string, shipped = 'default,kilter,tension,moonboard,spray') {
   const output = join(root, 'summary');
   const result = spawnSync('bash', ['-c', step('Summarize creative results').run!], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, CREATIVE_ACTION: 'upload-and-place', RUNNER_TEMP: root, GITHUB_STEP_SUMMARY: output },
+    env: {
+      ...process.env,
+      CREATIVE_ACTION: 'upload-and-place',
+      SHIPPED_VARIANTS: shipped,
+      RUNNER_TEMP: root,
+      GITHUB_STEP_SUMMARY: output,
+    },
   });
   expect(result.status, result.stderr).toBe(0);
   return readFileSync(output, 'utf8');
@@ -180,34 +186,148 @@ describe('merged store video upload workflow', () => {
     expect(guarded.status).toBe(19);
     expect(guarded.trace).toHaveLength(2);
   });
-  it('ships only the variants with a complete search matrix and fails before promotion otherwise', () => {
-    const validate = step('Validate each shipped search video matrix');
-    expect(validate.if).toBe("github.event_name == 'push'");
-    expect(validate.run).toContain('vp exec tsx scripts/store-creatives-r2.ts ready-search-variants');
-    const run = (vp: string) => {
+  describe('ships only variants whose search entries changed in the push', () => {
+    const repository = process.cwd();
+    function searchSet(manifest: Record<string, unknown>, variant: string, sha: string) {
+      const variants = manifest.variants as Record<string, { assets: unknown[] }>;
+      variants[variant].assets = ['en-US', 'es', 'fr', 'de'].map((locale) => ({
+        locale,
+        placement: 'search-results',
+        file: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results.mp4`,
+        sha256: sha.repeat(64),
+        provenance: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results.manifest.json`,
+        provenanceSha256: 'b'.repeat(64),
+        poster: `.boardsesh/app-store-creatives/${variant}/${locale}/search-results-poster.jpg`,
+        posterSha256: 'c'.repeat(64),
+        specId: 'search',
+        placementGroup: 'search',
+      }));
+    }
+    function push(
+      before: (manifest: Record<string, unknown>) => void,
+      after: (manifest: Record<string, unknown>) => void,
+    ) {
       const root = directory();
-      writeFileSync(join(root, 'vp'), `#!/bin/bash\n${vp}\n`, { mode: 0o755 });
-      const result = spawnSync('bash', ['-c', validate.run!], {
+      const upstream = join(root, 'upstream');
+      const git = (cwd: string, ...args: string[]) => {
+        const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout.trim();
+      };
+      mkdirSync(join(upstream, 'app-stores/apple'), { recursive: true });
+      git(upstream, 'init', '-q');
+      const base = JSON.parse(readFileSync('app-stores/apple/creative-assets.json', 'utf8')) as Record<string, unknown>;
+      const write = (change: (manifest: Record<string, unknown>) => void, message: string) => {
+        const manifest = structuredClone(base);
+        change(manifest);
+        writeFileSync(join(upstream, 'app-stores/apple/creative-assets.json'), JSON.stringify(manifest));
+        git(upstream, 'add', '.');
+        git(
+          upstream,
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@example.com',
+          'commit',
+          '-q',
+          '--allow-empty',
+          '-m',
+          message,
+        );
+        return git(upstream, 'rev-parse', 'HEAD');
+      };
+      const beforeSha = write(before, 'before');
+      write(after, 'after');
+      const work = join(root, 'work');
+      git(root, 'clone', '-q', '--depth=1', `file://${upstream}`, work);
+      const bin = join(root, 'bin');
+      mkdirSync(bin);
+      writeFileSync(
+        join(bin, 'vp'),
+        // Stand in for `vp exec tsx SCRIPT ACTION ...`: run this checkout's script against the pushed manifest.
+        `#!/bin/bash\n[ "$1 $2" = 'exec tsx' ] || exit 64\ncd ${JSON.stringify(repository)} && exec ${JSON.stringify(process.execPath)} --import tsx "$3" "$4" --manifest ${JSON.stringify(join(work, 'app-stores/apple/creative-assets.json'))} "\${@:5}"\n`,
+        { mode: 0o755 },
+      );
+      const result = spawnSync('bash', ['-c', step('Validate each shipped search video matrix').run!], {
+        cwd: work,
         encoding: 'utf8',
         env: {
           ...process.env,
-          PATH: `${root}:${process.env.PATH}`,
+          PATH: `${bin}:${process.env.PATH}`,
+          BEFORE_SHA: beforeSha,
+          RUNNER_TEMP: root,
           GITHUB_OUTPUT: join(root, 'output'),
           GITHUB_STEP_SUMMARY: join(root, 'summary'),
         },
       });
-      return { status: result.status, output: result.status === 0 ? readFileSync(join(root, 'output'), 'utf8') : '' };
-    };
-    expect(run('echo default')).toEqual({ status: 0, output: 'variants=default\n' });
-    expect(run("echo 'spray needs four search videos with posters before promotion' >&2; exit 1").status).toBe(1);
-    for (const name of ['Promote reviewed search videos', 'Fetch verified approved search videos']) {
-      expect(step(name).env?.SEARCH_VARIANTS).toBe('${{ steps.search.outputs.variants }}');
-      expect(step(name).run).toContain('--placement search --variant "$SEARCH_VARIANTS"');
-      expect(steps.indexOf(validate)).toBeLessThan(steps.indexOf(step(name)));
+      return {
+        status: result.status,
+        stderr: result.stderr,
+        output: result.status === 0 ? readFileSync(join(root, 'output'), 'utf8') : '',
+        summary: result.status === 0 ? readFileSync(join(root, 'summary'), 'utf8') : '',
+      };
     }
-    expect(step('Run creative lane with ephemeral API key').env?.CREATIVE_VARIANT).toBe(
-      "${{ github.event_name == 'push' && steps.search.outputs.variants || steps.operation.outputs.variant }}",
-    );
+    it('ships a new kilter subset but never re-ships an earlier train default entry', () => {
+      const result = push(
+        (manifest) => {
+          manifest.marketingVersion = '2.7.0';
+          searchSet(manifest, 'default', 'a');
+        },
+        (manifest) => {
+          manifest.marketingVersion = '2.8.0';
+          searchSet(manifest, 'default', 'a');
+          searchSet(manifest, 'kilter', 'd');
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('variants=kilter\n');
+      expect(result.summary).toContain('Shipping search videos for: kilter');
+    }, 30_000);
+    it('ships nothing, with a clear message, when no search entry changed', () => {
+      const same = (manifest: Record<string, unknown>) => {
+        manifest.marketingVersion = '2.7.0';
+        searchSet(manifest, 'default', 'a');
+      };
+      const result = push(same, same);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('variants=\n');
+      expect(result.summary).toContain('No search video entries changed in this push');
+    }, 30_000);
+    it('fails before promotion when a changed variant is incomplete', () => {
+      const result = push(
+        () => undefined,
+        (manifest) => {
+          manifest.marketingVersion = '2.7.0';
+          searchSet(manifest, 'spray', 'a');
+          (manifest.variants as Record<string, { assets: unknown[] }>).spray.assets.pop();
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('spray needs four search videos with posters');
+    }, 30_000);
+    it('feeds the shipped list to every later step and skips them when it is empty', () => {
+      for (const name of ['Promote reviewed search videos', 'Fetch verified approved search videos']) {
+        expect(step(name).if).toBe("github.event_name == 'push' && steps.search.outputs.variants != ''");
+        expect(step(name).env?.SEARCH_VARIANTS).toBe('${{ steps.search.outputs.variants }}');
+        expect(step(name).run).toContain('--placement search --variant "$SEARCH_VARIANTS"');
+        expect(steps.indexOf(step('Validate each shipped search video matrix'))).toBeLessThan(
+          steps.indexOf(step(name)),
+        );
+      }
+      const lane = step('Run creative lane with ephemeral API key');
+      expect(lane.if).toBe("github.event_name != 'push' || steps.search.outputs.variants != ''");
+      expect(lane.env?.CREATIVE_VARIANT).toBe(
+        "${{ github.event_name == 'push' && steps.search.outputs.variants || steps.operation.outputs.variant }}",
+      );
+    });
+  });
+  it('summarizes only the shipped variants, or says nothing shipped', () => {
+    const root = directory();
+    manifestFixture(root);
+    for (const action of ['promotion', 'fetch'])
+      writeFileSync(join(root, `creative-${action}-report.json`), JSON.stringify({ objects: 12, changed: 12 }));
+    expect(summarize(root, 'kilter')).toContain('| Promoted or already approved | 4 |');
+    expect(summarize(root, '')).toContain('nothing was promoted, uploaded or placed');
   });
   it('passes a shipped subset to the lane with unchanged guards', () => {
     const result = lane('upload-and-place', { CREATIVE_VARIANT: 'default,spray' });

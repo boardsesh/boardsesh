@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   createCreativeStore,
+  changedSearchVariants,
   creativeObjects,
   parseCreativeManifest,
   readySearchVariants,
@@ -168,9 +169,9 @@ describe('shipping a subset of page variants', () => {
     for (const variant of ['', 'default,', 'default,default', 'kilterx', 'all,default'])
       expect(() => selectCreativeVariants(manifest, variant)).toThrow();
   });
-  it('ships complete variants, skips pending ones and needs at least one', () => {
+  it('ships complete changed variants and skips pending ones', () => {
     const manifest = pending();
-    expect(() => readySearchVariants(manifest)).toThrow('No variant');
+    expect(readySearchVariants(manifest)).toEqual([]);
     searchSet(manifest, 'default');
     expect(readySearchVariants(manifest)).toEqual(['default']);
     searchSet(manifest, 'spray');
@@ -181,6 +182,24 @@ describe('shipping a subset of page variants', () => {
     manifest.variants.kilter.assets = [header];
     expect(readySearchVariants(manifest)).toEqual(['default', 'spray']);
     expect(() => readySearchVariants({ ...manifest, marketingVersion: undefined })).toThrow('marketingVersion');
+  });
+  it('never re-ships a variant whose search entries the push left unchanged', () => {
+    const earlier = pending();
+    earlier.marketingVersion = '2.7.0';
+    searchSet(earlier, 'default');
+    const later = structuredClone(earlier);
+    later.marketingVersion = '2.8.0';
+    searchSet(later, 'kilter');
+    expect(changedSearchVariants(earlier, later)).toEqual(['kilter']);
+    expect(readySearchVariants(later, earlier)).toEqual(['kilter']);
+    expect(readySearchVariants(earlier, earlier)).toEqual([]);
+    expect(readySearchVariants({ ...earlier, marketingVersion: undefined }, earlier)).toEqual([]);
+    const removed = structuredClone(later);
+    removed.variants.default.assets = [];
+    expect(readySearchVariants(removed, later)).toEqual([]);
+    const reshot = structuredClone(later);
+    reshot.variants.default.assets[0].sha256 = 'f'.repeat(64);
+    expect(readySearchVariants(reshot, later)).toEqual(['default']);
   });
   it.each([
     ['a missing locale', (manifest: CreativeManifest) => manifest.variants.spray.assets.pop()],

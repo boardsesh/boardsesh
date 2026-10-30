@@ -36,6 +36,10 @@ module BoardseshCreatives
       selected = variant == "all" ? @manifest.fetch("variants").keys : variant.split(",", -1)
       raise Error, "Unknown creative variant" unless !selected.empty? && selected.all? { |name| @manifest.fetch("variants").key?(name) }
       raise Error, "Repeated creative variant" unless selected.uniq.length == selected.length
+      if variant == "all" && placement == "search"
+        # Pages that have not shipped a search video yet stay out of an all-pages search run, like the merge path.
+        selected = selected.select { |name| @manifest.fetch("variants").fetch(name).fetch("assets").any? { |asset| asset.fetch("placement") == "search-results" } }
+      end
       placement_types = refdata.flat_map { |datum| datum.dig("attributes", "placementTypes") || [] }
       @selected_placements.map { |selected| PLACEMENTS.fetch(selected) }.each do |placement_type|
         raise Error, "Apple refdata does not advertise #{placement_type}; no writes performed" unless placement_types.any? { |entry| entry["placementTypeId"] == placement_type }
@@ -47,7 +51,7 @@ module BoardseshCreatives
       raise Error, "Unfinalized creative variants: #{pending.join(', ')}" unless pending.empty?
       @bound_app_version = nil
       if action == "place" && @manifest["marketingVersion"]
-        if variant == "all" || selected.include?("default")
+        if (variant == "all" && placement != "search") || selected.include?("default")
           @bound_app_version = app_version(allow_live)
         else
           matching_app_versions

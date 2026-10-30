@@ -11,7 +11,14 @@ import {
   sourceStillOnTrain,
   storeVideoSelection,
 } from '../store-videos-gate';
-import { carryOpenReview, mergeVideoManifest, videoReviewBody } from '../store-videos-publish';
+import {
+  carryOpenReview,
+  mergeVideoManifest,
+  missingCarriedCandidates,
+  parseVideoSourceTrailers,
+  videoReviewBody,
+  videoSourceTrailers,
+} from '../store-videos-publish';
 import { STORE_SEARCH_VARIANTS, storeSearchTakeIds } from '../lib/showcase-video/store-search';
 import { parseCreativeManifest, type CreativeManifest } from '../store-creatives-r2';
 
@@ -148,12 +155,11 @@ describe('video review manifest', () => {
     expect(() => mergeVideoManifest(current, rendered)).toThrow('storage');
   });
   it('embeds 20 durable candidate posters and exact video/provenance links', () => {
-    const body = videoReviewBody(
-      renderedManifest(),
-      '2.6.0',
-      'd'.repeat(40),
-      'https://github.com/boardsesh/boardsesh/actions/runs/1',
-    );
+    const all = ['default', 'kilter', 'tension', 'moonboard', 'spray'];
+    const body = videoReviewBody(renderedManifest(), '2.6.0', 'https://github.com/boardsesh/boardsesh/actions/runs/1', {
+      sources: Object.fromEntries(all.map((variant) => [variant, 'd'.repeat(40)])),
+      places: all,
+    });
     expect(body.match(/!\[/g)).toHaveLength(20);
     expect(body.match(/\[Play video\]/g)).toHaveLength(20);
     expect(body).toContain(`/candidates/${'a'.repeat(64)}.mp4`);
@@ -250,7 +256,7 @@ describe('subset video review manifest', () => {
     expect(() => mergeVideoManifest(current, renderedManifest(), [])).toThrow('non-empty');
     expect(() => mergeVideoManifest(current, renderedManifest(), ['header'])).toThrow('non-empty');
   });
-  it('carries an earlier subset run of the same train on the open review branch', () => {
+  it('carries only variants the open review branch changed against its merge-base', () => {
     const main = renderedManifest();
     for (const configuration of Object.values(main.variants)) configuration.assets = [];
     const header = {
@@ -259,25 +265,70 @@ describe('subset video review manifest', () => {
       file: '.boardsesh/app-store-creatives/spray/en-US/header.png',
     };
     main.variants.spray.assets = [header];
+    const base = structuredClone(main);
     const review = { ...renderedManifest(), marketingVersion: '2.7.0' };
     for (const variant of ['kilter', 'tension', 'moonboard']) review.variants[variant].assets = [];
-    const { manifest, carried } = carryOpenReview(main, review, '2.7.0', ['kilter']);
+    const { manifest, carried } = carryOpenReview(main, review, base, '2.7.0', ['kilter']);
     expect(carried).toEqual(['default', 'spray']);
     expect(manifest.variants.spray.assets[0]).toEqual(header);
     expect(search(manifest, 'spray')).toHaveLength(4);
     expect(manifest.variants.kilter.assets).toEqual([]);
-    expect(carryOpenReview(main, { ...review, marketingVersion: '2.6.0' }, '2.7.0', ['kilter']).carried).toEqual([]);
-    expect(carryOpenReview(main, undefined, '2.7.0', ['kilter']).manifest).toBe(main);
-  });
-  it('lists only the reviewed variants in the PR body', () => {
-    const manifest = renderedManifest();
-    const body = videoReviewBody(manifest, '2.7.0', 'd'.repeat(40), 'https://example.com/run', ['default']);
-    expect(body).toContain('Review 4 Search Results videos (default) for train v2.7.0.');
-    expect(body).toContain('Not in this review: kilter, tension, moonboard, spray.');
-    expect(body.match(/\[Play video\]/g)).toHaveLength(4);
-    expect(body).not.toContain('| kilter |');
-    expect(videoReviewBody(manifest, '2.7.0', 'd'.repeat(40), 'https://example.com/run')).not.toContain(
-      'Not in this review',
+    expect(carryOpenReview(main, { ...review, marketingVersion: '2.6.0' }, base, '2.7.0', ['kilter']).carried).toEqual(
+      [],
     );
+    expect(carryOpenReview(main, undefined, undefined, '2.7.0', ['kilter']).manifest).toBe(main);
+  });
+  it('never reverts a fix main made after the review branch was cut', () => {
+    // The branch was cut when main had spray v1; main has since shipped a spray fix (v2).
+    const base = renderedManifest();
+    for (const variant of ['default', 'kilter', 'tension', 'moonboard']) base.variants[variant].assets = [];
+    const review = { ...structuredClone(base), marketingVersion: '2.7.0' };
+    review.variants.default.assets = renderedManifest().variants.default.assets;
+    const main = structuredClone(base);
+    for (const asset of main.variants.spray.assets) asset.sha256 = 'f'.repeat(64);
+    const { manifest, carried } = carryOpenReview(main, review, base, '2.7.0', ['kilter']);
+    expect(carried).toEqual(['default']);
+    expect(search(manifest, 'spray').every((asset) => asset.sha256 === 'f'.repeat(64))).toBe(true);
+  });
+  it('round-trips each variant source through commit trailers', () => {
+    const sources = { default: 'a'.repeat(40), spray: 'b'.repeat(40) };
+    const message = `chore(store): review search videos for v2.7.0\n\n${videoSourceTrailers(sources)}`;
+    expect(parseVideoSourceTrailers(message)).toEqual(sources);
+    expect(
+      parseVideoSourceTrailers('Store-Video-Source: header abc\nStore-Video-Source: bogus ' + 'c'.repeat(40)),
+    ).toEqual({});
+  });
+  it('refuses carried candidates that expired, with HEAD checks only', async () => {
+    const manifest = renderedManifest();
+    const head = vi.fn(async (key: string) => !key.endsWith('.jpg'));
+    expect(await missingCarriedCandidates(manifest, [], { head })).toEqual([]);
+    expect(head).not.toHaveBeenCalled();
+    expect(await missingCarriedCandidates(manifest, ['spray'], { head })).toEqual([`candidates/${'c'.repeat(64)}.jpg`]);
+    head.mockResolvedValue(true);
+    expect(await missingCarriedCandidates(manifest, ['default', 'spray'], { head })).toEqual([]);
+  });
+  it('says exactly which variants the merge places and where each came from', () => {
+    const manifest = renderedManifest();
+    const body = videoReviewBody(manifest, '2.7.0', 'https://example.com/run', {
+      sources: { default: 'a'.repeat(40), kilter: 'd'.repeat(40) },
+      carriedFrom: { default: 'e'.repeat(40) },
+      places: ['kilter'],
+    });
+    expect(body).toContain('Review 8 Search Results videos (default, kilter) for train v2.7.0.');
+    expect(body).toContain('Merging places search videos for exactly: kilter.');
+    expect(body).toContain(
+      `- default: carried from earlier review commit ${'e'.repeat(40)}; recorded from ${'a'.repeat(40)}.`,
+    );
+    expect(body).toContain(`- kilter: recorded from ${'d'.repeat(40)} in this run.`);
+    expect(body).toContain('Not in this review: tension, moonboard, spray.');
+    expect(body.match(/\[Play video\]/g)).toHaveLength(8);
+    expect(body).not.toContain('| spray |');
+    const unknown = videoReviewBody(manifest, '2.7.0', 'https://example.com/run', {
+      sources: { spray: undefined },
+      carriedFrom: { spray: 'e'.repeat(40) },
+      places: [],
+    });
+    expect(unknown).toContain('recorded from an unrecorded source commit');
+    expect(unknown).toContain('it promotes, uploads and places nothing');
   });
 });

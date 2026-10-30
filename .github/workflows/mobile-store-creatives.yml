@@ -92,14 +92,33 @@ jobs:
       - name: Validate each shipped search video matrix
         id: search
         if: github.event_name == 'push'
-        # Variants with no search entries are still pending and stay out of every later step.
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        # Ship only variants whose search entries changed in this push; unchanged ones (an earlier
+        # train's included) are never promoted, uploaded or placed again. A failed fetch fails closed.
         run: |
           set -euo pipefail
-          variants="$(vp exec tsx scripts/store-creatives-r2.ts ready-search-variants)"
+          manifest=app-stores/apple/creative-assets.json
+          previous=()
+          if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+            if git cat-file -e "$BEFORE_SHA:$manifest" 2>/dev/null; then
+              git show "$BEFORE_SHA:$manifest" > "$RUNNER_TEMP/previous-creative-assets.json"
+              previous=(--previous "$RUNNER_TEMP/previous-creative-assets.json")
+            fi
+          else
+            echo "::error::Push has no previous commit to compare the manifest against."
+            exit 1
+          fi
+          variants="$(vp exec tsx scripts/store-creatives-r2.ts ready-search-variants "${previous[@]}")"
           echo "variants=$variants" >> "$GITHUB_OUTPUT"
-          echo "Shipping search videos for: $variants" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$variants" ]; then
+            echo "Shipping search videos for: $variants" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No search video entries changed in this push; nothing to promote, upload or place." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Promote reviewed search videos
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.search.outputs.variants != ''
         env:
           STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
           STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
@@ -109,7 +128,7 @@ jobs:
           set -euo pipefail
           vp exec tsx scripts/store-creatives-r2.ts promote --placement search --variant "$SEARCH_VARIANTS" | tee "$RUNNER_TEMP/creative-promotion-report.json"
       - name: Fetch verified approved search videos
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.search.outputs.variants != ''
         env:
           STORE_CREATIVES_R2_AWS_ENDPOINT_URL: ${{ secrets.STORE_CREATIVES_R2_AWS_ENDPOINT_URL }}
           STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID }}
@@ -125,6 +144,7 @@ jobs:
           CREATIVE_PLACEMENT: ${{ steps.operation.outputs.placement }}
         run: vp exec ruby fastlane/download_creative_assets.rb
       - name: Run creative lane with ephemeral API key
+        if: github.event_name != 'push' || steps.search.outputs.variants != ''
         working-directory: fastlane
         env:
           CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
@@ -173,6 +193,7 @@ jobs:
         if: always()
         env:
           CREATIVE_ACTION: ${{ steps.operation.outputs.action }}
+          SHIPPED_VARIANTS: ${{ steps.search.outputs.variants }}
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -182,10 +203,13 @@ jobs:
           const report = (name) => read(path.join(process.env.RUNNER_TEMP, name));
           const manifest = read('app-stores/apple/creative-assets.json');
           const variants = record(manifest) && record(manifest.variants) ? manifest.variants : {};
+          // A merge ships only the variants its validation step listed; count those alone.
+          const shipped = (process.env.SHIPPED_VARIANTS || '').split(',').filter(Boolean);
           const inventory = () => {
             const objects = new Map();
             const videos = new Set();
-            for (const variant of Object.values(variants)) {
+            for (const [name, variant] of Object.entries(variants)) {
+              if (shipped.length && !shipped.includes(name)) continue;
               if (!record(variant) || !Array.isArray(variant.assets)) return null;
               for (const asset of variant.assets) {
                 if (!record(asset)) return null;
@@ -211,7 +235,9 @@ jobs:
           const uploads = report('creative-assets-upload-report.json');
           const placements = report('creative-assets-place-report.json');
           const lines = ['### Store creative results', ''];
-          if (process.env.CREATIVE_ACTION === 'upload-and-place') {
+          if (process.env.CREATIVE_ACTION === 'upload-and-place' && !shipped.length) {
+            lines.push('No search video entries changed in this push; nothing was promoted, uploaded or placed.', '');
+          } else if (process.env.CREATIVE_ACTION === 'upload-and-place') {
             lines.push(`| Search videos | Count |`, '| --- | ---: |', `| Promoted or already approved | ${storageCount(promoted)} |`, `| Downloaded and SHA256 verified | ${storageCount(fetched, true)} |`, `| Uploaded or already in Asset Library | ${unique(uploads)} |`, `| Placed or already assigned | ${unique(placements)} |`, '');
           }
           lines.push('Asset-review submission stays manual. Inspect ASC Preview for every locale.', '');
