@@ -347,7 +347,9 @@
         "empty": "Gerade nichts Loses. Jedes Board in der Nähe deiner Halle steht schon in deinem Eintrag.",
         "loadError": "Konnte nicht nach herrenlosen Boards suchen.",
         "retry": "Nochmal versuchen"
-      }
+      },
+      "back": "Alle Boards",
+      "editLoadError": "Dieses Board konnte nicht zum Bearbeiten geladen werden."
     },
     "presets": {
       "single": "Eine Wand",

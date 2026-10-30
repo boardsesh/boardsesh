@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import BoardForm from '../board-form';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -199,5 +199,70 @@ describe('BoardForm', () => {
 
     const submitButton = screen.getByText('Save');
     expect(submitButton.closest('button')?.disabled).toBe(true);
+  });
+
+  it('reports edits and confirms cancelling a dirty edit', async () => {
+    const onDirtyChange = vi.fn();
+    render(
+      <BoardForm
+        title="Edit Board"
+        submitLabel="Save"
+        initialValues={defaultValues}
+        onSubmit={mockOnSubmit}
+        requireChanges
+        onDirtyChange={onDirtyChange}
+        onCancel={mockOnCancel}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Board Name *'), { target: { value: 'Renamed wall' } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mockOnCancel).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard changes' }));
+    expect(mockOnCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps typed edits after a failed save and prevents duplicate submits while pending', async () => {
+    let resolveSave!: () => void;
+    mockOnSubmit.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    render(
+      <BoardForm
+        title="Edit Board"
+        submitLabel="Save"
+        initialValues={defaultValues}
+        onSubmit={mockOnSubmit}
+        requireChanges
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Board Name *'), { target: { value: 'Renamed wall' } });
+    const form = screen.getByRole('button', { name: 'Save' }).closest('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(mockOnSubmit).toHaveBeenCalledTimes(1);
+    expect(form.querySelector('fieldset')?.disabled).toBe(true);
+    resolveSave();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false));
+    expect((screen.getByLabelText('Board Name *') as HTMLInputElement).value).toBe('Renamed wall');
+  });
+
+  it('hides credentials and disables privacy controls for a nonowner editor', () => {
+    render(
+      <BoardForm
+        title="Edit Board"
+        submitLabel="Save"
+        initialValues={defaultValues}
+        onSubmit={mockOnSubmit}
+        permissions={{ privacy: false, credentials: false, setup: true, angle: true }}
+      />,
+    );
+    expect(screen.queryByLabelText('Controller Serial Number')).toBeNull();
+    expect((screen.getByLabelText('Public board') as HTMLInputElement).disabled).toBe(true);
   });
 });

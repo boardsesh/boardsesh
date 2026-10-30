@@ -1,3 +1,4 @@
+import { adminBoardsTypeDefs } from './admin-boards';
 import { privacyTypeDefs } from './privacy';
 import { scalarTypeDefs } from './scalars';
 import { climbTypeDefs } from './climb';
@@ -42,6 +43,7 @@ import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 
 export const typeDefs = [
+  adminBoardsTypeDefs,
   releaseContextTypeDefs,
   appleAdsAttributionTypeDefs,
   privacyTypeDefs,

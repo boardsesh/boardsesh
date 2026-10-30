@@ -673,6 +673,11 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!
 
+    "Search all active registered boards, including private boards. Global admins only."
+    adminBoards(input: AdminBoardsInput!): AdminBoardConnection!
+    "Stored editable metadata for one active board. Global admins only."
+    adminBoard(boardUuid: ID!): AdminBoard
+
     "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
     boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
 

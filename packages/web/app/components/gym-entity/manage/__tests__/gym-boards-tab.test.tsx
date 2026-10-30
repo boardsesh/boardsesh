@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
-import GymBoardsTab, { GymBoardAssociation } from '../gym-boards-tab';
+import GymBoardsTab, { GymBoardAssociation, VisibilityChip } from '../gym-boards-tab';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -17,8 +17,42 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: vi.fn() }),
 }));
 
+const mockToken = vi.hoisted(() => ({ current: 'test-token' }));
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
-  useWsAuthToken: () => ({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null }),
+  useWsAuthToken: () => ({ token: mockToken.current, isAuthenticated: true, isLoading: false, error: null }),
+}));
+
+const mockRefresh = vi.hoisted(() => vi.fn());
+const mockEditorSaved = vi.hoisted(() => ({ current: null as ((board: UserBoard) => void) | null }));
+vi.mock('@/app/lib/i18n/use-locale-router', () => ({ useLocaleRouter: () => ({ refresh: mockRefresh }) }));
+
+vi.mock('@/app/components/board-entity/edit-board-form', () => ({
+  default: ({
+    board,
+    onSuccess,
+    onDirtyChange,
+  }: {
+    board: UserBoard;
+    onSuccess: (updated: UserBoard) => void;
+    onDirtyChange?: (dirty: boolean) => void;
+  }) => {
+    mockEditorSaved.current = onSuccess;
+    const [draft, setDraft] = React.useState(board.name);
+    return (
+      <div data-testid="hydrated-editor">
+        <input
+          aria-label="Draft name"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            onDirtyChange?.(true);
+          }}
+        />
+        <span>{board.description}</span>
+        <button onClick={() => onSuccess({ ...board, name: draft })}>Save editor</button>
+      </div>
+    );
+  },
 }));
 
 const mockSessionUserId = { current: 'user-owner' };
@@ -99,6 +133,8 @@ function stubRequests({
 beforeEach(() => {
   vi.clearAllMocks();
   mockSessionUserId.current = 'user-owner';
+  mockToken.current = 'test-token';
+  mockEditorSaved.current = null;
 });
 
 describe('GymBoardsTab — add-board dialog', () => {
@@ -458,5 +494,133 @@ describe('GymBoardsTab — Print poster', () => {
     // An unlisted Spraywall's link carries its own uuid, the capability its
     // share link carries; private boards and walls get no action at all.
     expect(posterLinks).toEqual(['/poster/b/main-kilter', `/poster/b/back-spraywall?wall=${WALL_UUID}`]);
+  });
+});
+
+describe('GymBoardsTab — editing', () => {
+  function editingRequests(detail: UserBoard) {
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('query GetBoard(')) return { board: detail };
+      if (document.includes('gymBoards'))
+        return { gymBoards: [makeBoard({ name: 'Partial list record', canEdit: true })] };
+      return { strayBoardsForGym: [] };
+    });
+  }
+
+  it('hides edit when the server denies board editing', async () => {
+    stubRequests({ gymBoards: [makeBoard({ canEdit: false })], myBoards: [] });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    await screen.findByText('Garage Board');
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull();
+  });
+
+  it('fetches the complete board before mounting the editor', async () => {
+    editingRequests(makeBoard({ name: 'Complete board', description: 'Full description', canEdit: true }));
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    await screen.findByText('Full description');
+    expect((screen.getByLabelText('Draft name') as HTMLInputElement).value).toBe('Complete board');
+    expect(mockRequest).toHaveBeenCalledWith(expect.stringContaining('query GetBoard('), { boardUuid: 'board-1' });
+  });
+
+  it('preserves unsaved edits through a same-account token refresh', async () => {
+    editingRequests(makeBoard({ name: 'Complete board', canEdit: true }));
+    const onGymChange = vi.fn();
+    const { rerender } = render(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    fireEvent.change(await screen.findByLabelText('Draft name'), { target: { value: 'Unsaved rename' } });
+    mockToken.current = 'refreshed-token';
+    rerender(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    await waitFor(() => expect((screen.getByLabelText('Draft name') as HTMLInputElement).value).toBe('Unsaved rename'));
+    expect(mockRequest.mock.calls.filter(([document]) => document.includes('query GetBoard('))).toHaveLength(1);
+  });
+
+  it('removes the old account’s loaded board immediately when the account changes', async () => {
+    editingRequests(makeBoard({ name: 'Owner private draft', canEdit: true }));
+    const onGymChange = vi.fn();
+    const { rerender } = render(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    await screen.findByLabelText('Draft name');
+    mockRequest.mockImplementation(() => new Promise(() => {}));
+    mockSessionUserId.current = 'another-account';
+    rerender(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    expect(screen.queryByLabelText('Draft name')).toBeNull();
+  });
+
+  it('ignores an old account’s save completing after the account changed', async () => {
+    editingRequests(makeBoard({ name: 'Private wall', canEdit: true }));
+    const onGymChange = vi.fn();
+    const { rerender } = render(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    await screen.findByLabelText('Draft name');
+    const completeOldSave = mockEditorSaved.current!;
+    mockRequest.mockImplementation(() => new Promise(() => {}));
+    mockSessionUserId.current = 'another-account';
+    rerender(<GymBoardsTab gym={gym} onGymChange={onGymChange} />);
+    await act(async () => completeOldSave(makeBoard({ name: 'Old account result', canEdit: true })));
+    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByText('Partial list record')).toBeNull();
+    expect(screen.queryByLabelText('Draft name')).toBeNull();
+  });
+
+  it('refreshes the row and server content after a successful edit', async () => {
+    let listReadCount = 0;
+    const updatedBoard = makeBoard({ name: 'Renamed wall', canEdit: true });
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('query GetBoard(')) return { board: makeBoard({ canEdit: true }) };
+      if (document.includes('gymBoards')) {
+        listReadCount += 1;
+        return { gymBoards: [listReadCount === 1 ? makeBoard({ canEdit: true }) : updatedBoard] };
+      }
+      return { strayBoardsForGym: [] };
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    fireEvent.change(await screen.findByLabelText('Draft name'), { target: { value: 'Renamed wall' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save editor' }));
+    await screen.findByText('Renamed wall');
+    expect(listReadCount).toBe(2);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('guards returning to the list when the editor reports unsaved changes', async () => {
+    const onDirtyChange = vi.fn();
+    editingRequests(makeBoard({ canEdit: true }));
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} onDirtyChange={onDirtyChange} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    fireEvent.change(await screen.findByLabelText('Draft name'), { target: { value: 'Unsaved rename' } });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'All boards' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(screen.getByLabelText('Draft name')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard changes' }));
+    await screen.findByText('Partial list record');
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('ignores a board detail response arriving after the editor was closed', async () => {
+    let resolveDetail!: (response: { board: UserBoard }) => void;
+    mockRequest.mockImplementation(async (document: string) => {
+      if (document.includes('query GetBoard('))
+        return new Promise<{ board: UserBoard }>((resolve) => {
+          resolveDetail = resolve;
+        });
+      if (document.includes('gymBoards')) return { gymBoards: [makeBoard({ canEdit: true })] };
+      return { strayBoardsForGym: [] };
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'All boards' }));
+    await act(async () => resolveDetail({ board: makeBoard({ canEdit: true }) }));
+    expect(screen.queryByTestId('hydrated-editor')).toBeNull();
+    expect(screen.getByText('Garage Board')).toBeTruthy();
+  });
+});
+
+describe('VisibilityChip', () => {
+  it('shows unlisted when both legacy visibility flags are true', () => {
+    render(<VisibilityChip board={{ isPublic: true, isUnlisted: true }} />);
+    expect(screen.getByText('Unlisted')).toBeTruthy();
+    expect(screen.queryByText('Public')).toBeNull();
   });
 });

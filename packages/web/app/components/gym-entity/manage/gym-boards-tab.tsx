@@ -20,6 +20,7 @@ import AddOutlined from '@mui/icons-material/AddOutlined';
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
 import AddLinkOutlined from '@mui/icons-material/AddLinkOutlined';
 import PrintOutlined from '@mui/icons-material/PrintOutlined';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -48,32 +49,36 @@ import { boardPosterConsoleHref } from '@/app/lib/board-poster';
 import { canManageGymBoards, canUnlinkBoard, linkableBoards } from './gym-board-permissions';
 import ConfirmDialog from './confirm-dialog';
 import type { GymManageTabProps } from './tab-props';
+import GymBoardEditor from './gym-board-editor';
 
 export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 'isUnlisted'> }) {
   const { t } = useTranslation('kiosk');
-  if (board.isPublic) {
-    return <Chip size="small" color="success" variant="outlined" label={t('manage.boards.visibility.public')} />;
-  }
   if (board.isUnlisted) {
     return <Chip size="small" color="warning" variant="outlined" label={t('manage.boards.visibility.unlisted')} />;
+  }
+  if (board.isPublic) {
+    return <Chip size="small" color="success" variant="outlined" label={t('manage.boards.visibility.public')} />;
   }
   return <Chip size="small" variant="outlined" label={t('manage.boards.visibility.private')} />;
 }
 
-export default function GymBoardsTab({ gym }: GymManageTabProps) {
-  return <GymBoardAssociation gym={gym} />;
+export default function GymBoardsTab({ gym, onDirtyChange }: GymManageTabProps) {
+  return <GymBoardAssociation gym={gym} onDirtyChange={onDirtyChange} />;
 }
 
 /** Shared by initial gym setup and the management console. */
 export function GymBoardAssociation({
   gym,
   onAssociated,
+  onDirtyChange,
 }: {
   gym: GymManageTabProps['gym'];
   onAssociated?: () => Promise<void>;
+  onDirtyChange?: (isDirty: boolean) => void;
 }) {
   const { t } = useTranslation('kiosk');
   const { t: tGyms } = useTranslation('gyms');
+  const { t: tBoards } = useTranslation('boards');
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
   const viewerUserId = session?.user?.id ?? null;
@@ -81,6 +86,7 @@ export function GymBoardAssociation({
   const [loadError, setLoadError] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<UserBoard | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editingBoardUuid, setEditingBoardUuid] = useState<string | null>(null);
   const linkedBoardUuids = useMemo(() => new Set((boards ?? []).map((board) => board.uuid)), [boards]);
   // Backend contract: linking requires gym owner/admin; unlinking requires
   // owning the board. Editors (canEdit) still see the list, read-only.
@@ -140,6 +146,25 @@ export function GymBoardAssociation({
     }
     return false;
   };
+
+  if (editingBoardUuid) {
+    return (
+      <GymBoardEditor
+        key={editingBoardUuid}
+        boardUuid={editingBoardUuid}
+        onDirtyChange={onDirtyChange}
+        onBack={() => setEditingBoardUuid(null)}
+        onSaved={(updatedBoard) => {
+          setBoards(
+            (previous) => previous?.map((board) => (board.uuid === updatedBoard.uuid ? updatedBoard : board)) ?? null,
+          );
+          setEditingBoardUuid(null);
+          void fetchBoards();
+          void onAssociated?.();
+        }}
+      />
+    );
+  }
 
   return (
     <Box>
@@ -223,6 +248,16 @@ export function GymBoardAssociation({
                       {board.name}
                     </Typography>
                     <VisibilityChip board={board} />
+                    {board.canEdit && (
+                      <Button
+                        size="small"
+                        startIcon={<EditOutlined />}
+                        onClick={() => setEditingBoardUuid(board.uuid)}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        {tBoards('boardEntity.actions.edit')}
+                      </Button>
+                    )}
                     {/* In the wrapping title row, not beside Unlink: two actions
                         in the fixed-width secondary slot would run over the
                         board's name on a phone. */}

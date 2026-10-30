@@ -137,7 +137,8 @@
     "feedback": "Reportes de errores",
     "gymDuplicates": "Rocódromos duplicados",
     "locationSync": "Bloqueos de sincronización de ubicaciones",
-    "sprayWalls": "Datos de entrenamiento de Spraywalls"
+    "sprayWalls": "Datos de entrenamiento de Spraywalls",
+    "boards": "Plafones registrados"
   },
   "feedback": {
     "title": "Errores y comentarios",
@@ -511,5 +512,34 @@
     },
     "backToAdmin": "Volver a admin",
     "noAccess": "Tu rol de admin no cubre los Spraywalls. Esta página necesita acceso de admin de Spraywalls o de todo el sitio."
+  },
+  "boards": {
+    "title": "Plafones registrados",
+    "description": "Busca y edita plafones registrados, incluidos los privados y los que no tienen un rocódromo asociado.",
+    "backToAdmin": "Volver a administración",
+    "search": "Buscar plafones",
+    "searchPlaceholder": "Nombre del plafón, UUID, slug o rocódromo",
+    "boardType": "Tipo de plafón",
+    "allTypes": "Todos los tipos",
+    "searchAction": "Buscar",
+    "loading": "Cargando plafones",
+    "editLoadError": "No se ha podido cargar este plafón para editarlo.",
+    "retry": "Reintentar",
+    "backToList": "Todos los plafones",
+    "loadError": "No se han podido cargar los plafones registrados.",
+    "empty": "Ningún plafón coincide con esta búsqueda.",
+    "owner": "Propietario: {{name}}",
+    "systemOwner": "Boardsesh",
+    "noGym": "Sin rocódromo asociado",
+    "editNamed": "Editar {{name}}",
+    "results_one": "{{count}} plafón",
+    "results_other": "{{count}} plafones",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "visibility": {
+      "public": "Público",
+      "unlisted": "No listado",
+      "private": "Privado"
+    }
   }
 }

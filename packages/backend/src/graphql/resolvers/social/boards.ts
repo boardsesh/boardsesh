@@ -53,7 +53,7 @@ import {
 import { findBlockingDuplicate, type BoardLocation } from './board-duplicates';
 import { assertBoardCapNotReached } from './board-limits';
 import { syncLocationGeography } from './location-geography';
-import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
+import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader, requireAdmin } from './roles';
 import {
   SYSTEM_BOARD_OWNER_ID,
   followBoardMergeChain,
@@ -149,15 +149,18 @@ type DuplicateBoardCandidate = {
  *
  * `excludeBoardId` is the row being edited — a board must never block itself.
  */
-async function findOwnedBlockingDuplicate(opts: {
-  ownerId: string;
-  boardType: string;
-  layoutId: number;
-  sizeId: number;
-  incoming: BoardLocation & { setIds: string };
-  excludeBoardId?: number;
-}): Promise<DuplicateBoardCandidate | undefined> {
-  const ownedWithConfig = await db
+async function findOwnedBlockingDuplicate(
+  opts: {
+    ownerId: string;
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    incoming: BoardLocation & { setIds: string };
+    excludeBoardId?: number;
+  },
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<DuplicateBoardCandidate | undefined> {
+  const ownedWithConfig = await executor
     .select({
       uuid: dbSchema.userBoards.uuid,
       slug: dbSchema.userBoards.slug,
@@ -1800,6 +1803,465 @@ export const socialBoardQueries = {
 // Mutations
 // ============================================
 
+type ValidatedBoardUpdate = z.infer<typeof UpdateBoardInputSchema>;
+
+/** Admin authority changes metadata access, never ownership or wall publication. */
+function assertAdminBoardFields(
+  input: ValidatedBoardUpdate,
+  board: { ownerId: string; boardType: string },
+  userId: string,
+): void {
+  const ownerOnlyFields = ['isPublic', 'isUnlisted', 'hideLocation', 'serialNumber', 'timerName'] as const;
+  if (board.ownerId !== userId && ownerOnlyFields.some((field) => input[field] !== undefined)) {
+    throw new GraphQLError('Only the owner can change board privacy or credentials', {
+      extensions: { code: 'FORBIDDEN' },
+    });
+  }
+  const sprayFields = [
+    ...ownerOnlyFields,
+    'layoutId',
+    'sizeId',
+    'setIds',
+    'angle',
+    'isAngleAdjustable',
+    'hasLeds',
+  ] as const;
+  if (board.boardType === 'spray' && sprayFields.some((field) => input[field] !== undefined)) {
+    throw new GraphQLError('Change spray wall setup and visibility on the wall itself', {
+      extensions: { code: 'SPRAY_WALL_SETTINGS_ELSEWHERE' },
+    });
+  }
+}
+
+/** Shared row writer; the admin mode is internal and authenticates its own caller. */
+export async function updateBoardRecord(
+  input: unknown,
+  ctx: ConnectionContext,
+  access: 'standard' | 'admin' = 'standard',
+): Promise<typeof dbSchema.userBoards.$inferSelect> {
+  requireAuthenticated(ctx);
+  if (access === 'admin') await requireAdmin(ctx);
+  await applyRateLimit(ctx, 20, access === 'admin' ? 'adminUpdateBoard' : 'updateBoard');
+
+  const validatedInput = validateInput(UpdateBoardInputSchema, input, 'input');
+  const userId = ctx.userId!;
+
+  const [board] = await db
+    .select()
+    .from(dbSchema.userBoards)
+    .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
+    .limit(1);
+
+  if (!board) {
+    throw new Error('Board not found');
+  }
+
+  // A soft-deleted board is visible only to its owner (who can restore it by
+  // editing). Moderators/gym admins must not resurrect a board the owner
+  // deliberately removed — republishing its name, location, and serial.
+  if (
+    (access === 'admin' && (board.deletedAt || board.mergedIntoBoardUuid)) ||
+    (board.deletedAt && board.ownerId !== userId)
+  ) {
+    throw new Error('Board not found');
+  }
+
+  // Owner, community admin/leader (for this board type), or the linked gym's
+  // owner/admin may edit. Community moderators can fix outdated catalog boards.
+  if (access === 'admin') {
+    assertAdminBoardFields(validatedInput, board, userId);
+  } else {
+    await requireBoardEditAccess(ctx, board);
+    if (board.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+  }
+
+  if (!isBoardAngleSupported(board.boardType, validatedInput.angle)) {
+    throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+  }
+
+  // Editing a soft-deleted board restores it (see `updateValues.deletedAt`
+  // below), and the cap counts live rows only — so a restore is +1 live board
+  // and pays the same toll as a mint. Without this, delete-N/create-N/restore-N
+  // walks an account to cap+N. Editing an already-live board never gets here.
+  if (board.deletedAt) {
+    await assertBoardCapNotReached(board.ownerId);
+  }
+
+  // Config field changes (layoutId, sizeId, setIds). Authorized editors may
+  // change these even when the board has logged climbs — a config change
+  // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
+  // left untouched: they keep referencing the climbs/config they were logged
+  // against. We do not delete, move, or modify any tick rows here.
+  const hasConfigChange =
+    validatedInput.layoutId !== undefined || validatedInput.sizeId !== undefined || validatedInput.setIds !== undefined;
+  // Build update values (only provided fields)
+  const updateValues: Record<string, unknown> = {
+    updatedAt: new Date(),
+    // A deliberate human edit — freeze the row so the location sync can never
+    // overwrite these curated values (a moderator's catalog fix, say) on its
+    // next run.
+    syncFrozenAt: new Date(),
+  };
+
+  if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
+  if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
+  if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
+  if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
+  if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
+  // A spray wall's visibility is not an ordinary board flag: flipping it public
+  // copies the wall photo into the world-readable bucket, and flipping it back
+  // deletes that copy and retracts the climbs already fanned out to feeds
+  // (`updateSprayWall`, SW-14). Letting it through here would set the flag and
+  // do none of that — a private wall whose photo is still on the open web, or a
+  // public one that has no photo to show. One door, and this is not it.
+  //
+  // Only a CHANGE is refused: the edit screen sends the board's current flags
+  // back unchanged with every rename, and failing those would make a wall
+  // unrenameable.
+  if (
+    ((validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
+      (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted) ||
+      (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)) &&
+    board.ownerId !== userId
+  ) {
+    throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+  }
+  const changingVisibility =
+    (validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
+    (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted);
+  if (board.boardType === 'spray' && changingVisibility) {
+    throw new GraphQLError("Change a spray wall's visibility on the wall itself", {
+      extensions: { code: 'SPRAY_WALL_VISIBILITY_ELSEWHERE' },
+    });
+  }
+
+  // The other two flags `createSprayWall` pins and this mutation would happily
+  // unpin (#5486). `has_leds` is the whole of the "no Bluetooth on a wall"
+  // contract: it routes the bulb down the take-the-wall path, keeps the device
+  // picker unmounted and the LED controls hidden, so a wall with it set offers a
+  // climber a Bluetooth scan for a photograph. `is_angle_adjustable` is the same
+  // shape of lie — a wall does not adjust, and every climb on it is recorded at
+  // the one angle it was photographed at.
+  //
+  // A CHANGE again, not the field's presence: a client that echoes the board
+  // back unchanged on a rename must not be refused.
+  const changingWallHardware =
+    (validatedInput.hasLeds !== undefined && validatedInput.hasLeds !== board.hasLeds) ||
+    (validatedInput.isAngleAdjustable !== undefined && validatedInput.isAngleAdjustable !== board.isAngleAdjustable);
+  if (board.boardType === 'spray' && changingWallHardware) {
+    throw new GraphQLError('A spray wall is a photograph — it has no lights and it does not adjust', {
+      extensions: { code: 'SPRAY_WALL_HAS_NO_HARDWARE' },
+    });
+  }
+
+  if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
+  if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
+  if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;
+  if (validatedInput.isOwned !== undefined) updateValues.isOwned = validatedInput.isOwned;
+  if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
+  if (validatedInput.isAngleAdjustable !== undefined) updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
+  if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
+  if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
+  if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
+
+  if (hasConfigChange) {
+    if (validatedInput.layoutId !== undefined) updateValues.layoutId = validatedInput.layoutId;
+    if (validatedInput.sizeId !== undefined) updateValues.sizeId = validatedInput.sizeId;
+    if (validatedInput.setIds !== undefined) updateValues.setIds = validatedInput.setIds;
+  }
+
+  // Handle slug update
+  if (validatedInput.slug !== undefined) {
+    // Check slug uniqueness
+    const [slugConflict] = await db
+      .select({ id: dbSchema.userBoards.id })
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          eq(dbSchema.userBoards.slug, validatedInput.slug),
+          isNull(dbSchema.userBoards.deletedAt),
+          sql`${dbSchema.userBoards.id} != ${board.id}`,
+        ),
+      )
+      .limit(1);
+
+    if (slugConflict) {
+      throw new Error('Slug is already taken');
+    }
+    updateValues.slug = validatedInput.slug;
+  }
+
+  // If board was soft-deleted, restore it
+  if (board.deletedAt) {
+    updateValues.deletedAt = null;
+  }
+
+  let updated: typeof dbSchema.userBoards.$inferSelect;
+  // Whether a board a signed-out viewer could read changed audience, for the
+  // kiosk tombstone below.
+  let kioskAudienceChanged = false;
+  try {
+    const updatedRows = await db.transaction(async (tx) => {
+      kioskAudienceChanged = false;
+      // Serialize partial edits to the same board before deriving the final
+      // serial+config tuple. Without this row lock, a serial-only edit could
+      // validate against C1 while a concurrent config-only edit changes the
+      // row to C2, producing an unchecked S+C2 duplicate.
+      const [lockedBoard] = rowsFromResult<{
+        serialNumber: string | null;
+        ownerId: string;
+        boardType: string;
+        layoutId: number | string;
+        sizeId: number | string;
+        setIds: string;
+        locationName: string | null;
+        latitude: number | null;
+        longitude: number | null;
+        deletedAt: Date | null;
+        mergedIntoBoardUuid: string | null;
+        isPublic: boolean;
+        isUnlisted: boolean;
+        hideLocation: boolean;
+      }>(
+        await tx.execute(sql`
+          SELECT serial_number AS "serialNumber",
+                 owner_id AS "ownerId",
+                 board_type AS "boardType",
+                 layout_id AS "layoutId",
+                 size_id AS "sizeId",
+                 set_ids AS "setIds",
+                 location_name AS "locationName",
+                 latitude,
+                 longitude,
+                 deleted_at AS "deletedAt",
+                 merged_into_board_uuid AS "mergedIntoBoardUuid",
+                 is_public AS "isPublic",
+                 is_unlisted AS "isUnlisted",
+                 hide_location AS "hideLocation"
+            FROM user_boards
+           WHERE id = ${board.id}
+           FOR UPDATE
+        `),
+      );
+      if (!lockedBoard) {
+        throw new Error('Board not found');
+      }
+      // A staged edit must not restore or repopulate an account-deletion
+      // tombstone after its owner has been detached.
+      if (
+        lockedBoard.boardType === 'spray' &&
+        (lockedBoard.ownerId !== board.ownerId || (lockedBoard.deletedAt === null) !== (board.deletedAt === null))
+      ) {
+        throw new Error('Board not found');
+      }
+
+      if (access === 'admin') {
+        if (lockedBoard.deletedAt || lockedBoard.mergedIntoBoardUuid) throw new Error('Board not found');
+        assertAdminBoardFields(validatedInput, lockedBoard, userId);
+      } else if (lockedBoard.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
+        throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+      }
+
+      const lockedLayoutId = Number(lockedBoard.layoutId);
+      const lockedSizeId = Number(lockedBoard.sizeId);
+      const resultingLayoutId = validatedInput.layoutId ?? lockedLayoutId;
+      const resultingSizeId = validatedInput.sizeId ?? lockedSizeId;
+      const resultingSetIds = validatedInput.setIds ?? lockedBoard.setIds;
+      // Older clients echo unchanged setup fields. Only an actual config
+      // change needs duplicate confirmation; location-only edits remain exempt.
+      const configActuallyChanged =
+        resultingLayoutId !== lockedLayoutId ||
+        resultingSizeId !== lockedSizeId ||
+        normaliseSetIds(resultingSetIds) !== normaliseSetIds(lockedBoard.setIds);
+      // Partial edits derive their untouched config fields from the locked row,
+      // since another editor may have changed them or the location after lookup.
+      if (hasConfigChange) {
+        await assertKnownBoardConfig(lockedBoard.boardType, resultingLayoutId, resultingSizeId, resultingSetIds, tx);
+        // Catalogue boards share their system owner across gyms. For a user's
+        // boards, compare the final tuple and place on the same transaction as
+        // the write, after a concurrent edit has released this row's lock.
+        if (configActuallyChanged && lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID) {
+          if (validatedInput.allowDuplicateConfig) {
+            logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
+              userId,
+              boardId: board.id,
+              ownerId: lockedBoard.ownerId,
+              boardType: lockedBoard.boardType,
+              layoutId: resultingLayoutId,
+              sizeId: resultingSizeId,
+            });
+          } else {
+            const existing = await findOwnedBlockingDuplicate(
+              {
+                ownerId: lockedBoard.ownerId,
+                boardType: lockedBoard.boardType,
+                layoutId: resultingLayoutId,
+                sizeId: resultingSizeId,
+                excludeBoardId: board.id,
+                incoming: {
+                  setIds: resultingSetIds,
+                  locationName:
+                    validatedInput.locationName !== undefined ? validatedInput.locationName : lockedBoard.locationName,
+                  latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : lockedBoard.latitude,
+                  longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : lockedBoard.longitude,
+                },
+              },
+              tx,
+            );
+            // A non-owner may not learn a private sibling's identity through an
+            // edit error. Ownership is the locked value, just like the probe.
+            if (existing)
+              throw duplicateBoardConfigError(existing, { includeIdentity: lockedBoard.ownerId === userId });
+          }
+        }
+      }
+      const resultingSerial =
+        validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
+      const serialChanged =
+        validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
+      const serialOrConfigBecomesActive =
+        resultingSerial !== null && (serialChanged || configActuallyChanged || lockedBoard.deletedAt !== null);
+
+      if (serialOrConfigBecomesActive) {
+        await lockAndAssertBoardSerialAvailable(
+          tx,
+          {
+            serialNumber: resultingSerial,
+            boardType: lockedBoard.boardType,
+            layoutId: validatedInput.layoutId ?? lockedLayoutId,
+            sizeId: validatedInput.sizeId ?? lockedSizeId,
+            setIds: validatedInput.setIds ?? lockedBoard.setIds,
+          },
+          board.ownerId,
+          board.id,
+          // The editor making this change, who may not be the owner, reads the error.
+          userId,
+        );
+      }
+      const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
+      if (hasVisibility || validatedInput.hideLocation !== undefined) {
+        const policyCondition = and(
+          eq(dbSchema.resourcePrivacy.kind, 'board'),
+          eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
+        );
+        const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+        const privacyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = {};
+        if (hasVisibility) {
+          const requested =
+            (validatedInput.isUnlisted ?? lockedBoard.isUnlisted)
+              ? 'unlisted'
+              : (validatedInput.isPublic ?? lockedBoard.isPublic)
+                ? 'public'
+                : 'invite_only';
+          const changed =
+            (validatedInput.isPublic !== undefined && validatedInput.isPublic !== lockedBoard.isPublic) ||
+            (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== lockedBoard.isUnlisted);
+          const audience = policy && !changed ? policy.audience : legacyResourceAudience(policy?.audience, requested);
+          if (policy) {
+            // Old edit screens resend every boolean with a rename. Keep both
+            // the policy and its legacy projection consistent after revocation.
+            updateValues.isPublic = audience === 'public';
+            updateValues.isUnlisted = audience === 'unlisted';
+            if (audience !== policy.audience) privacyUpdates.audience = audience;
+          }
+        }
+        if (policy && validatedInput.hideLocation !== undefined) {
+          const locationAudience = legacyLocationAudience(
+            policy.locationAudience,
+            validatedInput.hideLocation,
+            lockedBoard.hideLocation,
+          );
+          updateValues.hideLocation = locationAudience !== 'public';
+          if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
+        }
+        // Read the audience the way the read gates do. System-owned boards
+        // stay anon-readable whatever their flags say.
+        const audienceBefore = effectiveBoardAudience(policy?.audience, lockedBoard);
+        const flagAfter = (value: unknown, before: boolean) => (typeof value === 'boolean' ? value : before);
+        const audienceAfter = effectiveBoardAudience(privacyUpdates.audience ?? policy?.audience, {
+          isPublic: flagAfter(updateValues.isPublic, lockedBoard.isPublic),
+          isUnlisted: flagAfter(updateValues.isUnlisted, lockedBoard.isUnlisted),
+        });
+        kioskAudienceChanged =
+          lockedBoard.deletedAt === null &&
+          lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID &&
+          (audienceBefore === 'public' || audienceBefore === 'unlisted') &&
+          audienceAfter !== audienceBefore;
+        const changesPrivacy =
+          (updateValues.isPublic !== undefined && updateValues.isPublic !== lockedBoard.isPublic) ||
+          (updateValues.isUnlisted !== undefined && updateValues.isUnlisted !== lockedBoard.isUnlisted) ||
+          (updateValues.hideLocation !== undefined && updateValues.hideLocation !== lockedBoard.hideLocation) ||
+          Object.keys(privacyUpdates).length > 0;
+        if (changesPrivacy && lockedBoard.ownerId !== userId)
+          throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+        if (Object.keys(privacyUpdates).length > 0) {
+          await tx
+            .update(dbSchema.resourcePrivacy)
+            .set({
+              ...privacyUpdates,
+              updatedAt: new Date(),
+              revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
+            })
+            .where(policyCondition);
+        }
+      }
+      return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
+    });
+    [updated] = updatedRows;
+  } catch (error) {
+    throwIfBoardSerialConflict(error);
+    throw error;
+  }
+
+  // A Public or Unlisted board whose audience changes may drop out of a
+  // kiosk's reach: going private takes it out of the anon-readable set, and
+  // going Unlisted takes it away from kiosks that hold only its numeric id.
+  // Either way the preview producer goes quiet and kiosks would keep the last
+  // snapshot, so publish a tombstone. Each kiosk stream treats it as a wake,
+  // rechecks access and re-derives its snapshot. The "was anon-readable" gate
+  // uses the locked pre-update row: a board that was never anon-readable must
+  // not get a publish on its channel at all (that alone would leak "something
+  // changed here" to anyone who guessed the board id).
+  if (kioskAudienceChanged) {
+    try {
+      await publishBoardQueuePreviewTombstoneForBoard(board.id);
+    } catch (error) {
+      // A pubsub hiccup must never fail the edit itself. Nothing else wakes
+      // the kiosk, so it keeps its last snapshot until it reconnects.
+      logger.error('Failed to publish board queue preview tombstone after a visibility change', {
+        boardId: board.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // Update PostGIS location column (guarded — see syncLocationGeography)
+  if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
+    await syncLocationGeography({
+      table: 'user_boards',
+      id: updated.id,
+      latitude: validatedInput.latitude ?? updated.latitude,
+      longitude: validatedInput.longitude ?? updated.longitude,
+      operation: 'updateBoard',
+    });
+  }
+
+  if (access === 'admin') {
+    logger.info('Admin updated registered board', {
+      actorId: userId,
+      boardUuid: updated.uuid,
+      changedFields: Object.keys(validatedInput).filter(
+        (field) => field !== 'boardUuid' && field !== 'allowDuplicateConfig',
+      ),
+    });
+  }
+  return updated;
+}
+
 export const socialBoardMutations = {
   /**
    * Record the (serial, board config) the current user was on when connecting
@@ -2266,427 +2728,8 @@ export const socialBoardMutations = {
    * Update a board's metadata
    */
   updateBoard: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
-    requireAuthenticated(ctx);
-    await applyRateLimit(ctx, 20, 'updateBoard');
-
-    const validatedInput = validateInput(UpdateBoardInputSchema, input, 'input');
-    const userId = ctx.userId!;
-
-    const [board] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
-      .limit(1);
-
-    if (!board) {
-      throw new Error('Board not found');
-    }
-
-    // A soft-deleted board is visible only to its owner (who can restore it by
-    // editing). Moderators/gym admins must not resurrect a board the owner
-    // deliberately removed — republishing its name, location, and serial.
-    if (board.deletedAt && board.ownerId !== userId) {
-      throw new Error('Board not found');
-    }
-
-    // Owner, community admin/leader (for this board type), or the linked gym's
-    // owner/admin may edit. Community moderators can fix outdated catalog boards.
-    await requireBoardEditAccess(ctx, board);
-    if (board.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
-      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-    }
-
-    if (!isBoardAngleSupported(board.boardType, validatedInput.angle)) {
-      throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
-        extensions: { code: 'BAD_USER_INPUT' },
-      });
-    }
-
-    // Editing a soft-deleted board restores it (see `updateValues.deletedAt`
-    // below), and the cap counts live rows only — so a restore is +1 live board
-    // and pays the same toll as a mint. Without this, delete-N/create-N/restore-N
-    // walks an account to cap+N. Editing an already-live board never gets here.
-    if (board.deletedAt) {
-      await assertBoardCapNotReached(board.ownerId);
-    }
-
-    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
-    // change these even when the board has logged climbs — a config change
-    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
-    // left untouched: they keep referencing the climbs/config they were logged
-    // against. We do not delete, move, or modify any tick rows here.
-    const hasConfigChange =
-      validatedInput.layoutId !== undefined ||
-      validatedInput.sizeId !== undefined ||
-      validatedInput.setIds !== undefined;
-    const newLayoutId = validatedInput.layoutId ?? board.layoutId;
-    const newSizeId = validatedInput.sizeId ?? board.sizeId;
-    const newSetIds = validatedInput.setIds ?? board.setIds;
-
-    if (hasConfigChange) {
-      await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
-    }
-
-    // Build update values (only provided fields)
-    const updateValues: Record<string, unknown> = {
-      updatedAt: new Date(),
-      // A deliberate human edit — freeze the row so the location sync can never
-      // overwrite these curated values (a moderator's catalog fix, say) on its
-      // next run.
-      syncFrozenAt: new Date(),
-    };
-
-    if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
-    if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
-    if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
-    if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
-    if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
-    // A spray wall's visibility is not an ordinary board flag: flipping it public
-    // copies the wall photo into the world-readable bucket, and flipping it back
-    // deletes that copy and retracts the climbs already fanned out to feeds
-    // (`updateSprayWall`, SW-14). Letting it through here would set the flag and
-    // do none of that — a private wall whose photo is still on the open web, or a
-    // public one that has no photo to show. One door, and this is not it.
-    //
-    // Only a CHANGE is refused: the edit screen sends the board's current flags
-    // back unchanged with every rename, and failing those would make a wall
-    // unrenameable.
-    if (
-      ((validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
-        (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted) ||
-        (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)) &&
-      board.ownerId !== userId
-    ) {
-      throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
-    }
-    const changingVisibility =
-      (validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
-      (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted);
-    if (board.boardType === 'spray' && changingVisibility) {
-      throw new GraphQLError("Change a spray wall's visibility on the wall itself", {
-        extensions: { code: 'SPRAY_WALL_VISIBILITY_ELSEWHERE' },
-      });
-    }
-
-    // The other two flags `createSprayWall` pins and this mutation would happily
-    // unpin (#5486). `has_leds` is the whole of the "no Bluetooth on a wall"
-    // contract: it routes the bulb down the take-the-wall path, keeps the device
-    // picker unmounted and the LED controls hidden, so a wall with it set offers a
-    // climber a Bluetooth scan for a photograph. `is_angle_adjustable` is the same
-    // shape of lie — a wall does not adjust, and every climb on it is recorded at
-    // the one angle it was photographed at.
-    //
-    // A CHANGE again, not the field's presence: a client that echoes the board
-    // back unchanged on a rename must not be refused.
-    const changingWallHardware =
-      (validatedInput.hasLeds !== undefined && validatedInput.hasLeds !== board.hasLeds) ||
-      (validatedInput.isAngleAdjustable !== undefined && validatedInput.isAngleAdjustable !== board.isAngleAdjustable);
-    if (board.boardType === 'spray' && changingWallHardware) {
-      throw new GraphQLError('A spray wall is a photograph — it has no lights and it does not adjust', {
-        extensions: { code: 'SPRAY_WALL_HAS_NO_HARDWARE' },
-      });
-    }
-
-    if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
-    if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
-    if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;
-    if (validatedInput.isOwned !== undefined) updateValues.isOwned = validatedInput.isOwned;
-    if (validatedInput.angle !== undefined) updateValues.angle = validatedInput.angle;
-    if (validatedInput.isAngleAdjustable !== undefined)
-      updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
-    if (validatedInput.hasLeds !== undefined) updateValues.hasLeds = validatedInput.hasLeds;
-    if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
-    if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
-
-    if (hasConfigChange) {
-      // The clients resend layout/size/setIds on every edit whenever the config
-      // section is unlocked, so `hasConfigChange` says "config fields were
-      // present", not "the config moved". Compare the effective values —
-      // set ids normalised, since the stored order is whatever the board was
-      // created with — and skip the guard when nothing actually changed.
-      // Without this skip, an owner of two same-config boards could never save
-      // ANY edit to either one: renaming a board would be rejected for
-      // colliding with its sibling.
-      const configActuallyChanged =
-        newLayoutId !== board.layoutId ||
-        newSizeId !== board.sizeId ||
-        normaliseSetIds(newSetIds) !== normaliseSetIds(board.setIds);
-
-      // Keyed off the board's OWNER, not the caller — a moderator or gym admin
-      // may be editing someone else's board. The system catalog owner is exempt:
-      // many gyms legitimately share one config there, and blocking that would
-      // break the catalog fixes moderation exists for.
-      if (configActuallyChanged && board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
-        if (validatedInput.allowDuplicateConfig) {
-          // Same trail as createBoard: this is the one path that lets an edit
-          // land on a config the owner already has at the same place, so record
-          // that a human confirmed it rather than leaving it indistinguishable
-          // from a script setting the flag on every call.
-          logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
-            userId,
-            boardId: board.id,
-            ownerId: board.ownerId,
-            boardType: board.boardType,
-            layoutId: newLayoutId,
-            sizeId: newSizeId,
-          });
-        } else {
-          // Probe with the POST-update location, so an edit that moves this
-          // board onto a sibling's site is caught and one that moves it away is
-          // allowed. A location-only edit is deliberately NOT guarded at all
-          // (it never reaches here): as with createBoard after #4166, we block
-          // the accident of re-submitting a wall, not every way two rows can end
-          // up looking alike.
-          const existing = await findOwnedBlockingDuplicate({
-            ownerId: board.ownerId,
-            boardType: board.boardType,
-            layoutId: newLayoutId,
-            sizeId: newSizeId,
-            excludeBoardId: board.id,
-            incoming: {
-              setIds: newSetIds,
-              locationName:
-                validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
-              latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
-              longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
-            },
-          });
-
-          if (existing) {
-            // The colliding board belongs to this board's OWNER. A gym admin or
-            // community moderator editing someone else's board gets the bare
-            // rejection code — enough to render "this config is taken", nothing
-            // that names or locates a board they have no read access to.
-            throw duplicateBoardConfigError(existing, { includeIdentity: board.ownerId === userId });
-          }
-        }
-      }
-
-      if (validatedInput.layoutId !== undefined) updateValues.layoutId = validatedInput.layoutId;
-      if (validatedInput.sizeId !== undefined) updateValues.sizeId = validatedInput.sizeId;
-      if (validatedInput.setIds !== undefined) updateValues.setIds = validatedInput.setIds;
-    }
-
-    // Handle slug update
-    if (validatedInput.slug !== undefined) {
-      // Check slug uniqueness
-      const [slugConflict] = await db
-        .select({ id: dbSchema.userBoards.id })
-        .from(dbSchema.userBoards)
-        .where(
-          and(
-            eq(dbSchema.userBoards.slug, validatedInput.slug),
-            isNull(dbSchema.userBoards.deletedAt),
-            sql`${dbSchema.userBoards.id} != ${board.id}`,
-          ),
-        )
-        .limit(1);
-
-      if (slugConflict) {
-        throw new Error('Slug is already taken');
-      }
-      updateValues.slug = validatedInput.slug;
-    }
-
-    // If board was soft-deleted, restore it
-    if (board.deletedAt) {
-      updateValues.deletedAt = null;
-    }
-
-    let updated: typeof dbSchema.userBoards.$inferSelect;
-    // Whether a board a signed-out viewer could read changed audience, for the
-    // kiosk tombstone below.
-    let kioskAudienceChanged = false;
-    try {
-      const updatedRows = await db.transaction(async (tx) => {
-        kioskAudienceChanged = false;
-        // Serialize partial edits to the same board before deriving the final
-        // serial+config tuple. Without this row lock, a serial-only edit could
-        // validate against C1 while a concurrent config-only edit changes the
-        // row to C2, producing an unchecked S+C2 duplicate.
-        const [lockedBoard] = rowsFromResult<{
-          serialNumber: string | null;
-          ownerId: string;
-          boardType: string;
-          layoutId: number | string;
-          sizeId: number | string;
-          setIds: string;
-          deletedAt: Date | null;
-          isPublic: boolean;
-          isUnlisted: boolean;
-          hideLocation: boolean;
-        }>(
-          await tx.execute(sql`
-            SELECT serial_number AS "serialNumber",
-                   owner_id AS "ownerId",
-                   board_type AS "boardType",
-                   layout_id AS "layoutId",
-                   size_id AS "sizeId",
-                   set_ids AS "setIds",
-                   deleted_at AS "deletedAt",
-                   is_public AS "isPublic",
-                   is_unlisted AS "isUnlisted",
-                   hide_location AS "hideLocation"
-              FROM user_boards
-             WHERE id = ${board.id}
-             FOR UPDATE
-          `),
-        );
-        if (!lockedBoard) {
-          throw new Error('Board not found');
-        }
-        // A staged edit must not restore or repopulate an account-deletion
-        // tombstone after its owner has been detached.
-        if (
-          lockedBoard.boardType === 'spray' &&
-          (lockedBoard.ownerId !== board.ownerId || (lockedBoard.deletedAt === null) !== (board.deletedAt === null))
-        ) {
-          throw new Error('Board not found');
-        }
-
-        if (lockedBoard.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
-          throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-        }
-
-        const lockedLayoutId = Number(lockedBoard.layoutId);
-        const lockedSizeId = Number(lockedBoard.sizeId);
-        const resultingSerial =
-          validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
-        const serialChanged =
-          validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
-        const serialConfigChanged =
-          (validatedInput.layoutId !== undefined && validatedInput.layoutId !== lockedLayoutId) ||
-          (validatedInput.sizeId !== undefined && validatedInput.sizeId !== lockedSizeId) ||
-          (validatedInput.setIds !== undefined &&
-            normaliseSetIds(validatedInput.setIds) !== normaliseSetIds(lockedBoard.setIds));
-        const serialOrConfigBecomesActive =
-          resultingSerial !== null && (serialChanged || serialConfigChanged || lockedBoard.deletedAt !== null);
-
-        if (serialOrConfigBecomesActive) {
-          await lockAndAssertBoardSerialAvailable(
-            tx,
-            {
-              serialNumber: resultingSerial,
-              boardType: lockedBoard.boardType,
-              layoutId: validatedInput.layoutId ?? lockedLayoutId,
-              sizeId: validatedInput.sizeId ?? lockedSizeId,
-              setIds: validatedInput.setIds ?? lockedBoard.setIds,
-            },
-            board.ownerId,
-            board.id,
-            // The editor making this change, who may not be the owner, reads the error.
-            userId,
-          );
-        }
-        const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
-        if (hasVisibility || validatedInput.hideLocation !== undefined) {
-          const policyCondition = and(
-            eq(dbSchema.resourcePrivacy.kind, 'board'),
-            eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
-          );
-          const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
-          const privacyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = {};
-          if (hasVisibility) {
-            const requested =
-              (validatedInput.isUnlisted ?? lockedBoard.isUnlisted)
-                ? 'unlisted'
-                : (validatedInput.isPublic ?? lockedBoard.isPublic)
-                  ? 'public'
-                  : 'invite_only';
-            const changed =
-              (validatedInput.isPublic !== undefined && validatedInput.isPublic !== lockedBoard.isPublic) ||
-              (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== lockedBoard.isUnlisted);
-            const audience = policy && !changed ? policy.audience : legacyResourceAudience(policy?.audience, requested);
-            if (policy) {
-              // Old edit screens resend every boolean with a rename. Keep both
-              // the policy and its legacy projection consistent after revocation.
-              updateValues.isPublic = audience === 'public';
-              updateValues.isUnlisted = audience === 'unlisted';
-              if (audience !== policy.audience) privacyUpdates.audience = audience;
-            }
-          }
-          if (policy && validatedInput.hideLocation !== undefined) {
-            const locationAudience = legacyLocationAudience(
-              policy.locationAudience,
-              validatedInput.hideLocation,
-              lockedBoard.hideLocation,
-            );
-            updateValues.hideLocation = locationAudience !== 'public';
-            if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
-          }
-          // Read the audience the way the read gates do. System-owned boards
-          // stay anon-readable whatever their flags say.
-          const audienceBefore = effectiveBoardAudience(policy?.audience, lockedBoard);
-          const flagAfter = (value: unknown, before: boolean) => (typeof value === 'boolean' ? value : before);
-          const audienceAfter = effectiveBoardAudience(privacyUpdates.audience ?? policy?.audience, {
-            isPublic: flagAfter(updateValues.isPublic, lockedBoard.isPublic),
-            isUnlisted: flagAfter(updateValues.isUnlisted, lockedBoard.isUnlisted),
-          });
-          kioskAudienceChanged =
-            lockedBoard.deletedAt === null &&
-            lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID &&
-            (audienceBefore === 'public' || audienceBefore === 'unlisted') &&
-            audienceAfter !== audienceBefore;
-          const changesPrivacy =
-            (updateValues.isPublic !== undefined && updateValues.isPublic !== lockedBoard.isPublic) ||
-            (updateValues.isUnlisted !== undefined && updateValues.isUnlisted !== lockedBoard.isUnlisted) ||
-            (updateValues.hideLocation !== undefined && updateValues.hideLocation !== lockedBoard.hideLocation) ||
-            Object.keys(privacyUpdates).length > 0;
-          if (changesPrivacy && lockedBoard.ownerId !== userId)
-            throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
-          if (Object.keys(privacyUpdates).length > 0) {
-            await tx
-              .update(dbSchema.resourcePrivacy)
-              .set({
-                ...privacyUpdates,
-                updatedAt: new Date(),
-                revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
-              })
-              .where(policyCondition);
-          }
-        }
-        return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
-      });
-      [updated] = updatedRows;
-    } catch (error) {
-      throwIfBoardSerialConflict(error);
-      throw error;
-    }
-
-    // A Public or Unlisted board whose audience changes may drop out of a
-    // kiosk's reach: going private takes it out of the anon-readable set, and
-    // going Unlisted takes it away from kiosks that hold only its numeric id.
-    // Either way the preview producer goes quiet and kiosks would keep the last
-    // snapshot, so publish a tombstone. Each kiosk stream treats it as a wake,
-    // rechecks access and re-derives its snapshot. The "was anon-readable" gate
-    // uses the locked pre-update row: a board that was never anon-readable must
-    // not get a publish on its channel at all (that alone would leak "something
-    // changed here" to anyone who guessed the board id).
-    if (kioskAudienceChanged) {
-      try {
-        await publishBoardQueuePreviewTombstoneForBoard(board.id);
-      } catch (error) {
-        // A pubsub hiccup must never fail the edit itself. Nothing else wakes
-        // the kiosk, so it keeps its last snapshot until it reconnects.
-        logger.error('Failed to publish board queue preview tombstone after a visibility change', {
-          boardId: board.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    // Update PostGIS location column (guarded — see syncLocationGeography)
-    if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
-      await syncLocationGeography({
-        table: 'user_boards',
-        id: updated.id,
-        latitude: validatedInput.latitude ?? updated.latitude,
-        longitude: validatedInput.longitude ?? updated.longitude,
-        operation: 'updateBoard',
-      });
-    }
-
-    return enrichBoard(updated, userId);
+    const updated = await updateBoardRecord(input, ctx);
+    return enrichBoard(updated, ctx.userId!);
   },
 
   /**

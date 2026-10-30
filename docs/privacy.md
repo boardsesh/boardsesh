@@ -2,6 +2,12 @@
 
 Implementation issue: [#6242](https://github.com/boardsesh/boardsesh/issues/6242), under the Boardz follow-up epic [#6238](https://github.com/boardsesh/boardsesh/issues/6238). Privacy applies independently of any display preference (see [Make it configurable](./contributing-to-screens.md#make-it-configurable)).
 
+## Administrative board corrections
+
+Global Boardsesh admins can search active registered boards and edit their metadata at `/admin/boards`, including private and unlisted boards and boards without a gym. The dedicated admin API returns the board's stored location for correction. It does not grant access to the owner's activity, logbook, sessions, or controller credentials. Privacy changes and controller credentials remain owner-only. Deleted and merged boards cannot be edited through this registry.
+
+Ordinary board reads, discovery, and editing retain their existing audience rules. Admin records use a separate response type and an unpersisted, account-scoped client cache. Successful admin edits log the actor, board UUID, and changed field names without logging field contents. A human edit freezes the board against location-sync overwrites, as ordinary board editing already does.
+
 ## What a climber chooses
 
 | Setting | Choices | Default and effect |
