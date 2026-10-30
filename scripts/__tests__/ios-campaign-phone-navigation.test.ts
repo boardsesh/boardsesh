@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
@@ -11,6 +12,8 @@ import { resolveScreenshotCppBoard } from '../../packages/mobile/src/lib/screens
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../../packages/shared/climb-filters/src/filter-state';
 import {
   buildScreenshotEnv,
+  buildIosDuoInnerShots,
+  compileIosCampaignDuoNavigation,
   compileIosCampaignPhoneNavigation,
   parseArgs,
   readIosCampaignPhoneBoards,
@@ -43,6 +46,103 @@ const boards = boardTypes.map((boardType, index) => ({
 const directories: string[] = [];
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+describe('default Duo command compilation', () => {
+  it('registers and executes exactly the inner-shot commands with independent scenes and verified second-board seed', () => {
+    const options = {
+      ...parseArgs(['--flow', 'app-store-campaign', '--devices', 'duo']),
+      iosCampaignPhoneBoards: boards,
+      iosCampaignPrimaryCapture: { board: boards[0].board, climb: boards[0].climb, paintedId: 'real-primary-painted' },
+    };
+    const source = readFileSync('packages/mobile/.maestro/app-store-duo-inner.yaml', 'utf8');
+    const compiled = compileIosCampaignDuoNavigation(source, boards);
+    const env = buildScreenshotEnv(options, { NODE_ENV: 'test' }, 'en-US', '2026-10-13T01:00:01Z', 8090);
+    const registry = JSON.parse(env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS!) as typeof compiled.commands;
+    const scenes = Object.keys(compiled.commands);
+    expect(scenes).toEqual(['campaign-duo-climbs-0', 'campaign-duo-climbs-1', 'campaign-duo-climbs-2']);
+    expect(Object.fromEntries(scenes.map((scene) => [scene, registry[scene]]))).toEqual(compiled.commands);
+    expect(Object.keys(registry).filter((scene) => scene.startsWith('campaign-duo-climbs-'))).toEqual(scenes);
+    expect(registry['campaign-phone-climbs-0']).toBeDefined();
+    expect(registry['hero-1']).toBeDefined();
+    expect(env.EXPO_PUBLIC_SCREENSHOT_CPP_URL).toBeUndefined();
+    expect(env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS).toBeUndefined();
+
+    const [device] = resolveIosScreenshotDevices(options.devices);
+    const shots = buildIosDuoInnerShots(options, device);
+    expect(shots.map(({ name, relaunch }) => ({ name, relaunch }))).toEqual([
+      { name: '00-board-view', relaunch: false },
+      { name: '03-home', relaunch: false },
+      { name: '04-playlist-detail', relaunch: false },
+      { name: '02-climbs', relaunch: false },
+      { name: '01-board-view-2', relaunch: true },
+    ]);
+    const flow = shots.map((shot) => shot.flow).join('\n');
+    expect(flow).not.toMatch(/openLink: com\.boardsesh\.app:\/\/climbs/);
+    expect(flow).toContain('- openLink: com.boardsesh.app://home');
+    expect(flow).toContain('- openLink: com.boardsesh.app://discover/smart/RECOMMENDED_CROWD_FAVORITES');
+    const gates = (text: string) => text.split('\n').filter((line) => /id:|timeout:/.test(line));
+    expect(gates(flow)).toEqual(gates(source));
+
+    type NavigationCommand = { evalScript?: string; assertTrue?: string; retry?: { commands: NavigationCommand[] } };
+    const output: Record<string, unknown> = {};
+    const routes: string[] = [];
+    let sequence = 0;
+    let acknowledged = 0;
+    const execute = (commands: NavigationCommand[], commit = true) => {
+      const scope = {
+        output,
+        SCREENSHOT_PRIMARY_BOARD_URL: 'http://localhost:19870/cpp',
+        http: {
+          get: (rawUrl: string) => {
+            const url = new URL(rawUrl);
+            const scene = url.searchParams.get('scene');
+            if (url.pathname === '/cpp/set') {
+              if (!scene || !registry[scene]) throw new Error('Unregistered capture command');
+              sequence++;
+              if (commit) {
+                routes.push(registry[scene].route);
+                acknowledged = sequence;
+              }
+            }
+            return { body: JSON.stringify({ sequence, acknowledged }) };
+          },
+        },
+      };
+      for (const command of commands) {
+        if (command.evalScript) runInNewContext(command.evalScript.slice(2, -1), scope);
+        if (command.retry) execute(command.retry.commands, commit);
+        if (command.assertTrue && !runInNewContext(command.assertTrue.slice(2, -1), scope))
+          throw new Error('Board navigation has not acknowledged');
+      }
+    };
+    for (const shot of shots) execute(parseAllDocuments(shot.flow)[1].toJS() as NavigationCommand[]);
+    expect(routes).toEqual(scenes.map((scene) => registry[scene].route));
+    const secondBoard = registry[scenes[2]];
+    expect(secondBoard.identity.uuid).toBe(boards[1].board.uuid);
+    const secondRoute = new URL(routes[2], 'http://localhost');
+    expect(secondRoute.searchParams.get('screenshotClimbId')).toBe(boards[1].climb.uuid);
+    expect(secondRoute.searchParams.get('screenshotCppScene')).toBe(scenes[2]);
+    expect(secondRoute.searchParams.get('screenshotBoardIndex')).toBe('1');
+    expect(secondRoute.searchParams.get('screenshotOpenFirst')).toBe('1');
+    expect(() => execute(parseAllDocuments(shots[4].flow)[1].toJS() as NavigationCommand[], false)).toThrow(
+      'Board navigation has not acknowledged',
+    );
+  });
+
+  it('keeps legacy Duo links outside campaign mode and refuses unverified campaign boards', () => {
+    const options = parseArgs(['--flow', 'app-store', '--fixtures', 'off', '--devices', 'duo']);
+    const [device] = resolveIosScreenshotDevices(options.devices);
+    expect(buildIosDuoInnerShots(options, device)[4].flow).toContain(
+      '- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1',
+    );
+    expect(() => buildIosDuoInnerShots({ ...options, flow: 'app-store-campaign' }, device)).toThrow(
+      'Duo campaign requires verified board navigation',
+    );
+    expect(() => compileIosCampaignDuoNavigation('- openLink: com.boardsesh.app://climbs', boards.slice(1))).toThrow(
+      'seven verified boards',
+    );
+  });
 });
 function directory(): string {
   const result = mkdtempSync(join(tmpdir(), 'campaign-phone-navigation-'));

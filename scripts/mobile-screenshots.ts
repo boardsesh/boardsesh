@@ -181,7 +181,7 @@ import {
 import { ensureAndroidApk } from './mobile-android-apk';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
 import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from './lib/ios-campaign-primary';
-import { iosCampaignPhoneScene } from './lib/ios-campaign-phone-scenes';
+import { iosCampaignPhoneScene, iosCampaignDuoScene } from './lib/ios-campaign-phone-scenes';
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
 import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
@@ -856,6 +856,12 @@ export function buildScreenshotEnv(
       },
       ...(options.iosCampaignPhoneBoards
         ? compileIosCampaignPhoneNavigation(readIosCampaignPhoneSource(), options.iosCampaignPhoneBoards).commands
+        : {}),
+      ...(options.iosCampaignPhoneBoards
+        ? compileIosCampaignDuoNavigation(
+            readFileSync(join(MAESTRO_DIR, DUO_INNER_FLOW_FILE), 'utf8'),
+            options.iosCampaignPhoneBoards,
+          ).commands
         : {}),
     });
   }
@@ -2134,6 +2140,19 @@ export function splitDuoInnerFlow(source: string): DuoInnerShot[] {
   return shots;
 }
 
+/** Compile the exact source registered in Metro before splitting the inner-display passes. */
+export function buildIosDuoInnerShots(
+  options: ScreenshotOptions,
+  screenshotDevice: IosScreenshotDevice,
+): DuoInnerShot[] {
+  let source = readFileSync(join(MAESTRO_DIR, DUO_INNER_FLOW_FILE), 'utf8');
+  if (options.flow === 'app-store-campaign' && !options.cpp) {
+    if (!options.iosCampaignPhoneBoards) throw new Error('Duo campaign requires verified board navigation');
+    source = compileIosCampaignDuoNavigation(source, options.iosCampaignPhoneBoards).source;
+  }
+  return splitDuoInnerFlow(renderMaestroFlowForIosDevice(source, screenshotDevice));
+}
+
 /**
  * The Maestro flow source for an iOS device. iPad deep links don't navigate on
  * the simulator — the "Open in 'Boardsesh'?" scheme-confirm dialog swallows every
@@ -3064,12 +3083,20 @@ function captureIosDevice(
 
     if (duoHingeLog) {
       // Second pass: unfold, then shoot the inner display one shot at a time.
-      const shots = splitDuoInnerFlow(
-        renderMaestroFlowForIosDevice(readFileSync(join(MAESTRO_DIR, DUO_INNER_FLOW_FILE), 'utf8'), screenshotDevice),
-      );
+      const shots = buildIosDuoInnerShots(options, screenshotDevice);
       setDuoPose(device.udid, 'open', duoHingeLog);
       for (const [index, shot] of shots.entries()) {
         if (shot.relaunch) {
+          // A fresh app must not replay the previous shot's retained command
+          // before it reaches home and receives this shot's new sequence.
+          if (options.flow === 'app-store-campaign') {
+            const reset = runCapture('curl', [
+              '--fail',
+              '--silent',
+              `http://localhost:${SCREENSHOT_READY_PORT}/cpp/set?scene=reset`,
+            ]);
+            if (reset.status !== 0) throw new Error('Could not reset Duo navigation before relaunch');
+          }
           const markerBaseline = homeReadyMarkerCount();
           const readyBaseline = screenshotReadinessCount();
           runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
@@ -3501,7 +3528,22 @@ function readIosCampaignPhoneSource(): string {
 
 /** Replace only default campaign Climbs links; every occurrence has its own latch identity. */
 export function compileIosCampaignPhoneNavigation(source: string, boards: readonly IosCampaignPhoneBoard[]) {
-  if (boards.length !== 7) throw new Error('Phone campaign navigation requires seven verified boards');
+  return compileIosCampaignClimbsNavigation(source, boards, 'phone');
+}
+
+export function compileIosCampaignDuoNavigation(source: string, boards: readonly IosCampaignPhoneBoard[]) {
+  return compileIosCampaignClimbsNavigation(source, boards, 'duo');
+}
+
+function compileIosCampaignClimbsNavigation(
+  source: string,
+  boards: readonly IosCampaignPhoneBoard[],
+  device: 'phone' | 'duo',
+) {
+  const deviceLabel = device === 'duo' ? 'Duo' : 'Phone';
+  if (boards.length !== 7) throw new Error(`${deviceLabel} campaign navigation requires seven verified boards`);
+  const sequenceVariable = device === 'duo' ? 'campaignDuoSequence' : 'campaignPhoneSequence';
+  const acknowledgedVariable = device === 'duo' ? 'campaignDuoAcknowledged' : 'campaignPhoneAcknowledged';
   const commands: Record<
     string,
     {
@@ -3519,10 +3561,10 @@ export function compileIosCampaignPhoneNavigation(source: string, boards: readon
         link.searchParams.getAll('screenshotBoardIndex').length > 1 ||
         (rawIndex !== null && !/^[0-6]$/.test(rawIndex))
       )
-        throw new Error('Phone campaign link has an invalid board index');
+        throw new Error(`${deviceLabel} campaign link has an invalid board index`);
       const index = rawIndex === null ? 0 : Number(rawIndex);
       const capture = boards[index];
-      const scene = iosCampaignPhoneScene(Object.keys(commands).length);
+      const scene = (device === 'duo' ? iosCampaignDuoScene : iosCampaignPhoneScene)(Object.keys(commands).length);
       link.searchParams.set('screenshotBoardIndex', String(index));
       link.searchParams.set('screenshotCppScene', scene);
       if (link.searchParams.get('screenshotOpenFirst')) link.searchParams.set('screenshotClimbId', capture.climb.uuid);
@@ -3541,19 +3583,19 @@ export function compileIosCampaignPhoneNavigation(source: string, boards: readon
         route: `/climbs${link.search}`,
       };
       return [
-        `- evalScript: \${output.campaignPhoneSequence = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/set?scene=${scene}').body).sequence}`,
+        `- evalScript: \${output.${sequenceVariable} = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/set?scene=${scene}').body).sequence}`,
         '- retry:',
         '    maxRetries: 3',
         '    commands:',
-        `      - evalScript: \${output.campaignPhoneAcknowledged = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/status?waitFor=' + output.campaignPhoneSequence).body).acknowledged}`,
-        '      - assertTrue: ${output.campaignPhoneAcknowledged == output.campaignPhoneSequence}',
+        `      - evalScript: \${output.${acknowledgedVariable} = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/status?waitFor=' + output.${sequenceVariable}).body).acknowledged}`,
+        `      - assertTrue: \${output.${acknowledgedVariable} == output.${sequenceVariable}}`,
       ]
         .map((line) => `${indent}${line}`)
         .join('\n');
     },
   );
   if (/^\s*- openLink:\s*['"]?com\.boardsesh\.app:\/\/climbs/m.test(rewritten))
-    throw new Error('Uncompiled phone campaign Climbs link');
+    throw new Error(`Uncompiled ${device} campaign Climbs link`);
   return { source: rewritten, commands };
 }
 
