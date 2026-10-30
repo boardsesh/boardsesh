@@ -288,16 +288,6 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     reportBoardClear(boardId: Int!): Boolean!
 
-    """
-    Ask the crewmate whose phone holds \`boardId\` to let go of it, so the caller can
-    connect (#7113, the wall button's swipe on a crewmate's board). Publishes
-    \`BoardHandoffRequested\` to the holder alone. Requires sign-in, board membership,
-    and that the caller and the holder are in the same party session. Returns true
-    when the holder was asked, false when there is nobody to ask (the board is free,
-    or the caller already holds it). Rate-limited.
-    """
-    requestBoardHandoff(boardId: Int!): Boolean!
-
     # ============================================
     # User Management Mutations (require auth)
     # ============================================
