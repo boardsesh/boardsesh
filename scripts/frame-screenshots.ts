@@ -253,11 +253,45 @@ export const STORE_CREATIVE_PLACEMENTS = {
 export type StoreCreativePlacement = keyof typeof STORE_CREATIVE_PLACEMENTS;
 
 /** Header art carries native content only; Apple's overlay supplies the listing copy. */
+/** One native phone in a Header: its source index, centre x, width, top y and black dim (0–1). */
+export interface StoreHeaderSlot {
+  source: number;
+  centerX: number;
+  width: number;
+  top: number;
+  dim?: number;
+}
+
+/** CPP trio: hero (source 1) in front at the centre, flanked by sources 0 and 2. */
+export const TRIO_HEADER_SLOTS: readonly StoreHeaderSlot[] = [
+  { source: 0, centerX: 1320, width: 560, top: 100 },
+  { source: 2, centerX: 2520, width: 560, top: 100 },
+  { source: 1, centerX: 1920, width: 640, top: 40 },
+];
+
+/**
+ * Default page: a seven-board fan, so the Header doesn't repeat screenshot 1's trio.
+ * Sources are ordered left to right; paint order runs outside-in so the hero (source 3) lands on top.
+ * The iPhone crop (x 1097–2743) keeps the three middle boards.
+ */
+export const FAN_HEADER_SLOTS: readonly StoreHeaderSlot[] = [
+  { source: 0, centerX: 290, width: 440, top: 220, dim: 0.3 },
+  { source: 6, centerX: 3550, width: 440, top: 220, dim: 0.3 },
+  { source: 1, centerX: 770, width: 500, top: 160, dim: 0.15 },
+  { source: 5, centerX: 3070, width: 500, top: 160, dim: 0.15 },
+  { source: 2, centerX: 1320, width: 560, top: 100 },
+  { source: 4, centerX: 2520, width: 560, top: 100 },
+  { source: 3, centerX: 1920, width: 640, top: 40 },
+];
+
 export async function frameStoreHeader(
   sources: readonly Buffer[],
-  options: { sprayPhoto?: Buffer } = {},
+  options: { sprayPhoto?: Buffer; slots?: readonly StoreHeaderSlot[] } = {},
 ): Promise<Buffer> {
-  if (sources.length !== 3) throw new Error('Header requires three native board captures');
+  const slots = options.slots ?? TRIO_HEADER_SLOTS;
+  const used = new Set(slots.map((slot) => slot.source));
+  if (used.size !== slots.length || sources.length !== slots.length || slots.some((slot) => !sources[slot.source]))
+    throw new Error(`Header requires ${slots.length} native board captures, one per slot`);
   const dimensions = sources.map(readPngDimensions);
   if (dimensions.some((size) => size.width !== dimensions[0].width || size.height !== dimensions[0].height))
     throw new Error('Header sources must come from the same capture device');
@@ -287,21 +321,25 @@ export async function frameStoreHeader(
       top: 80,
     });
   }
-  for (const [sourceIndex, center] of [
-    [0, 1320],
-    [2, 2520],
-  ] as const) {
-    layers.push({
-      input: await renderNativePanel({ raw: sources[sourceIndex], left: 0, top: 0, width: 560 }, height),
-      left: center - 280,
-      top: 100,
-    });
+  for (const slot of slots) {
+    let panel = await renderNativePanel({ raw: sources[slot.source], left: 0, top: 0, width: slot.width }, height);
+    if (slot.dim) {
+      const size = readPngDimensions(panel);
+      // A shade over the outer phones keeps the eye on the hero; it never changes app pixels' content.
+      panel = await sharp(panel)
+        .composite([
+          {
+            input: Buffer.from(
+              `<svg width="${size.width}" height="${size.height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="black" fill-opacity="${slot.dim}"/></svg>`,
+            ),
+            blend: 'atop',
+          },
+        ])
+        .png()
+        .toBuffer();
+    }
+    layers.push({ input: panel, left: slot.centerX - Math.round(slot.width / 2), top: slot.top });
   }
-  layers.push({
-    input: await renderNativePanel({ raw: sources[1], left: 0, top: 0, width: 640 }, height),
-    left: 1920 - 320,
-    top: 40,
-  });
   return sharp(background).composite(layers).flatten({ background: '#110A20' }).removeAlpha().png().toBuffer();
 }
 

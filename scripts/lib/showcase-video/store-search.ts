@@ -47,12 +47,13 @@ const beat = (
 
 /** Explicit take lists prevent a named CPP from inheriting the legacy Kilter pile or session. */
 export function storeSearchPlan(variant: StoreSearchVariant): readonly ShowcaseScenePlan[] {
+  // Simulator-only cut: the Live Activity ending needs reviewed physical footage the default page can't wait for.
   if (variant === 'default')
     return [
-      beat('boards', 'boards', 140, PILE),
-      beat('spray', 'spray', 140),
-      beat('crew', 'crew', 140),
-      beat('lock-screen', 'island', 180),
+      beat('boards', 'yourBoards', 120, PILE),
+      beat('crew', 'crew', 135),
+      beat('spray', 'spray', 105),
+      beat('log', 'sends', 90),
     ];
   if (variant === 'kilter')
     return [

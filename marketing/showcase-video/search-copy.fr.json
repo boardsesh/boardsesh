@@ -1,6 +1,7 @@
 {
   "boards": "Chaque board.\nUne *app.*",
-  "spray": "Ton mur spray\n*aussi.*",
+  "yourBoards": "Tes boards.\nUne seule *app.*",
+  "spray": "Ton Spraywall,\n*lui aussi.*",
   "crew": "Ton crew.\nUne *file.*",
   "island": "Bloc suivant.\nHors de *l’app.*",
   "kilter": "Compatible avec\n*Kilter.*",

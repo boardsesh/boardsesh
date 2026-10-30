@@ -5,11 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderStoreCreatives, parseCreativeArguments, STORE_CREATIVE_VARIANTS } from '../app-store-creatives';
+import {
+  DEFAULT_HEADER_SOURCES,
+  parseCreativeArguments,
+  renderStoreCreatives,
+  STORE_CREATIVE_VARIANTS,
+} from '../app-store-creatives';
 import { CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
 import { extractScreenshotIsland } from '../lib/screenshot-island';
 import {
   frameShowcaseComposition,
+  FAN_HEADER_SLOTS,
   frameStoreHeader,
   renderShowcaseText,
   STORE_CREATIVE_PLACEMENTS,
@@ -230,7 +236,8 @@ describe('multiboard App Store campaign', () => {
     const output = directory();
     const raw = await capture();
     const names = ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'];
-    for (const name of names.filter((name) => name !== '14-spray-board-view.png'))
+    const fanOnly = DEFAULT_HEADER_SOURCES.filter((name) => !names.includes(name));
+    for (const name of [...names, ...fanOnly].filter((name) => name !== '14-spray-board-view.png'))
       writeFileSync(join(input, name), raw);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
       '14-spray-board-view.png',
@@ -244,10 +251,13 @@ describe('multiboard App Store campaign', () => {
       expect(await sharp(rendered).metadata()).toMatchObject({ ...dimensions, hasAlpha: false });
     }
     const manifest = JSON.parse(readFileSync(join(localizedOutput, 'creative-assets.json'), 'utf8')) as {
+      header: { sourceOrder: string[]; slots: unknown[] };
       sources: Record<string, { sha256: string }>;
       assets: Array<{ file: string; sha256: string }>;
     };
-    expect(Object.keys(manifest.sources)).toEqual(names);
+    expect(Object.keys(manifest.sources)).toEqual([...names, ...fanOnly]);
+    expect(manifest.header.sourceOrder).toEqual([...DEFAULT_HEADER_SOURCES]);
+    expect(manifest.header.slots).toHaveLength(7);
     expect(manifest.sources[names[0]].sha256).toBe(sha256Screenshot(raw));
     for (const asset of manifest.assets)
       expect(asset.sha256).toBe(sha256Screenshot(readFileSync(join(localizedOutput, asset.file))));
@@ -344,7 +354,36 @@ describe('multiboard App Store campaign', () => {
     expect(photoPixels[0]).toBeGreaterThan(170);
     expect(photoPixels[0]).toBeLessThan(190);
     expect([...photoPixels.subarray(1)]).toEqual([0, 0]);
-    await expect(frameStoreHeader(sources.slice(0, 2))).rejects.toThrow('three native');
+    await expect(frameStoreHeader(sources.slice(0, 2))).rejects.toThrow('3 native');
+  });
+
+  it('fans seven default boards with the hero in front and the three middle boards inside the iPhone crop', async () => {
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff', '#ffffff'];
+    const sources = await Promise.all(
+      colors.map((color) =>
+        sharp({ create: { width: 1206, height: 2622, channels: 3, background: color } })
+          .png()
+          .toBuffer(),
+      ),
+    );
+    const header = await frameStoreHeader(sources, { slots: FAN_HEADER_SLOTS });
+    expect(await sharp(header).metadata()).toMatchObject({ ...STORE_CREATIVE_PLACEMENTS.header, hasAlpha: false });
+    const pixels = await sharp(header).removeAlpha().raw().toBuffer();
+    const pixel = (left: number, top: number) => [
+      ...pixels.subarray((top * 3840 + left) * 3, (top * 3840 + left) * 3 + 3),
+    ];
+    // Undimmed middle trio, hero on top where it overlaps its neighbours.
+    expect(pixel(1320, 400)).toEqual([0, 0, 255]);
+    expect(pixel(1920, 400)).toEqual([255, 255, 0]);
+    expect(pixel(1640, 400)).toEqual([255, 255, 0]);
+    expect(pixel(2520, 400)).toEqual([0, 255, 255]);
+    // Outer phones are shaded, never replaced: still their own hue, darker.
+    const outer = pixel(290, 600);
+    expect(outer[0]).toBeGreaterThan(150);
+    expect(outer[0]).toBeLessThan(255);
+    expect(outer.slice(1)).toEqual([0, 0]);
+    expect(pixel(3550, 600)[0]).toBeLessThan(255);
+    await expect(frameStoreHeader(sources.slice(0, 3), { slots: FAN_HEADER_SLOTS })).rejects.toThrow('7 native');
   });
 
   it('rejects compressed video frames, blank images and mismatched devices', async () => {
@@ -359,8 +398,7 @@ describe('multiboard App Store campaign', () => {
     })
       .png()
       .toBuffer();
-    for (const name of ['00-board-view.png', '14-spray-board-view.png', '10-moonboard-board-view.png'])
-      writeFileSync(join(input, name), blank);
+    for (const name of DEFAULT_HEADER_SOURCES) writeFileSync(join(input, name), blank);
     await expect(renderStoreCreatives({ input, output, locale: 'en-US', device: 'iphone-16-pro' })).rejects.toThrow(
       'likely blank',
     );

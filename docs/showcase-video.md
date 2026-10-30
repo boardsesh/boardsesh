@@ -544,8 +544,9 @@ warning; asking for `--target homepage` with it fails instead).
 
 ### Whole native phone endings
 
-Kilter, Tension and default `store-search` cuts end with **Next climb. Outside
-the app.** Their required `lock-screen` take is the complete physical iPhone
+Kilter and Tension `store-search` cuts end with **Next climb. Outside the
+app.** The default cut ends on the logbook instead, so it renders from
+simulator takes alone. Their required `lock-screen` take is the complete physical iPhone
 13 Pro native screen, identified by `presentation: "native-lock-screen"` or
 `"native-notification-center"`, matching its actual `captureSurface`. Preserve
 its actual clock, wallpaper, notch, Live Activity and native controls. Clear
