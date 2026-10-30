@@ -163,7 +163,9 @@ export function validateLiveActivityFixture(
     !text(candidate.widgetLocale) ||
     !['notification-center', 'lock-screen'].includes(String(candidate.captureSurface)) ||
     !text(candidate.device) ||
-    !/^TestFlight\d+\.\d+\.\d+\(\d+\)$/.test(String(candidate.sourceBuild)) ||
+    !text(candidate.sourceBuild) ||
+    candidate.sourceBuild !== candidate.sourceBuild.trim() ||
+    !/^(?:TestFlight|Development)\d+\.\d+\.\d+\(\d+\)$/.test(candidate.sourceBuild) ||
     !(
       candidate.appSourceCommit === null ||
       (text(candidate.appSourceCommit) && /^[a-f0-9]{40}$/.test(candidate.appSourceCommit))
@@ -256,7 +258,7 @@ export function validateLiveActivityFixture(
     widgetLocale: candidate.widgetLocale,
     captureSurface: candidate.captureSurface as LiveActivityFixture['captureSurface'],
     device: candidate.device,
-    sourceBuild: String(candidate.sourceBuild),
+    sourceBuild: candidate.sourceBuild,
     appSourceCommit: candidate.appSourceCommit as string | null,
     capturedAt: candidate.capturedAt,
     nativePixels: { width: nativePixels.width, height: nativePixels.height },

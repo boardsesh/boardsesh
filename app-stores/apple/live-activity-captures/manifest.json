@@ -1,19 +1,18 @@
 {
   "version": 1,
-  "footage": {},
   "fixtures": {
     "kilter/en-US": {
       "file": "kilter-en-US-notification-center.png",
-      "sha256": "ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8",
-      "sourcePngSha256": "ee62c3974a1af90d7f6a172a59e523627babc205a3d40d1d43598847e38ebde8",
+      "sha256": "f2c87d0d4d3d885b548ea8e67b8d545d83543eebc4dc52c3bfd4e590bcc1b2a5",
+      "sourcePngSha256": "f2c87d0d4d3d885b548ea8e67b8d545d83543eebc4dc52c3bfd4e590bcc1b2a5",
       "boardFamily": "kilter",
       "appLocale": "en-US",
       "widgetLocale": "en",
       "captureSurface": "notification-center",
       "device": "iPhone13Pro",
-      "sourceBuild": "TestFlight2.6.0(18)",
+      "sourceBuild": "Development2.7.0(7)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-15T00:11:42.492757+00:00",
+      "capturedAt": "2026-10-30T09:02:10.541360+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -30,15 +29,15 @@
       },
       "captureFraming": "full-screen",
       "notificationCenterContext": {
-        "wallpaper": "iOS stock Astronomy Earth",
+        "wallpaper": "iOS stock Astronomy Earth, dimmed by existing Personal Focus",
         "unrelatedNotificationsDismissed": true,
         "entryFromAuthenticatedApp": true,
         "authenticationState": "not-established",
         "liveActivityRect": {
           "x": 30,
-          "y": 1713,
+          "y": 1740,
           "width": 1110,
-          "height": 438
+          "height": 409
         }
       },
       "content": {
@@ -51,12 +50,12 @@
       "controller": {
         "connection": "real-ble",
         "presentedBoardFamily": "kilter",
-        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Next received the changed LED payload",
+        "description": "Waveshare ESP32-S3 AMOLED gym fixture advertising a dedicated Kilter BLE identity; native Next received the changed LED payload",
         "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-15T00:39:04.418908+00:00",
-        "reviewedBy": "Codex root with independent native capture QA",
+        "reviewedAt": "2026-10-30T09:48:11.472452+00:00",
+        "reviewedBy": "Codex independent visual review; capture operator source observations",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
@@ -248,16 +247,16 @@
     },
     "tension/en-US": {
       "file": "tension-en-US-notification-center.png",
-      "sha256": "5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03",
-      "sourcePngSha256": "5b48626574fb5915267b18452b822ae2be2c454e106f1bcd7216918d15ac6a03",
+      "sha256": "79e1878b9a1895661d7923b3890945fc00ceee1adb843ea41565ceaa31d6870c",
+      "sourcePngSha256": "79e1878b9a1895661d7923b3890945fc00ceee1adb843ea41565ceaa31d6870c",
       "boardFamily": "tension",
       "appLocale": "en-US",
       "widgetLocale": "en",
       "captureSurface": "notification-center",
       "device": "iPhone13Pro",
-      "sourceBuild": "TestFlight2.6.0(18)",
+      "sourceBuild": "Development2.7.0(7)",
       "appSourceCommit": null,
-      "capturedAt": "2026-10-15T01:11:56.263971+00:00",
+      "capturedAt": "2026-10-30T09:09:26.617948+00:00",
       "nativePixels": {
         "width": 1170,
         "height": 2532
@@ -274,39 +273,33 @@
       },
       "captureFraming": "full-screen",
       "notificationCenterContext": {
-        "wallpaper": "iOS stock Astronomy Earth",
+        "wallpaper": "iOS stock Astronomy Earth, dimmed by existing Personal Focus",
         "unrelatedNotificationsDismissed": true,
         "entryFromAuthenticatedApp": true,
         "authenticationState": "not-established",
         "liveActivityRect": {
           "x": 30,
-          "y": 1716,
+          "y": 1740,
           "width": 1110,
-          "height": 435
+          "height": 409
         }
       },
       "content": {
         "climbName": "Masquerade",
-        "grade": "6a/V3",
+        "grade": "V3",
         "currentIndex": 1,
         "totalClimbs": 2,
         "nextEnabled": true
       },
       "controller": {
         "connection": "real-ble",
-        "presentedBoardFamily": "kilter",
-        "description": "Waveshare ESP32-S3 AMOLED development controller presenting as Kilter; native Tension Next received Putty LED payload after serial mismatch was accepted",
-        "physicalWallLightingVerified": false,
-        "compatibility": {
-          "protocol": "aurora-uart",
-          "targetBoardFamily": "tension",
-          "serialMismatchAccepted": true,
-          "verification": "native-next-and-received-led-payload"
-        }
+        "presentedBoardFamily": "tension",
+        "description": "Waveshare ESP32-S3 AMOLED gym fixture advertising a dedicated Tension BLE identity; native Next received the changed LED payload",
+        "physicalWallLightingVerified": false
       },
       "review": {
-        "reviewedAt": "2026-10-15T01:15:13.921008+00:00",
-        "reviewedBy": "Codex root with independent native capture QA",
+        "reviewedAt": "2026-10-30T09:48:11.472586+00:00",
+        "reviewedBy": "Codex independent visual review; capture operator source observations",
         "nativePixelsUnmodified": true,
         "unrelatedNotificationsExcluded": true,
         "appLocaleVerified": true,
@@ -513,6 +506,30 @@
         "appLocaleVerified": true,
         "nextNavigationVerified": true
       }
+    }
+  },
+  "footage": {
+    "kilter": {
+      "sha256": "09bd9747c81c1940211614bd03d1b041ab66a4a8745473f56bbef2fca395da00",
+      "key": "sources/live-activity/09bd9747c81c1940211614bd03d1b041ab66a4a8745473f56bbef2fca395da00.zip",
+      "boardFamily": "kilter",
+      "sourceLocale": "en-US",
+      "nativeFixtureSourcePngSha256": "f2c87d0d4d3d885b548ea8e67b8d545d83543eebc4dc52c3bfd4e590bcc1b2a5",
+      "frameCount": 254,
+      "durationSeconds": 11.950810791999999,
+      "reviewedAt": "2026-10-30T09:09:21.498144+00:00",
+      "reviewedBy": "Codex independent visual and original-frame review"
+    },
+    "tension": {
+      "sha256": "1c080fe65bfbcec40ecb420b9ca2649ed19dc417a0ab9852ee51d00da7ba6e47",
+      "key": "sources/live-activity/1c080fe65bfbcec40ecb420b9ca2649ed19dc417a0ab9852ee51d00da7ba6e47.zip",
+      "boardFamily": "tension",
+      "sourceLocale": "en-US",
+      "nativeFixtureSourcePngSha256": "79e1878b9a1895661d7923b3890945fc00ceee1adb843ea41565ceaa31d6870c",
+      "frameCount": 256,
+      "durationSeconds": 11.931684749999999,
+      "reviewedAt": "2026-10-30T09:48:11.472141+00:00",
+      "reviewedBy": "Codex independent visual and original-frame review"
     }
   }
 }

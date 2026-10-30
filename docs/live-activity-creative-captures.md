@@ -39,6 +39,21 @@ English even when the app is in Spanish, French or German. Record the actual
 `widgetLocale`; never translate the native pixels or duplicate an English
 capture under another app locale.
 
+The English Kilter and Tension stills and retained videos were refreshed on
+2026-10-30 from **Development 2.7.0 (7)** on that same physical iPhone 13 Pro.
+Their app source commit remains unknown. The real development fixture advertised
+separate matching Kilter and Tension BLE identities; native Next changed both
+the widget and the received LED payload. Notification history was collapsed
+through iOS before capture and preserved. The existing Personal Focus and dimmed
+stock Earth wallpaper remain in the original pixels. Other localized stills
+retain their earlier TestFlight provenance and controller compatibility records.
+
+The retained English sources contain all 254 Kilter and 256 Tension original
+JPEGs with their actual receipt timestamps. The reviewed six-second endings
+start at raw-stream 1.5 seconds and 0.7 seconds respectively. Those cuts preserve
+the real transition and over one second of settled native UI before fading;
+the later Tension thumbnail redraw remains in the original retained archive.
+
 Record the actual board layout, size, hold sets and angle, matching the preceding
 scene wherever its configuration is known. Keep the board family and queued
 climbs consistent; do not infer historical settings from catalogue defaults.
@@ -100,6 +115,23 @@ Keep the reviewer's identity honest; schema checks do not prove visual review.
 The importer uses `STORE_CREATIVES_R2_AWS_ENDPOINT_URL`,
 `STORE_CREATIVES_R2_AWS_ACCESS_KEY_ID` and
 `STORE_CREATIVES_R2_AWS_SECRET_ACCESS_KEY`. Do not commit these values.
+
+### Import using Production credentials in CI
+
+When the reviewed fixture PNGs and both retained source identities are already
+committed to main, **Import Reviewed Live Activity Sources** can upload the exact
+archives using the existing Production R2 secrets. Create a private draft release
+in this repository containing only the two archives, named `<sha256>.zip` using
+each committed `footage` entry's hash. Dispatch the workflow on main with that
+draft release's numeric ID. The release is transport only; keep it a draft.
+
+The workflow accepts no source URL or checksum override. It verifies both release
+asset names, sizes and hashes before extraction, rejects unsafe or incomplete ZIP
+contents, and runs the normal physical-footage importer against an isolated copy
+of the committed fixtures. Both revalidated archives and source records must
+match the committed manifest before any R2 write. It then verifies each public
+R2 archive's complete SHA-256 and confirms the committed manifest is unchanged.
+This manual workflow does not record footage or write to App Store Connect.
 
 After uploading, the importer holds a short exclusive `manifest.json.lock` while
 it reads, merges and atomically publishes the latest manifest. A competing or

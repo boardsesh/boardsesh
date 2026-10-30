@@ -320,6 +320,8 @@
     "__tests__/cpp-grade-count.test.ts",
     "__tests__/cpp-upstream-diagnostics.test.ts",
     "__tests__/cpp-detail-coverage.test.ts",
-    "__tests__/cpp-native-background-coverage.test.ts"
+    "__tests__/cpp-native-background-coverage.test.ts",
+    "upload-live-activity-sources.ts",
+    "__tests__/upload-live-activity-sources.test.ts"
   ]
 }
