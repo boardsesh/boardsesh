@@ -96,7 +96,8 @@ board, Sam has the board").
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
   nothing. A press's "stopped" lasts until that link drops. The model's `swipeAction` is `drive` on Put on board
-  (this phone's board or Sam's) and on Disconnect board while not driving; never on a relay, Set active, a wall with
+  (this phone's board) and on Disconnect board while not driving; never on Sam's board (until the hand-off, #7113 PR
+  4), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
   the setting decides solo and a crew previews. A drive starts from the swipe below, its "Light every climb"
@@ -162,22 +163,28 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   gives way to a vertical one past 14 pt. The frost wipes in from the trailing edge as the finger moves, on the UI
   thread (a clip plus `translateX`, `WallSwipeWipe.tsx`), with no React render per frame. Letting go commits past 55%
   of the width (189 pt of 343 pt, like the climb rows' full swipe), or on a fling faster than −800 pt/s once past
-  25%. Crossing the commit point buzzes medium once and the label becomes "Let go to light every climb" ("Let go to
-  take Sam's board" on a crewmate's board). Short of it the frost springs back (damping 20, stiffness 300). Past it
-  the frost fills the rest of the width in 150 ms and holds until the model says `driving`; the lit confirm buzzes
-  success. A refusal, or a drive that ends before it went live (a failed connect), springs it back with an error
-  buzz. A pan swallows the tap and the hold it ended in. On Expo web the detector has `touchAction="pan-y"`.
-- **A crewmate's board** keeps the swipe (and its label) for now: until the hand-off (#7113 PR 4) ships, the runner
-  answers `needs_handoff`, so the frost springs back with an error buzz and nothing changes.
+  25%. Crossing the commit point buzzes medium once and the label becomes "Let go to light every climb". Short of it
+  the frost springs back (damping 20, stiffness 300). Past it the frost fills the rest of the width in 150 ms and
+  holds until the drive goes live (a live drive whose climb doesn't read lit yet gets 1.5 s, and never an error); the
+  lit confirm buzzes success. A refusal, or a drive that ends while still arming (a failed connect), springs it back
+  with an error buzz. A pan swallows the tap and the hold it ended in, and a drag after a hold that already fired
+  does nothing (the sheet is opening). A system gesture that takes the touch (Android's edge back: the full-width
+  button ends 16 dp from the edge, inside the back zone, and neither RN nor RNGH can exclude it without native code)
+  cancels the pan, which springs back like any cancel. On Expo web the detector has `touchAction="pan-y"`.
+- **No swipe on a crewmate's board** until the hand-off (#7113 PR 4) ships: Aurora and MoonBoard boxes stop
+  advertising once linked, so taking Sam's board needs his phone to let go first. There the button has no chevrons,
+  no peek and no gesture. A drive the runner still can't start (presence says another account holds the board)
+  answers `needs_handoff`, and the frost springs back with an error buzz.
 - **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
   offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing
   edge and springs back (about 700 ms; a fade in place under Reduce Motion). At most 3 sessions, never again once a
   swipe has driven the wall, never in screenshot mode (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`).
 - **The frost in every swipeable state.** PlayCore builds the glow input for the climb on screen wherever the swipe
-  is offered, memoised as before; the button mounts the frost only on the first touch (or the peek). With no holds
-  the wipe is the flat `live` amber.
-- **Without the swipe.** Screen readers get the named action "Light every climb" beside "Board options", and the
-  hint ends "Swipe left to light every climb". The board sheet's first row is **Light every climb** wherever the
+  is offered or a drive is arming, memoised as before; the button mounts the frost only once a drag gets going (or
+  the peek plays), never on a plain tap, and unmounts it once it is back at rest. With no holds the wipe is the
+  flat `live` amber. A session counts towards the peek's three only once the peek actually plays.
+- **Without the swipe.** Screen readers get the named action "Light every climb" beside "Board options" (the rotor,
+  or TalkBack's actions menu). The spoken hint stays the tap's: under VoiceOver and TalkBack a swipe moves focus. The board sheet's first row is **Light every climb** wherever the
   swipe is offered: the visible way in for the bulb view and for Put on board with no link, where a hold opens no
   sheet. ⋯ › Board controls opens the sheet then even with no link, showing only that row.
 
@@ -192,7 +199,7 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`.
 - `Wall Control Swiped {state, outcome, control}` (#7113): once per swipe that got going (a drag past 10 pt), with
   the state it began in. `outcome`: `drive` (let go past the commit point and a drive started), `cancelled` (let go
-  short of it), `refused` (past it, but nothing could start: a crewmate's board until the hand-off). Whether the
+  short of it), `refused` (past it, but nothing could start: presence says another account holds the board). Whether the
   drive then went live is `Drive Mode Ended`'s `reason`. The screen-reader action and the sheet row don't fire it.
 - `Board Controls Opened {surface: 'play_drawer', source}`: a hold on `button`, `bulb` or `mini_bar`, or
   `player_menu`. A tap never opens it. Pre-release QA builds sent `wall_control`, `bulb_long_press` and

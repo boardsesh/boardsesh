@@ -38,11 +38,17 @@ export async function shouldPlayWallSwipePeek(): Promise<boolean> {
 
 /**
  * Claim this session's peek: true for the first caller only, so two buttons
- * mounted at once never both play it. Counts the session in storage.
+ * mounted at once never both play it. In memory only: a session counts towards
+ * the three once the peek actually plays (`recordWallSwipePeekPlayed`).
  */
 export function claimWallSwipePeek(): boolean {
   if (peekedThisSession) return false;
   peekedThisSession = true;
+  return true;
+}
+
+/** The peek played on screen: this session counts towards the three. */
+export function recordWallSwipePeekPlayed(): void {
   void (async () => {
     try {
       const sessions = await getPreference<number>(SESSIONS_KEY);
@@ -51,7 +57,6 @@ export function claimWallSwipePeek(): boolean {
       // A lost count only means one more peek, at most.
     }
   })();
-  return true;
 }
 
 /** A swipe drove the wall: the climber knows the gesture, so the peek stops for good. */

@@ -2272,11 +2272,12 @@ export function PlayCore({
   // Only while this climber drives the board (`wallControl.driving`, #7017).
   // A wall with no lights has no lit holds to frost.
   // And for the climb on screen wherever the swipe is offered (#7113): the
-  // frost a swipe wipes in. The button mounts it only on the first touch.
+  // frost a swipe wipes in, held full width while the drive arms. The button
+  // mounts it only once a drag gets going.
   const wallGlowShown =
     !isAnonymous &&
     ((wallControl.driving && wallControl.state === 'lit') ||
-      (swipeToDriveEnabled && wallControl.swipeAction === 'drive'));
+      (swipeToDriveEnabled && (wallControl.swipeAction === 'drive' || wallControl.drivePhase === 'arming')));
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
       ? playback.currentFrameString

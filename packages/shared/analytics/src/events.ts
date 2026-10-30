@@ -504,8 +504,8 @@ export const SHARED_EVENTS = {
   // state: the board control's state when the swipe began (as Wall Control
   // Tapped), outcome: 'drive' (let go past the commit point, 55% of the width
   // or a fling, and driving the wall started) | 'cancelled' (let go short of
-  // it) | 'refused' (let go past it, but nothing could start: a crewmate's
-  // board until the hand-off ships), control: 'button' (full width or in a
+  // it) | 'refused' (let go past it, but nothing could start: presence says
+  // another account holds the board), control: 'button' (full width or in a
   // workout's top row) }. Behind the `wall-swipe-to-drive` flag. Whether the
   // drive then went live is Drive Mode Ended's `reason` (`connect_failed`).
   WallControlSwiped: 'Wall Control Swiped',

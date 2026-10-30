@@ -950,8 +950,6 @@
       "stoppedDriving": "Ya no estás al mando del plafón",
       "lightEveryClimb": "Encender cada bloque",
       "releaseToDrive": "Suelta para encender cada bloque",
-      "releaseToTakeBoard": "Suelta para tomar el plafón de {{name}}",
-      "swipeHint": "Desliza a la izquierda para encender cada bloque",
       "crewPutUp": "Tu grupo ha encendido {{climb}}",
       "holderHasBoard": "{{name}} tiene el plafón",
       "crewHasBoard": "Tu grupo tiene el plafón",

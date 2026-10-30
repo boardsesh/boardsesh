@@ -123,6 +123,7 @@ const swipeCtrl = vi.hoisted(() => ({
   releaseArmed: false,
   committed: false,
   panned: false,
+  noteLongPress: vi.fn(),
   options: [] as { enabled: boolean; onSwipe?: () => unknown; onCancel?: () => void }[],
 }));
 vi.mock('../use-wall-swipe', () => ({
@@ -136,6 +137,7 @@ vi.mock('../use-wall-swipe', () => ({
       releaseArmed: swipeCtrl.releaseArmed,
       committed: swipeCtrl.committed,
       consumePanned: () => swipeCtrl.panned,
+      noteLongPress: swipeCtrl.noteLongPress,
     };
   },
 }));
@@ -164,6 +166,7 @@ afterEach(() => {
   swipeCtrl.releaseArmed = false;
   swipeCtrl.committed = false;
   swipeCtrl.panned = false;
+  swipeCtrl.noteLongPress.mockClear();
   swipeCtrl.options = [];
 });
 
@@ -379,6 +382,8 @@ describe('WallControlButton', () => {
     fireEvent.contextMenu(getByRole('button'));
     expect(onPress).toHaveBeenCalledOnce();
     expect(onLongPress).toHaveBeenCalledOnce();
+    // A hold that fired wins the touch: the swipe ignores a drag after it.
+    expect(swipeCtrl.noteLongPress).toHaveBeenCalledOnce();
     cleanup();
     const free = renderButton(modelFor('connect'));
     expect(free.getByRole('button').getAttribute('data-long-press')).toBe('false');
@@ -596,11 +601,17 @@ describe('WallControlButton', () => {
       expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
     });
 
-    it('adds the swipe to the spoken hint', () => {
+    // Under VoiceOver and TalkBack a swipe moves focus: the named action
+    // "Light every climb" is the way in, so the hint never mentions a swipe.
+    it('leaves the spoken hint to the tap', () => {
       const { getByRole } = renderButton(modelFor('connect'), { onSwipe });
-      expect(getByRole('button').getAttribute('data-hint')).toBe(
-        'playView.wallControl.connectHint. playView.wallControl.swipeHint',
-      );
+      expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.connectHint');
+    });
+
+    it("offers no swipe on a crewmate's board until the hand-off ships", () => {
+      const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
+      expect(sams.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
+      expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
     });
 
     it('says what letting go does once the drag is past the commit point', () => {
@@ -610,9 +621,6 @@ describe('WallControlButton', () => {
       measure();
       expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
       expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('true');
-      cleanup();
-      const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
-      expect(sams.getByText('playView.wallControl.releaseToTakeBoard:{"name":"Sam"}')).not.toBeNull();
     });
 
     it('wipes the flat amber in for a climb with no holds', () => {
@@ -622,7 +630,7 @@ describe('WallControlButton', () => {
       expect(view.getByTestId('wall-swipe-wipe').dataset).toMatchObject({ frost: 'false', fill: '#B45309' });
     });
 
-    it('mounts no wipe before the first touch', () => {
+    it('mounts no wipe before a drag gets going', () => {
       const view = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();

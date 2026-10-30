@@ -23,6 +23,7 @@ import {
   claimWallSwipePeek,
   markWallSwipeUsed,
   MAX_PEEK_SESSIONS,
+  recordWallSwipePeekPlayed,
   resetWallSwipeHintSessionForTests,
   shouldPlayWallSwipePeek,
   useWallSwipePeek,
@@ -45,6 +46,10 @@ describe('wall swipe peek', () => {
     // A second button in the same session gets nothing.
     expect(claimWallSwipePeek()).toBe(false);
     expect(await shouldPlayWallSwipePeek()).toBe(false);
+    // A claim alone counts nothing: only a peek that played does.
+    await settle();
+    expect(store.values.get('wallSwipePeekSessions')).toBeUndefined();
+    recordWallSwipePeekPlayed();
     await settle();
     expect(store.values.get('wallSwipePeekSessions')).toBe(1);
   });
@@ -54,6 +59,7 @@ describe('wall swipe peek', () => {
       resetWallSwipeHintSessionForTests();
       expect(await shouldPlayWallSwipePeek()).toBe(true);
       claimWallSwipePeek();
+      recordWallSwipePeekPlayed();
       await settle();
     }
     resetWallSwipeHintSessionForTests();

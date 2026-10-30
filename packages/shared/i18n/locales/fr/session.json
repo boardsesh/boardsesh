@@ -950,8 +950,6 @@
       "stoppedDriving": "Tu ne pilotes plus la board",
       "lightEveryClimb": "Allumer chaque bloc",
       "releaseToDrive": "Relâche pour allumer chaque bloc",
-      "releaseToTakeBoard": "Relâche pour prendre la board de {{name}}",
-      "swipeHint": "Fais glisser vers la gauche pour allumer chaque bloc",
       "crewPutUp": "Ton crew a allumé {{climb}}",
       "holderHasBoard": "{{name}} a la board",
       "crewHasBoard": "Ton crew a la board",

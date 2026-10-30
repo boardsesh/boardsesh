@@ -36,7 +36,7 @@ export function trackWallControlTapped({
 /**
  * What a swipe on the wall button came to (#7113): `drive` started driving the
  * wall, `cancelled` let go short of the commit point, `refused` let go past it
- * where nothing could start (a crewmate's board before the hand-off ships).
+ * where nothing could start (presence says another account holds the board).
  */
 export type WallControlSwipeOutcome = 'drive' | 'cancelled' | 'refused';
 

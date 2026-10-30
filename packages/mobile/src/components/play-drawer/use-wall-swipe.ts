@@ -10,7 +10,7 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { hapticError, hapticMedium } from '../../lib/haptics';
-import { markWallSwipeUsed } from '../../lib/wall-swipe-hint';
+import { markWallSwipeUsed, recordWallSwipePeekPlayed } from '../../lib/wall-swipe-hint';
 import type { DriveStartOutcome } from './use-wall-control';
 import {
   PEEK_FADE_HOLD_MS,
@@ -32,14 +32,20 @@ import {
  * The runner arms synchronously, so the next render shows it well inside this.
  */
 export const SWIPE_ARM_GRACE_MS = 1000;
+/**
+ * A live drive whose climb doesn't read lit yet (`markDriveLive` lands a beat
+ * before the link's lit confirm): the frost holds this long for `driving`, then
+ * lets go quietly. A live drive is never an error.
+ */
+export const SWIPE_LIVE_GRACE_MS = 1500;
 
 export type UseWallSwipeOptions = {
   /** The swipe is offered here (the model's `swipeAction`, and the flag). */
   enabled: boolean;
   /** The model says this phone drives the wall: a held swipe has landed. */
   driving: boolean;
-  /** The drive the swipe started is arming (connect or first light in flight). */
-  arming: boolean;
+  /** The drive the swipe started (the model's `drivePhase`). */
+  drivePhase: 'off' | 'arming' | 'live';
   /** Start driving. Anything but `started` springs back with an error buzz. */
   onSwipe?: () => DriveStartOutcome;
   /** A drag let go short of the commit point (or cancelled by the system). */
@@ -61,15 +67,17 @@ export type UseWallSwipeOptions = {
  * - Commits at 55% of the width, or on a fling under −800 pt/s past 25%.
  * - A medium buzz when the drag crosses the commit point, once per crossing.
  * - Short of it, the frost springs back. Past it, it fills the width in 150 ms
- *   and holds until the model says driving; a refusal, or a drive that ends
- *   before it went live (a failed connect), springs it back with an error buzz.
- * - `consumePanned` lets the Pressable drop the tap or hold a pan ended in.
- * - The frost mounts on the first touch (`frostArmed`), not before.
+ *   and holds until the drive goes live; a refusal, or a drive that ends while
+ *   still arming (a failed connect), springs it back with an error buzz.
+ * - `consumePanned` lets the Pressable drop the tap or hold a pan ended in, and
+ *   `noteLongPress` makes a drag after a hold that already fired do nothing.
+ * - The frost mounts once a drag gets going or the peek plays (`frostArmed`),
+ *   never on a plain tap, and unmounts once it is back at rest.
  */
 export function useWallSwipe({
   enabled,
   driving,
-  arming,
+  drivePhase,
   onSwipe,
   onCancel,
   peekToken,
@@ -81,9 +89,14 @@ export function useWallSwipe({
   const opacity = useSharedValue(1);
   const widthValue = useSharedValue(width);
   const crossed = useSharedValue(false);
+  /** A hold fired during this touch: the board sheet is opening, so a drag does nothing. */
+  const longPressed = useSharedValue(false);
   const [frostArmed, setFrostArmed] = useState(false);
   const [releaseArmed, setReleaseArmed] = useState(false);
   const [committed, setCommitted] = useState(false);
+  const committedRef = useRef(false);
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   const pannedRef = useRef(false);
   const seenArmingRef = useRef(false);
   const latest = useRef({ onSwipe, onCancel });
@@ -93,7 +106,16 @@ export function useWallSwipe({
     widthValue.value = width;
   }, [width, widthValue]);
 
+  const commit = useCallback((next: boolean) => {
+    committedRef.current = next;
+    setCommitted(next);
+  }, []);
   const armFrost = useCallback(() => setFrostArmed(true), []);
+  // Back at rest: the frost goes, so an idle button carries none of it.
+  const disarmFrost = useCallback(() => {
+    if (committedRef.current || previewRef.current !== null) return;
+    setFrostArmed(false);
+  }, []);
   const markPanned = useCallback(() => {
     pannedRef.current = true;
   }, []);
@@ -104,8 +126,11 @@ export function useWallSwipe({
     }, 0);
   }, []);
   const springBack = useCallback(() => {
-    progress.value = withSpring(0, SWIPE_SPRING_BACK);
-  }, [progress]);
+    progress.value = withSpring(0, SWIPE_SPRING_BACK, (finished) => {
+      'worklet';
+      if (finished) runOnJS(disarmFrost)();
+    });
+  }, [progress, disarmFrost]);
   const handleCross = useCallback((past: boolean) => {
     setReleaseArmed(past);
     if (past) hapticMedium();
@@ -115,13 +140,13 @@ export function useWallSwipe({
     const outcome = latest.current.onSwipe?.() ?? 'unavailable';
     if (outcome === 'started') {
       seenArmingRef.current = false;
-      setCommitted(true);
+      commit(true);
       void markWallSwipeUsed();
       return;
     }
     springBack();
     hapticError();
-  }, [springBack]);
+  }, [springBack, commit]);
   const handleCancel = useCallback(() => {
     setReleaseArmed(false);
     latest.current.onCancel?.();
@@ -133,17 +158,20 @@ export function useWallSwipe({
     failOffsetY: SWIPE_FAIL_OFFSET_Y,
     onBegin: () => {
       'worklet';
-      runOnJS(armFrost)();
+      longPressed.value = false;
     },
     onActivate: () => {
       'worklet';
+      runOnJS(markPanned)();
+      if (longPressed.value) return;
       cancelAnimation(progress);
       opacity.value = 1;
       crossed.value = false;
-      runOnJS(markPanned)();
+      runOnJS(armFrost)();
     },
     onUpdate: (event) => {
       'worklet';
+      if (longPressed.value) return;
       const next = wallSwipeProgress(event.translationX, widthValue.value);
       progress.value = next;
       const past = next >= SWIPE_COMMIT_PROGRESS;
@@ -154,13 +182,18 @@ export function useWallSwipe({
     },
     onDeactivate: (event) => {
       'worklet';
+      if (longPressed.value) return;
       crossed.value = false;
       if (!event.canceled && wallSwipeCommits(progress.value, event.velocityX)) {
         progress.value = withTiming(1, { duration: SWIPE_FILL_MS });
         runOnJS(handleCommit)();
         return;
       }
-      progress.value = withSpring(0, SWIPE_SPRING_BACK);
+      // A system gesture (Android's edge back) cancels the pan: the same cancel.
+      progress.value = withSpring(0, SWIPE_SPRING_BACK, (finished) => {
+        'worklet';
+        if (finished) runOnJS(disarmFrost)();
+      });
       runOnJS(handleCancel)();
     },
     onFinalize: () => {
@@ -172,38 +205,47 @@ export function useWallSwipe({
   // A committed swipe holds the full frost until the drive lands or ends.
   useEffect(() => {
     if (!committed) return undefined;
-    const fail = () => {
-      setCommitted(false);
+    const release = (withError: boolean) => {
+      commit(false);
       springBack();
-      hapticError();
+      if (withError) hapticError();
     };
     if (driving) {
       // The full frost takes over: the wipe goes away under it.
       cancelAnimation(progress);
       progress.value = 0;
-      setCommitted(false);
+      commit(false);
+      setFrostArmed(false);
       return undefined;
     }
-    if (arming) {
+    if (drivePhase === 'live') {
+      // Live, the climb not read lit yet: wait for it, and never buzz an error.
+      seenArmingRef.current = false;
+      const timer = setTimeout(() => release(false), SWIPE_LIVE_GRACE_MS);
+      return () => clearTimeout(timer);
+    }
+    if (drivePhase === 'arming') {
       seenArmingRef.current = true;
       return undefined;
     }
     if (seenArmingRef.current) {
-      fail();
+      release(true);
       return undefined;
     }
-    const timer = setTimeout(fail, SWIPE_ARM_GRACE_MS);
+    const timer = setTimeout(() => release(true), SWIPE_ARM_GRACE_MS);
     return () => clearTimeout(timer);
-  }, [committed, driving, arming, progress, springBack]);
+  }, [committed, driving, drivePhase, progress, springBack, commit]);
 
   // The one-time peek: in 28 pt and back, or under Reduce Motion a fade in place.
+  // It waits for the button's width, and only a peek that plays is counted.
   const playedPeekRef = useRef(0);
   useEffect(() => {
     // Only a new token plays it, never a change of Reduce Motion.
     if (peekToken === playedPeekRef.current || preview !== null) return;
-    playedPeekRef.current = peekToken;
-    const share = peekProgress(widthValue.value);
+    const share = peekProgress(width);
     if (share <= 0) return;
+    playedPeekRef.current = peekToken;
+    recordWallSwipePeekPlayed();
     setFrostArmed(true);
     if (reduceMotion) {
       progress.value = share;
@@ -217,6 +259,7 @@ export function useWallSwipe({
             if (!finished) return;
             progress.value = 0;
             opacity.value = 1;
+            runOnJS(disarmFrost)();
           }),
         ),
       );
@@ -224,9 +267,15 @@ export function useWallSwipe({
     }
     progress.value = withSequence(
       withTiming(share, { duration: PEEK_IN_MS }),
-      withDelay(PEEK_HOLD_MS, withSpring(0, SWIPE_SPRING_BACK)),
+      withDelay(
+        PEEK_HOLD_MS,
+        withSpring(0, SWIPE_SPRING_BACK, (finished) => {
+          'worklet';
+          if (finished) runOnJS(disarmFrost)();
+        }),
+      ),
     );
-  }, [peekToken, preview, reduceMotion, progress, opacity, widthValue]);
+  }, [peekToken, preview, reduceMotion, progress, opacity, width, disarmFrost]);
 
   // The stories' frozen frame.
   useEffect(() => {
@@ -238,6 +287,10 @@ export function useWallSwipe({
 
   /** Whether a pan just ended: the tap or hold it ended in is dropped. */
   const consumePanned = useCallback(() => pannedRef.current, []);
+  /** A hold fired: a drag in the same touch does nothing. */
+  const noteLongPress = useCallback(() => {
+    longPressed.value = true;
+  }, [longPressed]);
 
   return {
     gesture,
@@ -249,5 +302,6 @@ export function useWallSwipe({
     /** Let go past the commit point: the frost holds until the drive lands. */
     committed,
     consumePanned,
+    noteLongPress,
   };
 }

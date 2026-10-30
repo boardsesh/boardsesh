@@ -55,7 +55,7 @@ import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
-import { useWallControlText, withSwipeHint } from './wall-control-text';
+import { useWallControlText } from './wall-control-text';
 import { WallGlow } from './WallGlow';
 import { WallSwipeWipe } from './WallSwipeWipe';
 import { useWallGlowLayer, type WallGlowInput, type WallGlowLayer } from './use-wall-glow';
@@ -150,13 +150,18 @@ function WallControlButtonComponent({
   const reduceMotion = useReduceMotion();
   // The swipe, where the model offers it and the host wires it (#7113).
   const swipeOffered = model.swipeAction === 'drive' && onSwipe != null;
+  // A story's frozen frame, only where the swipe is offered (as the live one).
   const previewProgress =
-    swipePreview === undefined ? null : swipePreview.peek ? peekProgress(size.w) : (swipePreview.progress ?? 0);
+    swipePreview === undefined || !swipeOffered
+      ? null
+      : swipePreview.peek
+        ? peekProgress(size.w)
+        : (swipePreview.progress ?? 0);
   const peekToken = useWallSwipePeek(swipeOffered && swipePreview === undefined);
   const swipe = useWallSwipe({
     enabled: swipeOffered,
     driving: model.driving,
-    arming: model.driveArming,
+    drivePhase: model.drivePhase,
     onSwipe,
     onCancel: onSwipeCancel,
     peekToken,
@@ -164,7 +169,7 @@ function WallControlButtonComponent({
     width: size.w,
     preview: previewProgress,
   });
-  // The frost mounts on the first touch (or the peek), never before.
+  // The frost mounts once a drag gets going (or the peek plays), and goes at rest.
   const wiping = !model.driving && (swipe.frostArmed || swipe.committed);
   // The coloured lit look (the frost, or the amber fill) only while this
   // climber is driving the board: the model's rule, not the view's (#7017).
@@ -180,18 +185,18 @@ function WallControlButtonComponent({
   const busy = model.pending || model.writing;
   const label = swipe.releaseArmed && !model.driving ? text.releaseLabel : text.label;
   const showChevrons = swipeOffered && !model.driving;
-  const accessibilityHint =
-    swipeOffered && !model.pending ? withSwipeHint(text.accessibilityHint, text.swipeHint) : text.accessibilityHint;
 
-  const { consumePanned } = swipe;
+  const { consumePanned, noteLongPress } = swipe;
   const handlePress = useCallback(() => {
     if (model.pending || consumePanned()) return;
     onPress();
   }, [model.pending, onPress, consumePanned]);
+  // A hold that fires first wins the touch: a drag after it does nothing.
   const handleLongPress = useCallback(() => {
     if (consumePanned()) return;
+    noteLongPress();
     onLongPress();
-  }, [onLongPress, consumePanned]);
+  }, [onLongPress, consumePanned, noteLongPress]);
   // A screen reader can't swipe the button, so the swipe is a named action too
   // (WCAG 2.5.1), beside the hold's board controls.
   const drive = model.swipeAction === 'drive' ? onDrive : undefined;
@@ -328,7 +333,7 @@ function WallControlButtonComponent({
       onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
-      accessibilityHint={accessibilityHint}
+      accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy }}
       // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
       android_ripple={androidRipple(typeof restForeground === 'string' ? restForeground : brandColors.primary)}

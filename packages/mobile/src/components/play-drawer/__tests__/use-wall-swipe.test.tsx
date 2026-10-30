@@ -37,7 +37,10 @@ vi.mock('react-native-reanimated', async () => {
         callback(...args),
     useSharedValue: <T,>(value: T) => useRef({ value }).current,
     cancelAnimation: vi.fn(),
-    withSpring: (to: number) => to,
+    withSpring: (to: number, _config?: unknown, done?: (finished: boolean) => void) => {
+      if (done) native.animationEnds.push(done);
+      return to;
+    },
     withTiming: (to: number, _config?: unknown, done?: (finished: boolean) => void) => {
       if (done) native.animationEnds.push(done);
       return to;
@@ -48,10 +51,10 @@ vi.mock('react-native-reanimated', async () => {
 });
 const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticError: vi.fn() }));
 vi.mock('../../../lib/haptics', () => haptics);
-const hint = vi.hoisted(() => ({ markWallSwipeUsed: vi.fn(async () => {}) }));
+const hint = vi.hoisted(() => ({ markWallSwipeUsed: vi.fn(async () => {}), recordWallSwipePeekPlayed: vi.fn() }));
 vi.mock('../../../lib/wall-swipe-hint', () => hint);
 
-import { SWIPE_ARM_GRACE_MS, useWallSwipe, type UseWallSwipeOptions } from '../use-wall-swipe';
+import { SWIPE_ARM_GRACE_MS, SWIPE_LIVE_GRACE_MS, useWallSwipe, type UseWallSwipeOptions } from '../use-wall-swipe';
 
 const WIDTH = 343;
 
@@ -61,7 +64,7 @@ function setup(overrides: Partial<UseWallSwipeOptions> = {}) {
   const initial: UseWallSwipeOptions = {
     enabled: true,
     driving: false,
-    arming: false,
+    drivePhase: 'off',
     onSwipe,
     onCancel,
     peekToken: 0,
@@ -163,7 +166,7 @@ describe('useWallSwipe', () => {
   it('lets the full frost take over once the model says driving', () => {
     const { hook, initial } = setup();
     drag(-0.8 * WIDTH);
-    hook.rerender({ ...initial, enabled: false, arming: true });
+    hook.rerender({ ...initial, enabled: false, drivePhase: 'arming' });
     expect(hook.result.current.committed).toBe(true);
     hook.rerender({ ...initial, enabled: false, driving: true });
     expect(hook.result.current.committed).toBe(false);
@@ -174,11 +177,46 @@ describe('useWallSwipe', () => {
   it('springs back with an error buzz when the drive ends before it went live (a failed connect)', () => {
     const { hook, initial } = setup();
     drag(-0.8 * WIDTH);
-    hook.rerender({ ...initial, enabled: false, arming: true });
-    hook.rerender({ ...initial, enabled: true, arming: false });
+    hook.rerender({ ...initial, enabled: false, drivePhase: 'arming' });
+    hook.rerender({ ...initial, enabled: true, drivePhase: 'off' });
     expect(hook.result.current.committed).toBe(false);
     expect(hook.result.current.progress.value).toBe(0);
     expect(haptics.hapticError).toHaveBeenCalledOnce();
+  });
+
+  it('treats a live drive as landed: no error buzz while the climb catches up', () => {
+    const { hook, initial } = setup();
+    drag(-0.8 * WIDTH);
+    hook.rerender({ ...initial, enabled: false, drivePhase: 'arming' });
+    // `markDriveLive` lands before the link's lit confirm.
+    hook.rerender({ ...initial, enabled: false, drivePhase: 'live' });
+    expect(hook.result.current.committed).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(SWIPE_LIVE_GRACE_MS);
+    });
+    expect(hook.result.current.committed).toBe(false);
+    expect(haptics.hapticError).not.toHaveBeenCalled();
+  });
+
+  it('ignores a drag after a hold has fired in the same touch', () => {
+    const { hook, onSwipe, onCancel } = setup();
+    const pan = native.config;
+    if (!pan) throw new Error('no pan');
+    act(() => {
+      pan.onBegin();
+      hook.result.current.noteLongPress();
+      pan.onActivate();
+      pan.onUpdate({ translationX: -0.8 * WIDTH, velocityX: 0 });
+      pan.onDeactivate({ translationX: -0.8 * WIDTH, velocityX: 0, canceled: false });
+      pan.onFinalize();
+    });
+    expect(onSwipe).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(hook.result.current.progress.value).toBe(0);
+    expect(hook.result.current.frostArmed).toBe(false);
+    // The next touch swipes again.
+    drag(-0.8 * WIDTH);
+    expect(onSwipe).toHaveBeenCalledOnce();
   });
 
   it('gives up when the drive never arms', () => {
@@ -217,14 +255,28 @@ describe('useWallSwipe', () => {
     expect(hook.result.current.consumePanned()).toBe(false);
   });
 
-  it('mounts the frost on the first touch, and says when letting go would commit', () => {
+  it('mounts the frost once a drag gets going, never on a plain tap, and unmounts it at rest', () => {
     const { hook } = setup();
-    expect(hook.result.current.frostArmed).toBe(false);
     const pan = native.config;
     if (!pan) throw new Error('no pan');
-    act(() => pan.onBegin());
-    expect(hook.result.current.frostArmed).toBe(true);
     act(() => {
+      pan.onBegin();
+      pan.onFinalize();
+    });
+    expect(hook.result.current.frostArmed).toBe(false);
+    drag(-0.3 * WIDTH);
+    expect(hook.result.current.frostArmed).toBe(true);
+    // The spring back lands: the frost goes.
+    act(() => native.animationEnds.forEach((end) => end(true)));
+    expect(hook.result.current.frostArmed).toBe(false);
+  });
+
+  it('says when letting go would commit', () => {
+    const { hook } = setup();
+    const pan = native.config;
+    if (!pan) throw new Error('no pan');
+    act(() => {
+      pan.onBegin();
       pan.onActivate();
       pan.onUpdate({ translationX: -0.6 * WIDTH, velocityX: 0 });
     });
@@ -253,13 +305,26 @@ describe('useWallSwipe', () => {
     expect(hook.result.current.progress.value).toBe(0);
   });
 
-  it('slides the peek in 28 pt and springs it back', () => {
+  it('slides the peek in 28 pt and springs it back, then lets the frost go', () => {
     const { hook, initial } = setup();
     hook.rerender({ ...initial, peekToken: 1 });
     expect(hook.result.current.frostArmed).toBe(true);
+    expect(hint.recordWallSwipePeekPlayed).toHaveBeenCalledOnce();
     // The mock's sequence lands on its last step: back to rest.
     expect(hook.result.current.progress.value).toBe(0);
     expect(hook.result.current.opacity.value).toBe(1);
+    act(() => native.animationEnds.forEach((end) => end(true)));
+    expect(hook.result.current.frostArmed).toBe(false);
+  });
+
+  it('waits for a width before it plays the peek, and counts it only then', () => {
+    const { hook, initial } = setup({ width: 0 });
+    hook.rerender({ ...initial, width: 0, peekToken: 1 });
+    expect(hint.recordWallSwipePeekPlayed).not.toHaveBeenCalled();
+    expect(hook.result.current.frostArmed).toBe(false);
+    hook.rerender({ ...initial, width: WIDTH, peekToken: 1 });
+    expect(hint.recordWallSwipePeekPlayed).toHaveBeenCalledOnce();
+    expect(hook.result.current.frostArmed).toBe(true);
   });
 
   it('draws a story’s frozen frame with the pan off', () => {

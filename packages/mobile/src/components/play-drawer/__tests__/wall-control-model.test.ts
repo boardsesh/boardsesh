@@ -198,7 +198,9 @@ const rows: Row[] = [
       a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'lightHint',
       look: 'off',
-      swipeAction: 'drive',
+      // Taking Sam's board needs his phone to let go first: no swipe until
+      // the hand-off ships (#7113 PR 4).
+      swipeAction: null,
     },
   ],
   [
@@ -762,6 +764,11 @@ describe('resolveWallControl: driving the wall', () => {
       if (name.startsWith('crew')) {
         // A relay to Sam's board: Put on board, never a swipe.
         expect(model).toMatchObject({ tapAction: 'relay', labelKey: 'putOnBoard', swipeAction: null });
+        return;
+      }
+      if (name.includes("Sam's board")) {
+        // A preview on Sam's board: Put on board, no swipe until the hand-off (PR 4).
+        expect(model).toMatchObject({ labelKey: 'putOnBoard', swipeAction: null });
         return;
       }
       expect(model.labelKey).toBe('putOnBoard');

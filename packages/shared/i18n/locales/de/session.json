@@ -950,8 +950,6 @@
       "stoppedDriving": "Du steuerst das Board nicht mehr",
       "lightEveryClimb": "Jeden Boulder beleuchten",
       "releaseToDrive": "Loslassen, um jeden Boulder zu beleuchten",
-      "releaseToTakeBoard": "Loslassen, um das Board von {{name}} zu übernehmen",
-      "swipeHint": "Nach links wischen, um jeden Boulder zu beleuchten",
       "crewPutUp": "Deine Crew hat {{climb}} beleuchtet",
       "holderHasBoard": "{{name}} hat das Board",
       "crewHasBoard": "Deine Crew hat das Board",

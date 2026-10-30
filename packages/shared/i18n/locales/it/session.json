@@ -950,8 +950,6 @@
       "stoppedDriving": "Non guidi più il pannello",
       "lightEveryClimb": "Illumina ogni blocco",
       "releaseToDrive": "Rilascia per illuminare ogni blocco",
-      "releaseToTakeBoard": "Rilascia per prendere il pannello di {{name}}",
-      "swipeHint": "Scorri verso sinistra per illuminare ogni blocco",
       "crewPutUp": "La tua crew ha illuminato {{climb}}",
       "holderHasBoard": "{{name}} ha il pannello",
       "crewHasBoard": "La tua crew ha il pannello",

@@ -16,7 +16,7 @@
 // clipped with the frost, the words read on the frost where it covers them and
 // on the tonal pill where it doesn't.
 
-import { memo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { withAlpha } from '../../theme/colors';
@@ -41,7 +41,8 @@ type WallSwipeWipeProps = {
   rowStyle?: StyleProp<ViewStyle>;
 };
 
-function WallSwipeWipeComponent({ progress, opacity, width, layer, fill, children, rowStyle }: WallSwipeWipeProps) {
+// Not memoised: the button hands it a fresh copy of its row on every render.
+export function WallSwipeWipe({ progress, opacity, width, layer, fill, children, rowStyle }: WallSwipeWipeProps) {
   const edgeColor = layer ? layer.surface.base : fill;
   const clear = withAlpha(edgeColor, 0);
   const clipStyle = useAnimatedStyle(() => ({
@@ -92,8 +93,6 @@ function WallSwipeWipeComponent({ progress, opacity, width, layer, fill, childre
     </>
   );
 }
-
-export const WallSwipeWipe = memo(WallSwipeWipeComponent);
 
 const styles = StyleSheet.create({
   fill: {

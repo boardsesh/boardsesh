@@ -109,9 +109,9 @@ the one that lights every climb: it connects if needed, lights the climb on scre
 of climb lights the wall, in a crew too. It changes nothing on the server: the phone holds the board through its
 link like any holder, and each climb it lights is an ordinary `reportBoardClimb`. The drive lives on the phone
 (`drive-mode-store.ts`, in memory) and ends when this phone's link drops, the session or the board changes, or the
-climber signs out or presses the frosted button. On a crewmate's board the swipe refuses (`needs_handoff`): Aurora
-and MoonBoard boxes stop advertising once linked, so taking the board needs the holder's phone to let go first, a
-cooperative hand-off that is PR 4 of #7113. See `docs/climb-view-options.md`, "Swipe to drive".
+climber signs out or presses the frosted button. A crewmate's board offers no swipe yet (and a drive the runner can't
+start answers `needs_handoff`): Aurora and MoonBoard boxes stop advertising once linked, so taking the board needs
+the holder's phone to let go first, a cooperative hand-off that is PR 4 of #7113. See `docs/climb-view-options.md`, "Swipe to drive".
 
 ## Known limitations
 

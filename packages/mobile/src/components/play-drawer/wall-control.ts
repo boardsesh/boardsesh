@@ -426,10 +426,11 @@ export type WallControlModel = {
   bulbTapAction: WallControlAction;
   /**
    * A swipe on the wall button: `drive` wherever a press puts the climb on
-   * this phone's board (no link, a preview, Sam's board, a dark climb, on the
-   * wall with no link) and on Disconnect board, while not driving already.
-   * Never on a wall with no lights, Set active, a relay to a crewmate's board,
-   * or while the busy-wall question is up or a connect is in flight.
+   * this phone's board (no link, a preview, a dark climb, on the wall with no
+   * link) and on Disconnect board, while not driving already. Never on a
+   * crewmate's board until the hand-off ships (#7113 PR 4), a wall with no
+   * lights, Set active, a relay, or while the busy-wall question is up or a
+   * connect is in flight.
    */
   swipeAction: WallControlSwipeAction;
   longPress: 'sheet' | null;
@@ -454,11 +455,12 @@ export type WallControlModel = {
    */
   driving: boolean;
   /**
-   * A drive the swipe started is on its way (#7113, `driveMode` `arming`): the
-   * connect or the first light is in flight. The swipe's frost holds full width
-   * meanwhile, and springs back if it ends without `driving`.
+   * The drive (#7113, `driveMode`): `arming` while the swipe's connect or first
+   * light is in flight, `live` once every change of climb lights. The swipe's
+   * frost holds full width while arming, and springs back with an error buzz
+   * if the drive ends before it went live.
    */
-  driveArming: boolean;
+  drivePhase: 'off' | 'arming' | 'live';
   /** A connect or disconnect in flight: a spinner, and taps wait. */
   pending: boolean;
   writing: boolean;
@@ -579,9 +581,10 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     state === 'on_wall_unlinked' ||
     // A crew holder who hasn't started driving swipes from Disconnect board.
     state === 'lit' ||
-    // A preview, on Sam's board too (a swipe takes the board over), never Set
-    // active (no wall to light) or the crew's gym board (a relay).
-    (state === 'put_on_wall' && !onCrewGymBoard && labelKey !== 'setActive');
+    // A preview on this phone's board, never Set active (no wall to light),
+    // the crew's gym board (a relay), or a crewmate's board: taking it needs
+    // their phone to let go first, which the hand-off (#7113 PR 4) adds.
+    (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
@@ -623,7 +626,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     look: resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
     selected: state === 'lit',
     driving,
-    driveArming: driveMode === 'arming',
+    drivePhase: driveMode,
     pending: input.pending,
     writing: input.writing,
     autoDisconnectWarning: input.autoDisconnectWarning,
@@ -649,7 +652,7 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   look: 'off',
   selected: false,
   driving: false,
-  driveArming: false,
+  drivePhase: 'off',
   pending: false,
   writing: false,
   autoDisconnectWarning: false,

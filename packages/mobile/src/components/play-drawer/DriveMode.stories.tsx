@@ -87,7 +87,8 @@ const HINTS: readonly Variant[] = [
   { label: 'Flag off: no swipe, no hint', model: PUT_ON_WALL, swipe: false },
   { label: 'A, chevrons: Put on board', model: PUT_ON_WALL, preview: {} },
   { label: 'A+B, the peek mid-play: Put on board', model: PUT_ON_WALL, preview: { peek: true } },
-  { label: "A+B on Sam's board", model: PUT_ON_SAMS_BOARD, preview: { peek: true } },
+  // Taking Sam's board needs his phone to let go first: no swipe until the hand-off (#7113 PR 4).
+  { label: "Sam's board: no swipe until the hand-off", model: PUT_ON_SAMS_BOARD, preview: { peek: true } },
   { label: 'A+B with no link', model: CONNECT, preview: { peek: true } },
   { label: 'A on Disconnect board (you hold it, not driving)', model: DISCONNECT, preview: {} },
 ];
@@ -95,7 +96,6 @@ const HINTS: readonly Variant[] = [
 const DRAG: readonly Variant[] = [
   { label: 'Dragged 30%: the frost wipes in', model: PUT_ON_WALL, preview: { progress: 0.3 } },
   { label: 'Dragged 70%: let go lights every climb', model: PUT_ON_WALL, preview: { progress: 0.7 } },
-  { label: "Sam's board, dragged 70%", model: PUT_ON_SAMS_BOARD, preview: { progress: 0.7 } },
   {
     label: 'No holds to frost, dragged 70%: the live amber',
     model: PUT_ON_WALL,
