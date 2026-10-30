@@ -229,7 +229,7 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { _ in }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { _ in }
         }
 
         XCTAssertEqual(
@@ -450,13 +450,16 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
 
         let attemptsBeforeConfigure = attempts
         let suppressionsBeforeConfigure = suppressions
+        let writesBeforeConfigure = peripheral.writtenChunks.count
         manager.testHooks.sync {
             manager.testHooks.configure(moonboardConfiguration(), appActive: false)
         }
         XCTAssertEqual(attempts, attemptsBeforeConfigure)
-        // The gate was reached and refused, rather than skipped — without the
-        // provenance clear this connection would still read as authorised.
-        XCTAssertEqual(suppressions, suppressionsBeforeConfigure + 1)
+        // The pairing guard now rejects a dead link before the relight gate.
+        // The provenance assertions above independently pin its teardown.
+        XCTAssertEqual(suppressions, suppressionsBeforeConfigure)
+        XCTAssertNil(manager.connectedDeviceInfo)
+        XCTAssertEqual(peripheral.writtenChunks.count, writesBeforeConfigure)
     }
 
     func testRestoredConnectionIsSuppressedAndRetained() {
@@ -464,6 +467,7 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         var connectedEvents: [String] = []
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
+            manager.testHooks.setConnection(peripheral: peripheral, characteristic: makeWriteCharacteristic())
             manager.setEventHandlers(
                 owner: UUID(),
                 onScanResult: nil,
@@ -586,7 +590,11 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         )
 
         XCTAssertEqual(attempts, 0)
-        XCTAssertEqual(suppressions, 1)
+        // A late ready callback has no pairing and never reaches relighting.
+        XCTAssertEqual(suppressions, 0)
+        XCTAssertNil(manager.connectedDeviceInfo)
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.boundPeripheralUuid })
+        XCTAssertTrue(cancelledPeripheralIds.contains(peripheral.identifier))
     }
 
     func testUnexpectedDropForgetsWhoAskedSoAConfigureCannotUseADeadLinksAuthorization() {
@@ -613,11 +621,14 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
 
         // A background configureBoard landing in the window between the drop and
         // the next connect must not inherit the dead link's authorization.
+        let writesBeforeConfigure = peripheral.writtenChunks.count
         manager.testHooks.sync {
             manager.testHooks.configure(moonboardConfiguration(), appActive: false)
         }
         XCTAssertEqual(attempts, 1)
-        XCTAssertEqual(suppressions, 1)
+        XCTAssertEqual(suppressions, 0)
+        XCTAssertNil(manager.connectedDeviceInfo)
+        XCTAssertEqual(peripheral.writtenChunks.count, writesBeforeConfigure)
     }
 
     func testBluetoothTurningOffForgetsWhoAsked() {

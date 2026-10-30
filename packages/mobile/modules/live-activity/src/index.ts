@@ -48,6 +48,8 @@ export type NativeBleConnectedEvent = {
 export type NativeBleConnectedDevice = {
   deviceId: string;
   name?: string;
+  /** The configuration successfully paired with this exact peripheral (#7122). */
+  configKey?: string;
   /**
    * Connect-time BLE write diagnostics. Only present on binaries new enough to
    * report them (gate on a field being defined, not just on `getConnectedDevice`
@@ -128,6 +130,10 @@ export type NativeBleConfigureBoardOptions = {
   boardName: string;
   layoutId: number;
   sizeId: number;
+  /** Required by prepared-connection binaries for authorized updates (#7122). */
+  configKey?: string;
+  /** The bound peripheral expected to receive this configuration update. */
+  deviceId?: string;
   apiLevel?: number;
   deviceName?: string;
   colorOverrides?: Record<string, string>;
@@ -152,6 +158,8 @@ export type NativeBleConfigureBoardOptions = {
    */
   appActive?: boolean;
 };
+
+export type NativeBlePrepareBoardConnectionOptions = NativeBleConfigureBoardOptions & { configKey: string };
 
 /**
  * The app's Bluetooth authorization, as CoreBluetooth reports it before any
@@ -190,6 +198,13 @@ type BoardBleNativeModule = {
   startScan(services?: string[]): Promise<void>;
   stopScan(): Promise<void>;
   connect(deviceId: string): Promise<void>;
+  /**
+   * Invalidate the old native pairing before scanning, then stage a new one.
+   * Both prepared-connection methods must exist before using this surface.
+   */
+  prepareBoardConnection?(options: NativeBlePrepareBoardConnectionOptions): Promise<string>;
+  /** Connect only for the attempt returned by prepareBoardConnection (#7122). */
+  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<void>;
   disconnect(): Promise<void>;
   /**
    * Resolves the write's transport diagnostics on binaries new enough to
