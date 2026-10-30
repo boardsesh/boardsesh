@@ -34,7 +34,7 @@ describe('drive-mode store', () => {
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 
-  it("arms on a swipe, goes live once lit, and counts the climbs lit, the swipe's own included", () => {
+  it('arms on a swipe, goes live once lit, and counts the climbs lit while live', () => {
     enterDriveMode({ sessionId: 'session-1', boardId: null, now: 1_000 });
     expect(getDriveMode()).toEqual({
       phase: 'arming',
@@ -47,12 +47,12 @@ describe('drive-mode store', () => {
     noteDriveClimbLit();
     expect(getDriveMode()?.climbsLit).toBe(0);
     markDriveLive({ boardId: 7 });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 7, startedAt: 1_000, climbsLit: 1 });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 7, startedAt: 1_000, climbsLit: 0 });
     // A second read of the same live drive counts nothing.
     markDriveLive({ boardId: 7 });
     noteDriveClimbLit();
     noteDriveClimbLit();
-    expect(getDriveMode()?.climbsLit).toBe(3);
+    expect(getDriveMode()?.climbsLit).toBe(2);
   });
 
   it('keeps the board it knew when going live without one', () => {
@@ -131,7 +131,7 @@ describe('Drive Mode Ended', () => {
     expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', {
       reason: 'link_dropped',
       durationSec: 30,
-      climbsLit: 2,
+      climbsLit: 1,
       inSession: true,
     });
     vi.restoreAllMocks();

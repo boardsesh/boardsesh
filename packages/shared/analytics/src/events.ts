@@ -122,7 +122,7 @@ export const SHARED_EVENTS = {
   QueueNavigation: 'Queue Navigation',
   // Mobile-only (#7113): driving the wall ended. Props (built by
   // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
-  // 'link_dropped' | 'connect_failed' | 'arming_timed_out' | 'session_changed' |
+  // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
   // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
   // climb included), inSession }. Fired once per drive by the drive-mode store.
   DriveModeEnded: 'Drive Mode Ended',

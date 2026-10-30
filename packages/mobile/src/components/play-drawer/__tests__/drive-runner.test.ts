@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 // #7113: starting a drive from the wall button's swipe (or its "Light every
 // climb" action): refuse, arm, commit without the busy-wall question, connect
-// if needed, light, and go live once this phone's link lights the climb.
-import { act, renderHook } from '@testing-library/react';
+// if needed, and light. Going live is the watcher's (drive-mode-watcher.test).
+import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const effects = vi.hoisted(() => ({ hapticSuccess: vi.fn(), track: vi.fn() }));
-vi.mock('../../../lib/haptics', () => ({ hapticSuccess: effects.hapticSuccess }));
+const effects = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
 
-import { startDrive, useDriveGoesLive, type StartDriveInput } from '../drive-runner';
-import { getDriveMode, getLastDriveModeExitReason, resetDriveModeForTests } from '../drive-mode-store';
+import { startDrive, type StartDriveInput } from '../drive-runner';
+import { exitDriveMode, getDriveMode, getLastDriveModeExitReason, resetDriveModeForTests } from '../drive-mode-store';
 
 function input(overrides: Partial<StartDriveInput> = {}): StartDriveInput {
   return {
@@ -65,13 +64,24 @@ describe('startDrive', () => {
     expect(getLastDriveModeExitReason()).toBe('connect_failed');
   });
 
+  it('refuses a second start while a drive is on, in the same frame too', () => {
+    const first = input({ connected: false, connect: () => new Promise<boolean>(() => {}) });
+    expect(startDrive(first)).toBe('started');
+    const second = input({ committing: true });
+    expect(startDrive(second)).toBe('unavailable');
+    expect(second.commit).not.toHaveBeenCalled();
+    expect(second.relight).not.toHaveBeenCalled();
+  });
+
   it('a late connect failure never ends a newer drive', async () => {
     let settle: (linked: boolean) => void = () => {};
     const first = input({ connected: false, connect: () => new Promise<boolean>((resolve) => (settle = resolve)) });
     vi.spyOn(Date, 'now').mockReturnValue(1_000);
     startDrive(first);
+    // The first drive gave up arming; a new swipe starts another.
+    exitDriveMode('arming_timed_out');
     vi.spyOn(Date, 'now').mockReturnValue(2_000);
-    startDrive(input());
+    expect(startDrive(input())).toBe('started');
     await act(async () => {
       settle(false);
       await Promise.resolve();
@@ -102,30 +112,11 @@ describe('startDrive', () => {
     expect(run.relight).not.toHaveBeenCalled();
   });
 
-  it('ends the drive when nothing went up', () => {
+  it('ends the drive with commit_failed when nothing went up', () => {
     const run = input({ committing: true, commit: vi.fn(() => false) });
     expect(startDrive(run)).toBe('unavailable');
     expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('commit_failed');
     expect(run.relight).not.toHaveBeenCalled();
-  });
-});
-
-describe('useDriveGoesLive', () => {
-  it('goes live, with a success buzz, once the climb is lit on this phone’s link', () => {
-    startDrive(input());
-    const hook = renderHook((props: { lit: boolean }) => useDriveGoesLive(getDriveMode()?.phase ?? 'off', props.lit), {
-      initialProps: { lit: false },
-    });
-    expect(getDriveMode()?.phase).toBe('arming');
-    hook.rerender({ lit: true });
-    expect(getDriveMode()?.phase).toBe('live');
-    expect(getDriveMode()?.climbsLit).toBe(1);
-    expect(effects.hapticSuccess).toHaveBeenCalledOnce();
-  });
-
-  it('does nothing with nobody arming', () => {
-    renderHook(() => useDriveGoesLive('off', true));
-    expect(getDriveMode()).toBeNull();
-    expect(effects.hapticSuccess).not.toHaveBeenCalled();
   });
 });

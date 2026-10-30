@@ -14,7 +14,7 @@ import {
   useDriveMode,
   type DriveWatchSnapshot,
 } from './drive-mode-store';
-import { useDriveClimbsLit, useDriveCrewPutUp } from './use-drive-follow';
+import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -24,8 +24,10 @@ import { useDriveClimbsLit, useDriveCrewPutUp } from './use-drive-follow';
  * the board as I swipe (the setting speaks for itself again). Going to the
  * background ends nothing.
  *
- * While live it also counts the climbs lit, for Drive Mode Ended, and says
- * when a crewmate put a climb up (`use-drive-follow.ts`).
+ * It also takes an arming drive live once this phone's link lights the climb
+ * (here, so closing the player mid-connect still goes live), counts the climbs
+ * lit for Drive Mode Ended, and says when a crewmate put a climb up
+ * (`use-drive-follow.ts`).
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -39,7 +41,8 @@ export function DriveModeWatcher(): null {
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
   useDriveCrewPutUp(drive?.phase ?? null);
-  useDriveClimbsLit(drive?.phase ?? null, linked);
+  // Goes live, and counts the climbs lit, at this phone's own link's confirms.
+  useDriveWallConfirms(bluetooth?.isConnected ?? false);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const lightOnSwipeRef = useRef(lightOnSwipe);
   const previousRef = useRef<DriveWatchSnapshot | null>(null);

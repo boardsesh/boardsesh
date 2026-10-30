@@ -131,14 +131,15 @@ export function queueNavigation(
 
 /**
  * Why driving the wall ended (#7113). `stopped`: a press on the frosted wall
- * button (the link stays). `link_dropped`: this phone's link went. `connect_failed`
- * and `arming_timed_out`: the swipe never reached the wall. `session_changed`,
+ * button (the link stays). `link_dropped`: this phone's link went. `connect_failed`,
+ * `commit_failed` and `arming_timed_out`: the swipe never reached the wall. `session_changed`,
  * `board_changed`, `signed_out`: the drive's session, board or account went away.
  */
 export type DriveModeEndReason =
   | 'stopped'
   | 'link_dropped'
   | 'connect_failed'
+  | 'commit_failed'
   | 'arming_timed_out'
   | 'session_changed'
   | 'board_changed'

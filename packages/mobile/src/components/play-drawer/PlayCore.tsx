@@ -172,7 +172,7 @@ import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
 import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
-import { startDrive, useDriveGoesLive } from './drive-runner';
+import { startDrive } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
@@ -1780,8 +1780,8 @@ export function PlayCore({
   // without the busy-wall question, since the climber who drives never sees
   // it), the board connects when it isn't linked, and a reassert lights it,
   // which also clears a Turn off all lights and the #4979 hold. The drive arms
-  // first and goes live once this phone's link lights the climb (the effect
-  // below); a connect that fails ends it.
+  // first and goes live once this phone's link lights the climb
+  // (`DriveModeWatcher`, at the app root); a connect that fails ends it.
   //
   // A crewmate's board can't be taken by a connect: Aurora and MoonBoard boxes
   // stop advertising once linked. That needs their phone to let go first, so
@@ -1813,8 +1813,6 @@ export function PlayCore({
     bluetoothConnected,
     connectLightbulb,
   ]);
-  // Arming goes live once the climb on screen is lit on this phone's link.
-  useDriveGoesLive(driveModePhase, wallControl.state === 'lit' && wallControl.holder === 'self');
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
   // then the move to that board, which connects there and lights it.
@@ -1847,8 +1845,8 @@ export function PlayCore({
     onKeep: handleBackToLive,
     onPut: handleLightThisClimb,
   });
-  // A crewmate put a climb up while this phone drives the wall (#7113): "Sam
-  // put up Crimp Ladder" for 4 s where "Only you see this" sits, on that climb.
+  // A crewmate put a climb up while this phone drives the wall (#7113): "Your
+  // crew put up Crimp Ladder" for 4 s where "Only you see this" sits, on that climb.
   const crewPutUp = useCrewPutUp();
   const crewPutUpCaption =
     crewPutUp && displayedQueueItemUuid === crewPutUp.queueItemUuid ? formatCrewPutUp(crewPutUp, t) : null;

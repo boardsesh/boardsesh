@@ -5,14 +5,9 @@ import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type QueueItemRead = {
-  uuid: string;
-  climb: { uuid: string; name: string };
-  addedByUser?: { id: string; username: string };
-};
+type QueueItemRead = { uuid: string; climb: { uuid: string; name: string } };
 type Reads = {
   currentClimbQueueItem: QueueItemRead | null;
-  wallClimbUuid: string | null;
   isConnected: boolean;
   virtualWallHeld: boolean;
   loading: boolean;
@@ -24,7 +19,6 @@ type Reads = {
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
     currentClimbQueueItem: null,
-    wallClimbUuid: null,
     isConnected: false,
     virtualWallHeld: false,
     loading: false,
@@ -41,16 +35,21 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
     loading: reads.current.loading,
   }),
 }));
+// The queue is read narrowly: the current climb's uuid as the trigger, the
+// snapshot for the item. A stable snapshot reader, like the provider's.
+const getQueueSnapshot = () => ({ queue: [], currentClimbQueueItem: reads.current.currentClimbQueueItem });
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: reads.current.sessionId }),
-  useQueueData: () => ({ currentClimbQueueItem: reads.current.currentClimbQueueItem }),
+  useActiveClimbUuid: () => reads.current.currentClimbQueueItem?.climb.uuid ?? null,
+  useQueueActions: () => ({ getQueueSnapshot }),
 }));
-vi.mock('../use-wall-climb', () => ({
-  useWallClimb: () => ({ uuid: reads.current.wallClimbUuid, name: null, sentAt: null }),
+const effects = vi.hoisted(() => ({
+  hapticLight: vi.fn(),
+  hapticSuccess: vi.fn(),
+  announceQueued: vi.fn(),
+  track: vi.fn(),
 }));
-vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
-const effects = vi.hoisted(() => ({ hapticLight: vi.fn(), announceQueued: vi.fn(), track: vi.fn() }));
-vi.mock('../../../lib/haptics', () => ({ hapticLight: effects.hapticLight }));
+vi.mock('../../../lib/haptics', () => ({ hapticLight: effects.hapticLight, hapticSuccess: effects.hapticSuccess }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: effects.announceQueued }));
 vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
 vi.mock('react-i18next', () => ({
@@ -68,12 +67,14 @@ vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: reads.current.isAuthenticated }),
 }));
 
+import { emitWallConfirm } from '@boardsesh/play-view';
 import { DriveModeWatcher } from '../DriveModeWatcher';
 import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
   enterDriveMode,
+  exitDriveMode,
   getDriveMode,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
@@ -84,7 +85,6 @@ import {
 
 const DEFAULT_READS: Reads = {
   currentClimbQueueItem: null,
-  wallClimbUuid: null,
   isConnected: true,
   virtualWallHeld: false,
   loading: false,
@@ -223,8 +223,8 @@ describe('DriveModeWatcher', () => {
   });
 });
 
-function queueItem(uuid: string, name: string, addedBy?: { id: string; username: string }): QueueItemRead {
-  return { uuid, climb: { uuid: `climb-${uuid}`, name }, ...(addedBy ? { addedByUser: addedBy } : {}) };
+function queueItem(uuid: string, name: string): QueueItemRead {
+  return { uuid, climb: { uuid: `climb-${uuid}`, name } };
 }
 
 function crewMove(uuid: string) {
@@ -237,19 +237,17 @@ function crewMove(uuid: string) {
 
 // #7113: a crewmate puts a climb up while this phone drives the wall.
 describe('DriveModeWatcher: a crewmate puts a climb up', () => {
-  it('says who for 4 s, with a light buzz and one announcement, and keeps driving', () => {
+  it('says so for 4 s, naming nobody, with a light buzz and one announcement, and keeps driving', () => {
     vi.useFakeTimers();
     reads.current = { ...reads.current, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     const watcher = mount();
     driveLive();
     crewMove('q-2');
-    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder', { id: 'sam', username: 'Sam' }) });
-    expect(getCrewPutUp()).toEqual({ holderName: 'Sam', climbName: 'Crimp Ladder', queueItemUuid: 'q-2' });
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    expect(getCrewPutUp()).toEqual({ climbName: 'Crimp Ladder', queueItemUuid: 'q-2' });
     expect(effects.hapticLight).toHaveBeenCalledOnce();
     expect(effects.announceQueued).toHaveBeenCalledOnce();
-    expect(effects.announceQueued).toHaveBeenCalledWith(
-      'playView.wallControl.crewPutUp {"name":"Sam","climb":"Crimp Ladder"}',
-    );
+    expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.crewPutUp {"climb":"Crimp Ladder"}');
     expect(getDriveMode()?.phase).toBe('live');
     // A re-render with the same climb says nothing more.
     watcher.change({});
@@ -260,13 +258,20 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
     expect(getCrewPutUp()).toBeNull();
   });
 
-  it('says "Someone" when the climb was queued by this climber', () => {
+  it('drops a crewmate’s move the driver’s own swipe overtook, and never says it later', () => {
+    reads.current = { ...reads.current, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     const watcher = mount();
     driveLive();
-    crewMove('q-3');
-    watcher.change({ currentClimbQueueItem: queueItem('q-3', 'Pinch', { id: 'me', username: 'Me' }) });
-    expect(getCrewPutUp()?.holderName).toBeNull();
-    expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.crewPutUpSomeone {"climb":"Pinch"}');
+    // One batch: the crewmate's move to X, then the driver's swipe to Z.
+    crewMove('q-x');
+    noteOwnMove('q-z');
+    watcher.change({ currentClimbQueueItem: queueItem('q-z', 'Swiped') });
+    expect(getCrewPutUp()).toBeNull();
+    // Prev back to X: the driver's own step, not the crewmate's.
+    noteOwnMove('q-x');
+    watcher.change({ currentClimbQueueItem: queueItem('q-x', 'Crew climb') });
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
   });
 
   it('says nothing for this phone’s own move, or when not driving', () => {
@@ -274,14 +279,14 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
     driveLive();
     noteOwnMove('q-own');
     crewMove('q-own');
-    watcher.change({ currentClimbQueueItem: queueItem('q-own', 'Own', { id: 'sam', username: 'Sam' }) });
+    watcher.change({ currentClimbQueueItem: queueItem('q-own', 'Own') });
     expect(getCrewPutUp()).toBeNull();
 
     act(() => {
       stopDrivingForLink();
     });
     crewMove('q-4');
-    watcher.change({ currentClimbQueueItem: queueItem('q-4', 'Other', { id: 'sam', username: 'Sam' }) });
+    watcher.change({ currentClimbQueueItem: queueItem('q-4', 'Other') });
     expect(getCrewPutUp()).toBeNull();
     expect(effects.hapticLight).not.toHaveBeenCalled();
   });
@@ -290,25 +295,60 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
     const watcher = mount();
     driveLive();
     crewMove('q-5');
-    watcher.change({ currentClimbQueueItem: queueItem('q-5', 'Slab', { id: 'sam', username: 'Sam' }) });
+    watcher.change({ currentClimbQueueItem: queueItem('q-5', 'Slab') });
     expect(getCrewPutUp()).not.toBeNull();
     watcher.change({ isConnected: false });
     expect(getCrewPutUp()).toBeNull();
   });
 });
 
-describe('DriveModeWatcher: climbs lit', () => {
-  it("counts each new climb on the wall while live, the swipe's own once", () => {
-    reads.current = { ...reads.current, wallClimbUuid: 'climb-a' };
-    const watcher = mount();
-    driveLive();
-    watcher.change({});
-    expect(getDriveMode()?.climbsLit).toBe(1);
-    watcher.change({ wallClimbUuid: 'climb-b' });
-    watcher.change({ wallClimbUuid: 'climb-c' });
-    // The same climb again is not a new one.
-    watcher.change({ wallClimbUuid: 'climb-c' });
+// Going live and counting what lit, from this phone's own link's confirms.
+describe('DriveModeWatcher: the wall confirms', () => {
+  it('goes live at the first confirm on this phone’s link, with the player closed', () => {
+    mount();
+    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    expect(getDriveMode()?.phase).toBe('arming');
+    act(() => emitWallConfirm('climb-a'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
+    expect(effects.hapticSuccess).toHaveBeenCalledOnce();
+  });
+
+  it('never goes live on a confirm without this phone’s link', () => {
+    reads.current = { ...reads.current, isConnected: false };
+    mount();
+    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => emitWallConfirm('climb-a'));
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', climbsLit: 0 });
+  });
+
+  it('counts each new climb lit once, the swipe’s own first; re-sends and echoes are not new', () => {
+    mount();
+    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => {
+      emitWallConfirm('climb-a');
+      // The crew feed's echo of the same write.
+      emitWallConfirm('climb-a');
+      emitWallConfirm('climb-b');
+      emitWallConfirm('climb-c');
+      emitWallConfirm('climb-c');
+    });
     expect(getDriveMode()?.climbsLit).toBe(3);
+    // Prev back to a climb lit before is lit again.
+    act(() => emitWallConfirm('climb-b'));
+    expect(getDriveMode()?.climbsLit).toBe(4);
+  });
+
+  it('counts nothing with nobody driving, and starts over for a new drive', () => {
+    mount();
+    act(() => emitWallConfirm('climb-a'));
+    act(() => {
+      enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 1 });
+      emitWallConfirm('climb-a');
+      exitDriveMode('link_dropped');
+      enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 2 });
+      emitWallConfirm('climb-a');
+    });
+    expect(getDriveMode()?.climbsLit).toBe(1);
   });
 
   it('learns the bound board once live, so a later change of board ends the drive', () => {

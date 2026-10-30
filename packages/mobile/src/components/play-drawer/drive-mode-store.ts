@@ -41,6 +41,8 @@ export type DriveModeExitReason =
   | 'link_dropped'
   /** The connect the swipe started failed. */
   | 'connect_failed'
+  /** The swipe's climb never went up: there was nothing to commit. */
+  | 'commit_failed'
   /** Arming never reached the wall: nothing connected or lit in time. */
   | 'arming_timed_out'
   /** The climber joined, left or switched party sessions. */
@@ -141,14 +143,14 @@ export function enterDriveMode({
 
 /**
  * The swipe's climb is lit on this phone's link: every change of climb lights
- * from now on. That first climb counts as lit.
+ * from now on. The light that made it live is counted by `noteDriveClimbLit`,
+ * like every other.
  */
 export function markDriveLive({ boardId }: { boardId?: number | null } = {}): void {
   if (!driveMode) return;
   const nextBoardId = boardId ?? driveMode.boardId;
   if (driveMode.phase === 'live' && nextBoardId === driveMode.boardId) return;
-  const climbsLit = driveMode.phase === 'arming' ? driveMode.climbsLit + 1 : driveMode.climbsLit;
-  driveMode = { ...driveMode, phase: 'live', boardId: nextBoardId, climbsLit };
+  driveMode = { ...driveMode, phase: 'live', boardId: nextBoardId };
   emit();
 }
 

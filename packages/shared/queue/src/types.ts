@@ -12,7 +12,7 @@
  * QueueActionsType stay in the web app.
  */
 
-import type { CurrentClimbPlacement } from './now-slot';
+import type { CurrentClimbPlacement, HistoryCopyRule } from './now-slot';
 
 export type QueueItemUser = {
   id: string;
@@ -191,8 +191,11 @@ export type PlaylistTrackPage = {
  *   holder. A real choice, kept apart so the crew browse rollout (#4281) can
  *   count it; the event's `participantCount` tells a crew's commits from solo
  *   ones.
+ * - `next` / `previous`: a step along a list made through `setCurrentClimb`
+ *   rather than `nextClimb` / `previousClimb` (driving the wall from a preview
+ *   that walks a list, #7113). A step, not a pick, as from `nextClimb`.
  */
-export type SetCurrentClimbTrigger = 'climb_saved' | 'put_on_wall';
+export type SetCurrentClimbTrigger = 'climb_saved' | 'put_on_wall' | 'next' | 'previous';
 
 export type SetCurrentClimbOptions = {
   /**
@@ -217,6 +220,13 @@ export type SetCurrentClimbOptions = {
    * the climbs after it are Up next again, in order. Ignored in legacy mode.
    */
   placement?: CurrentClimbPlacement;
+  /**
+   * F3 now-slot mode: a climb only History holds. `reuse` (the default, a
+   * pick) moves that History entry into Now; `fresh` puts up a new copy and
+   * leaves History as it was, the way `nextClimb` places a list step
+   * (docs/current-climb-outside-queue.md). Ignored in legacy mode.
+   */
+  historyCopy?: HistoryCopyRule;
 };
 
 /**

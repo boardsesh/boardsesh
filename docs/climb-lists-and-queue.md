@@ -151,14 +151,20 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   outcome that happened.
 - **A crewmate puts a climb up.** This phone's auto-sender lights it like any current climb,
   the player follows (it shows the current climb), and driving goes on. The top bar's second
-  line says "Sam put up Crimp Ladder" for 4 s ("Someone put up …" when the queue can't say
-  who), with a light buzz and one screen-reader announcement. The driver never sees the
-  busy-wall question; crewmates still do.
+  line says "Your crew put up Crimp Ladder" for 4 s, with a light buzz and one screen-reader
+  announcement. It names nobody: the queue item says who added the climb, not who put it up,
+  and the event doesn't say who moved the wall. A crewmate's move that the driver's own swipe
+  overtakes is never said. The driver never sees the busy-wall question; crewmates still do.
+- **Going live and counting.** The drive goes live at the first wall confirm on this phone's
+  link (the auto-sender's write, read off the wall-confirm bus at the app root, so closing the
+  player mid-connect still goes live). `climbsLit` counts each new climb confirmed while
+  driving, the swipe's own first. A step along a list is placed as Next places one: a fresh
+  copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
 - **Ending it.** A press on the frosted button stops driving and keeps the link; solo, swipes
   and taps then stay previews until the link drops (the settings never flip). It also ends
-  when the link drops, the swipe's connect fails or never comes (30 s), the session or the
+  when the link drops, the swipe's climb can't go up, its connect fails or never comes (30 s), the session or the
   board changes, or the climber signs out (`DriveModeWatcher`). Each end fires `Drive Mode
   Ended {reason, durationSec, climbsLit, inSession}` once.
 - **Not yet:** a crewmate's board. Taking it needs their phone to let go first (#7113 PR 4),

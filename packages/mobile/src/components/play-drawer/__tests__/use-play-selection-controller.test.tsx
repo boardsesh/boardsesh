@@ -641,6 +641,9 @@ describe('driving the wall', () => {
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'next' }) }),
       {
         playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', activatedClimbUuid: 'next' }),
+        // A step, placed as Next places one: fresh, never pulled out of History.
+        trigger: 'next',
+        historyCopy: 'fresh',
       },
     );
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);

@@ -157,13 +157,16 @@ function useSwipeSelection({
         return;
       }
       // Driving the wall from a preview that walks a list (#7113): the next
-      // climb ON that list goes up, with the list as its track, the way Put on
-      // the wall commits a preview. The queue's own next would leave the list.
+      // climb ON that list goes up, with the list as its track. The queue's own
+      // next would leave the list. It is a step, placed as `nextClimb` places
+      // one: a fresh copy at the Now slot, never a climb pulled out of History.
       if (drawerPreviewItem && drawerPreviewSuggestionSource) {
         if (!targetItem) return;
         const { item } = resolveCommittableQueueItem(targetItem);
         setCurrentClimb(item, {
           playlistSuggestionSource: reanchorPlaylistSuggestionSource(drawerPreviewSuggestionSource, item.climb?.uuid),
+          trigger: direction,
+          historyCopy: 'fresh',
         });
         setSharedBrowseLatched(false);
         setDrawerPreviewItem(null);

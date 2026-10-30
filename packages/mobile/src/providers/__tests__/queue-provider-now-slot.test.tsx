@@ -468,6 +468,27 @@ describe('QueueProvider now-slot mode (F3)', () => {
       });
     });
 
+    // #7113: driving the wall from a preview that walks a list steps through
+    // setCurrentClimb, placed as nextClimb places a step.
+    it('a list step through setCurrentClimb with historyCopy fresh leaves a History copy where it was', async () => {
+      // A (climb x) was climbed earlier, with Z after it; B is on the wall.
+      const A = makeQueueItem('a', 'climb-x');
+      const Z = makeQueueItem('z', 'climb-z');
+      const latest = await renderSolo([A, Z, B], B);
+      act(() =>
+        latest().setCurrentClimb(makeQueueItem('x-step', 'climb-x'), { trigger: 'next', historyCopy: 'fresh' }),
+      );
+      const onX = latest().state.currentClimbQueueItem;
+      expect(onX?.climb.uuid).toBe('climb-x');
+      expect(onX?.uuid).not.toBe('a');
+      expect(uuidsOf(latest()).slice(0, 3)).toEqual(['a', 'z', 'b']);
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({ trigger: 'next', placement: 'NOW' });
+      // A pick (the default) still moves the History entry into Now.
+      const picked = await renderSolo([A, Z, B], B);
+      act(() => picked().setCurrentClimb(makeQueueItem('x-pick', 'climb-x')));
+      expect(picked().state.currentClimbQueueItem?.uuid).toBe('a');
+    });
+
     it('a fresh track peek goes on the wall at the Now slot, and moving on files it under History', async () => {
       // Swipe-shaped opens of climbs nobody queued: each one is History once the
       // next one goes on the wall, and Up next never changes.
