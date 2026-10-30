@@ -1,4 +1,3 @@
-import { boardHandoffMutations } from './handoff';
 import { boardPresenceMutations } from './mutations';
 import { boardPresenceQueries } from './queries';
 import { boardPresenceSubscriptions } from './subscription';
@@ -17,7 +16,7 @@ const boardPresenceEventResolver = {
 
 export const boardPresenceResolvers = {
   Query: { ...boardPresenceQueries, ...boardQueuePreviewQueries },
-  Mutation: { ...boardPresenceMutations, ...boardHandoffMutations },
+  Mutation: boardPresenceMutations,
   Subscription: { ...boardPresenceSubscriptions, ...boardQueuePreviewSubscriptions },
   BoardPresenceEvent: boardPresenceEventResolver,
 };
