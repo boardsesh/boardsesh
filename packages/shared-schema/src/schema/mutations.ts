@@ -532,6 +532,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     updateBoard(input: UpdateBoardInput!): UserBoard!
 
+    "Edit active board metadata as a global admin; privacy and credentials remain owner-only."
+    adminUpdateBoard(input: UpdateBoardInput!): AdminBoard!
+
     """
     Soft-delete a board.
     """

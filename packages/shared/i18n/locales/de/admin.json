@@ -26,7 +26,8 @@
     "feedback": "Bug-Reports",
     "gymDuplicates": "Doppelte Hallen",
     "locationSync": "Standort-Sync-Sperren",
-    "sprayWalls": "Trainingsdaten der Spraywalls"
+    "sprayWalls": "Trainingsdaten der Spraywalls",
+    "boards": "Registrierte Boards"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
@@ -511,5 +512,34 @@
     },
     "backToAdmin": "Zurück zum Admin",
     "noAccess": "Dein Admin-Zugang gilt nicht für Spraywalls. Diese Seite braucht Admin-Zugang für Spraywalls oder die ganze Seite."
+  },
+  "boards": {
+    "title": "Registrierte Boards",
+    "description": "Finde und bearbeite registrierte Boards, auch private Boards und Boards ohne verknüpfte Halle.",
+    "backToAdmin": "Zurück zur Verwaltung",
+    "search": "Boards suchen",
+    "searchPlaceholder": "Boardname, UUID, Slug oder Halle",
+    "boardType": "Boardtyp",
+    "allTypes": "Alle Typen",
+    "searchAction": "Suchen",
+    "loading": "Boards werden geladen",
+    "editLoadError": "Dieses Board konnte nicht zum Bearbeiten geladen werden.",
+    "retry": "Erneut versuchen",
+    "backToList": "Alle Boards",
+    "loadError": "Registrierte Boards konnten nicht geladen werden.",
+    "empty": "Keine Boards für diese Suche gefunden.",
+    "owner": "Eigentümer*in: {{name}}",
+    "systemOwner": "Boardsesh",
+    "noGym": "Keine Halle verknüpft",
+    "editNamed": "{{name}} bearbeiten",
+    "results_one": "{{count}} Board",
+    "results_other": "{{count}} Boards",
+    "previous": "Zurück",
+    "next": "Weiter",
+    "visibility": {
+      "public": "Öffentlich",
+      "unlisted": "Nicht gelistet",
+      "private": "Privat"
+    }
   }
 }

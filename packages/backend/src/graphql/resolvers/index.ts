@@ -1,3 +1,4 @@
+import { adminBoardQueries, adminBoardMutations } from './social/admin-boards';
 import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
 import {
   privacyQueries,
@@ -140,6 +141,7 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...adminBoardQueries,
     ...boardDiscoveryQueries,
     ...communityStatsQueries,
     ...socialGymQueries,
@@ -199,6 +201,7 @@ export const resolvers = {
     ...socialCommentMutations,
     ...socialVoteMutations,
     ...socialBoardMutations,
+    ...adminBoardMutations,
     ...socialGymMutations,
     ...gymActivityStatsMutations,
     ...socialGymStrayBoardMutations,

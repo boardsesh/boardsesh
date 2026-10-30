@@ -347,7 +347,9 @@
         "empty": "Nothing loose right now. Every board near your gym is already on your listing.",
         "loadError": "Couldn't check for stray boards.",
         "retry": "Try again"
-      }
+      },
+      "back": "All boards",
+      "editLoadError": "Couldn't load this board for editing."
     },
     "presets": {
       "single": "Single wall",
