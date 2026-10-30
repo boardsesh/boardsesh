@@ -110,7 +110,9 @@ final class BoardBleCentralCreationTests: XCTestCase {
 
         XCTAssertEqual(centralCreations, 0)
         XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
+        // An unbound board is refused before the radio availability check.
+        XCTAssertEqual(failureDescription(results.first), BoardBleError.deviceNotFound.localizedDescription)
+        XCTAssertTrue(scanCalls.isEmpty)
     }
 
     func testConnectWithoutAScanFailsWithoutAsking() {
@@ -120,7 +122,10 @@ final class BoardBleCentralCreationTests: XCTestCase {
         }
 
         XCTAssertEqual(centralCreations, 0)
-        XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
+        // A tokenless connect is refused before touching the central's state.
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(failureDescription(results.first), BoardBleError.superseded.localizedDescription)
+        XCTAssertTrue(scanCalls.isEmpty)
     }
 
     // MARK: - Paths that ask

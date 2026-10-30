@@ -246,6 +246,7 @@ public class BoardBleModule: Module {
             return [
                 "deviceId": device.deviceId,
                 "name": device.name ?? "",
+                "configKey": device.configKey,
                 // Write diagnostics (additive; older JS bundles ignore them).
                 "characteristicProperties": diagnostics.characteristicProperties,
                 "supportsWriteWithoutResponse": diagnostics.supportsWriteWithoutResponse,
@@ -261,18 +262,32 @@ public class BoardBleModule: Module {
 
         AsyncFunction("configureBoard") { (options: ConfigureBoardOptions) -> Void in
             BoardBleManager.shared.configure(
-                BoardBleConfiguration(
-                    boardName: options.boardName,
-                    layoutId: options.layoutId,
-                    sizeId: options.sizeId,
-                    apiLevel: options.apiLevel,
-                    deviceName: options.deviceName,
-                    colorOverrides: options.colorOverrides ?? [:],
-                    numRows: options.numRows,
-                    lightAdjacentHolds: options.lightAdjacentHolds
-                ),
-                appActive: options.appActive
+                options.configuration,
+                appActive: options.appActive,
+                configKey: options.configKey,
+                deviceId: options.deviceId
             )
+        }
+
+        AsyncFunction("prepareBoardConnection") { (options: ConfigureBoardOptions, promise: Promise) in
+            BoardBleManager.shared.prepareBoardConnection(
+                options.configuration,
+                configKey: options.configKey ?? ""
+            ) { result in
+                switch result {
+                case .success(let token): promise.resolve(token)
+                case .failure(let error): promise.reject("BLE_PREPARE_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("connectPreparedBoard") { (deviceId: String, preparationToken: String, promise: Promise) in
+            BoardBleManager.shared.connectPreparedBoard(deviceId: deviceId, preparationToken: preparationToken) { result in
+                switch result {
+                case .success: promise.resolve(nil)
+                case .failure(let error): promise.reject("BLE_CONNECT_FAILED", error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -315,6 +330,8 @@ public class BoardBleModule: Module {
 /// Argument record for `configureBoard`. Keys mirror the Capacitor
 /// `BoardBlePlugin.configureBoard` shape one-for-one.
 struct ConfigureBoardOptions: Record {
+    @Field var configKey: String? = nil
+    @Field var deviceId: String? = nil
     @Field var boardName: String = ""
     @Field var layoutId: Int = 0
     @Field var sizeId: Int = 0
@@ -329,4 +346,14 @@ struct ConfigureBoardOptions: Record {
     @Field var appActive: Bool = true
     // MoonBoard "V2" additional-LED feature — see BoardBleConfiguration.
     @Field var lightAdjacentHolds: Bool?
+}
+
+private extension ConfigureBoardOptions {
+    var configuration: BoardBleConfiguration {
+        BoardBleConfiguration(
+            boardName: boardName, layoutId: layoutId, sizeId: sizeId,
+            apiLevel: apiLevel, deviceName: deviceName, colorOverrides: colorOverrides ?? [:],
+            numRows: numRows, lightAdjacentHolds: lightAdjacentHolds
+        )
+    }
 }

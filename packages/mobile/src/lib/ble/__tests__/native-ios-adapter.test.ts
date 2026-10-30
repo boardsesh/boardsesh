@@ -63,7 +63,7 @@ vi.mock('../../../../modules/live-activity/src/index', () => ({
   boardBleNative: harness.nativeMock,
 }));
 
-import { NativeIosBleAdapter } from '../native-ios-adapter';
+import { NativeIosBleAdapter, nativeBleSupportsPreparedConnections } from '../native-ios-adapter';
 import { SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import type { BleWriteDiagnostics, DevicePickerFn } from '../types';
 import { recordingTargetPicker } from './recording-target-picker';
@@ -83,7 +83,204 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (nativeMock as Record<string, unknown>).prepareBoardConnection;
+  delete (nativeMock as Record<string, unknown>).connectPreparedBoard;
   vi.useRealTimers();
+});
+
+const boardConfiguration = { boardName: 'kilter', layoutId: 1, sizeId: 1, configKey: 'kilter::1::1::wall-b' };
+
+describe('NativeIosBleAdapter prepared connections (#7122)', () => {
+  function installPreparedConnectionSurface() {
+    const prepareBoardConnection = vi.fn().mockResolvedValue('attempt-a');
+    const connectPreparedBoard = vi.fn().mockResolvedValue(undefined);
+    Object.assign(nativeMock, { prepareBoardConnection, connectPreparedBoard });
+    return { prepareBoardConnection, connectPreparedBoard };
+  }
+
+  it('requires both preparation and token-bound connect before using the new native surface', () => {
+    expect(nativeBleSupportsPreparedConnections()).toBe(false);
+    installPreparedConnectionSurface();
+    expect(nativeBleSupportsPreparedConnections()).toBe(true);
+    delete (nativeMock as Record<string, unknown>).connectPreparedBoard;
+    expect(nativeBleSupportsPreparedConnections()).toBe(false);
+    (nativeMock as Record<string, unknown>).connectPreparedBoard = vi.fn();
+    delete (nativeMock as Record<string, unknown>).prepareBoardConnection;
+    expect(nativeBleSupportsPreparedConnections()).toBe(false);
+  });
+
+  it('refuses a connect without preparation before opening the picker or scan', async () => {
+    const { connectPreparedBoard } = installPreparedConnectionSurface();
+    const picker = vi.fn(pickerThatNeverPicks);
+    const adapter = new NativeIosBleAdapter(picker);
+
+    await expect(adapter.requestAndConnect()).rejects.toThrow('Board connection is not prepared');
+
+    expect(picker).not.toHaveBeenCalled();
+    expect(nativeMock.startScan).not.toHaveBeenCalled();
+    expect(connectPreparedBoard).not.toHaveBeenCalled();
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+  });
+
+  it('passes the staged attempt token to native after the device is selected', async () => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('wall-b-device'));
+
+    await adapter.prepareBoardConnection(boardConfiguration);
+    await expect(adapter.requestAndConnect()).resolves.toMatchObject({ deviceId: 'wall-b-device' });
+
+    expect(prepareBoardConnection).toHaveBeenCalledWith(boardConfiguration);
+    expect(prepareBoardConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      nativeMock.startScan.mock.invocationCallOrder[0],
+    );
+    expect(connectPreparedBoard).toHaveBeenCalledWith('wall-b-device', 'attempt-a');
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+    expect(nativeMock.configureBoard).not.toHaveBeenCalled();
+    expect(nativeMock.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('does not connect a late picker after this adapter prepares another board', async () => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    let pickDevice: (deviceId: string) => void = () => {};
+    const adapter = new NativeIosBleAdapter(() => new Promise<string>((resolve) => (pickDevice = resolve)));
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const oldConnect = adapter.requestAndConnect().catch((error: unknown) => error);
+    await Promise.resolve();
+    prepareBoardConnection.mockResolvedValueOnce('attempt-b');
+    await adapter.prepareBoardConnection({ ...boardConfiguration, configKey: 'kilter::1::1::wall-c' });
+    pickDevice('old-wall-device');
+
+    await expect(oldConnect).resolves.toMatchObject({ message: 'Board connection preparation superseded' });
+    expect(connectPreparedBoard).not.toHaveBeenCalled();
+    await expect(adapter.write(new Uint8Array([1]))).rejects.toThrow('Not connected');
+  });
+
+  it('keeps a picker tied to its token when another adapter prepares the native singleton', async () => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    let pickDevice: (deviceId: string) => void = () => {};
+    const adapter = new NativeIosBleAdapter(() => new Promise<string>((resolve) => (pickDevice = resolve)));
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const oldConnect = adapter.requestAndConnect().catch((error: unknown) => error);
+    await Promise.resolve();
+    prepareBoardConnection.mockResolvedValueOnce('attempt-b');
+    const newerAdapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+    await newerAdapter.prepareBoardConnection({ ...boardConfiguration, configKey: 'kilter::1::1::wall-c' });
+    connectPreparedBoard.mockRejectedValueOnce(new Error('Connection attempt superseded'));
+    pickDevice('old-wall-device');
+
+    await expect(oldConnect).resolves.toMatchObject({ message: 'Connection attempt superseded' });
+    expect(connectPreparedBoard).toHaveBeenCalledWith('old-wall-device', 'attempt-a');
+    await expect(adapter.write(new Uint8Array([1]))).rejects.toThrow('Not connected');
+  });
+
+  it('does not connect a late picker after its adapter was disconnected', async () => {
+    const { connectPreparedBoard } = installPreparedConnectionSurface();
+    let pickDevice: (deviceId: string) => void = () => {};
+    const adapter = new NativeIosBleAdapter(() => new Promise<string>((resolve) => (pickDevice = resolve)));
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const connecting = adapter.requestAndConnect().catch((error: unknown) => error);
+    await Promise.resolve();
+    await adapter.disconnect();
+    pickDevice('old-wall-device');
+
+    await expect(connecting).resolves.toMatchObject({ message: 'Board connection preparation superseded' });
+    expect(connectPreparedBoard).not.toHaveBeenCalled();
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+  });
+
+  it('does not track a connection superseded while its native promise was settling', async () => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    let finishConnect: () => void = () => {};
+    connectPreparedBoard.mockImplementationOnce(() => new Promise<void>((resolve) => (finishConnect = resolve)));
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('old-wall-device'));
+    await adapter.prepareBoardConnection(boardConfiguration);
+    const oldConnect = adapter.requestAndConnect().catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    prepareBoardConnection.mockResolvedValueOnce('attempt-b');
+    await adapter.prepareBoardConnection({ ...boardConfiguration, configKey: 'kilter::1::1::wall-c' });
+    finishConnect();
+
+    await expect(oldConnect).resolves.toMatchObject({ message: 'Board connection preparation superseded' });
+    await expect(adapter.write(new Uint8Array([1]))).rejects.toThrow('Not connected');
+  });
+
+  it.each(['Device selection cancelled', 'scan failed'])('leaves preparation unbound after %s', async (message) => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error(message)));
+    await adapter.prepareBoardConnection(boardConfiguration);
+
+    await expect(adapter.requestAndConnect()).rejects.toThrow(message);
+
+    expect(prepareBoardConnection).toHaveBeenCalledOnce();
+    expect(connectPreparedBoard).not.toHaveBeenCalled();
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+    expect(nativeMock.stopScan).toHaveBeenCalled();
+  });
+
+  it('blocks scanning when native preparation fails', async () => {
+    const { prepareBoardConnection, connectPreparedBoard } = installPreparedConnectionSurface();
+    prepareBoardConnection.mockRejectedValueOnce(new Error('Cannot invalidate old pairing'));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.prepareBoardConnection(boardConfiguration)).rejects.toThrow('Cannot invalidate old pairing');
+    await expect(adapter.requestAndConnect()).rejects.toThrow('Board connection is not prepared');
+
+    expect(nativeMock.startScan).not.toHaveBeenCalled();
+    expect(connectPreparedBoard).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty native token instead of falling back to an unbound connect', async () => {
+    const { prepareBoardConnection } = installPreparedConnectionSurface();
+    prepareBoardConnection.mockResolvedValueOnce('');
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.prepareBoardConnection(boardConfiguration)).rejects.toThrow('returned no token');
+    await expect(adapter.requestAndConnect()).rejects.toThrow('Board connection is not prepared');
+    expect(nativeMock.startScan).not.toHaveBeenCalled();
+  });
+});
+
+describe('NativeIosBleAdapter preparation on older binaries (#7122)', () => {
+  it('disconnects the native singleton before staging even with no JS-owned device', async () => {
+    const adapter = new NativeIosBleAdapter(() => Promise.resolve('wall-b-device'));
+
+    await adapter.prepareBoardConnection(boardConfiguration);
+    await adapter.requestAndConnect();
+
+    expect(nativeMock.disconnect).toHaveBeenCalledOnce();
+    expect(nativeMock.configureBoard).toHaveBeenCalledWith(boardConfiguration);
+    expect(nativeMock.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      nativeMock.configureBoard.mock.invocationCallOrder[0],
+    );
+    expect(nativeMock.configureBoard.mock.invocationCallOrder[0]).toBeLessThan(
+      nativeMock.startScan.mock.invocationCallOrder[0],
+    );
+    expect(nativeMock.connect).toHaveBeenCalledWith('wall-b-device');
+  });
+
+  it('waits for native disconnect before overwriting the old configuration', async () => {
+    let finishDisconnect: () => void = () => {};
+    nativeMock.disconnect.mockImplementationOnce(() => new Promise<void>((resolve) => (finishDisconnect = resolve)));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+    const preparing = adapter.prepareBoardConnection(boardConfiguration);
+
+    expect(nativeMock.configureBoard).not.toHaveBeenCalled();
+    await expect(adapter.requestAndConnect()).rejects.toThrow('Board connection is not prepared');
+    finishDisconnect();
+    await preparing;
+    expect(nativeMock.configureBoard).toHaveBeenCalledWith(boardConfiguration);
+  });
+
+  it.each(['disconnect', 'configureBoard'] as const)('blocks scanning when legacy %s fails', async (method) => {
+    nativeMock[method].mockRejectedValueOnce(new Error('Preparation failed'));
+    const adapter = new NativeIosBleAdapter(pickerThatNeverPicks);
+
+    await expect(adapter.prepareBoardConnection(boardConfiguration)).rejects.toThrow('Preparation failed');
+    await expect(adapter.requestAndConnect()).rejects.toThrow('Board connection is not prepared');
+
+    expect(nativeMock.startScan).not.toHaveBeenCalled();
+    expect(nativeMock.connect).not.toHaveBeenCalled();
+  });
 });
 
 describe('NativeIosBleAdapter scan timeout', () => {

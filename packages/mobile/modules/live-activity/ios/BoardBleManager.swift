@@ -213,6 +213,12 @@ private final class BoardBleDisplayWriteOutcome: @unchecked Sendable {
     }
 }
 
+private struct BoardBleAssociation: Codable {
+    var configuration: BoardBleConfiguration
+    let configKey: String
+    var boundPeripheralUuid: UUID?
+}
+
 final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     // Strict-concurrency audit: the manager is bleQueue-confined by design — all state
     // mutation happens on that serial queue — so this global is safe without claiming
@@ -229,6 +235,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let peripheralId: UUID
         let origin: BoardBleConnectOrigin
         let requestedAt: Date
+        let preparationToken: String?
         let completion: (Result<Void, Error>) -> Void
     }
 
@@ -481,6 +488,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // from there the reconnect's own connect timeout owns the deadline (#3181).
     private var writeStallRecoveryWatchdog: BleOneShotTimer?
     private var configuration: BoardBleConfiguration?
+    // Encoding and physical-device identity are one persisted value. A staged
+    // configuration has no device until its own explicit connect becomes ready.
+    private var association: BoardBleAssociation?
+    private let associationDefaults: UserDefaults?
+    private var preparationEpoch: UInt64 = 0
+    private var activePreparationToken: String?
+    private var connectingPreparation: (token: String, peripheralId: UUID, generation: UInt64)?
     private lazy var readyWaiters = WaiterPool(queue: bleQueue)
     private lazy var drainWaiters = WaiterPool(queue: bleQueue)
 
@@ -544,6 +558,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // `CBManager.authorization` is a class property: reading it creates no
         // manager and shows no alert, so it is safe here at launch.
         authorizationProvider = { CBManager.authorization }
+        associationDefaults = SharedConstants.sharedDefaults
         super.init()
         completeInit(
             createCentralManagerEagerly: Self.shouldCreateCentralManagerAtLaunch(
@@ -560,9 +575,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     init(
         timerScheduler: BleTimerScheduling,
         createCentralManagerEagerly: Bool,
-        authorizationProvider: @escaping () -> CBManagerAuthorization = { .allowedAlways }
+        authorizationProvider: @escaping () -> CBManagerAuthorization = { .allowedAlways },
+        associationDefaults: UserDefaults? = SharedConstants.sharedDefaults
     ) {
         self.authorizationProvider = authorizationProvider
+        self.associationDefaults = associationDefaults
         super.init()
         // Assign before the lazy `timerScheduler` default (or anything else)
         // can touch it — nothing in completeInit reads the scheduler.
@@ -611,7 +628,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func completeInit(createCentralManagerEagerly: Bool) {
         bleQueue.setSpecific(key: bleQueueKey, value: ())
         runOnBleQueueSync {
-            configuration = readConfiguration()
+            association = readAssociation()
+            configuration = association?.configuration ?? readLegacyConfiguration()
             if createCentralManagerEagerly {
                 centralManagerCreatingIfNeeded()
             }
@@ -734,12 +752,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// nil. Exposed to JS as `getConnectedDevice` so a foregrounding app can
     /// adopt a connection established while it was backgrounded (widget
     /// reconnect) even if the `connected` event was missed.
-    var connectedDeviceInfo: (deviceId: String, name: String?, diagnostics: BoardBleConnectionDiagnostics)? {
+    var connectedDeviceInfo: (deviceId: String, name: String?, configKey: String, diagnostics: BoardBleConnectionDiagnostics)? {
         runOnBleQueueSync {
-            guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic else { return nil }
+            guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic,
+                  hasBinding(for: peripheral.identifier), let association else { return nil }
             let deviceId = peripheral.identifier.uuidString
             let diagnostics = connectionDiagnosticsOnBleQueue(peripheral: peripheral, characteristic: characteristic)
-            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, diagnostics)
+            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, association.configKey, diagnostics)
         }
     }
 
@@ -813,11 +832,22 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// wall the connect gate just kept dark (#4499). It defaults to `true` at
     /// the bridge so an older JS bundle running against this binary keeps
     /// today's behaviour instead of silently losing mid-session re-lights.
-    func configure(_ configuration: BoardBleConfiguration, appActive: Bool = true) {
+    func configure(
+        _ configuration: BoardBleConfiguration,
+        appActive: Bool = true,
+        configKey: String? = nil,
+        deviceId: String? = nil
+    ) {
         runOnBleQueue { [weak self] in
             guard let self else { return }
+            guard let deviceId, let peripheralId = UUID(uuidString: deviceId),
+                  let configKey, self.association?.configKey == configKey,
+                  self.hasBinding(for: peripheralId),
+                  self.connectedPeripheral?.identifier == peripheralId,
+                  self.writeCharacteristic != nil else { return }
             self.configuration = configuration
-            self.writeConfiguration(configuration)
+            self.association?.configuration = configuration
+            guard self.persistAssociation() else { return }
             // Foreground: the user is looking at the app and just changed
             // something, so re-light regardless of how the link came to be.
             // Background: only re-light onto a connection the gate already
@@ -832,6 +862,49 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             self.implicitRelightAttempts += 1
             self.displaySharedCurrentItemOnBleQueue()
+        }
+    }
+
+    /// Invalidates the old pairing before the picker can be cancelled. The
+    /// token belongs to this exact staged configuration, never to a later one.
+    func prepareBoardConnection(
+        _ configuration: BoardBleConfiguration,
+        configKey: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        runOnBleQueue { [weak self] in
+            guard let self, !configKey.isEmpty else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+            self.disconnectOnBleQueue()
+            self.configuration = configuration
+            self.association = BoardBleAssociation(configuration: configuration, configKey: configKey)
+            guard self.persistAssociation() else {
+                self.association = nil
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+            let token = UUID().uuidString
+            self.activePreparationToken = token
+            completion(.success(token))
+        }
+    }
+
+    func connectPreparedBoard(
+        deviceId: String,
+        preparationToken: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let requestedAt = Date()
+        runOnBleQueue { [weak self] in
+            self?.connectOnBleQueue(
+                deviceId: deviceId,
+                origin: .userConnect,
+                requestedAt: requestedAt,
+                preparationToken: preparationToken,
+                completion: completion
+            )
         }
     }
 
@@ -947,6 +1020,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         drainTimeout: TimeInterval = 1.5,
         stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
+        let requestEpoch = runOnBleQueueSync { preparationEpoch }
         await waitUntilReady(timeout: readyTimeout)
         let ready = runOnBleQueueSync { isReadyForWrite }
         if !ready {
@@ -964,6 +1038,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             items: items,
             currentIndex: currentIndex,
             drainTimeout: drainTimeout,
+            expectedPreparationEpoch: requestEpoch,
             stillCurrent: stillCurrent
         )
     }
@@ -972,6 +1047,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         items: [SharedQueueItem],
         currentIndex: Int,
         drainTimeout: TimeInterval,
+        expectedPreparationEpoch: UInt64? = nil,
         stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         let displayOutcome = BoardBleDisplayWriteOutcome()
@@ -983,7 +1059,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 displayOutcome.settle(succeeded: false)
                 return
             }
-            guard stillCurrent() else {
+            guard stillCurrent(), expectedPreparationEpoch == nil || expectedPreparationEpoch == self.preparationEpoch else {
                 displayOutcome.settle(succeeded: false)
                 return
             }
@@ -1127,8 +1203,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         deviceId: String,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        preparationToken: String? = nil,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        // Check ownership before even the already-connected shortcut. A picker
+        // from preparation A cannot use preparation B's configuration.
+        if origin == .userConnect {
+            guard let preparationToken, preparationToken == activePreparationToken,
+                  association != nil else {
+                completion(.failure(BoardBleError.superseded))
+                return
+            }
+        } else {
+            guard let peripheralId = UUID(uuidString: deviceId), hasBinding(for: peripheralId) else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
+        }
         // Supersede any in-flight reconnect-by-last-known scan: this is a no-op
         // when called from the reconnect path itself (which already nils the scan
         // state first), but settles a stranded scan immediately when an unrelated
@@ -1183,6 +1274,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                     peripheralId: peripheralId,
                     origin: origin,
                     requestedAt: requestedAt,
+                    preparationToken: preparationToken,
                     completion: completion
                 )
                 return
@@ -1233,6 +1325,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let generation = connectionGeneration
         intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
+        if let preparationToken {
+            connectingPreparation = (preparationToken, peripheral.identifier, generation)
+        } else {
+            connectingPreparation = nil
+        }
         connectedPeripheral = peripheral
         writeCharacteristic = nil
         peripheralGenerations[peripheral.identifier] = generation
@@ -1258,6 +1355,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         peripheralId: UUID,
         origin: BoardBleConnectOrigin,
         requestedAt: Date,
+        preparationToken: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         failDeferredConnect(BoardBleError.superseded)
@@ -1280,6 +1378,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             peripheralId: peripheralId,
             origin: origin,
             requestedAt: requestedAt,
+            preparationToken: preparationToken,
             completion: completion
         )
     }
@@ -1295,8 +1394,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         requestedAt: Date,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        guard let uuid = association?.boundPeripheralUuid, hasBinding(for: uuid) else {
+            completion(.failure(BoardBleError.deviceNotFound))
+            return
+        }
         // Already connected — re-light the wall and report success.
         if let connectedPeripheral, writeCharacteristic != nil {
+            guard connectedPeripheral.identifier == uuid else {
+                completion(.failure(BoardBleError.notConnected))
+                return
+            }
             connectRequestOrigin = origin
             connectRequestedAt = requestedAt
             completion(.success(()))
@@ -1312,13 +1419,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
         }
-        guard let defaults = SharedConstants.sharedDefaults,
-              let uuidString = defaults.string(forKey: SharedConstants.bleLastPeripheralUuidKey),
-              let uuid = UUID(uuidString: uuidString)
-        else {
-            completion(.failure(BoardBleError.deviceNotFound))
-            return
-        }
+        let uuidString = uuid.uuidString
 
         // Fast path: the system still has this peripheral cached — connect
         // directly without scanning (works while backgrounded).
@@ -1393,18 +1494,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completion(.failure(error))
     }
 
-    private func persistLastConnectedPeripheral(_ peripheral: WritableBlePeripheral) {
-        SharedConstants.sharedDefaults?.set(
-            peripheral.identifier.uuidString,
-            forKey: SharedConstants.bleLastPeripheralUuidKey
-        )
-    }
-
     private func clearLastConnectedPeripheral() {
-        SharedConstants.sharedDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
+        associationDefaults?.removeObject(forKey: SharedConstants.bleLastPeripheralUuidKey)
     }
 
     private func disconnectOnBleQueue(completion: (() -> Void)? = nil) {
+        preparationEpoch += 1
+        activePreparationToken = nil
+        connectingPreparation = nil
+        association?.boundPeripheralUuid = nil
+        _ = persistAssociation()
         connectionGeneration += 1
         // A deliberate disconnect supersedes any in-flight write-stall recovery
         // (#3181): drop the recovery window and reset the budget.
@@ -1445,6 +1544,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // `notConnected`, which the JS classifier treats as a hard drop and
             // would tear the connection down mid-recovery (#3181).
             completion?(writeStallRecovery != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
+            return
+        }
+        guard hasBinding(for: peripheral.identifier) else {
+            completion?(BoardBleError.notConnected, nil)
             return
         }
 
@@ -1505,9 +1608,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// exists only so the Swift suite can drive this against an isolated
     /// suite instead of a developer machine's app-group defaults.
     private func displaySharedCurrentItemOnBleQueue(
-        defaults: UserDefaults? = SharedConstants.sharedDefaults
+        defaults: UserDefaults? = nil
     ) {
-        guard let defaults else { return }
+        guard let defaults = defaults ?? associationDefaults else { return }
         guard let item = SharedQueueState.currentItem(from: defaults) else {
             logger.info("Skipping implicit BLE re-light: no current climb in the App Group queue copy (#4544)")
             return
@@ -1532,7 +1635,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             completion?(false)
             return
         }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+        guard let connectedPeripheral, hasBinding(for: connectedPeripheral.identifier), writeCharacteristic != nil else {
             completion?(false)
             return
         }
@@ -1581,7 +1684,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             completion?(false)
             return
         }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+        guard let connectedPeripheral, hasBinding(for: connectedPeripheral.identifier), writeCharacteristic != nil else {
             completion?(false)
             return
         }
@@ -1793,20 +1896,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-              let peripheral = peripherals.first
-        else {
-            return
-        }
+        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] else { return }
+        restorePeripheralsOnBleQueue(peripherals)
+    }
 
-        // More than one restored peripheral means a superseded connect attempt
-        // was still mid-flight at suspension. Keep only the first; cancel the
-        // rest so they don't linger as system-held connections — these boards
-        // are last-connection-wins, so a phantom link blocks the wall.
-        for extra in peripherals.dropFirst() {
-            logger.info("Cancelling extra restored BLE peripheral \(extra.identifier.uuidString, privacy: .public)")
+    private func restorePeripheralsOnBleQueue(_ peripherals: [WritableBlePeripheral]) {
+        let peripheral = peripherals.first { hasBinding(for: $0.identifier) }
+        for extra in peripherals where extra.identifier != peripheral?.identifier {
             cancelPeripheralConnection(extra)
         }
+        guard let peripheral else { return }
 
         let deviceId = peripheral.identifier.uuidString
         connectionGeneration += 1
@@ -1817,15 +1916,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectRequestedAt = nil
         implicitRelightAuthorizedForConnection = false
         discoveredPeripherals[deviceId] = peripheral
-        peripheral.delegate = self
+        preparePeripheralForConnection(peripheral)
 
-        switch peripheral.state {
+        // Only CoreBluetooth objects reach this branch in production. The
+        // fake seam exercises identity selection without constructing a central.
+        guard let concretePeripheral = peripheral as? CBPeripheral else {
+            peripheralGenerations[peripheral.identifier] = connectionGeneration
+            connectedPeripheral = peripheral
+            return
+        }
+
+        switch concretePeripheral.state {
         case .connected:
             peripheralGenerations[peripheral.identifier] = connectionGeneration
             connectedPeripheral = peripheral
             logger.info("Restored BLE peripheral \(deviceId, privacy: .public)")
             retriedFullServiceDiscovery.remove(peripheral.identifier)
-            peripheral.discoverServices(writeServiceUuids())
+            concretePeripheral.discoverServices(writeServiceUuids())
         case .connecting:
             // The restored connect request is still pending; didConnect will
             // run service discovery when the link comes up (the generation set
@@ -1837,7 +1944,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Disconnected or disconnecting: nothing usable to restore, and
             // adopting it would leave a half-open connectedPeripheral with no
             // write characteristic.
-            logger.info("Restored BLE peripheral \(deviceId, privacy: .public) not connected (state=\(peripheral.state.rawValue, privacy: .public)); ignoring")
+            logger.info("Restored BLE peripheral \(deviceId, privacy: .public) not connected (state=\(concretePeripheral.state.rawValue, privacy: .public)); ignoring")
         }
     }
 
@@ -2096,7 +2203,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             connectOnBleQueue(
                 deviceId: deferredRequest.deviceId,
                 origin: deferredRequest.origin,
-                requestedAt: deferredRequest.requestedAt
+                requestedAt: deferredRequest.requestedAt,
+                preparationToken: deferredRequest.preparationToken
             ) { [weak self] result in
                 deferredRequest.completion(result)
                 if isJoiningWriteStallRecovery {
@@ -2111,6 +2219,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func beginWriteStallReconnectOnBleQueue(peripheralId: UUID) {
         guard let recovery = writeStallRecovery, recovery.peripheralId == peripheralId else { return }
+        guard hasBinding(for: peripheralId) else {
+            abandonWriteStallRecoveryOnBleQueue(peripheralId: peripheralId, context: "board_pairing_invalidated")
+            return
+        }
         let deviceId = peripheralId.uuidString
 
         // Recovery re-lights on purpose (#3181) — repainting the wall the user is
@@ -2440,6 +2552,31 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         peripheral: WritableBlePeripheral,
         characteristic: CBCharacteristic
     ) {
+        let peripheralId = peripheral.identifier
+        guard connectedPeripheral?.identifier == peripheralId,
+              peripheralGenerations[peripheralId] == connectionGeneration else {
+            cancelPeripheralConnection(peripheral)
+            return
+        }
+        if connectRequestOrigin == .userConnect, pendingConnectCompletion != nil {
+            guard let preparation = connectingPreparation,
+                  preparation.token == activePreparationToken,
+                  preparation.peripheralId == peripheralId,
+                  preparation.generation == connectionGeneration else {
+                rejectUnboundReadyConnection(peripheral)
+                return
+            }
+            association?.boundPeripheralUuid = peripheralId
+            guard persistAssociation() else {
+                association?.boundPeripheralUuid = nil
+                rejectUnboundReadyConnection(peripheral)
+                return
+            }
+        }
+        guard hasBinding(for: peripheralId) else {
+            rejectUnboundReadyConnection(peripheral)
+            return
+        }
         connectedPeripheral = peripheral
         writeCharacteristic = characteristic
         // Any successful (re)connect closes a write-stall recovery window (#3181)
@@ -2455,9 +2592,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // still avoids trusting a stale property bit as the live trigger. Shared
         // with the `setConnection` test seam so the two paths can't drift.
         reseedForceWriteWithResponse(peripheral: peripheral, characteristic: characteristic)
-        // Remember the board so the Live Activity lightbulb can reconnect to it
-        // by identifier later, no device pick required.
-        persistLastConnectedPeripheral(peripheral)
         completePendingConnect(.success(()))
         logger.info("Connected to board BLE peripheral \(peripheral.identifier.uuidString, privacy: .public)")
         // One-time write diagnostics (#3181 follow-up): records what the UART RX
@@ -2501,6 +2635,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         } else {
             performImplicitRelightIfAuthorizedOnBleQueue(deviceId: connectedDeviceId)
         }
+    }
+
+    private func rejectUnboundReadyConnection(_ peripheral: WritableBlePeripheral) {
+        connectedPeripheral = nil
+        writeCharacteristic = nil
+        completePendingConnect(.failure(BoardBleError.notConnected))
+        cancelPeripheralConnection(peripheral)
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
@@ -2643,6 +2784,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         centralStateOnBleQueue == .poweredOn
             && connectedPeripheral != nil
             && writeCharacteristic != nil
+            && connectedPeripheral.map { hasBinding(for: $0.identifier) } == true
     }
 
     private func waitUntilReady(timeout: TimeInterval) async {
@@ -2730,6 +2872,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectTimeoutTimer = nil
         let completion = pendingConnectCompletion
         pendingConnectCompletion = nil
+        if completion != nil {
+            if connectingPreparation?.token == activePreparationToken {
+                activePreparationToken = nil
+            }
+            connectingPreparation = nil
+        }
         completion?(result)
     }
 
@@ -3410,8 +3558,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         ])
     }
 
-    private func readConfiguration() -> BoardBleConfiguration? {
-        guard let defaults = SharedConstants.sharedDefaults,
+    private func hasBinding(for peripheralId: UUID) -> Bool {
+        guard let association, !association.configKey.isEmpty else { return false }
+        return association.boundPeripheralUuid == peripheralId
+    }
+
+    private func readAssociation() -> BoardBleAssociation? {
+        guard let data = associationDefaults?.data(forKey: SharedConstants.bleBoardConfigKey),
+              let stored = try? JSONDecoder().decode(BoardBleAssociation.self, from: data),
+              !stored.configKey.isEmpty else { return nil }
+        return stored
+    }
+
+    private func readLegacyConfiguration() -> BoardBleConfiguration? {
+        guard let defaults = associationDefaults,
               let data = defaults.data(forKey: SharedConstants.bleBoardConfigKey)
         else {
             return nil
@@ -3419,13 +3579,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return try? JSONDecoder().decode(BoardBleConfiguration.self, from: data)
     }
 
-    private func writeConfiguration(_ configuration: BoardBleConfiguration) {
-        guard let defaults = SharedConstants.sharedDefaults,
-              let data = try? JSONEncoder().encode(configuration)
+    @discardableResult
+    private func persistAssociation() -> Bool {
+        guard let defaults = associationDefaults, let association,
+              let data = try? JSONEncoder().encode(association)
         else {
-            return
+            return false
         }
         defaults.set(data, forKey: SharedConstants.bleBoardConfigKey)
+        return true
     }
 }
 
@@ -3495,6 +3657,14 @@ extension BoardBleManager {
             manager.writeCharacteristic = characteristic
             if let peripheral {
                 manager.discoveredPeripherals[peripheral.identifier.uuidString] = peripheral
+                manager.peripheralGenerations[peripheral.identifier] = manager.connectionGeneration
+                // Fixtures used by flow-control tests represent a connection
+                // already authorized by an explicit successful pairing.
+                manager.association = BoardBleAssociation(
+                    configuration: manager.configuration ?? Self.fixtureConfiguration,
+                    configKey: "native-test-fixture",
+                    boundPeripheralUuid: peripheral.identifier
+                )
             }
             // Mirror the production reset in didDiscoverCharacteristicsFor so a
             // reconnect in a test starts with the gate re-armed and the
@@ -3513,7 +3683,48 @@ extension BoardBleManager {
         /// `configure()` performs — so a dev machine's stored config can't leak in.
         func setConfiguration(_ configuration: BoardBleConfiguration?) {
             manager.configuration = configuration
+            manager.association = configuration.map {
+                BoardBleAssociation(configuration: $0, configKey: "native-test-fixture")
+            }
         }
+
+        private static var fixtureConfiguration: BoardBleConfiguration {
+            BoardBleConfiguration(
+                boardName: "kilter", layoutId: 1, sizeId: 1, apiLevel: nil,
+                deviceName: nil, colorOverrides: [:], numRows: nil
+            )
+        }
+
+        /// State-machine characterization tests seed the preparation that
+        /// their existing connect fixture assumes. Regression tests below use
+        /// the public prepare/connect pair instead.
+        func connect(deviceId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+            let token = UUID().uuidString
+            manager.activePreparationToken = token
+            if manager.association == nil {
+                manager.association = BoardBleAssociation(
+                    configuration: manager.configuration ?? Self.fixtureConfiguration,
+                    configKey: "native-test-fixture"
+                )
+            }
+            manager.connectPreparedBoard(deviceId: deviceId, preparationToken: token, completion: completion)
+        }
+
+        func restorePeripherals(_ peripherals: [WritableBlePeripheral]) {
+            manager.restorePeripheralsOnBleQueue(peripherals)
+        }
+
+        /// Model a lingering system-held link without granting an association.
+        /// Used to prove the write/reconnect guards independently of teardown.
+        func setUnboundConnection(peripheral: WritableBlePeripheral, characteristic: CBCharacteristic) {
+            manager.connectedPeripheral = peripheral
+            manager.writeCharacteristic = characteristic
+            manager.peripheralGenerations[peripheral.identifier] = manager.connectionGeneration
+        }
+
+        var boundPeripheralUuid: UUID? { manager.association?.boundPeripheralUuid }
+        var preparationEpoch: UInt64 { manager.preparationEpoch }
+        var hasReadyWaiters: Bool { manager.readyWaiters.hasPendingWaiters }
 
         /// Seed the consecutive-stall counter to exercise the recovery-budget
         /// boundary in `handleWriteStall`.
@@ -3652,7 +3863,12 @@ extension BoardBleManager {
 
         /// Drive `configure(_:)` with an explicit foreground flag.
         func configure(_ configuration: BoardBleConfiguration, appActive: Bool) {
-            manager.configure(configuration, appActive: appActive)
+            manager.configure(
+                configuration,
+                appActive: appActive,
+                configKey: manager.association?.configKey,
+                deviceId: manager.connectedPeripheral?.identifier.uuidString
+            )
         }
 
         var connectRequestOrigin: BoardBleConnectOrigin? { manager.connectRequestOrigin }

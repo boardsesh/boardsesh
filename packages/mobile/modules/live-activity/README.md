@@ -33,6 +33,30 @@ Side benefit: iOS BLE traffic that goes through the JS adapter also runs
 through the same Swift singleton, so the App Group's queue state and
 `BoardBleManager.configuration` stay coherent for the widget intent path.
 
+## Board configuration and reconnect identity
+
+Before opening the device picker, JS calls `prepareBoardConnection` with the
+selected board's config key. Native forgets the previous pairing, cancels its
+pending work, and persists the new configuration as unbound without lighting
+the wall. Preparation returns a token that the adapter passes to
+`connectPreparedBoard` after selection. Only that current attempt reaching
+write-ready state can bind the configuration to a peripheral UUID.
+
+The persisted record keeps configuration, config key, and bound UUID together.
+Live Activity reconnect, CoreBluetooth restoration, recovery, and writes require
+that association. A cancelled picker or failed connection leaves it unbound;
+the climber must connect successfully in the app before the Live Activity bulb
+can reconnect. Older saved configurations also need one in-app connection.
+`configureBoard` updates require the bound config key and device UUID, and
+cannot create a pairing. Buffered connected events trigger a fresh native
+snapshot query before JS adopts a link, including between identical boards
+whose advertised names carry no serial.
+
+The complete guard needs a new iOS binary. JS feature-detects both preparation
+methods; on older binaries it explicitly disconnects the native singleton
+before staging configuration. That mitigation closes the ordinary failed
+connect path, but cannot add the new restoration guard through an OTA update.
+
 ## When iOS asks for Bluetooth
 
 Expo creates `BoardBleModule` at app start, and its `OnCreate` is the first

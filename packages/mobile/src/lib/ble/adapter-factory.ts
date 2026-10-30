@@ -5,7 +5,12 @@ import {
   type NativeBleConnectedEvent,
 } from '../../../modules/live-activity/src/index';
 import { RNBleAdapter } from './adapter';
-import { NativeIosBleAdapter, nativeBleSupportsBoard, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
+import {
+  NativeIosBleAdapter,
+  nativeBleSupportsBoard,
+  nativeBleSupportsConnectionAdoption,
+  nativeBleSupportsPreparedConnections,
+} from './native-ios-adapter';
 import { loadScreenshotFakeAdapter } from './screenshot-fake-adapter-loader';
 import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
@@ -49,7 +54,7 @@ export function createBluetoothAdapter(
   return new RNBleAdapter(devicePicker, scanFamily, options);
 }
 
-export { nativeBleSupportsBoard };
+export { nativeBleSupportsBoard, nativeBleSupportsPreparedConnections };
 
 // `true` iff the runtime adapter is the native iOS one — used by the
 // provider to decide whether to push board configuration into native shared
