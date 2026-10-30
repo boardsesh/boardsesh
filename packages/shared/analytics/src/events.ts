@@ -499,6 +499,16 @@ export const SHARED_EVENTS = {
   // QA builds before the one-model refactor sent 'wall_control' for the
   // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
   WallControlTapped: 'Wall Control Tapped',
+  // Mobile-only (#7113): a swipe left on the player's wall button, once per
+  // gesture that got going (a drag past 10 pt; a tap never fires it). Props: {
+  // state: the board control's state when the swipe began (as Wall Control
+  // Tapped), outcome: 'drive' (let go past the commit point, 55% of the width
+  // or a fling, and driving the wall started) | 'cancelled' (let go short of
+  // it) | 'refused' (let go past it, but nothing could start: a crewmate's
+  // board until the hand-off ships), control: 'button' (full width or in a
+  // workout's top row) }. Behind the `wall-swipe-to-drive` flag. Whether the
+  // drive then went live is Drive Mode Ended's `reason` (`connect_failed`).
+  WallControlSwiped: 'Wall Control Swiped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started

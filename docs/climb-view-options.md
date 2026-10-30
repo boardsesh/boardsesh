@@ -99,7 +99,8 @@ board, Sam has the board").
   (this phone's board or Sam's) and on Disconnect board while not driving; never on a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
-  the setting decides solo and a crew previews. Nothing can enter drive mode until the swipe ships. Holding any
+  the setting decides solo and a crew previews. A drive starts from the swipe below, its "Light every climb"
+  screen-reader action, or the board sheet's row. Holding any
   view, in any state, or ⋯ › Board controls opens the board sheet (Re-light, Turn off all lights, Disconnect, plus
   the MoonBoard "Light the hold above") while this phone holds the link; screen readers get the hold as a named
   action, "Board options". Every view runs the same tap. The player's sheet leaves out auto-disconnect and the two lighting switches, which live in Settings ›
@@ -149,6 +150,37 @@ preview's put-up, and the Climbs
 header's wall capsule hides (#7095, `trustedWallCapsuleClimb`). With a live link the link decides and freshness
 doesn't matter.
 
+### Swipe to drive (#7113)
+
+Swipe the wall button left to drive the wall: connect if needed, light the climb on screen, and light every climb
+picked after it, in a crew too. Behind the positive flag `wall-swipe-to-drive` (`useWallSwipeToDriveEnabled`); with it
+off the button has no chevrons, no peek and no gesture, and the screen-reader action and the sheet row hide too.
+
+- **Where.** Wherever the model's `swipeAction` is `drive` and the host hands `onSwipe`: the full-width button and the
+  workout's compact one. Not on the bulb view (there the sheet row is the way in).
+- **The gesture** (`use-wall-swipe.ts`, numbers in `wall-swipe.ts`). A pan that claims a leftward drag past 10 pt and
+  gives way to a vertical one past 14 pt. The frost wipes in from the trailing edge as the finger moves, on the UI
+  thread (a clip plus `translateX`, `WallSwipeWipe.tsx`), with no React render per frame. Letting go commits past 55%
+  of the width (189 pt of 343 pt, like the climb rows' full swipe), or on a fling faster than −800 pt/s once past
+  25%. Crossing the commit point buzzes medium once and the label becomes "Let go to light every climb" ("Let go to
+  take Sam's board" on a crewmate's board). Short of it the frost springs back (damping 20, stiffness 300). Past it
+  the frost fills the rest of the width in 150 ms and holds until the model says `driving`; the lit confirm buzzes
+  success. A refusal, or a drive that ends before it went live (a failed connect), springs it back with an error
+  buzz. A pan swallows the tap and the hold it ended in. On Expo web the detector has `touchAction="pan-y"`.
+- **A crewmate's board** keeps the swipe (and its label) for now: until the hand-off (#7113 PR 4) ships, the runner
+  answers `needs_handoff`, so the frost springs back with an error buzz and nothing changes.
+- **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
+  offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing
+  edge and springs back (about 700 ms; a fade in place under Reduce Motion). At most 3 sessions, never again once a
+  swipe has driven the wall, never in screenshot mode (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`).
+- **The frost in every swipeable state.** PlayCore builds the glow input for the climb on screen wherever the swipe
+  is offered, memoised as before; the button mounts the frost only on the first touch (or the peek). With no holds
+  the wipe is the flat `live` amber.
+- **Without the swipe.** Screen readers get the named action "Light every climb" beside "Board options", and the
+  hint ends "Swipe left to light every climb". The board sheet's first row is **Light every climb** wherever the
+  swipe is offered: the visible way in for the bulb view and for Put on board with no link, where a hold opens no
+  sheet. ⋯ › Board controls opens the sheet then even with no link, showing only that row.
+
 ### What we measure
 
 - `Wall Control Shown {state, climbUuid}`: `connect` once per player open, `put_on_wall` once per climb per open, only
@@ -158,6 +190,10 @@ doesn't matter.
   button, full width or in a workout's top row), `bulb`, or `mini_bar` (the MiniPlayer's bulb standing in for a
   tablet or open-Duo player's). A tap on Disconnect board logs `{state: 'lit', action: 'disconnect'}`; a tap on
   You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`.
+- `Wall Control Swiped {state, outcome, control}` (#7113): once per swipe that got going (a drag past 10 pt), with
+  the state it began in. `outcome`: `drive` (let go past the commit point and a drive started), `cancelled` (let go
+  short of it), `refused` (past it, but nothing could start: a crewmate's board until the hand-off). Whether the
+  drive then went live is `Drive Mode Ended`'s `reason`. The screen-reader action and the sheet row don't fire it.
 - `Board Controls Opened {surface: 'play_drawer', source}`: a hold on `button`, `bulb` or `mini_bar`, or
   `player_menu`. A tap never opens it. Pre-release QA builds sent `wall_control`, `bulb_long_press` and
   `open_sheet`; no store build did.

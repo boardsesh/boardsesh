@@ -116,13 +116,56 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.4 }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { inline: 44, inlinePrimary: 48 } }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+// The swipe (#7113): the gesture has its own test (use-wall-swipe); here only
+// what the button draws from its state, and that a pan swallows the tap.
+const swipeCtrl = vi.hoisted(() => ({
+  frostArmed: false,
+  releaseArmed: false,
+  committed: false,
+  panned: false,
+  options: [] as { enabled: boolean; onSwipe?: () => unknown; onCancel?: () => void }[],
+}));
+vi.mock('../use-wall-swipe', () => ({
+  useWallSwipe: (options: { enabled: boolean; onSwipe?: () => unknown; onCancel?: () => void }) => {
+    swipeCtrl.options.push(options);
+    return {
+      gesture: {},
+      progress: { value: 0 },
+      opacity: { value: 1 },
+      frostArmed: swipeCtrl.frostArmed,
+      releaseArmed: swipeCtrl.releaseArmed,
+      committed: swipeCtrl.committed,
+      consumePanned: () => swipeCtrl.panned,
+    };
+  },
+}));
+vi.mock('../WallSwipeWipe', () => ({
+  WallSwipeWipe: ({ layer, fill }: { layer: unknown; fill: string }) =>
+    createElement('div', {
+      'data-testid': 'wall-swipe-wipe',
+      'data-frost': layer ? 'true' : 'false',
+      'data-fill': fill,
+    }),
+}));
+vi.mock('react-native-gesture-handler', () => ({
+  GestureDetector: ({ children }: Children) => createElement('div', { 'data-testid': 'gesture' }, children),
+}));
+vi.mock('../../../lib/wall-swipe-hint', () => ({ useWallSwipePeek: () => 0 }));
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 import { act } from '@testing-library/react';
 import { WallControlButton } from '../WallControlButton';
 import type { WallGlowInput } from '../use-wall-glow';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from '../wall-control';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  swipeCtrl.frostArmed = false;
+  swipeCtrl.releaseArmed = false;
+  swipeCtrl.committed = false;
+  swipeCtrl.panned = false;
+  swipeCtrl.options = [];
+});
 
 type ModelOptions = {
   holder?: WallHolder;
@@ -173,7 +216,13 @@ function modelFor(state: WallControlState, options: ModelOptions = {}): WallCont
 
 function renderButton(
   model: WallControlModel,
-  extra: { onLongPress?: () => void; onDrive?: () => void; compact?: boolean; glow?: WallGlowInput | null } = {},
+  extra: {
+    onLongPress?: () => void;
+    onDrive?: () => void;
+    onSwipe?: () => 'started' | 'needs_handoff' | 'unavailable';
+    compact?: boolean;
+    glow?: WallGlowInput | null;
+  } = {},
 ) {
   const onPress = vi.fn();
   const onLongPress = extra.onLongPress ?? vi.fn();
@@ -183,6 +232,7 @@ function renderButton(
       onPress,
       onLongPress,
       onDrive: extra.onDrive,
+      onSwipe: extra.onSwipe,
       compact: extra.compact,
       glow: extra.glow,
     }),
@@ -522,5 +572,77 @@ describe('WallControlButton', () => {
     const { container, queryByRole } = renderButton(modelFor(null));
     expect(queryByRole('button')).toBeNull();
     expect(container.querySelector('[data-testid="play-drawer-wall-control-empty"]')).not.toBeNull();
+  });
+
+  // #7113 PR 3: swipe left to drive.
+  describe('the swipe', () => {
+    const onSwipe = () => 'started' as const;
+    const putOnWall = () => modelFor('put_on_wall', { navigationCommits: false });
+
+    it('shows the chevrons and offers the gesture only where the swipe is offered and wired', () => {
+      const offered = renderButton(putOnWall(), { onSwipe });
+      expect(offered.queryByTestId('play-drawer-wall-control-swipe-hint')).not.toBeNull();
+      expect(swipeCtrl.options.at(-1)?.enabled).toBe(true);
+      cleanup();
+      // The flag off: the host hands no `onSwipe`, so no chevrons and no gesture.
+      const flagOff = renderButton(putOnWall());
+      expect(flagOff.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
+      expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
+      expect(flagOff.getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.lightHint');
+      cleanup();
+      // Already driving: nothing to swipe to.
+      const driving = renderButton(modelFor('lit', { holder: 'self' }), { onSwipe });
+      expect(driving.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
+      expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
+    });
+
+    it('adds the swipe to the spoken hint', () => {
+      const { getByRole } = renderButton(modelFor('connect'), { onSwipe });
+      expect(getByRole('button').getAttribute('data-hint')).toBe(
+        'playView.wallControl.connectHint. playView.wallControl.swipeHint',
+      );
+    });
+
+    it('says what letting go does once the drag is past the commit point', () => {
+      swipeCtrl.frostArmed = true;
+      swipeCtrl.releaseArmed = true;
+      const solo = renderButton(putOnWall(), { onSwipe, glow: GLOW });
+      measure();
+      expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
+      expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('true');
+      cleanup();
+      const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
+      expect(sams.getByText('playView.wallControl.releaseToTakeBoard:{"name":"Sam"}')).not.toBeNull();
+    });
+
+    it('wipes the flat amber in for a climb with no holds', () => {
+      swipeCtrl.frostArmed = true;
+      const view = renderButton(putOnWall(), { onSwipe, glow: { ...GLOW, holds: [] } });
+      measure();
+      expect(view.getByTestId('wall-swipe-wipe').dataset).toMatchObject({ frost: 'false', fill: '#B45309' });
+    });
+
+    it('mounts no wipe before the first touch', () => {
+      const view = renderButton(putOnWall(), { onSwipe, glow: GLOW });
+      measure();
+      expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
+      expect(view.queryByTestId('wall-glow')).toBeNull();
+    });
+
+    it('drops the tap and the hold a pan ended in', () => {
+      const onLongPress = vi.fn();
+      const view = renderButton(modelFor('put_on_wall', { holder: 'self', navigationCommits: false }), {
+        onSwipe,
+        onLongPress,
+      });
+      swipeCtrl.panned = true;
+      fireEvent.click(view.getByRole('button'));
+      fireEvent.contextMenu(view.getByRole('button'));
+      expect(view.onPress).not.toHaveBeenCalled();
+      expect(onLongPress).not.toHaveBeenCalled();
+      swipeCtrl.panned = false;
+      fireEvent.click(view.getByRole('button'));
+      expect(view.onPress).toHaveBeenCalledOnce();
+    });
   });
 });

@@ -135,7 +135,7 @@ import {
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useSetting } from '../../settings';
 import { useAuth } from '../../providers/auth-provider';
-import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
+import { useBoardseshGradeEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useClimb, useGymBoards, useProfile } from '../../lib/graphql/hooks';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
@@ -546,6 +546,9 @@ export function PlayCore({
   const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
 
   const drawerGradeSectionEnabled = useBoardseshGradeEnabled();
+  // Swipe the wall button to drive (#7113): the gesture, the screen-reader
+  // action and the board sheet's row, all behind one positive flag.
+  const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
   const visibleSectionIds = useMemo(
     () =>
       visiblePlayDrawerSections({
@@ -1858,11 +1861,16 @@ export function PlayCore({
     if (!bluetooth?.isConnected) return;
     setBleControlVisible(true);
   }, [bluetooth]);
+  // The board sheet offers Light every climb wherever the swipe is offered
+  // (#7113): the visible way in for the bulb view, and for Put on board with
+  // no link, where a hold opens no sheet. So ⋯ › Board controls opens it then
+  // even with no link, showing only that row.
+  const sheetOffersDrive = swipeToDriveEnabled && !isAnonymous && wallControl.swipeAction === 'drive';
   const handleMenuBoardControls = useCallback(() => {
-    if (!bluetooth?.isConnected) return;
+    if (!bluetooth?.isConnected && !sheetOffersDrive) return;
     trackBoardControlsOpened({ surface: 'play_drawer', source: 'player_menu' });
     setBleControlVisible(true);
-  }, [bluetooth]);
+  }, [bluetooth, sheetOffersDrive]);
   // What each tap action runs; `useWallControl` (below) picks one from the model.
   const wallControlRunners = useMemo(
     () => ({
@@ -2234,6 +2242,11 @@ export function PlayCore({
     visible: wallControlDrawn,
     linked: bluetoothConnected,
   });
+  // The board sheet's Light every climb row (#7113): the sheet closes itself.
+  const { drive: driveWallControl } = wallControlHandlers;
+  const handleBoardSheetDrive = useCallback(() => {
+    driveWallControl('button');
+  }, [driveWallControl]);
   // With the bulb chosen, the MiniPlayer beside this player draws the bulb for
   // it: that bulb draws this model and runs these handlers, so its face and its
   // taps match (pane-wall-control-store, `control: 'mini_bar'`).
@@ -2258,7 +2271,12 @@ export function PlayCore({
   // the colours change, so the glow does no work otherwise.
   // Only while this climber drives the board (`wallControl.driving`, #7017).
   // A wall with no lights has no lit holds to frost.
-  const wallGlowShown = !isAnonymous && wallControl.driving && wallControl.state === 'lit';
+  // And for the climb on screen wherever the swipe is offered (#7113): the
+  // frost a swipe wipes in. The button mounts it only on the first touch.
+  const wallGlowShown =
+    !isAnonymous &&
+    ((wallControl.driving && wallControl.state === 'lit') ||
+      (swipeToDriveEnabled && wallControl.swipeAction === 'drive'));
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
       ? playback.currentFrameString
@@ -2549,7 +2567,9 @@ export function PlayCore({
       miniPlayerMirrors={miniPlayerMirrors}
       onWallControlPress={wallControlHandlers.press}
       onWallControlLongPress={wallControlHandlers.longPress}
-      onWallControlDrive={wallControlHandlers.drive}
+      onWallControlDrive={swipeToDriveEnabled ? wallControlHandlers.drive : undefined}
+      onWallControlSwipe={swipeToDriveEnabled ? wallControlHandlers.swipe : undefined}
+      onWallControlSwipeCancel={swipeToDriveEnabled ? wallControlHandlers.swipeCancelled : undefined}
       boardControl={playerButtons.boardControl}
       // Whether a Bluetooth transport exists at all, and only
       // that. The anonymous suppression lives in the bar, with
@@ -2781,7 +2801,9 @@ export function PlayCore({
                                       onOpenQueue={handleOpenQueueFromMenu}
                                       onOpenViewOptions={handleOpenSectionsSettings}
                                       dismissPlayerAndWait={dismissPlayerAndWait}
-                                      onOpenBoardControls={bluetoothConnected ? handleMenuBoardControls : undefined}
+                                      onOpenBoardControls={
+                                        bluetoothConnected || sheetOffersDrive ? handleMenuBoardControls : undefined
+                                      }
                                     />
                                   ) : (
                                     <View style={styles.menuPlaceholder} />
@@ -3083,6 +3105,7 @@ export function PlayCore({
           handleCloseReportClimb={handleCloseReportClimb}
           handleTickBarDismiss={handleTickBarDismiss}
           handleCloseBleControl={handleCloseBleControl}
+          onBoardSheetDrive={sheetOffersDrive ? handleBoardSheetDrive : undefined}
         />
       </View>
       {renderSidePanel ? renderSidePanel(sidePanelClimb) : null}

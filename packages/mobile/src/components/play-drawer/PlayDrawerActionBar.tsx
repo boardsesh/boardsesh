@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
@@ -21,6 +21,7 @@ import {
   type PlayerButtonsLayout,
 } from '../../lib/player-buttons';
 import type { WallControlSurface } from '../../lib/analytics-wall-control';
+import type { DriveStartOutcome } from './use-wall-control';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
@@ -63,8 +64,15 @@ type PlayDrawerActionBarProps = {
   onWallControlPress?: (control: WallControlSurface) => void;
   /** A hold on one view of the board control: the board sheet, while this phone holds the link. */
   onWallControlLongPress?: (control: WallControlSurface) => void;
-  /** Start driving the wall from the wall button (#7113): its swipe and its "Light every climb" action. */
-  onWallControlDrive?: (control: WallControlSurface) => void;
+  /** Start driving the wall from the wall button's "Light every climb" action (#7113). */
+  onWallControlDrive?: (control: WallControlSurface) => DriveStartOutcome;
+  /**
+   * The wall button's swipe left to drive (#7113): let go past the commit
+   * point. Omitted (the `wall-swipe-to-drive` flag off), the button offers no swipe.
+   */
+  onWallControlSwipe?: (control: WallControlSurface) => DriveStartOutcome;
+  /** The swipe let go short of the commit point. */
+  onWallControlSwipeCancel?: (control: WallControlSurface) => void;
   /** View options › Buttons › Board control: the wall button (the default) or the bulb. */
   boardControl?: PlayerBoardControl;
   /** The lit wall button's glow (F1b): the climb's lit holds, while it is lit. */
@@ -173,6 +181,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onWallControlPress,
   onWallControlLongPress,
   onWallControlDrive,
+  onWallControlSwipe,
+  onWallControlSwipeCancel,
   boardControl = 'wallButton',
   wallGlow = null,
   miniPlayerMirrors = false,
@@ -251,7 +261,15 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // One handler behind both views (`useWallControl` in the host): each says which it is.
   const pressWallButton = useCallback(() => onWallControlPress?.('button'), [onWallControlPress]);
   const holdWallButton = useCallback(() => onWallControlLongPress?.('button'), [onWallControlLongPress]);
-  const driveWallButton = useCallback(() => onWallControlDrive?.('button'), [onWallControlDrive]);
+  const driveWallButton = useMemo(
+    () => (onWallControlDrive ? () => void onWallControlDrive('button') : undefined),
+    [onWallControlDrive],
+  );
+  const swipeWallButton = useMemo(
+    () => (onWallControlSwipe ? () => onWallControlSwipe('button') : undefined),
+    [onWallControlSwipe],
+  );
+  const cancelWallButtonSwipe = useCallback(() => onWallControlSwipeCancel?.('button'), [onWallControlSwipeCancel]);
   const pressBulb = useCallback(() => onWallControlPress?.('bulb'), [onWallControlPress]);
   const holdBulb = useCallback(() => onWallControlLongPress?.('bulb'), [onWallControlLongPress]);
 
@@ -332,6 +350,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             onPress={pressWallButton}
             onLongPress={holdWallButton}
             onDrive={driveWallButton}
+            onSwipe={swipeWallButton}
+            onSwipeCancel={cancelWallButtonSwipe}
           />
         </View>
       ) : layout.primaryCenter === 'wallControl' ? (
@@ -363,6 +383,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               onPress={pressWallButton}
               onLongPress={holdWallButton}
               onDrive={driveWallButton}
+              onSwipe={swipeWallButton}
+              onSwipeCancel={cancelWallButtonSwipe}
             />
           </View>
           <View style={styles.compactSlot}>
@@ -470,6 +492,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                       onPress={pressWallButton}
                       onLongPress={holdWallButton}
                       onDrive={driveWallButton}
+                      onSwipe={swipeWallButton}
+                      onSwipeCancel={cancelWallButtonSwipe}
                     />
                   );
                 case 'angle':

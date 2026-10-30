@@ -453,6 +453,12 @@ export type WallControlModel = {
    * board with its filled bulb and face on the plain tonal look.
    */
   driving: boolean;
+  /**
+   * A drive the swipe started is on its way (#7113, `driveMode` `arming`): the
+   * connect or the first light is in flight. The swipe's frost holds full width
+   * meanwhile, and springs back if it ends without `driving`.
+   */
+  driveArming: boolean;
   /** A connect or disconnect in flight: a spinner, and taps wait. */
   pending: boolean;
   writing: boolean;
@@ -617,6 +623,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     look: resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
     selected: state === 'lit',
     driving,
+    driveArming: driveMode === 'arming',
     pending: input.pending,
     writing: input.writing,
     autoDisconnectWarning: input.autoDisconnectWarning,
@@ -642,6 +649,7 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   look: 'off',
   selected: false,
   driving: false,
+  driveArming: false,
   pending: false,
   writing: false,
   autoDisconnectWarning: false,

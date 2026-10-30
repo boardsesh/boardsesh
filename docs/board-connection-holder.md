@@ -102,6 +102,17 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 - A peer has no way to re-light a cleared climb. The holder re-lights it from the bulb.
 - A virtual hold (a wall taken with no Bluetooth) never reports a clear. The blanking write needs a radio, so with none `blankWallAndReportClear` stops before the report, and a spill skip on a virtual hold leaves the previous climb as the feed's lit climb.
 
+## Driving the wall (#7113)
+
+A swipe on the player's wall button (or its "Light every climb" action, or the board sheet's row) makes this phone
+the one that lights every climb: it connects if needed, lights the climb on screen, and from then on every change
+of climb lights the wall, in a crew too. It changes nothing on the server: the phone holds the board through its
+link like any holder, and each climb it lights is an ordinary `reportBoardClimb`. The drive lives on the phone
+(`drive-mode-store.ts`, in memory) and ends when this phone's link drops, the session or the board changes, or the
+climber signs out or presses the frosted button. On a crewmate's board the swipe refuses (`needs_handoff`): Aurora
+and MoonBoard boxes stop advertising once linked, so taking the board needs the holder's phone to let go first, a
+cooperative hand-off that is PR 4 of #7113. See `docs/climb-view-options.md`, "Swipe to drive".
+
 ## Known limitations
 
 - **Same-user multi-connection**: the writer is keyed by emitter, so if a logged-in user holds from two connections, either connection's drop frees the wall (re-acquired on the next send). Benign under always-take.

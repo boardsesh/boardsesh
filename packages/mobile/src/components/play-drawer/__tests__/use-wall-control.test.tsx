@@ -5,11 +5,18 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const analytics = vi.hoisted(() => ({ tapped: vi.fn(), shown: vi.fn(), opened: vi.fn(), ended: vi.fn() }));
+const analytics = vi.hoisted(() => ({
+  tapped: vi.fn(),
+  shown: vi.fn(),
+  opened: vi.fn(),
+  ended: vi.fn(),
+  swiped: vi.fn(),
+}));
 const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
+  trackWallControlSwiped: analytics.swiped,
   trackWallControlShown: analytics.shown,
   trackDriveModeEnded: analytics.ended,
 }));
@@ -292,5 +299,59 @@ describe('useWallControl drive', () => {
     });
     expect(run.drive).not.toHaveBeenCalled();
     expect(outcome).toBe('unavailable');
+  });
+});
+
+// #7113 PR 3: Wall Control Swiped, once per gesture, in the state it began in.
+describe('useWallControl swipe', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('logs a drive with the state the swipe began in', () => {
+    const { hook, run } = setup(modelFor('connect', 'connect', { swipeAction: 'drive' }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.swipe('button');
+    });
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(outcome).toBe('started');
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({ state: 'connect', outcome: 'drive', control: 'button' });
+    expect(analytics.tapped).not.toHaveBeenCalled();
+  });
+
+  it('logs a refusal when nothing starts', () => {
+    const run = runners();
+    run.drive.mockReturnValue('needs_handoff');
+    const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
+    act(() => {
+      hook.result.current.swipe('button');
+    });
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({
+      state: 'put_on_wall',
+      outcome: 'refused',
+      control: 'button',
+    });
+  });
+
+  it('logs a cancel and runs nothing', () => {
+    const { hook, run } = setup(modelFor('dark', 'relight', { swipeAction: 'drive' }));
+    act(() => {
+      hook.result.current.swipeCancelled('button');
+    });
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({
+      state: 'dark',
+      outcome: 'cancelled',
+      control: 'button',
+    });
+  });
+
+  it('never logs a swipe for the screen-reader action', () => {
+    const { hook } = setup(modelFor('connect', 'connect', { swipeAction: 'drive' }));
+    act(() => {
+      hook.result.current.drive('button');
+    });
+    expect(analytics.swiped).not.toHaveBeenCalled();
   });
 });

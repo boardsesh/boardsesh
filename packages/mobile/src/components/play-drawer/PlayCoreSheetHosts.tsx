@@ -59,6 +59,8 @@ export type PlayCoreSheetHostsProps = {
   handleCloseReportClimb: () => void;
   handleTickBarDismiss: () => void;
   handleCloseBleControl: () => void;
+  /** The board sheet's Light every climb row (#7113), where the swipe is offered. */
+  onBoardSheetDrive?: () => void;
 };
 
 /**
@@ -107,6 +109,7 @@ export function PlayCoreSheetHosts({
   handleCloseReportClimb,
   handleTickBarDismiss,
   handleCloseBleControl,
+  onBoardSheetDrive,
 }: PlayCoreSheetHostsProps) {
   const mountSectionsSettings = useMountedOnFirstOpen(sectionsSettingsOpen);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
@@ -271,6 +274,7 @@ export function PlayCoreSheetHosts({
           // live in Settings › Board (#7000).
           showLightingSwitches={false}
           clearedClimbUuid={wallClearedTarget}
+          onDrive={onBoardSheetDrive}
         />
       )}
     </>

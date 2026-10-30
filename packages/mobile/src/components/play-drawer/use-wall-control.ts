@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
-import { trackWallControlTapped, type WallControlSurface } from '../../lib/analytics-wall-control';
+import {
+  trackWallControlSwiped,
+  trackWallControlTapped,
+  type WallControlSurface,
+} from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
 import { stopDrivingForLink } from './drive-mode-store';
@@ -72,10 +76,17 @@ export type WallControlHandlers = {
   press: (control: WallControlSurface) => void;
   longPress: (control: WallControlSurface) => void;
   /**
-   * Start driving the wall (#7113): the wall button's swipe and its "Light
-   * every climb" action, from any view, while the model offers it.
+   * Start driving the wall (#7113): the wall button's "Light every climb"
+   * action and the board sheet's row, while the model offers it.
    */
   drive: (control: WallControlSurface) => DriveStartOutcome;
+  /**
+   * A swipe on the wall button let go past its commit point: start driving,
+   * and log Wall Control Swiped (`drive`, or `refused` when nothing started).
+   */
+  swipe: (control: WallControlSurface) => DriveStartOutcome;
+  /** A swipe let go short of its commit point: Wall Control Swiped `cancelled`. */
+  swipeCancelled: (control: WallControlSurface) => void;
 };
 
 /**
@@ -183,8 +194,8 @@ export function useWallControl({
     run.openSheet();
   }, []);
 
-  // The view is named for Wall Control Swiped (#7113 PR 3), which the swipe
-  // fires; the swipe owns its own haptics (threshold, then the light).
+  // The swipe owns its own haptics (the threshold, then an error on a refusal);
+  // the lit confirm buzzes success.
   const drive = useCallback((_control: WallControlSurface): DriveStartOutcome => {
     const { model: current, runners: run } = latest.current;
     // `swipeAction` is the one rule for where a drive can start: never while a
@@ -193,5 +204,20 @@ export function useWallControl({
     return run.drive();
   }, []);
 
-  return { press, longPress, drive };
+  // Wall Control Swiped, once per gesture that activated: the state it started
+  // in, read before the drive changes it.
+  const swipe = useCallback(
+    (control: WallControlSurface): DriveStartOutcome => {
+      const state = latest.current.model.state;
+      const outcome = drive(control);
+      trackWallControlSwiped({ state, outcome: outcome === 'started' ? 'drive' : 'refused', control });
+      return outcome;
+    },
+    [drive],
+  );
+  const swipeCancelled = useCallback((control: WallControlSurface) => {
+    trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });
+  }, []);
+
+  return { press, longPress, drive, swipe, swipeCancelled };
 }

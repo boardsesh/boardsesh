@@ -57,6 +57,9 @@ const setCurrentClimb = vi.hoisted(() => vi.fn());
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 const crew = vi.hoisted(() => ({ shared: false }));
+// `wall-swipe-to-drive` (#7113). Off by default here, so the older tests keep
+// today's button; the swipe's own tests turn it on.
+const swipeToDrive = vi.hoisted(() => ({ on: false }));
 const wallClimbState = vi.hoisted(() => ({ uuid: null as string | null, sentAt: null as string | null }));
 const boardSheet = vi.hoisted(() => ({ props: [] as Props[], opened: vi.fn() }));
 const wallControlTapped = vi.hoisted(() => vi.fn());
@@ -415,6 +418,10 @@ vi.mock('../../report-climb/ReportClimbSheet', () => ({
     return null;
   },
 }));
+vi.mock('../../../providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../providers/feature-flags-provider')>()),
+  useWallSwipeToDriveEnabled: () => swipeToDrive.on,
+}));
 vi.mock('../../ble/BleControlSheetHost', () => ({
   BleControlSheetHost: (props: Props) => {
     boardSheet.props.push(props);
@@ -611,6 +618,7 @@ function render(...args: Parameters<typeof renderInitial>) {
 }
 
 beforeEach(() => {
+  swipeToDrive.on = false;
   clearOpeningLayoutCache();
   viewport.width = 390;
   viewport.height = 844;
@@ -2112,6 +2120,56 @@ describe('PlayDrawer wall button taps', () => {
     renderDrawer();
     expect(recorded.actionBar.at(-1)?.onWallControlLongPress).toBeUndefined();
     expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
+  });
+
+  // #7113 PR 3: the swipe, its screen-reader action, the frost it wipes in and
+  // the board sheet's row, all behind `wall-swipe-to-drive`.
+  describe('swipe to drive', () => {
+    const putOnBoardWithNoLink = () => {
+      queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+      bluetoothContext.value = { ...linkedBluetooth(), isConnected: false };
+      lightbulbState.pressAction = 'connect';
+    };
+
+    it('wires nothing with the flag off: no swipe, no action, no frost, no sheet row', () => {
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const bar = recorded.actionBar.at(-1);
+      expect(bar?.wallControl).toMatchObject({ swipeAction: 'drive' });
+      expect(bar?.onWallControlSwipe).toBeUndefined();
+      expect(bar?.onWallControlSwipeCancel).toBeUndefined();
+      expect(bar?.onWallControlDrive).toBeUndefined();
+      expect(bar?.wallGlow).toBeNull();
+      expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
+    });
+
+    it('hands the swipe, the action and the climb’s frost where the swipe is offered', () => {
+      swipeToDrive.on = true;
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const bar = recorded.actionBar.at(-1);
+      expect(bar?.onWallControlSwipe).toEqual(expect.any(Function));
+      expect(bar?.onWallControlSwipeCancel).toEqual(expect.any(Function));
+      expect(bar?.onWallControlDrive).toEqual(expect.any(Function));
+      // Built for the climb on screen, though nothing is lit: the swipe wipes it in.
+      const glow = bar?.wallGlow as { holds: unknown[] } | null;
+      expect(glow?.holds).toHaveLength(1);
+    });
+
+    it('opens ⋯ › Board controls with no link, offering Light every climb', () => {
+      swipeToDrive.on = true;
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const menuRow = recorded.actionsMenu.at(-1)?.onOpenBoardControls;
+      if (typeof menuRow !== 'function') throw new Error('no ⋯ › Board controls');
+      act(() => {
+        menuRow();
+      });
+      expect(boardSheet.opened).toHaveBeenLastCalledWith({ surface: 'play_drawer', source: 'player_menu' });
+      const sheet = boardSheet.props.at(-1);
+      expect(sheet?.visible).toBe(true);
+      expect(sheet?.onDrive).toEqual(expect.any(Function));
+    });
   });
 
   it('re-lights the #4979 held climb on a tap, with no Put on the wall beside it', () => {

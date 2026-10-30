@@ -30,6 +30,13 @@ export type WallControlText = {
   longPressActionLabel: string;
   /** The named accessibility action for the swipe (#7113): "Light every climb". */
   driveActionLabel: string;
+  /**
+   * The label once a swipe left has crossed the commit point (#7113): letting
+   * go starts driving the wall, or takes the board from the crewmate who holds it.
+   */
+  releaseLabel: string;
+  /** Spoken after the tap's hint where the swipe is offered: "Swipe left to light every climb". */
+  swipeHint: string;
 };
 
 function labelText(
@@ -143,6 +150,11 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
     bulbValue: bulbValueText(t, model.bulbValueKey, name),
     longPressActionLabel: t('playView.wallControl.boardOptions'),
     driveActionLabel: t('playView.wallControl.lightEveryClimb'),
+    releaseLabel:
+      model.holder === 'crew' && name
+        ? t('playView.wallControl.releaseToTakeBoard', { name })
+        : t('playView.wallControl.releaseToDrive'),
+    swipeHint: t('playView.wallControl.swipeHint'),
   };
 }
 
@@ -151,4 +163,13 @@ export function useWallControlText(model: WallControlModel): WallControlText {
   const { t } = useTranslation('session');
   const { t: tSettings } = useTranslation('settings');
   return useMemo(() => wallControlText(model, t, tSettings), [model, t, tSettings]);
+}
+
+/**
+ * The tap's hint, then the swipe's, as two sentences: "Connects your board and
+ * lights this climb. Swipe left to light every climb."
+ */
+export function withSwipeHint(tapHint: string | undefined, swipeHint: string): string {
+  if (!tapHint) return swipeHint;
+  return `${tapHint.replace(/[.\s]+$/u, '')}. ${swipeHint}`;
 }

@@ -33,6 +33,26 @@ export function trackWallControlTapped({
   track(SHARED_EVENTS.WallControlTapped, { state: state ?? 'none', action, control });
 }
 
+/**
+ * What a swipe on the wall button came to (#7113): `drive` started driving the
+ * wall, `cancelled` let go short of the commit point, `refused` let go past it
+ * where nothing could start (a crewmate's board before the hand-off ships).
+ */
+export type WallControlSwipeOutcome = 'drive' | 'cancelled' | 'refused';
+
+/** A swipe on the player's wall button, once per gesture (see `WallControlSwiped` in events.ts). */
+export function trackWallControlSwiped({
+  state,
+  outcome,
+  control,
+}: {
+  state: WallControlState;
+  outcome: WallControlSwipeOutcome;
+  control: WallControlSurface;
+}): void {
+  track(SHARED_EVENTS.WallControlSwiped, { state: state ?? 'none', outcome, control });
+}
+
 /** Driving the wall ended (#7113): once per drive, from the drive-mode store. */
 export function trackDriveModeEnded(input: DriveModeEndedInput): void {
   const { name, properties } = driveModeEnded(input);

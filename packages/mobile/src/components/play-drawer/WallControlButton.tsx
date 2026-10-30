@@ -25,16 +25,25 @@
 // The tap and the hold go to `useWallControl`, which does the haptics and the
 // events. `compact` is the narrower button in a workout's top row, between
 // ⏮ and ⏭ (#7000).
+//
+// Swipe left to drive (#7113): where the model offers it (`swipeAction`) and
+// the host hands `onSwipe` (the `wall-swipe-to-drive` flag), ‹‹ chevrons sit
+// before the face, the frost peeks in once (`useWallSwipePeek`), and dragging
+// left wipes the frost in from the trailing edge (`useWallSwipe`,
+// `WallSwipeWipe`). A full swipe starts driving the wall.
 
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useTheme } from '../../providers/theme-provider';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useWallSwipePeek } from '../../lib/wall-swipe-hint';
 import {
   LONG_PRESS_ACTION_NAME,
   namedAccessibilityActions,
@@ -46,9 +55,13 @@ import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
-import { useWallControlText } from './wall-control-text';
+import { useWallControlText, withSwipeHint } from './wall-control-text';
 import { WallGlow } from './WallGlow';
-import { useWallGlowLayer, type WallGlowInput } from './use-wall-glow';
+import { WallSwipeWipe } from './WallSwipeWipe';
+import { useWallGlowLayer, type WallGlowInput, type WallGlowLayer } from './use-wall-glow';
+import { useWallSwipe } from './use-wall-swipe';
+import { peekProgress } from './wall-swipe';
+import type { DriveStartOutcome } from './use-wall-control';
 
 const ICON_SIZE = 20;
 /** The holder's face. 24pt reads as a face inside a 44pt control. */
@@ -62,6 +75,23 @@ const COMPACT_MIN_FONT_SCALE = 0.85;
 
 /** The screen-reader action that starts driving the wall (#7113). */
 export const DRIVE_ACTION_NAME = 'lightEveryClimb';
+/** The swipe hint's chevrons: 10 pt glyphs, 2 pt apart, 4 pt before the face slot. */
+const CHEVRON_SIZE = 10;
+const CHEVRON_GAP = 2;
+const CHEVRON_FACE_GAP = 4;
+/**
+ * Leading chevron first: the stronger one points the way. 70% and 40% of the
+ * brand violet: the mocks' 25% vanished on the dark tonal pill (Marco).
+ */
+const CHEVRON_ALPHAS = [0.7, 0.4] as const;
+
+/** A frozen frame of the swipe, for the stories: no gesture, no live peek. */
+export type WallSwipePreview = {
+  /** The frost wiped in this far, 0 to 1 of the width. */
+  progress?: number;
+  /** The peek's frame: the frost showing 28 pt in from the trailing edge. */
+  peek?: boolean;
+};
 
 /**
  * The button's height: the inline control floor, 44pt on iOS and Material's
@@ -83,11 +113,21 @@ type WallControlButtonProps = {
    */
   onDrive?: () => void;
   /**
-   * The climb's lit holds, for the lit look (F1b): handed only while the
-   * climb on screen is lit on this phone's board or a crewmate's. Without it,
-   * or with no holds, the lit button is the flat amber.
+   * The swipe left to drive (#7113): returns what starting the drive did.
+   * Omitted (the `wall-swipe-to-drive` flag off), there are no chevrons, no
+   * peek and no gesture.
+   */
+  onSwipe?: () => DriveStartOutcome;
+  /** A swipe let go short of the commit point. */
+  onSwipeCancel?: () => void;
+  /**
+   * The climb's holds, for the frost (F1b): the lit look while driving, and
+   * the frost a swipe wipes in. Without it, or with no holds, both are the
+   * flat amber.
    */
   glow?: WallGlowInput | null;
+  /** The stories' frozen swipe frame. */
+  swipePreview?: WallSwipePreview;
 };
 
 function WallControlButtonComponent({
@@ -96,7 +136,10 @@ function WallControlButtonComponent({
   onPress,
   onLongPress,
   onDrive,
+  onSwipe,
+  onSwipeCancel,
   glow = null,
+  swipePreview,
 }: WallControlButtonProps) {
   const { brandColors, colorScheme, systemColors } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -104,21 +147,51 @@ function WallControlButtonComponent({
     const { width, height } = event.nativeEvent.layout;
     setSize((current) => (current.w === width && current.h === height ? current : { w: width, h: height }));
   }, []);
+  const reduceMotion = useReduceMotion();
+  // The swipe, where the model offers it and the host wires it (#7113).
+  const swipeOffered = model.swipeAction === 'drive' && onSwipe != null;
+  const previewProgress =
+    swipePreview === undefined ? null : swipePreview.peek ? peekProgress(size.w) : (swipePreview.progress ?? 0);
+  const peekToken = useWallSwipePeek(swipeOffered && swipePreview === undefined);
+  const swipe = useWallSwipe({
+    enabled: swipeOffered,
+    driving: model.driving,
+    arming: model.driveArming,
+    onSwipe,
+    onCancel: onSwipeCancel,
+    peekToken,
+    reduceMotion,
+    width: size.w,
+    preview: previewProgress,
+  });
+  // The frost mounts on the first touch (or the peek), never before.
+  const wiping = !model.driving && (swipe.frostArmed || swipe.committed);
   // The coloured lit look (the frost, or the amber fill) only while this
   // climber is driving the board: the model's rule, not the view's (#7017).
-  const glowShown = model.driving ? glow : null;
+  // A swipe toward driving wipes the same frost in part way.
+  const glowShown = model.driving || wiping ? glow : null;
   // Filled amber whenever this phone holds the board, in any state; the frost
   // (the glow) stays for the lit states only (Marco's QA).
   const holdsBoard = model.holder === 'self';
   const glowLayer = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
+  const fullGlow = model.driving ? glowLayer : null;
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
+  const label = swipe.releaseArmed && !model.driving ? text.releaseLabel : text.label;
+  const showChevrons = swipeOffered && !model.driving;
+  const accessibilityHint =
+    swipeOffered && !model.pending ? withSwipeHint(text.accessibilityHint, text.swipeHint) : text.accessibilityHint;
 
+  const { consumePanned } = swipe;
   const handlePress = useCallback(() => {
-    if (model.pending) return;
+    if (model.pending || consumePanned()) return;
     onPress();
-  }, [model.pending, onPress]);
+  }, [model.pending, onPress, consumePanned]);
+  const handleLongPress = useCallback(() => {
+    if (consumePanned()) return;
+    onLongPress();
+  }, [onLongPress, consumePanned]);
   // A screen reader can't swipe the button, so the swipe is a named action too
   // (WCAG 2.5.1), beside the hold's board controls.
   const drive = model.swipeAction === 'drive' ? onDrive : undefined;
@@ -153,94 +226,161 @@ function WallControlButtonComponent({
   // without the fill and the frost that mean "you have the board".
   const onWallUnlinked = model.state === 'on_wall_unlinked';
   // The glow (F1b) brings its own surface: white over the dark pill, dark over the light one.
-  const foreground = glowLayer
-    ? glowLayer.surface.label
+  const restForeground = fullGlow
+    ? fullGlow.surface.label
     : lit
       ? litForeground
       : onWallUnlinked
         ? systemColors.label
         : brandColors.primary;
-  const background = glowLayer
-    ? glowLayer.surface.base
-    : lit
+  const background = fullGlow
+    ? fullGlow.surface.base
+    : model.driving
       ? brandColors.live
       : onWallUnlinked
         ? 'transparent'
         : withAlpha(brandColors.primaryFill, WALL_CONTROL_TONAL_ALPHA);
   const face = model.holderFace;
+  // The wipe carries its own copy of the row, in the frost's label colour (or
+  // the lit one on the flat amber), clipped with it: the words and chevrons the
+  // frost covers read on the frost, the rest on the tonal pill.
+  const wipeForeground = glowLayer ? glowLayer.surface.label : litForeground;
 
-  return (
-    <PressableSurface
-      testID="play-drawer-wall-control"
-      onPress={handlePress}
-      onLongPress={hold ? onLongPress : undefined}
-      accessibilityActions={accessibilityActions}
-      onAccessibilityAction={onAccessibilityAction}
-      accessibilityRole="button"
-      accessibilityLabel={text.accessibilityLabel}
-      accessibilityHint={text.accessibilityHint}
-      accessibilityState={{ selected: model.selected, busy }}
-      // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
-      android_ripple={androidRipple(typeof foreground === 'string' ? foreground : brandColors.primary)}
-      onLayout={handleLayout}
-      style={({ pressed }) => [
-        styles.button,
-        compact && styles.compact,
-        { backgroundColor: background },
-        // A plain hairline with the busy fill: Marco wanted the border simple.
-        glowLayer && [styles.glowBorder, { borderColor: glowLayer.surface.border }],
-        onWallUnlinked && [styles.onWallBorder, { borderColor: brandColors.live }],
-        model.autoDisconnectWarning && [styles.warning, { borderColor: brandColors.warning }],
-        pressed && styles.pressed,
-      ]}
-    >
-      {glowLayer ? <WallGlow layer={glowLayer} width={size.w} /> : null}
+  /** The bulb, the label, the chevrons and the face slot, in one set of colours. */
+  const row = (rowColors: {
+    foreground: ColorValue;
+    bulb: ColorValue;
+    shadow: WallGlowLayer | null;
+    chevrons: (alpha: number) => ColorValue;
+    /** The resting row carries the testIDs and the large-content action; the wipe's copy only draws. */
+    resting: boolean;
+  }) => (
+    <>
       <View style={[styles.edge, styles.edgeLeading]}>
         {busy ? (
-          <ActivityIndicator size="small" color={foreground} />
+          <ActivityIndicator size="small" color={rowColors.foreground} />
         ) : (
           // Lit up while this climber has the board: the bulb is the board.
           <Icon
             name={holdsBoard ? 'lightbulb.fill' : 'lightbulb'}
             size={ICON_SIZE}
-            // Amber, except on the plain amber fill (a lit climb with no holds to
-            // frost), where it would vanish: there it takes the label colour.
-            color={(holdsBoard || onWallUnlinked) && !(lit && !glowLayer) ? brandColors.live : foreground}
+            color={rowColors.bulb}
             maxFontSizeMultiplier={1}
           />
         )}
       </View>
       <LargeContentViewer
-        title={text.label}
-        onActivate={model.pending ? undefined : handlePress}
+        title={label}
+        onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
       >
         <Text
           variant="subheadline"
-          color={foreground}
+          color={rowColors.foreground}
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={compact ? COMPACT_MIN_FONT_SCALE : MIN_FONT_SCALE}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
           style={[
             styles.label,
-            glowLayer && (glowLayer.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
+            rowColors.shadow && (rowColors.shadow.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
           ]}
         >
-          {text.label}
+          {label}
         </Text>
       </LargeContentViewer>
+      {showChevrons ? (
+        <View
+          style={[styles.chevrons, { marginEnd: CHEVRON_FACE_GAP - (compact ? spacing[1] : spacing[2]) }]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          testID={rowColors.resting ? 'play-drawer-wall-control-swipe-hint' : undefined}
+        >
+          {CHEVRON_ALPHAS.map((alpha) => (
+            <Icon
+              key={alpha}
+              name="chevron.left"
+              size={CHEVRON_SIZE}
+              color={rowColors.chevrons(alpha)}
+              maxFontSizeMultiplier={1}
+            />
+          ))}
+        </View>
+      ) : null}
       <View
         style={[styles.edge, styles.edgeTrailing]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        testID={face ? 'play-drawer-wall-control-holder' : undefined}
+        testID={face && rowColors.resting ? 'play-drawer-wall-control-holder' : undefined}
       >
         {face ? (
           <BoardDriverAvatar size={AVATAR_SIZE} userId={null} uri={face.avatarUrl} name={face.name} status="none" />
         ) : null}
       </View>
+    </>
+  );
+  const button = (
+    <PressableSurface
+      testID="play-drawer-wall-control"
+      onPress={handlePress}
+      onLongPress={hold ? handleLongPress : undefined}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
+      accessibilityRole="button"
+      accessibilityLabel={text.accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ selected: model.selected, busy }}
+      // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
+      android_ripple={androidRipple(typeof restForeground === 'string' ? restForeground : brandColors.primary)}
+      onLayout={handleLayout}
+      style={({ pressed }) => [
+        styles.button,
+        compact && styles.compact,
+        { backgroundColor: background },
+        // A plain hairline with the busy fill: Marco wanted the border simple.
+        fullGlow && [styles.glowBorder, { borderColor: fullGlow.surface.border }],
+        onWallUnlinked && [styles.onWallBorder, { borderColor: brandColors.live }],
+        model.autoDisconnectWarning && [styles.warning, { borderColor: brandColors.warning }],
+        pressed && styles.pressed,
+      ]}
+    >
+      {fullGlow ? <WallGlow layer={fullGlow} width={size.w} /> : null}
+      {row({
+        foreground: restForeground,
+        // Amber, except on the plain amber fill (a lit climb with no holds to
+        // frost), where it would vanish: there it takes the label colour.
+        bulb: (holdsBoard || onWallUnlinked) && !(lit && !fullGlow) ? brandColors.live : restForeground,
+        shadow: fullGlow,
+        chevrons: (alpha) => withAlpha(brandColors.primary, alpha),
+        resting: true,
+      })}
+      {wiping && size.w > 0 ? (
+        <WallSwipeWipe
+          progress={swipe.progress}
+          opacity={swipe.opacity}
+          width={size.w}
+          layer={glowLayer}
+          fill={brandColors.live}
+          rowStyle={[styles.wipeRow, compact && styles.compact]}
+        >
+          {row({
+            foreground: wipeForeground,
+            bulb: glowLayer && (holdsBoard || onWallUnlinked) ? brandColors.live : wipeForeground,
+            shadow: glowLayer,
+            chevrons: () => wipeForeground,
+            resting: false,
+          })}
+        </WallSwipeWipe>
+      ) : null}
     </PressableSurface>
+  );
+  // The pan is enabled only where the swipe is offered (`useWallSwipe`); always
+  // wrapped, so the button never remounts as the offer comes and goes. `pan-y`
+  // keeps a browser's vertical scroll (Expo web), as the climb rows do.
+  return (
+    <GestureDetector gesture={swipe.gesture} touchAction="pan-y">
+      {button}
+    </GestureDetector>
   );
 }
 
@@ -307,6 +447,18 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   labelViewer: { flex: 1, alignItems: 'center' },
+  // The wipe's copy of the row: the button's own row layout, laid over the frost.
+  wipeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[3],
+    gap: spacing[2],
+  },
+  chevrons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CHEVRON_GAP,
+  },
   label: {
     fontWeight: '600',
     textAlign: 'center',

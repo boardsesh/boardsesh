@@ -51,6 +51,8 @@ export const iconMap = {
   // Navigation
   'chevron.right': { ios: 'chevron.forward', android: 'chevron-right' },
   'chevron.left': { ios: 'chevron.backward', android: 'chevron-left' },
+  // The wall button's swipe to drive, as a board sheet row (#7113).
+  'chevron.left.2': { ios: 'chevron.backward.2', android: 'chevron-double-left' },
   'chevron.down': { ios: 'chevron.down', android: 'chevron-down' },
   'chevron.up': { ios: 'chevron.up', android: 'chevron-up' },
   close: { ios: 'xmark', android: 'close' },

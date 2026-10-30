@@ -24,6 +24,12 @@ type BleControlSheetHostProps = {
    * sheet always has.
    */
   clearedClimbUuid?: string | null;
+  /**
+   * Light every climb (#7113): start driving the wall, the swipe's visible
+   * alternative. The player passes it where the swipe is offered; with it the
+   * sheet also opens with no link, showing only that row.
+   */
+  onDrive?: () => void;
 };
 
 /**
@@ -40,6 +46,7 @@ export function BleControlSheetHost({
   onClose,
   showLightingSwitches = true,
   clearedClimbUuid,
+  onDrive,
 }: BleControlSheetHostProps) {
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
@@ -52,10 +59,11 @@ export function BleControlSheetHost({
   const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);
 
   // Close if the link drops while the sheet is open — otherwise it lingers
-  // showing Re-light / Disconnect actions that no-op on a dead link.
+  // showing Re-light / Disconnect actions that no-op on a dead link. A sheet
+  // offering Light every climb stays: that row connects first.
   useEffect(() => {
-    if (!isConnected && visible) onClose();
-  }, [isConnected, visible, onClose]);
+    if (!isConnected && visible && !onDrive) onClose();
+  }, [isConnected, visible, onClose, onDrive]);
 
   // Read without the throwing hook: the root host can mount outside a queue.
   const activeClimbUuid = useContext(QueueActiveClimbContext)?.activeClimbUuid ?? null;
@@ -100,6 +108,8 @@ export function BleControlSheetHost({
       lightOnClimbTap={lightOnClimbTap}
       onToggleLightOnClimbTap={setLightOnClimbTap}
       showLightingSwitches={showLightingSwitches}
+      linked={isConnected}
+      onDrive={onDrive}
       onClose={onClose}
     />
   );
