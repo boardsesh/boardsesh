@@ -136,6 +136,17 @@ const mockLastConnectedBoardStore = vi.hoisted(() => ({
   clearStoredLastConnectedBoard: vi.fn(async () => {}),
 }));
 vi.mock('../last-connected-board-store', () => mockLastConnectedBoardStore);
+// The per-board handles (#7076) persist through the same preference store.
+const mockKnownBoardDevicesStore = vi.hoisted(() => ({
+  getStoredKnownBoardDevices: vi.fn(
+    async (): Promise<Array<{ configKey: string; serial?: string; deviceId?: string }>> => [],
+  ),
+  setStoredKnownBoardDevices: vi.fn(async () => {}),
+}));
+vi.mock('../known-board-devices-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../known-board-devices-store')>()),
+  ...mockKnownBoardDevicesStore,
+}));
 
 // Spy on reportHandledError (keep the real noise-policy/other exports) so a
 // connect failure's Sentry tags can be asserted (#3480).
@@ -3571,6 +3582,204 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
       rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-a-uuid' });
     });
     await waitFor(() => expect(result.current.reconnectSerialForCurrentBoard).toBe('555'));
+  });
+});
+
+// At a gym with a Kilter and a MoonBoard the single remembered-board record
+// flips on every walk between them. Each board keeps its own handle (#7076), so
+// walking back reconnects instead of opening the picker.
+describe('useBoardBluetooth per-board remembered devices (#7076)', () => {
+  type BluetoothProps = Parameters<typeof useBoardBluetooth>[0];
+  const kilterBoard: BluetoothProps = { boardName: 'kilter', layoutId: 1, sizeId: 1 };
+  const moonBoard: BluetoothProps = { boardName: 'moonboard', layoutId: 1, sizeId: 1 };
+  const kilterKey = 'kilter::1::1::';
+  const moonKey = 'moonboard::1::1::';
+
+  let requestAndConnect: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValue([]);
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockResolvedValue(undefined);
+    requestAndConnect = vi.fn();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+  });
+
+  afterEach(() => {
+    vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  function renderBluetooth(initialProps: BluetoothProps) {
+    return renderHook((props: BluetoothProps) => useBoardBluetooth(props), { initialProps });
+  }
+
+  function nextConnectionIsKilter(serial: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId: `kilter-${serial}`, deviceName: `Kilter Board#${serial}@3` });
+  }
+
+  function nextConnectionIsMoonBoard(deviceId: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId, deviceName: 'MoonBoard' });
+  }
+
+  it('reconnects to the first board after connecting to another one', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+
+    // The single record now points at the MoonBoard; the Kilter still has its own.
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+      { configKey: kilterKey, serial: 'AAA' },
+    ]);
+  });
+
+  it('forgets only the disconnected board on a deliberate disconnect', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect(undefined, undefined, 'AAA');
+    });
+    expect(result.current.isConnected).toBe(true);
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+
+  it('offers a board handle stored in an earlier session', async () => {
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValueOnce([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    const { result } = renderBluetooth(moonBoard);
+
+    await waitFor(() => expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b'));
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+  });
+
+  it('keeps a connect made during the stored read and the stored handles for other boards', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // The stored list still holds an older Kilter handle; the connect wins.
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'OLD' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: kilterKey, serial: 'AAA' },
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+
+  it('keeps a board released before the stored read lands released', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result } = renderBluetooth(kilterBoard);
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    // Let go of it before the per-board list has even been read.
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'AAA' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
   });
 });
 

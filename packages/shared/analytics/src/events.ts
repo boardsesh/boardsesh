@@ -475,12 +475,13 @@ export const SHARED_EVENTS = {
   // Mobile-only (#7000): a tap on any view of the player's board control (one
   // handler, so one event per tap). Props: { state, action, control }. `state`:
   // 'connect' | 'on_wall_unlinked' | 'put_on_wall' | 'lit' | 'dark' | 'crew' |
-  // 'take_wall' | 'release_wall' | 'none', what the control showed when tapped
-  // ('on_wall_unlinked': On the wall per presence, lit under an hour ago, with
+  // 'take_wall' | 'release_wall' | 'move_to_board' | 'none', what the control
+  // showed when tapped ('move_to_board': Put on {board}, a climb on another
+  // board at this gym, #7076; 'on_wall_unlinked': On the wall per presence, lit under an hour ago, with
   // no live link; its tap connects and lights it again, 'relight' for the
   // climber's own climb, 'put_on_wall' for a preview). `action`:
   // 'disconnect' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
-  // 'take_wall' | 'release_wall' | 'noop', what the tap did ('disconnect' is a
+  // 'take_wall' | 'release_wall' | 'move_to_board' | 'noop', what the tap did ('disconnect' is a
   // tap on You have the board, state 'lit'; QA builds before Marco's phone
   // test sent 'open_sheet' there instead). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's

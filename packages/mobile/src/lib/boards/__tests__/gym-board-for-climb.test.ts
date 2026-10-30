@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { findGymBoardForClimb, findGymBoardToConnectForClimb } from '../gym-board-for-climb';
+import {
+  findGymBoardForClimb,
+  findGymBoardToConnectForClimb,
+  gymBoardButtonName,
+  sessionBoardPathNamesBoard,
+} from '../gym-board-for-climb';
 
 function makeBoard(overrides: Partial<UserBoard>): UserBoard {
   return {
@@ -85,5 +90,45 @@ describe('findGymBoardForClimb', () => {
   it('matches on board name and layout, ignoring size', () => {
     expect(findGymBoardForClimb({ boardName: 'moonboard', layoutId: 2 }, KILTER.uuid, GYM)).toBe(MOONBOARD);
     expect(findGymBoardForClimb({ boardName: 'moonboard', layoutId: 3 }, KILTER.uuid, GYM)).toBeNull();
+  });
+});
+
+// Put on {board} (#7076): the brand, the way climbers name boards in a room.
+describe('gymBoardButtonName', () => {
+  it('says the brand for the only board of it at the gym', () => {
+    expect(gymBoardButtonName(KILTER, GYM)).toBe('Kilter');
+    expect(gymBoardButtonName(MOONBOARD, GYM)).toBe('MoonBoard');
+  });
+
+  it("says the board's own name when the gym has two of that brand", () => {
+    const secondKilter = makeBoard({ uuid: 'gym-kilter-2', boardType: 'kilter', layoutId: 8, name: 'Homewall' });
+    expect(gymBoardButtonName(secondKilter, [...GYM, secondKilter])).toBe('Homewall');
+    expect(gymBoardButtonName(KILTER, [...GYM, secondKilter])).toBe('Gym Kilter');
+    // The MoonBoard is still the only one of its brand.
+    expect(gymBoardButtonName(MOONBOARD, [...GYM, secondKilter])).toBe('MoonBoard');
+  });
+
+  it('says the brand with no roster', () => {
+    expect(gymBoardButtonName(TENSION, null)).toBe('Tension');
+    expect(gymBoardButtonName(TENSION, undefined)).toBe('Tension');
+  });
+});
+
+describe('sessionBoardPathNamesBoard (#7076)', () => {
+  const NAMED_MOON = { ...MOONBOARD, slug: 'qa-moonboard' };
+
+  it("matches a named path by the board's slug", () => {
+    expect(sessionBoardPathNamesBoard('/b/qa-moonboard/40', NAMED_MOON)).toBe(true);
+    expect(sessionBoardPathNamesBoard('/b/qa-kilter/40', NAMED_MOON)).toBe(false);
+  });
+
+  it("matches a positional path by the board's configuration", () => {
+    expect(sessionBoardPathNamesBoard('/kilter/1/10/1,20/40', KILTER)).toBe(true);
+    expect(sessionBoardPathNamesBoard('/kilter/1/10/1,20,21/40', KILTER)).toBe(false);
+    expect(sessionBoardPathNamesBoard('/tension/9/10/1,20/40', KILTER)).toBe(false);
+  });
+
+  it('names no board outside a session', () => {
+    expect(sessionBoardPathNamesBoard('', KILTER)).toBe(false);
   });
 });

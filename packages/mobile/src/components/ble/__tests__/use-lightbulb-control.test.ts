@@ -18,6 +18,7 @@ type BluetoothCtx = {
   loading: boolean;
   connect: ReturnType<typeof vi.fn>;
   connectAfterBoardSwitch: ReturnType<typeof vi.fn>;
+  hasRememberedDeviceForBoard: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   armUndoWallChangeToast: ReturnType<typeof vi.fn>;
   reconnectSerialForCurrentBoard: string | null;
@@ -75,6 +76,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     loading: false,
     connect: vi.fn().mockResolvedValue(true),
     connectAfterBoardSwitch: vi.fn().mockResolvedValue(true),
+    hasRememberedDeviceForBoard: vi.fn(() => false),
     disconnect: vi.fn().mockResolvedValue(undefined),
     armUndoWallChangeToast: vi.fn(),
     reconnectSerialForCurrentBoard: null,
@@ -731,6 +733,88 @@ describe('useLightbulbControl connect follows the climb (#7001)', () => {
 
     expect(bluetooth.disconnect).toHaveBeenCalledOnce();
     expect(climbBoardConnect.moveToClimbBoard).not.toHaveBeenCalled();
+  });
+});
+
+// #7076: Put on {board}. The climb on screen is on another board at this gym;
+// the tap moves there and connects, whatever this phone is linked to now.
+describe('useLightbulbControl moveToClimbBoard (#7076)', () => {
+  const GYM_KILTER = {
+    uuid: 'gym-kilter',
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+  } as UserBoard;
+
+  function climbOnKilter(): ClimbBoardConnectValue & { moveToClimbBoard: ReturnType<typeof vi.fn> } {
+    return { moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'switched', board: GYM_KILTER }) };
+  }
+
+  it('moves and connects while linked to the MoonBoard, never disconnecting first', async () => {
+    const bluetooth = makeBluetooth({ boardName: 'moonboard', isConnected: true });
+    ctrl.bluetooth = bluetooth;
+    const climbBoardConnect = climbOnKilter();
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+    const kilterClimb = { boardType: 'kilter', layoutId: 1 };
+
+    await expect(result.current.moveToClimbBoard('move_to_board', kilterClimb)).resolves.toBe(true);
+
+    expect(climbBoardConnect.moveToClimbBoard).toHaveBeenCalledWith(kilterClimb);
+    expect(bluetooth.connectAfterBoardSwitch).toHaveBeenCalledWith(GYM_KILTER);
+    expect(bluetooth.disconnect).not.toHaveBeenCalled();
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+  });
+
+  it('reports a board this phone remembers as a reconnect', async () => {
+    const bluetooth = makeBluetooth({ isConnected: true, hasRememberedDeviceForBoard: vi.fn(() => true) });
+    ctrl.bluetooth = bluetooth;
+    ctrl.climbBoardConnect = climbOnKilter();
+    const { result } = renderControl();
+
+    await result.current.moveToClimbBoard('move_to_board');
+
+    expect(bluetooth.hasRememberedDeviceForBoard).toHaveBeenCalledWith(GYM_KILTER);
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'move_to_board',
+      boardName: 'kilter',
+      reconnect: true,
+    });
+  });
+
+  it('does nothing while a connect is in flight', async () => {
+    const bluetooth = makeBluetooth({ loading: true });
+    ctrl.bluetooth = bluetooth;
+    const climbBoardConnect = climbOnKilter();
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+
+    await expect(result.current.moveToClimbBoard('move_to_board')).resolves.toBe(false);
+
+    expect(climbBoardConnect.moveToClimbBoard).not.toHaveBeenCalled();
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
+  });
+
+  it('connects nowhere when there was no move', async () => {
+    const bluetooth = makeBluetooth({ isConnected: true });
+    ctrl.bluetooth = bluetooth;
+    ctrl.climbBoardConnect = { moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'none' }) };
+    const { result } = renderControl();
+
+    await expect(result.current.moveToClimbBoard('move_to_board')).resolves.toBe(false);
+
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+  });
+
+  it('resolves false outside a drawer host', async () => {
+    const bluetooth = makeBluetooth({ isConnected: true });
+    ctrl.bluetooth = bluetooth;
+    const { result } = renderControl();
+
+    await expect(result.current.moveToClimbBoard('move_to_board')).resolves.toBe(false);
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
   });
 });
 

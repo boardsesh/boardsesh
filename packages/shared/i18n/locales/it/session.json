@@ -950,7 +950,9 @@
       "crewHasBoard": "La tua crew ha il pannello",
       "boardOptions": "Opzioni del pannello",
       "onWall": "In parete",
-      "lightAgainHint": "Lo illumina di nuovo in parete"
+      "lightAgainHint": "Lo illumina di nuovo in parete",
+      "putOnGymBoard": "Metti sul {{board}}",
+      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco"
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {

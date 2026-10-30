@@ -464,6 +464,8 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   // The preview angle re-anchor asks for the climb at the live angle; nothing
   // here pins a preview at another angle, so it never resolves.
   useClimb: () => ({ data: undefined }),
+  // No gym roster: Put on {board} reads it (#7076).
+  useGymBoards: () => ({ data: undefined }),
   useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: toggleFavorite }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {

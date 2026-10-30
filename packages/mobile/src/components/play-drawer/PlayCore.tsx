@@ -30,6 +30,12 @@ import { configKey, getQueueBoardKey, isClimbOnReachableBoard } from '@boardsesh
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { formatRenderBoardLabel, resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import {
+  findGymBoardToConnectForClimb,
+  gymBoardButtonName,
+  sessionBoardPathNamesBoard,
+} from '../../lib/boards/gym-board-for-climb';
+import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { buildOpeningLayoutKey } from './opening-layout-cache';
@@ -131,7 +137,7 @@ import { useSetting } from '../../settings';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useClimb, useProfile } from '../../lib/graphql/hooks';
+import { useClimb, useGymBoards, useProfile } from '../../lib/graphql/hooks';
 import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
 import {
   PlayCoreEnhancements,
@@ -757,6 +763,7 @@ export function PlayCore({
     pending: lightbulbPending,
     onPress: handleLightbulb,
     connect: connectLightbulb,
+    moveToClimbBoard: moveLightbulbToClimbBoard,
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     wallHeldLocally,
@@ -767,6 +774,35 @@ export function PlayCore({
     canRelay: canRelayToHolder,
   });
   const { data: activeBoardForNavigation } = useActiveBoard();
+  // The board at this gym that draws the climb on screen, when it isn't the
+  // active one (#7076): what Put on {board} names and moves to. The same lookup
+  // the connect and the drawer host's switch use, so all three name one board.
+  const { data: playerGymBoards } = useGymBoards(activeBoardForNavigation?.gymUuid ?? null);
+  const climbGymBoard = useMemo(
+    () =>
+      climbBoardReachable && !showBoardMismatch
+        ? findGymBoardToConnectForClimb(
+            { boardType: renderBoardConfig.boardName, layoutId: renderBoardConfig.layoutId },
+            activeBoardForNavigation,
+            playerGymBoards,
+          )
+        : null,
+    [
+      climbBoardReachable,
+      showBoardMismatch,
+      renderBoardConfig.boardName,
+      renderBoardConfig.layoutId,
+      activeBoardForNavigation,
+      playerGymBoards,
+    ],
+  );
+  const climbGymBoardName = climbGymBoard ? gymBoardButtonName(climbGymBoard, playerGymBoards) : null;
+  // A crewmate moved the session to that board and lights it there. In a crew,
+  // the climb is theirs to light: this phone relays to them rather than taking
+  // the board (Marco: crewmates keep their own board and see the crew's state).
+  const sessionBoardPath = useSessionBoardPath();
+  const climbOnCrewGymBoard =
+    isSharedSession && climbGymBoard !== null && sessionBoardPathNamesBoard(sessionBoardPath, climbGymBoard);
   const activeBoardForLoggingRef = useRef(activeBoardForNavigation);
   activeBoardForLoggingRef.current = activeBoardForNavigation;
   // View options lists the MoonBoard-only Active holds switch on a MoonBoard
@@ -1277,6 +1313,9 @@ export function PlayCore({
         // The switch-board overlay, another board's climb, or a board with no
         // lights: the connected wall can't light what's on screen.
         offWall: showBoardMismatch || climbBoardMismatch || boardIsLedless || boardName === 'spray',
+        // ...unless another board at this gym draws it: then Put on {board} (#7076).
+        gymBoardName: climbGymBoardName,
+        crewGymBoard: climbOnCrewGymBoard,
         wallHeldLocally,
         // On the wall per presence with no link (QA #147).
         displayedIsWallClimb: wallClimb.uuid !== null && displayedClimbUuid === wallClimb.uuid,
@@ -1305,6 +1344,8 @@ export function PlayCore({
       displayedLit,
       showBoardMismatch,
       climbBoardMismatch,
+      climbGymBoardName,
+      climbOnCrewGymBoard,
       boardIsLedless,
       boardName,
       wallHeldLocally,
@@ -1698,6 +1739,13 @@ export function PlayCore({
     bluetoothConnected,
     connectLightbulb,
   ]);
+  // Put on {board} (#7076): the climb on screen is on another board at this gym.
+  // A preview goes up first (the busy-wall question can take the tap instead),
+  // then the move to that board, which connects there and lights it.
+  const handleMoveToGymBoard = useCallback(() => {
+    if (commitBarModel.mode === 'commit' && !handleSetActive()) return;
+    void moveLightbulbToClimbBoard('move_to_board', displayedClimb ?? null);
+  }, [commitBarModel.mode, handleSetActive, moveLightbulbToClimbBoard, displayedClimb]);
   // The busy-wall question (#7017): who put the lit climb up, and the one
   // handler behind its pair, which drops taps for the first 500 ms and speaks
   // the caption once. Its words replace the browse caption while it is up.
@@ -1740,14 +1788,25 @@ export function PlayCore({
   const wallControlRunners = useMemo(
     () => ({
       light: handleLightThisClimb,
-      toggle: handleLightbulb,
+      // On the crew's gym board the relay commits the preview to the session;
+      // the bulb's own press would connect this phone to its own board.
+      toggle: climbOnCrewGymBoard ? handleRelayToHolder : handleLightbulb,
       // You have the board: let go of it, as the board sheet's Disconnect does.
       // That forgets the board on purpose: it frees it for the next climber.
       disconnect: disconnectAllBluetooth,
       openSheet: openBoardSheet,
       lightAgain: handleLightAgain,
+      moveToBoard: handleMoveToGymBoard,
     }),
-    [handleLightThisClimb, handleLightbulb, openBoardSheet, handleLightAgain],
+    [
+      handleLightThisClimb,
+      climbOnCrewGymBoard,
+      handleRelayToHolder,
+      handleLightbulb,
+      openBoardSheet,
+      handleLightAgain,
+      handleMoveToGymBoard,
+    ],
   );
 
   // A swipe step changes the climb with these, whichever render it follows.

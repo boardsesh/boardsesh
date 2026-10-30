@@ -23,6 +23,9 @@ export type BoardConnectSurface =
   // The play view's Put on the wall while no board is connected (#6939): the
   // tap sets the preview and connects, so it reads apart from Connect board.
   | 'put_on_wall'
+  // The player's Put on {board}: a climb on another board at this gym, so the
+  // tap moves to that board first (#7076).
+  | 'move_to_board'
   // The Climbs header's "You have the board" capsule: a tap disconnects, a
   // long-press opens the controls sheet. It never connects (it only shows while
   // you hold the board, and a tap that would connect is dropped), but it shares
