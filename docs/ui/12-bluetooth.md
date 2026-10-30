@@ -56,6 +56,15 @@ search and auto-selection; using their search escape also reveals the full list.
 No matching target is distinct from an empty scan, so other boards being hidden
 does not trigger location-permission or no-lights advice.
 
+The simulator comparison uses the same resolved QA gym fixtures with a stronger
+Tension signal. The [expanded list](../images/7125-picker-all.png) follows an
+actual tap on "Search for any board"; the [missing-target state](../images/7125-picker-missing.png)
+shows dark Material styling. These captures verify presentation, not radio behavior.
+
+| Before | After |
+| --- | --- |
+| ![Tension listed first for a Kilter connection](../images/7125-picker-before.png) | ![Only the intended Kilter listed, with the search escape](../images/7125-picker-after.png) |
+
 On iOS, adopting a connection restored outside JavaScript waits until reconnect
 memory finishes loading, including a failed read (#5429). A named controller's
 serial must agree with each known identity: memory for the active board UUID key
