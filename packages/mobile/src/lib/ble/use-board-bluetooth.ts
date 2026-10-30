@@ -732,6 +732,10 @@ export function useBoardBluetooth({
   const activeConnectionLifetimeRef = useRef<ActiveBleConnectionLifetime | null>(null);
   const onConnectionEndedRef = useRef(onConnectionEnded);
   onConnectionEndedRef.current = onConnectionEnded;
+  // Board resolution can finish mid-connect. Keep attribution current without
+  // recreating callbacks that drive the connection and auto-sender.
+  const analyticsBoardIdRef = useRef(analyticsBoardId);
+  analyticsBoardIdRef.current = analyticsBoardId;
   // A connect callback can outlive the render which started its asynchronous
   // adapter request. Read session attribution when that request actually opens
   // a physical-link generation, rather than from the callback's stale closure.
@@ -1064,7 +1068,7 @@ export function useBoardBluetooth({
         layoutId,
         sizeId,
         mirrored,
-        boardId: analyticsBoardId ?? undefined,
+        boardId: analyticsBoardIdRef.current ?? undefined,
         connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
         ...sendContext,
       };
@@ -1512,7 +1516,6 @@ export function useBoardBluetooth({
       holdsData,
       ledColorOverrides,
       moonboardLightAdjacentHolds,
-      analyticsBoardId,
       handleDisconnection,
       getConnectedViaMismatchOverride,
       writeActivityStore,
@@ -1876,7 +1879,7 @@ export function useBoardBluetooth({
           sizeId,
           apiLevel: apiLevelRef.current,
           deviceNamePresent: !!connection.deviceName,
-          boardId: analyticsBoardId ?? undefined,
+          boardId: analyticsBoardIdRef.current ?? undefined,
           connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
@@ -2026,7 +2029,6 @@ export function useBoardBluetooth({
       sizeId,
       setIds,
       boardUuid,
-      analyticsBoardId,
       onConnectionChange,
       onConnectSuccess,
       getConnectedViaMismatchOverride,
