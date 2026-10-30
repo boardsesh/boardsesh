@@ -240,7 +240,11 @@ export function ConsentGate(): null {
   useEffect(() => {
     if (!settled || segments[0] === 'privacy-consent') return;
     const destination = consumeConsentDestination();
-    if (destination) router.navigate(destination as Href);
-  }, [settled, segments, router]);
+    // Signed out, the auth gate swaps the whole navigator for a login redirect
+    // on any route outside /auth, so opening the link here loops until React
+    // gives up. Drop it: the deep-link provider keeps join and board links
+    // across sign-in, the same as a link that arrives after the answer.
+    if (destination && isAuthenticated) router.navigate(destination as Href);
+  }, [settled, segments, router, isAuthenticated]);
   return null;
 }
