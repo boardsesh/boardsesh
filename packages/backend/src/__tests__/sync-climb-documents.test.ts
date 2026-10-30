@@ -147,10 +147,11 @@ describe('saved climb canonical mirror', () => {
       climbMutations.saveClimb({}, { input }, context(SETTER)),
       climbMutations.saveClimb({}, { input }, context(SETTER)),
     ]);
-    expect(first).toEqual(replay);
+    expect({ ...first, replayed: undefined }).toEqual({ ...replay, replayed: undefined });
+    expect([first, replay].filter((climbResult) => climbResult.replayed)).toHaveLength(1);
     expect(first.uuid).toBe(uuid);
     await db.execute(sql`UPDATE board_climbs SET name = 'Edited later' WHERE uuid = ${uuid}`);
-    await climbMutations.saveClimb({}, { input }, context(SETTER));
+    await expect(climbMutations.saveClimb({}, { input }, context(SETTER))).resolves.toMatchObject({ replayed: true });
     const mirrored = await syncClimbDocuments({}, { ...scope, boardType: 'kilter', climbUuid: uuid }, context(SETTER));
     expect(mirrored?.climb).toMatchObject({ uuid, name: 'Edited later' });
     await expect(climbMutations.saveClimb({}, { input }, context(OWNER))).rejects.toMatchObject({
