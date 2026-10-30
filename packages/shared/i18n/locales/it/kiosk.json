@@ -302,6 +302,8 @@
     "boards": {
       "heading": "Pannelli in questa palestra",
       "description": "Collega i pannelli che possiedi così compaiono sulla pagina della tua palestra e sui kiosk.",
+      "back": "Tutti i pannelli",
+      "editLoadError": "Impossibile caricare questo pannello per modificarlo.",
       "addBoard": "Aggiungi un pannello",
       "empty": "Ancora nessun pannello collegato. Aggiungine uno per iniziare.",
       "loadError": "Impossibile caricare i pannelli di questa palestra.",

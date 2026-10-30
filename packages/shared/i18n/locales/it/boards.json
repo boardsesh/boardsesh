@@ -585,7 +585,9 @@
     "helperText": {
       "unlisted": "Nascosto dai risultati di ricerca ma raggiungibile con il link diretto",
       "hideLocation": "Nascosto dalle ricerche di pannelli vicini, a meno che tu non segua chi cerca",
-      "hasLeds": "Disattivato significa nessun kit di luci. I turni funzionano comunque e lo schermo della palestra mostra sempre il blocco attivo."
+      "hasLeds": "Disattivato significa nessun kit di luci. I turni funzionano comunque e lo schermo della palestra mostra sempre il blocco attivo.",
+      "ownerOnlyPrivacy": "Solo il proprietario del pannello può modificare la visibilità e la privacy della posizione.",
+      "ownerOnlyCredentials": "Solo il proprietario del pannello può vedere o modificare le credenziali del controller."
     },
     "alerts": {
       "configEditable": "Puoi cambiare layout, dimensione e set di prese. I blocchi già registrati restano dove sono."
@@ -602,7 +604,11 @@
       "duplicateBodyWithLocation": "Con questa modifica il pannello diventa uguale a \"{{name}}\" a {{location}}: stesso layout, stessa dimensione e stessi set di prese.",
       "duplicateBodyGeneric": "Questa modifica coincide con una configurazione di pannello che il proprietario ha già.",
       "saveAnyway": "Salva comunque",
-      "cancel": "Annulla"
+      "cancel": "Annulla",
+      "discardTitle": "Scartare le modifiche non salvate?",
+      "discardBody": "Le modifiche al pannello non sono state salvate.",
+      "discard": "Scarta le modifiche",
+      "keepEditing": "Continua a modificare"
     },
     "serialReuse": {
       "warning": "Questo numero di serie appartiene già a \"{{name}}\". Se ti unisci a quel pannello, le ripetizioni e le statistiche di tutti restano su un unico pannello.",

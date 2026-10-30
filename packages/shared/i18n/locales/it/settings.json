@@ -446,6 +446,7 @@
     "searchingForBoard": "Ricerca del tuo {{board}}…",
     "searchingForSavedBoard": "Ricerca del tuo pannello…",
     "searchAnyBoard": "Cerca qualsiasi pannello",
+    "selectedBoardNotFound": "Il pannello selezionato non è stato trovato",
     "writing": "Illuminazione del pannello…",
     "selectBoard": "Seleziona pannello",
     "devicesFound_one": "{{count}} pannello trovato",

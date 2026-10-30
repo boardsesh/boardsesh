@@ -10,6 +10,7 @@ import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
+import { deviceMatchesPickerTarget, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
@@ -51,6 +52,8 @@ type DevicePickerSheetProps = {
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
+  targetBoard?: PickerBoardTarget;
+  showAllBoards?: boolean;
   /**
    * `searching`: a connect to the saved board is still trying to auto-select it
    * (#5658). The sheet shows a spinner, "Searching for your board" and "Search
@@ -66,7 +69,7 @@ type DevicePickerSheetProps = {
    */
   closing?: boolean;
   onClosed?: () => void;
-  /** "Search for any board", shown while `searching`. */
+  /** "Search for any board", for saved-device searches and known-board lists. */
   onSearchAnyBoard?: () => void;
   /** Another sheet displaced this one. Defaults to `onDismiss`. */
   onDisplaced?: () => void;
@@ -79,6 +82,8 @@ export function DevicePickerSheet({
   isScanning,
   resolvedBoards,
   currentBoardConfig,
+  targetBoard,
+  showAllBoards = false,
   onNoLeds,
   onScanAgain,
   mode = 'list',
@@ -116,7 +121,18 @@ export function DevicePickerSheet({
     };
   }, [closing]);
 
-  const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
+  const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
+  const listedDevices = useMemo(
+    () =>
+      filteringTarget && targetBoard
+        ? devices.filter((device) => deviceMatchesPickerTarget(device, resolvedBoards, targetBoard))
+        : devices,
+    [devices, filteringTarget, resolvedBoards, targetBoard],
+  );
+  const sortedDevices = useMemo(
+    () => [...listedDevices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi),
+    [listedDevices],
+  );
 
   // Pre-compute once per devices update; name is stable for a given device
   // throughout a scan session so parsing per renderItem invocation is wasteful.
@@ -161,6 +177,7 @@ export function DevicePickerSheet({
   const { systemColors } = theme;
 
   const searching = mode === 'searching';
+  const targetNotListed = !searching && filteringTarget && listedDevices.length === 0 && devices.length > 0;
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
 
@@ -210,7 +227,7 @@ export function DevicePickerSheet({
   // it's clearly listed, and not while the initial scan is still running
   // (showEmptyState gates the zero-device path on the scan having finished empty).
   const showHardwareTips =
-    !showLocationHint && !showLocationServicesHint && (showEmptyState || noneMatchedSelectedType);
+    !showLocationHint && !showLocationServicesHint && (showEmptyState || (!filteringTarget && noneMatchedSelectedType));
   const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
 
   // ModalSheet hands the native sheet a single flex child and pads the body for
@@ -226,7 +243,7 @@ export function DevicePickerSheet({
       header={
         <SheetTopBar
           title={t('ble.selectBoard')}
-          subtitle={devices.length > 0 ? t('ble.devicesFound', { count: devices.length }) : undefined}
+          subtitle={listedDevices.length > 0 ? t('ble.devicesFound', { count: listedDevices.length }) : undefined}
           leading={{ kind: 'cancel', onPress: onDismiss }}
         />
       }
@@ -272,7 +289,23 @@ export function DevicePickerSheet({
         </View>
       )}
 
-      {devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
+      {!searching && filteringTarget && (
+        <View style={targetNotListed ? styles.scanningContainer : styles.searchAnyBoardRow}>
+          {targetNotListed && (
+            <>
+              {isScanning && <ActivityIndicator size="small" color={theme.brandColors.primary} />}
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {isScanning ? t('ble.searchingForSavedBoard') : t('ble.selectedBoardNotFound')}
+              </Text>
+            </>
+          )}
+          {onSearchAnyBoard && (
+            <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
+          )}
+        </View>
+      )}
+
+      {!filteringTarget && devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
         <View style={styles.typeHint}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
@@ -280,7 +313,7 @@ export function DevicePickerSheet({
         </View>
       )}
 
-      {devices.length > 0 && (
+      {listedDevices.length > 0 && (
         <BottomSheetFlatList
           style={styles.list}
           data={sortedDevices}
@@ -376,6 +409,10 @@ export function DevicePickerSheet({
 }
 
 const styles = StyleSheet.create({
+  searchAnyBoardRow: {
+    alignItems: 'center',
+    paddingVertical: spacing[3],
+  },
   scanningContainer: {
     flex: 1,
     alignItems: 'center',

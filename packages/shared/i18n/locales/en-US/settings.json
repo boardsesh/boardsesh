@@ -446,6 +446,7 @@
     "searchingForBoard": "Searching for your {{board}}…",
     "searchingForSavedBoard": "Searching for your board…",
     "searchAnyBoard": "Search for any board",
+    "selectedBoardNotFound": "Your selected board was not found",
     "writing": "Lighting the board…",
     "selectBoard": "Select Board",
     "devicesFound_one": "{{count}} board found",
