@@ -26,7 +26,8 @@
     "feedback": "Segnalazioni di bug",
     "gymDuplicates": "Palestre duplicate",
     "locationSync": "Sincronizzazioni delle sedi congelate",
-    "sprayWalls": "Dati di addestramento Spraywall"
+    "sprayWalls": "Dati di addestramento Spraywall",
+    "boards": "Pannelli registrati"
   },
   "feedback": {
     "title": "Segnalazioni di bug e feedback",
@@ -511,5 +512,34 @@
     },
     "backToAdmin": "Torna all'admin",
     "noAccess": "Il tuo ruolo admin non copre le Spraywall. Questa pagina richiede l'accesso admin alle Spraywall o all'intero sito."
+  },
+  "boards": {
+    "title": "Pannelli registrati",
+    "description": "Trova e modifica i pannelli registrati, compresi quelli privati e quelli senza una palestra.",
+    "backToAdmin": "Torna all'admin",
+    "search": "Cerca pannelli",
+    "searchPlaceholder": "Nome del pannello, UUID, slug o palestra",
+    "boardType": "Tipo di pannello",
+    "allTypes": "Tutti i tipi",
+    "searchAction": "Cerca",
+    "loading": "Caricamento dei pannelli",
+    "editLoadError": "Impossibile caricare questo pannello per modificarlo.",
+    "retry": "Riprova",
+    "backToList": "Tutti i pannelli",
+    "loadError": "Impossibile caricare i pannelli registrati.",
+    "empty": "Nessun pannello corrisponde a questa ricerca.",
+    "owner": "Proprietario: {{name}}",
+    "systemOwner": "Boardsesh",
+    "noGym": "Nessuna palestra collegata",
+    "editNamed": "Modifica {{name}}",
+    "results_one": "{{count}} pannello",
+    "results_other": "{{count}} pannelli",
+    "previous": "Precedente",
+    "next": "Successivo",
+    "visibility": {
+      "public": "Pubblico",
+      "unlisted": "Non in elenco",
+      "private": "Privato"
+    }
   }
 }
