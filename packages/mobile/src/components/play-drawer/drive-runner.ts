@@ -1,3 +1,4 @@
+import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { enterDriveMode, exitDriveMode, getDriveMode } from './drive-mode-store';
 import type { DriveStartOutcome } from './use-wall-control';
 import type { WallControlModel } from './wall-control';
@@ -10,6 +11,8 @@ export type StartDriveInput = {
   wallHeldByOtherUser: boolean;
   /** The party session, or null solo. A drive ends when it changes. */
   sessionId: string | null;
+  /** What started it: the swipe, a solo press, or the screen-reader action / sheet row. */
+  startedBy: DriveModeStartedBy;
   /** The climb on screen is a preview: it goes up first. */
   committing: boolean;
   /**
@@ -50,7 +53,7 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
   // action, or a double fire) both see a model rendered before either armed.
   if (getDriveMode()) return 'unavailable';
   if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'needs_handoff';
-  enterDriveMode({ sessionId: input.sessionId, boardId: null });
+  enterDriveMode({ sessionId: input.sessionId, boardId: null, startedBy: input.startedBy });
   const startedAt = getDriveMode()?.startedAt ?? null;
   const endThisDrive = (reason: 'connect_failed' | 'commit_failed') => {
     if (getDriveMode()?.startedAt === startedAt) exitDriveMode(reason);

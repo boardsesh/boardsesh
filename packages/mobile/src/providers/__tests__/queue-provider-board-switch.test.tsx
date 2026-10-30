@@ -1227,13 +1227,37 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     await renderOnTheTappedClimb();
     const freshS3 = makeItem('fresh-s3', s3);
 
-    act(() => latest().setCurrentClimb(freshS3, { keepWalkedTrack: true, trigger: 'put_on_wall' }));
+    act(() =>
+      latest().setCurrentClimb(freshS3, {
+        keepWalkedTrack: true,
+        walkedPeek: true,
+        historyCopy: 'fresh',
+        trigger: 'put_on_wall',
+      }),
+    );
     expect(latest().state.currentClimbQueueItem?.uuid).toBe('fresh-s3');
     expect(latest().playlistSuggestionSource).toMatchObject({ playlistUuid: 'climblist', label: 'Search results' });
 
     // Next walks on down the same list.
     act(() => latest().nextClimb());
     expect(currentClimbUuid()).toBe('s4');
+  });
+
+  // #5403: holding Search results, a crew browse open of a peer's tick for a
+  // list climb, then Put on board, must not borrow the list.
+  it('leaves the list when a peer tick for a list climb goes up on the wall', async () => {
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [tapped],
+      currentClimbQueueItem: tapped,
+      playlistSuggestionSource: results,
+      savedAt: '2026-10-25T00:00:00.000Z',
+    });
+    await renderOnTheTappedClimb();
+    const peerTickS1 = makeItem('tick-s1', s1);
+
+    act(() => latest().setCurrentClimb(peerTickS1, { keepWalkedTrack: true, trigger: 'put_on_wall' }));
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('tick-s1');
+    expect(latest().playlistSuggestionSource).toBeNull();
   });
 
   // Codex review on #6798: the swipe down the list and back leaves the list's

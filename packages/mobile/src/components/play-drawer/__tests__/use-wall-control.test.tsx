@@ -50,7 +50,7 @@ import {
 
 type MockRunners = {
   [Name in Exclude<keyof WallControlRunners, 'drive'>]: ReturnType<typeof vi.fn<() => void>>;
-} & { drive: ReturnType<typeof vi.fn<() => DriveStartOutcome>> };
+} & { drive: ReturnType<typeof vi.fn<(startedBy: string) => DriveStartOutcome>> };
 
 function runners(): MockRunners {
   return {
@@ -60,7 +60,7 @@ function runners(): MockRunners {
     openSheet: vi.fn<() => void>(),
     lightAgain: vi.fn<() => void>(),
     moveToBoard: vi.fn<() => void>(),
-    drive: vi.fn<() => DriveStartOutcome>(() => 'started'),
+    drive: vi.fn<(startedBy: string) => DriveStartOutcome>(() => 'started'),
   };
 }
 
@@ -137,7 +137,7 @@ describe('useWallControl', () => {
   // #7113: a press on the frosted button stops driving and keeps the link.
   it('stops driving on You are driving the wall: no disconnect, a light buzz, and says so', () => {
     resetDriveModeForTests();
-    enterDriveMode({ sessionId: 'session-1', boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 });
     markDriveLive();
     const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
     act(() => hook.result.current.press('button'));
@@ -281,7 +281,7 @@ describe('useWallControl drive', () => {
     act(() => {
       outcome = hook.result.current.drive('button');
     });
-    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.drive).toHaveBeenCalledExactlyOnceWith('action');
     expect(outcome).toBe('started');
     // A start is not a tap: it logs no Wall Control Tapped.
     expect(analytics.tapped).not.toHaveBeenCalled();
@@ -321,7 +321,7 @@ describe('useWallControl swipe', () => {
     act(() => {
       outcome = hook.result.current.swipe('button');
     });
-    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.drive).toHaveBeenCalledExactlyOnceWith('swipe');
     expect(outcome).toBe('started');
     expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({ state: 'connect', outcome: 'drive', control: 'button' });
     expect(analytics.tapped).not.toHaveBeenCalled();
@@ -407,12 +407,13 @@ describe('useWallControl: a solo press ends in driving', () => {
     const run = runners();
     // The runner's own effect: a drive clears the stop as it arms.
     run.drive.mockImplementation(() => {
-      enterDriveMode({ sessionId: null, boardId: null });
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
       return 'started';
     });
     const { hook } = setup(previewAfterStop(input), run);
     act(() => hook.result.current.press(control));
     expect(run.drive).toHaveBeenCalledTimes(drives ? 1 : 0);
+    if (drives) expect(run.drive).toHaveBeenCalledWith('tap');
     expect(run.light).toHaveBeenCalledTimes(lights ? 1 : 0);
     expect(isDrivingStoppedForLink()).toBe(stoppedAfter);
     expect(getDriveMode() !== null).toBe(drives);

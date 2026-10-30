@@ -1691,11 +1691,22 @@ describe('Up next plays before the list continues (#6777)', () => {
     const peekS3 = selectNextQueueItemWithSuggestions([tapped], tapped, results).item;
     expect(peekS3?.uuid).toBe(getPlaylistPeekQueueItemUuid('s3'));
     const committedS3: ClimbQueueItem = { uuid: 'fresh-s3', climb: s3, suggested: true };
-    expect(resolveUpNextCommitResume([tapped], tapped, results, committedS3)).toBeNull();
+    expect(resolveUpNextCommitResume([tapped], tapped, results, committedS3, { walkedPeek: true })).toBeNull();
     // Previous's peek of the list climb behind it is the list too.
-    expect(resolveUpNextCommitResume(queue, tapped, results, { uuid: 'fresh-s1', climb: s1 })).toBeNull();
+    const freshS1 = { uuid: 'fresh-s1', climb: s1 };
+    expect(resolveUpNextCommitResume(queue, tapped, results, freshS1, { walkedPeek: true })).toBeNull();
     // A climb off the list, not queued, still leaves it.
-    expect(resolveUpNextCommitResume(queue, tapped, results, makeItem('not-queued'))).toBeUndefined();
+    expect(
+      resolveUpNextCommitResume(queue, tapped, results, makeItem('not-queued'), { walkedPeek: true }),
+    ).toBeUndefined();
+  });
+
+  // #5403: a crew browse open of a list climb (a peer's tick for s1) is a fresh
+  // item, not the walk's peek. Putting it up must not borrow the list, or the
+  // label would jump to "1 of 4" and Next replay s2.
+  it('leaves the list for a fresh item on it that is not the walk peek', () => {
+    const peerTickS1 = { uuid: 'tick-s1', climb: s1 };
+    expect(resolveUpNextCommitResume([tapped], tapped, results, peerTickS1)).toBeUndefined();
   });
 
   it('leaves the list for a looked-at climb that is not ahead on it', () => {

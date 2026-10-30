@@ -972,7 +972,7 @@ describe('DrawerHostProvider board sheet climb actions', () => {
   ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew, light) => {
     queue.isSharedSession = crew;
     setSetting('lightOnClimbTap', light);
-    enterDriveMode({ sessionId: null, boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     markDriveLive();
     try {
       renderHost(() => {});

@@ -468,6 +468,23 @@ describe('explicit wall commitment', () => {
     });
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: 'selection-1', climb: expect.objectContaining({ uuid: 'next' }) }),
+      // A step along the list, placed as Next places one: a fresh copy, never
+      // an older entry of the climb pulled out of History.
+      { keepWalkedTrack: true, walkedPeek: true, historyCopy: 'fresh', trigger: 'put_on_wall' },
+    );
+  });
+
+  // #5403: a crew browse open of a list climb (a peer's tick) is no peek.
+  it('never marks a fresh look, such as a peer tick, as the walk peek', () => {
+    const initialProps = inputs();
+    initialProps.navigation.browseByDefault = true;
+    initialProps.preview.drawerPreviewItem = item('tick');
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => {
+      result.current.handleSetActive();
+    });
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'tick' }) }),
       { keepWalkedTrack: true, trigger: 'put_on_wall' },
     );
   });

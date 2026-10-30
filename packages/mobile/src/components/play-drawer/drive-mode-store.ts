@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { trackDriveModeEnded } from '../../lib/analytics-wall-control';
 
 /**
@@ -25,6 +26,8 @@ export type DriveModeState = {
   boardId: number | null;
   /** `Date.now()` when the swipe landed. */
   startedAt: number;
+  /** What started it, for Drive Mode Ended. */
+  startedBy: DriveModeStartedBy;
   /** Climbs lit on this phone's link, the swipe's own included, for Drive Mode Ended. */
   climbsLit: number;
 };
@@ -118,6 +121,7 @@ function emit(): void {
 function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = Date.now()): void {
   trackDriveModeEnded({
     reason,
+    startedBy: ended.startedBy,
     startedAt: ended.startedAt,
     endedAt: now,
     climbsLit: ended.climbsLit,
@@ -129,13 +133,15 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
 export function enterDriveMode({
   sessionId,
   boardId,
+  startedBy,
   now = Date.now(),
 }: {
   sessionId: string | null;
   boardId: number | null;
+  startedBy: DriveModeStartedBy;
   now?: number;
 }): void {
-  driveMode = { phase: 'arming', sessionId, boardId, startedAt: now, climbsLit: 0 };
+  driveMode = { phase: 'arming', sessionId, boardId, startedAt: now, startedBy, climbsLit: 0 };
   stoppedForLink = false;
   lastExitReason = null;
   emit();
@@ -159,6 +165,43 @@ export function noteDriveClimbLit(): void {
   if (driveMode?.phase !== 'live') return;
   driveMode = { ...driveMode, climbsLit: driveMode.climbsLit + 1 };
   emit();
+}
+
+/**
+ * Whether a crew forming carries driving into it (#7113 QA, Marco: keep
+ * driving). A climber who drives solo keeps driving when a crew forms: a live
+ * drive (from a swipe, a press or the action) simply goes on, since only a
+ * change of session ends one. The other way to drive solo, Light the board as
+ * I swipe with no stop, is a setting that a crew doesn't honour (swipes there
+ * open previews), so it turns into a live drive the moment the crew forms. Not
+ * after a stop on this link, and not without a link: nothing was driving then.
+ *
+ * "Forms" is the roster's crew (`useIsCrewSession`) turning true, after its
+ * arrival dwell: until then the climber is solo.
+ */
+export function shouldCarryDriveIntoCrew({
+  crewFormed,
+  drive,
+  linked,
+  stopped,
+  lightOnSwipe,
+}: {
+  /** The roster just turned into a crew. */
+  crewFormed: boolean;
+  drive: DriveModeState | null;
+  /** This phone's link, or its hold on a wall with no lights. */
+  linked: boolean;
+  /** A press on the frosted button stopped driving on this link. */
+  stopped: boolean;
+  lightOnSwipe: boolean;
+}): boolean {
+  return crewFormed && drive === null && linked && !stopped && lightOnSwipe;
+}
+
+/** Carry solo, setting-driven driving into the crew that just formed: a live drive. */
+export function carryDriveIntoCrew({ sessionId, boardId }: { sessionId: string | null; boardId: number | null }): void {
+  enterDriveMode({ sessionId, boardId, startedBy: 'solo_carry' });
+  markDriveLive({ boardId });
 }
 
 /** End driving. Returns what ended, or null when nobody was driving. */

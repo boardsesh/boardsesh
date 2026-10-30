@@ -15,6 +15,7 @@ type Reads = {
   boardId: number | null;
   isAuthenticated: boolean;
   lightOnSwipe: boolean;
+  isCrew?: boolean;
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
@@ -40,6 +41,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 const getQueueSnapshot = () => ({ queue: [], currentClimbQueueItem: reads.current.currentClimbQueueItem });
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: reads.current.sessionId }),
+  useIsCrewSession: () => reads.current.isCrew ?? false,
   useActiveClimbUuid: () => reads.current.currentClimbQueueItem?.climb.uuid ?? null,
   useQueueActions: () => ({ getQueueSnapshot }),
 }));
@@ -108,7 +110,7 @@ function mount() {
 
 function driveLive() {
   act(() => {
-    enterDriveMode({ sessionId: reads.current.sessionId, boardId: reads.current.boardId });
+    enterDriveMode({ startedBy: 'swipe', sessionId: reads.current.sessionId, boardId: reads.current.boardId });
     markDriveLive();
   });
 }
@@ -153,7 +155,7 @@ describe('DriveModeWatcher', () => {
   it('fails arming when the swipe’s connect comes and goes without a link', () => {
     reads.current = { ...reads.current, isConnected: false, boardId: null };
     const watcher = mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: null }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null }));
     // A beat before the connect starts: still arming.
     watcher.change({});
     expect(getDriveMode()?.phase).toBe('arming');
@@ -167,7 +169,7 @@ describe('DriveModeWatcher', () => {
   it('keeps arming through a connect that links, and the board it resolves', () => {
     reads.current = { ...reads.current, isConnected: false, boardId: null };
     const watcher = mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: null }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null }));
     watcher.change({ loading: true });
     watcher.change({ loading: false, isConnected: true, boardId: 7 });
     expect(getDriveMode()?.phase).toBe('arming');
@@ -179,7 +181,7 @@ describe('DriveModeWatcher', () => {
   it('gives up arming that never reaches the wall', () => {
     vi.useFakeTimers();
     mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     act(() => {
       vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS - 1);
     });
@@ -306,7 +308,7 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
 describe('DriveModeWatcher: the wall confirms', () => {
   it('goes live at the first confirm on this phone’s link, with the player closed', () => {
     mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     expect(getDriveMode()?.phase).toBe('arming');
     act(() => emitWallConfirm('climb-a'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
@@ -316,14 +318,14 @@ describe('DriveModeWatcher: the wall confirms', () => {
   it('never goes live on a confirm without this phone’s link', () => {
     reads.current = { ...reads.current, isConnected: false };
     mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     act(() => emitWallConfirm('climb-a'));
     expect(getDriveMode()).toMatchObject({ phase: 'arming', climbsLit: 0 });
   });
 
   it('counts each new climb lit once, the swipe’s own first; re-sends and echoes are not new', () => {
     mount();
-    act(() => enterDriveMode({ sessionId: 'session-1', boardId: 7 }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     act(() => {
       emitWallConfirm('climb-a');
       // The crew feed's echo of the same write.
@@ -342,10 +344,10 @@ describe('DriveModeWatcher: the wall confirms', () => {
     mount();
     act(() => emitWallConfirm('climb-a'));
     act(() => {
-      enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 1 });
+      enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 1 });
       emitWallConfirm('climb-a');
       exitDriveMode('link_dropped');
-      enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 2 });
+      enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 2 });
       emitWallConfirm('climb-a');
     });
     expect(getDriveMode()?.climbsLit).toBe(1);
@@ -354,12 +356,67 @@ describe('DriveModeWatcher: the wall confirms', () => {
   it('learns the bound board once live, so a later change of board ends the drive', () => {
     const watcher = mount();
     act(() => {
-      enterDriveMode({ sessionId: 'session-1', boardId: null });
+      enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null });
       markDriveLive();
     });
     watcher.change({});
     expect(getDriveMode()?.boardId).toBe(7);
     watcher.change({ boardId: 9 });
     expect(getLastDriveModeExitReason()).toBe('board_changed');
+  });
+});
+
+// #7113 QA (Marco: keep driving): a crew forming carries solo driving into it.
+describe('DriveModeWatcher: a crew forms', () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    reads.current = { ...DEFAULT_READS, isCrew: false };
+  });
+  afterEach(() => resetDriveModeForTests());
+
+  it('turns solo, setting-driven driving into a live drive', () => {
+    const view = mount();
+    expect(getDriveMode()).toBeNull();
+    view.change({ isCrew: true });
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      sessionId: 'session-1',
+      boardId: 7,
+      startedBy: 'solo_carry',
+    });
+    // It stays: the same session, the same board.
+    view.change({ boardId: 7 });
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('leaves a stopped climber previewing', () => {
+    stopDrivingForLink();
+    const view = mount();
+    view.change({ isCrew: true });
+    expect(getDriveMode()).toBeNull();
+    expect(isDrivingStoppedForLink()).toBe(true);
+  });
+
+  it('carries nothing without a link, or with Light the board as I swipe off', () => {
+    const unlinked = mount();
+    unlinked.change({ isConnected: false });
+    unlinked.change({ isCrew: true });
+    expect(getDriveMode()).toBeNull();
+    resetDriveModeForTests();
+    reads.current = { ...DEFAULT_READS, isCrew: false, lightOnSwipe: false };
+    const settingOff = mount();
+    settingOff.change({ isCrew: true });
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('keeps a drive a press started live, as it was', () => {
+    act(() => {
+      enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7 });
+      markDriveLive();
+    });
+    const startedAt = getDriveMode()?.startedAt;
+    const view = mount();
+    view.change({ isCrew: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', startedAt });
   });
 });

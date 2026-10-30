@@ -422,7 +422,8 @@ export type WallControlInput = WallControlStateInput & {
  *   would drive after the press, because Light the board as I swipe is off.
  * - `resume` — drop a stop on this link and light the climb as before: the
  *   setting drives from there, or a drive already does.
- * - null — a crew (a press is a one-off put), or a press that puts nothing up.
+ * - null — a crew (a press is a one-off put), Set active (no wall in reach),
+ *   or a press that puts nothing up.
  */
 export type WallControlTapDrive = 'start' | 'resume' | null;
 
@@ -623,9 +624,10 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
   // Solo, a press that puts the climb up ends in driving (#7113 QA). It starts
   // a live drive only where nothing else would drive: the setting is off and no
-  // drive is on. The swipe's own rule says where a drive can start.
+  // drive is on. The swipe's own rule says where a drive can start. Never on
+  // Set active: no wall is in reach, so the press only makes it current.
   let tapDrive: WallControlTapDrive = null;
-  if (input.solo === true && isPutUpAction(tapAction)) {
+  if (input.solo === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
     tapDrive = driveMode === 'off' && input.lightOnSwipe !== true && swipeAction === 'drive' ? 'start' : 'resume';
   }
   const a11yHintKey =

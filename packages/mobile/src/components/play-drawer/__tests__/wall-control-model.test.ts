@@ -971,6 +971,10 @@ describe('resolveWallControl: a solo press that puts the climb up drives', () =>
     expect(resolveWallControl({ ...FREE, ...MINE, ...solo, driveMode: 'arming' }).tapDrive).toBe('resume');
     // A connect in flight offers no drive.
     expect(resolveWallControl({ ...FREE, ...solo, pending: true }).tapDrive).toBe('resume');
+    // Set active: no wall in reach, so the press only makes the climb current.
+    expect(resolveWallControl({ ...FREE, ...solo, commitButton: 'putOnWall', commitLabel: 'setActive' })).toMatchObject(
+      { tapAction: 'put_on_wall', labelKey: 'setActive', tapDrive: null },
+    );
   });
 
   // What the climber sees after the press: the model once the handler ran.

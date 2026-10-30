@@ -427,7 +427,7 @@ export function usePlaySelectionController({
       // `playlist-peek:<uuid>` items, and `toQueueItemWireInput` sends `item.uuid`
       // verbatim — committing one straight would put a uuid on the wire that no
       // peer can reconcile against their queue. Same helper `nextClimb()` uses.
-      const { item } = resolveCommittableQueueItem(drawerPreviewItem);
+      const { item, converted } = resolveCommittableQueueItem(drawerPreviewItem);
       // Re-anchor the track on the climb actually going up. Browsing moves
       // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
       // walk from A to Z the source still says the pass began at A — and committing
@@ -442,15 +442,19 @@ export function usePlaySelectionController({
       // off, after a stop on this link, or in a crew) is Next stepping onward
       // once it goes up (#6777): the provider keeps the committed list and where
       // it picks up when the climb is Up next on it, keeps the list when the climb
-      // is the list's own next climb (a peek, minted fresh here: #7113 QA, where
-      // Put on board used to drop "Search results · 4 of 23" and leave swipes
-      // nowhere to go), and clears it as before otherwise. The preview never
-      // borrows the track (#5403); only the commit, read against the committed
-      // climb, decides.
+      // is the walk's own peek of the list's next climb (`walkedPeek`: minted
+      // fresh here, #7113 QA, where Put on board used to drop "Search results ·
+      // 4 of 23" and leave swipes nowhere to go), and clears it as before
+      // otherwise. Only the walk's own peek: a crew browse open of a list climb
+      // (a peer's tick, a logbook row, a deep link, the Preview action) is a
+      // fresh item, not a peek, and never borrows the track (#5403). The peek
+      // goes up as Next places a list step: a fresh copy at the Now slot, never
+      // an older entry pulled out of History.
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
+      const walkedPeek = keepWalkedTrack && converted;
       setCurrentClimb(item, {
         ...(keepWalkedTrack
-          ? { keepWalkedTrack }
+          ? { keepWalkedTrack, ...(walkedPeek ? { walkedPeek, historyCopy: 'fresh' as const } : {}) }
           : {
               playlistSuggestionSource: reanchorPlaylistSuggestionSource(
                 drawerPreviewSuggestionSource,

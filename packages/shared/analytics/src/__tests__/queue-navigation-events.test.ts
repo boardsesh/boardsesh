@@ -105,16 +105,24 @@ describe('queueNavigation while driving the wall (#7113)', () => {
 describe('driveModeEnded', () => {
   it('names the event and rounds the duration to whole seconds', () => {
     expect(
-      driveModeEnded({ reason: 'stopped', startedAt: 1_000, endedAt: 62_600, climbsLit: 5, inSession: true }),
+      driveModeEnded({
+        reason: 'stopped',
+        startedBy: 'tap',
+        startedAt: 1_000,
+        endedAt: 62_600,
+        climbsLit: 5,
+        inSession: true,
+      }),
     ).toEqual({
       name: 'Drive Mode Ended',
-      properties: { reason: 'stopped', durationSec: 62, climbsLit: 5, inSession: true },
+      properties: { reason: 'stopped', startedBy: 'tap', durationSec: 62, climbsLit: 5, inSession: true },
     });
   });
 
   it('never reports a negative duration or count', () => {
     const { properties } = driveModeEnded({
       reason: 'connect_failed',
+      startedBy: 'swipe',
       startedAt: 5_000,
       endedAt: 4_000,
       climbsLit: -1,

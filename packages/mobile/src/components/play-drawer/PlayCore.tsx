@@ -37,7 +37,7 @@ import {
 } from '../../lib/boards/gym-board-for-climb';
 import { useSessionBoardPath } from '../../providers/queue/queue-contexts';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type DriveModeStartedBy } from '@boardsesh/analytics';
 import { buildOpeningLayoutKey } from './opening-layout-cache';
 import { usePlayNavigationModel } from './use-play-navigation-model';
 import { usePlayLayoutMeasurements, usePlayOpeningLayout } from './use-play-opening-layout';
@@ -449,7 +449,8 @@ export function PlayCore({
   const isSharedSession = useIsSharedSession();
   // The roster's answer, whatever the browse rollout flag says: solo, a press
   // that puts the climb up ends in driving (#7113 QA); in a crew it stays a
-  // one-off put.
+  // one-off put. A crewmate's arrival dwell counts as solo until the crew forms;
+  // when it forms, solo driving carries into it (`DriveModeWatcher`).
   const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
@@ -1801,35 +1802,39 @@ export function PlayCore({
   // it refuses with `needs_handoff` and changes nothing.
   const wallControlForDriveRef = useRef(wallControl);
   wallControlForDriveRef.current = wallControl;
-  const startDriving = useCallback((): DriveStartOutcome => {
-    // Behind the swipe's flag: a solo press asks for a drive too (`tapDrive`),
-    // and gets the plain light without one.
-    if (!swipeToDriveEnabled) return 'unavailable';
-    const committing = commitBarModel.mode === 'commit';
-    const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
-    return startDrive({
-      model: wallControlForDriveRef.current,
-      wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
+  const startDriving = useCallback(
+    (startedBy: DriveModeStartedBy): DriveStartOutcome => {
+      // Behind the swipe's flag: a solo press asks for a drive too (`tapDrive`),
+      // and gets the plain light without one.
+      if (!swipeToDriveEnabled) return 'unavailable';
+      const committing = commitBarModel.mode === 'commit';
+      const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
+      return startDrive({
+        model: wallControlForDriveRef.current,
+        wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
+        sessionId,
+        startedBy,
+        committing,
+        commit: () => handleSetActive({ skipBusyWall: true }),
+        connected: bluetoothConnected,
+        connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
+        relight: () => {
+          resetWallCleared();
+          bluetoothForRelightRef.current?.reassertWall();
+        },
+      });
+    },
+    [
+      swipeToDriveEnabled,
       sessionId,
-      committing,
-      commit: () => handleSetActive({ skipBusyWall: true }),
-      connected: bluetoothConnected,
-      connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
-      relight: () => {
-        resetWallCleared();
-        bluetoothForRelightRef.current?.reassertWall();
-      },
-    });
-  }, [
-    swipeToDriveEnabled,
-    sessionId,
-    currentClimbQueueItem,
-    commitBarModel.mode,
-    handleSetActive,
-    displayedClimb,
-    bluetoothConnected,
-    connectLightbulb,
-  ]);
+      currentClimbQueueItem,
+      commitBarModel.mode,
+      handleSetActive,
+      displayedClimb,
+      bluetoothConnected,
+      connectLightbulb,
+    ],
+  );
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
   // then the move to that board, which connects there and lights it.

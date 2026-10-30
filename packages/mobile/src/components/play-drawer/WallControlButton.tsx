@@ -113,9 +113,10 @@ export const WALL_CONTROL_HEIGHT = Platform.OS === 'android' ? glassSize.inlineP
  * So on Android the full-width button takes this much more margin on BOTH
  * sides, 32 dp from each edge in all: the same on the left and the right, so
  * it stays centred in its row instead of looking like a layout bug. Only where
- * the button spans its row (`spansRow`), which is where it reaches the screen
- * edge; the workout's compact one between ⏮ and ⏭, and the one between the
- * bulb row's buttons, are nowhere near it. iOS's edge swipe is the leading
+ * the button is the one thing drawn in a phone's second row (`spansRow`),
+ * which is where it reaches the screen edge; the workout's compact one between
+ * ⏮ and ⏭, the one between the bulb row's buttons, and the first-row one
+ * beside a MiniPlayer (a tablet's pane) are not at the edge. iOS's edge swipe is the leading
  * edge's alone and the button's leftward drag starts away from it, so iOS is
  * unchanged. The height is untouched, so the second row's fixed height holds.
  */

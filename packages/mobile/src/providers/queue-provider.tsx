@@ -3032,7 +3032,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       if (options?.keepWalkedTrack) {
         const { queue, currentClimbQueueItem } = stateRef.current;
         const heldTrack = playlistSuggestionSourceRef.current;
-        const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item);
+        const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item, {
+          walkedPeek: options.walkedPeek === true,
+        });
         if (trackResume === undefined) setPlaylistSuggestionSourceState(null);
         else storeTrackResume(heldTrack, trackResume);
       }

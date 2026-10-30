@@ -135,7 +135,7 @@ describe('useMiniPlayerNavigation', () => {
     ],
   ] as const)('moves the wall %s while driving, and says so', (_label, arrange, sessionMode) => {
     arrange();
-    enterDriveMode({ sessionId: null, boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     markDriveLive();
     try {
       const { result } = renderHook(() => useMiniPlayerNavigation());
