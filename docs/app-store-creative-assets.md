@@ -236,16 +236,31 @@ CPP-only retries. A CPP-only retry verifies that the matching iOS version exists
 then uses the CPP's own editable version (or approved version with `allow_live:true`).
 The matching app version may be waiting for Apple review. Default/all placement
 still requires that app version to be editable or live with explicit approval.
-The automatic path requires all 20 search
-videos and posters, promotes their immutable candidate objects to `approved/`,
-then downloads and verifies every SHA256 before exposing ASC credentials to the
-upload lane. It uploads search videos, waits up to 7.5 minutes for Apple's
-processing precondition, and places them on the editable version. Header PNGs
+The automatic path ships only the variants whose search entries changed in
+the push, comparing the manifest with the push's previous commit
+(`store-creatives-r2.ts ready-search-variants --previous`). A variant left
+unchanged, such as a page an earlier train shipped, is never promoted, uploaded
+or placed again, so its entries cannot land on a later version. A changed
+variant must have exactly one video with a poster in each of the four app
+locales, or the run stops before promotion; one whose entries were removed is
+skipped. When nothing changed (a header-only edit, say) the run says so and
+stops before any R2 or ASC step. For the changed variants only, the path
+promotes their immutable candidate objects to `approved/`, then downloads and
+verifies every SHA256 before exposing ASC credentials to the upload lane. It
+uploads those search videos, waits up to 7.5 minutes for Apple's processing
+precondition, and places them on the editable version. If that merge run fails,
+re-run it: a later manifest push compares against the failed merge, so it sees
+those variants as unchanged and will not retry them. A missing manifest at the
+previous commit stops the run rather than shipping every variant.
+
+A manual dispatch with `variant:all` and `placement:search` skips variants that
+have no search entries yet, the same way. With `placement:all`, or when a page
+is named explicitly, a pending page still stops the run. Header PNGs
 and their assignments stay on the manual path. A Production environment reviewer
 gate, if configured, requires one approval before the job starts.
 
 The workflow retains separate promotion, fetch, upload and placement reports.
-Its summary counts 20 unique videos, while the transfer reports count all
+Its summary counts unique videos for the shipped pages only (20 when every page ships), while the transfer reports count all
 media/poster/provenance objects. Spanish storefront duplication counts as one
 source video. Asset-review submission remains manual; inspect ASC Preview for
 every locale after placement.
