@@ -221,6 +221,84 @@ describe('admin board updates', () => {
     }
   });
 
+  it.each([
+    { access: 'standard', initialLocation: 'Away', lockedLocation: 'Home', blocked: true },
+    { access: 'admin', initialLocation: 'Away', lockedLocation: 'Home', blocked: true },
+    { access: 'admin', initialLocation: 'Home', lockedLocation: 'Away', blocked: false },
+  ] as const)(
+    'checks a $access config edit at the locked location ($initialLocation → $lockedLocation)',
+    async ({ access, initialLocation, lockedLocation, blocked }) => {
+      const targetSets = '5,6,7,8,9,10';
+      await insertBoard({
+        layoutId: 3,
+        setIds: targetSets,
+        locationName: 'Home',
+        latitude: null,
+        longitude: null,
+        serialNumber: null,
+      });
+      const board = await insertBoard({
+        layoutId: 3,
+        setIds: '5,6,7',
+        locationName: initialLocation,
+        latitude: null,
+        longitude: null,
+        serialNumber: null,
+      });
+      const originalTransaction = db.transaction.bind(db);
+      // Commit the other editor's location after lookup, before the writer
+      // acquires its row lock, so the save must derive the current location.
+      const transaction = vi.spyOn(db, 'transaction').mockImplementationOnce(async (callback, configuration) => {
+        await db
+          .update(dbSchema.userBoards)
+          .set({ locationName: lockedLocation })
+          .where(eq(dbSchema.userBoards.id, board.id));
+        return originalTransaction(callback, configuration);
+      });
+      try {
+        const save = access === 'admin' ? adminBoardMutations.adminUpdateBoard : socialBoardMutations.updateBoard;
+        const update = save(
+          null,
+          { input: { boardUuid: board.uuid, setIds: targetSets } },
+          context(access === 'admin' ? ADMIN : OWNER),
+        );
+        if (blocked) {
+          await expect(update).rejects.toMatchObject({ extensions: { code: 'BOARD_DUPLICATE_CONFIG' } });
+        } else {
+          await expect(update).resolves.toMatchObject({ setIds: targetSets });
+        }
+        const [stored] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+        expect(stored).toMatchObject({ locationName: lockedLocation, setIds: blocked ? '5,6,7' : targetSets });
+      } finally {
+        transaction.mockRestore();
+      }
+    },
+  );
+
+  it('uses the locked owner for duplicate detection and keeps their sibling identity private', async () => {
+    const targetSets = '5,6,7,8,9,10';
+    await insertBoard({ layoutId: 3, setIds: targetSets, serialNumber: null });
+    const board = await insertBoard({ ownerId: ADMIN, layoutId: 3, setIds: '5,6,7', serialNumber: null });
+    const originalTransaction = db.transaction.bind(db);
+    const transaction = vi.spyOn(db, 'transaction').mockImplementationOnce(async (callback, configuration) => {
+      await db.update(dbSchema.userBoards).set({ ownerId: OWNER }).where(eq(dbSchema.userBoards.id, board.id));
+      return originalTransaction(callback, configuration);
+    });
+    try {
+      await expect(
+        adminBoardMutations.adminUpdateBoard(
+          null,
+          { input: { boardUuid: board.uuid, setIds: targetSets } },
+          context(ADMIN),
+        ),
+      ).rejects.toHaveProperty('extensions', { code: 'BOARD_DUPLICATE_CONFIG' });
+      const [stored] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+      expect(stored).toMatchObject({ ownerId: OWNER, setIds: '5,6,7' });
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
   it('renames a private gym board without changing its slug, credentials, location, ticks or gym', async () => {
     const [gym] = await db.insert(dbSchema.gyms).values({ uuid: uuidv4(), name: 'Bowlo', ownerId: OWNER }).returning();
     const board = await insertBoard({ gymId: gym.id });

@@ -149,15 +149,18 @@ type DuplicateBoardCandidate = {
  *
  * `excludeBoardId` is the row being edited — a board must never block itself.
  */
-async function findOwnedBlockingDuplicate(opts: {
-  ownerId: string;
-  boardType: string;
-  layoutId: number;
-  sizeId: number;
-  incoming: BoardLocation & { setIds: string };
-  excludeBoardId?: number;
-}): Promise<DuplicateBoardCandidate | undefined> {
-  const ownedWithConfig = await db
+async function findOwnedBlockingDuplicate(
+  opts: {
+    ownerId: string;
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    incoming: BoardLocation & { setIds: string };
+    excludeBoardId?: number;
+  },
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<DuplicateBoardCandidate | undefined> {
+  const ownedWithConfig = await executor
     .select({
       uuid: dbSchema.userBoards.uuid,
       slug: dbSchema.userBoards.slug,
@@ -1895,14 +1898,6 @@ export async function updateBoardRecord(
   // against. We do not delete, move, or modify any tick rows here.
   const hasConfigChange =
     validatedInput.layoutId !== undefined || validatedInput.sizeId !== undefined || validatedInput.setIds !== undefined;
-  const newLayoutId = validatedInput.layoutId ?? board.layoutId;
-  const newSizeId = validatedInput.sizeId ?? board.sizeId;
-  const newSetIds = validatedInput.setIds ?? board.setIds;
-
-  if (hasConfigChange) {
-    await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
-  }
-
   // Build update values (only provided fields)
   const updateValues: Record<string, unknown> = {
     updatedAt: new Date(),
@@ -1974,68 +1969,6 @@ export async function updateBoardRecord(
   if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
   if (hasConfigChange) {
-    // The clients resend layout/size/setIds on every edit whenever the config
-    // section is unlocked, so `hasConfigChange` says "config fields were
-    // present", not "the config moved". Compare the effective values —
-    // set ids normalised, since the stored order is whatever the board was
-    // created with — and skip the guard when nothing actually changed.
-    // Without this skip, an owner of two same-config boards could never save
-    // ANY edit to either one: renaming a board would be rejected for
-    // colliding with its sibling.
-    const configActuallyChanged =
-      newLayoutId !== board.layoutId ||
-      newSizeId !== board.sizeId ||
-      normaliseSetIds(newSetIds) !== normaliseSetIds(board.setIds);
-
-    // Keyed off the board's OWNER, not the caller — a moderator or gym admin
-    // may be editing someone else's board. The system catalog owner is exempt:
-    // many gyms legitimately share one config there, and blocking that would
-    // break the catalog fixes moderation exists for.
-    if (configActuallyChanged && board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
-      if (validatedInput.allowDuplicateConfig) {
-        // Same trail as createBoard: this is the one path that lets an edit
-        // land on a config the owner already has at the same place, so record
-        // that a human confirmed it rather than leaving it indistinguishable
-        // from a script setting the flag on every call.
-        logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
-          userId,
-          boardId: board.id,
-          ownerId: board.ownerId,
-          boardType: board.boardType,
-          layoutId: newLayoutId,
-          sizeId: newSizeId,
-        });
-      } else {
-        // Probe with the POST-update location, so an edit that moves this
-        // board onto a sibling's site is caught and one that moves it away is
-        // allowed. A location-only edit is deliberately NOT guarded at all
-        // (it never reaches here): as with createBoard after #4166, we block
-        // the accident of re-submitting a wall, not every way two rows can end
-        // up looking alike.
-        const existing = await findOwnedBlockingDuplicate({
-          ownerId: board.ownerId,
-          boardType: board.boardType,
-          layoutId: newLayoutId,
-          sizeId: newSizeId,
-          excludeBoardId: board.id,
-          incoming: {
-            setIds: newSetIds,
-            locationName: validatedInput.locationName !== undefined ? validatedInput.locationName : board.locationName,
-            latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : board.latitude,
-            longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : board.longitude,
-          },
-        });
-
-        if (existing) {
-          // The colliding board belongs to this board's OWNER. A gym admin or
-          // community moderator editing someone else's board gets the bare
-          // rejection code — enough to render "this config is taken", nothing
-          // that names or locates a board they have no read access to.
-          throw duplicateBoardConfigError(existing, { includeIdentity: board.ownerId === userId });
-        }
-      }
-    }
-
     if (validatedInput.layoutId !== undefined) updateValues.layoutId = validatedInput.layoutId;
     if (validatedInput.sizeId !== undefined) updateValues.sizeId = validatedInput.sizeId;
     if (validatedInput.setIds !== undefined) updateValues.setIds = validatedInput.setIds;
@@ -2085,6 +2018,9 @@ export async function updateBoardRecord(
         layoutId: number | string;
         sizeId: number | string;
         setIds: string;
+        locationName: string | null;
+        latitude: number | null;
+        longitude: number | null;
         deletedAt: Date | null;
         mergedIntoBoardUuid: string | null;
         isPublic: boolean;
@@ -2098,8 +2034,11 @@ export async function updateBoardRecord(
                  layout_id AS "layoutId",
                  size_id AS "sizeId",
                  set_ids AS "setIds",
+                 location_name AS "locationName",
+                 latitude,
+                 longitude,
                  deleted_at AS "deletedAt",
-               merged_into_board_uuid AS "mergedIntoBoardUuid",
+                 merged_into_board_uuid AS "mergedIntoBoardUuid",
                  is_public AS "isPublic",
                  is_unlisted AS "isUnlisted",
                  hide_location AS "hideLocation"
@@ -2129,28 +2068,63 @@ export async function updateBoardRecord(
 
       const lockedLayoutId = Number(lockedBoard.layoutId);
       const lockedSizeId = Number(lockedBoard.sizeId);
+      const resultingLayoutId = validatedInput.layoutId ?? lockedLayoutId;
+      const resultingSizeId = validatedInput.sizeId ?? lockedSizeId;
+      const resultingSetIds = validatedInput.setIds ?? lockedBoard.setIds;
+      // Older clients echo unchanged setup fields. Only an actual config
+      // change needs duplicate confirmation; location-only edits remain exempt.
+      const configActuallyChanged =
+        resultingLayoutId !== lockedLayoutId ||
+        resultingSizeId !== lockedSizeId ||
+        normaliseSetIds(resultingSetIds) !== normaliseSetIds(lockedBoard.setIds);
       // Partial edits derive their untouched config fields from the locked row,
-      // since another editor may have changed them after the initial lookup.
+      // since another editor may have changed them or the location after lookup.
       if (hasConfigChange) {
-        await assertKnownBoardConfig(
-          lockedBoard.boardType,
-          validatedInput.layoutId ?? lockedLayoutId,
-          validatedInput.sizeId ?? lockedSizeId,
-          validatedInput.setIds ?? lockedBoard.setIds,
-          tx,
-        );
+        await assertKnownBoardConfig(lockedBoard.boardType, resultingLayoutId, resultingSizeId, resultingSetIds, tx);
+        // Catalogue boards share their system owner across gyms. For a user's
+        // boards, compare the final tuple and place on the same transaction as
+        // the write, after a concurrent edit has released this row's lock.
+        if (configActuallyChanged && lockedBoard.ownerId !== SYSTEM_BOARD_OWNER_ID) {
+          if (validatedInput.allowDuplicateConfig) {
+            logger.info('updateBoard: duplicate-config guard bypassed by explicit confirmation', {
+              userId,
+              boardId: board.id,
+              ownerId: lockedBoard.ownerId,
+              boardType: lockedBoard.boardType,
+              layoutId: resultingLayoutId,
+              sizeId: resultingSizeId,
+            });
+          } else {
+            const existing = await findOwnedBlockingDuplicate(
+              {
+                ownerId: lockedBoard.ownerId,
+                boardType: lockedBoard.boardType,
+                layoutId: resultingLayoutId,
+                sizeId: resultingSizeId,
+                excludeBoardId: board.id,
+                incoming: {
+                  setIds: resultingSetIds,
+                  locationName:
+                    validatedInput.locationName !== undefined ? validatedInput.locationName : lockedBoard.locationName,
+                  latitude: validatedInput.latitude !== undefined ? validatedInput.latitude : lockedBoard.latitude,
+                  longitude: validatedInput.longitude !== undefined ? validatedInput.longitude : lockedBoard.longitude,
+                },
+              },
+              tx,
+            );
+            // A non-owner may not learn a private sibling's identity through an
+            // edit error. Ownership is the locked value, just like the probe.
+            if (existing)
+              throw duplicateBoardConfigError(existing, { includeIdentity: lockedBoard.ownerId === userId });
+          }
+        }
       }
       const resultingSerial =
         validatedInput.serialNumber === undefined ? lockedBoard.serialNumber : validatedInput.serialNumber;
       const serialChanged =
         validatedInput.serialNumber !== undefined && validatedInput.serialNumber !== lockedBoard.serialNumber;
-      const serialConfigChanged =
-        (validatedInput.layoutId !== undefined && validatedInput.layoutId !== lockedLayoutId) ||
-        (validatedInput.sizeId !== undefined && validatedInput.sizeId !== lockedSizeId) ||
-        (validatedInput.setIds !== undefined &&
-          normaliseSetIds(validatedInput.setIds) !== normaliseSetIds(lockedBoard.setIds));
       const serialOrConfigBecomesActive =
-        resultingSerial !== null && (serialChanged || serialConfigChanged || lockedBoard.deletedAt !== null);
+        resultingSerial !== null && (serialChanged || configActuallyChanged || lockedBoard.deletedAt !== null);
 
       if (serialOrConfigBecomesActive) {
         await lockAndAssertBoardSerialAvailable(
