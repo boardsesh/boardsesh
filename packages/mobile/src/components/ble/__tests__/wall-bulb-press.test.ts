@@ -41,8 +41,8 @@ describe('resolveWallControlAction', () => {
     },
   );
 
-  // Marco's phone test (#7000): only You have the board lets go on a tap.
-  it('disconnects only from You have the board, whatever the press action', () => {
+  // Marco's phone test (#7000): only Disconnect board lets go on a tap.
+  it('disconnects only from Disconnect board, whatever the press action', () => {
     for (const state of states) {
       for (const pressAction of pressActions) {
         const disconnects = resolveWallControlAction({ state, pressAction, confirmArmed: false }) === 'disconnect';

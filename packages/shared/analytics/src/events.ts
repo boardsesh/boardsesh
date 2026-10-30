@@ -113,12 +113,19 @@ export const SHARED_EVENTS = {
   // MiniPlayer's ⏮ ⏭. Props (built by `queueNavigation`,
   // queue-navigation-events.ts): { direction: 'next' | 'previous', method:
   // 'button' | 'swipe', surface: 'player' | 'mini_player', outcome: 'moved' |
-  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, boardType, layoutId
+  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, driving, boardType, layoutId
   // (null on a spray wall) }. `preview` is a step that only looked: in a crew or
-  // with Light on swipe off the wall stays put. The rest timer's auto-advance
+  // with Light on swipe off the wall stays put. `driving` (#7113, false before
+  // it) says the climber was driving the wall, so the step lit it in a crew too. The rest timer's auto-advance
   // and the workout runner do not fire it. www's `method` values differ, so read
   // mobile on `surface`, which www never sent.
   QueueNavigation: 'Queue Navigation',
+  // Mobile-only (#7113): driving the wall ended. Props (built by
+  // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
+  // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
+  // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
+  // climb included), inSession }. Fired once per drive by the drive-mode store.
+  DriveModeEnded: 'Drive Mode Ended',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
   // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button
@@ -480,16 +487,28 @@ export const SHARED_EVENTS = {
   // board at this gym, #7076; 'on_wall_unlinked': On the wall per presence, lit under an hour ago, with
   // no live link; its tap connects and lights it again, 'relight' for the
   // climber's own climb, 'put_on_wall' for a preview). `action`:
-  // 'disconnect' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
+  // 'disconnect' | 'stop_driving' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
   // 'take_wall' | 'release_wall' | 'move_to_board' | 'noop', what the tap did ('disconnect' is a
-  // tap on You have the board, state 'lit'; QA builds before Marco's phone
-  // test sent 'open_sheet' there instead). `control`: 'button' (the wall
+  // tap on Disconnect board, state 'lit', called You have the board before
+  // #7113; QA builds before Marco's phone test sent 'open_sheet' there instead;
+  // 'stop_driving' (#7113) is a tap on You are driving the wall, state 'lit':
+  // driving stops and the link stays). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's
   // bulb, back for the busy-wall question or chosen in View options) |
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).
   // QA builds before the one-model refactor sent 'wall_control' for the
   // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
   WallControlTapped: 'Wall Control Tapped',
+  // Mobile-only (#7113): a swipe left on the player's wall button, once per
+  // gesture that got going (a drag past 10 pt; a tap never fires it). Props: {
+  // state: the board control's state when the swipe began (as Wall Control
+  // Tapped), outcome: 'drive' (let go past the commit point, 55% of the width
+  // or a fling, and driving the wall started) | 'cancelled' (let go short of
+  // it) | 'refused' (let go past it, but nothing could start: presence says
+  // another account holds the board), control: 'button' (full width or in a
+  // workout's top row) }. Behind the `wall-swipe-to-drive` flag. Whether the
+  // drive then went live is Drive Mode Ended's `reason` (`connect_failed`).
+  WallControlSwiped: 'Wall Control Swiped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started

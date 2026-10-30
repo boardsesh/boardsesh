@@ -705,10 +705,10 @@ afterEach(() => vi.unstubAllGlobals());
 // what only a render can see is whether PlayDrawer feeds them the crew flag at
 // all — hardcoding `inSharedSession: false` at these call sites leaves every
 // pure test green while the wall gets taken on the next swipe.
-// #7000: the wall button says Connect board on the climber's own climb; Put
+// #7000: the wall button says Put on board (a connect) on the climber's own climb; Put
 // on the wall is for previews and crew browsing.
 describe('PlayDrawer — the wall button with no board connected (#6939, #7000)', () => {
-  it('offers Connect board on the current climb, and the tap connects', () => {
+  it('offers Put on board on the current climb, and the tap connects', () => {
     lightbulb.pressAction = 'connect';
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');
@@ -750,7 +750,7 @@ describe('PlayDrawer — the wall button with no board connected (#6939, #7000)'
     expect(lightbulb.connect).not.toHaveBeenCalled();
   });
 
-  it('keeps Connect board while the connect it started is still finding the board', () => {
+  it('keeps Put on board while the connect it started is still finding the board', () => {
     lightbulb.pending = true;
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');

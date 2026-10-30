@@ -8,6 +8,7 @@
 //   is picked): a preview on the row's board, the list as its track.
 // - A crew is here, or "Light the board when I tap a climb" is off: a preview
 //   on the active board, the list as its track. The wall stays where it is.
+//   Driving the wall (#7113) overrides both: the climb goes up, in a crew too.
 // - Otherwise the climb goes up, inserted after the current climb and flagged
 //   `suggested` like every list play, with the list as its track.
 //
@@ -24,7 +25,7 @@ import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { boardLooselyMatches } from '../boards/board-matches';
 import { toQueueClimb } from '../climb-types';
-import { getSetting } from '../../settings/hooks';
+import { readClimbChangeLights } from '../../components/play-drawer/use-climb-change-lights';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import { usePlaylistActivation } from './use-playlist-activation';
 import {
@@ -185,8 +186,10 @@ export function useBoardListActivation<Row>({
     (row: Row, readyBoardArt?: ReadyBoardArtSnapshot) => {
       const { climb, board } = describeRow(row);
       if (!climb || !board) {
+        // The list's own rule (`climbChangeStaysViewOnly`): driving the wall
+        // lights it, in a crew too (#7113).
         openFallbackRef.current?.(row, {
-          preview: isSharedSessionRef.current || !getSetting('lightOnClimbTap'),
+          preview: !readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current }),
         });
         return;
       }

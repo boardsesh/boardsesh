@@ -1,11 +1,24 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
-import { trackWallControlTapped, type WallControlSurface } from '../../lib/analytics-wall-control';
+import {
+  trackWallControlSwiped,
+  trackWallControlTapped,
+  type WallControlSurface,
+} from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
-import { hapticMedium, hapticWarning } from '../../lib/haptics';
+import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
+import { stopDrivingForLink } from './drive-mode-store';
 import { useWallControlShown } from './use-wall-control-shown';
 import type { WallControlModel } from './wall-control';
+
+/**
+ * What starting a drive did (#7113). `started`: arming, the climb is going up
+ * and the connect (if any) is on its way. `needs_handoff`: a crewmate holds the
+ * board, and taking it needs their phone to let go first (PR 4); nothing
+ * changed. `unavailable`: the control offers no swipe here (`swipeAction`).
+ */
+export type DriveStartOutcome = 'started' | 'needs_handoff' | 'unavailable';
 
 /** What the player runs for each tap action. The handler decides which, from the model. */
 export type WallControlRunners = {
@@ -28,6 +41,12 @@ export type WallControlRunners = {
    * crew session moves too), connect, and light it. A preview is put up first.
    */
   moveToBoard: () => void;
+  /**
+   * Start driving the wall (#7113): commit the climb on screen without the
+   * busy-wall question, connect if needed, light it, and every change of
+   * climb lights the wall from then on.
+   */
+  drive: () => DriveStartOutcome;
 };
 
 export type UseWallControlOptions = {
@@ -44,16 +63,30 @@ export type UseWallControlOptions = {
 };
 
 /**
- * After a tap-disconnect, how long further taps are dropped. The provider marks
- * the link down before the adapter's disconnect finishes, so the second tap of
- * a double tap would otherwise read Connect board and start a connect (the
- * picker, or a 15 s scan) mid-disconnect.
+ * After a tap that changes what the next tap does, how long further taps are
+ * dropped. After a disconnect: the provider marks the link down before the
+ * adapter's disconnect finishes, so the second tap of a double tap would
+ * otherwise read Put on board and start a connect (the picker, or a 15 s scan)
+ * mid-disconnect. After a stop: the second tap would land on Disconnect board,
+ * and a crew's board has no Undo.
  */
 export const DISCONNECT_TAP_GUARD_MS = 600;
 
 export type WallControlHandlers = {
   press: (control: WallControlSurface) => void;
   longPress: (control: WallControlSurface) => void;
+  /**
+   * Start driving the wall (#7113): the wall button's "Light every climb"
+   * action and the board sheet's row, while the model offers it.
+   */
+  drive: (control: WallControlSurface) => DriveStartOutcome;
+  /**
+   * A swipe on the wall button let go past its commit point: start driving,
+   * and log Wall Control Swiped (`drive`, or `refused` when nothing started).
+   */
+  swipe: (control: WallControlSurface) => DriveStartOutcome;
+  /** A swipe let go short of its commit point: Wall Control Swiped `cancelled`. */
+  swipeCancelled: (control: WallControlSurface) => void;
 };
 
 /**
@@ -75,10 +108,12 @@ export function useWallControl({
   linked,
 }: UseWallControlOptions): WallControlHandlers {
   const { t: tSettings } = useTranslation('settings');
-  const latest = useRef({ model, runners });
-  latest.current = { model, runners };
-  // A tap-disconnect in flight: when it started, and whether the drop still owes its announcement.
-  const disconnectTappedAtRef = useRef<number | null>(null);
+  const { t } = useTranslation('session');
+  const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
+  const latest = useRef({ model, runners, stoppedDrivingLabel });
+  latest.current = { model, runners, stoppedDrivingLabel };
+  // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
+  const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
 
   useWallControlShown({ state: model.state, climbUuid, playerOpen, visible });
@@ -98,26 +133,37 @@ export function useWallControl({
     const { model: current, runners: run } = latest.current;
     // A connect in flight: the spinner says so, and a second tap waits.
     if (current.pending) return;
-    // The second tap of a double tap on You have the board: the link already
-    // reads down, but the adapter is still letting go. Drop it.
-    const tappedAt = disconnectTappedAtRef.current;
+    // The second tap of a double tap on Disconnect board (the link already
+    // reads down, but the adapter is still letting go) or on You are driving
+    // the wall (it now reads Disconnect board). Drop it.
+    const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
-    trackWallControlTapped({ state: current.state, action: current.tapAction, control });
-    if (current.state === 'on_wall_unlinked' && current.tapAction !== 'noop') {
+    // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
+    const action = control === 'button' ? current.tapAction : current.bulbTapAction;
+    trackWallControlTapped({ state: current.state, action, control });
+    if (current.state === 'on_wall_unlinked' && action !== 'noop') {
       hapticMedium();
       run.lightAgain();
       return;
     }
-    switch (current.tapAction) {
+    switch (action) {
       case 'disconnect':
         // Letting go of the board is the one tap that ends something, so it
         // buzzes like a warning; a screen reader hears it once the link drops.
         // It forgets the board on purpose, as the board sheet's Disconnect
         // does: it frees the board for the next climber.
-        disconnectTappedAtRef.current = Date.now();
+        guardedTapAtRef.current = Date.now();
         announceDropRef.current = true;
         hapticWarning();
         run.disconnect();
+        return;
+      case 'stop_driving':
+        // Stop driving and keep the link: swipes go back to previews. A light
+        // buzz, since nothing was let go; the next tap disconnects.
+        guardedTapAtRef.current = Date.now();
+        hapticLight();
+        stopDrivingForLink();
+        announceQueued(latest.current.stoppedDrivingLabel);
         return;
       case 'connect':
       case 'put_on_wall':
@@ -148,5 +194,30 @@ export function useWallControl({
     run.openSheet();
   }, []);
 
-  return { press, longPress };
+  // The swipe owns its own haptics (the threshold, then an error on a refusal);
+  // the lit confirm buzzes success.
+  const drive = useCallback((_control: WallControlSurface): DriveStartOutcome => {
+    const { model: current, runners: run } = latest.current;
+    // `swipeAction` is the one rule for where a drive can start: never while a
+    // connect is in flight, the busy-wall question is up, or already driving.
+    if (current.swipeAction !== 'drive') return 'unavailable';
+    return run.drive();
+  }, []);
+
+  // Wall Control Swiped, once per gesture that activated: the state it started
+  // in, read before the drive changes it.
+  const swipe = useCallback(
+    (control: WallControlSurface): DriveStartOutcome => {
+      const state = latest.current.model.state;
+      const outcome = drive(control);
+      trackWallControlSwiped({ state, outcome: outcome === 'started' ? 'drive' : 'refused', control });
+      return outcome;
+    },
+    [drive],
+  );
+  const swipeCancelled = useCallback((control: WallControlSurface) => {
+    trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });
+  }, []);
+
+  return { press, longPress, drive, swipe, swipeCancelled };
 }

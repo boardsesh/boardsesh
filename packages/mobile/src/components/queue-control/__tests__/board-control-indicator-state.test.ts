@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  drivingBulbColors,
   getBoardConnectionBadgeVisual,
   getBoardConnectionLabel,
   getBoardControlIndicatorVisual,
+  getPaneWallControlVisual,
 } from '../board-control-indicator-state';
+import { resolveWallBulbLook } from '../../play-drawer/wall-control';
 
 const colors = {
   connectedColor: '#FBBF24',
@@ -163,5 +166,54 @@ describe('getBoardConnectionLabel', () => {
     ['disconnected', true, null, 'ble.barControl.wallOpenLabel'],
   ] as const)('%s (ledless %s, holder %s) reads %s', (boardConnection, ledless, holderDisplayName, expected) => {
     expect(getBoardConnectionLabel(t, { boardConnection, ledless, holderDisplayName })).toBe(expected);
+  });
+});
+
+// #7113: a driver's bulb sits on the wall button's live fill, so a tap on any
+// climb reads as lighting it, on the Climbs tab too.
+describe('the driving bulb', () => {
+  const brand = { live: '#FBBF24', onAccent: '#16111F', onPrimary: '#FFFFFF' };
+
+  it('takes the live fill with the lit label colour, per scheme', () => {
+    expect(drivingBulbColors(brand, 'dark')).toEqual({ fillColor: '#FBBF24', iconColor: '#16111F' });
+    expect(drivingBulbColors(brand, 'light')).toEqual({ fillColor: '#FBBF24', iconColor: '#FFFFFF' });
+  });
+
+  it('draws the MiniPlayer bulb filled while this phone drives', () => {
+    const driving = drivingBulbColors(brand, 'dark');
+    expect(getBoardControlIndicatorVisual({ boardConnection: 'connectedByMe', ...colors, driving })).toEqual({
+      iconName: 'lightbulb.fill',
+      iconColor: '#16111F',
+      haloColor: '#FBBF24',
+    });
+    // Never for a crewmate's board, or a wall with no lights.
+    expect(getBoardControlIndicatorVisual({ boardConnection: 'heldByPeer', ...colors, driving }).iconName).toBe(
+      'person.fill',
+    );
+    expect(
+      getBoardControlIndicatorVisual({ boardConnection: 'connectedByMe', ...colors, ledless: true, driving }).iconName,
+    ).toBe('pin.fill');
+  });
+
+  it("draws the pane bulb filled for the model's driving look, and as lit without the colours", () => {
+    const base = {
+      holder: 'self' as const,
+      state: 'lit',
+      ...colors,
+      wallHeldColor: '#6D28D9',
+    };
+    expect(getPaneWallControlVisual({ ...base, look: 'driving', driving: drivingBulbColors(brand, 'light') })).toEqual({
+      iconName: 'lightbulb.fill',
+      iconColor: '#FFFFFF',
+      haloColor: '#FBBF24',
+    });
+    expect(getPaneWallControlVisual({ ...base, look: 'driving' }).haloColor).toBe('#FBBF2424');
+  });
+
+  it("is the board control's own rule: only a lit climb on this phone's link while driving", () => {
+    expect(resolveWallBulbLook('lit', true, true, true)).toBe('driving');
+    expect(resolveWallBulbLook('lit', true, true, false)).toBe('lit');
+    expect(resolveWallBulbLook(null, false, true, true)).toBe('off');
+    expect(resolveWallBulbLook('crew', false, true, true)).toBe('ready');
   });
 });

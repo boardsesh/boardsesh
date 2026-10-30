@@ -49,6 +49,12 @@ vi.mock('@boardsesh/play-view', () => ({
   resolveTrackPosition: () => null,
 }));
 
+import {
+  enterDriveMode,
+  markDriveLive,
+  resetDriveModeForTests,
+  stopDrivingForLink,
+} from '../../play-drawer/drive-mode-store';
 import { useMiniPlayerNavigation } from '../use-mini-player-navigation';
 
 function makeItem(uuid: string): ClimbQueueItem {
@@ -95,6 +101,53 @@ describe('useMiniPlayerNavigation', () => {
     expect(queue.nextClimb).toHaveBeenCalledTimes(1);
     expect(queue.previousClimb).toHaveBeenCalledTimes(1);
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // #7113: a press on "You are driving the wall" stopped driving on this link;
+  // ⏮ and ⏭ preview, as a swipe in the player does, until the link drops.
+  it('previews after a press stopped driving, solo with Light on swipe on', () => {
+    stopDrivingForLink();
+    try {
+      const { result } = renderHook(() => useMiniPlayerNavigation());
+      act(() => result.current.onNext());
+      expect(queue.nextClimb).not.toHaveBeenCalled();
+      expect(drawer.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      resetDriveModeForTests();
+    }
+  });
+
+  // #7113: driving the wall, ⏮ and ⏭ move the wall in a crew too.
+  it.each([
+    [
+      'in a crew',
+      () => {
+        queue.inSharedSession = true;
+      },
+      'party',
+    ],
+    [
+      'with Light on swipe off',
+      () => {
+        settings.lightOnSwipe = false;
+      },
+      'solo',
+    ],
+  ] as const)('moves the wall %s while driving, and says so', (_label, arrange, sessionMode) => {
+    arrange();
+    enterDriveMode({ sessionId: null, boardId: 7 });
+    markDriveLive();
+    try {
+      const { result } = renderHook(() => useMiniPlayerNavigation());
+      act(() => result.current.onNext());
+      expect(queue.nextClimb).toHaveBeenCalledOnce();
+      expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
+      expect(navigationEvents()).toEqual([
+        ['Queue Navigation', expect.objectContaining({ outcome: 'moved', sessionMode, driving: true })],
+      ]);
+    } finally {
+      resetDriveModeForTests();
+    }
   });
 
   it('reports each move once, as a MiniPlayer button press', () => {

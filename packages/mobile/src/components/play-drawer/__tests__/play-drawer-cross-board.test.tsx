@@ -57,11 +57,14 @@ const setCurrentClimb = vi.hoisted(() => vi.fn());
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 const crew = vi.hoisted(() => ({ shared: false }));
+// `wall-swipe-to-drive` (#7113). Off by default here, so the older tests keep
+// today's button; the swipe's own tests turn it on.
+const swipeToDrive = vi.hoisted(() => ({ on: false }));
 const wallClimbState = vi.hoisted(() => ({ uuid: null as string | null, sentAt: null as string | null }));
 const boardSheet = vi.hoisted(() => ({ props: [] as Props[], opened: vi.fn() }));
 const wallControlTapped = vi.hoisted(() => vi.fn());
 const disconnectAllBluetooth = vi.hoisted(() => vi.fn());
-const wallHaptics = vi.hoisted(() => ({ hapticWarning: vi.fn(), hapticMedium: vi.fn() }));
+const wallHaptics = vi.hoisted(() => ({ hapticWarning: vi.fn(), hapticMedium: vi.fn(), hapticLight: vi.fn() }));
 const announceQueued = vi.hoisted(() => vi.fn());
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
@@ -415,6 +418,10 @@ vi.mock('../../report-climb/ReportClimbSheet', () => ({
     return null;
   },
 }));
+vi.mock('../../../providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../providers/feature-flags-provider')>()),
+  useWallSwipeToDriveEnabled: () => swipeToDrive.on,
+}));
 vi.mock('../../ble/BleControlSheetHost', () => ({
   BleControlSheetHost: (props: Props) => {
     boardSheet.props.push(props);
@@ -531,18 +538,22 @@ vi.mock('../../../lib/ble/bluetooth-status-store', async (importOriginal) => ({
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: wallControlTapped,
   trackWallControlShown: vi.fn(),
+  trackDriveModeEnded: vi.fn(),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({
   hapticSuccess: vi.fn(),
   hapticMedium: wallHaptics.hapticMedium,
   hapticWarning: wallHaptics.hapticWarning,
+  hapticLight: wallHaptics.hapticLight,
 }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 
 const { PlayDrawer } = await import('../PlayDrawer');
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { resetWallCleared } = await import('../../ble/wall-cleared-store');
+const { getDriveMode, isDrivingStoppedForLink, markDriveLive, enterDriveMode, resetDriveModeForTests } =
+  await import('../drive-mode-store');
 
 // The Original 12x12 the climber switched TO.
 const TWELVE_BY_TWELVE = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
@@ -607,6 +618,7 @@ function render(...args: Parameters<typeof renderInitial>) {
 }
 
 beforeEach(() => {
+  swipeToDrive.on = false;
   clearOpeningLayoutCache();
   viewport.width = 390;
   viewport.height = 844;
@@ -1767,7 +1779,7 @@ describe('PlayDrawer wall button reads the wall', () => {
     expect(recorded.actionBar.at(-1)).toMatchObject({ wallControlState: 'lit', wallHolder: 'self' });
   });
 
-  it('says Connect board with no link, and names no holder', () => {
+  it('says Put on board with no link, and names no holder', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     bluetoothContext.value = { ...connectedBluetooth(), isConnected: false };
     lightbulbState.pressAction = 'connect';
@@ -1799,9 +1811,15 @@ describe('PlayDrawer wall button taps', () => {
   // "Turn off all lights" marks the climb in a module-wide store; start each case lit.
   beforeEach(() => {
     resetWallCleared();
+    resetDriveModeForTests();
     wallControlTapped.mockClear();
     wallHaptics.hapticWarning.mockClear();
+    wallHaptics.hapticLight.mockClear();
     announceQueued.mockClear();
+  });
+  afterEach(() => {
+    resetAllSettings();
+    resetDriveModeForTests();
   });
 
   function linkedBluetooth(staleCurrentHold: { queueItemUuid: string; lastCurrentChangeAt: number } | null = null) {
@@ -1835,12 +1853,14 @@ describe('PlayDrawer wall button taps', () => {
     });
   }
 
-  // Marco's phone test: a tap on You have the board lets go of it, the board
-  // sheet's own Disconnect. A hold opens the sheet (below).
+  // Marco's phone test: a tap on Disconnect board (lit, not driving) lets go
+  // of it, the board sheet's own Disconnect. A hold opens the sheet (below).
   it.each([
     ['the wall button', 'onWallControl', 'button'],
     ['the bulb, back in the first row', 'onLightbulb', 'bulb'],
-  ] as const)('a tap on You have the board on %s disconnects, and opens no sheet', (_control, prop, control) => {
+  ] as const)('a tap on Disconnect board on %s disconnects, and opens no sheet', (_control, prop, control) => {
+    // Not driving: solo with lighting on swipes off.
+    setSetting('lightOnSwipe', false);
     disconnectAllBluetooth.mockClear();
     boardSheet.opened.mockClear();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
@@ -1916,6 +1936,45 @@ describe('PlayDrawer wall button taps', () => {
     expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
   });
 
+  // #7113: one rule, solo included. A press on the frosted button stops driving
+  // and keeps the link; swipes go back to previews until the link drops.
+  const nothingToArrange = (): void => {};
+  const startLiveDrive = (): void => {
+    enterDriveMode({ sessionId: null, boardId: null });
+    markDriveLive();
+  };
+  it.each<[string, () => void]>([
+    ['solo with lighting on swipes', nothingToArrange],
+    ['a live drive', startLiveDrive],
+  ])('a tap on You are driving the wall (%s) stops driving and keeps the link', (_case, arrange) => {
+    disconnectAllBluetooth.mockClear();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    linkedTo(linkedBluetooth(), true);
+    act(() => arrange());
+    renderDrawer();
+    expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({
+      driving: true,
+      labelKey: 'youAreDriving',
+      tapAction: 'stop_driving',
+    });
+
+    tap('onWallControl');
+
+    expect(disconnectAllBluetooth).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+    expect(isDrivingStoppedForLink()).toBe(true);
+    expect(wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_driving', control: 'button' });
+    expect(wallHaptics.hapticLight).toHaveBeenCalledOnce();
+    expect(wallHaptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    renderDrawer();
+    expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({
+      driving: false,
+      labelKey: 'disconnectBoard',
+      tapAction: 'disconnect',
+    });
+  });
+
   // #7000, the tablet rule: beside a MiniPlayer (the open Duo's pane, a
   // tablet's player route) the player's first row is the wall button, and the
   // bar can draw the player's own board control.
@@ -1923,6 +1982,7 @@ describe('PlayDrawer wall button taps', () => {
     const { usePaneWallControl } = await import('../pane-wall-control-store');
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     linkedTo(linkedBluetooth(), true);
+    setSetting('lightOnSwipe', false);
     miniPlayerBeside.mirrors = true;
     onTestFinished(() => {
       miniPlayerBeside.mirrors = false;
@@ -1967,7 +2027,7 @@ describe('PlayDrawer wall button taps', () => {
       return bluetooth;
     }
 
-    it('says On the wall under an hour, and the tap connects and lights it again through the hold', async () => {
+    it('says the climb is on the wall under an hour, and the tap connects and lights it again through the hold', async () => {
       const bluetooth = unlinkedOnTheWall(minutesAgo(10));
       renderDrawer();
       const model = recorded.actionBar.at(-1)?.wallControl as { state: string; look: string; holder: unknown };
@@ -1992,7 +2052,7 @@ describe('PlayDrawer wall button taps', () => {
       });
     });
 
-    it('says Connect board past the hour, never Put on the wall', () => {
+    it("offers a connect past the hour, never a preview's put-up", () => {
       unlinkedOnTheWall(minutesAgo(61));
       renderDrawer();
       expect(recorded.actionBar.at(-1)?.wallControlState).toBe('connect');
@@ -2060,6 +2120,56 @@ describe('PlayDrawer wall button taps', () => {
     renderDrawer();
     expect(recorded.actionBar.at(-1)?.onWallControlLongPress).toBeUndefined();
     expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
+  });
+
+  // #7113 PR 3: the swipe, its screen-reader action, the frost it wipes in and
+  // the board sheet's row, all behind `wall-swipe-to-drive`.
+  describe('swipe to drive', () => {
+    const putOnBoardWithNoLink = () => {
+      queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+      bluetoothContext.value = { ...linkedBluetooth(), isConnected: false };
+      lightbulbState.pressAction = 'connect';
+    };
+
+    it('wires nothing with the flag off: no swipe, no action, no frost, no sheet row', () => {
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const bar = recorded.actionBar.at(-1);
+      expect(bar?.wallControl).toMatchObject({ swipeAction: 'drive' });
+      expect(bar?.onWallControlSwipe).toBeUndefined();
+      expect(bar?.onWallControlSwipeCancel).toBeUndefined();
+      expect(bar?.onWallControlDrive).toBeUndefined();
+      expect(bar?.wallGlow).toBeNull();
+      expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
+    });
+
+    it('hands the swipe, the action and the climb’s frost where the swipe is offered', () => {
+      swipeToDrive.on = true;
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const bar = recorded.actionBar.at(-1);
+      expect(bar?.onWallControlSwipe).toEqual(expect.any(Function));
+      expect(bar?.onWallControlSwipeCancel).toEqual(expect.any(Function));
+      expect(bar?.onWallControlDrive).toEqual(expect.any(Function));
+      // Built for the climb on screen, though nothing is lit: the swipe wipes it in.
+      const glow = bar?.wallGlow as { holds: unknown[] } | null;
+      expect(glow?.holds).toHaveLength(1);
+    });
+
+    it('opens ⋯ › Board controls with no link, offering Light every climb', () => {
+      swipeToDrive.on = true;
+      putOnBoardWithNoLink();
+      renderDrawer();
+      const menuRow = recorded.actionsMenu.at(-1)?.onOpenBoardControls;
+      if (typeof menuRow !== 'function') throw new Error('no ⋯ › Board controls');
+      act(() => {
+        menuRow();
+      });
+      expect(boardSheet.opened).toHaveBeenLastCalledWith({ surface: 'play_drawer', source: 'player_menu' });
+      const sheet = boardSheet.props.at(-1);
+      expect(sheet?.visible).toBe(true);
+      expect(sheet?.onDrive).toEqual(expect.any(Function));
+    });
   });
 
   it('re-lights the #4979 held climb on a tap, with no Put on the wall beside it', () => {
@@ -2137,7 +2247,12 @@ describe('PlayDrawer wall button taps', () => {
     expect(props?.wallControlState).toBe('connect');
     // The words come from the model (wall-control-text.ts); the layout rule is
     // pinned in resolve-action-bar-layout.test.ts.
-    expect(props?.wallControl).toMatchObject({ labelKey: 'connect', a11yHintKey: 'connectHint', tapAction: 'connect' });
+    expect(props?.wallControl).toMatchObject({
+      labelKey: 'putOnBoard',
+      a11yHintKey: 'connectHint',
+      tapAction: 'connect',
+      swipeAction: 'drive',
+    });
 
     tap('onLightbulb');
 

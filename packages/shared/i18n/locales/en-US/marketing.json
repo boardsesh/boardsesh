@@ -686,11 +686,11 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Tap Connect board, pick your board, and your climb lights up."
+        "subtitle": "Tap Put on board, pick your board, and your climb lights up."
       },
       "connect": {
         "title": "Connect",
-        "p1": "In a climb, tap Connect board under the board, or tap the lightbulb in the top bar. Then tap your board in Select Board. The list runs strongest signal first, each row with its serial.",
+        "p1": "In a climb, tap Put on board under the board, or tap the lightbulb in the top bar. Then tap your board in Select Board. The list runs strongest signal first, each row with its serial.",
         "p2": "The first time, iOS asks for Bluetooth. Android asks for nearby devices, or Location on Android 11 and older.",
         "shotAlt": "The Select Board sheet",
         "shotCaption": "Strongest signal first, with serials.",
@@ -701,13 +701,13 @@
       },
       "hidden": {
         "title": "Board controls",
-        "p1": "While connected, hold the button under the board. When it says You have the board, a short tap disconnects instead. In a climb ⋯, then Board controls, opens them too, and so does holding the lightbulb in the top bar.",
+        "p1": "While connected, hold the button under the board. When it says Disconnect board, a short tap disconnects instead. When it says You are driving the wall, a short tap stops driving and keeps the board connected. In a climb ⋯, then Board controls, opens them too, and so does holding the lightbulb in the top bar.",
         "row1": "Re-light board. Sends the climb to the LEDs again.",
         "row2": "Turn off all lights. Your phone stays connected.",
         "row3": "Disconnect board. Use it when you connected to the wrong wall.",
         "row4": "Light the hold above. MoonBoard only.",
         "p2": "Auto-disconnect, Light the board when I tap a climb and Light the board as I swipe are under Settings, then Board, and in the sheet the top bar's lightbulb opens. Auto-disconnect frees the board after 30 seconds idle. Turn both lighting switches off and browsing stops changing the wall.",
-        "p3": "With no board connected, Connect board, or a short tap on the top bar's lightbulb, connects to the last board you used."
+        "p3": "With no board connected, Put on board, or a short tap on the top bar's lightbulb, connects to the last board you used."
       },
       "failed": {
         "title": "When it won't connect",

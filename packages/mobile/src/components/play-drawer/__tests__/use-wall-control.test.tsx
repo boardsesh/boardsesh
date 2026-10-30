@@ -5,22 +5,45 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const analytics = vi.hoisted(() => ({ tapped: vi.fn(), shown: vi.fn(), opened: vi.fn() }));
-const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn() }));
+const analytics = vi.hoisted(() => ({
+  tapped: vi.fn(),
+  shown: vi.fn(),
+  opened: vi.fn(),
+  ended: vi.fn(),
+  swiped: vi.fn(),
+}));
+const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
+  trackWallControlSwiped: analytics.swiped,
   trackWallControlShown: analytics.shown,
+  trackDriveModeEnded: analytics.ended,
 }));
 vi.mock('../../../lib/analytics-board-connect', () => ({ trackBoardControlsOpened: analytics.opened }));
 vi.mock('../../../lib/haptics', () => haptics);
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { DISCONNECT_TAP_GUARD_MS, useWallControl, type WallControlRunners } from '../use-wall-control';
+import {
+  DISCONNECT_TAP_GUARD_MS,
+  useWallControl,
+  type DriveStartOutcome,
+  type WallControlRunners,
+} from '../use-wall-control';
 import { EMPTY_WALL_CONTROL, type WallControlAction, type WallControlModel } from '../wall-control';
+import {
+  enterDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  isDrivingStoppedForLink,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../drive-mode-store';
 
-type MockRunners = { [Name in keyof WallControlRunners]: ReturnType<typeof vi.fn<() => void>> };
+type MockRunners = {
+  [Name in Exclude<keyof WallControlRunners, 'drive'>]: ReturnType<typeof vi.fn<() => void>>;
+} & { drive: ReturnType<typeof vi.fn<() => DriveStartOutcome>> };
 
 function runners(): MockRunners {
   return {
@@ -30,6 +53,7 @@ function runners(): MockRunners {
     openSheet: vi.fn<() => void>(),
     lightAgain: vi.fn<() => void>(),
     moveToBoard: vi.fn<() => void>(),
+    drive: vi.fn<() => DriveStartOutcome>(() => 'started'),
   };
 }
 
@@ -53,7 +77,15 @@ const modelFor = (
   state: WallControlModel['state'],
   tapAction: WallControlAction,
   extra: Partial<WallControlModel> = {},
-) => ({ ...EMPTY_WALL_CONTROL, state, tapAction, ...extra }) as WallControlModel;
+) =>
+  ({
+    ...EMPTY_WALL_CONTROL,
+    state,
+    tapAction,
+    // The resolver's rule: a bulb never stops driving.
+    bulbTapAction: tapAction === 'stop_driving' ? 'disconnect' : tapAction,
+    ...extra,
+  }) as WallControlModel;
 
 describe('useWallControl', () => {
   beforeEach(() => {
@@ -95,6 +127,55 @@ describe('useWallControl', () => {
     });
   });
 
+  // #7113: a press on the frosted button stops driving and keeps the link.
+  it('stops driving on You are driving the wall: no disconnect, a light buzz, and says so', () => {
+    resetDriveModeForTests();
+    enterDriveMode({ sessionId: 'session-1', boardId: 7 });
+    markDriveLive();
+    const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    act(() => hook.result.current.press('button'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    for (const runner of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain', 'moveToBoard'] as const) {
+      expect(run[runner]).not.toHaveBeenCalled();
+    }
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_driving', control: 'button' });
+    resetDriveModeForTests();
+  });
+
+  // Review: a bulb draws no frost, so a tap there disconnects, as it always has.
+  it.each(['bulb', 'mini_bar'] as const)('lets go of the board from the %s while driving', (control) => {
+    resetDriveModeForTests();
+    const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    act(() => hook.result.current.press(control));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control });
+  });
+
+  // A double tap on the frost must not stop driving and then let go of a crew's board.
+  it('drops the second tap of a double tap on You are driving the wall', () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => hook.result.current.press('button'));
+      hook.rerender({ model: modelFor('lit', 'disconnect') });
+      act(() => hook.result.current.press('button'));
+      expect(run.disconnect).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS);
+      act(() => hook.result.current.press('button'));
+      expect(run.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      resetDriveModeForTests();
+    }
+  });
+
   it('lets go of the board with a warning buzz, and says so once the link drops', () => {
     const { hook } = setup(modelFor('lit', 'disconnect'));
     act(() => hook.result.current.press('bulb'));
@@ -116,13 +197,13 @@ describe('useWallControl', () => {
   });
 
   // Fable review: the provider marks the link down before the adapter lets go,
-  // so a double tap's second tap read Connect board and started a connect.
-  it('turns a double tap on You have the board into one disconnect and no connect', () => {
+  // so a double tap's second tap read Put on board and started a connect.
+  it('turns a double tap on Disconnect board into one disconnect and no connect', () => {
     vi.useFakeTimers();
     try {
       const { hook, run } = setup(modelFor('lit', 'disconnect'));
       act(() => hook.result.current.press('button'));
-      // The link already reads down: the model says Connect board.
+      // The link already reads down: the model says Put on board.
       hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
       act(() => hook.result.current.press('button'));
       expect(run.disconnect).toHaveBeenCalledOnce();
@@ -182,5 +263,95 @@ describe('useWallControl', () => {
     hook.rerender({ model: modelFor('connect', 'connect') });
     expect(analytics.shown).toHaveBeenCalledOnce();
     expect(analytics.shown).toHaveBeenCalledWith({ state: 'connect', climbUuid: 'climb-1' });
+  });
+});
+
+// #7113: the wall button's swipe and its "Light every climb" action share one runner.
+describe('useWallControl drive', () => {
+  it('starts a drive where the model offers the swipe, and passes the outcome back', () => {
+    const { hook, run } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive' }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(outcome).toBe('started');
+    // A start is not a tap: it logs no Wall Control Tapped.
+    expect(analytics.tapped).not.toHaveBeenCalled();
+  });
+
+  it("passes a refusal for a crewmate's board back untouched", () => {
+    const run = runners();
+    run.drive.mockReturnValue('needs_handoff');
+    const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(outcome).toBe('needs_handoff');
+  });
+
+  it('runs nothing where the model offers no swipe', () => {
+    const { hook, run } = setup(modelFor('crew', 'relay', { swipeAction: null }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(outcome).toBe('unavailable');
+  });
+});
+
+// #7113 PR 3: Wall Control Swiped, once per gesture, in the state it began in.
+describe('useWallControl swipe', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('logs a drive with the state the swipe began in', () => {
+    const { hook, run } = setup(modelFor('connect', 'connect', { swipeAction: 'drive' }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.swipe('button');
+    });
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(outcome).toBe('started');
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({ state: 'connect', outcome: 'drive', control: 'button' });
+    expect(analytics.tapped).not.toHaveBeenCalled();
+  });
+
+  it('logs a refusal when nothing starts', () => {
+    const run = runners();
+    run.drive.mockReturnValue('needs_handoff');
+    const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
+    act(() => {
+      hook.result.current.swipe('button');
+    });
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({
+      state: 'put_on_wall',
+      outcome: 'refused',
+      control: 'button',
+    });
+  });
+
+  it('logs a cancel and runs nothing', () => {
+    const { hook, run } = setup(modelFor('dark', 'relight', { swipeAction: 'drive' }));
+    act(() => {
+      hook.result.current.swipeCancelled('button');
+    });
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(analytics.swiped).toHaveBeenCalledExactlyOnceWith({
+      state: 'dark',
+      outcome: 'cancelled',
+      control: 'button',
+    });
+  });
+
+  it('never logs a swipe for the screen-reader action', () => {
+    const { hook } = setup(modelFor('connect', 'connect', { swipeAction: 'drive' }));
+    act(() => {
+      hook.result.current.drive('button');
+    });
+    expect(analytics.swiped).not.toHaveBeenCalled();
   });
 });

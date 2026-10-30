@@ -3053,6 +3053,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         true,
         undefined,
         options?.placement,
+        options?.historyCopy,
       );
       // #4979: opening the climb that is already current (a re-tap, or a list
       // row for the same climb, which now-slot mode dedupes onto it) leaves the

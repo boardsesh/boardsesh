@@ -9,8 +9,10 @@
 // receipt time from the queue stream (use-session-realtime.ts) to the
 // auto-sender (bluetooth-provider.tsx) without either importing the other.
 //
-// Instrumentation only. Times are `performance.now()` so a frozen screenshot
-// clock or a wall-clock jump cannot produce a negative stage.
+// Instrumentation, plus one listener: the phone driving the wall (#7113) is
+// told a crewmate moved it, so its player can say who. Times are
+// `performance.now()` so a frozen screenshot clock or a wall-clock jump cannot
+// produce a negative stage.
 
 export type RelayEventType = 'CurrentClimbChanged' | 'FullSync';
 
@@ -34,6 +36,21 @@ export type RelayReceipt = {
 export const RELAY_RECEIPT_MAX_AGE_MS = 30_000;
 
 let pendingReceipt: RelayReceipt | null = null;
+
+/**
+ * Who hears that a crewmate moved the wall (#7113): the phone driving the wall
+ * says "Sam put up …" when it follows. Told the same events, by the same
+ * rules, as the receipt: never this phone's own moves or echoes.
+ */
+const crewMoveListeners = new Set<(queueItemUuid: string) => void>();
+
+/** Hear each crewmate's move of the wall, by the queue item it made current. */
+export function subscribeCrewMoves(listener: (queueItemUuid: string) => void): () => void {
+  crewMoveListeners.add(listener);
+  return () => {
+    crewMoveListeners.delete(listener);
+  };
+}
 
 /**
  * Queue items this phone put on the wall itself, with when. A now-slot open's
@@ -100,6 +117,7 @@ export function noteRelayReceipt({
     correlationId: correlationId ?? null,
     receivedAt,
   };
+  for (const listener of crewMoveListeners) listener(incomingQueueItemUuid);
 }
 
 /**

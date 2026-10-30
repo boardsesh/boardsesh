@@ -120,3 +120,40 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
   getByText('lightControl.turnOffAll'.repeat(3));
   getByText('lightControl.disconnect'.repeat(3));
 });
+
+// #7113: Light every climb, the wall button's swipe as a row. With no link the
+// board's own actions would no-op, so it stands alone.
+it.each([
+  ['linked', true, ['playView.wallControl.lightEveryClimb', 'ble.relightBoard', 'lightControl.disconnect']],
+  ['with no link', false, ['playView.wallControl.lightEveryClimb']],
+] as const)('offers Light every climb %s', (_case, linked, rows) => {
+  const onDrive = vi.fn();
+  const onClose = vi.fn();
+  const { getByText, queryByText } = render(
+    <BleControlSheet
+      visible
+      onReassert={vi.fn()}
+      onClearLights={vi.fn()}
+      onDisconnect={vi.fn()}
+      autoDisconnectEnabled={false}
+      autoDisconnectTimeoutLabel="30 seconds"
+      onToggleAutoDisconnect={vi.fn()}
+      showLightAdjacentHolds={false}
+      lightAdjacentHoldsEnabled={false}
+      onToggleLightAdjacentHolds={vi.fn()}
+      lightOnSwipe={false}
+      onToggleLightOnSwipe={vi.fn()}
+      lightOnClimbTap={false}
+      onToggleLightOnClimbTap={vi.fn()}
+      showLightingSwitches={false}
+      linked={linked}
+      onDrive={onDrive}
+      onClose={onClose}
+    />,
+  );
+  for (const row of rows) getByText(row.repeat(3));
+  if (!linked) expect(queryByText('ble.relightBoard'.repeat(3))).toBeNull();
+  fireEvent.click(getByText('playView.wallControl.lightEveryClimb'.repeat(3)));
+  expect(onDrive).toHaveBeenCalledOnce();
+  expect(onClose).toHaveBeenCalledOnce();
+});

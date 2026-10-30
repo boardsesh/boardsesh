@@ -686,11 +686,11 @@
       "breadcrumb": "Plafón y Bluetooth",
       "hero": {
         "title": "Conecta el móvil al plafón",
-        "subtitle": "Toca Conectar plafón, elige tu plafón y tu bloque se enciende."
+        "subtitle": "Toca Poner en el plafón, elige tu plafón y tu bloque se enciende."
       },
       "connect": {
         "title": "Conectar",
-        "p1": "En un bloque, toca Conectar plafón debajo del plafón, o toca la bombilla de la barra de arriba. Luego toca tu plafón en Seleccionar plafón. La lista va de señal más fuerte a más débil, con el número de serie en cada fila.",
+        "p1": "En un bloque, toca Poner en el plafón debajo del plafón, o toca la bombilla de la barra de arriba. Luego toca tu plafón en Seleccionar plafón. La lista va de señal más fuerte a más débil, con el número de serie en cada fila.",
         "p2": "La primera vez, iOS pide Bluetooth. Android pide dispositivos cercanos, o Ubicación en Android 11 y anteriores.",
         "shotAlt": "La hoja Seleccionar plafón",
         "shotCaption": "Señal más fuerte primero, con números de serie.",
@@ -701,13 +701,13 @@
       },
       "hidden": {
         "title": "Controles del plafón",
-        "p1": "Con el plafón conectado, mantén pulsado el botón de debajo del plafón. Cuando dice Tienes el plafón, un toque corto lo desconecta. En un bloque también se abren con ⋯ y luego Controles del plafón, o manteniendo pulsada la bombilla de la barra de arriba.",
+        "p1": "Con el plafón conectado, mantén pulsado el botón de debajo del plafón. Cuando dice Desconectar plafón, un toque corto lo desconecta. Cuando dice Estás al mando del plafón, un toque corto deja el mando y el plafón sigue conectado. En un bloque también se abren con ⋯ y luego Controles del plafón, o manteniendo pulsada la bombilla de la barra de arriba.",
         "row1": "Reiluminar plafón. Manda el bloque a los LED otra vez.",
         "row2": "Apagar todas las luces. Tu móvil sigue conectado.",
         "row3": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
         "row4": "Iluminar la presa de arriba. Solo MoonBoard.",
         "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, en Plafón, y en el menú que abre la bombilla de la barra superior. La desconexión automática libera el plafón tras 30 segundos sin uso. Apaga los dos interruptores de iluminación y explorar deja de mover el muro.",
-        "p3": "Sin plafón conectado, Conectar plafón, o un toque corto en la bombilla de la barra de arriba, conecta al último plafón que usaste."
+        "p3": "Sin plafón conectado, Poner en el plafón, o un toque corto en la bombilla de la barra de arriba, conecta al último plafón que usaste."
       },
       "failed": {
         "title": "Cuando no conecta",

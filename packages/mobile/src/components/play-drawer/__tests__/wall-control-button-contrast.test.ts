@@ -18,7 +18,7 @@ const SURFACES = {
 } as const;
 
 describe('wall button contrast', () => {
-  it.each(['light', 'dark'] as const)('keeps Connect board and Put on the wall at 4.5:1 in %s', (scheme) => {
+  it.each(['light', 'dark'] as const)('keeps Put on board at 4.5:1 in %s', (scheme) => {
     const brand = scheme === 'dark' ? brandColorsDark : brandColors;
     for (const surface of SURFACES[scheme]) {
       const fill = blendOpaque(brand.primaryFill, surface, WALL_CONTROL_TONAL_ALPHA);

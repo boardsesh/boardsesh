@@ -686,11 +686,11 @@
       "breadcrumb": "Board et Bluetooth",
       "hero": {
         "title": "Connecte ton téléphone à la board",
-        "subtitle": "Touche Connecter la board, choisis ta board, et ton bloc s'allume."
+        "subtitle": "Touche Allumer sur la board, choisis ta board, et ton bloc s'allume."
       },
       "connect": {
         "title": "Se connecter",
-        "p1": "Dans un bloc, touche Connecter la board sous la board, ou touche l'ampoule dans la barre du haut. Puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
+        "p1": "Dans un bloc, touche Allumer sur la board sous la board, ou touche l'ampoule dans la barre du haut. Puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
         "p2": "La première fois, iOS demande le Bluetooth. Android demande les appareils à proximité, ou la localisation sur Android 11 et antérieur.",
         "shotAlt": "La fiche Sélectionner une board",
         "shotCaption": "Signal le plus fort en premier, avec les numéros de série.",
@@ -701,13 +701,13 @@
       },
       "hidden": {
         "title": "Commandes de la board",
-        "p1": "Une fois connecté, garde appuyé le bouton sous la board. Quand il affiche Tu as la board, une touche brève la déconnecte. Dans un bloc, ⋯ puis Commandes de la board les ouvre aussi, tout comme garder l'ampoule de la barre du haut appuyée.",
+        "p1": "Une fois connecté, garde appuyé le bouton sous la board. Quand il affiche Déconnecter la board, une touche brève la déconnecte. Quand il affiche Tu pilotes la board, une touche brève arrête de piloter et la board reste connectée. Dans un bloc, ⋯ puis Commandes de la board les ouvre aussi, tout comme garder l'ampoule de la barre du haut appuyée.",
         "row1": "Rallumer la board. Renvoie le bloc aux LED.",
         "row2": "Tout éteindre. Ton téléphone reste connecté.",
         "row3": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
         "row4": "Allumer la prise du dessus. MoonBoard uniquement.",
         "p2": "Déconnexion automatique, Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler sont dans Paramètres, puis Board, et dans le menu qu'ouvre l'ampoule de la barre du haut. La déconnexion automatique libère la board après 30 secondes d'inactivité. Désactive les deux réglages d'allumage et explorer ne change plus le mur.",
-        "p3": "Sans board connectée, Connecter la board, ou une touche courte sur l'ampoule de la barre du haut, connecte à la dernière board utilisée."
+        "p3": "Sans board connectée, Allumer sur la board, ou une touche courte sur l'ampoule de la barre du haut, connecte à la dernière board utilisée."
       },
       "failed": {
         "title": "Quand ça ne se connecte pas",

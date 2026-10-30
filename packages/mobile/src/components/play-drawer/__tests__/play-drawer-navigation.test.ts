@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import {
+  climbChangeStaysViewOnly,
   getSimilarClimbTapMode,
   getViewOnlyPreviewNavigationTarget,
   getSwipeNavigationTarget,
@@ -316,5 +317,135 @@ describe('getSimilarClimbTapMode', () => {
   it('leaves the signed-out reader on the preview path either way', () => {
     expect(getSimilarClimbTapMode('anonymous', { inSharedSession: true })).toBe('preview');
     expect(getSimilarClimbTapMode('anonymous', { inSharedSession: false })).toBe('preview');
+  });
+});
+
+// #7113: one rule for every change of climb. Driving lights everything, in a
+// crew too; otherwise the setting decides solo, a crew previews, and a press
+// that stopped driving keeps solo changes as previews until the link drops.
+describe('climbChangeStaysViewOnly', () => {
+  const cases: [boolean, boolean, boolean, boolean, boolean][] = [];
+  for (const driving of [false, true]) {
+    for (const inSharedSession of [false, true]) {
+      for (const lightSetting of [false, true]) {
+        for (const stoppedForLink of [false, true]) {
+          // Expected, spelled out: only driving, or solo with the setting on and no stop, lights.
+          const lights = driving || (!inSharedSession && lightSetting && !stoppedForLink);
+          cases.push([driving, inSharedSession, lightSetting, stoppedForLink, !lights]);
+        }
+      }
+    }
+  }
+
+  it.each(cases)(
+    'driving %s, crew %s, setting %s, stopped %s: view-only %s',
+    (driving, inSharedSession, lightSetting, stoppedForLink, viewOnly) => {
+      expect(climbChangeStaysViewOnly({ driving, inSharedSession, lightSetting, stoppedForLink })).toBe(viewOnly);
+    },
+  );
+
+  it('defaults to no stop', () => {
+    expect(climbChangeStaysViewOnly({ driving: false, inSharedSession: false, lightSetting: true })).toBe(false);
+  });
+
+  it('agrees with the swipe rule whenever nobody is driving and nothing is stopped', () => {
+    for (const inSharedSession of [false, true]) {
+      for (const lightOnSwipe of [false, true]) {
+        expect(climbChangeStaysViewOnly({ driving: false, inSharedSession, lightSetting: lightOnSwipe })).toBe(
+          swipeStaysViewOnly({ previewItem: null, previewSuggestionSource: null, lightOnSwipe, inSharedSession }),
+        );
+      }
+    }
+  });
+});
+
+// #7113: the swipe rule while driving the wall.
+describe('getSwipeNavigationTarget while driving', () => {
+  const current = makeItem('current');
+  const next = makeItem('next');
+  const preview = makeItem('preview');
+
+  it('commits in a crew, with Light on swipe off, and from a tracked preview', () => {
+    for (const [lightOnSwipe, inSharedSession] of [
+      [true, true],
+      [false, false],
+      [false, true],
+    ] as const) {
+      expect(
+        getSwipeNavigationTarget({
+          previewItem: null,
+          previewSuggestionSource: null,
+          targetItem: next,
+          lightOnSwipe,
+          inSharedSession,
+          driving: true,
+        }),
+      ).toEqual({ viewOnly: false });
+    }
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: preview,
+        previewSuggestionSource: makePreviewSource(current),
+        targetItem: next,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+      }),
+    ).toEqual({ viewOnly: false });
+  });
+
+  it('leaves a tracked preview of a climb from another board a preview', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: preview,
+        previewSuggestionSource: makePreviewSource(current),
+        targetItem: next,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+        previewOnOtherBoard: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: next });
+  });
+
+  it('a stop on this link keeps solo swipes previews with the setting on', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: next,
+        lightOnSwipe: true,
+        stoppedForLink: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: next });
+  });
+
+  it('the chrome agrees: no browse latch while driving, back once it ends', () => {
+    const source = makePreviewSource(current);
+    expect(
+      swipeStaysViewOnly({
+        previewItem: preview,
+        previewSuggestionSource: source,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+      }),
+    ).toBe(false);
+    expect(
+      swipeStaysViewOnly({
+        previewItem: preview,
+        previewSuggestionSource: source,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: false,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('getSimilarClimbTapMode while driving', () => {
+  it('queues for a member in a crew, never for the signed-out reader', () => {
+    expect(getSimilarClimbTapMode('member', { inSharedSession: true, driving: true })).toBe('queue');
+    expect(getSimilarClimbTapMode('anonymous', { inSharedSession: false, driving: true })).toBe('preview');
   });
 });

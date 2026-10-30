@@ -29,7 +29,13 @@ import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { hapticMedium } from '../../lib/haptics';
 import { glassSize } from '../../theme/layout';
-import { getBoardConnectionLabel, getBoardControlIndicatorVisual } from './board-control-indicator-state';
+import {
+  drivingBulbColors,
+  getBoardConnectionLabel,
+  getBoardControlIndicatorVisual,
+} from './board-control-indicator-state';
+import { resolveWallBulbLook } from '../play-drawer/wall-control';
+import { useDriveModePhase } from '../play-drawer/drive-mode-store';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
@@ -63,8 +69,12 @@ export function BoardControlIndicator({
   placement,
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { inAppBoardConnection, localConnected, ledless, holderDisplayName, bluetooth } = useBoardConnectionState();
+  // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
+  // the wall button's live fill. The board control's own rule
+  // (`resolveWallBulbLook`), fed this phone's link and the drive.
+  const drivePhase = useDriveModePhase();
   const { open: openBoardControls } = useBleControlSheet();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   // Shared connect/disconnect path so undo-arming and the press semantics match
@@ -104,6 +114,14 @@ export function BoardControlIndicator({
   // No board bound yet → nothing to indicate or connect to.
   if (!bluetooth) return null;
 
+  const heldByMe = inAppBoardConnection === 'connectedByMe';
+  const bulbLook = resolveWallBulbLook(
+    heldByMe && !ledless ? 'lit' : null,
+    heldByMe && localConnected,
+    true,
+    drivePhase === 'live',
+  );
+
   const visual = getBoardControlIndicatorVisual({
     boardConnection: inAppBoardConnection,
     connectedColor: brandColors.warning,
@@ -112,9 +130,9 @@ export function BoardControlIndicator({
     ledless,
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
+    driving: bulbLook === 'driving' ? drivingBulbColors(brandColors, colorScheme) : null,
   });
 
-  const heldByMe = inAppBoardConnection === 'connectedByMe';
   const accessibilityLabel = getBoardConnectionLabel(t, {
     boardConnection: inAppBoardConnection,
     ledless,

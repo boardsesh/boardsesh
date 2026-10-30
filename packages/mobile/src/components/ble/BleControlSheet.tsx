@@ -35,6 +35,17 @@ type BleControlSheetProps = {
    * the sheet is just the board's actions. Today's bar keeps them.
    */
   showLightingSwitches?: boolean;
+  /**
+   * This phone's link is up. Without it the board's own actions (Re-light,
+   * Turn off all lights, Disconnect) would no-op, so only Light every climb
+   * shows. Defaults to true: every sheet but the player's opens linked.
+   */
+  linked?: boolean;
+  /**
+   * Light every climb (#7113): start driving the wall, the wall button's swipe
+   * as a row. First, where the player offers the swipe.
+   */
+  onDrive?: () => void;
   onClose: () => void;
 };
 
@@ -57,10 +68,13 @@ function BleControlSheet({
   lightOnClimbTap,
   onToggleLightOnClimbTap,
   showLightingSwitches = true,
+  linked = true,
+  onDrive,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
+  const { t: tSession } = useTranslation('session');
   const { brandColors, systemColors } = useTheme();
 
   const handleReassert = useCallback(() => {
@@ -77,6 +91,11 @@ function BleControlSheet({
     onDisconnect();
     onClose();
   }, [onDisconnect, onClose]);
+
+  const handleDrive = useCallback(() => {
+    onDrive?.();
+    onClose();
+  }, [onDrive, onClose]);
 
   return (
     // A bounded large detent lets the scroll view reach every native Toggle and
@@ -126,24 +145,36 @@ function BleControlSheet({
           />
         )}
         {showLightingSwitches || showLightAdjacentHolds ? <Separator /> : null}
-        <ListRow
-          title={tSettings('ble.relightBoard')}
-          leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}
-          onPress={handleReassert}
-          showSeparator
-        />
-        <ListRow
-          title={tCommon('lightControl.turnOffAll')}
-          leading={<Icon name="lightbulb.slash" size={22} color={systemColors.secondaryLabel} />}
-          onPress={handleClearLights}
-          showSeparator
-        />
-        <ListRow
-          title={tCommon('lightControl.disconnect')}
-          leading={<Icon name="bluetooth.off" size={22} color={systemColors.error} />}
-          onPress={handleDisconnect}
-          showSeparator={false}
-        />
+        {onDrive ? (
+          <ListRow
+            title={tSession('playView.wallControl.lightEveryClimb')}
+            leading={<Icon name="chevron.left.2" size={22} color={brandColors.primary} />}
+            onPress={handleDrive}
+            showSeparator={linked}
+          />
+        ) : null}
+        {linked ? (
+          <>
+            <ListRow
+              title={tSettings('ble.relightBoard')}
+              leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}
+              onPress={handleReassert}
+              showSeparator
+            />
+            <ListRow
+              title={tCommon('lightControl.turnOffAll')}
+              leading={<Icon name="lightbulb.slash" size={22} color={systemColors.secondaryLabel} />}
+              onPress={handleClearLights}
+              showSeparator
+            />
+            <ListRow
+              title={tCommon('lightControl.disconnect')}
+              leading={<Icon name="bluetooth.off" size={22} color={systemColors.error} />}
+              onPress={handleDisconnect}
+              showSeparator={false}
+            />
+          </>
+        ) : null}
       </View>
     </ModalSheet>
   );

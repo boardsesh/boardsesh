@@ -246,6 +246,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Offers the 4x4, Limit Bouldering and On the Minute blocks on the Record tab and in "Add a block" before they launch (#5380): 8 type chips instead of 5. Dev builds always offer them. A POSITIVE rollout flag, off by default: with no value at all a store build shows the 5 chips climbers have today. Screenshot mode ignores it.',
     defaultEnabled: false,
   },
+  {
+    key: 'wall-swipe-to-drive',
+    label: 'Swipe the wall button to drive',
+    description:
+      'Swipe the player\'s wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action "Light every climb" appears, and the board sheet gets a Light every climb row. A POSITIVE rollout flag: unresolved or off is today\'s button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -620,6 +626,25 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useWorkoutTimedBlocksFlag(): boolean {
   return useFeatureFlag('workout-timed-blocks') === true;
+}
+
+/**
+ * Swipe the wall button left to drive the wall (#7113): the gesture, its
+ * chevrons and peek, the "Light every climb" screen-reader action and the board
+ * sheet's row. A POSITIVE rollout flag read strictly: unresolved or off is
+ * today's button, so the first frames of a cold open never offer a swipe a
+ * flag then takes back. Dev builds read it as on unless a tester turns it off
+ * on the Feature Flags screen; screenshot mode never offers it, so store
+ * captures and the E2E smokes keep the button they have today.
+ */
+export function useWallSwipeToDriveEnabled(): boolean {
+  return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
+}
+
+/** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
+export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  return __DEV__ ? flag !== false : flag === true;
 }
 
 /**

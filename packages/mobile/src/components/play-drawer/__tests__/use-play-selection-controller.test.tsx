@@ -69,6 +69,9 @@ function inputs(): SelectionInputs {
       navigationState: { prevItem: item('previous'), nextItem: item('next') },
       lightOnSwipe: true,
       browseByDefault: false,
+      driving: false,
+      stoppedForLink: false,
+      previewOnOtherBoard: false,
     },
     chrome: {
       clearMirror: vi.fn(),
@@ -602,5 +605,134 @@ describe('continuing into the queue from the end of a list', () => {
 
     expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(queued);
+  });
+});
+
+// #7113: while this phone drives the wall, every change of climb commits and
+// lights it, in a crew too. A climb from another board stays a preview.
+describe('driving the wall', () => {
+  function driving(): SelectionInputs {
+    const props = inputs();
+    props.navigation.driving = true;
+    props.navigation.browseByDefault = true;
+    return props;
+  }
+  const strip = () => [item('similar-a').climb, item('similar').climb, item('similar-b').climb] as Climb[];
+
+  it.each(['handlePrev', 'handleNext'] as const)('%s in a crew moves the wall', (handler) => {
+    const initialProps = driving();
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current[handler]('swipe'));
+    expect(
+      handler === 'handlePrev' ? initialProps.queue.previousClimb : initialProps.queue.nextClimb,
+    ).toHaveBeenCalledOnce();
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'moved' }));
+  });
+
+  it('commits the next climb on a tracked preview, keeping the list as its track', () => {
+    const initialProps = driving();
+    const next = initialProps.navigation.navigationState.nextItem!;
+    initialProps.preview.drawerPreviewItem = item('preview');
+    initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), next]);
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'next' }) }),
+      {
+        playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', activatedClimbUuid: 'next' }),
+        // A step, placed as Next places one: fresh, never pulled out of History.
+        trigger: 'next',
+        historyCopy: 'fresh',
+      },
+    );
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
+    expect(initialProps.preview.setSharedBrowseLatched).toHaveBeenCalledWith(false);
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith({
+      direction: 'next',
+      method: 'swipe',
+      outcome: 'moved',
+    });
+  });
+
+  it('leaves a preview of a climb from another board a preview', () => {
+    const initialProps = driving();
+    initialProps.navigation.previewOnOtherBoard = true;
+    initialProps.preview.drawerPreviewItem = item('preview');
+    initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), item('next')]);
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      initialProps.navigation.navigationState.nextItem,
+    );
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
+  });
+
+  it('a stop on this link keeps solo swipes previews, Light on swipe on or not', () => {
+    const initialProps = inputs();
+    initialProps.navigation.stoppedForLink = true;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
+  });
+
+  it('a fresh open in a crew puts the climb up instead of browsing', () => {
+    const initialProps = driving();
+    initialProps.openTarget = open(item('new'));
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+      { playlistSuggestionSource: null },
+    );
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
+  });
+
+  it('Keep going with your queue in a crew takes the wall', () => {
+    const initialProps = driving();
+    const target = item('queued');
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.continueIntoQueue(target));
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(target, { playlistSuggestionSource: null });
+  });
+
+  it('a similar climb in a crew goes up; on another board it stays a preview', () => {
+    const crew = driving();
+    const committed = renderHook(usePlaySelectionController, { initialProps: crew });
+    act(() => committed.result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+    expect(crew.queue.setCurrentClimb).toHaveBeenCalledOnce();
+
+    const otherBoard = driving();
+    otherBoard.showBoardMismatch = true;
+    const preview = renderHook(usePlaySelectionController, { initialProps: otherBoard });
+    act(() => preview.result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+    expect(otherBoard.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('a similar climb with Light on tap off still goes up while driving', () => {
+    setSetting('lightOnClimbTap', false);
+    const initialProps = driving();
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledOnce();
+  });
+
+  it('never asks the busy-wall question of the climber who drives', () => {
+    for (const props of [driving(), inputs()]) {
+      props.preview.drawerPreviewItem = item('preview');
+      props.navigation.browseByDefault = true;
+      props.confirmation.browseLatchActive = true;
+      props.confirmation.wallUuidAtLatchStartRef.current = 'old-wall';
+      const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+      // Not driving yet: the swipe that starts a drive skips the question.
+      act(() => {
+        result.current.handleSetActive(props.navigation.driving ? {} : { skipBusyWall: true });
+      });
+      expect(props.confirmation.setBusyWallConfirmArmed).not.toHaveBeenCalledWith(true);
+      expect(props.queue.setCurrentClimb).toHaveBeenCalledOnce();
+    }
   });
 });

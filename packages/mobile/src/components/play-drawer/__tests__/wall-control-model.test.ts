@@ -42,9 +42,10 @@ type Row = [
     tapAction: string;
     longPress: string | null;
     labelKey: string | null;
-    a11yLabelKey: string | null;
+    a11yValueKey: string | null;
     a11yHintKey: string | null;
     look: string;
+    swipeAction: string | null;
   },
 ];
 
@@ -57,10 +58,11 @@ const rows: Row[] = [
       holder: null,
       tapAction: 'connect',
       longPress: null,
-      labelKey: 'connect',
-      a11yLabelKey: 'connect',
+      labelKey: 'putOnBoard',
+      a11yValueKey: null,
       a11yHintKey: 'connectHint',
       look: 'off',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -71,10 +73,11 @@ const rows: Row[] = [
       holder: null,
       tapAction: 'put_on_wall',
       longPress: null,
-      labelKey: 'putOnWall',
-      a11yLabelKey: 'putOnWall',
+      labelKey: 'putOnBoard',
+      a11yValueKey: null,
       a11yHintKey: 'lightHint',
       look: 'off',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -86,23 +89,40 @@ const rows: Row[] = [
       tapAction: 'put_on_wall',
       longPress: null,
       labelKey: 'setActive',
-      a11yLabelKey: 'setActive',
+      a11yValueKey: null,
       a11yHintKey: 'lightHint',
       look: 'off',
+      swipeAction: null,
     },
   ],
   [
-    'lit, this phone holds it',
+    'lit, this phone holds it, solo with lighting on swipes: driving',
     { ...MINE, displayedLit: true },
+    {
+      state: 'lit',
+      holder: 'self',
+      tapAction: 'stop_driving',
+      longPress: 'sheet',
+      labelKey: 'youAreDriving',
+      a11yValueKey: 'drivingEveryClimb',
+      a11yHintKey: 'stopDrivingHint',
+      look: 'lit',
+      swipeAction: null,
+    },
+  ],
+  [
+    'lit, this phone holds it, not driving',
+    { ...MINE, displayedLit: true, navigationCommits: false },
     {
       state: 'lit',
       holder: 'self',
       tapAction: 'disconnect',
       longPress: 'sheet',
-      labelKey: 'youHaveBoard',
-      a11yLabelKey: 'youHaveBoardLit',
+      labelKey: 'disconnectBoard',
+      a11yValueKey: 'youHaveBoardLit',
       a11yHintKey: 'litHint',
       look: 'lit',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -113,10 +133,11 @@ const rows: Row[] = [
       holder: 'self',
       tapAction: 'relight',
       longPress: 'sheet',
-      labelKey: 'putOnWall',
-      a11yLabelKey: 'putOnWall',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'youHaveBoard',
       a11yHintKey: 'lightHint',
       look: 'lit',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -127,10 +148,11 @@ const rows: Row[] = [
       holder: 'self',
       tapAction: 'put_on_wall',
       longPress: 'sheet',
-      labelKey: 'putOnWall',
-      a11yLabelKey: 'putOnWall',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'youHaveBoard',
       a11yHintKey: 'lightHint',
       look: 'lit',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -141,10 +163,11 @@ const rows: Row[] = [
       holder: 'crew',
       tapAction: 'relay',
       longPress: null,
-      labelKey: 'onBoard',
-      a11yLabelKey: 'onBoard',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'relayHint',
       look: 'ready',
+      swipeAction: null,
     },
   ],
   // #7015: Sam turned all the lights off; this phone hears it through presence.
@@ -156,10 +179,11 @@ const rows: Row[] = [
       holder: 'crew',
       tapAction: 'relay',
       longPress: null,
-      labelKey: 'onBoard',
-      a11yLabelKey: 'onBoard',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'relayHint',
       look: 'ready',
+      swipeAction: null,
     },
   ],
   [
@@ -171,9 +195,12 @@ const rows: Row[] = [
       tapAction: 'put_on_wall',
       longPress: null,
       labelKey: 'putOnBoard',
-      a11yLabelKey: 'putOnBoard',
+      a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'lightHint',
       look: 'off',
+      // Taking Sam's board needs his phone to let go first: no swipe until
+      // the hand-off ships (#7113 PR 4).
+      swipeAction: null,
     },
   ],
   [
@@ -184,10 +211,11 @@ const rows: Row[] = [
       holder: 'self',
       tapAction: 'noop',
       longPress: 'sheet',
-      labelKey: 'youHaveBoard',
-      a11yLabelKey: 'youHaveBoardLit',
+      labelKey: 'youAreDriving',
+      a11yValueKey: 'drivingEveryClimb',
       a11yHintKey: null,
       look: 'lit',
+      swipeAction: null,
     },
   ],
   [
@@ -198,10 +226,11 @@ const rows: Row[] = [
       holder: null,
       tapAction: 'noop',
       longPress: null,
-      labelKey: 'connect',
-      a11yLabelKey: 'connect',
+      labelKey: 'putOnBoard',
+      a11yValueKey: null,
       a11yHintKey: null,
       look: 'off',
+      swipeAction: null,
     },
   ],
   [
@@ -213,9 +242,10 @@ const rows: Row[] = [
       tapAction: 'noop',
       longPress: 'sheet',
       labelKey: null,
-      a11yLabelKey: null,
+      a11yValueKey: null,
       a11yHintKey: null,
       look: 'lit',
+      swipeAction: null,
     },
   ],
   [
@@ -227,9 +257,10 @@ const rows: Row[] = [
       tapAction: 'take_wall',
       longPress: null,
       labelKey: 'takeWall',
-      a11yLabelKey: 'takeWall',
+      a11yValueKey: null,
       a11yHintKey: null,
       look: 'off',
+      swipeAction: null,
     },
   ],
   [
@@ -241,9 +272,10 @@ const rows: Row[] = [
       tapAction: 'release_wall',
       longPress: null,
       labelKey: 'releaseWall',
-      a11yLabelKey: 'releaseWall',
+      a11yValueKey: 'youHaveBoard',
       a11yHintKey: null,
       look: 'lit',
+      swipeAction: null,
     },
   ],
   // Marco's bug: a tap-disconnect left the face up, read from presence.
@@ -255,10 +287,11 @@ const rows: Row[] = [
       holder: null,
       tapAction: 'connect',
       longPress: null,
-      labelKey: 'connect',
-      a11yLabelKey: 'connect',
+      labelKey: 'putOnBoard',
+      a11yValueKey: null,
       a11yHintKey: 'connectHint',
       look: 'off',
+      swipeAction: 'drive',
     },
   ],
   [
@@ -271,9 +304,10 @@ const rows: Row[] = [
       tapAction: 'noop',
       longPress: null,
       labelKey: 'onOtherPhone',
-      a11yLabelKey: 'onOtherPhone',
+      a11yValueKey: null,
       a11yHintKey: null,
       look: 'ready',
+      swipeAction: null,
     },
   ],
 ];
@@ -296,13 +330,13 @@ describe('resolveWallControl', () => {
     expect(resolveWallControl({ ...FREE, ...SAMS }).holderName).toBe('Sam');
     expect(resolveWallControl({ ...FREE, ...MINE }).holderName).toBeNull();
     expect(resolveWallControl({ ...FREE, ...SAMS, crewFace: null })).toMatchObject({
-      labelKey: 'onCrewBoard',
-      a11yHolderKey: 'crewHasBoard',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'crewHasBoard',
       a11yHintKey: 'relayHintCrew',
     });
   });
 
-  it("gives the bulb a value: You have the board, Sam's board, another climb up, or off", () => {
+  it("gives the bulb a value: lit on your board, Sam's board, another climb up, or off", () => {
     expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true }).bulbValueKey).toBe('youHaveBoardLit');
     expect(resolveWallControl({ ...FREE, ...SAMS }).bulbValueKey).toBe('onBoard');
     expect(resolveWallControl({ ...FREE, ...MINE, otherClimbLit: true }).bulbValueKey).toBe('valueOtherClimb');
@@ -321,11 +355,15 @@ describe('wallControlText', () => {
   const t = ((key: string, params?: Record<string, unknown>) =>
     params ? `${key}:${JSON.stringify(params)}` : key) as unknown as TFunction;
 
-  it('says You have the board, and to a screen reader that the climb is lit, with the tap and the hold', () => {
-    const text = wallControlText(resolveWallControl({ ...FREE, ...MINE, displayedLit: true }), t, t);
+  it('says Disconnect board, and to a screen reader that the climb is lit, with the tap and the hold', () => {
+    const text = wallControlText(
+      resolveWallControl({ ...FREE, ...MINE, displayedLit: true, navigationCommits: false }),
+      t,
+      t,
+    );
     expect(text).toMatchObject({
-      label: 'playView.wallControl.youHaveBoard',
-      accessibilityLabel: 'playView.wallControl.youHaveBoardLit',
+      label: 'playView.wallControl.disconnectBoard',
+      accessibilityLabel: 'playView.wallControl.disconnectBoard, playView.wallControl.youHaveBoardLit',
       accessibilityHint: 'playView.wallControl.litHint',
       bulbAccessibilityLabel: 'playView.wallControl.bulbAria',
       bulbValue: 'playView.wallControl.youHaveBoardLit',
@@ -333,10 +371,12 @@ describe('wallControlText', () => {
     });
   });
 
+  // #7113: the label says what a press does; who has the board rides after it.
   it('says the label, then who has the board', () => {
     const text = wallControlText(resolveWallControl({ ...FREE, ...SAMS }), t, t);
+    expect(text.label).toBe('playView.wallControl.putOnBoard');
     expect(text.accessibilityLabel).toBe(
-      'playView.wallControl.onBoard:{"name":"Sam"}, playView.wallControl.holderHasBoard:{"name":"Sam"}',
+      'playView.wallControl.putOnBoard, playView.wallControl.holderHasBoard:{"name":"Sam"}',
     );
     expect(text.accessibilityHint).toBe('playView.wallControl.relayHint:{"name":"Sam"}');
   });
@@ -359,7 +399,6 @@ describe('resolveWallControl: a climb on another board at this gym', () => {
     state: 'move_to_board',
     tapAction: 'move_to_board',
     labelKey: 'putOnGymBoard',
-    a11yLabelKey: 'putOnGymBoard',
     a11yHintKey: 'moveToGymBoardHint',
     gymBoardName: 'Kilter',
   };
@@ -432,7 +471,8 @@ describe('resolveWallControl: a climb on another board at this gym', () => {
         state: 'put_on_wall',
         holder: 'crew',
         tapAction: 'relay',
-        labelKey: 'putOnCrewBoard',
+        labelKey: 'putOnBoard',
+        a11yValueKey: 'crewHasBoard',
         a11yHintKey: 'relayHintCrew',
       });
     });
@@ -506,10 +546,17 @@ describe('resolveWallControl: presence freshness', () => {
       'fresh, your link, lit',
       { ...WALL, ...MINE, presenceFresh: true, displayedLit: true },
       'lit',
+      'stop_driving',
+      'lit',
+    ],
+    ['stale, your link, lit', { ...WALL, ...MINE, displayedLit: true }, 'lit', 'stop_driving', 'lit'],
+    [
+      'stale, your link, lit, not driving',
+      { ...WALL, ...MINE, displayedLit: true, navigationCommits: false },
+      'lit',
       'disconnect',
       'lit',
     ],
-    ['stale, your link, lit', { ...WALL, ...MINE, displayedLit: true }, 'lit', 'disconnect', 'lit'],
     ["fresh, Sam's link", { ...WALL, ...SAMS, presenceFresh: true, displayedLit: true }, 'crew', 'relay', 'ready'],
     ["stale, Sam's link", { ...WALL, ...SAMS, displayedLit: true }, 'crew', 'relay', 'ready'],
     [
@@ -525,7 +572,7 @@ describe('resolveWallControl: presence freshness', () => {
     expect(resolveWallControl({ ...FREE, ...input })).toMatchObject({ state, tapAction, look });
   });
 
-  it('says On the wall, outlined, with no face, and says a tap lights it again', () => {
+  it('says Put on board, outlined, with no face, and tells a screen reader it is on the wall and a tap lights it again', () => {
     const model = resolveWallControl({
       ...FREE,
       ...WALL,
@@ -534,7 +581,8 @@ describe('resolveWallControl: presence freshness', () => {
       crewFace: SAM,
     });
     expect(model).toMatchObject({
-      labelKey: 'onWall',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'onWall',
       a11yHintKey: 'lightAgainHint',
       holder: null,
       holderFace: null,
@@ -613,14 +661,14 @@ describe('resolveWallControl: driving the board', () => {
   it.each([
     ['solo, lit on your link: the frost', { ...MINE, ...LIT }, { state: 'lit', holder: 'self', driving: true }],
     [
-      'a crew, lit on your link: You have the board, no frost',
+      'a crew, lit on your link: Disconnect board, no frost',
       { ...MINE, ...LIT, ...CREW },
-      { state: 'lit', holder: 'self', driving: false, labelKey: 'youHaveBoard', look: 'lit' },
+      { state: 'lit', holder: 'self', driving: false, labelKey: 'disconnectBoard', look: 'lit' },
     ],
     [
       'a crew member on the wall’s climb, Sam’s link: no frost',
       { ...SAMS, ...LIT, ...CREW },
-      { state: 'crew', holder: 'crew', driving: false, labelKey: 'onBoard', look: 'ready' },
+      { state: 'crew', holder: 'crew', driving: false, labelKey: 'putOnBoard', look: 'ready' },
     ],
     [
       'a preview of another climb on your link: no frost',
@@ -632,7 +680,7 @@ describe('resolveWallControl: driving the board', () => {
     [
       'solo with lighting on swipes off, lit on your link: no frost',
       { ...MINE, ...LIT, navigationCommits: false },
-      { state: 'lit', holder: 'self', driving: false, labelKey: 'youHaveBoard' },
+      { state: 'lit', holder: 'self', driving: false, labelKey: 'disconnectBoard' },
     ],
     // A wall with no lights you hold: amber only while your swipe moves it.
     [
@@ -668,10 +716,205 @@ describe('resolveWallControl: driving the board', () => {
       holderName: null,
       holderFace: null,
       driving: false,
-      labelKey: 'onOtherPhone',
-      a11yLabelKey: 'onOtherPhone',
+      labelKey: 'putOnBoard',
+      a11yValueKey: 'onOtherPhone',
       a11yHintKey: 'relayHintOtherPhone',
       bulbValueKey: 'onOtherPhone',
+    });
+  });
+});
+
+// #7113: a swipe on the wall button drives the wall, and a press on the frosted
+// button stops driving and keeps the link. The label says what a press does.
+describe('resolveWallControl: driving the wall', () => {
+  type DriveMode = 'off' | 'arming' | 'live';
+  const STATES: readonly [string, Partial<WallControlInput>][] = [
+    ['connect', {}],
+    ['put_on_wall', { commitButton: 'putOnWall' }],
+    ["put_on_wall on Sam's board", { ...SAMS, commitButton: 'putOnWall' }],
+    ['dark', MINE],
+    ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
+    ["crew (Sam's board)", { ...SAMS, displayedLit: true }],
+  ];
+  const cases: [string, Partial<WallControlInput>, boolean, boolean, DriveMode, boolean][] = [];
+  for (const [name, input] of STATES) {
+    for (const inCrew of [false, true]) {
+      for (const lightOnSwipe of [true, false]) {
+        for (const driveMode of ['off', 'arming', 'live'] as const) {
+          for (const stopped of [false, true]) {
+            cases.push([name, input, inCrew, lightOnSwipe, driveMode, stopped]);
+          }
+        }
+      }
+    }
+  }
+
+  it.each(cases)(
+    '%s, crew %s, light on swipe %s, drive %s, stopped %s',
+    (name, input, inCrew, lightOnSwipe, driveMode, stopped) => {
+      const model = resolveWallControl({
+        ...FREE,
+        ...input,
+        // The browse rule PlayCore feeds in: solo with lighting on swipes.
+        navigationCommits: lightOnSwipe && !inCrew,
+        driveMode,
+        drivingStopped: stopped,
+      });
+      expect(model.driving).toBe(false);
+      if (name.startsWith('crew')) {
+        // A relay to Sam's board: Put on board, never a swipe.
+        expect(model).toMatchObject({ tapAction: 'relay', labelKey: 'putOnBoard', swipeAction: null });
+        return;
+      }
+      if (name.includes("Sam's board")) {
+        // A preview on Sam's board: Put on board, no swipe until the hand-off (PR 4).
+        expect(model).toMatchObject({ labelKey: 'putOnBoard', swipeAction: null });
+        return;
+      }
+      expect(model.labelKey).toBe('putOnBoard');
+      expect(model.swipeAction).toBe(driveMode === 'arming' ? null : 'drive');
+    },
+  );
+
+  // Lit on this phone's link: whether it drives, row by row.
+  // [crew, light on swipe, drive phase, stopped, driving]
+  it.each<[boolean, boolean, DriveMode, boolean, boolean]>([
+    [false, true, 'off', false, true],
+    [false, true, 'off', true, false],
+    [false, true, 'arming', false, true],
+    [false, true, 'arming', true, false],
+    [false, true, 'live', false, true],
+    [false, true, 'live', true, false],
+    [false, false, 'off', false, false],
+    [false, false, 'off', true, false],
+    [false, false, 'arming', false, false],
+    [false, false, 'arming', true, false],
+    [false, false, 'live', false, true],
+    [false, false, 'live', true, false],
+    [true, true, 'off', false, false],
+    [true, true, 'off', true, false],
+    [true, true, 'arming', false, false],
+    [true, true, 'arming', true, false],
+    [true, true, 'live', false, true],
+    [true, true, 'live', true, false],
+    [true, false, 'off', false, false],
+    [true, false, 'off', true, false],
+    [true, false, 'arming', false, false],
+    [true, false, 'arming', true, false],
+    [true, false, 'live', false, true],
+    [true, false, 'live', true, false],
+  ])(
+    'lit on your link, crew %s, light on swipe %s, drive %s, stopped %s: driving %s',
+    (inCrew, lightOnSwipe, driveMode, stopped, driving) => {
+      const model = resolveWallControl({
+        ...FREE,
+        ...MINE,
+        displayedLit: true,
+        navigationCommits: lightOnSwipe && !inCrew,
+        driveMode,
+        drivingStopped: stopped,
+      });
+      expect(model).toMatchObject(
+        driving
+          ? {
+              driving: true,
+              tapAction: 'stop_driving',
+              bulbTapAction: 'disconnect',
+              labelKey: 'youAreDriving',
+              a11yValueKey: 'drivingEveryClimb',
+              a11yHintKey: 'stopDrivingHint',
+              bulbA11yHintKey: 'litHint',
+              swipeAction: null,
+            }
+          : {
+              driving: false,
+              tapAction: 'disconnect',
+              bulbTapAction: 'disconnect',
+              labelKey: 'disconnectBoard',
+              a11yValueKey: 'youHaveBoardLit',
+              a11yHintKey: 'litHint',
+              bulbA11yHintKey: 'litHint',
+              swipeAction: driveMode === 'arming' ? null : 'drive',
+            },
+      );
+    },
+  );
+
+  // Sam holds the board and the climb on screen is theirs: nothing to relay, so
+  // the label says whose board it is (one of the last status labels).
+  it("says On Sam's board, with no tap and no swipe, when there is nothing to relay", () => {
+    expect(resolveWallControl({ ...FREE, ...SAMS, pressAction: 'noop', displayedLit: true })).toMatchObject({
+      state: 'crew',
+      tapAction: 'noop',
+      bulbTapAction: 'noop',
+      labelKey: 'onBoard',
+      a11yValueKey: 'holderHasBoard',
+      swipeAction: null,
+      driving: false,
+    });
+  });
+
+  it('covers every state, crew, setting, drive phase and stop', () => {
+    expect(cases).toHaveLength(6 * 2 * 2 * 3 * 2);
+  });
+
+  it.each([
+    ['the busy-wall question is up', { commitButton: 'putOnWall' as const, confirmArmed: true }],
+    ['a connect is in flight', { pending: true, pressAction: 'noop' as const }],
+    ['no wall is reachable (Set active)', { commitButton: 'putOnWall' as const, commitLabel: 'setActive' as const }],
+    ['a wall with no lights, free', { pressAction: 'takeWall' as const, offWall: true }],
+    ['a wall with no lights, yours', { pressAction: 'releaseWall' as const, wallHeldLocally: true, offWall: true }],
+    [
+      "a preview on the crew's gym board (a relay)",
+      { commitButton: 'putOnWall' as const, offWall: true, gymBoardName: 'Kilter', crewGymBoard: true },
+    ],
+    ['Put on {board} at another gym board', { offWall: true, gymBoardName: 'Kilter' }],
+    ['nothing to offer', { ...MINE, offWall: true }],
+  ])('offers no swipe when %s', (_case, input) => {
+    expect(resolveWallControl({ ...FREE, ...input }).swipeAction).toBeNull();
+  });
+
+  it('keeps Release the wall on a wall with no lights, even while its swipes move it', () => {
+    expect(
+      resolveWallControl({
+        ...FREE,
+        pressAction: 'releaseWall',
+        wallHeldLocally: true,
+        offWall: true,
+        driveMode: 'live',
+      }),
+    ).toMatchObject({ driving: true, tapAction: 'release_wall', labelKey: 'releaseWall' });
+  });
+
+  it('waits on the busy-wall question while driving, still saying You are driving the wall', () => {
+    expect(
+      resolveWallControl({ ...FREE, ...MINE, displayedLit: true, confirmArmed: true, driveMode: 'live' }),
+    ).toMatchObject({ driving: true, tapAction: 'noop', labelKey: 'youAreDriving', a11yHintKey: null });
+  });
+
+  it('never drives a climb lit on a crewmate’s link, whatever the drive phase', () => {
+    expect(resolveWallControl({ ...FREE, ...SAMS, displayedLit: true, driveMode: 'live' }).driving).toBe(false);
+  });
+
+  // #7113 PR 2: the MiniPlayer's bulb reads this look, so a driver on the Climbs tab knows.
+  it('gives the bulb the live fill only for a live drive, never for solo swipes that light', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, driveMode: 'live' }).look).toBe('driving');
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, navigationCommits: true }).look).toBe('lit');
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, driveMode: 'arming' }).look).toBe('lit');
+    expect(resolveWallControl({ ...FREE, ...SAMS, displayedLit: true, driveMode: 'live' }).look).not.toBe('driving');
+  });
+
+  it('says You are driving the wall, then that every climb picked lights up, and how to stop', () => {
+    const t = ((key: string) => key) as unknown as TFunction;
+    const text = wallControlText(
+      resolveWallControl({ ...FREE, ...MINE, displayedLit: true, navigationCommits: false, driveMode: 'live' }),
+      t,
+      t,
+    );
+    expect(text).toMatchObject({
+      label: 'playView.wallControl.youAreDriving',
+      accessibilityLabel: 'playView.wallControl.youAreDriving, playView.wallControl.drivingEveryClimb',
+      accessibilityHint: 'playView.wallControl.stopDrivingHint',
     });
   });
 });

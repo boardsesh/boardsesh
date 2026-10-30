@@ -14,7 +14,7 @@ import type { ActionBarLayout } from './action-bar-layout';
 import type { PlayDrawerLightbulbPressAction } from './lightbulb-control';
 
 /**
- * The purple wash behind Connect board and Put on the wall: 20% of the brand
+ * The purple wash behind Put on board: 20% of the brand
  * fill, up from the 14% that read as disabled. About the most the brand-violet
  * label keeps 4.5:1 on: 4.6:1 at worst on every Liquid Glass and Material
  * sheet, light and dark (`wall-control-button-contrast` test).
@@ -154,9 +154,11 @@ export function resolveWallHolder({
 /**
  * What a tap does, for the handler and for Wall Control Tapped.
  *
- * - `disconnect` — on You have the board: this phone lets go of the board,
- *   the board sheet's Disconnect. A hold opens that sheet instead (the
- *   handler's job, not this table's).
+ * - `disconnect` — on Disconnect board (lit, not driving): this
+ *   phone lets go of the board, the board sheet's Disconnect. A hold opens that
+ *   sheet instead (the handler's job, not this table's).
+ * - `stop_driving` — on You are driving the wall (#7113): stop driving and keep
+ *   the link. The next press, on Disconnect board, disconnects.
  * - `connect` — connect, then the connect lights the climb.
  * - `put_on_wall` — make the preview current (connecting first if needed).
  * - `relight` — re-send the current climb to a connected board.
@@ -167,6 +169,7 @@ export function resolveWallHolder({
  */
 export type WallControlAction =
   | 'disconnect'
+  | 'stop_driving'
   | 'connect'
   | 'put_on_wall'
   | 'relight'
@@ -189,8 +192,9 @@ export type WallControlActionInput = {
 };
 
 /**
- * A tap lights the climb on screen, relays it, or on You have the board (this
+ * A tap lights the climb on screen, relays it, or on Disconnect board (this
  * phone holds the link and the climb is lit) lets go of the board.
+ * Driving overrides the lit tap in `resolveWallControl` (`stop_driving`).
  */
 export function resolveWallControlAction({
   state,
@@ -229,13 +233,23 @@ export function resolveWallControlAction({
 /**
  * The bulb's look: grey outline with no board, filled amber only while this
  * phone holds the board, in any state (Marco's QA: "Put on the wall" on a
- * preview with the link up, and "You have the board", fill too). Amber outline
+ * preview with the link up, and "Disconnect board", fill too). Amber outline
  * when the board is on the wall but not this phone's: no link, or a crewmate's
  * board, lit or dark (#7015); their face says whose.
+ *
+ * `driving` (#7113): this phone drives the wall and the climb is lit, so a tap
+ * on any climb lights it. The bulb sits on the wall button's own live fill,
+ * which is how a driver on the Climbs tab (the MiniPlayer's bulb) knows.
  */
-export type WallBulbLook = 'off' | 'ready' | 'lit';
+export type WallBulbLook = 'off' | 'ready' | 'lit' | 'driving';
 
-export function resolveWallBulbLook(state: WallControlState, selfHolds: boolean, displayedLit = true): WallBulbLook {
+export function resolveWallBulbLook(
+  state: WallControlState,
+  selfHolds: boolean,
+  displayedLit = true,
+  driving = false,
+): WallBulbLook {
+  if (driving && state === 'lit' && selfHolds) return 'driving';
   if (state === 'lit' || state === 'release_wall' || selfHolds) return 'lit';
   // A crewmate's board: an outline (their face says whose); filled means yours.
   if (state === 'crew') return 'ready';
@@ -281,15 +295,19 @@ export function isHolderSelfAccount(holderUserId: string | null, viewerUserId: s
 /** A face at the control's trailing edge. */
 export type WallControlFace = { name: string | null; avatarUrl: string | null };
 
-/** What the control says, as an id the text layer (`wall-control-text.ts`) turns into words. */
+/**
+ * What the control says, as an id the text layer (`wall-control-text.ts`) turns
+ * into words. The label says what a press does (#7113, Marco): the bulb's fill,
+ * outline or spinner already shows the connection, and the face whose board it
+ * is. Two exceptions say where things stand: You are driving the wall (the
+ * frost), and a crewmate's board when a press can't relay (On Sam's board, On
+ * your other phone, On your crew's board).
+ */
 export type WallControlLabelKey =
-  | 'connect'
-  | 'onWall'
-  | 'putOnWall'
-  | 'setActive'
   | 'putOnBoard'
-  | 'putOnCrewBoard'
-  | 'youHaveBoard'
+  | 'setActive'
+  | 'disconnectBoard'
+  | 'youAreDriving'
   | 'onBoard'
   | 'onCrewBoard'
   | 'onOtherPhone'
@@ -297,11 +315,19 @@ export type WallControlLabelKey =
   | 'releaseWall'
   | 'putOnGymBoard';
 
-/** What a screen reader hears first: the label, or for You have the board the longer "…, lit on the wall". */
-export type WallControlA11yLabelKey = WallControlLabelKey | 'youHaveBoardLit';
-
-/** Who has the board, spoken after the label (the face itself is hidden). */
-export type WallControlA11yHolderKey = 'youHaveBoard' | 'holderHasBoard' | 'crewHasBoard';
+/**
+ * Where things stand, spoken after the label ("Put on board, Sam has the
+ * board"): whose board it is (the face itself is hidden), whether the climb is
+ * lit, or that every climb picked lights up while driving.
+ */
+export type WallControlA11yValueKey =
+  | 'youHaveBoard'
+  | 'youHaveBoardLit'
+  | 'drivingEveryClimb'
+  | 'holderHasBoard'
+  | 'crewHasBoard'
+  | 'onOtherPhone'
+  | 'onWall';
 
 /** What a tap does, spoken as the hint. */
 export type WallControlA11yHintKey =
@@ -309,6 +335,7 @@ export type WallControlA11yHintKey =
   | 'lightHint'
   | 'lightAgainHint'
   | 'litHint'
+  | 'stopDrivingHint'
   | 'relayHint'
   | 'relayHintCrew'
   | 'relayHintOtherPhone'
@@ -354,7 +381,25 @@ export type WallControlInput = WallControlStateInput & {
    * open previews (#4281), so this is false there.
    */
   navigationCommits: boolean;
+  /**
+   * Driving the wall (#7113, `drive-mode-store.ts`): `arming` while the swipe's
+   * connect or first light is in flight, `live` once every change of climb
+   * lights the wall, in a crew too. Defaults to `off`.
+   */
+  driveMode?: 'off' | 'arming' | 'live';
+  /**
+   * A press on the frosted button stopped driving on this link: nothing drives
+   * until the link drops or the climber swipes again, solo with Light the board
+   * as I swipe on too.
+   */
+  drivingStopped?: boolean;
 };
+
+/**
+ * What a swipe on the wall button does (#7113): `drive` connects (or takes the
+ * board), lights the climb, and starts driving the wall.
+ */
+export type WallControlSwipeAction = 'drive' | null;
 
 /**
  * Everything a view of the board control draws, and what the handler runs.
@@ -371,26 +416,51 @@ export type WallControlModel = {
   holderFace: WallControlFace | null;
   /** The gym board a tap moves to, for `move_to_board`. */
   gymBoardName: string | null;
+  /** What a tap on the wall button (full width or compact) does. */
   tapAction: WallControlAction;
+  /**
+   * What a tap on a bulb does: the first row's bulb, or the MiniPlayer's
+   * standing in for it. A bulb draws no frost, so a stop there would be an
+   * invisible first tap; while driving a bulb tap disconnects, as it always has.
+   */
+  bulbTapAction: WallControlAction;
+  /**
+   * A swipe on the wall button: `drive` wherever a press puts the climb on
+   * this phone's board (no link, a preview, a dark climb, on the wall with no
+   * link) and on Disconnect board, while not driving already. Never on a
+   * crewmate's board until the hand-off ships (#7113 PR 4), a wall with no
+   * lights, Set active, a relay, or while the busy-wall question is up or a
+   * connect is in flight.
+   */
+  swipeAction: WallControlSwipeAction;
   longPress: 'sheet' | null;
   labelKey: WallControlLabelKey | null;
-  a11yLabelKey: WallControlA11yLabelKey | null;
-  a11yHolderKey: WallControlA11yHolderKey | null;
+  a11yValueKey: WallControlA11yValueKey | null;
   a11yHintKey: WallControlA11yHintKey | null;
+  /** The hint for a bulb's tap (`bulbTapAction`). */
+  bulbA11yHintKey: WallControlA11yHintKey | null;
   bulbValueKey: WallControlBulbValueKey;
   /** The bulb's look; the wall button reads `lit` as its amber fill. */
   look: WallBulbLook;
-  /** The control reads as selected: You have the board. */
+  /** The control reads as selected: the climb is lit on this phone's link. */
   selected: boolean;
   /**
    * This climber is driving the board: the climb on screen is lit on this
    * phone's link (or this phone holds a wall with no lights), and a swipe from
-   * here changes what the wall shows. Only then
+   * here changes what the wall shows: solo with lighting on swipes, or a live
+   * drive (#7113), and not stopped by a press on this link. Only then
    * does the wall button take its coloured lit look (the frost, or the amber
-   * fill) (#7017, Marco). In a crew the holder's lit button keeps its label,
-   * filled bulb and face on the plain tonal look.
+   * fill) (#7017, Marco). In a crew the holder's lit button says Disconnect
+   * board with its filled bulb and face on the plain tonal look.
    */
   driving: boolean;
+  /**
+   * The drive (#7113, `driveMode`): `arming` while the swipe's connect or first
+   * light is in flight, `live` once every change of climb lights. The swipe's
+   * frost holds full width while arming, and springs back with an error buzz
+   * if the drive ends before it went live.
+   */
+  drivePhase: 'off' | 'arming' | 'live';
   /** A connect or disconnect in flight: a spinner, and taps wait. */
   pending: boolean;
   writing: boolean;
@@ -399,24 +469,30 @@ export type WallControlModel = {
 
 function labelKeyOf(
   state: WallControlState,
+  tapAction: WallControlAction,
   holder: WallHolder,
   holderName: string | null,
   commitLabel: 'putOnWall' | 'setActive',
   holderIsSelfAccount: boolean,
+  drivingLit: boolean,
 ): WallControlLabelKey | null {
   switch (state) {
+    // Every press that puts the climb on a board, connecting first when
+    // needed, says so the same way; the face says whose board it is.
     case 'connect':
-      return 'connect';
     case 'on_wall_unlinked':
-      return 'onWall';
-    case 'put_on_wall':
-      if (holder === 'crew') return holderName ? 'putOnBoard' : 'putOnCrewBoard';
-      return commitLabel === 'putOnWall' ? 'putOnWall' : 'setActive';
     case 'dark':
-      return 'putOnWall';
+      return 'putOnBoard';
+    case 'put_on_wall':
+      // No wall in reach: the press only makes it the current climb.
+      if (holder !== 'crew' && commitLabel === 'setActive') return 'setActive';
+      return 'putOnBoard';
     case 'lit':
-      return 'youHaveBoard';
+      return drivingLit ? 'youAreDriving' : 'disconnectBoard';
     case 'crew':
+      // A relay puts the climb on the crewmate's board. With nothing to relay
+      // the label says whose board it is instead.
+      if (tapAction === 'relay') return 'putOnBoard';
       if (holderIsSelfAccount) return 'onOtherPhone';
       return holderName ? 'onBoard' : 'onCrewBoard';
     case 'take_wall':
@@ -438,6 +514,8 @@ function hintKeyOf(
   switch (action) {
     case 'disconnect':
       return 'litHint';
+    case 'stop_driving':
+      return 'stopDrivingHint';
     case 'connect':
       return 'connectHint';
     case 'put_on_wall':
@@ -469,23 +547,59 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   // On the crew's gym board a preview is relayed (made the session's climb, so
   // the crewmate's phone lights it) and the crew's own climb is left alone. The
   // bulb's press action describes this phone's board, not theirs.
-  const tapAction = onCrewGymBoard
-    ? input.confirmArmed || state !== 'put_on_wall'
-      ? 'noop'
-      : 'relay'
-    : resolveWallControlAction({
-        state,
-        pressAction: input.pressAction,
-        confirmArmed: input.confirmArmed,
-        displayedIsOwnCurrent: input.displayedIsOwnCurrent,
-      });
+  const driveMode = input.driveMode ?? 'off';
+  // Driving: lit on this phone's link (or its hold on a wall with no lights),
+  // and the next change of climb moves the wall: solo with lighting on swipes,
+  // or a live drive (#7113). A press on the frosted button stops it for this link.
+  const driving =
+    (state === 'lit' || state === 'release_wall') &&
+    holder === 'self' &&
+    (driveMode === 'live' || input.navigationCommits) &&
+    input.drivingStopped !== true;
+  // A wall with no lights keeps Release the wall: it has no frost and nothing
+  // to light, so only a lit climb says You are driving the wall.
+  const drivingLit = driving && state === 'lit';
+  let tapAction: WallControlAction;
+  if (onCrewGymBoard) tapAction = input.confirmArmed || state !== 'put_on_wall' ? 'noop' : 'relay';
+  // One rule, solo included: a press on the frosted button stops driving and
+  // keeps the link; a press on the plain lit button disconnects (Marco).
+  else if (drivingLit) tapAction = input.confirmArmed ? 'noop' : 'stop_driving';
+  else
+    tapAction = resolveWallControlAction({
+      state,
+      pressAction: input.pressAction,
+      confirmArmed: input.confirmArmed,
+      displayedIsOwnCurrent: input.displayedIsOwnCurrent,
+    });
   // Presence names this climber's own account holding the board through
   // another device's link: "On your other phone", never their own name.
   const onOtherPhone = state === 'crew' && !onCrewGymBoard && input.holderIsSelfAccount;
-  const labelKey = labelKeyOf(state, holder, holderName, input.commitLabel, onOtherPhone);
-  let a11yHolderKey: WallControlA11yHolderKey | null = null;
-  if (holder === 'self') a11yHolderKey = 'youHaveBoard';
-  else if (holder === 'crew') a11yHolderKey = holderName ? 'holderHasBoard' : 'crewHasBoard';
+  const labelKey = labelKeyOf(state, tapAction, holder, holderName, input.commitLabel, onOtherPhone, drivingLit);
+  const swipeable =
+    state === 'connect' ||
+    state === 'dark' ||
+    state === 'on_wall_unlinked' ||
+    // A crew holder who hasn't started driving swipes from Disconnect board.
+    state === 'lit' ||
+    // A preview on this phone's board, never Set active (no wall to light),
+    // the crew's gym board (a relay), or a crewmate's board: taking it needs
+    // their phone to let go first, which the hand-off (#7113 PR 4) adds.
+    (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+  const swipeAction: WallControlSwipeAction =
+    swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
+  const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
+  const a11yHintKey =
+    state === 'on_wall_unlinked' && tapAction !== 'noop'
+      ? 'lightAgainHint'
+      : hintKeyOf(tapAction, holderName, onOtherPhone);
+  let a11yValueKey: WallControlA11yValueKey | null = null;
+  if (labelKey === null) a11yValueKey = null;
+  else if (drivingLit) a11yValueKey = 'drivingEveryClimb';
+  else if (state === 'lit') a11yValueKey = 'youHaveBoardLit';
+  else if (state === 'on_wall_unlinked') a11yValueKey = 'onWall';
+  else if (onOtherPhone) a11yValueKey = labelKey === 'onOtherPhone' ? null : 'onOtherPhone';
+  else if (holder === 'self') a11yValueKey = 'youHaveBoard';
+  else if (holder === 'crew') a11yValueKey = holderName ? 'holderHasBoard' : 'crewHasBoard';
   let bulbValueKey: WallControlBulbValueKey = 'valueOff';
   if (state === 'lit') bulbValueKey = 'youHaveBoardLit';
   else if (state === 'on_wall_unlinked') bulbValueKey = 'onWall';
@@ -499,21 +613,20 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     holderFace,
     gymBoardName: state === 'move_to_board' ? (input.gymBoardName ?? null) : null,
     tapAction,
+    swipeAction,
     longPress: input.localConnected && !onCrewGymBoard ? 'sheet' : null,
     labelKey,
-    // You have the board already says whose it is, so it says the climb is lit instead.
-    a11yLabelKey: state === 'lit' ? 'youHaveBoardLit' : labelKey,
-    a11yHolderKey: state === 'lit' ? null : a11yHolderKey,
-    a11yHintKey:
-      state === 'on_wall_unlinked' && tapAction !== 'noop'
-        ? 'lightAgainHint'
-        : hintKeyOf(tapAction, holderName, onOtherPhone),
+    a11yValueKey,
+    a11yHintKey,
+    bulbTapAction,
+    bulbA11yHintKey: bulbTapAction === tapAction ? a11yHintKey : hintKeyOf(bulbTapAction, holderName, onOtherPhone),
     bulbValueKey,
-    look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
+    // The live fill only for a live drive (#7113): then a tap on any climb, in
+    // any list, lights the wall. Solo swipes that light it say nothing about taps.
+    look: resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
     selected: state === 'lit',
-    // Driving: lit on this phone's link (or its hold on a wall with no
-    // lights), and the next swipe moves the wall.
-    driving: (state === 'lit' || state === 'release_wall') && holder === 'self' && input.navigationCommits,
+    driving,
+    drivePhase: driveMode,
     pending: input.pending,
     writing: input.writing,
     autoDisconnectWarning: input.autoDisconnectWarning,
@@ -528,15 +641,18 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   holderFace: null,
   gymBoardName: null,
   tapAction: 'noop',
+  bulbTapAction: 'noop',
+  swipeAction: null,
   longPress: null,
   labelKey: null,
-  a11yLabelKey: null,
-  a11yHolderKey: null,
+  a11yValueKey: null,
   a11yHintKey: null,
+  bulbA11yHintKey: null,
   bulbValueKey: 'valueOff',
   look: 'off',
   selected: false,
   driving: false,
+  drivePhase: 'off',
   pending: false,
   writing: false,
   autoDisconnectWarning: false,

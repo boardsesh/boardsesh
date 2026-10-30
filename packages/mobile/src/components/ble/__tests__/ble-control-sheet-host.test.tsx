@@ -26,6 +26,8 @@ const mockBleControlSheet = vi.hoisted(() => ({
     onClearLights: () => void;
     onReassert: () => void;
     showLightingSwitches?: boolean;
+    linked?: boolean;
+    onDrive?: () => void;
   } | null,
 }));
 
@@ -164,6 +166,18 @@ describe('BleControlSheetHost', () => {
 
     expect(container.firstChild).toBeNull();
     expect(mockBleControlSheet.props).toBeNull();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // #7113: a sheet offering Light every climb opens with no link, showing that row.
+  it('stays open with no link while it offers Light every climb, and closes without it', () => {
+    mockBluetoothContext.current = { ...mockBluetooth, isConnected: false };
+    const onDrive = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(<BleControlSheetHost visible onClose={onClose} onDrive={onDrive} />);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockBleControlSheet.props).toMatchObject({ linked: false, onDrive });
+    rerender(<BleControlSheetHost visible onClose={onClose} />);
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
