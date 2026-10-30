@@ -1,5 +1,6 @@
 import { PressableSurface, StaticPressableSurface } from '../PressableSurface';
 import { useFullSwipe } from '../use-full-swipe';
+import { useSwipeDirectionLock } from '../use-swipe-direction-lock';
 import {
   SWIPE_ACTION_REVEAL as ACTION_REVEAL,
   SWIPE_FULL_THRESHOLD as COMMIT_THRESHOLD,
@@ -347,6 +348,7 @@ export const LogbookRow = memo(function LogbookRow({
     onCommit: commitSwipe,
     close: closeSwipe,
   });
+  const swipeDirectionLock = useSwipeDirectionLock();
   const handleSwipeableClosed = useCallback(() => {
     fullSwipe.onClosed();
     disarm();
@@ -483,6 +485,7 @@ export const LogbookRow = memo(function LogbookRow({
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
         simultaneousWithExternalGesture={fullSwipe.gesture}
+        requireExternalGestureToFail={swipeDirectionLock}
         leftThreshold={SWIPE_REVEAL_THRESHOLD}
         rightThreshold={SWIPE_REVEAL_THRESHOLD}
         dragOffsetFromLeftEdge={SWIPE_ACTIVATION_OFFSET}

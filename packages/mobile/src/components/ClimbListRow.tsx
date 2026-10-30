@@ -2,6 +2,7 @@ import { PressableSurface, StaticPressableSurface } from './PressableSurface';
 import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 import { Text } from './Text';
 import { useFullSwipe } from './use-full-swipe';
+import { useSwipeDirectionLock } from './use-swipe-direction-lock';
 import {
   SWIPE_ACTION_REVEAL as ACTION_REVEAL,
   SWIPE_FULL_THRESHOLD as COMMIT_THRESHOLD,
@@ -477,6 +478,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
     onCommit: commitSwipe,
     close: closeSwipe,
   });
+  const swipeDirectionLock = useSwipeDirectionLock();
   const handleSwipeableClosed = useCallback(() => {
     fullSwipe.onClosed();
     disarm();
@@ -606,6 +608,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
         simultaneousWithExternalGesture={fullSwipe.gesture}
+        requireExternalGestureToFail={swipeDirectionLock}
         leftThreshold={SWIPE_REVEAL_THRESHOLD}
         rightThreshold={SWIPE_REVEAL_THRESHOLD}
         dragOffsetFromLeftEdge={SWIPE_ACTIVATION_OFFSET}

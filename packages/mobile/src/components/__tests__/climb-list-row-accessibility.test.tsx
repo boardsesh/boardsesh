@@ -93,6 +93,7 @@ vi.mock('react-native-reanimated', () => {
     useAnimatedReaction: () => undefined,
     interpolate: () => 0,
     Extrapolation: { CLAMP: 'clamp' },
+    useSharedValue: (initial: unknown) => ({ value: initial }),
     runOnJS:
       (fn: (...args: unknown[]) => unknown) =>
       (...args: unknown[]) =>
@@ -101,7 +102,7 @@ vi.mock('react-native-reanimated', () => {
 });
 
 type GestureCapture = {
-  kind: 'tap' | 'longPress' | 'pan';
+  kind: 'tap' | 'longPress' | 'pan' | 'manual';
   maxDuration?: number;
   minDuration?: number;
   onStart?: () => void;
@@ -137,6 +138,7 @@ vi.mock('react-native-gesture-handler', () => {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
     Gesture: {
       Pan: () => makeBuilder('pan'),
+      Manual: () => makeBuilder('manual'),
       Simultaneous: (...gestures: unknown[]) => gestures[0],
       Tap: () => makeBuilder('tap'),
       LongPress: () => makeBuilder('longPress'),
