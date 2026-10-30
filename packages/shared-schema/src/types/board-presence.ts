@@ -79,12 +79,32 @@ export type BoardHistoryUpdated = {
 };
 export type BoardHistoryPage = { entries: BoardPresenceClimb[]; nextCursor: string | null };
 
+/** The crewmate asking to take the board (#7113). Always signed in. */
+export type BoardHandoffRequester = {
+  userId: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+};
+
+/**
+ * A crewmate asked the holder to let go of the board (#7113). Reaches only the
+ * subscriber signed in as `holderUserId`; carries no board seq (see the SDL).
+ */
+export type BoardHandoffRequested = {
+  __typename: 'BoardHandoffRequested';
+  holderUserId: string;
+  requester: BoardHandoffRequester;
+  requestId: string;
+  requestedAt: string;
+};
+
 export type BoardPresenceEvent =
   | BoardClimbSet
   | BoardClimbCleared
   | BoardStatsUpdated
   | BoardConnectionChanged
-  | BoardHistoryUpdated;
+  | BoardHistoryUpdated
+  | BoardHandoffRequested;
 
 export type BoardPresenceHardestSend = {
   /** Internal provenance for viewer-specific identity and content projection. */

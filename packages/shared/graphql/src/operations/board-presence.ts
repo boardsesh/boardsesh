@@ -320,6 +320,10 @@ export const REPORT_BOARD_DISCONNECT = `mutation ReportBoardDisconnect($boardId:
 // (accepted; false when another emitter holds the board).
 export const REPORT_BOARD_CLEAR = `mutation ReportBoardClear($boardId: Int!) { reportBoardClear(boardId: $boardId) }`;
 
+// Mutation — ask the crewmate whose phone holds the board to let go of it
+// (#7113). Returns Boolean! (true: the holder was asked; false: nobody to ask).
+export const REQUEST_BOARD_HANDOFF = `mutation RequestBoardHandoff($boardId: Int!) { requestBoardHandoff(boardId: $boardId) }`;
+
 // All fields of a redacted BoardQueuePreview (gym-kiosk "Up next"). Items
 // deliberately carry ONLY climb-catalog display fields — never who added or
 // ticked them. Shared between the cold-fetch query and the live subscription
