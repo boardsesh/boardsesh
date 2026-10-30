@@ -44,9 +44,6 @@ function PrivacyConsentScreen() {
         if (analytics === 'granted') track('Consent Decided', { analytics: 'granted' });
       })
       .catch(reportHandledError);
-    // ConsentGate dismisses the pushed step once the answer lands. Dismissing
-    // here as well popped it twice, and the second pop warned that no navigator
-    // handled it. A direct launch has nothing to dismiss to, so it leaves here.
     if (!router.canDismiss()) router.replace('/');
   };
   return (
