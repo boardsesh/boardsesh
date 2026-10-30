@@ -86,6 +86,9 @@ The wall button is the default; View options › Buttons › **Board control** p
   no lights linked (`offWall`). A tap there could only re-send the queue head.
 - **A tap while the busy-wall question is up does nothing**: Put mine up is the one answer
   (`resolveWallControlAction`'s `confirmArmed`).
+  When the preview belongs to another board at the gym, **Put mine up** commits the preview and follows
+  **Put on {board}** to move there, connect and light it. A board already used by the crew still relays to
+  its holder instead of moving this phone; **Keep theirs** leaves both boards alone.
 - **Lit only with a live link.** `resolveWallLit` (`play-drawer/wall-lit.ts`) decides it: this phone's link or a
   crewmate's. The server's board presence never clears and can name a climb lit 8 hours ago, so with no link the
   button says Connect board. A preview of another climb, the #4979 hold and "Turn off all lights" read as dark.

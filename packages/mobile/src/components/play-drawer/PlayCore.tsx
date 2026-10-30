@@ -1769,7 +1769,8 @@ export function PlayCore({
     wallClimbName: scenarioBusyWall?.climbName ?? wallClimb.name,
     selfHoldsBoard,
     onKeep: handleBackToLive,
-    onPut: handleLightThisClimb,
+    // Confirmation makes tapAction a noop; the state still names the board move.
+    onPut: wallControlState === 'move_to_board' ? handleMoveToGymBoard : handleLightThisClimb,
   });
   const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : browseCaption;
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
