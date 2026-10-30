@@ -241,6 +241,19 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   });
   // No wall to light and nothing to commit: the second row folds away.
   const hasSecondaryRow = typeof layout.secondaryRow === 'string' || layout.secondaryRow.length > 0;
+  // The wall button alone in the second row reaches the screen's edges, so on
+  // Android it keeps clear of the edge Back zone (`ANDROID_EDGE_BACK_EXTRA_INSET`).
+  // Counted by what actually draws: the angle pill with no angle, or Share with
+  // nothing to share, leaves the button alone in its row.
+  const secondaryItemsDrawn =
+    typeof layout.secondaryRow === 'string'
+      ? 0
+      : layout.secondaryRow.filter((item) => {
+          if (item === 'angle') return onOpenAngleSelector != null && currentAngle != null;
+          if (item === 'share') return onShare != null;
+          return true;
+        }).length;
+  const wallControlSpansRow = secondaryItemsDrawn === 1;
 
   // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
   // sign in / angle) get none — the press itself is the feedback. The two
@@ -344,9 +357,10 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-wall-row"
         >
+          {/* Beside a MiniPlayer (tablets, the open Duo) the pane sits away from
+            the screen's edge, so this one keeps its width (no spansRow). */}
           <WallControlButton
             model={wallControl}
-            spansRow
             glow={wallGlow}
             onPress={pressWallButton}
             onLongPress={holdWallButton}
@@ -491,7 +505,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                       model={wallControl}
                       // Alone in the row it reaches the screen's edges; between
                       // the bulb row's buttons it doesn't.
-                      spansRow={layout.secondaryRow.length === 1}
+                      spansRow={wallControlSpansRow}
                       glow={wallGlow}
                       onPress={pressWallButton}
                       onLongPress={holdWallButton}

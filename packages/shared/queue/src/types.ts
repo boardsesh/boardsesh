@@ -208,12 +208,19 @@ export type SetCurrentClimbOptions = {
    * preview that walked from the current climb, then Put on the wall. Where the
    * climb is Up next on the held track, the track keeps steering and learns
    * where the list picks up, as Next stepping into Up next does; where it is
-   * the list's own climb the walk peeked at (not queued yet, #7113 QA), the
-   * list goes on from it, as Next stepping onto it does; otherwise it is
-   * cleared, like `playlistSuggestionSource: null`. Passed instead of
+   * the walk's own peek of a list climb (`walkedPeek`, #7113 QA), the list goes
+   * on from it, as Next stepping onto it does; otherwise it is cleared, like
+   * `playlistSuggestionSource: null`. Passed instead of
    * `playlistSuggestionSource`.
    */
   keepWalkedTrack?: boolean;
+  /**
+   * With `keepWalkedTrack`: the climb is the walk's own `playlist-peek:` item,
+   * minted fresh to go up. Only that keeps the list for a list climb that is
+   * not queued; any other fresh item (a crew browse open of a peer's tick, a
+   * deep link) never borrows the track (#5403).
+   */
+  walkedPeek?: boolean;
   trigger?: SetCurrentClimbTrigger;
   /**
    * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the

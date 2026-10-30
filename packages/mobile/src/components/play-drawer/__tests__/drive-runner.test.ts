@@ -16,6 +16,7 @@ function input(overrides: Partial<StartDriveInput> = {}): StartDriveInput {
     model: { swipeAction: 'drive', holder: null },
     wallHeldByOtherUser: false,
     sessionId: 'session-1',
+    startedBy: 'swipe',
     committing: false,
     commit: vi.fn(() => true),
     connected: true,

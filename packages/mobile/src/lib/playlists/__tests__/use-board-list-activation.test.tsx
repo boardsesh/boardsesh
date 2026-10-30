@@ -149,7 +149,7 @@ describe('useBoardListActivation', () => {
       mocks.isSharedSession = shared;
       setSetting('lightOnClimbTap', lightOnTap);
       if (driving) {
-        enterDriveMode({ sessionId: null, boardId: 7 });
+        enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
         markDriveLive();
       }
       const openFallback = vi.fn();

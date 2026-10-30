@@ -3366,7 +3366,7 @@ describe('climb-list rows from the search hook', () => {
 describe('usePlaylistActivation while driving the wall', () => {
   beforeEach(() => {
     resetDriveModeForTests();
-    enterDriveMode({ sessionId: 'session-1', boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 });
     markDriveLive();
   });
 

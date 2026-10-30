@@ -162,14 +162,23 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
-- **Ending it.** A press on the frosted button stops driving and keeps the link; solo, swipes
+- **Stopping it.** A press on the frosted button stops driving and keeps the link; solo, swipes
   and taps then stay previews until the link drops or the climber presses to put a climb up
   again (the settings never flip). Solo, every such press (Put on board, a re-light, a
   connect) ends in driving: it drops the stop, and with Light on swipe off it starts a live
-  drive (`tapDrive`, docs/climb-view-options.md). In a crew a press stays a one-off put. It also ends
-  when the link drops, the swipe's climb can't go up, its connect fails or never comes (30 s), the session or the
-  board changes, or the climber signs out (`DriveModeWatcher`). Each end fires `Drive Mode
-  Ended {reason, durationSec, climbsLit, inSession}` once.
+  drive (`tapDrive`, docs/climb-view-options.md). In a crew a press stays a one-off put.
+- **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
+  started it (a swipe, a press, the action), goes on into the crew in the same session. Solo
+  driving by Light on swipe alone (no stop, a link up) turns into a live drive the moment the
+  crew forms (`shouldCarryDriveIntoCrew` in `DriveModeWatcher`, `startedBy: 'solo_carry'`), so
+  "You are driving the wall" stays and swipes, Next, list taps and the MiniPlayer keep lighting.
+  After a stop, or with no link, nothing carries and the crew's previews rule. "Forms" is the
+  roster's crew (`useIsCrewSession`) turning true after a newcomer's 3 s arrival dwell; until
+  then the climber is solo. Joining a different session still ends a drive (`session_changed`).
+- **Ending it.** A drive also ends when the link drops, the swipe's climb can't go up, its
+  connect fails or never comes (30 s), the session or the board changes, or the climber signs
+  out (`DriveModeWatcher`). Each end fires `Drive Mode Ended {reason, startedBy, durationSec,
+  climbsLit, inSession}` once; `startedBy` is `swipe`, `tap`, `action` or `solo_carry`.
 - **Not yet:** a crewmate's board. Taking it needs their phone to let go first (#7113 PR 4),
   so the swipe refuses there and nothing changes.
 

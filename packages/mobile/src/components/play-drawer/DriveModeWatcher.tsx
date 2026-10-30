@@ -3,14 +3,17 @@ import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useSetting } from '../../settings';
-import { useQueueSessionControls } from '../../providers/queue-provider';
+import { useIsCrewSession, useQueueSessionControls } from '../../providers/queue-provider';
 import {
+  carryDriveIntoCrew,
   clearDrivingStopped,
+  isDrivingStoppedForLink,
   DRIVE_ARMING_TIMEOUT_MS,
   exitDriveMode,
   getDriveMode,
   markDriveLive,
   resolveDriveModeExit,
+  shouldCarryDriveIntoCrew,
   useDriveMode,
   type DriveWatchSnapshot,
 } from './drive-mode-store';
@@ -27,7 +30,9 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * It also takes an arming drive live once this phone's link lights the climb
  * (here, so closing the player mid-connect still goes live), counts the climbs
  * lit for Drive Mode Ended, and says when a crewmate put a climb up
- * (`use-drive-follow.ts`).
+ * (`use-drive-follow.ts`). And when a crew forms while this climber drives
+ * solo by Light the board as I swipe (no stop, a link up), it carries that into
+ * the crew as a live drive (`shouldCarryDriveIntoCrew`, #7113 QA).
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -45,6 +50,9 @@ export function DriveModeWatcher(): null {
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const lightOnSwipeRef = useRef(lightOnSwipe);
+  // The roster's crew, after its arrival dwell: until it forms, the climber is solo.
+  const isCrewSession = useIsCrewSession();
+  const wasCrewRef = useRef(isCrewSession);
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
   // The arming drive (by its start) whose connect was seen in flight.
   const connectSeenForRef = useRef<number | null>(null);
@@ -72,6 +80,24 @@ export function DriveModeWatcher(): null {
       markDriveLive({ boardId: current.boardId });
     }
   }, [linked, pending, sessionId, boardId, isAuthenticated, drive]);
+
+  // A crew formed while this climber drove solo by Light the board as I swipe:
+  // keep driving, as a live drive (#7113 QA, Marco). A live drive already goes on.
+  useEffect(() => {
+    const crewFormed = isCrewSession && !wasCrewRef.current;
+    wasCrewRef.current = isCrewSession;
+    if (
+      shouldCarryDriveIntoCrew({
+        crewFormed,
+        drive: getDriveMode(),
+        linked,
+        stopped: isDrivingStoppedForLink(),
+        lightOnSwipe,
+      })
+    ) {
+      carryDriveIntoCrew({ sessionId, boardId });
+    }
+  }, [isCrewSession, linked, lightOnSwipe, sessionId, boardId]);
 
   useEffect(() => {
     if (lightOnSwipeRef.current === lightOnSwipe) return;

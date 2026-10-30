@@ -97,6 +97,8 @@ board, Sam has the board").
   the bulb alike. The model's `tapDrive` says how: `resume` with Light the board as I swipe on drops a stop on this
   link and lights as before, and the setting drives from there; `start` with it off starts a live drive through
   the swipe's runner (`startDrive`: commit, connect, light), so "You are driving the wall" is honest either way.
+  Never on Set active, where no wall is in reach. `Drive Mode Ended` says what started each drive (`startedBy`:
+  `swipe`, `tap`, `action` for the screen-reader action and the sheet row, or `solo_carry` when a crew formed).
   Where a drive can't start (the model offers no swipe, the `wall-swipe-to-drive` flag is off) the press drops the
   stop and lights as before. Solo means no crew session on the roster (`useIsCrewSession`, whatever the browse
   flag says) and no browse latch. In a crew a press stays a one-off put; crews drive by swiping.
@@ -185,10 +187,12 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   drags starting 35 dp or more from the screen edge drive and drags starting 28 dp or less go Back and close the
   player. The full-width button ended 16 dp from the edge, so its trailing ~12 dp sat in the zone, and neither RN nor
   RNGH can exclude it without native code. So on Android the button takes 16 dp more margin on both sides wherever it
-  spans its row (alone in the second row, or the first row beside a MiniPlayer), 32 dp from each edge, the same on
-  the left and the right so it stays centred (`ANDROID_EDGE_BACK_EXTRA_INSET`, `WallControlButton.tsx`). The height
-  doesn't change, so the second row's fixed height holds. iOS, the workout's compact button between ⏮ and ⏭, and the
-  button between the bulb row's buttons are unchanged. On Expo web the detector has `touchAction="pan-y"`.
+  is the one thing drawn in a phone's second row (counted by what draws, so an angle pill with no angle or a Share
+  with nothing to share doesn't count), 32 dp from each edge, the same on the left and the right so it stays centred
+  (`ANDROID_EDGE_BACK_EXTRA_INSET`, `WallControlButton.tsx`; `spansRow` from `PlayDrawerActionBar`). The height doesn't
+  change, so the second row's fixed height holds. iOS, the workout's compact button between ⏮ and ⏭, the button
+  between the bulb row's buttons, and the first-row button beside a MiniPlayer (a tablet's pane, away from the edge)
+  are unchanged. On Expo web the detector has `touchAction="pan-y"`.
 - **No swipe on a crewmate's board** until the hand-off (#7113 PR 4) ships: Aurora and MoonBoard boxes stop
   advertising once linked, so taking Sam's board needs his phone to let go first. There the button has no chevrons,
   no peek and no gesture. A drive the runner still can't start (presence says another account holds the board)

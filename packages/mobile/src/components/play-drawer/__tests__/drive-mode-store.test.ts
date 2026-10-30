@@ -35,12 +35,13 @@ describe('drive-mode store', () => {
   });
 
   it('arms on a swipe, goes live once lit, and counts the climbs lit while live', () => {
-    enterDriveMode({ sessionId: 'session-1', boardId: null, now: 1_000 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null, now: 1_000 });
     expect(getDriveMode()).toEqual({
       phase: 'arming',
       sessionId: 'session-1',
       boardId: null,
       startedAt: 1_000,
+      startedBy: 'swipe',
       climbsLit: 0,
     });
     // Arming lights nothing yet.
@@ -56,7 +57,7 @@ describe('drive-mode store', () => {
   });
 
   it('keeps the board it knew when going live without one', () => {
-    enterDriveMode({ sessionId: null, boardId: 3 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 3 });
     markDriveLive();
     expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 3 });
   });
@@ -67,7 +68,7 @@ describe('drive-mode store', () => {
   });
 
   it('ends a drive with its reason, and says what ended', () => {
-    enterDriveMode({ sessionId: null, boardId: 7, now: 5 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7, now: 5 });
     expect(exitDriveMode('link_dropped')).toMatchObject({ phase: 'arming', startedAt: 5 });
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('link_dropped');
@@ -76,7 +77,7 @@ describe('drive-mode store', () => {
   });
 
   it('stops driving on a press and keeps the stop until the link drops', () => {
-    enterDriveMode({ sessionId: null, boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     markDriveLive();
     expect(stopDrivingForLink()).toMatchObject({ phase: 'live' });
     expect(getDriveMode()).toBeNull();
@@ -95,7 +96,7 @@ describe('drive-mode store', () => {
 
   it('lets a fresh swipe drive again after a stop', () => {
     stopDrivingForLink();
-    enterDriveMode({ sessionId: null, boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     expect(isDrivingStoppedForLink()).toBe(false);
     expect(getDriveMode()?.phase).toBe('arming');
   });
@@ -105,7 +106,7 @@ describe('drive-mode store', () => {
     const phase = renderHook(() => useDriveModePhase());
     const stopped = renderHook(() => useDrivingStoppedForLink());
     expect(phase.result.current).toBe('off');
-    act(() => enterDriveMode({ sessionId: null, boardId: 7 }));
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 }));
     expect(phase.result.current).toBe('arming');
     act(() => markDriveLive());
     expect(phase.result.current).toBe('live');
@@ -122,7 +123,7 @@ describe('drive-mode store', () => {
 describe('Drive Mode Ended', () => {
   it('fires once when a drive ends, with how long it lasted and what it lit', () => {
     vi.spyOn(Date, 'now').mockReturnValue(31_400);
-    enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 1_000 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 1_000 });
     markDriveLive();
     noteDriveClimbLit();
     exitDriveMode('link_dropped');
@@ -130,6 +131,7 @@ describe('Drive Mode Ended', () => {
     expect(analytics.track).toHaveBeenCalledTimes(1);
     expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', {
       reason: 'link_dropped',
+      startedBy: 'swipe',
       durationSec: 30,
       climbsLit: 1,
       inSession: true,
@@ -140,7 +142,7 @@ describe('Drive Mode Ended', () => {
   it('reports a press on the frosted button as stopped, and a solo stop with no drive as nothing', () => {
     stopDrivingForLink();
     expect(analytics.track).not.toHaveBeenCalled();
-    enterDriveMode({ sessionId: null, boardId: 7 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     stopDrivingForLink();
     expect(analytics.track).toHaveBeenCalledWith(
       'Drive Mode Ended',
@@ -148,8 +150,14 @@ describe('Drive Mode Ended', () => {
     );
   });
 
+  it.each(['tap', 'action', 'solo_carry'] as const)('says a drive was started by %s', (startedBy) => {
+    enterDriveMode({ startedBy, sessionId: null, boardId: 7 });
+    exitDriveMode('link_dropped');
+    expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', expect.objectContaining({ startedBy }));
+  });
+
   it('reports a swipe whose connect failed', () => {
-    enterDriveMode({ sessionId: null, boardId: null });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
     exitDriveMode('connect_failed');
     expect(analytics.track).toHaveBeenCalledWith(
       'Drive Mode Ended',
@@ -166,7 +174,14 @@ describe('resolveDriveModeExit', () => {
     boardId: 7,
     signedIn: true,
   };
-  const LIVE: DriveModeState = { phase: 'live', sessionId: 'session-1', boardId: 7, startedAt: 0, climbsLit: 0 };
+  const LIVE: DriveModeState = {
+    phase: 'live',
+    sessionId: 'session-1',
+    boardId: 7,
+    startedAt: 0,
+    startedBy: 'swipe',
+    climbsLit: 0,
+  };
   const ARMING: DriveModeState = { ...LIVE, phase: 'arming', boardId: null };
 
   function exit(

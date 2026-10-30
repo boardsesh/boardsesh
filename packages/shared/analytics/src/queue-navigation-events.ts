@@ -145,8 +145,16 @@ export type DriveModeEndReason =
   | 'board_changed'
   | 'signed_out';
 
+/**
+ * What started the drive (#7113): the wall button's swipe, a solo press that
+ * puts a climb up, the screen-reader action or the board sheet's row, or a solo
+ * climber driving by Light the board as I swipe when a crew formed.
+ */
+export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry';
+
 export type DriveModeEndedInput = {
   reason: DriveModeEndReason;
+  startedBy: DriveModeStartedBy;
   /** `Date.now()` when the swipe landed. */
   startedAt: number;
   /** `Date.now()` when it ended. */
@@ -159,6 +167,7 @@ export type DriveModeEndedInput = {
 
 export type DriveModeEndedProps = {
   reason: DriveModeEndReason;
+  startedBy: DriveModeStartedBy;
   /** Whole seconds, never negative. */
   durationSec: number;
   climbsLit: number;
@@ -173,6 +182,7 @@ export function driveModeEnded(
     name: SHARED_EVENTS.DriveModeEnded,
     properties: {
       reason: input.reason,
+      startedBy: input.startedBy,
       durationSec: Math.max(0, Math.round((input.endedAt - input.startedAt) / 1000)),
       climbsLit: Math.max(0, input.climbsLit),
       inSession: input.inSession,

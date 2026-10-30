@@ -7,6 +7,7 @@ import {
   type WallControlSurface,
 } from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
+import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
 import { clearDrivingStopped, stopDrivingForLink } from './drive-mode-store';
 import { useWallControlShown } from './use-wall-control-shown';
@@ -44,9 +45,9 @@ export type WallControlRunners = {
   /**
    * Start driving the wall (#7113): commit the climb on screen without the
    * busy-wall question, connect if needed, light it, and every change of
-   * climb lights the wall from then on.
+   * climb lights the wall from then on. `startedBy` is for Drive Mode Ended.
    */
-  drive: () => DriveStartOutcome;
+  drive: (startedBy: DriveModeStartedBy) => DriveStartOutcome;
 };
 
 export type UseWallControlOptions = {
@@ -147,7 +148,7 @@ export function useWallControl({
     // does; anywhere the drive can't start, it falls through to the plain
     // light below. With the setting on, dropping a stop is all it takes.
     if (current.tapDrive !== null && isPutUpAction(action)) {
-      if (current.tapDrive === 'start' && run.drive() === 'started') {
+      if (current.tapDrive === 'start' && run.drive('tap') === 'started') {
         hapticMedium();
         return;
       }
@@ -208,24 +209,26 @@ export function useWallControl({
 
   // The swipe owns its own haptics (the threshold, then an error on a refusal);
   // the lit confirm buzzes success.
-  const drive = useCallback((_control: WallControlSurface): DriveStartOutcome => {
+  const startDriveBy = useCallback((startedBy: DriveModeStartedBy): DriveStartOutcome => {
     const { model: current, runners: run } = latest.current;
     // `swipeAction` is the one rule for where a drive can start: never while a
     // connect is in flight, the busy-wall question is up, or already driving.
     if (current.swipeAction !== 'drive') return 'unavailable';
-    return run.drive();
+    return run.drive(startedBy);
   }, []);
+  // The screen-reader action and the board sheet's row.
+  const drive = useCallback((_control: WallControlSurface) => startDriveBy('action'), [startDriveBy]);
 
   // Wall Control Swiped, once per gesture that activated: the state it started
   // in, read before the drive changes it.
   const swipe = useCallback(
     (control: WallControlSurface): DriveStartOutcome => {
       const state = latest.current.model.state;
-      const outcome = drive(control);
+      const outcome = startDriveBy('swipe');
       trackWallControlSwiped({ state, outcome: outcome === 'started' ? 'drive' : 'refused', control });
       return outcome;
     },
-    [drive],
+    [startDriveBy],
   );
   const swipeCancelled = useCallback((control: WallControlSurface) => {
     trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });

@@ -1941,7 +1941,7 @@ describe('PlayDrawer wall button taps', () => {
   // and keeps the link; swipes go back to previews until the link drops.
   const nothingToArrange = (): void => {};
   const startLiveDrive = (): void => {
-    enterDriveMode({ sessionId: null, boardId: null });
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
     markDriveLive();
   };
   it.each<[string, () => void]>([

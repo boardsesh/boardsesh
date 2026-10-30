@@ -816,7 +816,7 @@ function findUpNextBehind(
  * swipe off the committed climb is a look that walks the queue, and Put on the
  * wall commits the queued climb it landed on.
  *
- * A list climb not in the queue (the walk's peek, minted fresh on commit)
+ * The walk's own peek of a list climb (`walkedPeek`, minted fresh on commit)
  * returns null: it is the list going on, as Next stepping onto it.
  *
  * An entry ahead of the current climb that the walk would play as Up next goes
@@ -832,17 +832,23 @@ export function resolveUpNextCommitResume(
   currentItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   targetItem: ClimbQueueItem,
-  prepared?: PreparedQueueNavigation,
+  { walkedPeek = false, prepared }: { walkedPeek?: boolean; prepared?: PreparedQueueNavigation } = {},
 ): PlaylistTrackResume | null | undefined {
   if (!source || !currentItem) return undefined;
   const position = resolveTrackPosition(queue, currentItem, source, prepared);
   if (position.kind === 'off') return undefined;
-  // A climb on the list that the look reached as the walk's peek, not queued
-  // yet (#7113 QA): stopped driving, a swipe off the list climb on the wall
-  // lands on the list's next climb, and Put on board commits it as a fresh
-  // entry. That is the list going on, as Next stepping onto it would.
+  // The walk's own peek of a list climb (#7113 QA): stopped driving, a swipe
+  // off the list climb on the wall lands on the list's next climb, and Put on
+  // board commits it as a fresh entry. That is the list going on, as Next
+  // stepping onto it would. Only the peek: any other fresh item on the list (a
+  // crew browse open of a peer's tick) never borrows the track (#5403).
   const targetQueueIndex = findQueueIndexOfEntry(queue, targetItem.uuid, prepared);
-  if (targetQueueIndex < 0 && targetItem.climb?.uuid && findPlaylistClimbIndex(source, targetItem.climb.uuid) >= 0) {
+  if (
+    walkedPeek &&
+    targetQueueIndex < 0 &&
+    targetItem.climb?.uuid &&
+    findPlaylistClimbIndex(source, targetItem.climb.uuid) >= 0
+  ) {
     return null;
   }
   const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);

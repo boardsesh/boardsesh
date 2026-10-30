@@ -174,11 +174,13 @@ vi.mock('../WallControlButton', () => ({
   WallControlButton: ({
     model,
     compact,
+    spansRow,
     onPress,
     onLongPress,
   }: {
     model: { state: string | null; holder: string | null };
     compact?: boolean;
+    spansRow?: boolean;
     onPress: () => void;
     onLongPress: () => void;
   }) =>
@@ -186,6 +188,7 @@ vi.mock('../WallControlButton', () => ({
       'data-wall-control': model.state ?? 'none',
       'data-holder': model.holder ?? 'none',
       'data-compact': compact ? 'true' : 'false',
+      'data-spans-row': spansRow ? 'true' : 'false',
       onClick: onPress,
       onContextMenu: onLongPress,
     }),
@@ -1073,5 +1076,74 @@ describe('PlayDrawerActionBar (the wall leaves a timed block)', () => {
     expect(container.querySelector('[data-workout-outcome]')).toBeNull();
     expect(container.querySelector('[data-wall-control]')?.getAttribute('data-compact')).toBe('false');
     expect(workoutOutcomeRow.onFell).not.toHaveBeenCalled();
+  });
+});
+
+// #7113 PR 5: on Android the wall button keeps clear of the edge Back zone
+// wherever it reaches the screen's edges, which is where it is the one thing
+// drawn in the second row. The button applies the inset (its own test); here,
+// where it is told it spans its row.
+describe('PlayDrawerActionBar: where the wall button spans its row', () => {
+  const spansRow = (container: HTMLElement) =>
+    container.querySelector('[data-wall-control]')?.getAttribute('data-spans-row');
+  const order = ['mirror', 'favorite', 'queue', 'share', 'angle'] as const;
+  const bulbPreview = {
+    ...baseProps,
+    boardControl: 'lightbulb' as const,
+    commitButton: 'putOnWall' as const,
+    onCommit: vi.fn(),
+    wallControl: { ...CONNECT_MODEL, state: 'put_on_wall' as const },
+  };
+
+  it('spans the second row alone on a phone', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, baseProps));
+    expect(spansRow(container)).toBe('true');
+  });
+
+  it('does not beside a MiniPlayer, between the bulb row buttons, or in a workout top row', () => {
+    const beside = render(
+      createElement(PlayDrawerActionBar, { ...baseProps, miniPlayerMirrors: true, wallControl: LIT_MODEL }),
+    );
+    expect(spansRow(beside.container)).toBe('false');
+    beside.unmount();
+
+    const bulbRow = render(createElement(PlayDrawerActionBar, bulbPreview));
+    expect(spansRow(bulbRow.container)).toBe('false');
+    bulbRow.unmount();
+
+    const workout = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        workoutOutcome: {
+          climb: { uuid: 'climb-1' } as unknown as Climb,
+          queueItemUuid: 'item-1',
+          sessionId: 'session-1',
+          boardName: 'tension',
+          layoutId: 9,
+          sizeId: 1,
+          setIds: '1',
+          angle: 40,
+          isMirror: false,
+        },
+      }),
+    );
+    const workoutButton = workout.container.querySelector('[data-wall-control]');
+    expect(workoutButton?.getAttribute('data-compact')).toBe('true');
+    expect(workoutButton?.getAttribute('data-spans-row')).toBe('false');
+  });
+
+  it('counts what draws: beside a Share with nothing to share it spans the row', () => {
+    const favoriteAndShare = {
+      order,
+      visible: { mirror: false, favorite: true, angle: false, share: true, queue: false },
+    };
+    const sharing = render(createElement(PlayDrawerActionBar, { ...bulbPreview, buttons: favoriteAndShare }));
+    expect(spansRow(sharing.container)).toBe('false');
+    sharing.unmount();
+
+    const nothingToShare = render(
+      createElement(PlayDrawerActionBar, { ...bulbPreview, buttons: favoriteAndShare, onShare: undefined }),
+    );
+    expect(spansRow(nothingToShare.container)).toBe('true');
   });
 });
