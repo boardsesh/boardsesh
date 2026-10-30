@@ -7,7 +7,7 @@ export { compareBoardHistoryEntries, mergeBoardHistory, boardHistoryEntryKey } f
 
 export { mapBoardPresenceEnvelopeToAction } from './map-envelope';
 
-export type { BoardPresenceState, BoardPresenceAction } from './types';
+export type { BoardPresenceState, BoardPresenceAction, BoardHandoffRequest } from './types';
 
 export { rankSessionClimbers } from './session-ranking';
 

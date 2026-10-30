@@ -29,6 +29,7 @@ export const initialBoardPresenceState: BoardPresenceState = {
   lastStatsSeq: 0,
   holder: null,
   lastConnectionSeq: 0,
+  handoffRequest: null,
 };
 
 /** True when an entry with the same `(climbUuid, seq)` is already in history. */
@@ -233,6 +234,14 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
         holder: action.payload.holder,
         lastConnectionSeq: action.payload.upToSeq,
       };
+    }
+
+    case 'APPLY_HANDOFF_REQUESTED': {
+      // No seq to gate on (the request takes none): a repeat of the same
+      // request is a no-op, anything else replaces it. The holder's phone
+      // answers each `requestId` once.
+      if (state.handoffRequest?.requestId === action.payload.requestId) return state;
+      return { ...state, handoffRequest: action.payload };
     }
 
     case 'RESET':

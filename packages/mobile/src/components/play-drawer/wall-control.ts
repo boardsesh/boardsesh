@@ -427,10 +427,11 @@ export type WallControlModel = {
   /**
    * A swipe on the wall button: `drive` wherever a press puts the climb on
    * this phone's board (no link, a preview, a dark climb, on the wall with no
-   * link) and on Disconnect board, while not driving already. Never on a
-   * crewmate's board until the hand-off ships (#7113 PR 4), a wall with no
-   * lights, Set active, a relay, or while the busy-wall question is up or a
-   * connect is in flight.
+   * link) and on Disconnect board, while not driving already. On a crewmate's
+   * board too, Put on board and its relay (#7113 PR 4): the swipe asks their
+   * phone to let go first. Never on the climber's own other phone, the crew's
+   * gym board, a wall with no lights, Set active, or while the busy-wall
+   * question is up or a connect is in flight.
    */
   swipeAction: WallControlSwipeAction;
   longPress: 'sheet' | null;
@@ -581,10 +582,14 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     state === 'on_wall_unlinked' ||
     // A crew holder who hasn't started driving swipes from Disconnect board.
     state === 'lit' ||
-    // A preview on this phone's board, never Set active (no wall to light),
-    // the crew's gym board (a relay), or a crewmate's board: taking it needs
-    // their phone to let go first, which the hand-off (#7113 PR 4) adds.
-    (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+    // A preview, on this phone's board or a crewmate's (#7113 PR 4: the swipe
+    // asks their phone to let go, then connects). Never Set active (no wall to
+    // light) or the crew's gym board (a relay to the crew's own board).
+    (state === 'put_on_wall' && !onCrewGymBoard && labelKey !== 'setActive') ||
+    // Put on board as a relay to a crewmate's board: the swipe takes it the
+    // same way. Not the climber's own other phone: the hand-off is addressed by
+    // account, so it can't tell their two phones apart.
+    (state === 'crew' && tapAction === 'relay' && !onCrewGymBoard && !onOtherPhone);
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;

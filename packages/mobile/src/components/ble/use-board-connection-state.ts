@@ -119,7 +119,12 @@ export function useBoardConnectionState(): BoardConnectionState {
   // Presence identifies accounts, not devices, so a second device on the same
   // account can conservatively fall back to connecting after a local hold.
   const holderIsStaleSelf = holderUserId !== null && holderUserId === bluetooth?.lastLocalHolderUserId;
-  const holderIsAuthoritative = sessionHolderPresent && !localConnected && !holderIsStaleSelf;
+  // A crewmate just took the board with a hand-off (#7113) and is connecting:
+  // until presence names them, the board is theirs, never this phone's to
+  // reconnect. Without this the stale-self branch above would offer a connect
+  // that races them for the radio.
+  const takenOver = (bluetooth?.takenOverBy ?? null) !== null && !localConnected;
+  const holderIsAuthoritative = (sessionHolderPresent && !localConnected && !holderIsStaleSelf) || takenOver;
 
   return useMemo(
     () => ({

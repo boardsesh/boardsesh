@@ -8,7 +8,24 @@
  * subscription) lives in a separate `@boardsesh/board-presence-react` package.
  */
 
-import type { BoardConnectionHolder, BoardPresenceClimb, BoardPresenceStats } from '@boardsesh/shared-schema';
+import type {
+  BoardConnectionHolder,
+  BoardHandoffRequester,
+  BoardPresenceClimb,
+  BoardPresenceStats,
+} from '@boardsesh/shared-schema';
+
+/**
+ * A crewmate asked this viewer's phone to let go of the board (#7113). The
+ * server delivers it only to the holder it names; `requestId` tells requests
+ * apart, since it carries no board seq.
+ */
+export type BoardHandoffRequest = {
+  holderUserId: string;
+  requester: BoardHandoffRequester;
+  requestId: string;
+  requestedAt: string;
+};
 
 /**
  * The wall's "now playing" state, driven by the per-board presence stream.
@@ -65,6 +82,12 @@ export type BoardPresenceState = {
    * stats cursors (and vice versa).
    */
   lastConnectionSeq: number;
+  /**
+   * The latest hand-off request addressed to this viewer (#7113), or `null`.
+   * Kept until the next request or a reset; the holder's phone remembers which
+   * `requestId` it already answered.
+   */
+  handoffRequest: BoardHandoffRequest | null;
 };
 
 export type BoardPresenceAction =
@@ -87,4 +110,6 @@ export type BoardPresenceAction =
   // replaces stale holder state and advances the connection cursor through the
   // repaired seq.
   | { type: 'REFRESH_CONNECTION'; payload: { holder: BoardConnectionHolder | null; upToSeq: number } }
+  // A crewmate asked this viewer's phone to let go of the board (#7113).
+  | { type: 'APPLY_HANDOFF_REQUESTED'; payload: BoardHandoffRequest }
   | { type: 'RESET' };

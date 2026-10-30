@@ -60,6 +60,7 @@ describe('initialBoardPresenceState', () => {
       lastStatsSeq: 0,
       holder: null,
       lastConnectionSeq: 0,
+      handoffRequest: null,
     });
   });
 });
@@ -760,5 +761,48 @@ describe('mapBoardPresenceEnvelopeToAction', () => {
   it('returns null for an unknown/absent __typename', () => {
     const event = { climb: makeClimb({ seq: 1 }) } as unknown as BoardPresenceEvent;
     expect(mapBoardPresenceEnvelopeToAction(event)).toBeNull();
+  });
+});
+
+describe('hand-off requests (#7113)', () => {
+  const request = {
+    holderUserId: 'sam',
+    requester: { userId: 'liz', displayName: 'Liz', avatarUrl: null },
+    requestId: 'request-1',
+    requestedAt: '2026-10-30T12:00:00.000Z',
+  };
+
+  it('maps BoardHandoffRequested to APPLY_HANDOFF_REQUESTED', () => {
+    const event: BoardPresenceEvent = { __typename: 'BoardHandoffRequested', ...request };
+    expect(mapBoardPresenceEnvelopeToAction(event)).toEqual({ type: 'APPLY_HANDOFF_REQUESTED', payload: request });
+  });
+
+  it('keeps the latest request, and a repeat of it changes nothing', () => {
+    const asked = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_HANDOFF_REQUESTED',
+      payload: request,
+    });
+    expect(asked.handoffRequest).toEqual(request);
+    expect(boardPresenceReducer(asked, { type: 'APPLY_HANDOFF_REQUESTED', payload: { ...request } })).toBe(asked);
+    const again = boardPresenceReducer(asked, {
+      type: 'APPLY_HANDOFF_REQUESTED',
+      payload: { ...request, requestId: 'request-2' },
+    });
+    expect(again.handoffRequest?.requestId).toBe('request-2');
+  });
+
+  it('leaves the wall, the holder and every seq cursor alone', () => {
+    const before = makeState({ lastSeq: 7, lastConnectionSeq: 7, lastStatsSeq: 7, holder: { userId: 'sam' } });
+    const after = boardPresenceReducer(before, { type: 'APPLY_HANDOFF_REQUESTED', payload: request });
+    expect(after).toMatchObject({ lastSeq: 7, lastConnectionSeq: 7, lastStatsSeq: 7, holder: { userId: 'sam' } });
+    expect(after.currentClimb).toBe(before.currentClimb);
+  });
+
+  it('is forgotten on reset (a board switch)', () => {
+    const asked = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_HANDOFF_REQUESTED',
+      payload: request,
+    });
+    expect(boardPresenceReducer(asked, { type: 'RESET' }).handoffRequest).toBeNull();
   });
 });

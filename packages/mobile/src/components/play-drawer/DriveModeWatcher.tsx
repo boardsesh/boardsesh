@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
+import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -15,6 +16,7 @@ import {
   type DriveWatchSnapshot,
 } from './drive-mode-store';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
+import { cancelBoardReleaseWait, noteBoardHolder } from './board-handoff-store';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -27,7 +29,9 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * It also takes an arming drive live once this phone's link lights the climb
  * (here, so closing the player mid-connect still goes live), counts the climbs
  * lit for Drive Mode Ended, and says when a crewmate put a climb up
- * (`use-drive-follow.ts`).
+ * (`use-drive-follow.ts`). While a swipe waits for a crewmate's phone to let
+ * go of the board (#7113), it feeds that wait presence's holder, and stops it
+ * when the drive ends.
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -46,6 +50,16 @@ export function DriveModeWatcher(): null {
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const lightOnSwipeRef = useRef(lightOnSwipe);
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
+  // Raw context: the watcher mounts at the app root, outside a board's feed in tests.
+  const presence = useContext(BoardPresenceCurrentContext);
+  const presenceHolder = presence?.holder ?? null;
+  const presenceConnectionSeq = presence?.lastConnectionSeq ?? 0;
+  useEffect(() => {
+    noteBoardHolder({ holder: presenceHolder, connectionSeq: presenceConnectionSeq });
+  }, [presenceHolder, presenceConnectionSeq]);
+  useEffect(() => {
+    if (!drive) cancelBoardReleaseWait();
+  }, [drive]);
   // The arming drive (by its start) whose connect was seen in flight.
   const connectSeenForRef = useRef<number | null>(null);
 

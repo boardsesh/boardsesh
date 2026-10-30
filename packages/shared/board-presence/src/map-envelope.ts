@@ -36,6 +36,16 @@ export function mapBoardPresenceEnvelopeToAction(event: BoardPresenceEvent): Boa
         type: 'APPLY_CONNECTION_CHANGED',
         payload: { holder: event.holder, seq: event.seq },
       };
+    case 'BoardHandoffRequested':
+      return {
+        type: 'APPLY_HANDOFF_REQUESTED',
+        payload: {
+          holderUserId: event.holderUserId,
+          requester: event.requester,
+          requestId: event.requestId,
+          requestedAt: event.requestedAt,
+        },
+      };
     default:
       return null;
   }

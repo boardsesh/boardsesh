@@ -17,7 +17,7 @@ import {
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
-import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import type { BoardHandoffRequester, BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import {
   useBoardBluetooth,
@@ -67,7 +67,11 @@ import { useBoardPresenceControls } from './board-presence-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
-import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { hapticLight, hapticSuccess, hapticWarning } from '../lib/haptics';
+import { announceQueued } from '../lib/announce-queued';
+import { trackBoardHandedOff } from '../lib/analytics-wall-control';
+import { exitDriveMode, getDriveMode } from '../components/play-drawer/drive-mode-store';
+import { useBoardHandoffRelease } from './use-board-handoff-release';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
@@ -202,6 +206,14 @@ type BluetoothContextValue = {
    * set this.
    */
   wallHeldByOtherUser: boolean;
+  /**
+   * A crewmate took the board from this phone with a hand-off (#7113) and it is
+   * on its way to them: this phone let go and must not connect again by itself.
+   * Set from the release until presence names the new holder (or 30 s pass);
+   * while set, the board reads as theirs, so a tap relays instead of racing
+   * them for the radio. Null otherwise.
+   */
+  takenOverBy: BoardHandoffRequester | null;
   /**
    * Take the wall with no Bluetooth: report the current climb to the board feed
    * and keep reporting as the queue moves. Refused while a BLE link exists —
@@ -897,8 +909,14 @@ export function BluetoothProvider({
   const bleConnectedRef = useRef(false);
   const wallOperationEpochRef = useRef(0);
   const [writeActivityStore] = useState(createBleWriteActivityStore);
-  const { sessionId, confirmClimbOnWall, reportWallDisconnect, setSessionBoardSerial, lastConnectedBoardSerial } =
-    useQueueSessionControls();
+  const {
+    sessionId,
+    sessionMemberUserIds,
+    confirmClimbOnWall,
+    reportWallDisconnect,
+    setSessionBoardSerial,
+    lastConnectedBoardSerial,
+  } = useQueueSessionControls();
   const { t } = useTranslation('settings');
   const { t: tSession } = useTranslation('session');
   // Board presence ("now on the wall"). Always-on now (the board-presence flag
@@ -917,7 +935,7 @@ export function BluetoothProvider({
     reportClearForBoard,
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
-  const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
+  const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq, handoffRequest } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
   lastConnectionSeqRef.current = lastConnectionSeq;
   // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
@@ -2621,6 +2639,45 @@ export function BluetoothProvider({
     [clearPendingWallReportAndUndoToastArm, disconnect],
   );
 
+  // A crewmate took the board with a hand-off (#7113; Bluetooth-reviewed). Let
+  // go of the link on purpose, so nothing brings it back by itself:
+  //   - the `taken_over` teardown suppresses native-connection adoption (iOS
+  //     state restoration, an AppState return) until a deliberate connect, as a
+  //     tap-disconnect does, and keeps the remembered board for a later tap;
+  //   - a queued board-switch connect is dropped, so it can't fire after;
+  //   - `takenOverBy` reads the board as the asker's until presence names them,
+  //     so this phone's controls relay instead of offering a connect.
+  // The drive ends first, with its own reason, so the drop isn't counted as
+  // `link_dropped`. The teardown's connection-ended path reports
+  // `reportBoardDisconnect`, which frees the board for the asker.
+  const releaseForHandoff = useCallback(
+    (requester: BoardHandoffRequester) => {
+      const wasDriving = getDriveMode() !== null;
+      exitDriveMode('taken_over');
+      setPendingAutoConnect(null);
+      settlePendingConnectWaiter(false);
+      void wrappedDisconnect('taken_over');
+      hapticWarning();
+      announceQueued(
+        requester.displayName
+          ? tSession('playView.wallControl.boardTakenBy', { name: requester.displayName })
+          : tSession('playView.wallControl.boardTakenByCrew'),
+      );
+      trackBoardHandedOff({ wasDriving });
+    },
+    [settlePendingConnectWaiter, wrappedDisconnect, tSession],
+  );
+  const takenOverBy = useBoardHandoffRelease({
+    request: handoffRequest ?? null,
+    isConnected,
+    localHolderUserId: lastLocalHolderUserId,
+    sessionMemberUserIds,
+    holderUserId: holder?.userId ?? null,
+    boardId: presenceBoardId,
+    sessionId,
+    release: releaseForHandoff,
+  });
+
   const autoDisconnectOnExpire = useCallback(() => {
     void wrappedDisconnect('auto_disconnect');
   }, [wrappedDisconnect]);
@@ -2703,6 +2760,7 @@ export function BluetoothProvider({
       ledless,
       virtualWallHeld,
       wallHeldByOtherUser,
+      takenOverBy,
       takeVirtualWall,
       releaseVirtualWall: releaseVirtualWallForUser,
       canDriveWall: isConnected || virtualWallHeld,
@@ -2737,6 +2795,7 @@ export function BluetoothProvider({
       ledless,
       virtualWallHeld,
       wallHeldByOtherUser,
+      takenOverBy,
       takeVirtualWall,
       releaseVirtualWallForUser,
       staleCurrentHoldFlagEnabled,

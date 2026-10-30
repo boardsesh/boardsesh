@@ -119,6 +119,15 @@ export interface BoardPresenceClient {
   reportClear?(boardId: number): Promise<boolean>;
 
   /**
+   * Ask the crewmate whose phone holds the board to let go of it (#7113).
+   * Resolves true when the holder was asked, false when nobody holds it (or this
+   * account already does); rejects when the server refuses (not in the holder's
+   * session, rate-limited, signed out). Optional so a read-only client still
+   * satisfies the interface.
+   */
+  requestHandoff?(boardId: number): Promise<boolean>;
+
+  /**
    * Report the climb just lit on the wall. `angle` is the wall angle (null =
    * unspecified). Resolves to the server's accepted flag.
    */

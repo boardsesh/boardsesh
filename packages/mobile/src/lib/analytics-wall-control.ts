@@ -58,3 +58,26 @@ export function trackDriveModeEnded(input: DriveModeEndedInput): void {
   const { name, properties } = driveModeEnded(input);
   track(name, properties);
 }
+
+/**
+ * What a hand-off request came to on the asking phone (#7113): `released` the
+ * crewmate's phone let go, `timed_out` it didn't within 12 s, `refused` the
+ * server said no (or the request never reached it).
+ */
+export type BoardHandoffOutcome = 'released' | 'timed_out' | 'refused';
+
+/** Board Handoff Requested: once per request, when it resolves. No ids or names. */
+export function trackBoardHandoffRequested({
+  outcome,
+  inSession,
+}: {
+  outcome: BoardHandoffOutcome;
+  inSession: boolean;
+}): void {
+  track(SHARED_EVENTS.BoardHandoffRequested, { outcome, inSession });
+}
+
+/** Board Handed Off: this phone let go because a crewmate asked. No ids or names. */
+export function trackBoardHandedOff({ wasDriving }: { wasDriving: boolean }): void {
+  track(SHARED_EVENTS.BoardHandedOff, { wasDriving });
+}

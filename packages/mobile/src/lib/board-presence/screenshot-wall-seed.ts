@@ -334,6 +334,10 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
     async reportClear() {
       return true;
     },
+    // No crewmate holds a seeded wall: nobody to ask.
+    async requestHandoff() {
+      return false;
+    },
     async reportClimb(_boardId, climb, angle) {
       if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
         recordScreenshotWallReport(climb, angle);

@@ -1,6 +1,34 @@
-import { enterDriveMode, exitDriveMode, getDriveMode } from './drive-mode-store';
+import { trackBoardHandoffRequested } from '../../lib/analytics-wall-control';
+import type { BoardReleaseOutcome } from './board-handoff-store';
+import { enterDriveMode, exitDriveMode, getDriveMode, type DriveModeExitReason } from './drive-mode-store';
 import type { DriveStartOutcome } from './use-wall-control';
 import type { WallControlModel } from './wall-control';
+
+/**
+ * Taking a crewmate's board (#7113 PR 4): what the cooperative hand-off needs.
+ * Aurora and MoonBoard boxes stop advertising once linked and Android refuses a
+ * second phone, so this phone asks theirs to let go, waits for presence to show
+ * the board free, and only then connects.
+ */
+export type HandoffInput = {
+  /** The crewmate presence names as the holder: the account asked to let go. */
+  holderUserId: string;
+  /**
+   * `requestBoardHandoff`: `asked` the holder was asked, `free` nobody holds it
+   * now, `refused` the server said no or the request never reached it.
+   */
+  request: () => Promise<'asked' | 'free' | 'refused'>;
+  /** Resolves once presence shows `holderUserId` gone, or after 12 s. */
+  waitForRelease: (holderUserId: string) => Promise<BoardReleaseOutcome>;
+  /**
+   * Connect for the hand-off: the ordinary connect path with the relay
+   * suppression lifted, since presence can still read the board as theirs for
+   * a beat. Read at call time, never from the render that started the swipe.
+   */
+  connect: () => Promise<boolean>;
+  /** Say "Couldn't reach the board": the hand-off timed out or was refused. */
+  onFailed: () => void;
+};
 
 /** What starting a drive needs from the player, injected so the order can be tested. */
 export type StartDriveInput = {
@@ -23,22 +51,30 @@ export type StartDriveInput = {
   connect: () => Promise<boolean>;
   /** Light the current climb: a reassert, clearing a Turn off all lights and the #4979 hold. */
   relight: () => void;
+  /**
+   * The hand-off for a crewmate's board. Without it (an anonymous holder, an
+   * older caller) a crewmate's board still answers `needs_handoff`.
+   */
+  handoff?: HandoffInput | null;
 };
 
 /**
  * Start driving the wall (#7113), in this order:
  *
  * 1. Refuse where the control offers no swipe or a drive is already on
- *    (`unavailable`), or where a
- *    crewmate holds the board (`needs_handoff`): Aurora and MoonBoard boxes
- *    stop advertising once linked, so taking it needs their phone to let go
- *    first. Nothing changes either way.
+ *    (`unavailable`), or where a crewmate holds the board and there is no
+ *    hand-off to ask them with (`needs_handoff`). Nothing changes either way.
  * 2. Arm the drive.
  * 3. Put the climb on screen up when it is a preview, with no busy-wall
  *    question: the climber who drives never sees it. Nothing going up ends
  *    the drive (`commit_failed`).
  * 4. With the link up, light it. Otherwise connect, then light it; a connect
  *    that fails ends this drive (`connect_failed`), never a newer one.
+ *    On a crewmate's board (#7113 PR 4) the connect waits for the hand-off:
+ *    ask their phone to let go, wait up to 12 s for presence to show the board
+ *    free, then connect. A refusal ends the drive `handoff_refused`, no release
+ *    `handoff_timed_out`; both say "Couldn't reach the board". It never
+ *    connects before the release: their phone still holds the radio.
  *
  * The drive goes live once this phone's link lights the climb, in
  * `DriveModeWatcher` at the app root, so closing the player mid-connect still
@@ -49,15 +85,23 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
   // Read synchronously: two starts in one frame (a swipe and the screen-reader
   // action, or a double fire) both see a model rendered before either armed.
   if (getDriveMode()) return 'unavailable';
-  if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'needs_handoff';
+  const crewHolds = input.model.holder === 'crew' || input.wallHeldByOtherUser;
+  // A virtual hold on a wall with no lights has no radio to hand over.
+  const handoff = crewHolds && input.model.holder === 'crew' ? (input.handoff ?? null) : null;
+  if (crewHolds && !handoff) return 'needs_handoff';
   enterDriveMode({ sessionId: input.sessionId, boardId: null });
   const startedAt = getDriveMode()?.startedAt ?? null;
-  const endThisDrive = (reason: 'connect_failed' | 'commit_failed') => {
-    if (getDriveMode()?.startedAt === startedAt) exitDriveMode(reason);
+  const isThisDrive = () => getDriveMode()?.startedAt === startedAt;
+  const endThisDrive = (reason: DriveModeExitReason) => {
+    if (isThisDrive()) exitDriveMode(reason);
   };
   if (input.committing && !input.commit()) {
     endThisDrive('commit_failed');
     return 'unavailable';
+  }
+  if (handoff) {
+    void runHandoff(handoff, input, { isThisDrive, endThisDrive });
+    return 'started';
   }
   if (input.connected) {
     input.relight();
@@ -71,4 +115,46 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
     () => endThisDrive('connect_failed'),
   );
   return 'started';
+}
+
+async function runHandoff(
+  handoff: HandoffInput,
+  input: StartDriveInput,
+  drive: { isThisDrive: () => boolean; endThisDrive: (reason: DriveModeExitReason) => void },
+): Promise<void> {
+  const inSession = input.sessionId !== null;
+  const fail = (outcome: 'timed_out' | 'refused') => {
+    // A drive that already ended another way (the session changed, the climber
+    // stopped it) says nothing more.
+    if (!drive.isThisDrive()) return;
+    trackBoardHandoffRequested({ outcome, inSession });
+    drive.endThisDrive(outcome === 'timed_out' ? 'handoff_timed_out' : 'handoff_refused');
+    handoff.onFailed();
+  };
+  let asked: 'asked' | 'free' | 'refused';
+  try {
+    asked = await handoff.request();
+  } catch {
+    asked = 'refused';
+  }
+  if (asked === 'refused') {
+    fail('refused');
+    return;
+  }
+  if (!drive.isThisDrive()) return;
+  const released = asked === 'free' ? 'released' : await handoff.waitForRelease(handoff.holderUserId);
+  if (released === 'timed_out') {
+    fail('timed_out');
+    return;
+  }
+  if (released === 'cancelled' || !drive.isThisDrive()) return;
+  trackBoardHandoffRequested({ outcome: 'released', inSession });
+  let connected = false;
+  try {
+    connected = await handoff.connect();
+  } catch {
+    connected = false;
+  }
+  if (connected) input.relight();
+  else drive.endThisDrive('connect_failed');
 }

@@ -222,6 +222,24 @@ describe('createBoardPresenceClient', () => {
     expect(await client.reportDisconnect(5)).toBe(false);
   });
 
+  it('asks for a hand-off (#7113), true only when the holder was asked', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    harness.setExecuteResult({ requestBoardHandoff: true });
+
+    expect(await client.requestHandoff(5)).toBe(true);
+    expect(harness.executeCalls[0].variables).toEqual({ boardId: 5 });
+    expect(harness.executeCalls[0].query).toContain('requestBoardHandoff');
+
+    harness.setExecuteResult({ requestBoardHandoff: false });
+    expect(await client.requestHandoff(5)).toBe(false);
+  });
+
+  it('selects the hand-off request on the now-playing feed', () => {
+    const client = createBoardPresenceClient(harness.transport);
+    client.subscribeNowPlaying(5, vi.fn());
+    expect(harness.subscribeCalls[0].query).toContain('... on BoardHandoffRequested');
+  });
+
   it('resolves a board for a serial, forwarding the board config args', async () => {
     const client = createBoardPresenceClient(harness.transport);
     const resolved = {

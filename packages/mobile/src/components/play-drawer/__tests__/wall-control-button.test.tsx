@@ -608,10 +608,10 @@ describe('WallControlButton', () => {
       expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.connectHint');
     });
 
-    it("offers no swipe on a crewmate's board until the hand-off ships", () => {
+    it("offers the swipe on a crewmate's board: it takes the board with a hand-off (#7113 PR 4)", () => {
       const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
-      expect(sams.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
-      expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
+      expect(sams.queryByTestId('play-drawer-wall-control-swipe-hint')).not.toBeNull();
+      expect(swipeCtrl.options.at(-1)?.enabled).toBe(true);
     });
 
     it('says what letting go does once the drag is past the commit point', () => {
@@ -621,6 +621,9 @@ describe('WallControlButton', () => {
       measure();
       expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
       expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('true');
+      cleanup();
+      const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
+      expect(sams.getByText('playView.wallControl.releaseToTakeBoard:{"name":"Sam"}')).not.toBeNull();
     });
 
     it('wipes the flat amber in for a climb with no holds', () => {

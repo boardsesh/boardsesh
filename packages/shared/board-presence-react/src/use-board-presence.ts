@@ -20,6 +20,7 @@ import {
   initialBoardPresenceState,
   mapBoardPresenceEnvelopeToAction,
   selectClearedClimbUuid,
+  type BoardHandoffRequest,
   type BoardPresenceState,
 } from '@boardsesh/board-presence';
 import type {
@@ -81,6 +82,7 @@ export type UseBoardPresenceResult = {
   holder: BoardPresenceCurrentState['holder'];
   lastConnectionSeq: BoardPresenceCurrentState['lastConnectionSeq'];
   clearedClimbUuid: BoardPresenceCurrentState['clearedClimbUuid'];
+  handoffRequest: BoardPresenceCurrentState['handoffRequest'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
@@ -128,6 +130,11 @@ export type BoardPresenceCurrentState = {
    * echo, and its new climb must not read as turned off.
    */
   clearedClimbUuid: string | null;
+  /**
+   * The latest hand-off request addressed to this viewer (#7113): a crewmate
+   * asked this phone to let go of the board. `null` when none came.
+   */
+  handoffRequest: BoardHandoffRequest | null;
   /** True while a live subscription is attached for the active board. */
   isLive: boolean;
 };
@@ -179,6 +186,9 @@ function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
     case 'BoardConnectionChanged':
     case 'BoardHistoryUpdated':
       return event.seq;
+    // A hand-off request (#7113) reaches only the holder it names, so it takes
+    // no board seq and never counts towards gap detection.
+    case 'BoardHandoffRequested':
     default:
       return null;
   }
@@ -595,6 +605,7 @@ export function useBoardPresence(
       holder: visibleState.holder,
       lastConnectionSeq: visibleState.lastConnectionSeq,
       clearedClimbUuid,
+      handoffRequest: visibleState.handoffRequest,
       history: visibleState.history,
       stats: visibleState.stats,
       isLive: visibleIsLive,
@@ -613,6 +624,7 @@ export function useBoardPresence(
       visibleState.holder,
       visibleState.lastConnectionSeq,
       clearedClimbUuid,
+      visibleState.handoffRequest,
       visibleState.history,
       visibleState.stats,
       visibleIsLive,

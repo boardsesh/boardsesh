@@ -176,6 +176,11 @@ const drawerSections = vi.hoisted(() => ({
   ready: true,
 }));
 
+// The swipe's hand-off (#7113 PR 4) asks board presence through its controls;
+// the real provider module pulls in the graphql-ws client.
+vi.mock('../../../providers/board-presence-provider', () => ({
+  useBoardPresenceControls: () => ({ boardId: null, requestHandoffForBoard: async () => 'refused' }),
+}));
 vi.mock('../../../lib/play-drawer-sections-preference', () => {
   const order = [
     'activeHolds',

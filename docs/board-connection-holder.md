@@ -26,6 +26,7 @@ Display states (client):
 - `mutation reportBoardClimb(boardId, climb, angle)` — report a confirmed send (sets the holder).
 - `mutation reportBoardDisconnect(boardId)` — release this client's hold (lightbulb-off / BLE drop).
 - `mutation reportBoardClear(boardId)` — the holder turned every light off but kept its link. Publishes `BoardClimbCleared { clearedAt, seq, climbUuid }`.
+- `mutation requestBoardHandoff(boardId)` — ask the crewmate holding the board to let go (#7113). Publishes `BoardHandoffRequested { holderUserId, requester, requestId, requestedAt }` to the holder alone. See [Taking the board](#taking-the-board-7113).
 
 ## Auth model
 
@@ -109,9 +110,62 @@ the one that lights every climb: it connects if needed, lights the climb on scre
 of climb lights the wall, in a crew too. It changes nothing on the server: the phone holds the board through its
 link like any holder, and each climb it lights is an ordinary `reportBoardClimb`. The drive lives on the phone
 (`drive-mode-store.ts`, in memory) and ends when this phone's link drops, the session or the board changes, or the
-climber signs out or presses the frosted button. A crewmate's board offers no swipe yet (and a drive the runner can't
-start answers `needs_handoff`): Aurora and MoonBoard boxes stop advertising once linked, so taking the board needs
-the holder's phone to let go first, a cooperative hand-off that is PR 4 of #7113. See `docs/climb-view-options.md`, "Swipe to drive".
+climber signs out or presses the frosted button. On a crewmate's board the swipe takes the board with a cooperative
+hand-off first (next section). See `docs/climb-view-options.md`, "Swipe to drive".
+
+## Taking the board (#7113)
+
+A swipe on "Put on board" while a crewmate (Sam) holds the board takes it for the climber who swiped (Liz).
+
+**Why there is no direct connect.** Aurora and MoonBoard boxes stop advertising once a phone is linked, and
+Android's GATT refuses a second central (`lightbulb-control.ts`, the relay comment). A connect from Liz's phone
+would scan for 15 s and fail over a board that works. So Sam's phone has to let go first.
+
+**The flow.**
+
+1. Liz's swipe arms the drive (the frost holds), puts a preview up without the busy-wall question, and calls
+   `requestBoardHandoff(boardId)` (`drive-runner.ts`).
+2. The server (`graphql/resolvers/board-presence/handoff.ts`) checks, in order: sign-in, a rate limit of 10 a minute,
+   board membership, and that the holder in `board:{id}:writer` is a signed-in member of Liz's party session. It
+   publishes `BoardHandoffRequested` on the board channel and returns true; false when nobody holds the board (or Liz
+   already does). Auth is required, unlike the other presence mutations: the request ends someone else's link, so
+   it needs an accountable identity, and Sam's phone names who took it.
+3. `boardNowPlaying` passes the event only to a subscriber signed in as `holderUserId`. It carries a `requestId`, not
+   a board seq: the event reaches one phone, so a number from the shared counter would read as a missed event (and
+   a catch-up) on every other one. The requester's name and face go only to that crewmate, who sees them in the
+   session roster already.
+4. Sam's `BluetoothProvider` (`use-board-handoff-release.ts`) answers each `requestId` once, and only while it holds
+   the link as the account named, for an asker in its session. It ends its drive (`taken_over`), drops any queued
+   board-switch connect, disconnects with the `taken_over` reason, buzzes a warning once and announces "Liz took
+   the board". The disconnect's connection-ended path calls `reportBoardDisconnect`, which frees the writer key and
+   publishes `BoardConnectionChanged { holder: null }`. Board Handed Off `{ wasDriving }` is logged.
+5. Liz's phone waits (`board-handoff-store.ts`, fed by `DriveModeWatcher`) for a holder event that no longer names
+   Sam, then connects through the ordinary connect path with `takeover: true`, the one connect that sets the relay
+   suppression aside. The drive goes live on the first light as usual. Board Handoff Requested `{ outcome:
+   'released' }` is logged.
+
+**Sam's phone does not reconnect by itself.** The `taken_over` teardown is a deliberate one: it suppresses native
+connection adoption (iOS state restoration, an app return) until the climber connects by hand, on iOS and Android
+alike, and keeps the remembered board so a later tap reconnects without the picker. Until presence names Liz (or 30 s
+pass), `takenOverBy` makes the board read as hers, so Sam's controls relay instead of offering a connect that would
+race her for the radio. Once she holds it, his button reads "Put on board" with her face.
+
+**Timeouts.** Liz waits 12 s for the release. A refusal, or no release (Sam's phone is offline, its socket suspended
+in the background, or on an app that predates the event), ends the drive `handoff_refused` or `handoff_timed_out`,
+springs the frost back with an error buzz, and shows "Couldn't reach the board". Nothing force-connects. A failed
+connect after the release ends it `connect_failed`. The arming drive's own 30 s limit covers the wait plus a scan.
+
+**Not covered.**
+
+- The climber's own other phone: the request is addressed by account, so it can't tell two phones apart. That board
+  offers no swipe.
+- An anonymous holder has no account to address, and a wall with no lights has no radio to hand over: both answer
+  `needs_handoff`.
+- Sam's lock-screen bulb (the Live Activity's reconnect intent) is a deliberate tap; it still tries to connect, and
+  fails while Liz holds the board.
+- The event needs a backend that serves `BoardHandoffRequested`: an older server rejects the whole `boardNowPlaying`
+  selection over the unknown type, so the backend ships first.
+- Seq ordering is not involved: a request that arrives twice is answered once by `requestId`.
 
 ## Known limitations
 

@@ -419,14 +419,23 @@ export type SendFramesToBoard = (
   sendContext?: BleSendContext,
 ) => Promise<boolean | undefined>;
 
-export type BluetoothDisconnectReason = 'user' | 'auto_disconnect';
+/**
+ * - `user`: a deliberate disconnect; forgets the board.
+ * - `auto_disconnect`: the idle timer; keeps the board for a one-tap reconnect.
+ * - `taken_over` (#7113): a crewmate asked for the board with a hand-off. A
+ *   deliberate teardown like the others (adoption stays suppressed, nothing
+ *   reconnects by itself), keeping the board like `auto_disconnect` so a later
+ *   tap reconnects without the picker.
+ */
+export type BluetoothDisconnectReason = 'user' | 'auto_disconnect' | 'taken_over';
 
 export type BleDisconnectTrigger =
   | 'explicit_user'
   | 'auto_disconnect'
   | 'config_switch'
   | 'connection_replacement'
-  | 'link_drop';
+  | 'link_drop'
+  | 'taken_over';
 
 export type BleConnectionEnded = {
   reason: 'user' | 'unexpected';
@@ -2122,9 +2131,9 @@ export function useBoardBluetooth({
       // config switch keeps the silent same-board reconnect memory alive. Clears
       // the persisted copy too so the next launch doesn't resurrect it.
       // Auto-disconnect also keeps the remembered handle so the lightbulb can
-      // silently reconnect to the same board.
+      // silently reconnect to the same board, and so does a hand-off (#7113).
       if (reason === 'user') forgetConnectedBoard();
-      await teardownConnection(reason === 'user' ? 'explicit_user' : 'auto_disconnect');
+      await teardownConnection(reason === 'user' ? 'explicit_user' : reason);
     },
     [forgetConnectedBoard, teardownConnection],
   );

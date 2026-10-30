@@ -101,8 +101,18 @@ export type LightbulbControl = {
    * with the Kilter selected), the connect moves to that board first and
    * connects there (#7001). Pass `climb` when the caller has just made it
    * current, since the queue may not have caught up yet.
+   *
+   * `takeover` (#7113 PR 4, the hand-off only): connect even though presence
+   * still reads the board as a crewmate's. The swipe has asked their phone to
+   * let go and seen it do so, but this hook's press action can lag that by a
+   * render. Everything else (a link up, a connect in flight, a wall with no
+   * lights) still refuses.
    */
-  connect: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
+  connect: (
+    surface?: ConnectSurface,
+    climb?: ClimbBoardModel | null,
+    options?: { takeover?: boolean },
+  ) => Promise<boolean>;
   /**
    * Put on {board} (#7076): the climb is on another board at this gym. Moves
    * there (a crew session moves too) and connects to that board, whatever this
@@ -213,11 +223,33 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     [bluetooth, surface, placement],
   );
 
+  // The press action with the crewmate's hold set aside, for the hand-off's
+  // connect: the one place the relay suppression is lifted.
+  const takeoverPressAction = useMemo(
+    () =>
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: bluetooth != null,
+        isBluetoothConnected: bluetooth?.isConnected ?? false,
+        isBluetoothLoading: bluetooth?.loading ?? false,
+        ledless,
+        wallHeld: wallHeldLocally,
+        holderIsAuthoritative: false,
+        canRelay: false,
+      }),
+    [bluetooth, ledless, wallHeldLocally],
+  );
+
   const connect = useCallback(
-    async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
+    async (
+      surfaceOverride?: ConnectSurface,
+      climb?: ClimbBoardModel | null,
+      options?: { takeover?: boolean },
+    ): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
-      if (!bluetooth || pressAction !== 'connect') return false;
+      // Only the hand-off sets the peer's hold aside (see `takeover`).
+      const gate = options?.takeover === true ? takeoverPressAction : pressAction;
+      if (!bluetooth || gate !== 'connect') return false;
       // The climb decides which board to connect to, not the board that happens
       // to be selected. Connecting to the selected board would scan for the
       // wrong family: a Kilter scan never lists the MoonBoard the climb needs.
@@ -237,7 +269,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface, placement, climbBoardConnect, connectAfterMove],
+    [bluetooth, pressAction, takeoverPressAction, surface, placement, climbBoardConnect, connectAfterMove],
   );
 
   const moveToClimbBoard = useCallback(

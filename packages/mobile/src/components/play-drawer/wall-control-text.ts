@@ -30,7 +30,11 @@ export type WallControlText = {
   longPressActionLabel: string;
   /** The named accessibility action for the swipe (#7113): "Light every climb". */
   driveActionLabel: string;
-  /** The label once a swipe left has crossed the commit point (#7113): letting go starts driving the wall. */
+  /**
+   * The label once a swipe left has crossed the commit point (#7113): letting
+   * go starts driving the wall, or takes the board from the crewmate who holds
+   * it (PR 4's hand-off).
+   */
   releaseLabel: string;
 };
 
@@ -145,7 +149,10 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
     bulbValue: bulbValueText(t, model.bulbValueKey, name),
     longPressActionLabel: t('playView.wallControl.boardOptions'),
     driveActionLabel: t('playView.wallControl.lightEveryClimb'),
-    releaseLabel: t('playView.wallControl.releaseToDrive'),
+    releaseLabel:
+      model.holder === 'crew' && name
+        ? t('playView.wallControl.releaseToTakeBoard', { name })
+        : t('playView.wallControl.releaseToDrive'),
   };
 }
 

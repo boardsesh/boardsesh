@@ -167,7 +167,8 @@ const rows: Row[] = [
       a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'relayHint',
       look: 'ready',
-      swipeAction: null,
+      // The swipe takes Sam's board with a hand-off (#7113 PR 4).
+      swipeAction: 'drive',
     },
   ],
   // #7015: Sam turned all the lights off; this phone hears it through presence.
@@ -183,7 +184,8 @@ const rows: Row[] = [
       a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'relayHint',
       look: 'ready',
-      swipeAction: null,
+      // The swipe takes Sam's board with a hand-off (#7113 PR 4).
+      swipeAction: 'drive',
     },
   ],
   [
@@ -198,9 +200,8 @@ const rows: Row[] = [
       a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'lightHint',
       look: 'off',
-      // Taking Sam's board needs his phone to let go first: no swipe until
-      // the hand-off ships (#7113 PR 4).
-      swipeAction: null,
+      // The swipe asks Sam's phone to let go, then connects (#7113 PR 4).
+      swipeAction: 'drive',
     },
   ],
   [
@@ -762,14 +763,8 @@ describe('resolveWallControl: driving the wall', () => {
       });
       expect(model.driving).toBe(false);
       if (name.startsWith('crew')) {
-        // A relay to Sam's board: Put on board, never a swipe.
-        expect(model).toMatchObject({ tapAction: 'relay', labelKey: 'putOnBoard', swipeAction: null });
-        return;
-      }
-      if (name.includes("Sam's board")) {
-        // A preview on Sam's board: Put on board, no swipe until the hand-off (PR 4).
-        expect(model).toMatchObject({ labelKey: 'putOnBoard', swipeAction: null });
-        return;
+        // A relay to Sam's board: Put on board, and the swipe takes it (#7113 PR 4).
+        expect(model).toMatchObject({ tapAction: 'relay', labelKey: 'putOnBoard', holder: 'crew' });
       }
       expect(model.labelKey).toBe('putOnBoard');
       expect(model.swipeAction).toBe(driveMode === 'arming' ? null : 'drive');
@@ -870,6 +865,22 @@ describe('resolveWallControl: driving the wall', () => {
     ],
     ['Put on {board} at another gym board', { offWall: true, gymBoardName: 'Kilter' }],
     ['nothing to offer', { ...MINE, offWall: true }],
+    [
+      // The hand-off is addressed by account: it can't tell this climber's two phones apart.
+      "a relay to this climber's other phone",
+      { holderIsAuthoritative: true, holderIsSelfAccount: true, pressAction: 'relay' as const },
+    ],
+    [
+      "a preview relayed to the crew's gym board",
+      {
+        holderIsAuthoritative: true,
+        pressAction: 'relay' as const,
+        commitButton: 'putOnWall' as const,
+        offWall: true,
+        gymBoardName: 'Kilter',
+        crewGymBoard: true,
+      },
+    ],
   ])('offers no swipe when %s', (_case, input) => {
     expect(resolveWallControl({ ...FREE, ...input }).swipeAction).toBeNull();
   });

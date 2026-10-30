@@ -83,6 +83,7 @@ export function createReadOnlyWebBoardPresenceClient(getClient: () => Client): W
     reportClimb: rejectAsReadOnly('reportClimb'),
     reportDisconnect: rejectAsReadOnly('reportDisconnect'),
     reportClear: rejectAsReadOnly('reportClear'),
+    requestHandoff: rejectAsReadOnly('requestHandoff'),
     resolveBoardForSerial: rejectAsReadOnly('resolveBoardForSerial'),
     resolveBoardForConfig: rejectAsReadOnly('resolveBoardForConfig'),
     resolveBoardForUuid: rejectAsReadOnly('resolveBoardForUuid'),

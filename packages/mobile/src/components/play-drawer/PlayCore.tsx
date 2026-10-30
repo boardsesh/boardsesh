@@ -172,7 +172,9 @@ import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
 import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
-import { startDrive } from './drive-runner';
+import { startDrive, type HandoffInput } from './drive-runner';
+import { waitForBoardRelease } from './board-handoff-store';
+import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
@@ -1787,13 +1789,40 @@ export function PlayCore({
   // (`DriveModeWatcher`, at the app root); a connect that fails ends it.
   //
   // A crewmate's board can't be taken by a connect: Aurora and MoonBoard boxes
-  // stop advertising once linked. That needs their phone to let go first, so
-  // it refuses with `needs_handoff` and changes nothing.
+  // stop advertising once linked. So the swipe asks their phone to let go
+  // (#7113 PR 4, `requestBoardHandoff`), waits for presence to show the board
+  // free, and only then connects, with the relay suppression lifted for that
+  // one connect. No release in 12 s, or a refusal, says "Couldn't reach the
+  // board" and ends the drive.
   const wallControlForDriveRef = useRef(wallControl);
   wallControlForDriveRef.current = wallControl;
+  const { boardId: presenceBoardIdForHandoff, requestHandoffForBoard } = useBoardPresenceControls();
+  const handoffScopeRef = useRef({ boardId: presenceBoardIdForHandoff, holder: wallHolderIdentity });
+  handoffScopeRef.current = { boardId: presenceBoardIdForHandoff, holder: wallHolderIdentity };
+  // Read at call time: the hand-off connects seconds after the swipe, once
+  // presence has moved on, so the render that started it is stale by then.
+  const connectLightbulbRef = useRef(connectLightbulb);
+  connectLightbulbRef.current = connectLightbulb;
+  const handoffFailedLabel = t('playView.wallControl.handoffFailed');
   const startDriving = useCallback((): DriveStartOutcome => {
     const committing = commitBarModel.mode === 'commit';
     const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
+    const surface = committing ? 'put_on_wall' : 'play_drawer';
+    const { boardId: handoffBoardId, holder: holderIdentity } = handoffScopeRef.current;
+    // Presence's holder, or while it hasn't confirmed one, the crewmate who lit
+    // the wall (the model's unconfirmed crew holder). The server asks whoever
+    // really holds it, and answers `free` when nobody does.
+    const handoffHolderUserId = holderIdentity.holderUserId ?? holderIdentity.userId;
+    const handoff: HandoffInput | null =
+      handoffHolderUserId !== null && handoffBoardId !== null
+        ? {
+            holderUserId: handoffHolderUserId,
+            request: () => requestHandoffForBoard(handoffBoardId),
+            waitForRelease: (holderUserId) => waitForBoardRelease({ holderUserId }),
+            connect: () => connectLightbulbRef.current(surface, climb, { takeover: true }),
+            onFailed: () => showToast(handoffFailedLabel, 'error'),
+          }
+        : null;
     return startDrive({
       model: wallControlForDriveRef.current,
       wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
@@ -1801,13 +1830,17 @@ export function PlayCore({
       committing,
       commit: () => handleSetActive({ skipBusyWall: true }),
       connected: bluetoothConnected,
-      connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
+      connect: () => connectLightbulb(surface, climb),
       relight: () => {
         resetWallCleared();
         bluetoothForRelightRef.current?.reassertWall();
       },
+      handoff,
     });
   }, [
+    requestHandoffForBoard,
+    showToast,
+    handoffFailedLabel,
     sessionId,
     currentClimbQueueItem,
     commitBarModel.mode,

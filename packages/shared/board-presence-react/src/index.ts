@@ -54,3 +54,4 @@ export type { BoardHistoryPageLoadedInfo, BoardHistoryPagination } from './use-b
 
 export { useBoardClimbRecentSenders } from './use-board-climb-recent-senders';
 export type { BoardClimbRecentSendersOptions, BoardClimbRecentSendersState } from './use-board-climb-recent-senders';
+export type { BoardHandoffRequest } from '@boardsesh/board-presence';

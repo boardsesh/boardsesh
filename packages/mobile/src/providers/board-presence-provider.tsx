@@ -206,9 +206,19 @@ type BoardPresenceControlsValue = {
    * older than the mutation, or another emitter holds the board.
    */
   reportClearForBoard: (boardId: number) => Promise<boolean>;
+  /**
+   * Ask the crewmate whose phone holds `boardId` to let go of it (#7113).
+   * Resolves `asked` when the holder was asked, `free` when nobody holds it (or
+   * this account does), and `refused` when the server said no, the backend is
+   * older than the mutation, or no transport is available.
+   */
+  requestHandoffForBoard: (boardId: number) => Promise<BoardHandoffRequestResult>;
   /** Clear the current board binding and force the shared presence hook inert. */
   resetPresence: () => void;
 };
+
+/** What asking for a crewmate's board came to (#7113). */
+export type BoardHandoffRequestResult = 'asked' | 'free' | 'refused';
 
 const BoardPresenceControlsContext = createContext<BoardPresenceControlsValue | null>(null);
 
@@ -728,6 +738,19 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     }
   }, []);
 
+  const requestHandoffForBoard = useCallback(async (targetBoardId: number): Promise<BoardHandoffRequestResult> => {
+    const activeClient = clientRef.current;
+    if (!enabledRef.current || activeClient?.requestHandoff == null) {
+      return 'refused';
+    }
+    try {
+      return (await activeClient.requestHandoff(targetBoardId)) ? 'asked' : 'free';
+    } catch (error) {
+      console.warn('[board-presence] requestBoardHandoff failed', error);
+      return 'refused';
+    }
+  }, []);
+
   // Confirm the board the user picked from the disambiguation prompt: remember
   // the choice server-side and bind it as the active wall.
   const chooseDisambiguatedBoard = useCallback(
@@ -839,6 +862,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       reportClimbForBoard,
       reportDisconnectForBoard,
       reportClearForBoard,
+      requestHandoffForBoard,
       resetPresence,
     }),
     [
@@ -852,6 +876,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       reportClimbForBoard,
       reportDisconnectForBoard,
       reportClearForBoard,
+      requestHandoffForBoard,
       resetPresence,
     ],
   );
@@ -918,6 +943,7 @@ const DISABLED_CONTROLS: BoardPresenceControlsValue = {
   reportClimbForBoard: async () => false,
   reportDisconnectForBoard: async () => false,
   reportClearForBoard: async () => false,
+  requestHandoffForBoard: async () => 'refused',
   resetPresence: () => {},
 };
 

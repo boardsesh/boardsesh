@@ -123,9 +123,25 @@ export const SHARED_EVENTS = {
   // Mobile-only (#7113): driving the wall ended. Props (built by
   // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
-  // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
-  // climb included), inSession }. Fired once per drive by the drive-mode store.
+  // 'board_changed' | 'signed_out' | 'taken_over' | 'handoff_timed_out' |
+  // 'handoff_refused', durationSec, climbsLit (the swipe's own climb included),
+  // inSession }. Fired once per drive by the drive-mode store. The three
+  // hand-off reasons arrived with #7113 PR 4: `taken_over` on the phone a
+  // crewmate took the board from, the other two on the phone that asked.
   DriveModeEnded: 'Drive Mode Ended',
+  // Mobile-only (#7113): the swipe on a crewmate's board asked their phone to
+  // let go (requestBoardHandoff), fired once per request on the asking phone.
+  // Props: { outcome: 'released' (the board went free and this phone went on
+  // to connect; whether the connect worked is Drive Mode Ended's reason) |
+  // 'timed_out' (no release within 12 s: their phone is offline, on an older
+  // app, or ignored it) | 'refused' (the server said no: not in their session,
+  // rate-limited, or the request never reached the server), inSession }. No
+  // ids or names.
+  BoardHandoffRequested: 'Board Handoff Requested',
+  // Mobile-only (#7113): this phone let go of the board because a crewmate
+  // asked for it with a hand-off. Props: { wasDriving }. No ids or names: the
+  // asker's account is never sent.
+  BoardHandedOff: 'Board Handed Off',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
   // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button

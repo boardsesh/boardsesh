@@ -96,9 +96,9 @@ board, Sam has the board").
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
   nothing. A press's "stopped" lasts until that link drops. The model's `swipeAction` is `drive` on Put on board
-  (this phone's board) and on Disconnect board while not driving; never on Sam's board (until the hand-off, #7113 PR
-  4), a relay, Set active, a wall with
-  no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
+  (this phone's board, or Sam's, a relay to Sam's included) and on Disconnect board while not driving; never on the
+  climber's own other phone, the crew's gym board, Set active, a wall with no lights, or while the busy-wall question
+  is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
   the setting decides solo and a crew previews. A drive starts from the swipe below, its "Light every climb"
   screen-reader action, or the board sheet's row. Holding any
@@ -174,10 +174,11 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   does nothing (the sheet is opening). A system gesture that takes the touch (Android's edge back: the full-width
   button ends 16 dp from the edge, inside the back zone, and neither RN nor RNGH can exclude it without native code)
   cancels the pan, which springs back like any cancel. On Expo web the detector has `touchAction="pan-y"`.
-- **No swipe on a crewmate's board** until the hand-off (#7113 PR 4) ships: Aurora and MoonBoard boxes stop
-  advertising once linked, so taking Sam's board needs his phone to let go first. There the button has no chevrons,
-  no peek and no gesture. A drive the runner still can't start (presence says another account holds the board)
-  answers `needs_handoff`, and the frost springs back with an error buzz.
+- **A crewmate's board** (#7113 PR 4): past the commit point the label reads "Let go to take Sam's board", and
+  letting go asks Sam's phone to let go of the board, then connects (`docs/board-connection-holder.md`, "Taking
+  the board"). The frost holds while it waits. No release within 12 s, or a refusal, springs it back with an error
+  buzz and "Couldn't reach the board". A drive the runner can't start at all (a wall with no lights another account
+  holds, an anonymous holder) answers `needs_handoff` and springs back the same way.
 - **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
   offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing
   edge and springs back (about 700 ms; a fade in place under Reduce Motion). At most 3 sessions, never again once a

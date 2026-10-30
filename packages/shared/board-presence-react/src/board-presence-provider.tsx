@@ -96,6 +96,7 @@ export function BoardPresenceProvider({
       holder: value.holder,
       lastConnectionSeq: value.lastConnectionSeq,
       clearedClimbUuid: value.clearedClimbUuid,
+      handoffRequest: value.handoffRequest,
       isLive: value.isLive,
     }),
     [
@@ -105,6 +106,7 @@ export function BoardPresenceProvider({
       value.holder,
       value.lastConnectionSeq,
       value.clearedClimbUuid,
+      value.handoffRequest,
       value.isLive,
     ],
   );

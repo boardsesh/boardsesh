@@ -49,7 +49,13 @@ export type DriveModeExitReason =
   | 'session_changed'
   /** The board changed under a live drive. */
   | 'board_changed'
-  | 'signed_out';
+  | 'signed_out'
+  /** A crewmate took the board with a hand-off: this phone let go (#7113 PR 4). */
+  | 'taken_over'
+  /** The swipe asked a crewmate's phone to let go, and it didn't within 12 s. */
+  | 'handoff_timed_out'
+  /** The server refused the hand-off request, or it never reached the server. */
+  | 'handoff_refused';
 
 /**
  * How long arming may wait for the wall before it gives up. The Bluetooth scan

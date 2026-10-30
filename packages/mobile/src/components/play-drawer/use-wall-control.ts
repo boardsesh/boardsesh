@@ -14,9 +14,11 @@ import type { WallControlModel } from './wall-control';
 
 /**
  * What starting a drive did (#7113). `started`: arming, the climb is going up
- * and the connect (if any) is on its way. `needs_handoff`: a crewmate holds the
- * board, and taking it needs their phone to let go first (PR 4); nothing
- * changed. `unavailable`: the control offers no swipe here (`swipeAction`).
+ * and the connect (if any, after a crewmate's phone lets go on their board) is
+ * on its way. `needs_handoff`: another account holds the board and there is no
+ * hand-off to ask them with (a wall with no lights, an anonymous holder);
+ * nothing changed. `unavailable`: the control offers no swipe here
+ * (`swipeAction`).
  */
 export type DriveStartOutcome = 'started' | 'needs_handoff' | 'unavailable';
 

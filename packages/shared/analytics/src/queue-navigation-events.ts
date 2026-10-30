@@ -134,6 +134,9 @@ export function queueNavigation(
  * button (the link stays). `link_dropped`: this phone's link went. `connect_failed`,
  * `commit_failed` and `arming_timed_out`: the swipe never reached the wall. `session_changed`,
  * `board_changed`, `signed_out`: the drive's session, board or account went away.
+ * `taken_over`: a crewmate took the board with a hand-off (on the holder's phone).
+ * `handoff_timed_out`, `handoff_refused`: the swipe asked a crewmate's phone to let
+ * go, and it didn't in time, or the server refused the request (on the asker's).
  */
 export type DriveModeEndReason =
   | 'stopped'
@@ -143,7 +146,10 @@ export type DriveModeEndReason =
   | 'arming_timed_out'
   | 'session_changed'
   | 'board_changed'
-  | 'signed_out';
+  | 'signed_out'
+  | 'taken_over'
+  | 'handoff_timed_out'
+  | 'handoff_refused';
 
 export type DriveModeEndedInput = {
   reason: DriveModeEndReason;
