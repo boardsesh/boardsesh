@@ -56,6 +56,10 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 // lands on the wall) so the tiles update live instead of re-fetching, and a
 // BoardConnectionChanged carries the current connection holder (or null when the
 // board goes free) so consumers can show held-vs-free distinct from the lit climb.
+// A BoardHandoffRequested (#7113) reaches only the holder it names: a crewmate
+// asked to take the board, so the holder's phone lets go of its link. Selected
+// only once the backend that serves the type is deployed: an older server
+// rejects the whole subscription over an unknown fragment type.
 export const BOARD_NOW_PLAYING = `
   subscription BoardNowPlaying($boardId: Int!, $boardUuid: ID) {
     boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
@@ -87,6 +91,16 @@ export const BOARD_NOW_PLAYING = `
           lastSentAt
         }
         seq
+      }
+      ... on BoardHandoffRequested {
+        holderUserId
+        requestId
+        requestedAt
+        requester {
+          userId
+          displayName
+          avatarUrl
+        }
       }
     }
   }
@@ -317,6 +331,10 @@ export const REPORT_BOARD_DISCONNECT = `mutation ReportBoardDisconnect($boardId:
 // (#7015). Publishes BoardClimbCleared to every viewer. Returns Boolean!
 // (accepted; false when another emitter holds the board).
 export const REPORT_BOARD_CLEAR = `mutation ReportBoardClear($boardId: Int!) { reportBoardClear(boardId: $boardId) }`;
+
+// Mutation — ask the crewmate whose phone holds the board to let go of it
+// (#7113). Returns Boolean! (true: the holder was asked; false: nobody to ask).
+export const REQUEST_BOARD_HANDOFF = `mutation RequestBoardHandoff($boardId: Int!) { requestBoardHandoff(boardId: $boardId) }`;
 
 // All fields of a redacted BoardQueuePreview (gym-kiosk "Up next"). Items
 // deliberately carry ONLY climb-catalog display fields — never who added or

@@ -125,6 +125,43 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   }
 
   """
+  The crewmate asking to take the board (\`requestBoardHandoff\`). Always a
+  signed-in member of the holder's party session, so the holder's phone can say
+  who took it.
+  """
+  type BoardHandoffRequester {
+    "Boardsesh user id of the crewmate asking."
+    userId: ID!
+    "Profile display name, falling back to the account name."
+    displayName: String
+    "Profile avatar URL, falling back to the account image."
+    avatarUrl: String
+  }
+
+  """
+  Event: a crewmate in the holder's party session asked to take the board
+  (#7113). Delivered only to subscribers signed in as \`holderUserId\`; every
+  other viewer of the feed never sees it. The holder's phone lets go of its
+  Bluetooth link (an Aurora or MoonBoard box takes one phone at a time), and the
+  requester connects once \`BoardConnectionChanged\` shows the board free.
+  Clients that don't know this member ignore it.
+  """
+  type BoardHandoffRequested {
+    "The holder this request is addressed to."
+    holderUserId: ID!
+    "Who asked."
+    requester: BoardHandoffRequester!
+    """
+    Identifies this request, for de-duplication. Not a board sequence number:
+    the event reaches the holder alone, so taking a number from the board's
+    shared counter would read as a missed event on every other phone.
+    """
+    requestId: ID!
+    "ISO 8601 timestamp when the server accepted the request."
+    requestedAt: String!
+  }
+
+  """
   Union of board-presence events streamed by \`boardNowPlaying\`.
   """
   type BoardHistoryUpdated {
@@ -143,6 +180,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     | BoardStatsUpdated
     | BoardConnectionChanged
     | BoardHistoryUpdated
+    | BoardHandoffRequested
 
   """
   The first climber to send the hardest grade logged on this wall.
