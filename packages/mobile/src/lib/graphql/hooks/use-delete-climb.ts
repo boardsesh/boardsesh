@@ -12,8 +12,9 @@ import {
   type DeleteClimbMutationResponse,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import { getHttpClient } from '../client';
-import { captureAuthCredentialGeneration } from '../../auth-store';
+import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { removeDeletedClimbFromDevice } from '../../../offline/remove-deleted-climb';
+import { assertClimbDeleteReady } from '../../../offline/assert-climb-delete-ready';
 import {
   CLIMB_QUERY_KEY,
   INFINITE_SEARCH_CLIMBS_QUERY_KEY,
@@ -37,6 +38,8 @@ export function useDeleteClimb() {
     mutationFn: async (variables: DeleteClimbMutationVariables) => {
       // Captured before the request, so a sign-out during it stops the local write.
       const authGeneration = captureAuthCredentialGeneration();
+      await assertClimbDeleteReady(variables);
+      if (!isAuthCredentialGenerationCurrent(authGeneration)) throw new Error('Account changed before deleting climb');
       const response = await getHttpClient().request<DeleteClimbMutationResponse>(DELETE_CLIMB_MUTATION, variables);
       return { deleted: response.deleteClimb, authGeneration };
     },

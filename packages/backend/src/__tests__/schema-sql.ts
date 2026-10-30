@@ -8,6 +8,10 @@ const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
 );
+const climbMutationReceiptsSchema = readFileSync(
+  new URL('../../../db/drizzle/0287_climb_mutation_receipts.sql', import.meta.url),
+  'utf8',
+);
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
@@ -2210,4 +2214,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${boardShareLinksSchema}
   ${sessionWorkoutsSchema}
   ${sharedSprayDraftsSchema}
+  ${climbMutationReceiptsSchema}
 `;

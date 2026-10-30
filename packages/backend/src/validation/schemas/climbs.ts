@@ -389,6 +389,7 @@ export const SaveClimbInputSchema = z
 
 export const UpdateClimbInputSchema = z
   .object({
+    clientMutationId: UUIDSchema.nullish(),
     uuid: z.string().min(1).max(100),
     boardType: BoardNameSchema,
     name: z.string().min(1).max(200).optional(),

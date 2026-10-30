@@ -9165,6 +9165,8 @@ export type SaveClimbResult = {
   createdAt?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of when the row was first published (null while still a draft) */
   publishedAt?: Maybe<Scalars['String']['output']>;
+  /** True when the UUID already existed and no fields were changed. */
+  replayed?: Maybe<Scalars['Boolean']['output']>;
   synced: Scalars['Boolean']['output'];
   uuid: Scalars['ID']['output'];
 };
@@ -11864,6 +11866,8 @@ export type UpdateClimbInput = {
   boardType: Scalars['String']['input'];
   /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, any_feet, MoonBoard method) is left untouched. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Stable UUID for one edit; retries acknowledge the original committed edit. */
+  clientMutationId?: InputMaybe<Scalars['ID']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -14220,6 +14224,7 @@ export type SaveClimbMutation = {
   saveClimb: {
     __typename?: 'SaveClimbResult';
     uuid: string;
+    replayed?: boolean | null;
     synced: boolean;
     createdAt?: string | null;
     publishedAt?: string | null;
@@ -21164,6 +21169,7 @@ export const SaveClimbDocument = {
               kind: 'SelectionSet',
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'replayed' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'synced' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'publishedAt' } },

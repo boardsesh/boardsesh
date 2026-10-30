@@ -399,6 +399,8 @@ export type SaveMoonBoardClimbInput = {
 };
 
 export type SaveClimbResult = {
+  /** The UUID already existed; the create did not apply this request's fields. */
+  replayed?: boolean;
   uuid: string;
   synced: boolean;
   /** ISO timestamp of when the row was created */
@@ -415,6 +417,8 @@ export type SaveClimbResult = {
  */
 export type UpdateClimbInput = {
   uuid: string;
+  /** Stable identity of one offline edit, reused only when retrying that edit. */
+  clientMutationId?: string | null;
   boardType: string;
   name?: string | null;
   description?: string | null;

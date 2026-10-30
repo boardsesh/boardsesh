@@ -108,7 +108,12 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
         case 'create':
           return { mutationName: 'SaveClimb', variables: { input: payload } };
         case 'update':
-          return { mutationName: 'UpdateClimb', variables: { input: payload } };
+          return {
+            mutationName: 'UpdateClimb',
+            variables: {
+              input: { ...payload, clientMutationId: mutation.idempotency_key.replace(/^climb:update:/, '') },
+            },
+          };
         default:
           throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
       }

@@ -6,6 +6,8 @@ import {
   stampLocalUserId,
   getLatestClimbMutationKey,
   peekPending,
+  enqueue,
+  retryDeadLetter,
 } from '@boardsesh/offline-sync';
 import type { SaveClimbInput as ClimbInput } from '@boardsesh/shared-schema';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
@@ -139,6 +141,52 @@ describe('offline spray climb writes', () => {
     ).toEqual({ is_draft: 1, published_at: null });
     const operations = await db.getAllAsync<{ payload: string }>('SELECT payload FROM pending_mutations');
     expect(operations.every((operation) => JSON.parse(operation.payload).isDraft === true)).toBe(true);
+  });
+
+  it('gives repaired updates fresh identities and moves their waiting ticks atomically', async () => {
+    const created = await saveClimbLocal(db, input('Original'));
+    await db.runAsync('DELETE FROM pending_mutations');
+    await updateClimbLocal(db, { boardType: 'spray', uuid: created!.uuid, name: 'First edit' });
+    const firstEdit = (await peekPending(db))[0];
+    await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: created!.uuid }, 'tick', {
+      dependsOnKey: firstEdit.idempotency_key,
+    });
+    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE id = ?", [firstEdit.id]);
+
+    // A plain retry remains the same immutable server operation.
+    await retryDeadLetter(db, firstEdit.id);
+    expect((await peekPending(db))[0]).toMatchObject({
+      idempotency_key: firstEdit.idempotency_key,
+      payload: firstEdit.payload,
+    });
+    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE id = ?", [firstEdit.id]);
+    await updateClimbLocal(db, { boardType: 'spray', uuid: created!.uuid, name: 'Corrected edit' });
+
+    const repaired = (await peekPending(db))[0];
+    expect(repaired.idempotency_key).not.toBe(firstEdit.idempotency_key);
+    expect(JSON.parse(repaired.payload)).toMatchObject({ name: 'Corrected edit' });
+    expect(
+      await db.getFirstAsync("SELECT depends_on_key FROM pending_mutations WHERE idempotency_key = 'tick'"),
+    ).toEqual({ depends_on_key: repaired.idempotency_key });
+    expect(await peekPending(db)).toHaveLength(1);
+  });
+
+  it('preserves later edits behind a repaired update and reapplies the current form last', async () => {
+    const created = await saveClimbLocal(db, input('Original'));
+    await db.runAsync('DELETE FROM pending_mutations');
+    await updateClimbLocal(db, { boardType: 'spray', uuid: created!.uuid, name: 'First edit' });
+    const firstEdit = (await peekPending(db))[0];
+    await updateClimbLocal(db, { boardType: 'spray', uuid: created!.uuid, name: 'Second edit' });
+    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE id = ?", [firstEdit.id]);
+    await updateClimbLocal(db, { boardType: 'spray', uuid: created!.uuid, name: 'Corrected edit' });
+    const updates = await db.getAllAsync<{ idempotency_key: string; depends_on_key: string | null; payload: string }>(
+      'SELECT idempotency_key, depends_on_key, payload FROM pending_mutations ORDER BY id',
+    );
+    expect(updates).toHaveLength(3);
+    expect(updates[0].idempotency_key).not.toBe(firstEdit.idempotency_key);
+    expect(updates[1].depends_on_key).toBe(updates[0].idempotency_key);
+    expect(updates[2].depends_on_key).toBe(updates[1].idempotency_key);
+    expect(JSON.parse(updates[2].payload)).toMatchObject({ name: 'Corrected edit' });
   });
 
   it('keeps an unacknowledged published climb editable after reopening48hours later', async () => {

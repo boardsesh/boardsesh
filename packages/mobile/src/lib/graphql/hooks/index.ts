@@ -60,11 +60,6 @@ import {
 } from '@boardsesh/playlists-react';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 import {
-  DELETE_DRAFT_CLIMB_MUTATION,
-  type DeleteDraftClimbMutationVariables,
-  type DeleteDraftClimbMutationResponse,
-} from '@boardsesh/graphql/operations/new-climb-feed';
-import {
   SEARCH_GYMS,
   GET_GYM,
   GET_MY_GYMS,
@@ -1008,23 +1003,7 @@ export function useClimb(variables: GetClimbQueryVariables | null) {
  * deleted draft disappears from the drafts list (and any climb list) without a
  * manual reload.
  */
-export function useDeleteDraftClimb() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (variables: DeleteDraftClimbMutationVariables) => {
-      const response = await getHttpClient().request<DeleteDraftClimbMutationResponse>(
-        DELETE_DRAFT_CLIMB_MUTATION,
-        variables,
-      );
-      return response.deleteDraftClimb;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
-    },
-  });
-}
+export { useDeleteDraftClimb } from './use-delete-draft-climb';
 
 // ============================================
 // Session Queries

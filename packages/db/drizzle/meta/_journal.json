@@ -2010,6 +2010,13 @@
       "when": 1793343314384,
       "tag": "0286_offline_climb_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1793343933993,
+      "tag": "0287_climb_mutation_receipts",
+      "breakpoints": true
     }
   ]
 }

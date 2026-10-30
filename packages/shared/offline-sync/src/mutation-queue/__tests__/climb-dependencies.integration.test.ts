@@ -51,7 +51,11 @@ describe('durable climb write dependencies', () => {
     const deliveries: string[] = [];
     const graphqlFetch = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
       if (query.includes('saveClimb') || query.includes('updateClimb')) {
-        expect(variables?.input).toEqual({ uuid: 'climb', boardType: 'spray' });
+        expect(variables?.input).toEqual({
+          uuid: 'climb',
+          boardType: 'spray',
+          ...(query.includes('updateClimb') ? { clientMutationId: 'edit' } : {}),
+        });
       }
       deliveries.push(query.includes('saveClimb') ? 'create' : query.includes('updateClimb') ? 'edit' : 'tick');
       return {} as T;
@@ -126,6 +130,53 @@ describe('durable climb write dependencies', () => {
     await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'elsewhere' }, 'unrelated');
     expect((await peekPending(db, 1)).map((mutation) => mutation.idempotency_key)).toEqual(['unrelated']);
     await expect(enqueue(db, 'board_climbs', 'update', {}, 'self', { dependsOnKey: 'self' })).rejects.toThrow('itself');
+  });
+
+  it.each(['user_favorites', 'playlist_climbs'])(
+    'retains %s additions until a rejected offline climb is repaired',
+    async (tableName) => {
+      await enqueue(db, 'board_climbs', 'create', { uuid: 'climb', boardType: 'spray' }, 'create', { entityKey });
+      await enqueue(db, tableName, 'create', { boardName: 'spray', climbUuid: 'climb' }, 'reference');
+      let rejectCreate = true;
+      let climbExists = false;
+      const sentReferences: string[] = [];
+      const graphqlFetch = async <T>(query: string): Promise<T> => {
+        if (query.includes('saveClimb')) {
+          if (rejectCreate) throw new Response(null, { status: 400 });
+          climbExists = true;
+        } else {
+          if (!climbExists) {
+            throw { response: { status: 200, errors: [{ extensions: { code: 'CLIMB_NOT_FOUND' } }] } };
+          }
+          sentReferences.push(tableName);
+        }
+        return {} as T;
+      };
+      await drainMutationQueue(db, { invalidateQueries: vi.fn() }, graphqlFetch, options);
+      expect(sentReferences).toEqual([]);
+      expect(
+        await db.getFirstAsync(
+          "SELECT status, depends_on_key FROM pending_mutations WHERE idempotency_key = 'reference'",
+        ),
+      ).toEqual({ status: 'pending', depends_on_key: 'create' });
+      rejectCreate = false;
+      await enqueue(db, 'board_climbs', 'create', { uuid: 'climb', boardType: 'spray' }, 'create', {
+        entityKey,
+        reviveDeadLetter: true,
+      });
+      await drainMutationQueue(db, { invalidateQueries: vi.fn() }, graphqlFetch, options);
+      expect(sentReferences).toEqual([tableName]);
+      expect(await db.getAllAsync('SELECT * FROM pending_mutations')).toEqual([]);
+    },
+  );
+
+  it('restores reference dependencies when a deterministic add is revived', async () => {
+    await enqueue(db, 'user_favorites', 'create', { climbUuid: 'climb' }, 'favorite');
+    const favorite = (await peekPending(db))[0];
+    await markDeadLetter(db, favorite.id, 'Needs repair');
+    await enqueue(db, 'board_climbs', 'create', { uuid: 'climb', boardType: 'spray' }, 'create', { entityKey });
+    await enqueue(db, 'user_favorites', 'create', { climbUuid: 'climb' }, 'favorite', { reviveDeadLetter: true });
+    expect((await peekPending(db)).map((mutation) => mutation.idempotency_key)).toEqual(['create']);
   });
 });
 

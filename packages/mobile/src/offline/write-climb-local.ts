@@ -232,12 +232,28 @@ export async function updateClimbLocal(
       if (failedWrite) {
         const original = JSON.parse(failedWrite.payload) as Record<string, unknown>;
         const supplied = Object.fromEntries(Object.entries(input).filter(([, content]) => content !== undefined));
+        let repairedKey = failedWrite.idempotency_key;
+        if (failedWrite.operation === 'update') {
+          // A dead letter may already have landed remotely before its canonical
+          // read failed. Its receipt must keep identifying that original payload.
+          // Saving a repaired form is a NEW operation; move its dependents with
+          // it atomically so they cannot overtake the corrected climb write.
+          repairedKey = `climb:update:${randomUUID()}`;
+          await transaction.runAsync('UPDATE pending_mutations SET depends_on_key = ? WHERE depends_on_key = ?', [
+            repairedKey,
+            failedWrite.idempotency_key,
+          ]);
+          await transaction.runAsync(
+            "UPDATE pending_mutations SET idempotency_key = ? WHERE idempotency_key = ? AND status = 'dead_letter'",
+            [repairedKey, failedWrite.idempotency_key],
+          );
+        }
         await enqueue(
           transaction,
           'board_climbs',
           failedWrite.operation,
           { ...original, ...supplied, sprayWallUuid: wall.wallUuid },
-          failedWrite.idempotency_key,
+          repairedKey,
           { entityKey, reviveDeadLetter: true },
         );
       }

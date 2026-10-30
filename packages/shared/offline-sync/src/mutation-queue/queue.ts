@@ -69,10 +69,27 @@ export async function enqueue(
 ): Promise<EnqueueResult> {
   if (options.dependsOnKey === idempotencyKey) throw new Error('A queued write cannot depend on itself');
   const serializedPayload = JSON.stringify(payload);
+  // Reference writes must wait for an offline climb too: CLIMB_NOT_FOUND is
+  // otherwise treated as a deleted climb and silently acknowledged by the drain.
+  // Resolve inside the INSERT/UPDATE so even callers without an enclosing
+  // transaction cannot miss a climb write committed before this reference.
+  const referenceEntityKey =
+    operation === 'create' &&
+    (tableName === 'user_favorites' || tableName === 'playlist_climbs') &&
+    typeof payload.climbUuid === 'string'
+      ? climbMutationEntityKey('spray', payload.climbUuid)
+      : null;
+  const dependencySql = referenceEntityKey
+    ? `COALESCE(?, (SELECT idempotency_key FROM pending_mutations
+         WHERE table_name = 'board_climbs' AND entity_key = ? ORDER BY id DESC LIMIT 1))`
+    : '?';
+  const dependencyParams = referenceEntityKey
+    ? [options.dependsOnKey ?? null, referenceEntityKey]
+    : [options.dependsOnKey ?? null];
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key, entity_key, depends_on_key)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [tableName, operation, serializedPayload, idempotencyKey, options.entityKey ?? null, options.dependsOnKey ?? null],
+     VALUES (?, ?, ?, ?, ?, ${dependencySql})`,
+    [tableName, operation, serializedPayload, idempotencyKey, options.entityKey ?? null, ...dependencyParams],
   );
   // Anything other than an explicit `changes: 0` counts as inserted. A driver
   // (or test double) that doesn't report `changes` degrades to losing the
@@ -99,10 +116,10 @@ export async function enqueue(
   // never touch a row a concurrent drain has in flight.
   const revive = await db.runAsync(
     `UPDATE pending_mutations
-     SET table_name = ?, operation = ?, payload = ?, entity_key = ?, depends_on_key = ?, status = 'pending',
+     SET table_name = ?, operation = ?, payload = ?, entity_key = ?, depends_on_key = ${dependencySql}, status = 'pending',
          retry_count = 0, last_error = NULL, created_at = datetime('now')
      WHERE idempotency_key = ? AND status = 'dead_letter'`,
-    [tableName, operation, serializedPayload, options.entityKey ?? null, options.dependsOnKey ?? null, idempotencyKey],
+    [tableName, operation, serializedPayload, options.entityKey ?? null, ...dependencyParams, idempotencyKey],
   );
   // Same defensive read as the INSERT above: a driver that reports no `changes`
   // count degrades to "revived", matching the row state we just wrote.
@@ -212,10 +229,15 @@ export async function markDeadLetter(db: SqlExecutor, id: number, error: string)
  * then dead-letter as CLIMB_NOT_FOUND. A row being drained stays `pending` until
  * it is marked completed, so an in-flight send counts too. Dead letters do not.
  */
-export async function hasPendingTickForClimb(db: SqlExecutor, climbUuid: string): Promise<boolean> {
+export async function hasPendingTickForClimb(
+  db: SqlExecutor,
+  climbUuid: string,
+  options: { includeDeadLetters?: boolean } = {},
+): Promise<boolean> {
   const row = await db.getFirstAsync<{ found: number }>(
     `SELECT 1 AS found FROM pending_mutations
-     WHERE table_name = 'boardsesh_ticks' AND operation = 'create' AND status = 'pending'
+     WHERE table_name = 'boardsesh_ticks' AND operation = 'create'
+       AND ${options.includeDeadLetters ? "status IN ('pending', 'dead_letter')" : "status = 'pending'"}
        AND json_extract(payload, '$.climbUuid') = ?
      LIMIT 1`,
     [climbUuid],

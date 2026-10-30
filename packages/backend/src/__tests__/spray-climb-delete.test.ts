@@ -78,6 +78,7 @@ vi.mock('../services/inferred-sessions/reconcile', async (importOriginal) => {
 });
 
 import { db } from '../db/client';
+import { notifyClimbRevalidated } from '../lib/web-revalidate';
 import { sprayWallPhotoKey } from '../handlers/spray-wall-photos';
 import { sprayWallMutations, sprayWallQueries } from '../graphql/resolvers/board/spray-walls';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
@@ -418,7 +419,7 @@ beforeEach(async () => {
                    "playlist_climbs", "board_climb_popularity", "board_climb_embeddings", "board_climb_similar",
                    "board_climb_grades", "board_climb_send_stats", "board_climb_events",
                    "climb_stats_recompute_pending", "board_climb_ratings", "board_beta_links", "sync_deletions",
-                   "playlist_ownership"
+                   "playlist_ownership", "climb_mutation_receipts"
     RESTART IDENTITY CASCADE
   `);
   await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
@@ -1097,5 +1098,152 @@ describe('references written after or during the delete', () => {
     expect(deleteState).toBe('parked');
     expect(await climbExists(climbUuid)).toBe(false);
     expect(await playlistEntriesOn(climbUuid)).toBe(0);
+  });
+});
+
+describe('offline climb mutation receipts', () => {
+  it('keeps every publish read on the receipt transaction connection', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const uuid = await setClimb(wall, holdIds, STRANGER, true);
+    await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid = ${uuid}`);
+    // The held receipt transaction already owns a pool connection. Escaping to
+    // the global pool can deadlock when concurrent reconnects occupy the rest.
+    const globalSelect = vi.spyOn(db, 'select').mockImplementation(() => {
+      throw new Error('Receipt-backed edit escaped its transaction connection');
+    });
+    // Revalidation is the first post-commit effect. Profile reads after commit
+    // are free to use the global pool again.
+    vi.mocked(notifyClimbRevalidated).mockImplementationOnce(async () => {
+      globalSelect.mockRestore();
+    });
+    try {
+      await expect(
+        climbMutations.updateClimb(
+          {},
+          {
+            input: {
+              uuid,
+              boardType: 'spray',
+              clientMutationId: uuidv4(),
+              isDraft: false,
+              userGrade: '6b/V4',
+            },
+          },
+          ctxFor(STRANGER),
+        ),
+      ).resolves.toMatchObject({ uuid, isDraft: false });
+    } finally {
+      globalSelect.mockRestore();
+    }
+  });
+
+  it('keeps only the reserved identity when its account is erased', async () => {
+    const userId = `receipt-owner-${uuidv4()}`;
+    await insertUser(userId);
+    const operationKey = `create:${uuidv4()}`;
+    await db.execute(sql`INSERT INTO climb_mutation_receipts (operation_key, climb_uuid, board_type, user_id)
+      VALUES (${operationKey}, ${uuidv4()}, 'spray', ${userId})`);
+    await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM climb_mutation_receipts
+      WHERE operation_key = ${operationKey} AND user_id IS NULL`),
+    ).toBe(1);
+  });
+
+  it('rolls back the operation receipt when the edit is rejected', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const uuid = await setClimb(wall, holdIds, OWNER, true);
+    const input = { uuid, boardType: 'spray', clientMutationId: uuidv4() };
+    await expect(
+      climbMutations.updateClimb({}, { input: { ...input, frames: 'p999999999r1' } }, ctxFor(OWNER)),
+    ).rejects.toThrow();
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM climb_mutation_receipts
+      WHERE operation_key = ${`update:${input.clientMutationId}`}`),
+    ).toBe(0);
+    await expect(
+      climbMutations.updateClimb({}, { input: { ...input, name: 'Valid edit' } }, ctxFor(OWNER)),
+    ).resolves.toMatchObject({ uuid });
+  });
+
+  it('reserves a deleted create UUID after its sync tombstone has been pruned', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const input = {
+      uuid: uuidv4().replace(/-/g, '').toUpperCase(),
+      boardType: 'spray',
+      layoutId: wall.layoutId,
+      sprayWallUuid: wall.uuid,
+      name: 'Offline draft',
+      isDraft: true,
+      angle: ANGLE,
+      frames: holdIds.map((holdId, index) => `p${holdId}r${[1, 2, 3][index] ?? 2}`).join(''),
+    };
+    await climbMutations.saveClimb({}, { input }, ctxFor(OWNER));
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: input.uuid, boardType: 'spray', name: 'Later edit' } },
+      ctxFor(OWNER),
+    );
+    expect(await climbMutations.saveClimb({}, { input }, ctxFor(OWNER))).toMatchObject({
+      uuid: input.uuid,
+      replayed: true,
+    });
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM board_climbs WHERE uuid = ${input.uuid} AND name = 'Later edit'`),
+    ).toBe(1);
+    await climbMutations.deleteDraftClimb({}, { uuid: input.uuid, boardType: 'spray' }, ctxFor(OWNER));
+    await db.execute(sql`DELETE FROM sync_deletions WHERE record_id = ${input.uuid}`);
+    await expect(climbMutations.saveClimb({}, { input }, ctxFor(OWNER))).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_NOT_FOUND' },
+    });
+    expect(await climbExists(input.uuid)).toBe(false);
+  });
+
+  it('acknowledges a publish replay after expiry and preserves a later edit', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const uuid = await setClimb(wall, holdIds, OWNER, true);
+    const input = { uuid, boardType: 'spray', clientMutationId: uuidv4(), isDraft: false, name: 'Published offline' };
+    const first = await climbMutations.updateClimb({}, { input }, ctxFor(OWNER));
+    await climbMutations.updateClimb({}, { input: { uuid, boardType: 'spray', name: 'Newer edit' } }, ctxFor(OWNER));
+    await db.execute(sql`UPDATE board_climbs SET published_at = now() - interval '25 hours' WHERE uuid = ${uuid}`);
+    expect(await climbMutations.updateClimb({}, { input }, ctxFor(OWNER))).toEqual(first);
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM board_climbs WHERE uuid = ${uuid} AND name = 'Newer edit'`),
+    ).toBe(1);
+    await expect(
+      climbMutations.updateClimb({}, { input: { ...input, clientMutationId: uuidv4() } }, ctxFor(OWNER)),
+    ).rejects.toMatchObject({ extensions: { code: 'CLIMB_EDIT_WINDOW_EXPIRED' } });
+  });
+
+  it('serializes concurrent retries and acknowledges an archived wall without editing it', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const uuid = await setClimb(wall, holdIds, OWNER, true);
+    const input = { uuid, boardType: 'spray', clientMutationId: uuidv4(), name: 'One edit' };
+    const results = await Promise.all([
+      climbMutations.updateClimb({}, { input }, ctxFor(OWNER)),
+      climbMutations.updateClimb({}, { input }, ctxFor(OWNER)),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS n FROM climb_mutation_receipts WHERE operation_key = ${`update:${input.clientMutationId}`}`,
+      ),
+    ).toBe(1);
+    await db.execute(sql`UPDATE spray_walls SET archived_at = now() WHERE board_uuid = ${wall.uuid}`);
+    expect(await climbMutations.updateClimb({}, { input }, ctxFor(OWNER))).toEqual(results[0]);
+  });
+
+  it('does not let a receipt bypass ownership or revoked wall access', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const uuid = await setClimb(wall, holdIds, STRANGER, true);
+    const input = { uuid, boardType: 'spray', clientMutationId: uuidv4(), name: 'My draft' };
+    await climbMutations.updateClimb({}, { input }, ctxFor(STRANGER));
+    await expect(climbMutations.updateClimb({}, { input }, ctxFor(OWNER))).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_ID_CONFLICT' },
+    });
+    await db.execute(sql`UPDATE user_boards SET is_public = false, is_unlisted = false WHERE uuid = ${wall.uuid}`);
+    await expect(climbMutations.updateClimb({}, { input }, ctxFor(STRANGER))).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_NOT_FOUND' },
+    });
   });
 });

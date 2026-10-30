@@ -31,6 +31,33 @@ function pendingMutation(overrides: Partial<PendingMutation>): PendingMutation {
   };
 }
 
+describe('board_climbs update replay identity', () => {
+  it('keeps one operation identity across retries and distinguishes subsequent edits', async () => {
+    const graphqlFetch = vi.fn().mockResolvedValue({});
+    const mutation = pendingMutation({
+      table_name: 'board_climbs',
+      idempotency_key: 'climb:update:f0df2f9c-bd35-4496-b812-17132032595e',
+      payload: JSON.stringify({ uuid: 'climb-1', boardType: 'spray', name: 'New name' }),
+    });
+
+    await processMutation(mutation, graphqlFetch);
+    await processMutation({ ...mutation, retry_count: 1 }, graphqlFetch);
+    await processMutation({ ...mutation, idempotency_key: '03e26148-2c0a-4ade-904d-edc4df049c9b' }, graphqlFetch);
+
+    expect(graphqlFetch.mock.calls[0][0]).toContain('mutation UpdateClimb');
+    expect(graphqlFetch.mock.calls[0][1]).toEqual({
+      input: {
+        uuid: 'climb-1',
+        boardType: 'spray',
+        name: 'New name',
+        clientMutationId: 'f0df2f9c-bd35-4496-b812-17132032595e',
+      },
+    });
+    expect(graphqlFetch.mock.calls[1][1]).toEqual(graphqlFetch.mock.calls[0][1]);
+    expect(graphqlFetch.mock.calls[2][1].input.clientMutationId).toBe('03e26148-2c0a-4ade-904d-edc4df049c9b');
+  });
+});
+
 describe('boardsesh_ticks update dispatch', () => {
   it('whitelists UpdateTickInput fields: uuid rides as a variable, stray keys are dropped', async () => {
     const graphqlFetch = vi.fn().mockResolvedValue({});

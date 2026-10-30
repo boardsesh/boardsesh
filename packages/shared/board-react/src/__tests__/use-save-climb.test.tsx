@@ -80,6 +80,48 @@ describe('useSaveClimb (shared)', () => {
     expect(showError).toHaveBeenCalledWith('saveClimbFailed');
   });
 
+  it('saves the current form after recovering a create whose response was lost', async () => {
+    const executeWs = vi
+      .fn()
+      .mockResolvedValueOnce({ saveClimb: { uuid: 'stable-uuid', replayed: true } })
+      .mockResolvedValueOnce({ updateClimb: { uuid: 'stable-uuid', isDraft: true } });
+    const afterClimbWrite = vi.fn();
+    const { wrapper } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs, afterClimbWrite });
+    const { result } = renderHook(() => useSaveClimb('spray'), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ ...climbOptions(), uuid: 'stable-uuid', name: 'Edited after timeout' });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(executeWs.mock.calls[1][0].variables.input).toMatchObject({
+      uuid: 'stable-uuid',
+      boardType: 'spray',
+      name: 'Edited after timeout',
+    });
+    expect(executeWs.mock.calls[1][0].variables.input).not.toHaveProperty('layoutId');
+    expect(afterClimbWrite).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toEqual({ uuid: 'stable-uuid', isDraft: true });
+  });
+
+  it('keeps recovery failed when the current form cannot be saved', async () => {
+    const executeWs = vi
+      .fn()
+      .mockResolvedValueOnce({ saveClimb: { uuid: 'stable-uuid', replayed: true } })
+      .mockRejectedValueOnce(new Error('The 24 hour edit window has expired'));
+    const afterClimbWrite = vi.fn();
+    const { wrapper } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs, afterClimbWrite });
+    const { result } = renderHook(() => useSaveClimb('spray'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ ...climbOptions(), uuid: 'stable-uuid', name: 'Unsaved edit' });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(afterClimbWrite).not.toHaveBeenCalled();
+    expect(result.current.data).toBeUndefined();
+  });
+
   it('suppresses showError when the failure is a duplicate-climb rejection', async () => {
     const duplicate = new GraphQLOperationError([
       { message: 'dup', extensions: { code: 'CLIMB_IS_DUPLICATE', existingClimbUuid: 'x' } },
