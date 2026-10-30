@@ -857,7 +857,7 @@ describe('draft deletion tombstones follow the board draft audience', () => {
 
   it('migration 0283 retains catalogue draft scoping and pinned search paths', async () => {
     const migration = readFileSync(
-      new URL('../../../db/drizzle/0283_shared_spray_drafts.sql', import.meta.url),
+      new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
       'utf8',
     );
     for (const statement of migration.split('--> statement-breakpoint')) {

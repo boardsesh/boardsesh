@@ -1996,6 +1996,20 @@
       "when": 1793164265387,
       "tag": "0284_session_workouts",
       "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1793343314383,
+      "tag": "0285_shared_spray_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1793343314384,
+      "tag": "0286_offline_climb_identity",
+      "breakpoints": true
     }
   ]
 }

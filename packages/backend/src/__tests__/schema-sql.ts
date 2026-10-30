@@ -5,7 +5,7 @@
 
 import { readFileSync } from 'node:fs';
 const sharedSprayDraftsSchema = readFileSync(
-  new URL('../../../db/drizzle/0283_shared_spray_drafts.sql', import.meta.url),
+  new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
 );
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
