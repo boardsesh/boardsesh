@@ -919,7 +919,9 @@ per sheet so an account change resets each draft.
   `fullScreenModal` would snapshot the native tab container (rule 2).
 - **Account** (`/account`) is the native iOS avatar sheet. Settings and Edit profile
   push inside its own stack; Back returns to the account menu. Android and the
-  browser retain the side drawer. User search, connections, profiles and Settings
+  browser retain the side drawer. Its opener ignores taps while either menu is
+  already in the active root stack and uses queued `router.navigate`, so rapid
+  avatar taps reuse one route before it mounts (#7124). User search, connections, profiles and Settings
   opened directly from a tab resolve into that tab's stack, preserving the tab bar.
   My playlists closes the menu first, then uses `router.navigate` to reach Discover's
   playlist list. After the menu has popped, `dismissTo` from another tab targets the
