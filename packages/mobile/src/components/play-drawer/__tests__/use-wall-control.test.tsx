@@ -61,7 +61,15 @@ const modelFor = (
   state: WallControlModel['state'],
   tapAction: WallControlAction,
   extra: Partial<WallControlModel> = {},
-) => ({ ...EMPTY_WALL_CONTROL, state, tapAction, ...extra }) as WallControlModel;
+) =>
+  ({
+    ...EMPTY_WALL_CONTROL,
+    state,
+    tapAction,
+    // The resolver's rule: a bulb never stops driving.
+    bulbTapAction: tapAction === 'stop_driving' ? 'disconnect' : tapAction,
+    ...extra,
+  }) as WallControlModel;
 
 describe('useWallControl', () => {
   beforeEach(() => {
@@ -121,6 +129,17 @@ describe('useWallControl', () => {
     expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
     expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_driving', control: 'button' });
     resetDriveModeForTests();
+  });
+
+  // Review: a bulb draws no frost, so a tap there disconnects, as it always has.
+  it.each(['bulb', 'mini_bar'] as const)('lets go of the board from the %s while driving', (control) => {
+    resetDriveModeForTests();
+    const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    act(() => hook.result.current.press(control));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control });
   });
 
   // A double tap on the frost must not stop driving and then let go of a crew's board.

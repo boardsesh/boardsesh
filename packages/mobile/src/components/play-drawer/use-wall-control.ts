@@ -108,13 +108,15 @@ export function useWallControl({
     // the wall (it now reads Disconnect board). Drop it.
     const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
-    trackWallControlTapped({ state: current.state, action: current.tapAction, control });
-    if (current.state === 'on_wall_unlinked' && current.tapAction !== 'noop') {
+    // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
+    const action = control === 'button' ? current.tapAction : current.bulbTapAction;
+    trackWallControlTapped({ state: current.state, action, control });
+    if (current.state === 'on_wall_unlinked' && action !== 'noop') {
       hapticMedium();
       run.lightAgain();
       return;
     }
-    switch (current.tapAction) {
+    switch (action) {
       case 'disconnect':
         // Letting go of the board is the one tap that ends something, so it
         // buzzes like a warning; a screen reader hears it once the link drops.

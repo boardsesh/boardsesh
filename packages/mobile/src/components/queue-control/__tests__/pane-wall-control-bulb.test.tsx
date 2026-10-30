@@ -62,6 +62,8 @@ const LIT: WallControlModel = {
   labelKey: 'disconnectBoard',
   a11yValueKey: 'youHaveBoardLit',
   a11yHintKey: 'litHint',
+  bulbTapAction: 'disconnect',
+  bulbA11yHintKey: 'litHint',
   look: 'lit',
   selected: true,
 };
@@ -86,6 +88,18 @@ describe('PaneWallControlBulb', () => {
     fireEvent.contextMenu(bulb);
     expect(press).toHaveBeenCalledOnce();
     expect(longPress).toHaveBeenCalledOnce();
+  });
+
+  // #7113: a bulb draws no frost, so while driving it still says a tap disconnects.
+  it('says a tap disconnects while driving, not that it stops', () => {
+    const { getByRole } = renderBulb({
+      ...LIT,
+      driving: true,
+      tapAction: 'stop_driving',
+      labelKey: 'youAreDriving',
+      a11yHintKey: 'stopDrivingHint',
+    });
+    expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.litHint');
   });
 
   it.each([

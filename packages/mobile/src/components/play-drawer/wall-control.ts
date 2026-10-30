@@ -406,7 +406,14 @@ export type WallControlModel = {
   holderFace: WallControlFace | null;
   /** The gym board a tap moves to, for `move_to_board`. */
   gymBoardName: string | null;
+  /** What a tap on the wall button (full width or compact) does. */
   tapAction: WallControlAction;
+  /**
+   * What a tap on a bulb does: the first row's bulb, or the MiniPlayer's
+   * standing in for it. A bulb draws no frost, so a stop there would be an
+   * invisible first tap; while driving a bulb tap disconnects, as it always has.
+   */
+  bulbTapAction: WallControlAction;
   /**
    * A swipe on the wall button: `drive` wherever a press puts the climb on
    * this phone's board (no link, a preview, Sam's board, a dark climb, on the
@@ -419,6 +426,8 @@ export type WallControlModel = {
   labelKey: WallControlLabelKey | null;
   a11yValueKey: WallControlA11yValueKey | null;
   a11yHintKey: WallControlA11yHintKey | null;
+  /** The hint for a bulb's tap (`bulbTapAction`). */
+  bulbA11yHintKey: WallControlA11yHintKey | null;
   bulbValueKey: WallControlBulbValueKey;
   /** The bulb's look; the wall button reads `lit` as its amber fill. */
   look: WallBulbLook;
@@ -559,6 +568,11 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     (state === 'put_on_wall' && !onCrewGymBoard && labelKey !== 'setActive');
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
+  const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
+  const a11yHintKey =
+    state === 'on_wall_unlinked' && tapAction !== 'noop'
+      ? 'lightAgainHint'
+      : hintKeyOf(tapAction, holderName, onOtherPhone);
   let a11yValueKey: WallControlA11yValueKey | null = null;
   if (labelKey === null) a11yValueKey = null;
   else if (drivingLit) a11yValueKey = 'drivingEveryClimb';
@@ -584,10 +598,9 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     longPress: input.localConnected && !onCrewGymBoard ? 'sheet' : null,
     labelKey,
     a11yValueKey,
-    a11yHintKey:
-      state === 'on_wall_unlinked' && tapAction !== 'noop'
-        ? 'lightAgainHint'
-        : hintKeyOf(tapAction, holderName, onOtherPhone),
+    a11yHintKey,
+    bulbTapAction,
+    bulbA11yHintKey: bulbTapAction === tapAction ? a11yHintKey : hintKeyOf(bulbTapAction, holderName, onOtherPhone),
     bulbValueKey,
     look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
     selected: state === 'lit',
@@ -606,11 +619,13 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   holderFace: null,
   gymBoardName: null,
   tapAction: 'noop',
+  bulbTapAction: 'noop',
   swipeAction: null,
   longPress: null,
   labelKey: null,
   a11yValueKey: null,
   a11yHintKey: null,
+  bulbA11yHintKey: null,
   bulbValueKey: 'valueOff',
   look: 'off',
   selected: false,

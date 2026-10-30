@@ -456,7 +456,7 @@ Allowed over the board, and nothing else:
 
 ![The wall button in each state](images/wall-button-states.png)
 
-The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row. The lit shots still read "Lit on the wall"; after the phone test that state says "You have the board", same amber and face.
+The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row. The lit shots still read "Lit on the wall"; that state now says "Disconnect board" (or "You are driving the wall" under the frost, #7113), same face.
 
 These shots predate the wall button: they show round 2's "Lit on the wall" text.
 

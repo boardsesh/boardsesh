@@ -732,7 +732,6 @@ describe('resolveWallControl: driving the wall', () => {
     ["put_on_wall on Sam's board", { ...SAMS, commitButton: 'putOnWall' }],
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
-    ['lit', { ...MINE, displayedLit: true }],
     ["crew (Sam's board)", { ...SAMS, displayedLit: true }],
   ];
   const cases: [string, Partial<WallControlInput>, boolean, boolean, DriveMode, boolean][] = [];
@@ -759,18 +758,6 @@ describe('resolveWallControl: driving the wall', () => {
         driveMode,
         drivingStopped: stopped,
       });
-      if (name === 'lit') {
-        const driving = (driveMode === 'live' || (lightOnSwipe && !inCrew)) && !stopped;
-        expect(model).toMatchObject({
-          driving,
-          tapAction: driving ? 'stop_driving' : 'disconnect',
-          labelKey: driving ? 'youAreDriving' : 'disconnectBoard',
-          a11yValueKey: driving ? 'drivingEveryClimb' : 'youHaveBoardLit',
-          a11yHintKey: driving ? 'stopDrivingHint' : 'litHint',
-          swipeAction: !driving && driveMode !== 'arming' ? 'drive' : null,
-        });
-        return;
-      }
       expect(model.driving).toBe(false);
       if (name.startsWith('crew')) {
         // A relay to Sam's board: Put on board, never a swipe.
@@ -782,8 +769,86 @@ describe('resolveWallControl: driving the wall', () => {
     },
   );
 
+  // Lit on this phone's link: whether it drives, row by row.
+  // [crew, light on swipe, drive phase, stopped, driving]
+  it.each<[boolean, boolean, DriveMode, boolean, boolean]>([
+    [false, true, 'off', false, true],
+    [false, true, 'off', true, false],
+    [false, true, 'arming', false, true],
+    [false, true, 'arming', true, false],
+    [false, true, 'live', false, true],
+    [false, true, 'live', true, false],
+    [false, false, 'off', false, false],
+    [false, false, 'off', true, false],
+    [false, false, 'arming', false, false],
+    [false, false, 'arming', true, false],
+    [false, false, 'live', false, true],
+    [false, false, 'live', true, false],
+    [true, true, 'off', false, false],
+    [true, true, 'off', true, false],
+    [true, true, 'arming', false, false],
+    [true, true, 'arming', true, false],
+    [true, true, 'live', false, true],
+    [true, true, 'live', true, false],
+    [true, false, 'off', false, false],
+    [true, false, 'off', true, false],
+    [true, false, 'arming', false, false],
+    [true, false, 'arming', true, false],
+    [true, false, 'live', false, true],
+    [true, false, 'live', true, false],
+  ])(
+    'lit on your link, crew %s, light on swipe %s, drive %s, stopped %s: driving %s',
+    (inCrew, lightOnSwipe, driveMode, stopped, driving) => {
+      const model = resolveWallControl({
+        ...FREE,
+        ...MINE,
+        displayedLit: true,
+        navigationCommits: lightOnSwipe && !inCrew,
+        driveMode,
+        drivingStopped: stopped,
+      });
+      expect(model).toMatchObject(
+        driving
+          ? {
+              driving: true,
+              tapAction: 'stop_driving',
+              bulbTapAction: 'disconnect',
+              labelKey: 'youAreDriving',
+              a11yValueKey: 'drivingEveryClimb',
+              a11yHintKey: 'stopDrivingHint',
+              bulbA11yHintKey: 'litHint',
+              swipeAction: null,
+            }
+          : {
+              driving: false,
+              tapAction: 'disconnect',
+              bulbTapAction: 'disconnect',
+              labelKey: 'disconnectBoard',
+              a11yValueKey: 'youHaveBoardLit',
+              a11yHintKey: 'litHint',
+              bulbA11yHintKey: 'litHint',
+              swipeAction: driveMode === 'arming' ? null : 'drive',
+            },
+      );
+    },
+  );
+
+  // Sam holds the board and the climb on screen is theirs: nothing to relay, so
+  // the label says whose board it is (one of the last status labels).
+  it("says On Sam's board, with no tap and no swipe, when there is nothing to relay", () => {
+    expect(resolveWallControl({ ...FREE, ...SAMS, pressAction: 'noop', displayedLit: true })).toMatchObject({
+      state: 'crew',
+      tapAction: 'noop',
+      bulbTapAction: 'noop',
+      labelKey: 'onBoard',
+      a11yValueKey: 'holderHasBoard',
+      swipeAction: null,
+      driving: false,
+    });
+  });
+
   it('covers every state, crew, setting, drive phase and stop', () => {
-    expect(cases).toHaveLength(7 * 2 * 2 * 3 * 2);
+    expect(cases).toHaveLength(6 * 2 * 2 * 3 * 2);
   });
 
   it.each([

@@ -37,7 +37,7 @@ function WallControlBulbComponent({ model, showFace = true, onPress, onLongPress
         ready={model.look === 'ready'}
         accessibilitySelected={model.selected}
         accessibilityValueText={text.bulbValue}
-        accessibilityTapHint={text.accessibilityHint}
+        accessibilityTapHint={text.bulbAccessibilityHint}
         isScanning={model.pending}
         writing={model.writing}
         autoDisconnectWarning={model.autoDisconnectWarning}

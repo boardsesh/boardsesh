@@ -236,7 +236,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
   no new account is enrolled, and every enrolled one stops seeing the Climbs
   card and the first-connect confirmation. (The play view's "Light it on the
-  board" pill went in #7000: the player's Connect board button does that job
+  board" pill went in #7000: the player's wall button (Put on board) does that job
   in both arms.) The test deliberately assigns arms WITHOUT a PostHog flag: a
   first launch has no cached flags, so a flag-driven arm could change under a
   climber the moment it resolved. The arm is

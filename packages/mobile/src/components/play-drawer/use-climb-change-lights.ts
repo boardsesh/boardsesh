@@ -9,7 +9,9 @@ export type ClimbChangeKind = 'swipe' | 'tap';
 /**
  * Whether a change of climb of this kind lights the wall right now
  * (`climbChangeStaysViewOnly`, #7113): driving the wall, or solo with the
- * matching setting on and no press-to-stop on this link.
+ * matching setting on and no press-to-stop on this link. Today only the
+ * MiniPlayer's ⏮ and ⏭ read it (`swipe`); `tap` is for the list taps #7113
+ * PR 2 moves onto it.
  */
 export function useClimbChangeLights(kind: ClimbChangeKind): boolean {
   const drivePhase = useDriveModePhase();

@@ -67,6 +67,8 @@ const LIT: WallControlModel = {
   labelKey: 'disconnectBoard',
   a11yValueKey: 'youHaveBoardLit',
   a11yHintKey: 'litHint',
+  bulbTapAction: 'disconnect',
+  bulbA11yHintKey: 'litHint',
   bulbValueKey: 'youHaveBoardLit',
   look: 'lit',
   selected: true,

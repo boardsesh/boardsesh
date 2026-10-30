@@ -21,7 +21,8 @@ import { hapticSelection } from '../../lib/haptics';
 import { trackQueueNavigation } from '../../lib/queue-navigation-analytics';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
-import { getSwipeNavigationTarget } from '../play-drawer/play-drawer-navigation';
+import { getViewOnlyPreviewNavigationTarget } from '../play-drawer/play-drawer-navigation';
+import { useClimbChangeLights } from '../play-drawer/use-climb-change-lights';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 
 export type MiniPlayerNavigation = {
@@ -38,8 +39,10 @@ export type MiniPlayerNavigation = {
  * - Solo, with Light on swipe on: the queue's own `previousClimb` / `nextClimb`,
  *   the walk the player, the rest timer and the workout runner all make (Up next
  *   first, then the list). The board lights the new climb.
- * - In a crew, or with Light on swipe off: the player opens on that climb as a
- *   preview, so one tap never moves anybody's wall (`getSwipeNavigationTarget`).
+ * - In a crew, with Light on swipe off, or after a press on "You are driving
+ *   the wall" stopped driving on this link (#7113): the player opens on that
+ *   climb as a preview, so one tap never moves anybody's wall
+ *   (`useClimbChangeLights('swipe')`, the player's own rule).
  * - At the end of a list, Next opens the player on the climb, where Next opens
  *   the list's end card ("Keep going with your queue"): that choice needs the
  *   card, which the bar has no room for.
@@ -57,7 +60,9 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const { queue, currentClimbQueueItem, historyCount } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const inSharedSession = useIsSharedSession();
+  // The setting, for Queue Navigation; whether a step lights reads the one rule.
   const [lightOnSwipe] = useSetting('lightOnSwipe');
+  const stepLights = useClimbChangeLights('swipe');
   const { openPlayDrawer } = useDrawerHost();
   const { data: activeBoard } = useActiveBoard();
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
@@ -90,12 +95,11 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
     (targetItem: ClimbQueueItem | null, navigateQueue: () => void, direction: QueueNavigationDirection) => {
       if (!targetItem) return;
       hapticSelection();
-      const target = getSwipeNavigationTarget({
+      const target = getViewOnlyPreviewNavigationTarget({
         previewItem: null,
         previewSuggestionSource: null,
         targetItem,
-        lightOnSwipe,
-        inSharedSession,
+        forceViewOnly: !stepLights,
       });
       const trackStep = (outcome: 'moved' | 'preview') =>
         trackQueueNavigation({
@@ -120,7 +124,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       navigateQueue();
       trackStep('moved');
     },
-    [lightOnSwipe, inSharedSession, openPlayDrawer, playlistSuggestionSource, boardType, layoutId],
+    [stepLights, lightOnSwipe, inSharedSession, openPlayDrawer, playlistSuggestionSource, boardType, layoutId],
   );
   const onPrevious = useCallback(() => move(prevItem, previousClimb, 'previous'), [move, prevItem, previousClimb]);
   const onNext = useCallback(() => {

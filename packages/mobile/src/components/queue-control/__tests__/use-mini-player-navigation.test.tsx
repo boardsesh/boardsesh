@@ -49,6 +49,7 @@ vi.mock('@boardsesh/play-view', () => ({
   resolveTrackPosition: () => null,
 }));
 
+import { resetDriveModeForTests, stopDrivingForLink } from '../../play-drawer/drive-mode-store';
 import { useMiniPlayerNavigation } from '../use-mini-player-navigation';
 
 function makeItem(uuid: string): ClimbQueueItem {
@@ -95,6 +96,20 @@ describe('useMiniPlayerNavigation', () => {
     expect(queue.nextClimb).toHaveBeenCalledTimes(1);
     expect(queue.previousClimb).toHaveBeenCalledTimes(1);
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  // #7113: a press on "You are driving the wall" stopped driving on this link;
+  // ⏮ and ⏭ preview, as a swipe in the player does, until the link drops.
+  it('previews after a press stopped driving, solo with Light on swipe on', () => {
+    stopDrivingForLink();
+    try {
+      const { result } = renderHook(() => useMiniPlayerNavigation());
+      act(() => result.current.onNext());
+      expect(queue.nextClimb).not.toHaveBeenCalled();
+      expect(drawer.openPlayDrawer).toHaveBeenCalledOnce();
+    } finally {
+      resetDriveModeForTests();
+    }
   });
 
   it('reports each move once, as a MiniPlayer button press', () => {

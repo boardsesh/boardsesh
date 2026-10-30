@@ -686,11 +686,11 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Tocca Metti sul pannello, scegli il pannello e il tuo blocco si illumina."
+        "subtitle": "Tocca Illumina il pannello, scegli il pannello e il tuo blocco si illumina."
       },
       "connect": {
         "title": "Connetti",
-        "p1": "In un blocco, tocca Metti sul pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
+        "p1": "In un blocco, tocca Illumina il pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
         "shotAlt": "Il foglio Seleziona pannello",
         "shotCaption": "Segnale più forte per primo, con i numeri di serie.",
@@ -707,7 +707,7 @@
         "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
         "row4": "Illumina la presa sopra. Solo MoonBoard.",
         "p2": "Disconnessione automatica, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu che apre la lampadina della barra in alto. La disconnessione automatica libera il pannello dopo 30 secondi di inattività. Disattiva entrambe le opzioni di illuminazione e sfogliare non cambierà più il blocco in parete.",
-        "p3": "Senza pannello connesso, Metti sul pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
+        "p3": "Senza pannello connesso, Illumina il pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
       },
       "failed": {
         "title": "Quando non si connette",

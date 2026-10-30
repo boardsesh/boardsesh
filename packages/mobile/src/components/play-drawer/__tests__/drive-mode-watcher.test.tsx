@@ -12,6 +12,7 @@ type Reads = {
   sessionId: string | null;
   boardId: number | null;
   isAuthenticated: boolean;
+  lightOnSwipe: boolean;
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
@@ -21,6 +22,7 @@ const reads = vi.hoisted((): { current: Reads } => ({
     sessionId: null,
     boardId: null,
     isAuthenticated: true,
+    lightOnSwipe: true,
   },
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -35,6 +37,9 @@ vi.mock('../../../providers/queue-provider', () => ({
 }));
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: reads.current.boardId }),
+}));
+vi.mock('../../../settings', () => ({
+  useSetting: () => [reads.current.lightOnSwipe, vi.fn()],
 }));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: reads.current.isAuthenticated }),
@@ -59,6 +64,7 @@ const DEFAULT_READS: Reads = {
   sessionId: 'session-1',
   boardId: 7,
   isAuthenticated: true,
+  lightOnSwipe: true,
 };
 
 function mount() {
@@ -171,6 +177,17 @@ describe('DriveModeWatcher', () => {
     watcher.change({ boardId: 9 });
     expect(isDrivingStoppedForLink()).toBe(true);
     watcher.change({ isConnected: false });
+    expect(isDrivingStoppedForLink()).toBe(false);
+  });
+
+  it('lets go of a stop when Light the board as I swipe changes', () => {
+    const watcher = mount();
+    act(() => {
+      stopDrivingForLink();
+    });
+    watcher.change({});
+    expect(isDrivingStoppedForLink()).toBe(true);
+    watcher.change({ lightOnSwipe: false });
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 });

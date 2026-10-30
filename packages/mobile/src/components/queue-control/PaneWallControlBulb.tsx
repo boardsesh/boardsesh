@@ -65,7 +65,7 @@ export function PaneWallControlBulb({
       onLongPress={hold ? longPress : undefined}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
-      accessibilityHint={text.accessibilityHint}
+      accessibilityHint={text.bulbAccessibilityHint}
       accessibilityState={{ selected: model.selected, busy: model.pending || model.writing }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}

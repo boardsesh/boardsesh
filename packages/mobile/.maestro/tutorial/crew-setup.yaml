@@ -62,9 +62,10 @@ name: Tutorial setup - private crew session
 - extendedWaitUntil:
     # The wall button says the climb is lit and whose board it is (#7000):
     # this phone's ("Disconnect board" or "You are driving the wall") or
-    # Alex's ("Put on board, Alex has the board"). The recorder additionally verifies its exact UUID as the
+    # Alex's ("Put on board, Alex has the board", or "On Alex's board" when
+    # there is nothing to relay). The recorder additionally verifies its exact UUID as the
     # sole joined row.
     visible:
       id: play-drawer-wall-control
-      text: '(Disconnect board|You are driving the wall|Put on board, Alex has the board).*'
+      text: '(Disconnect board|You are driving the wall|Put on board, Alex has the board|On Alex.s board).*'
     timeout: 20000

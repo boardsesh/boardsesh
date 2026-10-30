@@ -145,8 +145,11 @@ export function getSimilarClimbTapMode(
 }
 
 /**
- * Whether a change of climb (a swipe, Next, Prev, a list tap) stays a preview
- * instead of lighting the wall (#7113). One rule for every entry point:
+ * Whether a change of climb stays a preview instead of lighting the wall
+ * (#7113). Read today, through `useClimbChangeLights('swipe')`, only by the
+ * MiniPlayer's ⏮ and ⏭; the player's swipes, Next and Prev, list taps and
+ * similar climbs move onto it in #7113 PR 2 (until then the player folds a stop
+ * into `lightOnSwipe` itself, and list taps read `lightOnClimbTap`). The rule:
  *
  * - driving the wall (a live drive on this phone's link) always lights, in a
  *   crew too;
