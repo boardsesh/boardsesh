@@ -360,7 +360,8 @@ The spray wall is filmed twice: held still as `boards-spray`, one of the nine
 board phones, and with two swipes as `spray`, the scene of its own. Its photo is
 fetched, so both takes give the last deep link 8 s to draw before recording
 starts (`primeSettleMs` in `takes.ts`; every other take gets 3 s). The default
-name is `Home Spray Wall`; point slot 6 at another wall with `--boards`.
+name is `Liz's Wall` (the CPP bootstrap renamed the old Home Spray Wall in place);
+point slot 6 at another wall with `--boards`.
 
 The wall's photo was taken by a friend of the project, who agreed to it
 appearing in the video, the store previews and ads. It is not in the repo: to
@@ -370,7 +371,7 @@ public wall copies the photo into the world-readable media bucket and lists the
 wall.
 
 The wall check reads the board type from the app's own log line, which ends
-with it: `[screenshot] board[6] "Home Spray Wall" -> "<name>" (<layout> L..
+with it: `[screenshot] board[6] "Liz's Wall" -> "<name>" (<layout> L..
 S.. @..°, spray)`. A spray wall's name and layout are whatever its owner typed, so
 the type is never taken from either (`findBoardSlotProblem` in `record.ts`).
 

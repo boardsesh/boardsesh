@@ -161,7 +161,7 @@ export function showcaseFilterPatterns(catalog: ShowcaseFilterCatalog): Record<s
  * the account's roster in the message.
  */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Home Spray Wall",
+  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Liz's Wall",
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 
