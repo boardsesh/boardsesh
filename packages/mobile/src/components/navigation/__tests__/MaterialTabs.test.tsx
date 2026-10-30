@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const haptics = vi.hoisted(() => ({ selection: vi.fn() }));
+
+type LayoutHandler = (event: { nativeEvent: { layout: { width: number } } }) => void;
+// The latest onLayout handed to the tablist container and to each label, keyed
+// by label text, so a test can feed in the measurements the native side would.
+const layoutHandlers = vi.hoisted(() => ({
+  container: undefined as LayoutHandler | undefined,
+  labels: new Map<string, LayoutHandler>(),
+}));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -11,22 +19,44 @@ vi.mock('react-native', () => ({
     children,
     accessibilityRole,
     accessibilityLabel,
+    onLayout,
   }: {
     children?: ReactNode;
     accessibilityRole?: string;
     accessibilityLabel?: string;
-  }) => createElement('div', { role: accessibilityRole, 'aria-label': accessibilityLabel }, children),
+    onLayout?: LayoutHandler;
+  }) => {
+    if (accessibilityRole === 'tablist') layoutHandlers.container = onLayout;
+    return createElement('div', { role: accessibilityRole, 'aria-label': accessibilityLabel }, children);
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
-  useAnimatedStyle: () => ({}),
+  default: {
+    // Flattens the style array and exposes the indicator's width / translateX
+    // as data attributes, so tests can read where it landed.
+    View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: unknown }) => {
+      const flat = Object.assign({}, ...(Array.isArray(style) ? style : [style])) as {
+        width?: number;
+        transform?: { translateX: number }[];
+      };
+      return createElement(
+        'div',
+        { 'data-testid': testID, 'data-width': flat.width, 'data-offset': flat.transform?.[0]?.translateX },
+        children,
+      );
+    },
+  },
+  useAnimatedStyle: (updater: () => unknown) => updater(),
   useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
   withTiming: (value: number) => value,
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, onLayout }: { children?: ReactNode; onLayout?: LayoutHandler }) => {
+    if (typeof children === 'string' && onLayout) layoutHandlers.labels.set(children, onLayout);
+    return createElement('span', null, children);
+  },
 }));
 
 // PressableSurface forwards onPress to a button and mirrors the tab role /
@@ -67,7 +97,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
-import { MaterialTabs } from '../MaterialTabs';
+import { MaterialTabs, primaryIndicatorGeometry } from '../MaterialTabs';
 
 const OPTIONS = [
   { key: 'progress', label: 'Progress' },
@@ -118,5 +148,75 @@ describe('MaterialTabs', () => {
   it('exposes the group accessibility label on a tablist', () => {
     const { getByRole } = render(<MaterialTabs {...makeProps({ accessibilityLabel: 'Dashboard' })} />);
     expect(getByRole('tablist').getAttribute('aria-label')).toBe('Dashboard');
+  });
+});
+
+function layout(handler: LayoutHandler | undefined, width: number) {
+  act(() => handler?.({ nativeEvent: { layout: { width } } }));
+}
+
+describe('MaterialTabs indicator', () => {
+  beforeEach(() => {
+    layoutHandlers.container = undefined;
+    layoutHandlers.labels.clear();
+  });
+
+  it('appears only once the container and the active label are measured', () => {
+    const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'sessions' })} />);
+    expect(queryByTestId('material-tabs-indicator')).toBeNull();
+
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    expect(queryByTestId('material-tabs-indicator')).toBeNull();
+
+    layout(layoutHandlers.labels.get('Sessions'), 64);
+    const indicator = queryByTestId('material-tabs-indicator');
+    // 360 / 3 = 120dp slots; a 64dp label centred in slot 1 starts at 120 + 28.
+    expect(indicator?.getAttribute('data-width')).toBe('64');
+    expect(indicator?.getAttribute('data-offset')).toBe('148');
+  });
+
+  it('moves to the newly selected label', () => {
+    const { queryByTestId, rerender } = render(<MaterialTabs {...makeProps({ selectedKey: 'sessions' })} />);
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    layout(layoutHandlers.labels.get('Sessions'), 64);
+    layout(layoutHandlers.labels.get('Logbook'), 58);
+
+    rerender(<MaterialTabs {...makeProps({ selectedKey: 'logbook' })} />);
+    const indicator = queryByTestId('material-tabs-indicator');
+    // Slot 2 starts at 240; a 58dp label centred in 120dp adds 31.
+    expect(indicator?.getAttribute('data-width')).toBe('58');
+    expect(indicator?.getAttribute('data-offset')).toBe('271');
+  });
+
+  it('falls back to the first tab when selectedKey is not an option', () => {
+    const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'missing' })} />);
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    const indicator = queryByTestId('material-tabs-indicator');
+    expect(indicator?.getAttribute('data-width')).toBe('60');
+    expect(indicator?.getAttribute('data-offset')).toBe('30');
+  });
+});
+
+describe('primaryIndicatorGeometry', () => {
+  it('stays hidden until the slot and the active label are measured', () => {
+    expect(primaryIndicatorGeometry(0, 0, 60)).toBeNull();
+    expect(primaryIndicatorGeometry(120, 0, undefined)).toBeNull();
+    expect(primaryIndicatorGeometry(120, 0, 0)).toBeNull();
+  });
+
+  it('matches the label width and centres it in the active slot', () => {
+    expect(primaryIndicatorGeometry(120, 0, 60)).toEqual({ width: 60, offset: 30 });
+    expect(primaryIndicatorGeometry(120, 2, 70)).toEqual({ width: 70, offset: 265 });
+  });
+
+  it('never draws narrower than 24dp', () => {
+    expect(primaryIndicatorGeometry(120, 1, 10)).toEqual({ width: 24, offset: 168 });
+  });
+
+  it('never spills past its own slot', () => {
+    expect(primaryIndicatorGeometry(80, 1, 140)).toEqual({ width: 80, offset: 80 });
   });
 });
