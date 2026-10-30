@@ -212,6 +212,56 @@ export type AdminAppFeedbackResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** Stored board metadata for global admins; separate from public UserBoard projections. */
+export type AdminBoard = {
+  __typename?: 'AdminBoard';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  canEdit: Scalars['Boolean']['output'];
+  createdAt: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  gymName?: Maybe<Scalars['String']['output']>;
+  gymSlug?: Maybe<Scalars['String']['output']>;
+  gymUuid?: Maybe<Scalars['ID']['output']>;
+  hasLeds: Scalars['Boolean']['output'];
+  hideLocation: Scalars['Boolean']['output'];
+  isAngleAdjustable: Scalars['Boolean']['output'];
+  isOwned: Scalars['Boolean']['output'];
+  isPublic: Scalars['Boolean']['output'];
+  isUnlisted: Scalars['Boolean']['output'];
+  latitude?: Maybe<Scalars['Float']['output']>;
+  layoutId: Scalars['Int']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  longitude?: Maybe<Scalars['Float']['output']>;
+  name: Scalars['String']['output'];
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  ownerId?: Maybe<Scalars['ID']['output']>;
+  /** Owner-only, including in the admin registry. */
+  serialNumber?: Maybe<Scalars['String']['output']>;
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  slug: Scalars['String']['output'];
+  /** Owner-only, including in the admin registry. */
+  timerName?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type AdminBoardConnection = {
+  __typename?: 'AdminBoardConnection';
+  boards: Array<AdminBoard>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
+export type AdminBoardsInput = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Case-insensitive board name, UUID, slug, gym name, or gym slug search. */
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Result of fetching the authenticated user's playlists, paginated. */
 export type AllUserPlaylistsResult = {
   __typename?: 'AllUserPlaylistsResult';
@@ -4190,6 +4240,8 @@ export type Mutation = {
    * Optional position parameter for inserting at specific index.
    */
   addQueueItem: ClimbQueueItem;
+  /** Edit active board metadata as a global admin; privacy and credentials remain owner-only. */
+  adminUpdateBoard: AdminBoard;
   approveFollowRequest: Scalars['Boolean']['output'];
   approveResourceAccess: Scalars['Boolean']['output'];
   /**
@@ -4982,6 +5034,11 @@ export type MutationAddGymMemberArgs = {
 export type MutationAddQueueItemArgs = {
   item: ClimbQueueItemInput;
   position?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationAdminUpdateBoardArgs = {
+  input: UpdateBoardInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6805,6 +6862,10 @@ export type Query = {
    * the comment, with offset pagination.
    */
   adminAppFeedback: AdminAppFeedbackResult;
+  /** Stored editable metadata for one active board. Global admins only. */
+  adminBoard?: Maybe<AdminBoard>;
+  /** Search all active registered boards, including private boards. Global admins only. */
+  adminBoards: AdminBoardConnection;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
@@ -7672,6 +7733,16 @@ export type QueryActivityFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryAdminAppFeedbackArgs = {
   input?: InputMaybe<AdminAppFeedbackInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardArgs = {
+  boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardsArgs = {
+  input: AdminBoardsInput;
 };
 
 /** Root query type for all read operations. */
@@ -12528,6 +12599,9 @@ export type ResolversTypes = ResolversObject<{
   AddGymMemberInput: AddGymMemberInput;
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: ResolverTypeWrapper<AdminAppFeedbackResult>;
+  AdminBoard: ResolverTypeWrapper<AdminBoard>;
+  AdminBoardConnection: ResolverTypeWrapper<AdminBoardConnection>;
+  AdminBoardsInput: AdminBoardsInput;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
   AnalyticsConsent: ResolverTypeWrapper<AnalyticsConsent>;
   Angle: ResolverTypeWrapper<Angle>;
@@ -13101,6 +13175,9 @@ export type ResolversParentTypes = ResolversObject<{
   AddGymMemberInput: AddGymMemberInput;
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: AdminAppFeedbackResult;
+  AdminBoard: AdminBoard;
+  AdminBoardConnection: AdminBoardConnection;
+  AdminBoardsInput: AdminBoardsInput;
   AllUserPlaylistsResult: AllUserPlaylistsResult;
   AnalyticsConsent: AnalyticsConsent;
   Angle: Angle;
@@ -13678,6 +13755,51 @@ export type AdminAppFeedbackResultResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   reports?: Resolver<Array<ResolversTypes['AppFeedbackReport']>, ParentType, ContextType>;
   statusCounts?: Resolver<ResolversTypes['AppFeedbackStatusCounts'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AdminBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminBoard'] = ResolversParentTypes['AdminBoard'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  canEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymSlug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  gymUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  hideLocation?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isAngleAdjustable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isOwned?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isUnlisted?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  longitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  serialNumber?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  timerName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AdminBoardConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminBoardConnection'] = ResolversParentTypes['AdminBoardConnection'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['AdminBoard']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -15770,6 +15892,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationAddQueueItemArgs, 'item'>
   >;
+  adminUpdateBoard?: Resolver<
+    ResolversTypes['AdminBoard'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationAdminUpdateBoardArgs, 'input'>
+  >;
   approveFollowRequest?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -17249,6 +17377,18 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     Partial<QueryAdminAppFeedbackArgs>
+  >;
+  adminBoard?: Resolver<
+    Maybe<ResolversTypes['AdminBoard']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryAdminBoardArgs, 'boardUuid'>
+  >;
+  adminBoards?: Resolver<
+    ResolversTypes['AdminBoardConnection'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryAdminBoardsArgs, 'input'>
   >;
   allUserPlaylists?: Resolver<
     ResolversTypes['AllUserPlaylistsResult'],
@@ -19973,6 +20113,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ActivityFeedItem?: ActivityFeedItemResolvers<ContextType>;
   ActivityFeedResult?: ActivityFeedResultResolvers<ContextType>;
   AdminAppFeedbackResult?: AdminAppFeedbackResultResolvers<ContextType>;
+  AdminBoard?: AdminBoardResolvers<ContextType>;
+  AdminBoardConnection?: AdminBoardConnectionResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
   AnalyticsConsent?: AnalyticsConsentResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;

@@ -13,6 +13,8 @@ import EditBoardForm from '../edit-board-form';
 // moderators, and the server strips the colliding board's identity for them —
 // so the dialog also has to render with no board to name.
 
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { user: { id: 'owner' } } }) }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
     t: (key: string, options?: Record<string, unknown>) => tFromCatalog(ns, key, options),
@@ -35,16 +37,18 @@ vi.mock('@/app/lib/analytics', () => ({ track: mockTrack }));
 const mockExecute = vi.hoisted(() => vi.fn());
 const errorHolder = vi.hoisted(() => ({
   onError: null as ((error: unknown, serverMessage: string | null) => void) | null,
+  operation: null as unknown,
 }));
 vi.mock('@/app/hooks/use-entity-mutation', () => ({
-  useEntityMutation: (_mutation: unknown, opts: { onError?: (e: unknown, s: string | null) => void }) => {
+  useEntityMutation: (mutation: unknown, opts: { onError?: (e: unknown, s: string | null) => void }) => {
+    errorHolder.operation = mutation;
     errorHolder.onError = opts.onError ?? null;
     return { execute: mockExecute };
   },
 }));
 
 const SUBMIT_VALUES = {
-  name: 'Home Wall',
+  name: 'Renamed Home Wall',
   slug: 'home-wall',
   description: '',
   locationName: 'Garage',
@@ -66,7 +70,10 @@ vi.mock('../board-form', () => ({
     ),
 }));
 
-vi.mock('@boardsesh/graphql/operations', () => ({ UPDATE_BOARD: 'UPDATE_BOARD' }));
+vi.mock('@boardsesh/graphql/operations', () => ({
+  UPDATE_BOARD: 'UPDATE_BOARD',
+  ADMIN_UPDATE_BOARD: 'ADMIN_UPDATE_BOARD',
+}));
 
 const board = {
   uuid: 'board-uuid',
@@ -136,6 +143,48 @@ describe('EditBoardForm — duplicate config', () => {
 
     expect(mockExecute).toHaveBeenCalledTimes(1);
     expect(mockExecute.mock.calls[0][0].input.allowDuplicateConfig).toBeUndefined();
+    expect(mockExecute.mock.calls[0][0]).toEqual({ input: { boardUuid: 'board-uuid', name: 'Renamed Home Wall' } });
+  });
+
+  it('uses the dedicated admin mutation and returns its distinct board projection', async () => {
+    const adminBoard: import('@boardsesh/shared-schema').AdminBoard = {
+      ...board,
+      ownerId: 'owner',
+      ownerDisplayName: null,
+      description: null,
+      locationName: 'Garage',
+      latitude: null,
+      longitude: null,
+      hasLeds: true,
+      serialNumber: null,
+      timerName: null,
+      gymUuid: null,
+      gymName: null,
+      gymSlug: null,
+      updatedAt: '2026-10-30',
+      canEdit: true,
+    };
+    const updatedBoard = { ...adminBoard, name: 'Renamed Home Wall' };
+    const onSuccess = vi.fn();
+    mockExecute.mockResolvedValueOnce({ adminUpdateBoard: updatedBoard });
+    render(<EditBoardForm mode="admin" board={adminBoard} onSuccess={onSuccess} />);
+    await act(async () => {
+      screen.getByTestId('board-form').click();
+    });
+    expect(errorHolder.operation).toBe('ADMIN_UPDATE_BOARD');
+    expect(mockExecute).toHaveBeenCalledWith({ input: { boardUuid: 'board-uuid', name: 'Renamed Home Wall' } });
+    expect(onSuccess).toHaveBeenCalledWith(updatedBoard);
+  });
+
+  it('keeps the editor mounted without reporting success when saving fails', async () => {
+    const onSuccess = vi.fn();
+    mockExecute.mockResolvedValueOnce(null);
+    render(<EditBoardForm board={board} onSuccess={onSuccess} />);
+    await act(async () => {
+      screen.getByTestId('board-form').click();
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByTestId('board-form')).toBeTruthy();
   });
 
   it('names both the colliding board and its location instead of a failure toast', async () => {
@@ -203,7 +252,7 @@ describe('EditBoardForm — duplicate config', () => {
     // Same edit, now with the user's confirmation attached.
     expect(mockExecute.mock.calls[1][0].input).toMatchObject({
       boardUuid: 'board-uuid',
-      name: 'Home Wall',
+      name: 'Renamed Home Wall',
       allowDuplicateConfig: true,
     });
   });

@@ -209,6 +209,56 @@ export type AdminAppFeedbackResult = {
   totalCount: Scalars['Int']['output'];
 };
 
+/** Stored board metadata for global admins; separate from public UserBoard projections. */
+export type AdminBoard = {
+  __typename?: 'AdminBoard';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  canEdit: Scalars['Boolean']['output'];
+  createdAt: Scalars['String']['output'];
+  description?: Maybe<Scalars['String']['output']>;
+  gymName?: Maybe<Scalars['String']['output']>;
+  gymSlug?: Maybe<Scalars['String']['output']>;
+  gymUuid?: Maybe<Scalars['ID']['output']>;
+  hasLeds: Scalars['Boolean']['output'];
+  hideLocation: Scalars['Boolean']['output'];
+  isAngleAdjustable: Scalars['Boolean']['output'];
+  isOwned: Scalars['Boolean']['output'];
+  isPublic: Scalars['Boolean']['output'];
+  isUnlisted: Scalars['Boolean']['output'];
+  latitude?: Maybe<Scalars['Float']['output']>;
+  layoutId: Scalars['Int']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  longitude?: Maybe<Scalars['Float']['output']>;
+  name: Scalars['String']['output'];
+  ownerDisplayName?: Maybe<Scalars['String']['output']>;
+  ownerId?: Maybe<Scalars['ID']['output']>;
+  /** Owner-only, including in the admin registry. */
+  serialNumber?: Maybe<Scalars['String']['output']>;
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  slug: Scalars['String']['output'];
+  /** Owner-only, including in the admin registry. */
+  timerName?: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type AdminBoardConnection = {
+  __typename?: 'AdminBoardConnection';
+  boards: Array<AdminBoard>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
+export type AdminBoardsInput = {
+  boardType?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Case-insensitive board name, UUID, slug, gym name, or gym slug search. */
+  query?: InputMaybe<Scalars['String']['input']>;
+};
+
 /** Result of fetching the authenticated user's playlists, paginated. */
 export type AllUserPlaylistsResult = {
   __typename?: 'AllUserPlaylistsResult';
@@ -4187,6 +4237,8 @@ export type Mutation = {
    * Optional position parameter for inserting at specific index.
    */
   addQueueItem: ClimbQueueItem;
+  /** Edit active board metadata as a global admin; privacy and credentials remain owner-only. */
+  adminUpdateBoard: AdminBoard;
   approveFollowRequest: Scalars['Boolean']['output'];
   approveResourceAccess: Scalars['Boolean']['output'];
   /**
@@ -4979,6 +5031,11 @@ export type MutationAddGymMemberArgs = {
 export type MutationAddQueueItemArgs = {
   item: ClimbQueueItemInput;
   position?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationAdminUpdateBoardArgs = {
+  input: UpdateBoardInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6802,6 +6859,10 @@ export type Query = {
    * the comment, with offset pagination.
    */
   adminAppFeedback: AdminAppFeedbackResult;
+  /** Stored editable metadata for one active board. Global admins only. */
+  adminBoard?: Maybe<AdminBoard>;
+  /** Search all active registered boards, including private boards. Global admins only. */
+  adminBoards: AdminBoardConnection;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
@@ -7669,6 +7730,16 @@ export type QueryActivityFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryAdminAppFeedbackArgs = {
   input?: InputMaybe<AdminAppFeedbackInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardArgs = {
+  boardUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminBoardsArgs = {
+  input: AdminBoardsInput;
 };
 
 /** Root query type for all read operations. */

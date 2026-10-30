@@ -37,3 +37,5 @@ export * from './spray-training';
 export * from './saved-climb-sync';
 export * from './apple-ads-attribution';
 export * from './release-context';
+
+export * from './admin-boards';

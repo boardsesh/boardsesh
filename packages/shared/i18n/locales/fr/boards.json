@@ -585,7 +585,9 @@
     "helperText": {
       "unlisted": "Masqué des résultats de recherche, mais accessible par lien direct",
       "hideLocation": "Masqué des recherches de boards à proximité, sauf pour les personnes que vous suivez",
-      "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours."
+      "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours.",
+      "ownerOnlyPrivacy": "Seul le propriétaire de la board peut modifier sa visibilité et la confidentialité de sa position.",
+      "ownerOnlyCredentials": "Seul le propriétaire de la board peut consulter ou modifier les identifiants du contrôleur."
     },
     "alerts": {
       "configEditable": "Vous pouvez modifier le layout, la taille et les jeux de prises. Les blocs déjà enregistrés restent intacts."
@@ -602,7 +604,11 @@
       "duplicateBodyWithLocation": "Avec ce changement, la board devient identique à « {{name}} » à {{location}} : même layout, même taille et mêmes sets de prises.",
       "duplicateBodyGeneric": "Avec ce changement, la board devient identique à une autre que son propriétaire a déjà.",
       "saveAnyway": "Enregistrer quand même",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "discardTitle": "Abandonner les modifications non enregistrées ?",
+      "discardBody": "Les modifications de la board n’ont pas été enregistrées.",
+      "discard": "Abandonner les modifications",
+      "keepEditing": "Continuer à modifier"
     },
     "serialReuse": {
       "warning": "Ce numéro de série appartient déjà à « {{name}} ». Rejoindre cette board garde les croix et les stats de tout le monde sur un seul mur.",

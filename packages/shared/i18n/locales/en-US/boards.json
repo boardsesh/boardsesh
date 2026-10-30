@@ -585,7 +585,9 @@
     "helperText": {
       "unlisted": "Hidden from search results but accessible via direct link",
       "hideLocation": "Hidden from nearby board searches unless you follow the searcher",
-      "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb."
+      "hasLeds": "Off means no light kit. Turns still work, and the gym screen still shows the active climb.",
+      "ownerOnlyPrivacy": "Only the board owner can change visibility and location privacy.",
+      "ownerOnlyCredentials": "Only the board owner can see or change controller credentials."
     },
     "alerts": {
       "configEditable": "You can change the layout, size, and hold sets. Climbs already logged stay put."
@@ -602,7 +604,11 @@
       "duplicateBodyWithLocation": "This change makes the board match \"{{name}}\" at {{location}} — same layout, size and hold sets.",
       "duplicateBodyGeneric": "This change matches a board setup the owner already has.",
       "saveAnyway": "Save anyway",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "discardTitle": "Discard unsaved changes?",
+      "discardBody": "Your board edits have not been saved.",
+      "discard": "Discard changes",
+      "keepEditing": "Keep editing"
     },
     "serialReuse": {
       "warning": "This serial number already belongs to \"{{name}}\". Joining that board keeps everyone's sends and stats on one wall.",
