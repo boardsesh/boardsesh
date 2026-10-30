@@ -17,7 +17,7 @@ import {
   resetDriveModeForTests,
 } from '../drive-mode-store';
 import {
-  HANDOFF_RELEASE_TIMEOUT_MS,
+  HANDOFF_RETRY_RELEASE_WAIT_MS,
   isWaitingForBoardRelease,
   noteBoardHolder,
   resetBoardHandoffStoreForTests,
@@ -155,14 +155,15 @@ describe('startDrive', () => {
   });
 });
 
-// #7113 PR 4: taking a crewmate's board. Their phone has to let go first
-// (Aurora and MoonBoard boxes stop advertising once linked), so the runner asks,
-// waits for presence to show the board free, and only then connects.
+// #7113 PR 4: taking a crewmate's board. Most boxes take the newest link and
+// drop the old one; some MoonBoards refuse a second phone while one is linked.
+// So the runner asks Sam's phone to let go and connects at the same time, and
+// retries once after the release when a strict box refused it.
 describe("startDrive: taking a crewmate's board", () => {
   const SAMS_BOARD = { model: { swipeAction: 'drive' as const, holder: 'crew' as const }, connected: false };
   const flush = () =>
     act(async () => {
-      for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+      for (let tick = 0; tick < 8; tick += 1) await Promise.resolve();
     });
   const handoffEvents = () =>
     effects.track.mock.calls.filter(([name]) => name === 'Board Handoff Requested').map(([, props]) => props);
@@ -172,8 +173,8 @@ describe("startDrive: taking a crewmate's board", () => {
     noteBoardHolder({ holder: { userId: 'sam' }, connectionSeq: 4 });
   });
 
-  it('needs_handoff → requested → released → connect → live', async () => {
-    const handoff = handoffInput();
+  it('a last-connection-wins box: asks and connects at once, never waiting on the answer', async () => {
+    const handoff = handoffInput({ request: vi.fn(() => new Promise<'asked'>(() => {})) });
     const run = input({
       ...SAMS_BOARD,
       committing: true,
@@ -181,50 +182,64 @@ describe("startDrive: taking a crewmate's board", () => {
       relight: vi.fn(() => markDriveLive({ boardId: 7 })),
     });
     expect(startDrive(run)).toBe('started');
-    expect(getDriveMode()?.phase).toBe('arming');
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', handoff: true });
     // The preview goes up first, without the busy-wall question.
     expect(run.commit).toHaveBeenCalledOnce();
-    await flush();
     expect(handoff.request).toHaveBeenCalledOnce();
-    // Never a connect while Sam's phone still holds the radio.
-    expect(isWaitingForBoardRelease()).toBe(true);
-    expect(handoff.connect).not.toHaveBeenCalled();
-    expect(run.connect).not.toHaveBeenCalled();
-
-    // Sam's phone let go: presence shows the board free.
-    noteBoardHolder({ holder: null, connectionSeq: 5 });
-    await flush();
     expect(handoff.connect).toHaveBeenCalledOnce();
     expect(run.connect).not.toHaveBeenCalled();
+    await flush();
     expect(run.relight).toHaveBeenCalledOnce();
     expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 7 });
     expect(handoffEvents()).toEqual([{ outcome: 'released', inSession: true }]);
-    expect(handoff.onFailed).not.toHaveBeenCalled();
+    expect(isWaitingForBoardRelease()).toBe(false);
   });
 
-  async function timeOut(handoff: HandoffInput) {
+  it('a strict MoonBoard released late: the scan finds it once Sam lets go, no retry needed', async () => {
+    let scanFinds: (linked: boolean) => void = () => {};
+    const handoff = handoffInput({ connect: vi.fn(() => new Promise<boolean>((resolve) => (scanFinds = resolve))) });
+    const run = input({ ...SAMS_BOARD, handoff });
+    startDrive(run);
+    await flush();
+    expect(run.relight).not.toHaveBeenCalled();
+    // Sam's phone lets go; the box advertises again and the scan links.
+    noteBoardHolder({ holder: null, connectionSeq: 5 });
+    await act(async () => scanFinds(true));
+    await flush();
+    expect(handoff.connect).toHaveBeenCalledOnce();
+    expect(run.relight).toHaveBeenCalledOnce();
+  });
+
+  it('a strict box found while still held: waits for the release, then one retry', async () => {
+    const connect = vi.fn<() => Promise<boolean>>().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const handoff = handoffInput({ connect });
+    const run = input({ ...SAMS_BOARD, handoff });
+    startDrive(run);
+    await flush();
+    expect(connect).toHaveBeenCalledOnce();
+    expect(isWaitingForBoardRelease()).toBe(true);
+    // The watcher must not end the drive on that failed connect.
+    expect(getDriveMode()?.phase).toBe('arming');
+    noteBoardHolder({ holder: null, connectionSeq: 5 });
+    await flush();
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(run.relight).toHaveBeenCalledOnce();
+    expect(handoff.onFailed).not.toHaveBeenCalled();
+    expect(handoffEvents()).toEqual([{ outcome: 'released', inSession: true }]);
+  });
+
+  it('times out: no release within 5 s of a failed connect, one retry, then "Couldn\'t reach the board"', async () => {
     vi.useFakeTimers();
+    const handoff = handoffInput({ connect: vi.fn(() => Promise.resolve(false)) });
     const run = input({ ...SAMS_BOARD, handoff });
     startDrive(run);
     await flush();
     expect(isWaitingForBoardRelease()).toBe(true);
     await act(async () => {
-      vi.advanceTimersByTime(HANDOFF_RELEASE_TIMEOUT_MS - 1);
-    });
-    // Never a connect while Sam's phone may still hold the radio.
-    expect(handoff.connect).not.toHaveBeenCalled();
-    expect(getDriveMode()?.phase).toBe('arming');
-    await act(async () => {
-      vi.advanceTimersByTime(1);
+      vi.advanceTimersByTime(HANDOFF_RETRY_RELEASE_WAIT_MS);
     });
     await flush();
-    return run;
-  }
-
-  it('no release in 12 s: one plain connect, and only its failure says "Couldn\'t reach the board"', async () => {
-    const handoff = handoffInput({ connect: vi.fn(() => Promise.resolve(false)) });
-    const run = await timeOut(handoff);
-    expect(handoff.connect).toHaveBeenCalledOnce();
+    expect(handoff.connect).toHaveBeenCalledTimes(2);
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('handoff_timed_out');
     expect(handoff.onFailed).toHaveBeenCalledOnce();
@@ -232,79 +247,48 @@ describe("startDrive: taking a crewmate's board", () => {
     expect(handoffEvents()).toEqual([{ outcome: 'timed_out', inSession: true }]);
   });
 
-  it('no release in 12 s, but the board was free after all (a stale writer key): the connect lights it', async () => {
-    const handoff = handoffInput();
-    const run = await timeOut(handoff);
-    expect(handoff.connect).toHaveBeenCalledOnce();
-    expect(run.relight).toHaveBeenCalledOnce();
-    expect(getDriveMode()?.phase).toBe('arming');
-    expect(handoff.onFailed).not.toHaveBeenCalled();
-  });
-
-  it('says "Couldn\'t reach the board" even when the watcher ended the drive first on the failed connect', async () => {
-    const handoff = handoffInput({
-      connect: vi.fn(async () => {
-        exitDriveMode('connect_failed');
-        return false;
-      }),
-    });
-    await timeOut(handoff);
-    expect(getLastDriveModeExitReason()).toBe('connect_failed');
-    expect(handoff.onFailed).toHaveBeenCalledOnce();
-  });
-
-  it('a refused request (or one that never reached the server) ends the drive at once', async () => {
+  it('a refused request still connects (the box may take it), and only a failed connect says so', async () => {
     const handoff = handoffInput({ request: vi.fn(() => Promise.reject(new Error('offline'))) });
-    startDrive(input({ ...SAMS_BOARD, handoff }));
-    await flush();
-    expect(getDriveMode()).toBeNull();
-    expect(getLastDriveModeExitReason()).toBe('handoff_refused');
-    expect(handoff.onFailed).toHaveBeenCalledOnce();
-    expect(handoff.connect).not.toHaveBeenCalled();
-    expect(handoffEvents()).toEqual([{ outcome: 'refused', inSession: true }]);
-  });
-
-  it('connects straight away when the server says nobody holds it any more', async () => {
-    const handoff = handoffInput({ request: vi.fn(() => Promise.resolve('free' as const)) });
     const run = input({ ...SAMS_BOARD, handoff });
     startDrive(run);
     await flush();
-    expect(isWaitingForBoardRelease()).toBe(false);
-    expect(handoff.connect).toHaveBeenCalledOnce();
     expect(run.relight).toHaveBeenCalledOnce();
+    expect(handoff.onFailed).not.toHaveBeenCalled();
   });
 
-  it('counts a release that landed while the request was in flight', async () => {
-    let answer: (asked: 'asked') => void = () => {};
-    const handoff = handoffInput({ request: () => new Promise((resolve) => (answer = resolve)) });
-    startDrive(input({ ...SAMS_BOARD, handoff }));
-    noteBoardHolder({ holder: null, connectionSeq: 5 });
-    await act(async () => {
-      answer('asked');
+  it('a refused request and a failed connect: no retry, ends handoff_refused', async () => {
+    const handoff = handoffInput({
+      request: vi.fn(() => Promise.resolve('refused' as const)),
+      connect: vi.fn(() => Promise.resolve(false)),
     });
+    startDrive(input({ ...SAMS_BOARD, handoff }));
     await flush();
     expect(handoff.connect).toHaveBeenCalledOnce();
+    expect(getLastDriveModeExitReason()).toBe('handoff_refused');
+    expect(handoff.onFailed).toHaveBeenCalledOnce();
+    expect(handoffEvents()).toEqual([{ outcome: 'refused', inSession: true }]);
   });
 
-  it('a failed connect after the release ends the drive as connect_failed', async () => {
+  it('nobody held it after all (free): a failed connect is not retried', async () => {
     const handoff = handoffInput({
       request: vi.fn(() => Promise.resolve('free' as const)),
       connect: vi.fn(() => Promise.resolve(false)),
     });
     startDrive(input({ ...SAMS_BOARD, handoff }));
     await flush();
-    expect(getLastDriveModeExitReason()).toBe('connect_failed');
-    expect(handoff.onFailed).not.toHaveBeenCalled();
+    expect(handoff.connect).toHaveBeenCalledOnce();
+    expect(getLastDriveModeExitReason()).toBe('handoff_timed_out');
   });
 
-  it('stops quietly when the drive ends some other way mid-wait', async () => {
-    const handoff = handoffInput();
-    startDrive(input({ ...SAMS_BOARD, handoff }));
-    await flush();
+  it('stops quietly when the drive ends some other way mid-flight', async () => {
+    let scanFinds: (linked: boolean) => void = () => {};
+    const handoff = handoffInput({ connect: vi.fn(() => new Promise<boolean>((resolve) => (scanFinds = resolve))) });
+    const run = input({ ...SAMS_BOARD, handoff });
+    startDrive(run);
     exitDriveMode('session_changed');
-    noteBoardHolder({ holder: null, connectionSeq: 5 });
+    await act(async () => scanFinds(true));
     await flush();
-    expect(handoff.connect).not.toHaveBeenCalled();
+    expect(run.relight).not.toHaveBeenCalled();
     expect(handoff.onFailed).not.toHaveBeenCalled();
     expect(handoffEvents()).toEqual([]);
   });
@@ -313,7 +297,6 @@ describe("startDrive: taking a crewmate's board", () => {
 describe('board-handoff-store', () => {
   it('reads a null holder as free only after a holder event (not an unseeded feed)', async () => {
     noteBoardHolder({ holder: null, connectionSeq: 0 });
-    vi.useFakeTimers();
     const waiting = waitForBoardRelease({ holderUserId: 'sam', timeoutMs: 100 });
     expect(isWaitingForBoardRelease()).toBe(true);
     noteBoardHolder({ holder: null, connectionSeq: 3 });

@@ -6,9 +6,11 @@ import type { WallControlModel } from './wall-control';
 
 /**
  * Taking a crewmate's board (#7113 PR 4): what the cooperative hand-off needs.
- * Aurora and MoonBoard boxes stop advertising once linked and Android refuses a
- * second phone, so this phone asks theirs to let go, waits for presence to show
- * the board free, and only then connects.
+ * Most boxes (Kilter, Tension, the other Aurora boards, most MoonBoards) take
+ * the newest connection and drop the old one; some MoonBoards refuse a second
+ * phone while one is linked. So this phone asks theirs to let go and connects
+ * at the same time: a last-connection-wins box links at once, a strict one is
+ * found once their phone lets go (its scan keeps looking meanwhile).
  */
 export type HandoffInput = {
   /** The crewmate presence names as the holder: the account asked to let go. */
@@ -18,7 +20,10 @@ export type HandoffInput = {
    * now, `refused` the server said no or the request never reached it.
    */
   request: () => Promise<'asked' | 'free' | 'refused'>;
-  /** Resolves once presence shows `holderUserId` gone, or after 12 s. */
+  /**
+   * Resolves once presence shows `holderUserId` gone, or after 5 s
+   * (`HANDOFF_RETRY_RELEASE_WAIT_MS`). Only for the one retry.
+   */
   waitForRelease: (holderUserId: string) => Promise<BoardReleaseOutcome>;
   /**
    * Connect for the hand-off: the ordinary connect path with the relay
@@ -26,7 +31,7 @@ export type HandoffInput = {
    * a beat. Read at call time, never from the render that started the swipe.
    */
   connect: () => Promise<boolean>;
-  /** Say "Couldn't reach the board": the hand-off timed out or was refused. */
+  /** Say "Couldn't reach the board": no connect got the board. */
   onFailed: () => void;
 };
 
@@ -70,12 +75,13 @@ export type StartDriveInput = {
  *    the drive (`commit_failed`).
  * 4. With the link up, light it. Otherwise connect, then light it; a connect
  *    that fails ends this drive (`connect_failed`), never a newer one.
- *    On a crewmate's board (#7113 PR 4) the connect waits for the hand-off:
- *    ask their phone to let go, wait up to 12 s for presence to show the board
- *    free, then connect. A refusal ends the drive `handoff_refused` and says
- *    "Couldn't reach the board". No release in 12 s tries one plain connect
- *    anyway (presence can carry a stale holder); only if that fails too does
- *    the drive end `handoff_timed_out` with the same words.
+ *    On a crewmate's board (#7113 PR 4) it asks their phone to let go and
+ *    connects at the same time, with the relay suppression lifted. A connect
+ *    that fails while the holder was asked (a strict MoonBoard found still
+ *    held) waits up to 5 s for the release and tries once more. Only when no
+ *    connect got the board does the drive end, `handoff_refused` when the
+ *    server refused the request, else `handoff_timed_out`, and say
+ *    "Couldn't reach the board".
  *
  * The drive goes live once this phone's link lights the climb, in
  * `DriveModeWatcher` at the app root, so closing the player mid-connect still
@@ -90,7 +96,7 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
   // A virtual hold on a wall with no lights has no radio to hand over.
   const handoff = crewHolds && input.model.holder === 'crew' ? (input.handoff ?? null) : null;
   if (crewHolds && !handoff) return 'needs_handoff';
-  enterDriveMode({ sessionId: input.sessionId, boardId: null });
+  enterDriveMode({ sessionId: input.sessionId, boardId: null, handoff: handoff !== null });
   const startedAt = getDriveMode()?.startedAt ?? null;
   const isThisDrive = () => getDriveMode()?.startedAt === startedAt;
   const endThisDrive = (reason: DriveModeExitReason) => {
@@ -131,39 +137,29 @@ async function runHandoff(
       return false;
     }
   };
-  let asked: 'asked' | 'free' | 'refused';
-  try {
-    asked = await handoff.request();
-  } catch {
-    asked = 'refused';
+  // Ask and connect at once: never wait on the answer before the radio.
+  const answer = handoff.request().then(
+    (asked) => asked,
+    () => 'refused' as const,
+  );
+  let connected = await connect();
+  if (!connected && drive.isThisDrive() && (await answer) === 'asked' && drive.isThisDrive()) {
+    // A strict MoonBoard refused this phone while the holder's still linked.
+    // Their phone usually lets go within 1 to 2 s of the request: wait for
+    // presence to say so (5 s at most), then one more connect.
+    const released = await handoff.waitForRelease(handoff.holderUserId);
+    if (released !== 'cancelled' && drive.isThisDrive()) connected = await connect();
   }
+  // The drive ended some other way meanwhile (the session changed, a press):
+  // nothing more to say.
   if (!drive.isThisDrive()) return;
-  if (asked === 'refused') {
-    trackBoardHandoffRequested({ outcome: 'refused', inSession });
-    drive.endThisDrive('handoff_refused');
-    handoff.onFailed();
-    return;
-  }
-  const released = asked === 'free' ? 'released' : await handoff.waitForRelease(handoff.holderUserId);
-  if (released === 'cancelled' || !drive.isThisDrive()) return;
-  trackBoardHandoffRequested({ outcome: released, inSession });
-  if (released === 'released') {
-    if (await connect()) input.relight();
-    else drive.endThisDrive('connect_failed');
-    return;
-  }
-  // No release in 12 s. Presence can be wrong: a writer key left behind by a
-  // drop whose disconnect report never went out lives up to 12 h. So try one
-  // plain connect: against a box that is still linked the scan fails
-  // harmlessly within 15 s. Only that failure says "Couldn't reach the board".
-  if (await connect()) {
+  if (connected) {
+    trackBoardHandoffRequested({ outcome: 'released', inSession });
     input.relight();
     return;
   }
-  // The watcher may have ended the drive already when the connect settled
-  // (`connect_failed`); a newer drive is left alone.
-  const current = getDriveMode();
-  if (current !== null && !drive.isThisDrive()) return;
-  drive.endThisDrive('handoff_timed_out');
+  const refused = (await answer) === 'refused';
+  trackBoardHandoffRequested({ outcome: refused ? 'refused' : 'timed_out', inSession });
+  drive.endThisDrive(refused ? 'handoff_refused' : 'handoff_timed_out');
   handoff.onFailed();
 }

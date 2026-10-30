@@ -71,7 +71,7 @@ import { hapticLight, hapticSuccess, hapticWarning } from '../lib/haptics';
 import { announceQueued } from '../lib/announce-queued';
 import { trackBoardHandedOff } from '../lib/analytics-wall-control';
 import { exitDriveMode, getDriveMode } from '../components/play-drawer/drive-mode-store';
-import { useBoardHandoffRelease } from './use-board-handoff-release';
+import { recentUnexpectedDropHeldAs, useBoardHandoffRelease, type UnexpectedDrop } from './use-board-handoff-release';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
@@ -907,6 +907,10 @@ export function BluetoothProvider({
   virtualWallHeldRef.current = virtualWallHeld;
   const virtualWallHoldRef = useRef<VirtualWallHold | null>(null);
   const bleConnectedRef = useRef(false);
+  // The account this phone held the board as, and the last unexpected drop
+  // (#7113 PR 4: a crewmate's hand-off connect can cause it).
+  const lastLocalHolderUserIdRef = useRef<string | null>(null);
+  const unexpectedDropRef = useRef<UnexpectedDrop | null>(null);
   const wallOperationEpochRef = useRef(0);
   const [writeActivityStore] = useState(createBleWriteActivityStore);
   const {
@@ -1436,6 +1440,10 @@ export function BluetoothProvider({
   // the time a config-switch teardown completes.
   const handleBluetoothConnectionEnded = useCallback(
     (connection: BleConnectionEnded) => {
+      // A crewmate's hand-off connect can drop this link before its request
+      // arrives (#7113 PR 4): remember who this phone held the board as.
+      unexpectedDropRef.current =
+        connection.reason === 'unexpected' ? { heldAs: lastLocalHolderUserIdRef.current, at: Date.now() } : null;
       wallOperationEpochRef.current += 1;
       clearPendingWallReportAndUndoToastArm();
       connectedViaMismatchOverrideRef.current = false;
@@ -1519,6 +1527,7 @@ export function BluetoothProvider({
     holderUserId: holder?.userId ?? null,
     isConnected,
   });
+  lastLocalHolderUserIdRef.current = lastLocalHolderUserId;
 
   // Every successful board write is activity for the auto-disconnect deadline,
   // no matter which surface wrote (queue auto-sender, mirror toggle, playback
@@ -2652,14 +2661,19 @@ export function BluetoothProvider({
   // `reportBoardDisconnect`, which frees the board for the asker.
   // A virtual hold (a wall taken with no radio) is given back the same way the
   // presence watch gives it back to a peer: its release report frees the key.
+  // When the asker's connect already dropped this link (a last-connection-wins
+  // box), there is nothing to let go of: only the buzz, the words and the
+  // taken-over hold. Nothing reconnects after such a drop either way: JS never
+  // reconnects on its own, Android connects with autoConnect off, and the iOS
+  // native manager does not reconnect after an unexpected drop.
   const releaseForHandoff = useCallback(
-    (requester: BoardHandoffRequester) => {
+    (requester: BoardHandoffRequester, { linked }: { linked: boolean }) => {
       const wasDriving = getDriveMode() !== null;
       exitDriveMode('taken_over');
       setPendingAutoConnect(null);
       settlePendingConnectWaiter(false);
-      if (bleConnectedRef.current) void wrappedDisconnect('taken_over');
-      else releaseVirtualWall('taken_by_peer');
+      if (linked && bleConnectedRef.current) void wrappedDisconnect('taken_over');
+      else if (linked) releaseVirtualWall('taken_by_peer');
       hapticWarning();
       announceQueued(
         requester.displayName
@@ -2674,7 +2688,13 @@ export function BluetoothProvider({
     request: handoffRequest ?? null,
     linked: isConnected || virtualWallHeld,
     // Presence names the virtual holder: its own reports set the writer key.
-    heldAsUserId: isConnected ? lastLocalHolderUserId : virtualWallHeld ? (holder?.userId ?? null) : null,
+    // After an unexpected drop (the asker's connect may have caused it), the
+    // account it held as, for a few seconds.
+    heldAsUserId: isConnected
+      ? lastLocalHolderUserId
+      : virtualWallHeld
+        ? (holder?.userId ?? null)
+        : recentUnexpectedDropHeldAs(unexpectedDropRef.current),
     sessionMemberUserIds,
     holderUserId: holder?.userId ?? null,
     boardId: presenceBoardId,

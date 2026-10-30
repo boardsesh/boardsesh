@@ -4,10 +4,19 @@ import type { BoardHandoffRequester } from '@boardsesh/shared-schema';
 
 /**
  * How long this phone treats the board as the asker's after it let go (#7113):
- * their release wait (12 s) plus a full Bluetooth scan (15 s), rounded up. It
- * ends sooner once presence names the asker (or anyone else) as the holder.
+ * their scan (15 s), a 5 s wait for the release and one more scan, about the
+ * asker's arming limit. It ends sooner once presence names the asker (or anyone
+ * else) as the holder.
  */
 export const HANDOFF_TAKEN_OVER_HOLD_MS = 30_000;
+
+/**
+ * How long after an unexpected drop a matching request still counts as a
+ * hand-off. The asking phone connects at the same time as it asks, so on a
+ * last-connection-wins box its link can drop this one a moment before the
+ * request arrives (usually 1 to 2 s later).
+ */
+export const HANDOFF_RECENT_DROP_MS = 5_000;
 
 /**
  * Request ids this app has already answered, kept across provider remounts (a
@@ -16,6 +25,15 @@ export const HANDOFF_TAKEN_OVER_HOLD_MS = 30_000;
  * made after it. In memory: a relaunch starts with an empty presence feed too.
  */
 const answeredRequestIds = new Set<string>();
+
+/** An unexpected drop of this phone's link: who it held the board as, and when. */
+export type UnexpectedDrop = { heldAs: string | null; at: number };
+
+/** The account a drop under {@link HANDOFF_RECENT_DROP_MS} ago held the board as, else null. */
+export function recentUnexpectedDropHeldAs(drop: UnexpectedDrop | null, now = Date.now()): string | null {
+  if (!drop || now - drop.at > HANDOFF_RECENT_DROP_MS) return null;
+  return drop.heldAs;
+}
 
 /** Tests only. */
 export function resetAnsweredHandoffRequestsForTests(): void {
@@ -69,8 +87,11 @@ export type UseBoardHandoffReleaseInput = {
    * Let go of the board for `requester`: end the drive, disconnect the link
    * with the `taken_over` reason or give back a virtual hold (either release
    * report frees the board), buzz and announce. The provider owns that side.
+   * `linked` false: the asker's connect already dropped this phone's link
+   * (`heldAsUserId` came from a recent unexpected drop), so there is nothing
+   * to let go of, only the buzz and the words.
    */
-  release: (requester: BoardHandoffRequester) => void;
+  release: (requester: BoardHandoffRequester, options: { linked: boolean }) => void;
 };
 
 /**
@@ -118,9 +139,9 @@ export function useBoardHandoffRelease({
       boardId,
       sessionId,
       previousHolderUserId: heldAsUserId,
-      linkDropped: false,
+      linkDropped: !linked,
     });
-    releaseRef.current(request.requester);
+    releaseRef.current(request.requester, { linked });
     // Only a new request answers; the other inputs are read at its arrival.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request]);

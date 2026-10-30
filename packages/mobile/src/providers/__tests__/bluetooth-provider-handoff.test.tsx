@@ -422,6 +422,84 @@ describe('BluetoothProvider — a crewmate takes the board (#7113 PR 4)', () => 
     expect(bluetooth.state.connect).not.toHaveBeenCalled();
   });
 
+  // The asker connects as it asks: on a last-connection-wins box its link drops
+  // this one (peer_terminated) a moment before the request lands.
+  function peerTookTheLink() {
+    bluetooth.state.isConnected = false;
+    bluetooth.options?.onConnectionEnded?.({
+      reason: 'unexpected',
+      disconnectTrigger: 'link_drop',
+      connectionDurationSec: 60,
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      boardId: 42,
+      inSession: true,
+      disconnectInfo: { source: 'ble-plx', androidErrorCode: 19 },
+    } as BleConnectionEnded);
+  }
+
+  it('the drop comes first: a matching request within 5 s turns it into taken_over, and nothing reconnects', async () => {
+    const view = render(providerElement());
+    await act(async () => {
+      peerTookTheLink();
+      view.rerender(providerElement());
+    });
+    // Nothing reconnects on its own after the drop, foreground included.
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    presence.handoffRequest = LIZ_ASKS;
+    await act(async () => {
+      view.rerender(providerElement());
+    });
+    // Nothing left to disconnect: only the buzz, the words and the hold.
+    expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
+    expect(announce.announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.boardTakenBy');
+    expect(handedOffEvents()).toHaveLength(1);
+    expect(capturedBluetooth?.takenOverBy).toEqual(LIZ_ASKS.requester);
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+  });
+
+  it('the drop comes first: a request more than 5 s later is not a hand-off of this link', async () => {
+    const view = render(providerElement());
+    await act(async () => {
+      peerTookTheLink();
+      view.rerender(providerElement());
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_001);
+    });
+    presence.handoffRequest = LIZ_ASKS;
+    await act(async () => {
+      view.rerender(providerElement());
+    });
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(capturedBluetooth?.takenOverBy).toBeNull();
+  });
+
+  it('a deliberate disconnect followed by a request is not a hand-off', async () => {
+    const view = render(providerElement());
+    await act(async () => {
+      linkEnded();
+      view.rerender(providerElement());
+    });
+    presence.handoffRequest = LIZ_ASKS;
+    await act(async () => {
+      view.rerender(providerElement());
+    });
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(capturedBluetooth?.takenOverBy).toBeNull();
+  });
+
   it('never answers an old request on a link made after it', async () => {
     bluetooth.state.isConnected = false;
     const view = render(providerElement());

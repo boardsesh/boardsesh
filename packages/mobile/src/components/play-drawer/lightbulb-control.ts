@@ -34,20 +34,22 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   if (args.wallHeld) return 'releaseWall';
   // A wall with no lights has nothing to connect to; the tap takes the wall.
   if (args.ledless) return 'takeWall';
-  // Someone I'm climbing with is driving the wall. An Aurora/MoonBoard box is a
-  // single-central peripheral: it stops advertising once taken, and Android's
-  // GATT rejects the second central outright. So a connect from here cannot
-  // succeed — it spends ~15s scanning and then shows "Connection failed" over a
-  // board that is working perfectly (BleError 201 DeviceDisconnected, which
-  // `connection-error.ts` buckets as `connect_failed` — the single largest BLE
-  // failure bucket in the app, and ~65x more common on Android than iOS).
-  //
-  // Relay instead: the holder's auto-sender writes whatever the session's
-  // current climb is, so making this climb current lights it on their link.
-  // With nothing to relay we stop at 'noop' rather than firing that doomed
-  // connect — the bulb already reads lit in this state, so a tap that does
-  // nothing tells the truth ("it's on, someone else is driving") where the
-  // alert actively lied.
+  // Someone I'm climbing with is driving the wall. A connect from here would
+  // either take it from them or fail:
+  //   - Most boxes (Kilter, Tension, the other Aurora boards, most MoonBoards)
+  //     are last-connection-wins: the connect links and silently drops the
+  //     crewmate mid-session, with no Undo (2026-10-28 rule).
+  //   - Some MoonBoards refuse a second phone while one is linked: the scan
+  //     spends ~15 s and shows "Connection failed" over a board that works
+  //     (BleError 201 DeviceDisconnected, bucketed `connect_failed` by
+  //     `connection-error.ts`, far more common on Android than iOS).
+  // Neither is what a plain bulb tap means, so it relays instead: the holder's
+  // auto-sender writes whatever the session's current climb is, so making this
+  // climb current lights it on their link. With nothing to relay we stop at
+  // 'noop': the bulb already reads lit, so a tap that does nothing tells the
+  // truth ("it's on, someone else is driving"). Taking the board on purpose is
+  // the wall button's swipe (#7113 PR 4), which asks the crewmate's phone and
+  // connects with this suppression lifted.
   if (args.holderIsAuthoritative) return args.canRelay ? 'relay' : 'noop';
   return 'connect';
 }

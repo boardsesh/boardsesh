@@ -27,6 +27,12 @@ export type DriveModeState = {
   startedAt: number;
   /** Climbs lit on this phone's link, the swipe's own included, for Drive Mode Ended. */
   climbsLit: number;
+  /**
+   * The drive takes a crewmate's board (#7113 PR 4). Its connect can fail once
+   * and be retried, so the runner, not the watcher, ends it on a failed connect,
+   * and arming may run longer (`DRIVE_HANDOFF_ARMING_TIMEOUT_MS`).
+   */
+  handoff: boolean;
 };
 
 /**
@@ -64,6 +70,12 @@ export type DriveModeExitReason =
  */
 export const DRIVE_ARMING_TIMEOUT_MS = 30_000;
 
+/**
+ * Arming for a hand-off: a scan (15 s), a wait for the crewmate's release
+ * (5 s) and one more scan, with room to spare.
+ */
+export const DRIVE_HANDOFF_ARMING_TIMEOUT_MS = 45_000;
+
 /** What `DriveModeWatcher` reads each render. */
 export type DriveWatchSnapshot = {
   /** This phone's Bluetooth link, or its hold on a wall with no lights. */
@@ -98,6 +110,8 @@ export function resolveDriveModeExit({
   if (drive.sessionId !== current.sessionId) return 'session_changed';
   if (previous.linked && !current.linked) return 'link_dropped';
   if (drive.phase === 'arming') {
+    // A hand-off's runner retries a failed connect once, then ends it itself.
+    if (drive.handoff) return null;
     return connectSeen && !current.pending && !current.linked ? 'connect_failed' : null;
   }
   // Live: another board (never a binding that is only on its way, null).
@@ -135,13 +149,15 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
 export function enterDriveMode({
   sessionId,
   boardId,
+  handoff = false,
   now = Date.now(),
 }: {
   sessionId: string | null;
   boardId: number | null;
+  handoff?: boolean;
   now?: number;
 }): void {
-  driveMode = { phase: 'arming', sessionId, boardId, startedAt: now, climbsLit: 0 };
+  driveMode = { phase: 'arming', sessionId, boardId, startedAt: now, climbsLit: 0, handoff };
   stoppedForLink = false;
   lastExitReason = null;
   emit();

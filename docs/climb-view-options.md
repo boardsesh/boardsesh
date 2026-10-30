@@ -175,9 +175,10 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   button ends 16 dp from the edge, inside the back zone, and neither RN nor RNGH can exclude it without native code)
   cancels the pan, which springs back like any cancel. On Expo web the detector has `touchAction="pan-y"`.
 - **A crewmate's board** (#7113 PR 4): past the commit point the label reads "Let go to take Sam's board", and
-  letting go asks Sam's phone to let go of the board, then connects (`docs/board-connection-holder.md`, "Taking
-  the board"). The frost holds while it waits. No release within 12 s, or a refusal, springs it back with an error
-  buzz and "Couldn't reach the board". A drive the runner can't start at all (a wall with no lights another account
+  letting go asks Sam's phone to let go of the board and connects at the same time (`docs/board-connection-holder.md`,
+  "Taking the board"). The frost holds meanwhile. When no connect gets the board (the scan, plus one retry after Sam's
+  release on a MoonBoard that refuses a second phone), it springs back with an error buzz and "Couldn't reach the
+  board". A drive the runner can't start at all (a wall with no lights another account
   holds, an anonymous holder) answers `needs_handoff` and springs back the same way.
 - **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
   offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing

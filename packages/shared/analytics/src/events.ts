@@ -130,13 +130,14 @@ export const SHARED_EVENTS = {
   // crewmate took the board from, the other two on the phone that asked.
   DriveModeEnded: 'Drive Mode Ended',
   // Mobile-only (#7113): the swipe on a crewmate's board asked their phone to
-  // let go (requestBoardHandoff), fired once per request on the asking phone.
-  // Props: { outcome: 'released' (the board went free and this phone went on
-  // to connect; whether the connect worked is Drive Mode Ended's reason) |
-  // 'timed_out' (no release within 12 s: their phone is offline, on an older
-  // app, or ignored it) | 'refused' (the server said no: not in their session,
-  // rate-limited, or the request never reached the server), inSession }. No
-  // ids or names.
+  // let go (requestBoardHandoff) while connecting at the same time; fired once
+  // per swipe on the asking phone, when it resolves. Props: { outcome:
+  // 'released' (this phone got the board: at once on a last-connection-wins
+  // box, or after their phone let go on a strict MoonBoard) | 'timed_out' (no
+  // connect got it, the one retry after a release included: their phone is
+  // offline, on an older app, or the box is out of reach) | 'refused' (no
+  // connect got it and the server refused the request: not in their session,
+  // rate-limited, or it never reached the server), inSession }. No ids or names.
   BoardHandoffRequested: 'Board Handoff Requested',
   // Mobile-only (#7113): this phone let go of the board because a crewmate
   // asked for it with a hand-off. Props: { wasDriving }. No ids or names: the

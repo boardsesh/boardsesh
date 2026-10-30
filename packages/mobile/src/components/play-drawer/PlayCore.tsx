@@ -753,10 +753,10 @@ export function PlayCore({
   // press action also accounts for a session peer holding the wall; the label
   // follows that action rather than the local BLE connection alone.
   //
-  // While a session peer holds the board, the tap RELAYS instead: an Aurora /
-  // MoonBoard box takes one central at a time, so a connect from here could only
-  // spend 15s scanning and then claim "Connection failed" over a wall that is
-  // lit and working. Making the displayed climb the session's current
+  // While a session peer holds the board, the tap RELAYS instead: a connect
+  // would silently kick them off a last-connection-wins box, or fail after a
+  // 15 s scan on a MoonBoard that refuses a second phone (see
+  // `lightbulb-control.ts`). Making the displayed climb the session's current
   // climb lights it on the holder's link — the same path a queue add already
   // rides — with no BLE from this device.
   //
@@ -1126,8 +1126,8 @@ export function PlayCore({
     confirmArmed: busyWallConfirmArmed,
     wallDriven: lightbulbActive,
     // A connect already in flight counts, so Put on the wall keeps its label
-    // while the board is found. Never while
-    // another account holds the board: it takes one phone at a time.
+    // while the board is found. Never while another account holds the board:
+    // a tap must not take it from them (`lightbulb-control.ts`).
     tapConnects:
       (lightbulbPressAction === 'connect' || (lightbulbPending && !bluetoothConnected)) &&
       !(bluetooth?.wallHeldByOtherUser ?? false),
@@ -1788,12 +1788,12 @@ export function PlayCore({
   // first and goes live once this phone's link lights the climb
   // (`DriveModeWatcher`, at the app root); a connect that fails ends it.
   //
-  // A crewmate's board can't be taken by a connect: Aurora and MoonBoard boxes
-  // stop advertising once linked. So the swipe asks their phone to let go
-  // (#7113 PR 4, `requestBoardHandoff`), waits for presence to show the board
-  // free, and only then connects, with the relay suppression lifted for that
-  // one connect. No release in 12 s, or a refusal, says "Couldn't reach the
-  // board" and ends the drive.
+  // A crewmate's board (#7113 PR 4): the swipe asks their phone to let go
+  // (`requestBoardHandoff`) and connects at the same time, with the relay
+  // suppression lifted for that connect. Most boxes take the newest link at
+  // once; a MoonBoard that refuses a second phone is found once theirs lets go,
+  // with one retry after the release. No link at the end says "Couldn't reach
+  // the board" and ends the drive.
   const wallControlForDriveRef = useRef(wallControl);
   wallControlForDriveRef.current = wallControl;
   const { boardId: presenceBoardIdForHandoff, requestHandoffForBoard } = useBoardPresenceControls();

@@ -1,9 +1,10 @@
 /**
- * The asking phone's half of taking a crewmate's board (#7113): after
- * `requestBoardHandoff`, wait for presence to show the board let go before
- * connecting. Aurora and MoonBoard boxes stop advertising once linked, and
- * Android refuses a second phone, so a connect before the holder's phone lets
- * go only scans for 15 s and fails.
+ * Taking a crewmate's board (#7113 PR 4): the release the asking phone may wait
+ * for. Most boxes (Kilter, Tension, the other Aurora boards, most MoonBoards)
+ * take the newest connection and drop the old one, so the asking phone connects
+ * straight away and never waits. Some MoonBoards refuse a second phone while one
+ * is linked; there a connect that failed waits here, briefly, for presence to
+ * show the holder's phone let go, then tries once more.
  *
  * In memory, one wait at a time. `DriveModeWatcher` (app root) feeds it
  * presence's holder, so the wait resolves with the player closed too, and
@@ -11,12 +12,11 @@
  */
 
 /**
- * How long the asking phone waits for the holder's phone to let go. Their phone
- * answers in well under a second when it is online; past this it is offline,
- * backgrounded with its socket suspended, or on an app that doesn't know the
- * request, and the swipe springs back with "Couldn't reach the board".
+ * How long a connect that failed against a held box waits for the release
+ * before its one retry. The holder's phone answers in 1 to 2 s when it is
+ * online.
  */
-export const HANDOFF_RELEASE_TIMEOUT_MS = 12_000;
+export const HANDOFF_RETRY_RELEASE_WAIT_MS = 5_000;
 
 export type BoardReleaseOutcome = 'released' | 'timed_out' | 'cancelled';
 
@@ -65,7 +65,7 @@ function settle(outcome: BoardReleaseOutcome): void {
  */
 export function waitForBoardRelease({
   holderUserId,
-  timeoutMs = HANDOFF_RELEASE_TIMEOUT_MS,
+  timeoutMs = HANDOFF_RETRY_RELEASE_WAIT_MS,
 }: {
   holderUserId: string;
   timeoutMs?: number;

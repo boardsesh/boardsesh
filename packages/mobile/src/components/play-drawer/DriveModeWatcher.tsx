@@ -8,6 +8,7 @@ import { useQueueSessionControls } from '../../providers/queue-provider';
 import {
   clearDrivingStopped,
   DRIVE_ARMING_TIMEOUT_MS,
+  DRIVE_HANDOFF_ARMING_TIMEOUT_MS,
   exitDriveMode,
   getDriveMode,
   markDriveLive,
@@ -94,6 +95,7 @@ export function DriveModeWatcher(): null {
   }, [lightOnSwipe]);
 
   const armingSince = drive?.phase === 'arming' ? drive.startedAt : null;
+  const armingTimeoutMs = drive?.handoff ? DRIVE_HANDOFF_ARMING_TIMEOUT_MS : DRIVE_ARMING_TIMEOUT_MS;
   useEffect(() => {
     if (armingSince === null) return undefined;
     const timer = setTimeout(
@@ -101,10 +103,10 @@ export function DriveModeWatcher(): null {
         const latest = getDriveMode();
         if (latest?.phase === 'arming' && latest.startedAt === armingSince) exitDriveMode('arming_timed_out');
       },
-      Math.max(0, armingSince + DRIVE_ARMING_TIMEOUT_MS - Date.now()),
+      Math.max(0, armingSince + armingTimeoutMs - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [armingSince]);
+  }, [armingSince, armingTimeoutMs]);
 
   return null;
 }

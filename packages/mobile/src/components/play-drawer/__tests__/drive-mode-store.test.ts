@@ -42,6 +42,7 @@ describe('drive-mode store', () => {
       boardId: null,
       startedAt: 1_000,
       climbsLit: 0,
+      handoff: false,
     });
     // Arming lights nothing yet.
     noteDriveClimbLit();
@@ -166,7 +167,14 @@ describe('resolveDriveModeExit', () => {
     boardId: 7,
     signedIn: true,
   };
-  const LIVE: DriveModeState = { phase: 'live', sessionId: 'session-1', boardId: 7, startedAt: 0, climbsLit: 0 };
+  const LIVE: DriveModeState = {
+    phase: 'live',
+    sessionId: 'session-1',
+    boardId: 7,
+    startedAt: 0,
+    climbsLit: 0,
+    handoff: false,
+  };
   const ARMING: DriveModeState = { ...LIVE, phase: 'arming', boardId: null };
 
   function exit(
@@ -224,6 +232,13 @@ describe('resolveDriveModeExit', () => {
     expect(exit(ARMING, notLinked, { linked: false, pending: true }, true)).toBe('connect_failed');
     // It ended with a link: the runner marks it live.
     expect(exit(ARMING, { linked: true, pending: false }, { linked: false, pending: true }, true)).toBeNull();
+  });
+
+  it("leaves a hand-off's failed connect to its runner, which retries once (#7113 PR 4)", () => {
+    const handoff: DriveModeState = { ...ARMING, handoff: true };
+    expect(exit(handoff, { linked: false, pending: false }, { linked: false, pending: true }, true)).toBeNull();
+    // Everything else still ends it.
+    expect(exit(handoff, { sessionId: null })).toBe('session_changed');
   });
 
   it('puts sign-out first when several things change at once', () => {

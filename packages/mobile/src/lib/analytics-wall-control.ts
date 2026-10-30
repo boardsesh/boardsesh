@@ -60,9 +60,9 @@ export function trackDriveModeEnded(input: DriveModeEndedInput): void {
 }
 
 /**
- * What a hand-off request came to on the asking phone (#7113): `released` the
- * crewmate's phone let go, `timed_out` it didn't within 12 s, `refused` the
- * server said no (or the request never reached it).
+ * What a hand-off came to on the asking phone (#7113): `released` this phone got
+ * the board, `timed_out` no connect got it (the retry included), `refused` no
+ * connect got it and the server refused the request (or it never reached it).
  */
 export type BoardHandoffOutcome = 'released' | 'timed_out' | 'refused';
 
