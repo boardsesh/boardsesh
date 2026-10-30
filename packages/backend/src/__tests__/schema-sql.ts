@@ -115,6 +115,7 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
