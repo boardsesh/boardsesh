@@ -135,9 +135,10 @@ would scan for 15 s and fail over a board that works. So Sam's phone has to let 
    a catch-up) on every other one. The requester's name and face go only to that crewmate, who sees them in the
    session roster already.
 4. Sam's `BluetoothProvider` (`use-board-handoff-release.ts`) answers each `requestId` once, and only while it holds
-   the link as the account named, for an asker in its session. It ends its drive (`taken_over`), drops any queued
-   board-switch connect, disconnects with the `taken_over` reason, buzzes a warning once and announces "Liz took
-   the board". The disconnect's connection-ended path calls `reportBoardDisconnect`, which frees the writer key and
+   the board as the account named (its link, or a virtual hold on a wall it took with no radio), for an asker in its
+   session. It ends its drive (`taken_over`), drops any queued board-switch connect, disconnects with the
+   `taken_over` reason (a virtual hold is given back instead, as when a peer takes it), buzzes a warning once and
+   announces "Liz took the board". The disconnect's connection-ended path calls `reportBoardDisconnect`, which frees the writer key and
    publishes `BoardConnectionChanged { holder: null }`. Board Handed Off `{ wasDriving }` is logged.
 5. Liz's phone waits (`board-handoff-store.ts`, fed by `DriveModeWatcher`) for a holder event that no longer names
    Sam, then connects through the ordinary connect path with `takeover: true`, the one connect that sets the relay
@@ -147,20 +148,24 @@ would scan for 15 s and fail over a board that works. So Sam's phone has to let 
 **Sam's phone does not reconnect by itself.** The `taken_over` teardown is a deliberate one: it suppresses native
 connection adoption (iOS state restoration, an app return) until the climber connects by hand, on iOS and Android
 alike, and keeps the remembered board so a later tap reconnects without the picker. Until presence names Liz (or 30 s
-pass), `takenOverBy` makes the board read as hers, so Sam's controls relay instead of offering a connect that would
-race her for the radio. Once she holds it, his button reads "Put on board" with her face.
+pass), `takenOverBy` makes the board read as hers: Sam's controls relay instead of offering a connect that would
+race her for the radio, and `wall-holder-identity.ts` stands her in for the holder presence still reports (his own
+account, then nobody), so his button reads "Put on board" with her face the whole time, never "On your other phone".
 
-**Timeouts.** Liz waits 12 s for the release. A refusal, or no release (Sam's phone is offline, its socket suspended
-in the background, or on an app that predates the event), ends the drive `handoff_refused` or `handoff_timed_out`,
-springs the frost back with an error buzz, and shows "Couldn't reach the board". Nothing force-connects. A failed
-connect after the release ends it `connect_failed`. The arming drive's own 30 s limit covers the wait plus a scan.
+**Timeouts.** Liz waits 12 s for the release. A refusal ends the drive `handoff_refused`. No release (Sam's phone is
+offline, its socket suspended in the background, or on an app that predates the event) tries one plain connect anyway:
+the writer key can be stale for up to 12 h after a drop whose disconnect report never went out, and against a box
+that is still linked the scan fails harmlessly within 15 s. Only when that connect fails does the drive end
+`handoff_timed_out`. Both failures spring the frost back with an error buzz and show "Couldn't reach the board". A
+failed connect after a release ends it `connect_failed`. The arming drive's own 30 s limit covers the wait plus a
+scan. A request refused for a lapsed membership stamp is re-stamped once and asked again, as a climb report is.
 
 **Not covered.**
 
 - The climber's own other phone: the request is addressed by account, so it can't tell two phones apart. That board
   offers no swipe.
-- An anonymous holder has no account to address, and a wall with no lights has no radio to hand over: both answer
-  `needs_handoff`.
+- An anonymous holder has no account to address, and a crewmate's virtual hold on a wall flagged with no lights shows
+  no swipe: both answer `needs_handoff`.
 - Sam's lock-screen bulb (the Live Activity's reconnect intent) is a deliberate tap; it still tries to connect, and
   fails while Liz holds the board.
 - The event needs a backend that serves `BoardHandoffRequested`: an older server rejects the whole `boardNowPlaying`

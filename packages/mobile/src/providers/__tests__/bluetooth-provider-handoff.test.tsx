@@ -401,6 +401,27 @@ describe('BluetoothProvider — a crewmate takes the board (#7113 PR 4)', () => 
     expect(capturedBluetooth?.takenOverBy).toBeNull();
   });
 
+  it('gives back a virtual hold (a wall taken with no radio), freeing the board for the asker', async () => {
+    bluetooth.state.isConnected = false;
+    const view = render(providerElement());
+    await act(async () => {
+      capturedBluetooth?.takeVirtualWall();
+    });
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    presence.reportDisconnectForBoard.mockClear();
+    presence.handoffRequest = LIZ_ASKS;
+    await act(async () => {
+      view.rerender(providerElement());
+    });
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(42);
+    expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+    expect(haptics.hapticWarning).toHaveBeenCalledOnce();
+    expect(handedOffEvents()).toEqual([['Board Handed Off', { wasDriving: false }]]);
+    expect(capturedBluetooth?.takenOverBy).toEqual(LIZ_ASKS.requester);
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+  });
+
   it('never answers an old request on a link made after it', async () => {
     bluetooth.state.isConnected = false;
     const view = render(providerElement());

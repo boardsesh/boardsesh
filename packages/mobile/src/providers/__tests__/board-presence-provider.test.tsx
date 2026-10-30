@@ -19,6 +19,7 @@ const transport = vi.hoisted(() => ({
     async (_args: unknown) => ({ boardId: 43, boardName: 'MoonBoard 40' }) as unknown as ResolvedBoard,
   ),
   reportClimb: vi.fn(async () => true),
+  requestHandoff: vi.fn(async (_boardId: number) => true),
 }));
 const credentialScope = vi.hoisted(() => ({ generation: 0 }));
 vi.mock('../../lib/auth-store', () => ({
@@ -84,6 +85,7 @@ vi.mock('../../lib/board-presence/board-presence-client', () => ({
     fetchRecentClimbs: async () => [],
     fetchStats: async () => null,
     reportClimb: transport.reportClimb,
+    requestHandoff: transport.requestHandoff,
   }),
 }));
 
@@ -495,6 +497,60 @@ describe('MobileBoardPresenceProvider', () => {
 
     expect(cachedBinding).toEqual({ boardId: 44, boardUuid: '11111111-1111-4111-8111-111111111111' });
     expect(transport.resolveBoardForUuid).toHaveBeenCalledTimes(1);
+  });
+
+  describe('requestHandoffForBoard (#7113)', () => {
+    const args = { boardUuid: '11111111-1111-4111-8111-111111111111' };
+    async function bound() {
+      renderProvider();
+      await act(async () => {
+        await capturedControls?.resolveAndBindBoardByUuid(args);
+      });
+      transport.resolveBoardForUuid.mockClear();
+      transport.requestHandoff.mockReset();
+    }
+
+    it('answers asked or free from the server', async () => {
+      await bound();
+      transport.requestHandoff.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      expect(await capturedControls?.requestHandoffForBoard(44)).toBe('asked');
+      expect(await capturedControls?.requestHandoffForBoard(44)).toBe('free');
+      expect(transport.resolveBoardForUuid).not.toHaveBeenCalled();
+    });
+
+    it('re-stamps a lapsed membership once and asks again, as a climb report does', async () => {
+      await bound();
+      transport.requestHandoff
+        .mockRejectedValueOnce(new Error('Not connected to this board'))
+        .mockResolvedValueOnce(true);
+      let answer: string | undefined;
+      await act(async () => {
+        answer = await capturedControls?.requestHandoffForBoard(44);
+      });
+      expect(answer).toBe('asked');
+      expect(transport.resolveBoardForUuid).toHaveBeenCalledExactlyOnceWith({ ...args, boardId: 44 });
+      expect(transport.requestHandoff).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses after one retry, never looping', async () => {
+      await bound();
+      transport.requestHandoff.mockRejectedValue(new Error('The board is held outside your session'));
+      let answer: string | undefined;
+      await act(async () => {
+        answer = await capturedControls?.requestHandoffForBoard(44);
+      });
+      expect(answer).toBe('refused');
+      expect(transport.requestHandoff).toHaveBeenCalledTimes(2);
+      expect(transport.resolveBoardForUuid).toHaveBeenCalledOnce();
+    });
+
+    it('refuses without a re-stamp for a board it is not bound to', async () => {
+      await bound();
+      transport.requestHandoff.mockRejectedValue(new Error('Not connected to this board'));
+      expect(await capturedControls?.requestHandoffForBoard(7)).toBe('refused');
+      expect(transport.resolveBoardForUuid).not.toHaveBeenCalled();
+      expect(transport.requestHandoff).toHaveBeenCalledOnce();
+    });
   });
 
   it('shares the in-flight result without starting a second uuid resolve', async () => {

@@ -26,37 +26,40 @@ export function resetAnsweredHandoffRequestsForTests(): void {
  * Whether this phone lets go of the board for `request`. All of:
  *
  * - it is a request this app hasn't answered yet;
- * - this phone holds the Bluetooth link now;
- * - the request names the account this phone holds the board as (presence's
- *   holder while linked). The server already sends it to that account only;
- *   this keeps a second phone on the same account, which isn't linked, out;
+ * - this phone holds the board now (`heldAsUserId` set): its Bluetooth link, or
+ *   a hold with no radio on a wall it took virtually;
+ * - the request names the account this phone holds the board as. The server
+ *   already sends it to that account only; this keeps a second phone on the
+ *   same account, which holds nothing, out;
  * - the asker is someone else, and a member of this phone's party session (the
  *   server checked that too).
  */
 export function shouldReleaseForHandoff({
   request,
-  isConnected,
-  localHolderUserId,
+  heldAsUserId,
   sessionMemberUserIds,
 }: {
   request: BoardHandoffRequest | null;
-  isConnected: boolean;
-  localHolderUserId: string | null;
+  /** The account this phone holds the board as, or null when it holds nothing. */
+  heldAsUserId: string | null;
   sessionMemberUserIds: ReadonlySet<string> | null | undefined;
 }): boolean {
   if (!request || answeredRequestIds.has(request.requestId)) return false;
-  if (!isConnected || localHolderUserId === null) return false;
-  if (request.holderUserId !== localHolderUserId) return false;
-  if (request.requester.userId === localHolderUserId) return false;
+  if (heldAsUserId === null || request.holderUserId !== heldAsUserId) return false;
+  if (request.requester.userId === heldAsUserId) return false;
   return sessionMemberUserIds?.has(request.requester.userId) === true;
 }
 
 export type UseBoardHandoffReleaseInput = {
   /** The latest request presence delivered to this account, or null. */
   request: BoardHandoffRequest | null;
-  isConnected: boolean;
-  /** The account this phone holds the board as (`useLocalBluetoothHolder`). */
-  localHolderUserId: string | null;
+  /** This phone holds the board: its Bluetooth link, or a virtual hold. */
+  linked: boolean;
+  /**
+   * The account this phone holds the board as: `useLocalBluetoothHolder` for a
+   * link, presence's holder for a virtual hold; null when it holds nothing.
+   */
+  heldAsUserId: string | null;
   sessionMemberUserIds: ReadonlySet<string> | null | undefined;
   /** Presence's holder now, to see the asker take the board. */
   holderUserId: string | null;
@@ -64,8 +67,8 @@ export type UseBoardHandoffReleaseInput = {
   sessionId: string | null;
   /**
    * Let go of the board for `requester`: end the drive, disconnect the link
-   * with the `taken_over` reason (its release report frees the board), buzz and
-   * announce. The provider owns the Bluetooth side.
+   * with the `taken_over` reason or give back a virtual hold (either release
+   * report frees the board), buzz and announce. The provider owns that side.
    */
   release: (requester: BoardHandoffRequester) => void;
 };
@@ -84,8 +87,8 @@ export type UseBoardHandoffReleaseInput = {
  */
 export function useBoardHandoffRelease({
   request,
-  isConnected,
-  localHolderUserId,
+  linked,
+  heldAsUserId,
   sessionMemberUserIds,
   holderUserId,
   boardId,
@@ -105,16 +108,16 @@ export function useBoardHandoffRelease({
 
   useEffect(() => {
     if (!request) return;
-    const releasing = shouldReleaseForHandoff({ request, isConnected, localHolderUserId, sessionMemberUserIds });
+    const releasing = shouldReleaseForHandoff({ request, heldAsUserId, sessionMemberUserIds });
     // Answered once, acted on or not: a request that found this phone unlinked
     // must not disconnect a link made later.
     answeredRequestIds.add(request.requestId);
-    if (!releasing || localHolderUserId === null) return;
+    if (!releasing || heldAsUserId === null) return;
     setTakenOver({
       requester: request.requester,
       boardId,
       sessionId,
-      previousHolderUserId: localHolderUserId,
+      previousHolderUserId: heldAsUserId,
       linkDropped: false,
     });
     releaseRef.current(request.requester);
@@ -125,10 +128,10 @@ export function useBoardHandoffRelease({
   // The link is still up for a beat after the release starts: only a link that
   // comes back after it went down means this phone connected again.
   useEffect(() => {
-    if (takenOver && !takenOver.linkDropped && !isConnected) {
+    if (takenOver && !takenOver.linkDropped && !linked) {
       setTakenOver({ ...takenOver, linkDropped: true });
     }
-  }, [takenOver, isConnected]);
+  }, [takenOver, linked]);
 
   // The asker (or anyone) holds it now, or this phone's scope changed, or it
   // linked again (a deliberate connect: nothing here connects).
@@ -137,7 +140,7 @@ export function useBoardHandoffRelease({
     ((holderUserId !== null && holderUserId !== takenOver.previousHolderUserId) ||
       boardId !== takenOver.boardId ||
       sessionId !== takenOver.sessionId ||
-      (takenOver.linkDropped && isConnected));
+      (takenOver.linkDropped && linked));
   useEffect(() => {
     if (settled) setTakenOver(null);
   }, [settled]);

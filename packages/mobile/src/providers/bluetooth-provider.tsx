@@ -2650,13 +2650,16 @@ export function BluetoothProvider({
   // The drive ends first, with its own reason, so the drop isn't counted as
   // `link_dropped`. The teardown's connection-ended path reports
   // `reportBoardDisconnect`, which frees the board for the asker.
+  // A virtual hold (a wall taken with no radio) is given back the same way the
+  // presence watch gives it back to a peer: its release report frees the key.
   const releaseForHandoff = useCallback(
     (requester: BoardHandoffRequester) => {
       const wasDriving = getDriveMode() !== null;
       exitDriveMode('taken_over');
       setPendingAutoConnect(null);
       settlePendingConnectWaiter(false);
-      void wrappedDisconnect('taken_over');
+      if (bleConnectedRef.current) void wrappedDisconnect('taken_over');
+      else releaseVirtualWall('taken_by_peer');
       hapticWarning();
       announceQueued(
         requester.displayName
@@ -2665,12 +2668,13 @@ export function BluetoothProvider({
       );
       trackBoardHandedOff({ wasDriving });
     },
-    [settlePendingConnectWaiter, wrappedDisconnect, tSession],
+    [settlePendingConnectWaiter, wrappedDisconnect, releaseVirtualWall, tSession],
   );
   const takenOverBy = useBoardHandoffRelease({
     request: handoffRequest ?? null,
-    isConnected,
-    localHolderUserId: lastLocalHolderUserId,
+    linked: isConnected || virtualWallHeld,
+    // Presence names the virtual holder: its own reports set the writer key.
+    heldAsUserId: isConnected ? lastLocalHolderUserId : virtualWallHeld ? (holder?.userId ?? null) : null,
     sessionMemberUserIds,
     holderUserId: holder?.userId ?? null,
     boardId: presenceBoardId,

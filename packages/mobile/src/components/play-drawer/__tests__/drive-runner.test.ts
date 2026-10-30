@@ -202,9 +202,8 @@ describe("startDrive: taking a crewmate's board", () => {
     expect(handoff.onFailed).not.toHaveBeenCalled();
   });
 
-  it('times out after 12 s with no release: ends the drive and says so, never connecting', async () => {
+  async function timeOut(handoff: HandoffInput) {
     vi.useFakeTimers();
-    const handoff = handoffInput();
     const run = input({ ...SAMS_BOARD, handoff });
     startDrive(run);
     await flush();
@@ -212,17 +211,46 @@ describe("startDrive: taking a crewmate's board", () => {
     await act(async () => {
       vi.advanceTimersByTime(HANDOFF_RELEASE_TIMEOUT_MS - 1);
     });
+    // Never a connect while Sam's phone may still hold the radio.
+    expect(handoff.connect).not.toHaveBeenCalled();
     expect(getDriveMode()?.phase).toBe('arming');
     await act(async () => {
       vi.advanceTimersByTime(1);
     });
     await flush();
+    return run;
+  }
+
+  it('no release in 12 s: one plain connect, and only its failure says "Couldn\'t reach the board"', async () => {
+    const handoff = handoffInput({ connect: vi.fn(() => Promise.resolve(false)) });
+    const run = await timeOut(handoff);
+    expect(handoff.connect).toHaveBeenCalledOnce();
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('handoff_timed_out');
     expect(handoff.onFailed).toHaveBeenCalledOnce();
-    expect(handoff.connect).not.toHaveBeenCalled();
     expect(run.relight).not.toHaveBeenCalled();
     expect(handoffEvents()).toEqual([{ outcome: 'timed_out', inSession: true }]);
+  });
+
+  it('no release in 12 s, but the board was free after all (a stale writer key): the connect lights it', async () => {
+    const handoff = handoffInput();
+    const run = await timeOut(handoff);
+    expect(handoff.connect).toHaveBeenCalledOnce();
+    expect(run.relight).toHaveBeenCalledOnce();
+    expect(getDriveMode()?.phase).toBe('arming');
+    expect(handoff.onFailed).not.toHaveBeenCalled();
+  });
+
+  it('says "Couldn\'t reach the board" even when the watcher ended the drive first on the failed connect', async () => {
+    const handoff = handoffInput({
+      connect: vi.fn(async () => {
+        exitDriveMode('connect_failed');
+        return false;
+      }),
+    });
+    await timeOut(handoff);
+    expect(getLastDriveModeExitReason()).toBe('connect_failed');
+    expect(handoff.onFailed).toHaveBeenCalledOnce();
   });
 
   it('a refused request (or one that never reached the server) ends the drive at once', async () => {

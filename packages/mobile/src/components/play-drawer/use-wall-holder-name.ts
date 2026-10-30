@@ -1,14 +1,9 @@
 import { useContext, useMemo } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
-import type { WallControlFace } from './wall-control';
+import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { resolveWallHolderIdentity, type WallHolderIdentity } from './wall-holder-identity';
 
-export type WallHolderIdentity = {
-  /** Who board presence says holds the board, or put its climb up. Null when nobody is known. */
-  face: WallControlFace | null;
-  userId: string | null;
-  /** Presence's named holder only, without the climb's sender: who holds the link, as far as presence knows. */
-  holderUserId: string | null;
-};
+export type { WallHolderIdentity } from './wall-holder-identity';
 
 /**
  * Who board presence names for the wall (#7000): the holder, or whoever put
@@ -20,12 +15,16 @@ export type WallHolderIdentity = {
  */
 export function useWallHolderIdentity(): WallHolderIdentity {
   const current = useContext(BoardPresenceCurrentContext);
+  // A crewmate just took the board from this phone (#7113 PR 4): until presence
+  // names them, they stand in for the holder it still reports (this account, or
+  // nobody once the release lands).
+  const takenOverBy = useOptionalBluetoothContext()?.takenOverBy ?? null;
   const holder = current?.holder ?? null;
   const climb = current?.currentClimb ?? null;
-  const name = holder?.displayName ?? climb?.sentByDisplayName ?? null;
-  const avatarUrl = holder?.avatarUrl ?? climb?.sentByAvatarUrl ?? null;
-  const holderUserId = holder?.userId ?? null;
-  const userId = holderUserId ?? climb?.sentByUserId ?? null;
+  const identity = resolveWallHolderIdentity(holder, climb, takenOverBy);
+  const { face, userId, holderUserId } = identity;
+  const name = face?.name ?? null;
+  const avatarUrl = face?.avatarUrl ?? null;
   return useMemo(
     () => ({ face: name === null && avatarUrl === null ? null : { name, avatarUrl }, userId, holderUserId }),
     [name, avatarUrl, userId, holderUserId],

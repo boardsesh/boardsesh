@@ -738,18 +738,36 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     }
   }, []);
 
-  const requestHandoffForBoard = useCallback(async (targetBoardId: number): Promise<BoardHandoffRequestResult> => {
-    const activeClient = clientRef.current;
-    if (!enabledRef.current || activeClient?.requestHandoff == null) {
-      return 'refused';
-    }
-    try {
-      return (await activeClient.requestHandoff(targetBoardId)) ? 'asked' : 'free';
-    } catch (error) {
-      console.warn('[board-presence] requestBoardHandoff failed', error);
-      return 'refused';
-    }
-  }, []);
+  const requestHandoffForBoard = useCallback(
+    async (targetBoardId: number): Promise<BoardHandoffRequestResult> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient?.requestHandoff == null) {
+        return 'refused';
+      }
+      const ask = async (): Promise<BoardHandoffRequestResult | null> => {
+        try {
+          return (await activeClient.requestHandoff?.(targetBoardId)) ? 'asked' : 'free';
+        } catch (error) {
+          console.warn('[board-presence] requestBoardHandoff failed', error);
+          return null;
+        }
+      };
+      const answer = await ask();
+      if (answer !== null) return answer;
+      // A refusal can be a lapsed board-membership stamp (an anonymous socket
+      // reconnect, or a long session): re-stamp once without touching the live
+      // binding, then ask once more, as a climb report does.
+      const binding = boundBoardBindingRef.current;
+      const boardUuid = binding?.boardId === targetBoardId ? binding.boardUuid : null;
+      if (!boardUuid) return 'refused';
+      const stillTheSameBoard = await restampBoardMembershipByUuid({ boardUuid, boardId: targetBoardId }).catch(
+        () => false,
+      );
+      if (!stillTheSameBoard) return 'refused';
+      return (await ask()) ?? 'refused';
+    },
+    [restampBoardMembershipByUuid],
+  );
 
   // Confirm the board the user picked from the disambiguation prompt: remember
   // the choice server-side and bind it as the active wall.

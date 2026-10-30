@@ -72,9 +72,10 @@ export type StartDriveInput = {
  *    that fails ends this drive (`connect_failed`), never a newer one.
  *    On a crewmate's board (#7113 PR 4) the connect waits for the hand-off:
  *    ask their phone to let go, wait up to 12 s for presence to show the board
- *    free, then connect. A refusal ends the drive `handoff_refused`, no release
- *    `handoff_timed_out`; both say "Couldn't reach the board". It never
- *    connects before the release: their phone still holds the radio.
+ *    free, then connect. A refusal ends the drive `handoff_refused` and says
+ *    "Couldn't reach the board". No release in 12 s tries one plain connect
+ *    anyway (presence can carry a stale holder); only if that fails too does
+ *    the drive end `handoff_timed_out` with the same words.
  *
  * The drive goes live once this phone's link lights the climb, in
  * `DriveModeWatcher` at the app root, so closing the player mid-connect still
@@ -123,13 +124,12 @@ async function runHandoff(
   drive: { isThisDrive: () => boolean; endThisDrive: (reason: DriveModeExitReason) => void },
 ): Promise<void> {
   const inSession = input.sessionId !== null;
-  const fail = (outcome: 'timed_out' | 'refused') => {
-    // A drive that already ended another way (the session changed, the climber
-    // stopped it) says nothing more.
-    if (!drive.isThisDrive()) return;
-    trackBoardHandoffRequested({ outcome, inSession });
-    drive.endThisDrive(outcome === 'timed_out' ? 'handoff_timed_out' : 'handoff_refused');
-    handoff.onFailed();
+  const connect = async () => {
+    try {
+      return await handoff.connect();
+    } catch {
+      return false;
+    }
   };
   let asked: 'asked' | 'free' | 'refused';
   try {
@@ -137,24 +137,33 @@ async function runHandoff(
   } catch {
     asked = 'refused';
   }
-  if (asked === 'refused') {
-    fail('refused');
-    return;
-  }
   if (!drive.isThisDrive()) return;
-  const released = asked === 'free' ? 'released' : await handoff.waitForRelease(handoff.holderUserId);
-  if (released === 'timed_out') {
-    fail('timed_out');
+  if (asked === 'refused') {
+    trackBoardHandoffRequested({ outcome: 'refused', inSession });
+    drive.endThisDrive('handoff_refused');
+    handoff.onFailed();
     return;
   }
+  const released = asked === 'free' ? 'released' : await handoff.waitForRelease(handoff.holderUserId);
   if (released === 'cancelled' || !drive.isThisDrive()) return;
-  trackBoardHandoffRequested({ outcome: 'released', inSession });
-  let connected = false;
-  try {
-    connected = await handoff.connect();
-  } catch {
-    connected = false;
+  trackBoardHandoffRequested({ outcome: released, inSession });
+  if (released === 'released') {
+    if (await connect()) input.relight();
+    else drive.endThisDrive('connect_failed');
+    return;
   }
-  if (connected) input.relight();
-  else drive.endThisDrive('connect_failed');
+  // No release in 12 s. Presence can be wrong: a writer key left behind by a
+  // drop whose disconnect report never went out lives up to 12 h. So try one
+  // plain connect: against a box that is still linked the scan fails
+  // harmlessly within 15 s. Only that failure says "Couldn't reach the board".
+  if (await connect()) {
+    input.relight();
+    return;
+  }
+  // The watcher may have ended the drive already when the connect settled
+  // (`connect_failed`); a newer drive is left alone.
+  const current = getDriveMode();
+  if (current !== null && !drive.isThisDrive()) return;
+  drive.endThisDrive('handoff_timed_out');
+  handoff.onFailed();
 }
