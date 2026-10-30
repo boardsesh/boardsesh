@@ -453,6 +453,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   // Solo unless a case says otherwise (the busy-wall question needs a crew):
   // the crew gate is off, so gestures commit as they always have.
   useIsSharedSession: () => crew.shared,
+  useIsCrewSession: () => crew.shared,
   usePlaylistSuggestionSource: () => null,
 }));
 // Null (no Bluetooth transport) unless a case hands the player a context, as

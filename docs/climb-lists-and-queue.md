@@ -163,7 +163,10 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
 - **Ending it.** A press on the frosted button stops driving and keeps the link; solo, swipes
-  and taps then stay previews until the link drops (the settings never flip). It also ends
+  and taps then stay previews until the link drops or the climber presses to put a climb up
+  again (the settings never flip). Solo, every such press (Put on board, a re-light, a
+  connect) ends in driving: it drops the stop, and with Light on swipe off it starts a live
+  drive (`tapDrive`, docs/climb-view-options.md). In a crew a press stays a one-off put. It also ends
   when the link drops, the swipe's climb can't go up, its connect fails or never comes (30 s), the session or the
   board changes, or the climber signs out (`DriveModeWatcher`). Each end fires `Drive Mode
   Ended {reason, durationSec, climbsLit, inSession}` once.
@@ -457,7 +460,10 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    wall) starts the walk from there. With Light on swipe off, or in a crew, a swipe off the
    climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
    the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
-   would (`resolveUpNextCommitResume`), and leaves the list for anything else. The look itself
+   would (`resolveUpNextCommitResume`), keeps the list when the look landed on the list's own
+   next climb (the walk's peek, not queued yet: after a stop on this link a swipe off a Search
+   results climb lands there, and Put on board used to drop "Search results · 4 of 23" and
+   leave swipes nowhere to go, #7113 QA), and leaves the list for anything else. The look itself
    never borrows or captures this phone's list, even when it starts from a list climb: only Put
    on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
    climb's own queue entry is removed while Up next plays, Previous goes back to that list

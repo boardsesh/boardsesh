@@ -427,7 +427,7 @@ describe('explicit wall commitment', () => {
     // going after it (#6777), and clears it otherwise.
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'preview' }) }),
-      { keepTrackIfUpNext: true, trigger: 'put_on_wall' },
+      { keepWalkedTrack: true, trigger: 'put_on_wall' },
     );
     expect(initialProps.preview.setSharedBrowseLatched).toHaveBeenCalledWith(false);
   });
@@ -446,6 +446,29 @@ describe('explicit wall commitment', () => {
         climb: expect.objectContaining({ uuid: 'preview' }),
       }),
       { playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }), trigger: 'put_on_wall' },
+    );
+  });
+
+  // #7113 QA: stopped driving on a list, a swipe off the climb on the wall is a
+  // trackless look at the list's next climb (a peek). Put on board used to send
+  // `playlistSuggestionSource: null`, dropping "Search results · 4 of 23".
+  it('hands a trackless look at a list peek to the provider to keep the list', () => {
+    const initialProps = inputs();
+    initialProps.navigation.stoppedForLink = true;
+    const peek = { ...item('next'), uuid: 'playlist-peek:next', suggested: true };
+    initialProps.navigation.navigationState.nextItem = peek;
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    // The look: a preview of the peek, with no track of its own (#5403).
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(peek);
+    expect(initialProps.preview.setDrawerPreviewSuggestionSource).not.toHaveBeenCalled();
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: peek } });
+    act(() => {
+      result.current.handleSetActive();
+    });
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'selection-1', climb: expect.objectContaining({ uuid: 'next' }) }),
+      { keepWalkedTrack: true, trigger: 'put_on_wall' },
     );
   });
 

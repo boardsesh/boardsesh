@@ -204,14 +204,16 @@ export type SetCurrentClimbOptions = {
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   /**
-   * A queued climb a look reached went up on the wall (issue #6777): a preview
-   * that walked the queue from the current climb, then Put on the wall. Where
-   * the climb is Up next on the held track, the track keeps steering and
-   * learns where the list picks up, as Next stepping into Up next does;
-   * otherwise it is cleared, like `playlistSuggestionSource: null`. Passed
-   * instead of `playlistSuggestionSource`.
+   * A climb a trackless look reached went up on the wall (issue #6777): a
+   * preview that walked from the current climb, then Put on the wall. Where the
+   * climb is Up next on the held track, the track keeps steering and learns
+   * where the list picks up, as Next stepping into Up next does; where it is
+   * the list's own climb the walk peeked at (not queued yet, #7113 QA), the
+   * list goes on from it, as Next stepping onto it does; otherwise it is
+   * cleared, like `playlistSuggestionSource: null`. Passed instead of
+   * `playlistSuggestionSource`.
    */
-  keepTrackIfUpNext?: boolean;
+  keepWalkedTrack?: boolean;
   trigger?: SetCurrentClimbTrigger;
   /**
    * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the

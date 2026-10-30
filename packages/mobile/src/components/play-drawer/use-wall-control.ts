@@ -8,9 +8,9 @@ import {
 } from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
-import { stopDrivingForLink } from './drive-mode-store';
+import { clearDrivingStopped, stopDrivingForLink } from './drive-mode-store';
 import { useWallControlShown } from './use-wall-control-shown';
-import type { WallControlModel } from './wall-control';
+import { isPutUpAction, type WallControlModel } from './wall-control';
 
 /**
  * What starting a drive did (#7113). `started`: arming, the climb is going up
@@ -141,6 +141,18 @@ export function useWallControl({
     // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
     const action = control === 'button' ? current.tapAction : current.bulbTapAction;
     trackWallControlTapped({ state: current.state, action, control });
+    // Solo, a press that puts the climb up ends in driving (#7113 QA, Marco),
+    // on the button and the bulb alike. With Light the board as I swipe off it
+    // starts a live drive, which commits, connects and lights as the swipe
+    // does; anywhere the drive can't start, it falls through to the plain
+    // light below. With the setting on, dropping a stop is all it takes.
+    if (current.tapDrive !== null && isPutUpAction(action)) {
+      if (current.tapDrive === 'start' && run.drive() === 'started') {
+        hapticMedium();
+        return;
+      }
+      clearDrivingStopped();
+    }
     if (current.state === 'on_wall_unlinked' && action !== 'noop') {
       hapticMedium();
       run.lightAgain();

@@ -101,10 +101,40 @@ export type WallSwipePreview = {
  */
 export const WALL_CONTROL_HEIGHT = Platform.OS === 'android' ? glassSize.inlinePrimary : glassSize.inline;
 
+/**
+ * Android's edge Back takes the wall button's swipe (#7113 PR 5). With gesture
+ * navigation a horizontal drag that starts near either screen edge is the
+ * system's Back, which closes the player. Measured on a Pixel 8 Pro: drags
+ * starting 35 dp or more from the edge drive the wall; drags starting 28 dp or
+ * less go Back. The full-width button ended 16 dp from the edge (the row's
+ * padding), so its trailing ~12 dp sat inside that zone, and neither React
+ * Native nor Gesture Handler can exclude the zone without native code.
+ *
+ * So on Android the full-width button takes this much more margin on BOTH
+ * sides, 32 dp from each edge in all: the same on the left and the right, so
+ * it stays centred in its row instead of looking like a layout bug. Only where
+ * the button spans its row (`spansRow`), which is where it reaches the screen
+ * edge; the workout's compact one between ⏮ and ⏭, and the one between the
+ * bulb row's buttons, are nowhere near it. iOS's edge swipe is the leading
+ * edge's alone and the button's leftward drag starts away from it, so iOS is
+ * unchanged. The height is untouched, so the second row's fixed height holds.
+ */
+export const ANDROID_EDGE_BACK_EXTRA_INSET = spacing[4];
+
+/** The extra side margin the button takes, the same on each side (`ANDROID_EDGE_BACK_EXTRA_INSET`). */
+export function wallControlEdgeInset(spansRow: boolean): number {
+  return spansRow && Platform.OS === 'android' ? ANDROID_EDGE_BACK_EXTRA_INSET : 0;
+}
+
 type WallControlButtonProps = {
   model: WallControlModel;
   /** The workout's top-row button, between ⏮ and ⏭: tighter padding, a little more shrink. */
   compact?: boolean;
+  /**
+   * The button is the only thing in its row, so it reaches the screen's edges:
+   * on Android it keeps clear of the edge Back zone (`ANDROID_EDGE_BACK_EXTRA_INSET`).
+   */
+  spansRow?: boolean;
   onPress: () => void;
   onLongPress: () => void;
   /**
@@ -133,6 +163,7 @@ type WallControlButtonProps = {
 function WallControlButtonComponent({
   model,
   compact = false,
+  spansRow = false,
   onPress,
   onLongPress,
   onDrive,
@@ -183,6 +214,8 @@ function WallControlButtonComponent({
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
+  // Clear of Android's edge Back, the same on both sides so it stays centred.
+  const edgeInset = wallControlEdgeInset(spansRow);
   const label = swipe.releaseArmed && !model.driving ? text.releaseLabel : text.label;
   const showChevrons = swipeOffered && !model.driving;
 
@@ -341,6 +374,7 @@ function WallControlButtonComponent({
       style={({ pressed }) => [
         styles.button,
         compact && styles.compact,
+        edgeInset > 0 && { marginLeft: edgeInset, marginRight: edgeInset },
         { backgroundColor: background },
         // A plain hairline with the busy fill: Marco wanted the border simple.
         fullGlow && [styles.glowBorder, { borderColor: fullGlow.surface.border }],
