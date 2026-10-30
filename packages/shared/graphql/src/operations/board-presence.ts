@@ -56,10 +56,6 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 // lands on the wall) so the tiles update live instead of re-fetching, and a
 // BoardConnectionChanged carries the current connection holder (or null when the
 // board goes free) so consumers can show held-vs-free distinct from the lit climb.
-// A BoardHandoffRequested (#7113) reaches only the holder it names: a crewmate
-// asked to take the board, so the holder's phone lets go of its link. Selected
-// only once the backend that serves the type is deployed: an older server
-// rejects the whole subscription over an unknown fragment type.
 export const BOARD_NOW_PLAYING = `
   subscription BoardNowPlaying($boardId: Int!, $boardUuid: ID) {
     boardNowPlaying(boardId: $boardId, boardUuid: $boardUuid) {
@@ -91,16 +87,6 @@ export const BOARD_NOW_PLAYING = `
           lastSentAt
         }
         seq
-      }
-      ... on BoardHandoffRequested {
-        holderUserId
-        requestId
-        requestedAt
-        requester {
-          userId
-          displayName
-          avatarUrl
-        }
       }
     }
   }
