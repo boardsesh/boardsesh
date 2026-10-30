@@ -548,6 +548,11 @@ Two simulator facts shape it:
   Maestro flow, and captures the inner display itself with
   `simctl io screenshot --display=primary-1`. A piece marked `# duo: relaunch`
   starts from a relaunched app, where the phone flow would tap a close button.
+Regular campaign captures compile the inner display's Climbs links into the same
+acknowledged board-selection controller as phones, under separate
+`campaign-duo-climbs-*` scenes. The controller commits the exact recorded board
+and climb before the painted-board wait; the second wall cannot remain blocked
+behind the primary board. Home and playlist links keep their existing deep links.
 
 The shard needs Xcode 27 and the iOS 27.1 runtime; the shard action selects
 the newest installed Xcode 27 for it. Custom product pages have no Duo set, so
