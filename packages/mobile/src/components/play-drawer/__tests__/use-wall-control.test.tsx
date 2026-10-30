@@ -79,6 +79,22 @@ describe('useWallControl', () => {
     expect(analytics.tapped).toHaveBeenCalledWith({ state, action, control: 'button' });
   });
 
+  it('moves to the gym board on a tap on Put on {board}, with a medium buzz, and logs it once', () => {
+    const { hook, run } = setup(modelFor('move_to_board', 'move_to_board', { gymBoardName: 'Kilter' }));
+    act(() => hook.result.current.press('button'));
+    expect(run.moveToBoard).toHaveBeenCalledOnce();
+    for (const other of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain'] as const) {
+      expect(run[other]).not.toHaveBeenCalled();
+    }
+    expect(haptics.hapticMedium).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(analytics.tapped).toHaveBeenCalledWith({
+      state: 'move_to_board',
+      action: 'move_to_board',
+      control: 'button',
+    });
+  });
+
   it('lets go of the board with a warning buzz, and says so once the link drops', () => {
     const { hook } = setup(modelFor('lit', 'disconnect'));
     act(() => hook.result.current.press('bulb'));

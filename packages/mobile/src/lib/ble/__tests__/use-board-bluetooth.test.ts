@@ -3536,6 +3536,173 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
   });
 });
 
+// At a gym with a Kilter and a MoonBoard the single remembered-board record
+// flips on every walk between them. Each board keeps its own handle (#7076), so
+// walking back reconnects instead of opening the picker.
+describe('useBoardBluetooth per-board remembered devices (#7076)', () => {
+  type BluetoothProps = Parameters<typeof useBoardBluetooth>[0];
+  const kilterBoard: BluetoothProps = { boardName: 'kilter', layoutId: 1, sizeId: 1 };
+  const moonBoard: BluetoothProps = { boardName: 'moonboard', layoutId: 1, sizeId: 1 };
+  const kilterKey = 'kilter::1::1::';
+  const moonKey = 'moonboard::1::1::';
+
+  let requestAndConnect: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValue([]);
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockResolvedValue(undefined);
+    requestAndConnect = vi.fn();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+  });
+
+  afterEach(() => {
+    vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  function renderBluetooth(initialProps: BluetoothProps) {
+    return renderHook((props: BluetoothProps) => useBoardBluetooth(props), { initialProps });
+  }
+
+  function nextConnectionIsKilter(serial: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId: `kilter-${serial}`, deviceName: `Kilter Board#${serial}@3` });
+  }
+
+  function nextConnectionIsMoonBoard(deviceId: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId, deviceName: 'MoonBoard' });
+  }
+
+  it('reconnects to the first board after connecting to another one', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+
+    // The single record now points at the MoonBoard; the Kilter still has its own.
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+      { configKey: kilterKey, serial: 'AAA' },
+    ]);
+  });
+
+  it('forgets only the disconnected board on a deliberate disconnect', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect(undefined, undefined, 'AAA');
+    });
+    expect(result.current.isConnected).toBe(true);
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+
+  it('offers a board handle stored in an earlier session', async () => {
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValueOnce([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    const { result } = renderBluetooth(moonBoard);
+
+    await waitFor(() => expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b'));
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+  });
+
+  it('keeps a connect made during the stored read and the stored handles for other boards', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // The stored list still holds an older Kilter handle; the connect wins.
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'OLD' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: kilterKey, serial: 'AAA' },
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+});
+
 // connect() writes initialFrames before declaring success. That write can take
 // the link with it. These tests pin the boundary: a lost link fails the connect,
 // while a write the board merely refused does not.
@@ -5003,6 +5170,82 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     expect(result.current.loading).toBe(false);
     await expect(connectPromise).resolves.toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  // The auto-follow at a multi-board gym (#7076) looks for the next board's
+  // saved device with nobody having tapped anything: no sheet, no alert.
+  it('keeps a quiet connect to a saved board off screen and silent when the board never answers', async () => {
+    const presentedValues: boolean[] = [];
+    const { result } = renderHook(() => {
+      const bluetooth = useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 });
+      if (bluetooth.pickerState) presentedValues.push(bluetooth.pickerState.presented);
+      return bluetooth;
+    });
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'SN-1', undefined, { quiet: true });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+    expect(result.current.loading).toBe(true);
+
+    // Past the grace window (where a seen sheet turns into the list) and on to
+    // the end of the scan.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    await expect(connectPromise).resolves.toBe(false);
+    expect(presentedValues.length).toBeGreaterThan(0);
+    expect(presentedValues).not.toContain(true);
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    // Still counted as a failure, so a silent miss is visible in analytics.
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ boardName: 'kilter', failureReason: 'board_not_found' }),
+    );
+
+    // The next tap is a normal connect: the sheet is on screen again.
+    let tapPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      tapPromise = result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: true });
+
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(tapPromise).resolves.toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it('ignores quiet without a saved board to look for and shows the list as usual', async () => {
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, undefined, undefined, { quiet: true });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true, isScanning: true });
+
+    // A seen list keeps its empty state when the scan ends, as any list does.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({ presented: true, isScanning: false });
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
   });
 });
 

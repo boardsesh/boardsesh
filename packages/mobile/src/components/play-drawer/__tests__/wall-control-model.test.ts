@@ -351,6 +351,79 @@ describe('wallControlText', () => {
   });
 });
 
+// #7076: a gym with a Kilter and a MoonBoard, one mixed queue. The MoonBoard
+// can't draw the Kilter climb on screen, but there is somewhere to go.
+describe('resolveWallControl: a climb on another board at this gym', () => {
+  const KILTER_CLIMB: Partial<WallControlInput> = { offWall: true, gymBoardName: 'Kilter' };
+  const MOVE = {
+    state: 'move_to_board',
+    tapAction: 'move_to_board',
+    labelKey: 'putOnGymBoard',
+    a11yLabelKey: 'putOnGymBoard',
+    a11yHintKey: 'moveToGymBoardHint',
+    gymBoardName: 'Kilter',
+  };
+
+  it('offers Put on Kilter while linked to the MoonBoard', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, ...KILTER_CLIMB })).toMatchObject({
+      ...MOVE,
+      holder: 'self',
+      longPress: 'sheet',
+    });
+  });
+
+  it('offers Put on Kilter with no board linked', () => {
+    expect(resolveWallControl({ ...FREE, ...KILTER_CLIMB })).toMatchObject({ ...MOVE, holder: null, longPress: null });
+  });
+
+  it("offers Put on Kilter over a crew preview's Put on the wall", () => {
+    expect(resolveWallControl({ ...FREE, ...SAMS, ...KILTER_CLIMB, commitButton: 'putOnWall' })).toMatchObject(MOVE);
+    expect(resolveWallControl({ ...FREE, ...MINE, ...KILTER_CLIMB, commitButton: 'putOnWall' })).toMatchObject(MOVE);
+  });
+
+  it('offers nothing for a climb no board at this gym draws, as before', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, offWall: true, gymBoardName: null })).toMatchObject({
+      state: null,
+      tapAction: 'noop',
+      labelKey: null,
+      gymBoardName: null,
+    });
+  });
+
+  it('waits on the busy-wall question like every other tap', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, ...KILTER_CLIMB, confirmArmed: true })).toMatchObject({
+      state: 'move_to_board',
+      tapAction: 'noop',
+      a11yHintKey: null,
+    });
+  });
+
+  // The presence block only covers a climb this wall draws, so it can't really
+  // meet a gym board name; if it does, On the wall still wins.
+  it('loses to fresh presence on the wall climb with no link', () => {
+    const model = resolveWallControl({
+      ...FREE,
+      displayedIsWallClimb: true,
+      presenceFresh: true,
+      gymBoardName: 'Kilter',
+    });
+    expect(model).toMatchObject({ state: 'on_wall_unlinked', gymBoardName: null });
+  });
+
+  it('carries no board name in any other state', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true }).gymBoardName).toBeNull();
+  });
+
+  it('says Put on {board}, and tells a screen reader it moves there', () => {
+    const t = ((key: string, params?: Record<string, unknown>) =>
+      params ? `${key}:${JSON.stringify(params)}` : key) as unknown as TFunction;
+    const text = wallControlText(resolveWallControl({ ...FREE, ...MINE, ...KILTER_CLIMB }), t, t);
+    expect(text.label).toBe('playView.wallControl.putOnGymBoard:{"board":"Kilter"}');
+    expect(text.accessibilityHint).toBe('playView.wallControl.moveToGymBoardHint:{"board":"Kilter"}');
+    expect(text.accessibilityLabel).toContain('playView.wallControl.putOnGymBoard:{"board":"Kilter"}');
+  });
+});
+
 // QA #147: no live link, on the climb presence says is on the wall. Trusted for
 // an hour (Aurora and MoonBoard boxes keep their LEDs after a disconnect).
 describe('resolveWallControl: presence freshness', () => {
