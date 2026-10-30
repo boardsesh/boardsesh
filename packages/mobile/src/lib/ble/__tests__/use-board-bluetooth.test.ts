@@ -3701,6 +3701,37 @@ describe('useBoardBluetooth per-board remembered devices (#7076)', () => {
     });
     expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
   });
+
+  it('keeps a board released before the stored read lands released', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result } = renderBluetooth(kilterBoard);
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    // Let go of it before the per-board list has even been read.
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'AAA' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+  });
 });
 
 // connect() writes initialFrames before declaring success. That write can take

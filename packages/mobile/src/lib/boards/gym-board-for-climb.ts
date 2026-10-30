@@ -5,7 +5,7 @@
 // take the climber to one board while the Switch board button named another.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { formatBoardDisplayName, parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { boardLooselyMatches } from './board-matches';
 
 /** A climb's board model as the queue carries it. */
@@ -64,4 +64,26 @@ export function findGymBoardToConnectForClimb(
 export function gymBoardButtonName(board: UserBoard, gymBoards: ReadonlyArray<UserBoard> | null | undefined): string {
   const sameBrand = gymBoards?.filter((gymBoard) => gymBoard.boardType === board.boardType).length ?? 0;
   return sameBrand > 1 ? board.name : formatBoardDisplayName(board.boardType);
+}
+
+/**
+ * The session's board path names `board` (#7076): a crewmate moved the session
+ * there. A named path (`/b/{slug}`) matches the slug; a positional one matches
+ * the board's configuration. An empty path (no session) names no board.
+ */
+export function sessionBoardPathNamesBoard(
+  boardPath: string,
+  board: Pick<UserBoard, 'slug' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds'>,
+): boolean {
+  if (!boardPath) return false;
+  const named = parseNamedBoardPath(boardPath);
+  if (named) return board.slug === named.slug;
+  const parsed = parseBoardPath(boardPath);
+  return (
+    parsed !== null &&
+    parsed.boardName === board.boardType &&
+    parsed.layoutId === board.layoutId &&
+    parsed.sizeId === board.sizeId &&
+    parsed.setIds === board.setIds
+  );
 }

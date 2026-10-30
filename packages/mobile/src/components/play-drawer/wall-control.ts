@@ -80,6 +80,12 @@ export type WallControlStateInput = {
    * connected wall can't light it, but there is somewhere to go.
    */
   gymBoardName?: string | null;
+  /**
+   * The crew session is on that gym board (a crewmate moved it there and lights
+   * it): the climb is the crew's to light, not this phone's to take (#7076,
+   * Marco). The control reads the crew's board instead of Put on {board}.
+   */
+  crewGymBoard?: boolean;
 };
 
 /** First match wins. */
@@ -94,6 +100,7 @@ export function resolveWallControlState({
   displayedIsWallClimb = false,
   presenceFresh = false,
   gymBoardName = null,
+  crewGymBoard = false,
 }: WallControlStateInput): WallControlState {
   // No live link, on the climb presence says is on the wall (QA #147): trust
   // presence for an hour, then ask to connect. Never "Put on the wall": the
@@ -105,7 +112,13 @@ export function resolveWallControlState({
   }
   // Another board at this gym draws the climb on screen. Put on the wall would
   // light it on a wall that can't draw it, so this wins over a preview's commit.
-  if (gymBoardName) return 'move_to_board';
+  if (gymBoardName) {
+    // On the crew's board: a preview goes up through the crew, the climb they
+    // already have up is theirs. Never Put on {board}, which would take the
+    // board from the crewmate lighting it.
+    if (crewGymBoard) return commitButton === 'putOnWall' ? 'put_on_wall' : 'crew';
+    return 'move_to_board';
+  }
   if (commitButton === 'putOnWall') return 'put_on_wall';
   if (pressAction === 'takeWall') return 'take_wall';
   if (pressAction === 'releaseWall') return 'release_wall';
@@ -444,20 +457,31 @@ function hintKeyOf(
 export function resolveWallControl(input: WallControlInput): WallControlModel {
   const state = resolveWallControlState(input);
   const selfHolds = input.localConnected || input.wallHeldLocally;
-  const crewHolds = !selfHolds && input.holderIsAuthoritative && !input.holderIsSelfAccount;
-  const holder: WallHolder = selfHolds ? 'self' : crewHolds ? 'crew' : null;
-  const holderFace = holder === 'self' ? input.selfFace : holder === 'crew' ? input.crewFace : null;
+  // The crew's gym board is lit from a crewmate's phone, whatever this one holds.
+  const onCrewGymBoard = Boolean(input.gymBoardName) && input.crewGymBoard === true;
+  const crewHolds = onCrewGymBoard || (!selfHolds && input.holderIsAuthoritative && !input.holderIsSelfAccount);
+  const holder: WallHolder = onCrewGymBoard ? 'crew' : selfHolds ? 'self' : crewHolds ? 'crew' : null;
+  // The crew face is the holder of this phone's board, so it says nothing about
+  // who lights the crew's gym board: that one reads as "your crew".
+  const holderFace = holder === 'self' ? input.selfFace : holder === 'crew' && !onCrewGymBoard ? input.crewFace : null;
   // Only a crewmate is named; this climber's own name is "You".
-  const holderName = holder === 'crew' ? (input.crewFace?.name ?? null) : null;
-  const tapAction = resolveWallControlAction({
-    state,
-    pressAction: input.pressAction,
-    confirmArmed: input.confirmArmed,
-    displayedIsOwnCurrent: input.displayedIsOwnCurrent,
-  });
+  const holderName = holder === 'crew' && !onCrewGymBoard ? (input.crewFace?.name ?? null) : null;
+  // On the crew's gym board a preview is relayed (made the session's climb, so
+  // the crewmate's phone lights it) and the crew's own climb is left alone. The
+  // bulb's press action describes this phone's board, not theirs.
+  const tapAction = onCrewGymBoard
+    ? input.confirmArmed || state !== 'put_on_wall'
+      ? 'noop'
+      : 'relay'
+    : resolveWallControlAction({
+        state,
+        pressAction: input.pressAction,
+        confirmArmed: input.confirmArmed,
+        displayedIsOwnCurrent: input.displayedIsOwnCurrent,
+      });
   // Presence names this climber's own account holding the board through
   // another device's link: "On your other phone", never their own name.
-  const onOtherPhone = state === 'crew' && input.holderIsSelfAccount;
+  const onOtherPhone = state === 'crew' && !onCrewGymBoard && input.holderIsSelfAccount;
   const labelKey = labelKeyOf(state, holder, holderName, input.commitLabel, onOtherPhone);
   let a11yHolderKey: WallControlA11yHolderKey | null = null;
   if (holder === 'self') a11yHolderKey = 'youHaveBoard';
@@ -475,7 +499,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     holderFace,
     gymBoardName: state === 'move_to_board' ? (input.gymBoardName ?? null) : null,
     tapAction,
-    longPress: input.localConnected ? 'sheet' : null,
+    longPress: input.localConnected && !onCrewGymBoard ? 'sheet' : null,
     labelKey,
     // You have the board already says whose it is, so it says the climb is lit instead.
     a11yLabelKey: state === 'lit' ? 'youHaveBoardLit' : labelKey,

@@ -410,6 +410,55 @@ describe('resolveWallControl: a climb on another board at this gym', () => {
     expect(model).toMatchObject({ state: 'on_wall_unlinked', gymBoardName: null });
   });
 
+  // Marco: a crewmate keeps their own board. When the crew session is on the
+  // Kilter (a crewmate moved it there and lights it), this phone never takes it.
+  describe("on the crew's board", () => {
+    const CREW_KILTER: Partial<WallControlInput> = { ...KILTER_CLIMB, crewGymBoard: true };
+
+    it("reads the crew's board for the crew's own climb, and a tap does nothing", () => {
+      expect(resolveWallControl({ ...FREE, ...CREW_KILTER })).toMatchObject({
+        state: 'crew',
+        holder: 'crew',
+        holderName: null,
+        holderFace: null,
+        tapAction: 'noop',
+        labelKey: 'onCrewBoard',
+        gymBoardName: null,
+      });
+    });
+
+    it('relays a preview to the crew instead of Put on Kilter', () => {
+      expect(resolveWallControl({ ...FREE, ...CREW_KILTER, commitButton: 'putOnWall' })).toMatchObject({
+        state: 'put_on_wall',
+        holder: 'crew',
+        tapAction: 'relay',
+        labelKey: 'putOnCrewBoard',
+        a11yHintKey: 'relayHintCrew',
+      });
+    });
+
+    it("is the crew's even while this phone holds its own board's link", () => {
+      expect(resolveWallControl({ ...FREE, ...MINE, ...CREW_KILTER })).toMatchObject({
+        state: 'crew',
+        holder: 'crew',
+        tapAction: 'noop',
+        longPress: null,
+      });
+    });
+
+    it('ignores the crew session when the climb is on no other gym board', () => {
+      expect(resolveWallControl({ ...FREE, ...MINE, offWall: true, crewGymBoard: true })).toMatchObject({
+        state: null,
+      });
+    });
+
+    it('waits on the busy-wall question', () => {
+      expect(
+        resolveWallControl({ ...FREE, ...CREW_KILTER, commitButton: 'putOnWall', confirmArmed: true }),
+      ).toMatchObject({ tapAction: 'noop' });
+    });
+  });
+
   it('carries no board name in any other state', () => {
     expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true }).gymBoardName).toBeNull();
   });

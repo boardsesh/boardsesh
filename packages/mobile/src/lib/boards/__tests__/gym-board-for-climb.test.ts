@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { findGymBoardForClimb, findGymBoardToConnectForClimb, gymBoardButtonName } from '../gym-board-for-climb';
+import {
+  findGymBoardForClimb,
+  findGymBoardToConnectForClimb,
+  gymBoardButtonName,
+  sessionBoardPathNamesBoard,
+} from '../gym-board-for-climb';
 
 function makeBoard(overrides: Partial<UserBoard>): UserBoard {
   return {
@@ -106,5 +111,24 @@ describe('gymBoardButtonName', () => {
   it('says the brand with no roster', () => {
     expect(gymBoardButtonName(TENSION, null)).toBe('Tension');
     expect(gymBoardButtonName(TENSION, undefined)).toBe('Tension');
+  });
+});
+
+describe('sessionBoardPathNamesBoard (#7076)', () => {
+  const NAMED_MOON = { ...MOONBOARD, slug: 'qa-moonboard' };
+
+  it("matches a named path by the board's slug", () => {
+    expect(sessionBoardPathNamesBoard('/b/qa-moonboard/40', NAMED_MOON)).toBe(true);
+    expect(sessionBoardPathNamesBoard('/b/qa-kilter/40', NAMED_MOON)).toBe(false);
+  });
+
+  it("matches a positional path by the board's configuration", () => {
+    expect(sessionBoardPathNamesBoard('/kilter/1/10/1,20/40', KILTER)).toBe(true);
+    expect(sessionBoardPathNamesBoard('/kilter/1/10/1,20,21/40', KILTER)).toBe(false);
+    expect(sessionBoardPathNamesBoard('/tension/9/10/1,20/40', KILTER)).toBe(false);
+  });
+
+  it('names no board outside a session', () => {
+    expect(sessionBoardPathNamesBoard('', KILTER)).toBe(false);
   });
 });

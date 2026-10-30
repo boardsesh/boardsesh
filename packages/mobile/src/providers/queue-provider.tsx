@@ -117,6 +117,7 @@ import {
   QueueContext,
   QueueSessionControlContext,
   QueueSessionIdContext,
+  QueueSessionBoardPathContext,
   QueueLiveStatsContext,
   QueueSharedSessionContext,
   QueueActiveClimbContext,
@@ -3713,21 +3714,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   return (
     <QueueSessionControlContext.Provider value={sessionControlValue}>
       <QueueSessionIdContext.Provider value={sessionIdValue}>
-        <QueueLiveStatsContext.Provider value={liveStatsValue}>
-          <QueueSharedSessionContext.Provider value={sharedSessionValue}>
-            <QueueActionsContext.Provider value={actionsValue}>
-              <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-                <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                  <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                    <QueueDataContext.Provider value={queueDataValue}>
-                      <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                    </QueueDataContext.Provider>
-                  </QueueHasActiveClimbContext.Provider>
-                </QueueActiveClimbContext.Provider>
-              </QueuePlaylistSuggestionContext.Provider>
-            </QueueActionsContext.Provider>
-          </QueueSharedSessionContext.Provider>
-        </QueueLiveStatsContext.Provider>
+        <QueueSessionBoardPathContext.Provider value={sessionId ? sessionRuntimeState.boardPath : ''}>
+          <QueueLiveStatsContext.Provider value={liveStatsValue}>
+            <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+              <QueueActionsContext.Provider value={actionsValue}>
+                <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                  <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                    <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                      <QueueDataContext.Provider value={queueDataValue}>
+                        <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                      </QueueDataContext.Provider>
+                    </QueueHasActiveClimbContext.Provider>
+                  </QueueActiveClimbContext.Provider>
+                </QueuePlaylistSuggestionContext.Provider>
+              </QueueActionsContext.Provider>
+            </QueueSharedSessionContext.Provider>
+          </QueueLiveStatsContext.Provider>
+        </QueueSessionBoardPathContext.Provider>
       </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>
   );

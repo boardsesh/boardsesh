@@ -2427,7 +2427,13 @@ export function useBoardBluetooth({
     void getStoredKnownBoardDevices().then(
       (stored) => {
         if (cancelled) return;
-        if (knownBoardDevicesIntentGenerationRef.current === intentGeneration) {
+        // Plain read only if this session touched no board yet. A forget on an
+        // empty list changes nothing to bump the generation with, and the stored
+        // handle for the board just released must still stay gone.
+        if (
+          knownBoardDevicesIntentGenerationRef.current === intentGeneration &&
+          knownBoardDevicesTouchedRef.current.size === 0
+        ) {
           knownBoardDevicesRef.current = stored;
           setKnownBoardDevices(stored);
           return;
