@@ -1924,6 +1924,14 @@ export function BluetoothProvider({
     // remembered target is read now: the props describe the switched-to board,
     // so it is that board's own, never the one just left. A MoonBoard is
     // remembered by device id, not serial.
+    // A quiet connect is only ever for a board this phone knows. If the handle
+    // went away between the follow's decision and now (a forget, a failed
+    // read), opening the board list for a connect nobody tapped is the one
+    // thing it must not do: end it instead.
+    if (quiet && !reconnectSerialForCurrentBoard && !reconnectDeviceIdForCurrentBoard) {
+      waiter?.resolve(false);
+      return;
+    }
     const connecting = useRememberedBoard
       ? connect(
           undefined,

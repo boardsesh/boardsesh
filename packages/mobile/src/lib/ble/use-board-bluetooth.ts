@@ -65,7 +65,7 @@ import {
   findKnownBoardDevice,
   forgetKnownBoardDevice,
   getStoredKnownBoardDevices,
-  MAX_KNOWN_BOARD_DEVICES,
+  mergeKnownBoardDevices,
   rememberKnownBoardDevice,
   setStoredKnownBoardDevices,
   type KnownBoardDevices,
@@ -924,7 +924,8 @@ export function useBoardBluetooth({
       // A quiet connect (#7076, the auto-follow) is never seen either: it looks
       // for the saved board out of sight and ends as "board not found" if it
       // doesn't answer, with no alert (see the catch in `connect`).
-      const presentedAtOpen = !quietConnectRef.current && (mode === 'list' || isAppActive());
+      const quiet = quietConnectRef.current;
+      const presentedAtOpen = !quiet && (mode === 'list' || isAppActive());
 
       // Every write is scoped to this session: a late callback from an earlier
       // connect must never change, or clear, a newer picker.
@@ -1018,6 +1019,15 @@ export function useBoardBluetooth({
           ? {
               onTargetSearchEnded: () => {
                 if (settled || mode !== 'searching') return;
+                // A quiet connect has no list to fall back to: nobody will pick
+                // from it. End it now as "board not found" rather than scanning
+                // a hidden list for the rest of the scan window, which would
+                // hold the radio (and every tap) for 30 s.
+                if (quiet) {
+                  cleanup();
+                  rejectPicker(new Error('No boards found'));
+                  return;
+                }
                 mode = 'list';
                 updateSession((current) => ({
                   ...current,
@@ -2462,15 +2472,9 @@ export function useBoardBluetooth({
           setKnownBoardDevices(stored);
           return;
         }
-        const touched = knownBoardDevicesTouchedRef.current;
-        const merged = stored.reduceRight<KnownBoardDevices>(
-          (devices, device) =>
-            touched.has(device.configKey) || findKnownBoardDevice(devices, device.configKey)
-              ? devices
-              : [...devices, device].slice(0, MAX_KNOWN_BOARD_DEVICES),
-          knownBoardDevicesRef.current,
+        writeKnownBoardDevices(
+          mergeKnownBoardDevices(knownBoardDevicesRef.current, stored, knownBoardDevicesTouchedRef.current),
         );
-        writeKnownBoardDevices(merged);
       },
       () => {},
     );

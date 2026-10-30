@@ -1367,6 +1367,20 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
     });
   });
 
+  it('ends a quiet connect without opening the board list when the board is no longer remembered (#7076)', async () => {
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
+    const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
+    let connected: Promise<boolean> | undefined;
+    act(() => {
+      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD, { quiet: true });
+    });
+    rerenderOn(rerender, MOON_PROPS);
+
+    await expect(connected).resolves.toBe(false);
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+  });
+
   it('resolves false and never connects when the switch never reaches the provider', async () => {
     vi.useFakeTimers();
     try {

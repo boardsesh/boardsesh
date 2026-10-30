@@ -20,6 +20,7 @@ import {
   forgetKnownBoardDevice,
   getStoredKnownBoardDevices,
   MAX_KNOWN_BOARD_DEVICES,
+  mergeKnownBoardDevices,
   rememberKnownBoardDevice,
   setStoredKnownBoardDevices,
   type KnownBoardDevices,
@@ -82,6 +83,22 @@ describe('forgetKnownBoardDevice', () => {
   it('hands back the same list when the board was never remembered', () => {
     const devices = [KILTER, MOONBOARD];
     expect(forgetKnownBoardDevice(devices, TENSION.configKey)).toBe(devices);
+  });
+});
+
+describe('mergeKnownBoardDevices', () => {
+  it('puts this session first, then the stored handles newest first, minus boards this session touched', () => {
+    const stored = [{ ...KILTER, serial: 'K-OLD' }, MOONBOARD, TENSION];
+    const merged = mergeKnownBoardDevices([KILTER], stored, new Set([KILTER.configKey, TENSION.configKey]));
+    expect(merged).toEqual([KILTER, MOONBOARD]);
+  });
+
+  it('keeps the newest stored handles when the merge goes over the cap', () => {
+    const stored = Array.from({ length: MAX_KNOWN_BOARD_DEVICES }, (_unused, index) => boardNumber(index));
+    const merged = mergeKnownBoardDevices([TENSION], stored, new Set([TENSION.configKey]));
+    expect(merged).toHaveLength(MAX_KNOWN_BOARD_DEVICES);
+    expect(merged[0]).toBe(TENSION);
+    expect(merged.slice(1)).toEqual(stored.slice(0, MAX_KNOWN_BOARD_DEVICES - 1));
   });
 });
 

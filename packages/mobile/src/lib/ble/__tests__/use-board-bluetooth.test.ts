@@ -5190,10 +5190,11 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
     expect(result.current.loading).toBe(true);
 
-    // Past the grace window (where a seen sheet turns into the list) and on to
-    // the end of the scan.
+    // It ends with the saved-board search, where a seen sheet would turn into
+    // the list: a hidden list nobody can pick from would hold the radio, and
+    // every tap, for the rest of the 30 s scan.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 1);
     });
 
     await expect(connectPromise).resolves.toBe(false);

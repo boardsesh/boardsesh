@@ -65,6 +65,22 @@ export function forgetKnownBoardDevice(devices: KnownBoardDevices, configKey: st
     : devices;
 }
 
+/**
+ * The stored list read on mount, merged into handles this session already
+ * changed: `current` first (it is newer), then the stored ones in their own
+ * newest-first order, minus any board this session remembered or forgot.
+ */
+export function mergeKnownBoardDevices(
+  current: KnownBoardDevices,
+  stored: KnownBoardDevices,
+  touchedConfigKeys: ReadonlySet<string>,
+): KnownBoardDevices {
+  const fromStorage = stored.filter(
+    (device) => !touchedConfigKeys.has(device.configKey) && !findKnownBoardDevice(current, device.configKey),
+  );
+  return [...current, ...fromStorage].slice(0, MAX_KNOWN_BOARD_DEVICES);
+}
+
 export async function getStoredKnownBoardDevices(): Promise<KnownBoardDevices> {
   const stored = await getPreference<unknown>(KNOWN_BOARD_DEVICES_KEY);
   if (!Array.isArray(stored)) return [];
