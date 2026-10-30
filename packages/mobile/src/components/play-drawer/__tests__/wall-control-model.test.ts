@@ -198,8 +198,7 @@ const rows: Row[] = [
       a11yValueKey: 'holderHasBoard',
       a11yHintKey: 'lightHint',
       look: 'off',
-      // Taking Sam's board needs his phone to let go first: no swipe until
-      // the hand-off ships (#7113 PR 4).
+      // Sam's phone holds his board: no swipe on it, by design.
       swipeAction: null,
     },
   ],
@@ -767,7 +766,7 @@ describe('resolveWallControl: driving the wall', () => {
         return;
       }
       if (name.includes("Sam's board")) {
-        // A preview on Sam's board: Put on board, no swipe until the hand-off (PR 4).
+        // A preview on Sam's board: Put on board, no swipe on a crewmate's board.
         expect(model).toMatchObject({ labelKey: 'putOnBoard', swipeAction: null });
         return;
       }

@@ -15,11 +15,10 @@ import { isPutUpAction, type WallControlModel } from './wall-control';
 
 /**
  * What starting a drive did (#7113). `started`: arming, the climb is going up
- * and the connect (if any) is on its way. `needs_handoff`: a crewmate holds the
- * board, and taking it needs their phone to let go first (PR 4); nothing
- * changed. `unavailable`: the control offers no swipe here (`swipeAction`).
+ * and the connect (if any) is on its way. `held_by_crew`: a crewmate holds the
+ * board, so there is no swipe on it by design; nothing changed. `unavailable`: the control offers no swipe here (`swipeAction`).
  */
-export type DriveStartOutcome = 'started' | 'needs_handoff' | 'unavailable';
+export type DriveStartOutcome = 'started' | 'held_by_crew' | 'unavailable';
 
 /** What the player runs for each tap action. The handler decides which, from the model. */
 export type WallControlRunners = {

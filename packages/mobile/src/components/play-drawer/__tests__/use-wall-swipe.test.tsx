@@ -152,8 +152,8 @@ describe('useWallSwipe', () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it('springs back with an error buzz when nothing starts (a crewmate’s board before the hand-off)', () => {
-    const onSwipe = vi.fn(() => 'needs_handoff' as const);
+  it('springs back with an error buzz when nothing starts (a crewmate’s board)', () => {
+    const onSwipe = vi.fn(() => 'held_by_crew' as const);
     const { hook } = setup({ onSwipe });
     drag(-0.7 * WIDTH);
     expect(onSwipe).toHaveBeenCalledOnce();

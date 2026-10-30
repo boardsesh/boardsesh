@@ -34,11 +34,10 @@ export function derivePlayDrawerLightbulbPressAction(args: {
   if (args.wallHeld) return 'releaseWall';
   // A wall with no lights has nothing to connect to; the tap takes the wall.
   if (args.ledless) return 'takeWall';
-  // Someone I'm climbing with is driving the wall. An Aurora/MoonBoard box is a
-  // single-central peripheral: it stops advertising once taken, and Android's
-  // GATT rejects the second central outright. So a connect from here cannot
-  // succeed — it spends ~15s scanning and then shows "Connection failed" over a
-  // board that is working perfectly (BleError 201 DeviceDisconnected, which
+  // Someone I'm climbing with is driving the wall. Most Aurora boxes are
+  // last-connection-wins and some MoonBoards refuse a second phone, so a connect
+  // from here would kick them off or fail — it spends ~15s scanning and can then
+  // show "Connection failed" over a board that is working perfectly (BleError 201 DeviceDisconnected, which
   // `connection-error.ts` buckets as `connect_failed` — the single largest BLE
   // failure bucket in the app, and ~65x more common on Android than iOS).
   //

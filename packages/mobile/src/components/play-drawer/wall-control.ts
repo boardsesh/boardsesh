@@ -460,7 +460,7 @@ export type WallControlModel = {
    * A swipe on the wall button: `drive` wherever a press puts the climb on
    * this phone's board (no link, a preview, a dark climb, on the wall with no
    * link) and on Disconnect board, while not driving already. Never on a
-   * crewmate's board until the hand-off ships (#7113 PR 4), a wall with no
+   * crewmate's board (their phone holds it), a wall with no
    * lights, Set active, a relay, or while the busy-wall question is up or a
    * connect is in flight.
    */
@@ -616,8 +616,8 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     // A crew holder who hasn't started driving swipes from Disconnect board.
     state === 'lit' ||
     // A preview on this phone's board, never Set active (no wall to light),
-    // the crew's gym board (a relay), or a crewmate's board: taking it needs
-    // their phone to let go first, which the hand-off (#7113 PR 4) adds.
+    // the crew's gym board (a relay), or a crewmate's board (their phone
+    // holds it; Put on board relays the climb to it).
     (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;

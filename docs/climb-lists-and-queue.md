@@ -179,8 +179,8 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   connect fails or never comes (30 s), the session or the board changes, or the climber signs
   out (`DriveModeWatcher`). Each end fires `Drive Mode Ended {reason, startedBy, durationSec,
   climbsLit, inSession}` once; `startedBy` is `swipe`, `tap`, `action` or `solo_carry`.
-- **Not yet:** a crewmate's board. Taking it needs their phone to let go first (#7113 PR 4),
-  so the swipe refuses there and nothing changes.
+- **Not on a crewmate's board**, by design. Their phone holds it and Put on board relays the climb
+  to it, so the swipe refuses there and nothing changes.
 
 ## Player states today
 

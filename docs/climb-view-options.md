@@ -107,8 +107,7 @@ board, Sam has the board").
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
   nothing. A press's "stopped" lasts until that link drops, or a solo press puts a climb up (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
-  (this phone's board) and on Disconnect board while not driving; never on Sam's board (until the hand-off, #7113 PR
-  4), a relay, Set active, a wall with
+  (this phone's board) and on Disconnect board while not driving; never on Sam's board (his phone holds it), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
   the setting decides solo and a crew previews. A drive starts from the swipe below, its "Light every climb"
@@ -193,10 +192,9 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   change, so the second row's fixed height holds. iOS, the workout's compact button between ⏮ and ⏭, the button
   between the bulb row's buttons, and the first-row button beside a MiniPlayer (a tablet's pane, away from the edge)
   are unchanged. On Expo web the detector has `touchAction="pan-y"`.
-- **No swipe on a crewmate's board** until the hand-off (#7113 PR 4) ships: Aurora and MoonBoard boxes stop
-  advertising once linked, so taking Sam's board needs his phone to let go first. There the button has no chevrons,
-  no peek and no gesture. A drive the runner still can't start (presence says another account holds the board)
-  answers `needs_handoff`, and the frost springs back with an error buzz.
+- **No swipe on a crewmate's board**, by design: his phone holds it, and Put on board relays the climb to that
+  phone. There the button has no chevrons, no peek and no gesture. A drive the runner still can't start (presence
+  says another account holds the board) answers `held_by_crew`, and the frost springs back with an error buzz.
 - **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
   offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing
   edge and springs back (about 700 ms; a fade in place under Reduce Motion). At most 3 sessions, never again once a

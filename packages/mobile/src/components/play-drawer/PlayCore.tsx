@@ -1797,9 +1797,9 @@ export function PlayCore({
   // first and goes live once this phone's link lights the climb
   // (`DriveModeWatcher`, at the app root); a connect that fails ends it.
   //
-  // A crewmate's board can't be taken by a connect: Aurora and MoonBoard boxes
-  // stop advertising once linked. That needs their phone to let go first, so
-  // it refuses with `needs_handoff` and changes nothing.
+  // A crewmate's board isn't swipeable by design: their phone holds it, and
+  // Put on board relays the climb to it. So it refuses with `held_by_crew` and
+  // changes nothing.
   const wallControlForDriveRef = useRef(wallControl);
   wallControlForDriveRef.current = wallControl;
   const startDriving = useCallback(
