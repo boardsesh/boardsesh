@@ -35,6 +35,8 @@ const OPTION_FIELDS = [
   'hasPrevious',
   'boardConnection',
   'holderDisplayName',
+  'bulbOpensApp',
+  'boardConnecting',
   'androidThumbnailOverlayPath',
   'androidThumbnailBackgroundPaths',
 ] as const;

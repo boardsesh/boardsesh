@@ -75,6 +75,29 @@ in exactly that state, so its watchdogs cannot rely on `setTimeout` alone (#7038
   on screen. A sheet the climber did see keeps its empty state instead, whatever
   the app state when the scan ends.
 
+Two more rules keep the bulb honest (#7087):
+
+- **No remembered board, no background reconnect.** Without a remembered serial
+  or device id, a reconnect can only end in the board list. From the
+  notification that list would land on a paused activity, and the connect would
+  hold its in-flight guard until someone opened the app. So the bridge sends
+  `bulbOpensApp` on every update, and `BoardSessionService` makes the outline
+  bulb an activity PendingIntent (the launcher intent, the same as tapping the
+  card) instead of the `ACTION_BULB` broadcast. The climber lands in the app and
+  connects from the in-app bulb, with the list on screen. It has to be the
+  notification's own PendingIntent: Android 12+ does not let a broadcast
+  receiver started by a notification tap open an activity. The lit bulb
+  (`connectedByMe`) still re-lights the wall by broadcast.
+- **"Connecting…" while a connect runs.** `connect()` ignores a second tap while
+  one is in flight, so the bridge sends `boardConnecting` (the Bluetooth
+  context's `loading`) and the outline bulb reads `connectingLabel` until the
+  connect ends. The action stays a broadcast, so a repeat tap still lands on the
+  in-flight guard and does not cancel anything; the label is what tells the
+  climber the first tap landed.
+
+Both flags default to false when an older bundle leaves them out, and iOS pins
+them to false (ActivityKit draws its own bulb).
+
 Limits: the native clock stops in deep sleep, so with the screen locked the scan
 ends, and the alert is raised, after the phone wakes. Android keeps one pending
 alert, with no age limit. A process death loses it, and so does an activity that

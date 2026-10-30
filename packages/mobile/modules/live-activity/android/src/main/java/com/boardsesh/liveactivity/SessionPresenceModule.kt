@@ -23,6 +23,7 @@ class AndroidNotificationStrings : Record {
     @Field var nextLabel: String = "Next"
     @Field var relightLabel: String = "Relight wall"
     @Field var reconnectLabel: String = "Connect to board"
+    @Field var connectingLabel: String = "Connecting…"
     @Field var onWallTemplate: String = "{{name}} is on the wall"
 }
 
@@ -56,6 +57,12 @@ class SessionUpdateOptions : Record {
     @Field var hasPrevious: Boolean = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String? = null
+    // The outline bulb opens the app instead of reconnecting in the background:
+    // there is no remembered board, so a reconnect would need the board list
+    // (#7087). False on an older JS bundle, which keeps the broadcast.
+    @Field var bulbOpensApp: Boolean = false
+    // A connect is running: the outline bulb reads "Connecting…" (#7087).
+    @Field var boardConnecting: Boolean = false
     @Field var androidThumbnailOverlayPath: String? = null
     @Field var androidThumbnailBackgroundPaths: List<String> = emptyList()
 }

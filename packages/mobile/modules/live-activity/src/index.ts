@@ -315,6 +315,11 @@ export type LiveActivityStartSessionOptions = {
     relightLabel: string;
     /** Lightbulb action label while a peer holds it / nobody is driving. */
     reconnectLabel: string;
+    /**
+     * That lightbulb's label while a connect is running (`boardConnecting`).
+     * An older binary ignores it.
+     */
+    connectingLabel?: string;
     /** "{{name}} is on the wall" template; Kotlin substitutes holderDisplayName. */
     onWallTemplate: string;
   };
@@ -361,6 +366,17 @@ export type LiveActivityUpdateOptions = {
    */
   androidThumbnailOverlayPath?: string | null;
   androidThumbnailBackgroundPaths?: string[];
+  /**
+   * Android-only: no board is remembered for the current config, so the
+   * notification's outline bulb opens the app instead of starting a background
+   * reconnect, which could only end in a board list nobody can see (#7087).
+   */
+  bulbOpensApp?: boolean;
+  /**
+   * Android-only: a connect is running, so the outline bulb reads
+   * `connectingLabel` and a repeat tap visibly isn't lost (#7087).
+   */
+  boardConnecting?: boolean;
   /**
    * The climber's saved board look — refreshed on every update so a settings
    * change reaches a running activity (startSession is not re-called for it).

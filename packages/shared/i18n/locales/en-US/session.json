@@ -874,6 +874,7 @@
         "unmirror": "Unmirror climb",
         "relight": "Relight wall",
         "reconnect": "Connect to board",
+        "connecting": "Connecting…",
         "onWall": "{{name}} is on the wall"
       },
       "inStatsFlashes": "Flashes",

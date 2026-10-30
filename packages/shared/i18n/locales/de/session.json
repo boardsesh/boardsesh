@@ -874,6 +874,7 @@
         "unmirror": "Spiegelung aufheben",
         "relight": "Wand neu beleuchten",
         "reconnect": "Mit Board verbinden",
+        "connecting": "Verbinde…",
         "onWall": "{{name}} ist an der Wand"
       },
       "inStatsFlashes": "Flashes",

@@ -874,6 +874,7 @@
         "unmirror": "Annuler le miroir",
         "relight": "Rallumer le mur",
         "reconnect": "Se connecter à la board",
+        "connecting": "Connexion…",
         "onWall": "{{name}} est sur le mur"
       },
       "inStatsFlashes": "Flashs",

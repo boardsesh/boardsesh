@@ -45,7 +45,18 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // Live Activity lightbulb + Previous/Next visibility: controls show only while
   // THIS device holds the BLE link (connectedByMe); once a peer takes the wall
   // the bulb goes out and the controls hide, leaving just the current climb.
-  const { bluetooth, boardConnection, holderDisplayName } = useBoardConnectionState();
+  const { bluetooth, boardConnection, holderDisplayName, pending: boardConnectPending } = useBoardConnectionState();
+  // Android notification bulb (#7087). With no remembered board a background
+  // reconnect could only end in the board list, on an activity nobody can see,
+  // so the bulb opens the app instead. While a connect runs the bulb reads
+  // "Connecting…", so a repeat tap visibly isn't lost (connect() ignores it).
+  // Pinned to false on iOS, where ActivityKit draws its own bulb: a flip there
+  // would only spend Live Activity updates.
+  const bulbOpensApp =
+    isAndroidSessionPresence &&
+    !bluetooth?.reconnectSerialForCurrentBoard &&
+    !bluetooth?.reconnectDeviceIdForCurrentBoard;
+  const boardConnecting = isAndroidSessionPresence && boardConnectPending;
   // The climber's saved board look for the iOS server-rendered thumbnail. The
   // REQUESTED mode, not the device-probed effective one: the server always
   // renders aura. Pre-hydration the store snapshot resolves to the default
@@ -112,6 +123,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       unmirrorLabel: t('mobile.session.notification.unmirror'),
       relightLabel: t('mobile.session.notification.relight'),
       reconnectLabel: t('mobile.session.notification.reconnect'),
+      connectingLabel: t('mobile.session.notification.connecting'),
       onWallTemplate: t('mobile.session.notification.onWall'),
     }),
     [t],
@@ -148,6 +160,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     isPartySession: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? false : sessionId !== null,
     boardConnection,
     holderDisplayName,
+    bulbOpensApp,
+    boardConnecting,
     renderMode,
     androidNotification,
     androidThumbnailOverlayPath: overlayUri,

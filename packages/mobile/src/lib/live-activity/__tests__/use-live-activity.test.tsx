@@ -254,6 +254,33 @@ describe('useLiveActivity start-failure contract', () => {
     expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
   });
 
+  // #7087: the Android notification bulb opens the app with no remembered board,
+  // and reads "Connecting…" while a connect runs. Neither may restart the session.
+  it("sends the Android bulb's open-app and connecting flags, and pushes when a connect starts and ends", async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const props = activeProps({ boardConnection: 'disconnected', bulbOpensApp: true });
+    const { rerender } = render(<Harness {...props} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ bulbOpensApp: true, boardConnecting: false }),
+    );
+    plugin.updateLiveActivity.mockClear();
+
+    rerender(<Harness {...props} boardConnecting />);
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ bulbOpensApp: true, boardConnecting: true }),
+    );
+    plugin.updateLiveActivity.mockClear();
+
+    rerender(<Harness {...props} boardConnecting={false} />);
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(expect.objectContaining({ boardConnecting: false }));
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+    expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
+  });
+
   it('refreshes an Android thumbnail when its generation changes at the same path', async () => {
     plugin.startLiveActivitySession.mockResolvedValue(undefined);
     const props = activeProps({

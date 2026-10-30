@@ -874,6 +874,7 @@
         "unmirror": "Annulla lo specchio",
         "relight": "Illumina di nuovo",
         "reconnect": "Connetti al pannello",
+        "connecting": "Connessione…",
         "onWall": "{{name}} è in parete"
       },
       "inStatsFlashes": "Flash",
