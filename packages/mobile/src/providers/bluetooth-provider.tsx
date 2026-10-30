@@ -2813,6 +2813,8 @@ export function BluetoothProvider({
             isScanning={pickerState.isScanning}
             resolvedBoards={resolvedPickerBoards}
             currentBoardConfig={currentBoardConfig}
+            targetBoard={pickerState.targetBoard}
+            showAllBoards={pickerState.showAllBoards}
             onNoLeds={takeVirtualWallAfterPickerDismiss}
             onScanAgain={handlePickerScanAgain}
             mode={pickerState.mode}

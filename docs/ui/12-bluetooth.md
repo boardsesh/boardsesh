@@ -45,6 +45,17 @@ and configuration control the hop. Reconnect waits for that UUID, board type,
 layout, size and normalized hold sets to reach the provider, including a change
 that affects only the UUID or hold sets. The one-shot still expires and fires once.
 
+Connecting to a known board initially lists only controllers resolving to that
+exact board UUID. Each controller's advertised board type must agree too, since
+Kilter and Tension serial numbers can overlap. The broad scan continues to feed
+serial resolution; a delayed lookup can add a matching row but never selects it.
+"Search for any board" reveals the full scan, including unresolved controllers,
+and keeps that choice through sheet-host changes for this connect. A new connect
+starts with its own target again. Saved-device reconnects keep their existing
+search and auto-selection; using their search escape also reveals the full list.
+No matching target is distinct from an empty scan, so other boards being hidden
+does not trigger location-permission or no-lights advice.
+
 On iOS, adopting a connection restored outside JavaScript waits until reconnect
 memory finishes loading, including a failed read (#5429). A named controller's
 serial must agree with each known identity: memory for the active board UUID key

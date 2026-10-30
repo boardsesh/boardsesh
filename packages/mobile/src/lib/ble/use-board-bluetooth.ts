@@ -73,6 +73,8 @@ import {
 } from './known-board-devices-store';
 import type { BleWriteActivityStore } from './write-activity-store';
 import { getBleEncodingSignature } from './encoding-signature';
+import type { PickerBoardTarget } from './picker-device-target';
+import { boardUuidOrNull } from '../boards/board-identity';
 
 // Exported for testing. Decides how a connect-failure category reaches error
 // tracking:
@@ -262,6 +264,11 @@ export type PickerState = {
   // New per picker session. Hosts key the sheet on it so a new connect never
   // reuses the previous session's sheet instance.
   sessionId: number;
+  // A first connect to a known board shows only devices resolving to that
+  // physical board. Keep this snapshot and the escape on the session so moving
+  // between root and route sheet hosts cannot reset the climber's choice.
+  targetBoard?: PickerBoardTarget;
+  showAllBoards: boolean;
   // Kept EMPTY while `searching`: boards only reach the sheet (and the serial
   // lookup behind it) once the list is on screen (#5658).
   devices: DiscoveredDevice[];
@@ -278,7 +285,7 @@ export type PickerState = {
   // The saved board was auto-selected: the sheet dismisses itself, and only once
   // that dismissal has settled does the host call `handleClosed`.
   closing: boolean;
-  // Set while `searching`: the sheet's "Search for any board" button.
+  // Stops a saved-device search and/or reveals devices outside targetBoard.
   handleSearchAnyBoard?: () => void;
   // Another root sheet displaced this one (sheet coordinator). A `searching`
   // picker hides and keeps scanning; a `list` picker cancels, as it always did.
@@ -901,142 +908,155 @@ export function useBoardBluetooth({
   // The picker for one connect. With a saved board (`targetSearch`) it opens at
   // the tap in `searching` and moves to `list` or closes itself, as the adapter
   // reports (see RNBleAdapter.requestAndConnect for the state machine, #5658).
-  const devicePicker = useCallback<DevicePickerFn>((subscribe, targetSearch) => {
-    return new Promise<string>((resolve, reject) => {
-      pickerSessionCounterRef.current += 1;
-      const sessionId = pickerSessionCounterRef.current;
-      // The picker promise settles exactly once, whoever gets there first: a
-      // pick, a cancel, the auto-select, or connect()'s failure path.
-      let settled = false;
-      let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
-      // Boards heard while `searching`, held back until the list is on screen.
-      let latestDevices: DiscoveredDevice[] = [];
-      // A connect started with the app in the background (the Android session
-      // notification's bulb) keeps the silent search: nothing on screen, ever.
-      // Whether the climber has seen this sheet decides how the scan ends
-      // (#7038): a sheet they saw waits with its empty state, one they never
-      // saw ends the connect with "board not found".
-      const presentedAtOpen = mode === 'list' || isAppActive();
+  const devicePicker = useCallback<DevicePickerFn>(
+    (subscribe, targetSearch) => {
+      return new Promise<string>((resolve, reject) => {
+        pickerSessionCounterRef.current += 1;
+        const sessionId = pickerSessionCounterRef.current;
+        // The picker promise settles exactly once, whoever gets there first: a
+        // pick, a cancel, the auto-select, or connect()'s failure path.
+        let settled = false;
+        let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
+        const targetUuid = boardUuidOrNull(boardUuid);
+        const targetBoard = targetUuid && boardName ? { boardUuid: targetUuid, boardName } : undefined;
+        // Boards heard while `searching`, held back until the list is on screen.
+        let latestDevices: DiscoveredDevice[] = [];
+        // A connect started with the app in the background (the Android session
+        // notification's bulb) keeps the silent search: nothing on screen, ever.
+        // Whether the climber has seen this sheet decides how the scan ends
+        // (#7038): a sheet they saw waits with its empty state, one they never
+        // saw ends the connect with "board not found".
+        const presentedAtOpen = mode === 'list' || isAppActive();
 
-      // Every write is scoped to this session: a late callback from an earlier
-      // connect must never change, or clear, a newer picker.
-      const updateSession = (update: (current: PickerState) => PickerState | null) => {
-        setPickerState((prev) => (prev && prev.sessionId === sessionId ? update(prev) : prev));
-      };
+        // Every write is scoped to this session: a late callback from an earlier
+        // connect must never change, or clear, a newer picker.
+        const updateSession = (update: (current: PickerState) => PickerState | null) => {
+          setPickerState((prev) => (prev && prev.sessionId === sessionId ? update(prev) : prev));
+        };
 
-      const rejectPicker = (error: Error) => {
-        if (settled) return;
-        settled = true;
-        reject(error);
-      };
-      pickerRejectRef.current = { sessionId, reject: rejectPicker };
-      const releaseRejectRef = () => {
-        if (pickerRejectRef.current?.reject === rejectPicker) pickerRejectRef.current = null;
-      };
+        const rejectPicker = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
+        pickerRejectRef.current = { sessionId, reject: rejectPicker };
+        const releaseRejectRef = () => {
+          if (pickerRejectRef.current?.reject === rejectPicker) pickerRejectRef.current = null;
+        };
 
-      const cleanup = () => {
-        releaseRejectRef();
-        updateSession(() => null);
-      };
+        const cleanup = () => {
+          releaseRejectRef();
+          updateSession(() => null);
+        };
 
-      const handleSelect = (deviceId: string) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(deviceId);
-      };
+        const handleSelect = (deviceId: string) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(deviceId);
+        };
 
-      const handleCancel = () => {
-        if (settled) return;
-        cleanup();
-        rejectPicker(new Error('Device selection cancelled'));
-      };
+        const handleCancel = () => {
+          if (settled) return;
+          cleanup();
+          rejectPicker(new Error('Device selection cancelled'));
+        };
 
-      const handleDisplaced = () => {
-        if (mode === 'searching') {
-          // Another root sheet (queue, board, filters) took the screen. Keep the
-          // connect alive and scanning out of sight, as it was before #5658: the
-          // saved board still connects if it shows up, and the list comes back
-          // on screen when the search ends.
-          updateSession((current) => ({ ...current, presented: false }));
-          return;
-        }
-        handleCancel();
-      };
-
-      const handleClosed = () => updateSession(() => null);
-
-      setPickerState({
-        sessionId,
-        devices: [],
-        isScanning: true,
-        handleSelect,
-        handleCancel,
-        mode,
-        presented: presentedAtOpen,
-        closing: false,
-        handleSearchAnyBoard: targetSearch?.searchAnyBoard,
-        handleDisplaced,
-        handleClosed,
-      });
-
-      subscribe(
-        (devices) => {
-          latestDevices = devices;
-          if (mode !== 'list') return;
-          updateSession((current) => ({ ...current, devices }));
-        },
-        () => {
-          // Nobody ever saw this picker: the Android session notification's bulb
-          // connects without bringing the app forward. Since the adapters stopped
-          // failing an empty scan, nothing else would end this connect, and
-          // connectInFlightRef would swallow every later bulb tap until the app
-          // is opened. End it as "board not found" (classifyBleFailure reads the
-          // message): connect() shows the standard alert, which Android holds
-          // until the app is on screen again (#7038). Gated on whether the sheet
-          // was ever shown, not on where the app is now: a sheet the climber saw
-          // and then left in the background still waits for them.
-          if (!presentedAtOpen) {
-            if (settled) return;
-            cleanup();
-            rejectPicker(new Error('No boards found'));
+        const handleDisplaced = () => {
+          if (mode === 'searching') {
+            // Another root sheet (queue, board, filters) took the screen. Keep the
+            // connect alive and scanning out of sight, as it was before #5658: the
+            // saved board still connects if it shows up, and the list comes back
+            // on screen when the search ends.
+            updateSession((current) => ({ ...current, presented: false }));
             return;
           }
-          // Scan window closed — drop the spinner. The picker stays open (a
-          // device was found but not yet picked, or it shows the empty state).
-          updateSession((current) => ({ ...current, isScanning: false }));
-        },
-        targetSearch
-          ? {
-              onTargetSearchEnded: () => {
-                if (settled || mode !== 'searching') return;
-                mode = 'list';
-                updateSession((current) => ({
-                  ...current,
-                  mode: 'list',
-                  // A sheet nobody has seen stays off screen: the list would land
-                  // on a paused activity, where nobody can pick from it (#7038).
-                  presented: presentedAtOpen,
-                  devices: latestDevices,
-                  handleSearchAnyBoard: undefined,
-                }));
-              },
-              onTargetFound: () => {
-                if (settled) return;
-                // The adapter settled its own selection first, so this reject only
-                // retires the picker promise.
-                releaseRejectRef();
-                rejectPicker(new Error('Device selection cancelled'));
-                // Leave by DISMISS, never by unmounting: the match can land while
-                // the sheet is still presenting. The host calls handleClosed once
-                // the dismissal has settled (at once if it never presented).
-                updateSession((current) => ({ ...current, closing: true }));
-              },
+          handleCancel();
+        };
+
+        const handleClosed = () => updateSession(() => null);
+
+        const handleSearchAnyBoard = () => {
+          if (settled) return;
+          updateSession((current) => ({ ...current, showAllBoards: true }));
+          targetSearch?.searchAnyBoard();
+        };
+
+        setPickerState({
+          sessionId,
+          targetBoard,
+          showAllBoards: false,
+          devices: [],
+          isScanning: true,
+          handleSelect,
+          handleCancel,
+          mode,
+          presented: presentedAtOpen,
+          closing: false,
+          handleSearchAnyBoard: targetSearch || targetBoard ? handleSearchAnyBoard : undefined,
+          handleDisplaced,
+          handleClosed,
+        });
+
+        subscribe(
+          (devices) => {
+            latestDevices = devices;
+            if (mode !== 'list') return;
+            updateSession((current) => ({ ...current, devices }));
+          },
+          () => {
+            // Nobody ever saw this picker: the Android session notification's bulb
+            // connects without bringing the app forward. Since the adapters stopped
+            // failing an empty scan, nothing else would end this connect, and
+            // connectInFlightRef would swallow every later bulb tap until the app
+            // is opened. End it as "board not found" (classifyBleFailure reads the
+            // message): connect() shows the standard alert, which Android holds
+            // until the app is on screen again (#7038). Gated on whether the sheet
+            // was ever shown, not on where the app is now: a sheet the climber saw
+            // and then left in the background still waits for them.
+            if (!presentedAtOpen) {
+              if (settled) return;
+              cleanup();
+              rejectPicker(new Error('No boards found'));
+              return;
             }
-          : undefined,
-      );
-    });
-  }, []);
+            // Scan window closed — drop the spinner. The picker stays open (a
+            // device was found but not yet picked, or it shows the empty state).
+            updateSession((current) => ({ ...current, isScanning: false }));
+          },
+          targetSearch
+            ? {
+                onTargetSearchEnded: () => {
+                  if (settled || mode !== 'searching') return;
+                  mode = 'list';
+                  updateSession((current) => ({
+                    ...current,
+                    mode: 'list',
+                    // A sheet nobody has seen stays off screen: the list would land
+                    // on a paused activity, where nobody can pick from it (#7038).
+                    presented: presentedAtOpen,
+                    devices: latestDevices,
+                    handleSearchAnyBoard: targetBoard ? handleSearchAnyBoard : undefined,
+                  }));
+                },
+                onTargetFound: () => {
+                  if (settled) return;
+                  // The adapter settled its own selection first, so this reject only
+                  // retires the picker promise.
+                  releaseRejectRef();
+                  rejectPicker(new Error('Device selection cancelled'));
+                  // Leave by DISMISS, never by unmounting: the match can land while
+                  // the sheet is still presenting. The host calls handleClosed once
+                  // the dismissal has settled (at once if it never presented).
+                  updateSession((current) => ({ ...current, closing: true }));
+                },
+              }
+            : undefined,
+        );
+      });
+    },
+    [boardName, boardUuid],
+  );
 
   const clearConnectionAfterDrop = useCallback(
     (expectedAdapter: BluetoothAdapter) => {

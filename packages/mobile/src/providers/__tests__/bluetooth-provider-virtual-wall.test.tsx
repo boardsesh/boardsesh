@@ -788,6 +788,7 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
       handleSelect: vi.fn(),
       handleCancel: vi.fn(),
       sessionId: 1,
+      showAllBoards: false,
       mode: 'list',
       presented: true,
       closing: false,

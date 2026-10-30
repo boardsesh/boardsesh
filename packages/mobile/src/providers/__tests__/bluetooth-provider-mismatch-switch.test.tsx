@@ -80,6 +80,9 @@ const presence = vi.hoisted(() => ({
 type PickerSheetProps = {
   onSelect: (deviceId: string) => void;
   onScanAgain?: () => void;
+  targetBoard?: { boardUuid: string; boardName: string };
+  showAllBoards?: boolean;
+  onSearchAnyBoard?: () => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -314,6 +317,7 @@ function makeMismatchingPickerState(): PickerState {
     handleSelect: vi.fn(),
     handleCancel: vi.fn(),
     sessionId: 1,
+    showAllBoards: false,
     mode: 'list',
     presented: true,
     closing: false,
@@ -1116,6 +1120,35 @@ describe('BluetoothProvider external picker host stacking (#5868)', () => {
     // instance, which now un-suppresses.
     rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
     expect(sheetCount(container)).toBe(1);
+  });
+
+  it('keeps the session target and escape across root and route host handoffs (#7125)', () => {
+    const targetBoard = { boardUuid: 'qa-kilter', boardName: 'kilter' };
+    const handleSearchAnyBoard = vi.fn();
+    bluetooth.state.pickerState = {
+      ...makeMismatchingPickerState(),
+      targetBoard,
+      showAllBoards: true,
+      handleSearchAnyBoard,
+    };
+    const { rerender } = render(renderHosts([]));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
+    rerender(renderHosts(['play']));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
+    rerender(renderHosts([]));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
   });
 });
 

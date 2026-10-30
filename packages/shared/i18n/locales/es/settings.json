@@ -446,6 +446,7 @@
     "searchingForBoard": "Buscando tu {{board}}…",
     "searchingForSavedBoard": "Buscando tu plafón…",
     "searchAnyBoard": "Buscar cualquier plafón",
+    "selectedBoardNotFound": "No se encontró el plafón seleccionado",
     "writing": "Iluminando el plafón…",
     "selectBoard": "Seleccionar plafón",
     "devicesFound_one": "{{count}} plafón encontrado",

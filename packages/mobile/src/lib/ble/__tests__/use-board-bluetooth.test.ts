@@ -5291,8 +5291,8 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     vi.useRealTimers();
   });
 
-  function renderBluetooth() {
-    return renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+  function renderBluetooth(boardUuid?: string) {
+    return renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid }));
   }
 
   it('opens the sheet at the tap searching for the saved board, and lists nothing until the list starts', async () => {
@@ -5337,6 +5337,99 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));
     expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual(['needle-device']);
     expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps the known-board filter through saved-search grace expiry, with an explicit escape', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      mode: 'list',
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeInstanceOf(Function);
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+  });
+
+  it('makes the saved-search escape reveal all boards as it ends auto-selection', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', showAllBoards: true });
+    act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps first-connect raw results for resolution and preserves the escape on later scan updates', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      mode: 'list',
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    act(() => scanCallbacks[0](null, advert('OTHER', 'other-device')));
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual(['other-device']);
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    act(() => scanCallbacks[0](null, advert('LATER', 'later-device')));
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual([
+      'other-device',
+      'later-device',
+    ]);
+  });
+
+  it('snapshots the target and resets escape for a new session, ignoring an old escape callback', async () => {
+    const { result, rerender } = renderHook(
+      ({ boardUuid }) => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid }),
+      { initialProps: { boardUuid: 'first-board' } },
+    );
+    let firstConnect: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      firstConnect = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const oldEscape = result.current.pickerState?.handleSearchAnyBoard;
+    rerender({ boardUuid: 'second-board' });
+    expect(result.current.pickerState?.targetBoard?.boardUuid).toBe('first-board');
+    act(() => oldEscape?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(firstConnect).resolves.toBe(false);
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      targetBoard: { boardUuid: 'second-board', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    act(() => oldEscape?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(false);
+  });
+
+  it('does not constrain an anonymous first connect', async () => {
+    const { result } = renderBluetooth('');
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState?.targetBoard).toBeUndefined();
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeUndefined();
   });
 
   // #7038: nobody can pick from a list in the background, so the grace window
