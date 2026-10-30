@@ -40,7 +40,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as renderInitial, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { Climb } from '@boardsesh/shared-schema';
+import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { configKey, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
@@ -73,8 +73,17 @@ const activeBoard = vi.hoisted(() => ({
     sizeId: 20,
     setIds: '3',
     angle: 40,
-  } as { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null,
+  } as {
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    angle: number;
+    uuid?: string;
+    gymUuid?: string | null;
+  } | null,
 }));
+const gymBoards = vi.hoisted(() => ({ current: undefined as UserBoard[] | undefined }));
 const queueActions = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
   nextClimb: vi.fn(),
@@ -119,6 +128,7 @@ const lightbulb = vi.hoisted(() => ({
   pending: false,
   localConnected: false,
   connect: vi.fn(async () => true),
+  moveToClimbBoard: vi.fn(async () => true),
 }));
 const wall = vi.hoisted(() => ({
   uuid: null as string | null,
@@ -457,8 +467,7 @@ vi.mock('../use-wall-climb', () => ({
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  // No gym roster: Put on {board} reads it (#7076).
-  useGymBoards: () => ({ data: undefined }),
+  useGymBoards: () => ({ data: gymBoards.current }),
   useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: toggleFavorite }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
@@ -490,6 +499,7 @@ vi.mock('../../ble/use-lightbulb-control', () => ({
     pressAction: lightbulb.pressAction,
     holderIsAuthoritative: lightbulb.holderIsAuthoritative,
     connect: lightbulb.connect,
+    moveToClimbBoard: lightbulb.moveToClimbBoard,
   }),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
@@ -512,6 +522,7 @@ const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
 const { BUSY_WALL_TAP_DEBOUNCE_MS } = await import('../busy-wall-question');
+const { QueueSessionBoardPathContext } = await import('../../../providers/queue/queue-contexts');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -649,6 +660,8 @@ beforeEach(() => {
   lightbulb.pressAction = 'noop';
   lightbulb.pending = false;
   lightbulb.localConnected = false;
+  activeBoard.current = { boardType: 'tension', layoutId: 8, sizeId: 20, setIds: '3', angle: 40 };
+  gymBoards.current = undefined;
   resetWallCleared();
   recorded.actionBar = [];
   recorded.boardSheet = [];
@@ -1795,6 +1808,171 @@ describe('PlayDrawer — the busy-wall confirm', () => {
 
     expect(lastActionBarProps().commitButton).not.toBe('confirm');
     expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PlayDrawer — busy-wall confirmation on another gym board (#7126)', () => {
+  const kilterGymBoard: UserBoard = {
+    uuid: 'gym-kilter',
+    slug: 'gym-kilter',
+    ownerId: null,
+    boardType: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    angle: 40,
+    name: 'Gym Kilter',
+    gymUuid: 'gym-uuid',
+    isPublic: true,
+    isUnlisted: false,
+    hideLocation: false,
+    isOwned: false,
+    isAngleAdjustable: true,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    totalAscents: 0,
+    uniqueClimbers: 0,
+    followerCount: 0,
+    commentCount: 0,
+    isFollowedByMe: false,
+  };
+  const moonboardGymBoard: UserBoard = {
+    ...kilterGymBoard,
+    uuid: 'gym-moonboard',
+    slug: 'gym-moonboard',
+    boardType: 'moonboard',
+    layoutId: 3,
+    sizeId: 1,
+    setIds: '5,6,7,8,9,10',
+    name: 'Gym MoonBoard',
+    isAngleAdjustable: false,
+  };
+  const moonboardClimb: Climb = {
+    ...CLIMB,
+    uuid: 'moonboard-preview',
+    name: 'MoonBoard Preview',
+    boardType: 'moonboard',
+    layoutId: 3,
+    compatibleSizeIds: [1],
+  };
+
+  function browseGymClimbThenLoseTheWall({
+    linked = true,
+    previewClimb = moonboardClimb,
+    crewBoardPath = '',
+  }: { linked?: boolean; previewClimb?: Climb; crewBoardPath?: string } = {}) {
+    auth.isAuthenticated = true;
+    activeBoard.current = kilterGymBoard;
+    gymBoards.current = [kilterGymBoard, moonboardGymBoard];
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    lightbulb.localConnected = linked;
+    lightbulb.lit = linked;
+    lightbulb.pressAction = linked ? 'noop' : 'connect';
+    ble.current = { isConnected: linked, sendFramesToBoard: vi.fn(async () => true) };
+    wall.uuid = 'wall-climb-a';
+    wall.name = 'What Was Up';
+    const target = openTargetFor(previewClimb);
+    const reachableBoardKeys = new Set([
+      configKey(BOARD_CONFIG),
+      configKey({ boardName: moonboardGymBoard.boardType, layoutId: moonboardGymBoard.layoutId }),
+    ]);
+    const player = () =>
+      createElement(
+        QueueSessionBoardPathContext.Provider,
+        { value: crewBoardPath },
+        createElement(PlayDrawer, {
+          viewer: 'member',
+          presentation: 'pane',
+          boardConfig: BOARD_CONFIG,
+          reachableBoardKeys,
+          openTarget: target,
+          onOpenQueue: vi.fn(),
+        }),
+      );
+    const view = render(player());
+    wall.uuid = 'wall-climb-b';
+    wall.name = 'Their Project';
+    view.rerender(player());
+  }
+
+  it.each([true, false])('commits then moves after Put mine up, linked=%s', (linked) => {
+    browseGymClimbThenLoseTheWall({ linked });
+    expect(lastActionBarProps().wallControlState).toBe('move_to_board');
+
+    act(() => (lastActionBarProps().onWallControl as () => void)());
+
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+    // Confirmation disables the ordinary tap action, but the answer must still
+    // remember which board the wall control is offering to move to.
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'move_to_board', tapAction: 'noop' });
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lightbulb.moveToClimbBoard).not.toHaveBeenCalled();
+
+    act(() => (lastActionBarProps().onCommit as () => void)());
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lightbulb.moveToClimbBoard).not.toHaveBeenCalled();
+
+    afterBusyWallDebounce(() => (lastActionBarProps().onCommit as () => void)());
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ climb: moonboardClimb }),
+      expect.objectContaining({ trigger: 'put_on_wall' }),
+    );
+    expect(lightbulb.moveToClimbBoard).toHaveBeenCalledExactlyOnceWith('move_to_board', moonboardClimb);
+    expect(queueActions.setCurrentClimb.mock.invocationCallOrder[0]).toBeLessThan(
+      lightbulb.moveToClimbBoard.mock.invocationCallOrder[0],
+    );
+    expect(lightbulb.connect).not.toHaveBeenCalled();
+    expect(ble.current?.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('keeps both boards unchanged when Keep theirs answers the cross-board question', () => {
+    browseGymClimbThenLoseTheWall();
+    act(() => (lastActionBarProps().onWallControl as () => void)());
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+
+    afterBusyWallDebounce(() => (lastActionBarProps().onKeepTheirs as () => void)());
+
+    expect(lastActionBarProps().commitButton).not.toBe('confirm');
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lightbulb.moveToClimbBoard).not.toHaveBeenCalled();
+    expect(lightbulb.connect).not.toHaveBeenCalled();
+    expect(ble.current?.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('still commits a same-board answer without moving to another board', () => {
+    browseGymClimbThenLoseTheWall({ previewClimb: CLIMB });
+    expect(lastActionBarProps().wallControlState).toBe('put_on_wall');
+    act(() => (lastActionBarProps().onWallControl as () => void)());
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+
+    afterBusyWallDebounce(() => (lastActionBarProps().onCommit as () => void)());
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ climb: CLIMB }),
+      expect.objectContaining({ trigger: 'put_on_wall' }),
+    );
+    expect(lightbulb.moveToClimbBoard).not.toHaveBeenCalled();
+    expect(lightbulb.connect).not.toHaveBeenCalled();
+  });
+
+  it('relays an answer to the crew’s gym board without taking its connection', () => {
+    browseGymClimbThenLoseTheWall({ crewBoardPath: '/b/gym-moonboard' });
+    expect(lastActionBarProps().wallControlState).toBe('put_on_wall');
+    act(() => (lastActionBarProps().onWallControl as () => void)());
+    expect(lastActionBarProps().commitButton).toBe('confirm');
+    expect(lastActionBarProps().wallControlState).toBe('crew');
+
+    afterBusyWallDebounce(() => (lastActionBarProps().onCommit as () => void)());
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ climb: moonboardClimb }),
+      expect.objectContaining({ trigger: 'put_on_wall' }),
+    );
+    expect(lightbulb.moveToClimbBoard).not.toHaveBeenCalled();
+    expect(lightbulb.connect).not.toHaveBeenCalled();
+    expect(ble.current?.sendFramesToBoard).not.toHaveBeenCalled();
   });
 });
 
