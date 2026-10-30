@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-30T19:51:41.712Z",
+  "generatedAt": "2026-10-30T20:53:54.511Z",
   "entries": [
+    {
+      "prNumber": 6617,
+      "category": "fixed",
+      "title": "See recent climbing on your board, even without starting a session.",
+      "mergedAt": "2026-10-30T20:50:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6617"
+    },
     {
       "prNumber": 7123,
       "category": "improved",
@@ -8486,6 +8493,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-30T19:47:00Z",
+      "sha": "7ca519544dbf8b913a4e1b364a25f86e8b264302",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "74cedc1db50490cba2a0fc684034435ee9b90a93",
+        "ios": "0474e2cf2c1d4539cd920e7e00ef4a728dd5d5b1"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-29T15:57:44+01:00",
