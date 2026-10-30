@@ -89,13 +89,22 @@ board, Sam has the board").
   driving the wall" stops driving (a light buzz, "Stopped driving the wall" for screen readers), the frost fades to
   the tonal "Disconnect board", and swipes go back to previews; the next press disconnects. Disconnecting a crew's
   board has no Undo and breaks every crewmate's relay, so it never happens in one press from the frost. Solo with
-  Light the board as I swipe on, the stop holds until the link drops; it never flips the setting. A second tap
-  inside 600 ms of a stop or a disconnect is dropped.
+  Light the board as I swipe on, the stop holds until the link drops, or until the climber presses to put a climb
+  up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
+- **Solo, a press that puts a climb up ends in driving** (#7113 QA, Marco: "When I'm alone I should just always end
+  up in the driving state when I press the button"). Put on board, Put on board on a dark climb, the connect and
+  the press on the wall with no link (`connect`, `put_on_wall`, `relight`, `on_wall_unlinked`), on the button and
+  the bulb alike. The model's `tapDrive` says how: `resume` with Light the board as I swipe on drops a stop on this
+  link and lights as before, and the setting drives from there; `start` with it off starts a live drive through
+  the swipe's runner (`startDrive`: commit, connect, light), so "You are driving the wall" is honest either way.
+  Where a drive can't start (the model offers no swipe, the `wall-swipe-to-drive` flag is off) the press drops the
+  stop and lights as before. Solo means no crew session on the roster (`useIsCrewSession`, whatever the browse
+  flag says) and no browse latch. In a crew a press stays a one-off put; crews drive by swiping.
 - **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
   first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
-  nothing. A press's "stopped" lasts until that link drops. The model's `swipeAction` is `drive` on Put on board
+  nothing. A press's "stopped" lasts until that link drops, or a solo press puts a climb up (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
   (this phone's board) and on Disconnect board while not driving; never on Sam's board (until the hand-off, #7113 PR
   4), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
@@ -171,9 +180,15 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   holds until the drive goes live (a live drive whose climb doesn't read lit yet gets 1.5 s, and never an error); the
   lit confirm buzzes success. A refusal, or a drive that ends while still arming (a failed connect), springs it back
   with an error buzz. A pan swallows the tap and the hold it ended in, and a drag after a hold that already fired
-  does nothing (the sheet is opening). A system gesture that takes the touch (Android's edge back: the full-width
-  button ends 16 dp from the edge, inside the back zone, and neither RN nor RNGH can exclude it without native code)
-  cancels the pan, which springs back like any cancel. On Expo web the detector has `touchAction="pan-y"`.
+  does nothing (the sheet is opening). A system gesture that takes the touch cancels the pan, which springs back like
+  any cancel. **Android's edge Back** was the one that mattered: measured on a Pixel 8 Pro with gesture navigation,
+  drags starting 35 dp or more from the screen edge drive and drags starting 28 dp or less go Back and close the
+  player. The full-width button ended 16 dp from the edge, so its trailing ~12 dp sat in the zone, and neither RN nor
+  RNGH can exclude it without native code. So on Android the button takes 16 dp more margin on both sides wherever it
+  spans its row (alone in the second row, or the first row beside a MiniPlayer), 32 dp from each edge, the same on
+  the left and the right so it stays centred (`ANDROID_EDGE_BACK_EXTRA_INSET`, `WallControlButton.tsx`). The height
+  doesn't change, so the second row's fixed height holds. iOS, the workout's compact button between ⏮ and ⏭, and the
+  button between the bulb row's buttons are unchanged. On Expo web the detector has `touchAction="pan-y"`.
 - **No swipe on a crewmate's board** until the hand-off (#7113 PR 4) ships: Aurora and MoonBoard boxes stop
   advertising once linked, so taking Sam's board needs his phone to let go first. There the button has no chevrons,
   no peek and no gesture. A drive the runner still can't start (presence says another account holds the board)

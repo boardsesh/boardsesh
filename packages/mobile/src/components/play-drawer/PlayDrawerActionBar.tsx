@@ -346,6 +346,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         >
           <WallControlButton
             model={wallControl}
+            spansRow
             glow={wallGlow}
             onPress={pressWallButton}
             onLongPress={holdWallButton}
@@ -488,6 +489,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                     <WallControlButton
                       key={item}
                       model={wallControl}
+                      // Alone in the row it reaches the screen's edges; between
+                      // the bulb row's buttons it doesn't.
+                      spansRow={layout.secondaryRow.length === 1}
                       glow={wallGlow}
                       onPress={pressWallButton}
                       onLongPress={holdWallButton}

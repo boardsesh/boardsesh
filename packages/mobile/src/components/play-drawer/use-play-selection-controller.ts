@@ -427,7 +427,7 @@ export function usePlaySelectionController({
       // `playlist-peek:<uuid>` items, and `toQueueItemWireInput` sends `item.uuid`
       // verbatim — committing one straight would put a uuid on the wire that no
       // peer can reconcile against their queue. Same helper `nextClimb()` uses.
-      const { item, converted } = resolveCommittableQueueItem(drawerPreviewItem);
+      const { item } = resolveCommittableQueueItem(drawerPreviewItem);
       // Re-anchor the track on the climb actually going up. Browsing moves
       // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
       // walk from A to Z the source still says the pass began at A — and committing
@@ -438,16 +438,19 @@ export function usePlaySelectionController({
       // is by construction on this preview's own track, and the lineage rule lives
       // in `resolveNavigationSuggestionSource` — don't re-add a call-site check.
       //
-      // A trackless look at a queued climb (a swipe off the committed climb with
-      // Light on swipe off, or in a crew, walks the queue) is Next stepping into
-      // Up next once it goes up (#6777): the provider keeps the committed list and
-      // where it picks up when the climb is Up next on it, and clears it as
-      // before otherwise. The preview never borrows the track (#5403); only the
-      // commit, read against the committed climb, decides.
-      const keepTrackIfUpNext = !drawerPreviewSuggestionSource && !converted;
+      // A trackless look (a swipe off the committed climb with Light on swipe
+      // off, after a stop on this link, or in a crew) is Next stepping onward
+      // once it goes up (#6777): the provider keeps the committed list and where
+      // it picks up when the climb is Up next on it, keeps the list when the climb
+      // is the list's own next climb (a peek, minted fresh here: #7113 QA, where
+      // Put on board used to drop "Search results · 4 of 23" and leave swipes
+      // nowhere to go), and clears it as before otherwise. The preview never
+      // borrows the track (#5403); only the commit, read against the committed
+      // climb, decides.
+      const keepWalkedTrack = !drawerPreviewSuggestionSource;
       setCurrentClimb(item, {
-        ...(keepTrackIfUpNext
-          ? { keepTrackIfUpNext }
+        ...(keepWalkedTrack
+          ? { keepWalkedTrack }
           : {
               playlistSuggestionSource: reanchorPlaylistSuggestionSource(
                 drawerPreviewSuggestionSource,

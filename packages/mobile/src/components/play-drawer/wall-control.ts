@@ -230,6 +230,11 @@ export function resolveWallControlAction({
   }
 }
 
+/** A tap that connects, puts the climb up, or lights it again (`tapDrive`). */
+export function isPutUpAction(action: WallControlAction): boolean {
+  return action === 'connect' || action === 'put_on_wall' || action === 'relight';
+}
+
 /**
  * The bulb's look: grey outline with no board, filled amber only while this
  * phone holds the board, in any state (Marco's QA: "Put on the wall" on a
@@ -389,11 +394,37 @@ export type WallControlInput = WallControlStateInput & {
   driveMode?: 'off' | 'arming' | 'live';
   /**
    * A press on the frosted button stopped driving on this link: nothing drives
-   * until the link drops or the climber swipes again, solo with Light the board
-   * as I swipe on too.
+   * until the link drops, the climber swipes again, or (solo) presses to put a
+   * climb up (`tapDrive`), with Light the board as I swipe on too.
    */
   drivingStopped?: boolean;
+  /**
+   * Not in a crew session (the roster, whatever the browse rollout flag says):
+   * a press that puts the climb up ends in driving (`tapDrive`). In a crew it
+   * stays a one-off put; crews drive by swiping.
+   */
+  solo?: boolean;
+  /**
+   * The climber's Light the board as I swipe. Solo with it on, a lit climb is
+   * already driven by the setting, so a press only has to drop a stop; with it
+   * off, a press starts a live drive.
+   */
+  lightOnSwipe?: boolean;
 };
+
+/**
+ * What a press that puts the climb up does about driving (#7113 QA, Marco:
+ * "When I'm alone I should just always end up in the driving state when I
+ * press the button"). Solo, every press that connects, puts the climb up or
+ * lights it again ends in driving:
+ *
+ * - `start` — start a live drive (`WallControlRunners.drive`): nothing else
+ *   would drive after the press, because Light the board as I swipe is off.
+ * - `resume` — drop a stop on this link and light the climb as before: the
+ *   setting drives from there, or a drive already does.
+ * - null — a crew (a press is a one-off put), or a press that puts nothing up.
+ */
+export type WallControlTapDrive = 'start' | 'resume' | null;
 
 /**
  * What a swipe on the wall button does (#7113): `drive` connects (or takes the
@@ -433,6 +464,8 @@ export type WallControlModel = {
    * connect is in flight.
    */
   swipeAction: WallControlSwipeAction;
+  /** What a press that puts the climb up does about driving (`WallControlTapDrive`). */
+  tapDrive: WallControlTapDrive;
   longPress: 'sheet' | null;
   labelKey: WallControlLabelKey | null;
   a11yValueKey: WallControlA11yValueKey | null;
@@ -588,6 +621,13 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
+  // Solo, a press that puts the climb up ends in driving (#7113 QA). It starts
+  // a live drive only where nothing else would drive: the setting is off and no
+  // drive is on. The swipe's own rule says where a drive can start.
+  let tapDrive: WallControlTapDrive = null;
+  if (input.solo === true && isPutUpAction(tapAction)) {
+    tapDrive = driveMode === 'off' && input.lightOnSwipe !== true && swipeAction === 'drive' ? 'start' : 'resume';
+  }
   const a11yHintKey =
     state === 'on_wall_unlinked' && tapAction !== 'noop'
       ? 'lightAgainHint'
@@ -614,6 +654,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     gymBoardName: state === 'move_to_board' ? (input.gymBoardName ?? null) : null,
     tapAction,
     swipeAction,
+    tapDrive,
     longPress: input.localConnected && !onCrewGymBoard ? 'sheet' : null,
     labelKey,
     a11yValueKey,
@@ -643,6 +684,7 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   tapAction: 'noop',
   bulbTapAction: 'noop',
   swipeAction: null,
+  tapDrive: null,
   longPress: null,
   labelKey: null,
   a11yValueKey: null,

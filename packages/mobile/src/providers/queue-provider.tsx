@@ -3025,10 +3025,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       if (options?.playlistSuggestionSource !== undefined) {
         setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
       }
-      // A look that walked the queue went up on the wall (#6777). Read before the
-      // dispatch, against the climb still current: Up next on the held track
-      // keeps the list's place, as Next stepping into Up next does.
-      if (options?.keepTrackIfUpNext) {
+      // A look that walked from the current climb went up on the wall (#6777).
+      // Read before the dispatch, against the climb still current: Up next on
+      // the held track keeps the list's place, as Next stepping into Up next
+      // does, and the list's own next climb (the walk's peek) keeps the list.
+      if (options?.keepWalkedTrack) {
         const { queue, currentClimbQueueItem } = stateRef.current;
         const heldTrack = playlistSuggestionSourceRef.current;
         const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item);

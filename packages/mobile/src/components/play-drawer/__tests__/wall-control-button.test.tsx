@@ -13,6 +13,7 @@ const layoutCtrl = vi.hoisted(() => ({
   onAccessibilityAction: undefined as undefined | ((event: { nativeEvent: { actionName: string } }) => void),
 }));
 const themeCtrl = vi.hoisted(() => ({ scheme: 'light' as 'light' | 'dark' }));
+const platformCtrl = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     onLayout,
@@ -64,7 +65,11 @@ vi.mock('react-native', () => ({
   View: ({ testID, children }: { testID?: string; children?: ReactNode }) =>
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return platformCtrl.os;
+    },
+  },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -168,6 +173,7 @@ afterEach(() => {
   swipeCtrl.panned = false;
   swipeCtrl.noteLongPress.mockClear();
   swipeCtrl.options = [];
+  platformCtrl.os = 'ios';
 });
 
 type ModelOptions = {
@@ -224,6 +230,7 @@ function renderButton(
     onDrive?: () => void;
     onSwipe?: () => 'started' | 'needs_handoff' | 'unavailable';
     compact?: boolean;
+    spansRow?: boolean;
     glow?: WallGlowInput | null;
   } = {},
 ) {
@@ -237,6 +244,7 @@ function renderButton(
       onDrive: extra.onDrive,
       onSwipe: extra.onSwipe,
       compact: extra.compact,
+      spansRow: extra.spansRow,
       glow: extra.glow,
     }),
   );
@@ -417,6 +425,45 @@ describe('WallControlButton', () => {
     const { getByRole } = renderButton(modelFor('lit', { holder: 'self' }), { compact: true });
     expect(getByRole('button').getAttribute('aria-label')).toBe(DRIVING);
     expect(getByRole('button').getAttribute('data-style')).toContain('"paddingHorizontal":8');
+  });
+
+  // #7113 PR 5: Android's edge Back took drags starting 28 dp or less from the
+  // edge (Pixel 8 Pro); the full-width button ended 16 dp in.
+  describe("clear of Android's edge Back", () => {
+    const sideMargins = (style: string) => {
+      const parsed = JSON.parse(style) as unknown[];
+      const flat = parsed
+        .flat(2)
+        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null);
+      const left = flat.map((entry) => entry.marginLeft).find((value) => value !== undefined);
+      const right = flat.map((entry) => entry.marginRight).find((value) => value !== undefined);
+      return { left, right };
+    };
+
+    it('insets the full-width button 16 dp more on Android, the same on both sides', () => {
+      platformCtrl.os = 'android';
+      const { getByRole } = renderButton(modelFor('connect'), { spansRow: true });
+      const { left, right } = sideMargins(getByRole('button').getAttribute('data-style') ?? '[]');
+      expect(left).toBe(16);
+      expect(right).toBe(16);
+      // Symmetrical, so the button stays centred in its row.
+      expect(left).toBe(right);
+    });
+
+    it('leaves iOS, and a button that does not span its row, as they were', () => {
+      const ios = renderButton(modelFor('connect'), { spansRow: true });
+      expect(sideMargins(ios.getByRole('button').getAttribute('data-style') ?? '[]')).toEqual({
+        left: undefined,
+        right: undefined,
+      });
+      cleanup();
+      platformCtrl.os = 'android';
+      const compact = renderButton(modelFor('connect'), { compact: true });
+      expect(sideMargins(compact.getByRole('button').getAttribute('data-style') ?? '[]')).toEqual({
+        left: undefined,
+        right: undefined,
+      });
+    });
   });
 
   it('waits while a connect is in flight', () => {

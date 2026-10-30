@@ -919,6 +919,96 @@ describe('resolveWallControl: driving the wall', () => {
   });
 });
 
+// #7113 QA (Marco): "When I'm alone I should just always end up in the driving
+// state when I press the button." Solo, every press that puts the climb up ends
+// in driving; in a crew it stays a one-off put.
+describe('resolveWallControl: a solo press that puts the climb up drives', () => {
+  const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
+    ['connect', {}],
+    ['put_on_wall', { commitButton: 'putOnWall' }],
+    ['put_on_wall, linked', { ...MINE, commitButton: 'putOnWall' }],
+    ['dark', MINE],
+    ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
+  ];
+
+  // [solo, light on swipe, stopped, tapDrive]
+  const RULES: [boolean, boolean, boolean, 'start' | 'resume' | null][] = [
+    [true, true, false, 'resume'],
+    [true, true, true, 'resume'],
+    [true, false, false, 'start'],
+    [true, false, true, 'start'],
+    [false, true, false, null],
+    [false, true, true, null],
+    [false, false, false, null],
+    [false, false, true, null],
+  ];
+  const cases = PUT_UP.flatMap(([name, input]) => RULES.map((rule) => [name, input, ...rule] as const));
+
+  it.each(cases)(
+    '%s, solo %s, light on swipe %s, stopped %s: %s',
+    (_name, input, solo, lightOnSwipe, stopped, tapDrive) => {
+      const model = resolveWallControl({
+        ...FREE,
+        ...input,
+        navigationCommits: lightOnSwipe && solo && !stopped,
+        drivingStopped: stopped,
+        solo,
+        lightOnSwipe,
+      });
+      expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
+      expect(model.tapDrive).toBe(tapDrive);
+    },
+  );
+
+  it('never asks a press that puts nothing up, or one while a drive is on, to start one', () => {
+    const solo = { solo: true, lightOnSwipe: false };
+    // Disconnect board, and You are driving the wall.
+    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, displayedLit: true }).tapDrive).toBeNull();
+    expect(
+      resolveWallControl({ ...FREE, ...MINE, ...solo, displayedLit: true, driveMode: 'live' }).tapDrive,
+    ).toBeNull();
+    // Arming already: the press lights as before.
+    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, driveMode: 'arming' }).tapDrive).toBe('resume');
+    // A connect in flight offers no drive.
+    expect(resolveWallControl({ ...FREE, ...solo, pending: true }).tapDrive).toBe('resume');
+  });
+
+  // What the climber sees after the press: the model once the handler ran.
+  // [case, solo, light on swipe, driving after]
+  it.each<[string, boolean, boolean, boolean]>([
+    ['solo, stopped, Light on swipe on', true, true, true],
+    ['solo, Light on swipe off', true, false, true],
+    ['a crew, stopped', false, true, false],
+    ['a crew, Light on swipe off', false, false, false],
+  ])('%s: a press ends driving %s', (_name, solo, lightOnSwipe, drivingAfter) => {
+    const before = resolveWallControl({
+      ...FREE,
+      ...MINE,
+      commitButton: 'putOnWall',
+      drivingStopped: true,
+      solo,
+      lightOnSwipe,
+      navigationCommits: false,
+    });
+    expect(before.tapAction).toBe('put_on_wall');
+    // `resume` drops the stop; `start` runs a drive that goes live; null leaves both.
+    const stopped = before.tapDrive === null;
+    const driveMode = before.tapDrive === 'start' ? 'live' : 'off';
+    const after = resolveWallControl({
+      ...FREE,
+      ...MINE,
+      displayedLit: true,
+      drivingStopped: stopped,
+      driveMode,
+      solo,
+      lightOnSwipe,
+      navigationCommits: solo && lightOnSwipe && !stopped,
+    });
+    expect(after.driving).toBe(drivingAfter);
+    expect(after.labelKey).toBe(drivingAfter ? 'youAreDriving' : 'disconnectBoard');
+  });
+});
+
 // "On your other phone" keys on presence's named holder and the signed-in id,
 // never on whoever lit the climb, and never on a profile still loading (#7017 review).
 describe('isHolderSelfAccount', () => {

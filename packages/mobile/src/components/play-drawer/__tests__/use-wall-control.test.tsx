@@ -31,7 +31,13 @@ import {
   type DriveStartOutcome,
   type WallControlRunners,
 } from '../use-wall-control';
-import { EMPTY_WALL_CONTROL, type WallControlAction, type WallControlModel } from '../wall-control';
+import {
+  EMPTY_WALL_CONTROL,
+  resolveWallControl,
+  type WallControlAction,
+  type WallControlInput,
+  type WallControlModel,
+} from '../wall-control';
 import {
   enterDriveMode,
   getDriveMode,
@@ -39,6 +45,7 @@ import {
   isDrivingStoppedForLink,
   markDriveLive,
   resetDriveModeForTests,
+  stopDrivingForLink,
 } from '../drive-mode-store';
 
 type MockRunners = {
@@ -353,5 +360,94 @@ describe('useWallControl swipe', () => {
       hook.result.current.drive('button');
     });
     expect(analytics.swiped).not.toHaveBeenCalled();
+  });
+});
+
+// #7113 QA (Marco): solo, a press that puts the climb up ends in driving, on
+// the button and the bulb; in a crew it stays a one-off put.
+describe('useWallControl: a solo press ends in driving', () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+
+  /** A preview with the link up, after a press on You are driving the wall stopped it. */
+  const PREVIEW_AFTER_STOP: WallControlInput = {
+    commitButton: 'putOnWall',
+    pressAction: 'disconnect',
+    holderIsAuthoritative: false,
+    localConnected: true,
+    pending: false,
+    displayedLit: false,
+    offWall: false,
+    wallHeldLocally: false,
+    holderIsSelfAccount: false,
+    selfFace: null,
+    crewFace: null,
+    confirmArmed: false,
+    commitLabel: 'putOnWall',
+    otherClimbLit: false,
+    writing: false,
+    autoDisconnectWarning: false,
+    navigationCommits: false,
+    drivingStopped: true,
+  };
+  const previewAfterStop = (input: Partial<WallControlInput>) =>
+    resolveWallControl({ ...PREVIEW_AFTER_STOP, ...input });
+
+  // [case, model input, control, drive runner called, light runner called, stopped after]
+  it.each<[string, Partial<WallControlInput>, 'button' | 'bulb', boolean, boolean, boolean]>([
+    ['solo, stopped, Light on swipe on', { solo: true, lightOnSwipe: true }, 'button', false, true, false],
+    ['solo, stopped, Light on swipe on, the bulb', { solo: true, lightOnSwipe: true }, 'bulb', false, true, false],
+    ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', true, false, false],
+    ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', true, false, false],
+    ['a crew', { solo: false, lightOnSwipe: true }, 'button', false, true, true],
+  ])('%s', (_name, input, control, drives, lights, stoppedAfter) => {
+    stopDrivingForLink();
+    const run = runners();
+    // The runner's own effect: a drive clears the stop as it arms.
+    run.drive.mockImplementation(() => {
+      enterDriveMode({ sessionId: null, boardId: null });
+      return 'started';
+    });
+    const { hook } = setup(previewAfterStop(input), run);
+    act(() => hook.result.current.press(control));
+    expect(run.drive).toHaveBeenCalledTimes(drives ? 1 : 0);
+    expect(run.light).toHaveBeenCalledTimes(lights ? 1 : 0);
+    expect(isDrivingStoppedForLink()).toBe(stoppedAfter);
+    expect(getDriveMode() !== null).toBe(drives);
+    expect(haptics.hapticMedium).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledOnce();
+  });
+
+  it('lights as before, with the stop dropped, where the drive cannot start', () => {
+    stopDrivingForLink();
+    const run = runners();
+    run.drive.mockReturnValue('unavailable');
+    const { hook } = setup(previewAfterStop({ solo: true, lightOnSwipe: false }), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(false);
+  });
+
+  it('starts the drive instead of lighting again on the wall with no link', () => {
+    const run = runners();
+    const model = resolveWallControl({
+      ...PREVIEW_AFTER_STOP,
+      commitButton: null,
+      pressAction: 'connect',
+      localConnected: false,
+      displayedIsWallClimb: true,
+      presenceFresh: true,
+      displayedIsOwnCurrent: true,
+      solo: true,
+      lightOnSwipe: false,
+    });
+    expect(model.state).toBe('on_wall_unlinked');
+    const { hook } = setup(model, run);
+    act(() => hook.result.current.press('button'));
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.lightAgain).not.toHaveBeenCalled();
   });
 });

@@ -131,6 +131,7 @@ import {
   useQueueActions,
   useQueueSessionId,
   useIsSharedSession,
+  useIsCrewSession,
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useSetting } from '../../settings';
@@ -446,6 +447,10 @@ export function PlayCore({
   // so the ≤1/2s session-stats push and every presence delta cost the drawer
   // nothing — it flips only across the solo ↔ crew boundary.
   const isSharedSession = useIsSharedSession();
+  // The roster's answer, whatever the browse rollout flag says: solo, a press
+  // that puts the climb up ends in driving (#7113 QA); in a crew it stays a
+  // one-off put.
+  const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
   const [lightOnSwipe] = useSetting('lightOnSwipe');
@@ -1361,6 +1366,8 @@ export function PlayCore({
         navigationCommits: navigationCommits && !browseLatchActive,
         driveMode: driveModePhase,
         drivingStopped,
+        solo: !isCrewSession && !browseByDefault,
+        lightOnSwipe,
       }),
     [
       commitButton,
@@ -1392,6 +1399,9 @@ export function PlayCore({
       browseLatchActive,
       driveModePhase,
       drivingStopped,
+      isCrewSession,
+      browseByDefault,
+      lightOnSwipe,
     ],
   );
   const wallControlState: WallControlState = wallControl.state;
@@ -1792,6 +1802,9 @@ export function PlayCore({
   const wallControlForDriveRef = useRef(wallControl);
   wallControlForDriveRef.current = wallControl;
   const startDriving = useCallback((): DriveStartOutcome => {
+    // Behind the swipe's flag: a solo press asks for a drive too (`tapDrive`),
+    // and gets the plain light without one.
+    if (!swipeToDriveEnabled) return 'unavailable';
     const committing = commitBarModel.mode === 'commit';
     const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
     return startDrive({
@@ -1808,6 +1821,7 @@ export function PlayCore({
       },
     });
   }, [
+    swipeToDriveEnabled,
     sessionId,
     currentClimbQueueItem,
     commitBarModel.mode,
