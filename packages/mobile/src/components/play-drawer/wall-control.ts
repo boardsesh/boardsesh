@@ -236,10 +236,20 @@ export function resolveWallControlAction({
  * preview with the link up, and "Disconnect board", fill too). Amber outline
  * when the board is on the wall but not this phone's: no link, or a crewmate's
  * board, lit or dark (#7015); their face says whose.
+ *
+ * `driving` (#7113): this phone drives the wall and the climb is lit, so a tap
+ * on any climb lights it. The bulb sits on the wall button's own live fill,
+ * which is how a driver on the Climbs tab (the MiniPlayer's bulb) knows.
  */
-export type WallBulbLook = 'off' | 'ready' | 'lit';
+export type WallBulbLook = 'off' | 'ready' | 'lit' | 'driving';
 
-export function resolveWallBulbLook(state: WallControlState, selfHolds: boolean, displayedLit = true): WallBulbLook {
+export function resolveWallBulbLook(
+  state: WallControlState,
+  selfHolds: boolean,
+  displayedLit = true,
+  driving = false,
+): WallBulbLook {
+  if (driving && state === 'lit' && selfHolds) return 'driving';
   if (state === 'lit' || state === 'release_wall' || selfHolds) return 'lit';
   // A crewmate's board: an outline (their face says whose); filled means yours.
   if (state === 'crew') return 'ready';
@@ -602,7 +612,9 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     bulbTapAction,
     bulbA11yHintKey: bulbTapAction === tapAction ? a11yHintKey : hintKeyOf(bulbTapAction, holderName, onOtherPhone),
     bulbValueKey,
-    look: resolveWallBulbLook(state, selfHolds, input.displayedLit),
+    // The live fill only for a live drive (#7113): then a tap on any climb, in
+    // any list, lights the wall. Solo swipes that light it say nothing about taps.
+    look: resolveWallBulbLook(state, selfHolds, input.displayedLit, drivingLit && driveMode === 'live'),
     selected: state === 'lit',
     driving,
     pending: input.pending,

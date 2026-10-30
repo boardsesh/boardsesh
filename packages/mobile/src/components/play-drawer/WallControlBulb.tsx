@@ -33,7 +33,7 @@ function WallControlBulbComponent({ model, showFace = true, onPress, onLongPress
   return (
     <View testID="play-drawer-wall-bulb">
       <BleLightbulbButton
-        isConnected={model.look === 'lit'}
+        isConnected={model.look === 'lit' || model.look === 'driving'}
         ready={model.look === 'ready'}
         accessibilitySelected={model.selected}
         accessibilityValueText={text.bulbValue}

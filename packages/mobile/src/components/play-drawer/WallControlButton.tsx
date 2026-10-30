@@ -39,6 +39,7 @@ import {
   LONG_PRESS_ACTION_NAME,
   namedAccessibilityActions,
   onNamedAccessibilityAction,
+  type NamedAccessibilityAction,
 } from '../../lib/named-accessibility-action';
 import { withAlpha } from '../../theme/colors';
 import { androidRipple, spacing } from '../../theme/tokens';
@@ -59,6 +60,9 @@ const MIN_FONT_SCALE = 0.8;
 /** The narrower workout button has less room; German still fits at 85%. */
 const COMPACT_MIN_FONT_SCALE = 0.85;
 
+/** The screen-reader action that starts driving the wall (#7113). */
+export const DRIVE_ACTION_NAME = 'lightEveryClimb';
+
 /**
  * The button's height: the inline control floor, 44pt on iOS and Material's
  * 48dp minimum touch target on Android. The second row's fixed height is built
@@ -74,6 +78,11 @@ type WallControlButtonProps = {
   onPress: () => void;
   onLongPress: () => void;
   /**
+   * Start driving the wall (#7113): what the swipe runs, and the screen-reader
+   * action "Light every climb" while the model offers it (`swipeAction`).
+   */
+  onDrive?: () => void;
+  /**
    * The climb's lit holds, for the lit look (F1b): handed only while the
    * climb on screen is lit on this phone's board or a crewmate's. Without it,
    * or with no holds, the lit button is the flat amber.
@@ -86,6 +95,7 @@ function WallControlButtonComponent({
   compact = false,
   onPress,
   onLongPress,
+  onDrive,
   glow = null,
 }: WallControlButtonProps) {
   const { brandColors, colorScheme, systemColors } = useTheme();
@@ -109,13 +119,22 @@ function WallControlButtonComponent({
     if (model.pending) return;
     onPress();
   }, [model.pending, onPress]);
-  const longPressActions = useMemo(
-    () => (hold ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, text.longPressActionLabel) : undefined),
-    [hold, text.longPressActionLabel],
+  // A screen reader can't swipe the button, so the swipe is a named action too
+  // (WCAG 2.5.1), beside the hold's board controls.
+  const drive = model.swipeAction === 'drive' ? onDrive : undefined;
+  const namedActions = useMemo(() => {
+    const actions: NamedAccessibilityAction[] = [];
+    if (hold) actions.push({ name: LONG_PRESS_ACTION_NAME, label: text.longPressActionLabel, run: onLongPress });
+    if (drive) actions.push({ name: DRIVE_ACTION_NAME, label: text.driveActionLabel, run: drive });
+    return actions.length > 0 ? actions : null;
+  }, [hold, text.longPressActionLabel, onLongPress, drive, text.driveActionLabel]);
+  const accessibilityActions = useMemo(
+    () => (namedActions ? namedAccessibilityActions(namedActions) : undefined),
+    [namedActions],
   );
-  const onLongPressAction = useMemo(
-    () => (hold ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress) : undefined),
-    [hold, onLongPress],
+  const onAccessibilityAction = useMemo(
+    () => (namedActions ? onNamedAccessibilityAction(namedActions) : undefined),
+    [namedActions],
   );
 
   // Nothing to offer (no board selected, no climb): the row keeps its height.
@@ -155,8 +174,8 @@ function WallControlButtonComponent({
       testID="play-drawer-wall-control"
       onPress={handlePress}
       onLongPress={hold ? onLongPress : undefined}
-      accessibilityActions={longPressActions}
-      onAccessibilityAction={onLongPressAction}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
       accessibilityHint={text.accessibilityHint}

@@ -115,6 +115,10 @@ export {
 // call sites today; `Queue Navigation` is the name www fired before W-16.
 export {
   queueNavigation,
+  driveModeEnded,
+  type DriveModeEndReason,
+  type DriveModeEndedInput,
+  type DriveModeEndedProps,
   queueSheetOpened,
   type QueueNavigationDirection,
   type QueueNavigationMethod,

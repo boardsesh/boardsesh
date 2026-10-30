@@ -10,6 +10,7 @@ type Children = { children?: ReactNode };
 
 const layoutCtrl = vi.hoisted(() => ({
   onLayout: undefined as undefined | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void),
+  onAccessibilityAction: undefined as undefined | ((event: { nativeEvent: { actionName: string } }) => void),
 }));
 const themeCtrl = vi.hoisted(() => ({ scheme: 'light' as 'light' | 'dark' }));
 vi.mock('../../PressableSurface', () => ({
@@ -22,10 +23,12 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityHint,
     accessibilityState,
     accessibilityActions,
+    onAccessibilityAction,
     testID,
     style,
   }: Children & {
     accessibilityActions?: { name: string; label?: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     onPress?: () => void;
     onLongPress?: () => void;
     accessibilityLabel?: string;
@@ -51,6 +54,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-style': JSON.stringify(style?.({ pressed: false })),
         ref: () => {
           layoutCtrl.onLayout = onLayout;
+          layoutCtrl.onAccessibilityAction = onAccessibilityAction;
         },
       },
       children,
@@ -169,12 +173,19 @@ function modelFor(state: WallControlState, options: ModelOptions = {}): WallCont
 
 function renderButton(
   model: WallControlModel,
-  extra: { onLongPress?: () => void; compact?: boolean; glow?: WallGlowInput | null } = {},
+  extra: { onLongPress?: () => void; onDrive?: () => void; compact?: boolean; glow?: WallGlowInput | null } = {},
 ) {
   const onPress = vi.fn();
   const onLongPress = extra.onLongPress ?? vi.fn();
   const view = render(
-    createElement(WallControlButton, { model, onPress, onLongPress, compact: extra.compact, glow: extra.glow }),
+    createElement(WallControlButton, {
+      model,
+      onPress,
+      onLongPress,
+      onDrive: extra.onDrive,
+      compact: extra.compact,
+      glow: extra.glow,
+    }),
   );
   return { ...view, onPress, onLongPress };
 }
@@ -322,6 +333,29 @@ describe('WallControlButton', () => {
     const free = renderButton(modelFor('connect'));
     expect(free.getByRole('button').getAttribute('data-long-press')).toBe('false');
     expect(free.getByRole('button').getAttribute('data-actions')).toBe('');
+  });
+
+  // #7113: a screen reader can't swipe the button, so the swipe is a named action.
+  it('offers Light every climb beside Board options where the model offers the swipe', () => {
+    const onDrive = vi.fn();
+    const onLongPress = vi.fn();
+    const lit = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }), { onDrive, onLongPress });
+    expect(lit.getByRole('button').getAttribute('data-actions')).toBe(
+      'playView.wallControl.boardOptions|playView.wallControl.lightEveryClimb',
+    );
+    act(() => layoutCtrl.onAccessibilityAction?.({ nativeEvent: { actionName: 'lightEveryClimb' } }));
+    expect(onDrive).toHaveBeenCalledOnce();
+    expect(onLongPress).not.toHaveBeenCalled();
+    // The board-sheet action keeps working beside it.
+    act(() => layoutCtrl.onAccessibilityAction?.({ nativeEvent: { actionName: 'longPress' } }));
+    expect(onLongPress).toHaveBeenCalledOnce();
+    cleanup();
+    // Already driving: no swipe, so no action.
+    const driving = renderButton(modelFor('lit', { holder: 'self' }), { onDrive });
+    expect(driving.getByRole('button').getAttribute('data-actions')).toBe('playView.wallControl.boardOptions');
+    cleanup();
+    const connect = renderButton(modelFor('connect'), { onDrive });
+    expect(connect.getByRole('button').getAttribute('data-actions')).toBe('playView.wallControl.lightEveryClimb');
   });
 
   it('draws the same states in the narrower workout button', () => {

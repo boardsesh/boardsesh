@@ -28,6 +28,8 @@ export type WallControlText = {
   bulbValue: string;
   /** The named accessibility action for a hold: "Board options". */
   longPressActionLabel: string;
+  /** The named accessibility action for the swipe (#7113): "Light every climb". */
+  driveActionLabel: string;
 };
 
 function labelText(
@@ -140,6 +142,7 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
     bulbAccessibilityLabel: t('playView.wallControl.bulbAria'),
     bulbValue: bulbValueText(t, model.bulbValueKey, name),
     longPressActionLabel: t('playView.wallControl.boardOptions'),
+    driveActionLabel: t('playView.wallControl.lightEveryClimb'),
   };
 }
 

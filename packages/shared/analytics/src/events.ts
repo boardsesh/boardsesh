@@ -113,12 +113,19 @@ export const SHARED_EVENTS = {
   // MiniPlayer's ⏮ ⏭. Props (built by `queueNavigation`,
   // queue-navigation-events.ts): { direction: 'next' | 'previous', method:
   // 'button' | 'swipe', surface: 'player' | 'mini_player', outcome: 'moved' |
-  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, boardType, layoutId
+  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, driving, boardType, layoutId
   // (null on a spray wall) }. `preview` is a step that only looked: in a crew or
-  // with Light on swipe off the wall stays put. The rest timer's auto-advance
+  // with Light on swipe off the wall stays put. `driving` (#7113, false before
+  // it) says the climber was driving the wall, so the step lit it in a crew too. The rest timer's auto-advance
   // and the workout runner do not fire it. www's `method` values differ, so read
   // mobile on `surface`, which www never sent.
   QueueNavigation: 'Queue Navigation',
+  // Mobile-only (#7113): driving the wall ended. Props (built by
+  // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
+  // 'link_dropped' | 'connect_failed' | 'arming_timed_out' | 'session_changed' |
+  // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
+  // climb included), inSession }. Fired once per drive by the drive-mode store.
+  DriveModeEnded: 'Drive Mode Ended',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
   // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button

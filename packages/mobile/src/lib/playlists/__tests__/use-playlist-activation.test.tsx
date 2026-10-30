@@ -20,6 +20,12 @@ import { canLoadMoreOfTrack, loadNextTrackPage, _resetTrackPagerForTests } from 
 import type { LoadedListTrackLoader } from '../loaded-list-pages';
 import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 import { setSetting } from '../../../settings/hooks';
+import {
+  enterDriveMode,
+  markDriveLive,
+  resetDriveModeForTests,
+  stopDrivingForLink,
+} from '../../../components/play-drawer/drive-mode-store';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
 import { toQueueClimbs, toSchemaClimb } from '../../climb-types';
 import type { SearchClimbsQueryResponse } from '../../graphql/operations';
@@ -3352,5 +3358,80 @@ describe('climb-list rows from the search hook', () => {
       unmount();
       client.clear();
     }
+  });
+});
+
+// #7113: driving the wall lights every list tap, in a crew too. A climb from
+// another board stays a preview, and a crew's queue is never replaced.
+describe('usePlaylistActivation while driving the wall', () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    enterDriveMode({ sessionId: 'session-1', boardId: 7 });
+    markDriveLive();
+  });
+
+  it('commits a crew tap instead of previewing it', async () => {
+    const climb = makeClimb('a');
+    const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
+
+    await result.current.activate(climb);
+
+    expect(mocks.activate).toHaveBeenCalledWith(climb);
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    resetDriveModeForTests();
+  });
+
+  it('commits a solo tap with Light the board when I tap a climb off', async () => {
+    setSetting('lightOnClimbTap', false);
+    const climb = makeClimb('a');
+    const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: false });
+
+    await result.current.activate(climb);
+
+    expect(mocks.activate).toHaveBeenCalledWith(climb);
+    resetDriveModeForTests();
+  });
+
+  it('plays from the list in a crew without replacing the crew queue', async () => {
+    setSetting('playlistTapLoadsQueue', true);
+    const climb = makeClimb('a');
+    const { result } = renderActivation(vi.fn(), {
+      allClimbs: [climb],
+      previewOnly: true,
+      honorPlaylistLoadSetting: true,
+    });
+
+    await result.current.activate(climb);
+
+    expect(mocks.setQueue).not.toHaveBeenCalled();
+    expect(mocks.activate).toHaveBeenCalledWith(climb);
+    resetDriveModeForTests();
+  });
+
+  it('leaves a climb from another board a preview on its own board', async () => {
+    const climb = { ...makeClimb('a'), angle: 20 };
+    const { result } = renderActivation(vi.fn(), {
+      allClimbs: [climb],
+      previewOnly: true,
+      viewOnlyBoard: VIEW_ONLY_BOARD,
+    });
+
+    await result.current.activate(climb);
+
+    expect(mocks.activate).not.toHaveBeenCalled();
+    expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('boardConfig', { ...VIEW_ONLY_BOARD, angle: 20 });
+    resetDriveModeForTests();
+  });
+
+  it('a press that stopped driving keeps solo taps previews until the link drops', async () => {
+    stopDrivingForLink();
+    const climb = makeClimb('a');
+    const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: false });
+
+    await result.current.activate(climb);
+
+    expect(mocks.activate).not.toHaveBeenCalled();
+    expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
+    resetDriveModeForTests();
   });
 });

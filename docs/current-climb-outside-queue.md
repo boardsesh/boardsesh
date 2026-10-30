@@ -159,7 +159,10 @@ phones (`lineAfterDelta`, below), whoever sent it and whatever `QUEUE_NOW_SLOT_P
    Play next, workouts, Undo, playlist replace), a removal, or a step back on the queue walk
    (section 7). `replaceQueueItem` and `mirrorSessionClimb` rewrite one entry in place and keep
    its index, so they change no membership. The widget and Garmin navigate stops at the ends
-   instead of wrapping (section 3).
+   instead of wrapping (section 3). Driving the wall (#7113) adds no writer: every change of
+   climb it lights goes through `nextClimb`, `previousClimb` or `setCurrentClimb`, so through
+   `placeOnWall`, and a step along a list commits the laundered climb (never a
+   `playlist-peek:` uuid) as Now, so the climbs it walks past go to History, not Up next.
 4. History holds at most 125 entries and is trimmed to 100. History + Up next hold at most
    `MAX_SYNCED_QUEUE_ITEMS` = 500 (`shared/queue/src/limits.ts:25`); the climb on the wall is
    extra, so the array holds at most 501 entries with a climb current and 500 with nothing

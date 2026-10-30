@@ -4,6 +4,7 @@ import {
   clearRelayReceipt,
   noteOwnMove,
   noteRelayReceipt,
+  subscribeCrewMoves,
   takeRelayReceipt,
 } from '../relay-receipt';
 
@@ -131,5 +132,33 @@ describe('relay receipt (#7014)', () => {
       correlationId: null,
       receivedAt: 2_000,
     });
+  });
+
+  // #7113: the phone driving the wall says who put a climb up.
+  it('tells its listeners about a crewmate’s move, never this phone’s own', () => {
+    const heard = vi.fn();
+    const unsubscribe = subscribeCrewMoves(heard);
+    noteOwnMove('queue-own');
+    noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: 'queue-own', localQueueItemUuid: 'queue-a' });
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-echo',
+      localQueueItemUuid: 'queue-a',
+      ownEcho: true,
+    });
+    expect(heard).not.toHaveBeenCalled();
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-sam',
+      localQueueItemUuid: 'queue-a',
+    });
+    expect(heard).toHaveBeenCalledWith('queue-sam');
+    unsubscribe();
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-liz',
+      localQueueItemUuid: 'queue-sam',
+    });
+    expect(heard).toHaveBeenCalledTimes(1);
   });
 });

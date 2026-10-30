@@ -889,6 +889,14 @@ describe('resolveWallControl: driving the wall', () => {
     expect(resolveWallControl({ ...FREE, ...SAMS, displayedLit: true, driveMode: 'live' }).driving).toBe(false);
   });
 
+  // #7113 PR 2: the MiniPlayer's bulb reads this look, so a driver on the Climbs tab knows.
+  it('gives the bulb the live fill only for a live drive, never for solo swipes that light', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, driveMode: 'live' }).look).toBe('driving');
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, navigationCommits: true }).look).toBe('lit');
+    expect(resolveWallControl({ ...FREE, ...MINE, displayedLit: true, driveMode: 'arming' }).look).toBe('lit');
+    expect(resolveWallControl({ ...FREE, ...SAMS, displayedLit: true, driveMode: 'live' }).look).not.toBe('driving');
+  });
+
   it('says You are driving the wall, then that every climb picked lights up, and how to stop', () => {
     const t = ((key: string) => key) as unknown as TFunction;
     const text = wallControlText(

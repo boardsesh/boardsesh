@@ -5,7 +5,14 @@ import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type QueueItemRead = {
+  uuid: string;
+  climb: { uuid: string; name: string };
+  addedByUser?: { id: string; username: string };
+};
 type Reads = {
+  currentClimbQueueItem: QueueItemRead | null;
+  wallClimbUuid: string | null;
   isConnected: boolean;
   virtualWallHeld: boolean;
   loading: boolean;
@@ -16,6 +23,8 @@ type Reads = {
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
+    currentClimbQueueItem: null,
+    wallClimbUuid: null,
     isConnected: false,
     virtualWallHeld: false,
     loading: false,
@@ -34,6 +43,20 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: reads.current.sessionId }),
+  useQueueData: () => ({ currentClimbQueueItem: reads.current.currentClimbQueueItem }),
+}));
+vi.mock('../use-wall-climb', () => ({
+  useWallClimb: () => ({ uuid: reads.current.wallClimbUuid, name: null, sentAt: null }),
+}));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
+const effects = vi.hoisted(() => ({ hapticLight: vi.fn(), announceQueued: vi.fn(), track: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({ hapticLight: effects.hapticLight }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: effects.announceQueued }));
+vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string>) => (values ? `${key} ${JSON.stringify(values)}` : key),
+  }),
 }));
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: reads.current.boardId }),
@@ -46,6 +69,8 @@ vi.mock('../../../providers/auth-provider', () => ({
 }));
 
 import { DriveModeWatcher } from '../DriveModeWatcher';
+import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
+import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
   enterDriveMode,
@@ -58,6 +83,8 @@ import {
 } from '../drive-mode-store';
 
 const DEFAULT_READS: Reads = {
+  currentClimbQueueItem: null,
+  wallClimbUuid: null,
   isConnected: true,
   virtualWallHeld: false,
   loading: false,
@@ -89,10 +116,14 @@ function driveLive() {
 beforeEach(() => {
   reads.current = { ...DEFAULT_READS };
   resetDriveModeForTests();
+  clearRelayReceipt();
+  clearCrewPutUp();
+  for (const effect of Object.values(effects)) effect.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
   resetDriveModeForTests();
+  clearCrewPutUp();
 });
 
 describe('DriveModeWatcher', () => {
@@ -189,5 +220,106 @@ describe('DriveModeWatcher', () => {
     expect(isDrivingStoppedForLink()).toBe(true);
     watcher.change({ lightOnSwipe: false });
     expect(isDrivingStoppedForLink()).toBe(false);
+  });
+});
+
+function queueItem(uuid: string, name: string, addedBy?: { id: string; username: string }): QueueItemRead {
+  return { uuid, climb: { uuid: `climb-${uuid}`, name }, ...(addedBy ? { addedByUser: addedBy } : {}) };
+}
+
+function crewMove(uuid: string) {
+  noteRelayReceipt({
+    eventType: 'CurrentClimbChanged',
+    incomingQueueItemUuid: uuid,
+    localQueueItemUuid: reads.current.currentClimbQueueItem?.uuid,
+  });
+}
+
+// #7113: a crewmate puts a climb up while this phone drives the wall.
+describe('DriveModeWatcher: a crewmate puts a climb up', () => {
+  it('says who for 4 s, with a light buzz and one announcement, and keeps driving', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, currentClimbQueueItem: queueItem('q-1', 'Mine') };
+    const watcher = mount();
+    driveLive();
+    crewMove('q-2');
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder', { id: 'sam', username: 'Sam' }) });
+    expect(getCrewPutUp()).toEqual({ holderName: 'Sam', climbName: 'Crimp Ladder', queueItemUuid: 'q-2' });
+    expect(effects.hapticLight).toHaveBeenCalledOnce();
+    expect(effects.announceQueued).toHaveBeenCalledOnce();
+    expect(effects.announceQueued).toHaveBeenCalledWith(
+      'playView.wallControl.crewPutUp {"name":"Sam","climb":"Crimp Ladder"}',
+    );
+    expect(getDriveMode()?.phase).toBe('live');
+    // A re-render with the same climb says nothing more.
+    watcher.change({});
+    expect(effects.announceQueued).toHaveBeenCalledOnce();
+    act(() => {
+      vi.advanceTimersByTime(CREW_PUT_UP_NOTICE_MS);
+    });
+    expect(getCrewPutUp()).toBeNull();
+  });
+
+  it('says "Someone" when the climb was queued by this climber', () => {
+    const watcher = mount();
+    driveLive();
+    crewMove('q-3');
+    watcher.change({ currentClimbQueueItem: queueItem('q-3', 'Pinch', { id: 'me', username: 'Me' }) });
+    expect(getCrewPutUp()?.holderName).toBeNull();
+    expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.crewPutUpSomeone {"climb":"Pinch"}');
+  });
+
+  it('says nothing for this phone’s own move, or when not driving', () => {
+    const watcher = mount();
+    driveLive();
+    noteOwnMove('q-own');
+    crewMove('q-own');
+    watcher.change({ currentClimbQueueItem: queueItem('q-own', 'Own', { id: 'sam', username: 'Sam' }) });
+    expect(getCrewPutUp()).toBeNull();
+
+    act(() => {
+      stopDrivingForLink();
+    });
+    crewMove('q-4');
+    watcher.change({ currentClimbQueueItem: queueItem('q-4', 'Other', { id: 'sam', username: 'Sam' }) });
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.hapticLight).not.toHaveBeenCalled();
+  });
+
+  it('drops the line when the drive ends', () => {
+    const watcher = mount();
+    driveLive();
+    crewMove('q-5');
+    watcher.change({ currentClimbQueueItem: queueItem('q-5', 'Slab', { id: 'sam', username: 'Sam' }) });
+    expect(getCrewPutUp()).not.toBeNull();
+    watcher.change({ isConnected: false });
+    expect(getCrewPutUp()).toBeNull();
+  });
+});
+
+describe('DriveModeWatcher: climbs lit', () => {
+  it("counts each new climb on the wall while live, the swipe's own once", () => {
+    reads.current = { ...reads.current, wallClimbUuid: 'climb-a' };
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    expect(getDriveMode()?.climbsLit).toBe(1);
+    watcher.change({ wallClimbUuid: 'climb-b' });
+    watcher.change({ wallClimbUuid: 'climb-c' });
+    // The same climb again is not a new one.
+    watcher.change({ wallClimbUuid: 'climb-c' });
+    expect(getDriveMode()?.climbsLit).toBe(3);
+  });
+
+  it('learns the bound board once live, so a later change of board ends the drive', () => {
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({ sessionId: 'session-1', boardId: null });
+      markDriveLive();
+    });
+    watcher.change({});
+    expect(getDriveMode()?.boardId).toBe(7);
+    watcher.change({ boardId: 9 });
+    expect(getLastDriveModeExitReason()).toBe('board_changed');
   });
 });

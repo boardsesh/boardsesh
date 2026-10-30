@@ -63,6 +63,8 @@ type PlayDrawerActionBarProps = {
   onWallControlPress?: (control: WallControlSurface) => void;
   /** A hold on one view of the board control: the board sheet, while this phone holds the link. */
   onWallControlLongPress?: (control: WallControlSurface) => void;
+  /** Start driving the wall from the wall button (#7113): its swipe and its "Light every climb" action. */
+  onWallControlDrive?: (control: WallControlSurface) => void;
   /** View options › Buttons › Board control: the wall button (the default) or the bulb. */
   boardControl?: PlayerBoardControl;
   /** The lit wall button's glow (F1b): the climb's lit holds, while it is lit. */
@@ -170,6 +172,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   wallControl = EMPTY_WALL_CONTROL,
   onWallControlPress,
   onWallControlLongPress,
+  onWallControlDrive,
   boardControl = 'wallButton',
   wallGlow = null,
   miniPlayerMirrors = false,
@@ -248,6 +251,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // One handler behind both views (`useWallControl` in the host): each says which it is.
   const pressWallButton = useCallback(() => onWallControlPress?.('button'), [onWallControlPress]);
   const holdWallButton = useCallback(() => onWallControlLongPress?.('button'), [onWallControlLongPress]);
+  const driveWallButton = useCallback(() => onWallControlDrive?.('button'), [onWallControlDrive]);
   const pressBulb = useCallback(() => onWallControlPress?.('bulb'), [onWallControlPress]);
   const holdBulb = useCallback(() => onWallControlLongPress?.('bulb'), [onWallControlLongPress]);
 
@@ -327,6 +331,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             glow={wallGlow}
             onPress={pressWallButton}
             onLongPress={holdWallButton}
+            onDrive={driveWallButton}
           />
         </View>
       ) : layout.primaryCenter === 'wallControl' ? (
@@ -357,6 +362,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               glow={wallGlow}
               onPress={pressWallButton}
               onLongPress={holdWallButton}
+              onDrive={driveWallButton}
             />
           </View>
           <View style={styles.compactSlot}>
@@ -463,6 +469,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                       glow={wallGlow}
                       onPress={pressWallButton}
                       onLongPress={holdWallButton}
+                      onDrive={driveWallButton}
                     />
                   );
                 case 'angle':

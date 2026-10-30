@@ -12,7 +12,7 @@ import {
 import { glassSize } from '../../theme/layout';
 import type { PaneWallControl } from '../play-drawer/pane-wall-control-store';
 import { useWallControlText } from '../play-drawer/wall-control-text';
-import { getPaneWallControlVisual } from './board-control-indicator-state';
+import { drivingBulbColors, getPaneWallControlVisual } from './board-control-indicator-state';
 
 type PaneWallControlBulbProps = {
   control: PaneWallControl;
@@ -35,7 +35,7 @@ export function PaneWallControlBulb({
   solidGlyphs = false,
 }: PaneWallControlBulbProps) {
   const { model, press, longPress } = control;
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
@@ -56,6 +56,7 @@ export function PaneWallControlBulb({
     disconnectedColor: systemColors.secondaryLabel,
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
+    driving: drivingBulbColors(brandColors, colorScheme),
   });
   if (model.state === null) return null;
   return (

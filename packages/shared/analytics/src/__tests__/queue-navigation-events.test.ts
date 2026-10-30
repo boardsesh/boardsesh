@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { queueNavigation, queueSheetOpened } from '../queue-navigation-events';
+import { driveModeEnded, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
 
 describe('queueNavigation', () => {
   it('names the event www fired and carries the step, the session and the board', () => {
@@ -23,6 +23,7 @@ describe('queueNavigation', () => {
         outcome: 'preview',
         sessionMode: 'party',
         lightOnSwipe: true,
+        driving: false,
         boardType: 'kilter',
         layoutId: 1,
       },
@@ -81,5 +82,44 @@ describe('queueSheetOpened', () => {
       name: 'Queue Sheet Opened',
       properties: { surface: 'mini_player', boardType: 'moonboard' },
     });
+  });
+});
+
+describe('queueNavigation while driving the wall (#7113)', () => {
+  it('says the step was driven, in a crew too', () => {
+    const { properties } = queueNavigation({
+      direction: 'next',
+      method: 'swipe',
+      surface: 'player',
+      outcome: 'moved',
+      inSharedSession: true,
+      lightOnSwipe: false,
+      driving: true,
+      boardType: 'kilter',
+      layoutId: 1,
+    });
+    expect(properties).toMatchObject({ outcome: 'moved', sessionMode: 'party', driving: true });
+  });
+});
+
+describe('driveModeEnded', () => {
+  it('names the event and rounds the duration to whole seconds', () => {
+    expect(
+      driveModeEnded({ reason: 'stopped', startedAt: 1_000, endedAt: 62_600, climbsLit: 5, inSession: true }),
+    ).toEqual({
+      name: 'Drive Mode Ended',
+      properties: { reason: 'stopped', durationSec: 62, climbsLit: 5, inSession: true },
+    });
+  });
+
+  it('never reports a negative duration or count', () => {
+    const { properties } = driveModeEnded({
+      reason: 'connect_failed',
+      startedAt: 5_000,
+      endedAt: 4_000,
+      climbsLit: -1,
+      inSession: false,
+    });
+    expect(properties).toMatchObject({ durationSec: 0, climbsLit: 0, inSession: false });
   });
 });

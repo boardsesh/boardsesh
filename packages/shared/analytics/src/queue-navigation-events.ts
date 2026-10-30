@@ -62,6 +62,11 @@ export type QueueNavigationInput = QueueNavigationBoard & {
   inSharedSession: boolean;
   /** The Light on swipe setting at the time of the step. */
   lightOnSwipe: boolean;
+  /**
+   * The climber was driving the wall (#7113): a swipe on the wall button made
+   * every change of climb light it, in a crew too. Defaults to false.
+   */
+  driving?: boolean;
 };
 
 export type QueueNavigationProps = BoardTypeProperty & {
@@ -72,6 +77,8 @@ export type QueueNavigationProps = BoardTypeProperty & {
   /** www's name and values, kept so the two platforms read alike. */
   sessionMode: 'party' | 'solo';
   lightOnSwipe: boolean;
+  /** Driving the wall (#7113): the step lit the wall whatever the session or the setting said. */
+  driving: boolean;
   /** Null on a spray wall (its layout id names the wall) and with no board. */
   layoutId: number | null;
 };
@@ -115,8 +122,59 @@ export function queueNavigation(
       outcome: input.outcome,
       sessionMode: input.inSharedSession ? 'party' : 'solo',
       lightOnSwipe: input.lightOnSwipe,
+      driving: input.driving ?? false,
       ...boardTypeProperty(input.boardType),
       layoutId: layoutIdProperty(input),
+    },
+  };
+}
+
+/**
+ * Why driving the wall ended (#7113). `stopped`: a press on the frosted wall
+ * button (the link stays). `link_dropped`: this phone's link went. `connect_failed`
+ * and `arming_timed_out`: the swipe never reached the wall. `session_changed`,
+ * `board_changed`, `signed_out`: the drive's session, board or account went away.
+ */
+export type DriveModeEndReason =
+  | 'stopped'
+  | 'link_dropped'
+  | 'connect_failed'
+  | 'arming_timed_out'
+  | 'session_changed'
+  | 'board_changed'
+  | 'signed_out';
+
+export type DriveModeEndedInput = {
+  reason: DriveModeEndReason;
+  /** `Date.now()` when the swipe landed. */
+  startedAt: number;
+  /** `Date.now()` when it ended. */
+  endedAt: number;
+  /** Climbs lit on this phone's link while driving, the swipe's own included. */
+  climbsLit: number;
+  /** The drive started in a party session. */
+  inSession: boolean;
+};
+
+export type DriveModeEndedProps = {
+  reason: DriveModeEndReason;
+  /** Whole seconds, never negative. */
+  durationSec: number;
+  climbsLit: number;
+  inSession: boolean;
+};
+
+/** A drive ended (#7113): how long it lasted and how many climbs it lit. */
+export function driveModeEnded(
+  input: DriveModeEndedInput,
+): QueueNavigationPayload<typeof SHARED_EVENTS.DriveModeEnded, DriveModeEndedProps> {
+  return {
+    name: SHARED_EVENTS.DriveModeEnded,
+    properties: {
+      reason: input.reason,
+      durationSec: Math.max(0, Math.round((input.endedAt - input.startedAt) / 1000)),
+      climbsLit: Math.max(0, input.climbsLit),
+      inSession: input.inSession,
     },
   };
 }

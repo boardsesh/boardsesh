@@ -170,8 +170,10 @@ import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
-import { useWallControl } from './use-wall-control';
+import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
+import { startDrive, useDriveGoesLive } from './drive-runner';
+import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -446,13 +448,15 @@ export function PlayCore({
   const isSharedSession = useIsSharedSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
-  const [lightOnSwipeSetting] = useSetting('lightOnSwipe');
-  // Driving the wall (#7113). A press on the frosted button stops it and keeps
-  // the link; solo swipes then stay previews until the link drops, whatever
-  // Light the board as I swipe says (the setting never flips).
+  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  // Driving the wall (#7113): while live, every change of climb lights the
+  // wall, in a crew too (`climbChangeStaysViewOnly`, which every navigation
+  // below reads). A press on the frosted button stops it and keeps the link;
+  // solo swipes then stay previews until the link drops, whatever Light the
+  // board as I swipe says (the setting never flips).
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
-  const lightOnSwipe = lightOnSwipeSetting && !drivingStopped;
+  const drivingLive = driveModePhase === 'live';
   const [enhancementSnapshot, setEnhancementSnapshot] = usePrivacyScopedState<PlayCoreEnhancementSnapshot>();
   const handleEnhancementSnapshot = useCallback(
     (snapshot: PlayCoreEnhancementSnapshot | null) => setEnhancementSnapshot(snapshot),
@@ -1009,6 +1013,12 @@ export function PlayCore({
   // auto-sender. So the latch is "a preview whose navigation genuinely stays
   // view-only", read off the same predicate the swipe handlers use, which is what
   // stops the chrome from ever promising more than the gesture keeps.
+  //
+  // Driving the wall (#7113) ignores the crew and the latch: a swipe commits,
+  // so no browse chrome claims otherwise. A climb from another board stays a
+  // preview: the wall this phone drives can't light it. The latch itself is
+  // kept, so it is back once driving ends if a crew is still here.
+  const previewOnOtherBoard = isPreview && (boardMismatch || climbBoardMismatch);
   const browseLatchActive =
     isPreview &&
     swipeStaysViewOnly({
@@ -1016,6 +1026,9 @@ export function PlayCore({
       previewSuggestionSource: drawerPreviewSuggestionSource,
       lightOnSwipe,
       inSharedSession: browseByDefault,
+      driving: drivingLive,
+      stoppedForLink: drivingStopped,
+      previewOnOtherBoard,
     });
   // Whether a swipe from a NON-preview state would drive the wall — the pill's
   // `live` claim. Derived from the same predicate rather than restated, so a crew
@@ -1025,6 +1038,8 @@ export function PlayCore({
     previewSuggestionSource: null,
     lightOnSwipe,
     inSharedSession: browseByDefault,
+    driving: drivingLive,
+    stoppedForLink: drivingStopped,
   });
   // --- Busy-wall confirm -----------------------------------------------------
   //
@@ -1612,11 +1627,12 @@ export function PlayCore({
         surface: 'player',
         inSharedSession: browseByDefault,
         // The climber's setting, not a stop on this link.
-        lightOnSwipe: lightOnSwipeSetting,
+        lightOnSwipe,
+        driving: drivingLive,
         boardType: navigationBoardType,
         layoutId: navigationLayoutId,
       }),
-    [browseByDefault, lightOnSwipeSetting, navigationBoardType, navigationLayoutId],
+    [browseByDefault, lightOnSwipe, drivingLive, navigationBoardType, navigationLayoutId],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   const handleOpenQueueFromBar = useCallback(() => {
@@ -1643,7 +1659,14 @@ export function PlayCore({
       },
       queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
       similarTrack,
-      navigation: { navigationState, lightOnSwipe, browseByDefault },
+      navigation: {
+        navigationState,
+        lightOnSwipe,
+        browseByDefault,
+        driving: drivingLive,
+        stoppedForLink: drivingStopped,
+        previewOnOtherBoard,
+      },
       chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
       confirmation: {
         busyWallConfirmArmed,
@@ -1751,6 +1774,47 @@ export function PlayCore({
     bluetoothConnected,
     connectLightbulb,
   ]);
+  // Start driving the wall (#7113): what the wall button's swipe and its
+  // "Light every climb" action run, through `useWallControl`. Built on the
+  // light-again path: the climb on screen goes up (a preview is committed
+  // without the busy-wall question, since the climber who drives never sees
+  // it), the board connects when it isn't linked, and a reassert lights it,
+  // which also clears a Turn off all lights and the #4979 hold. The drive arms
+  // first and goes live once this phone's link lights the climb (the effect
+  // below); a connect that fails ends it.
+  //
+  // A crewmate's board can't be taken by a connect: Aurora and MoonBoard boxes
+  // stop advertising once linked. That needs their phone to let go first, so
+  // it refuses with `needs_handoff` and changes nothing.
+  const wallControlForDriveRef = useRef(wallControl);
+  wallControlForDriveRef.current = wallControl;
+  const startDriving = useCallback((): DriveStartOutcome => {
+    const committing = commitBarModel.mode === 'commit';
+    const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
+    return startDrive({
+      model: wallControlForDriveRef.current,
+      wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
+      sessionId,
+      committing,
+      commit: () => handleSetActive({ skipBusyWall: true }),
+      connected: bluetoothConnected,
+      connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
+      relight: () => {
+        resetWallCleared();
+        bluetoothForRelightRef.current?.reassertWall();
+      },
+    });
+  }, [
+    sessionId,
+    currentClimbQueueItem,
+    commitBarModel.mode,
+    handleSetActive,
+    displayedClimb,
+    bluetoothConnected,
+    connectLightbulb,
+  ]);
+  // Arming goes live once the climb on screen is lit on this phone's link.
+  useDriveGoesLive(driveModePhase, wallControl.state === 'lit' && wallControl.holder === 'self');
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
   // then the move to that board, which connects there and lights it.
@@ -1783,7 +1847,12 @@ export function PlayCore({
     onKeep: handleBackToLive,
     onPut: handleLightThisClimb,
   });
-  const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : browseCaption;
+  // A crewmate put a climb up while this phone drives the wall (#7113): "Sam
+  // put up Crimp Ladder" for 4 s where "Only you see this" sits, on that climb.
+  const crewPutUp = useCrewPutUp();
+  const crewPutUpCaption =
+    crewPutUp && displayedQueueItemUuid === crewPutUp.queueItemUuid ? formatCrewPutUp(crewPutUp, t) : null;
+  const topBarCaption = busyWall.model ? formatBusyWallCaption(busyWall.model, t) : (crewPutUpCaption ?? browseCaption);
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
@@ -1809,6 +1878,7 @@ export function PlayCore({
       openSheet: openBoardSheet,
       lightAgain: handleLightAgain,
       moveToBoard: handleMoveToGymBoard,
+      drive: startDriving,
     }),
     [
       handleLightThisClimb,
@@ -1818,6 +1888,7 @@ export function PlayCore({
       openBoardSheet,
       handleLightAgain,
       handleMoveToGymBoard,
+      startDriving,
     ],
   );
 
@@ -2480,6 +2551,7 @@ export function PlayCore({
       miniPlayerMirrors={miniPlayerMirrors}
       onWallControlPress={wallControlHandlers.press}
       onWallControlLongPress={wallControlHandlers.longPress}
+      onWallControlDrive={wallControlHandlers.drive}
       boardControl={playerButtons.boardControl}
       // Whether a Bluetooth transport exists at all, and only
       // that. The anonymous suppression lives in the bar, with

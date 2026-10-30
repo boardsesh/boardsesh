@@ -23,6 +23,7 @@ import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
 import { getViewOnlyPreviewNavigationTarget } from '../play-drawer/play-drawer-navigation';
 import { useClimbChangeLights } from '../play-drawer/use-climb-change-lights';
+import { useDriveModePhase } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 
 export type MiniPlayerNavigation = {
@@ -39,6 +40,8 @@ export type MiniPlayerNavigation = {
  * - Solo, with Light on swipe on: the queue's own `previousClimb` / `nextClimb`,
  *   the walk the player, the rest timer and the workout runner all make (Up next
  *   first, then the list). The board lights the new climb.
+ * - Driving the wall (#7113): the queue moves and the board lights it, in a
+ *   crew too.
  * - In a crew, with Light on swipe off, or after a press on "You are driving
  *   the wall" stopped driving on this link (#7113): the player opens on that
  *   climb as a preview, so one tap never moves anybody's wall
@@ -63,6 +66,8 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   // The setting, for Queue Navigation; whether a step lights reads the one rule.
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const stepLights = useClimbChangeLights('swipe');
+  // Driving the wall (#7113): every step lights it, in a crew too.
+  const driving = useDriveModePhase() === 'live';
   const { openPlayDrawer } = useDrawerHost();
   const { data: activeBoard } = useActiveBoard();
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
@@ -109,6 +114,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           outcome,
           inSharedSession,
           lightOnSwipe,
+          driving,
           boardType,
           layoutId,
         });
@@ -124,7 +130,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       navigateQueue();
       trackStep('moved');
     },
-    [stepLights, lightOnSwipe, inSharedSession, openPlayDrawer, playlistSuggestionSource, boardType, layoutId],
+    [stepLights, lightOnSwipe, driving, inSharedSession, openPlayDrawer, playlistSuggestionSource, boardType, layoutId],
   );
   const onPrevious = useCallback(() => move(prevItem, previousClimb, 'previous'), [move, prevItem, previousClimb]);
   const onNext = useCallback(() => {

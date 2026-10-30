@@ -9,10 +9,12 @@ import {
   DRIVE_ARMING_TIMEOUT_MS,
   exitDriveMode,
   getDriveMode,
+  markDriveLive,
   resolveDriveModeExit,
   useDriveMode,
   type DriveWatchSnapshot,
 } from './drive-mode-store';
+import { useDriveClimbsLit, useDriveCrewPutUp } from './use-drive-follow';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -21,6 +23,9 @@ import {
  * a press's "stopped" once that link drops, or once the climber changes Light
  * the board as I swipe (the setting speaks for itself again). Going to the
  * background ends nothing.
+ *
+ * While live it also counts the climbs lit, for Drive Mode Ended, and says
+ * when a crewmate put a climb up (`use-drive-follow.ts`).
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -33,6 +38,8 @@ export function DriveModeWatcher(): null {
   const { boardId } = useBoardPresenceControls();
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
+  useDriveCrewPutUp(drive?.phase ?? null);
+  useDriveClimbsLit(drive?.phase ?? null, linked);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const lightOnSwipeRef = useRef(lightOnSwipe);
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
@@ -52,7 +59,15 @@ export function DriveModeWatcher(): null {
       current,
       connectSeen: connectSeenForRef.current === drive.startedAt,
     });
-    if (reason) exitDriveMode(reason);
+    if (reason) {
+      exitDriveMode(reason);
+      return;
+    }
+    // The player starts a drive without knowing the bound board: learn it once
+    // live, so a later change of board ends the drive.
+    if (drive.phase === 'live' && drive.boardId === null && current.boardId !== null) {
+      markDriveLive({ boardId: current.boardId });
+    }
   }, [linked, pending, sessionId, boardId, isAuthenticated, drive]);
 
   useEffect(() => {

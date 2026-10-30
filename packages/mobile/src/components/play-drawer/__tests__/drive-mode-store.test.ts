@@ -2,7 +2,10 @@
 // Driving the wall (#7113): the in-memory store, and the one rule that ends a
 // drive between two reads of the board connection.
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 import {
   clearDrivingStopped,
   enterDriveMode,
@@ -22,6 +25,7 @@ import {
   type DriveWatchSnapshot,
 } from '../drive-mode-store';
 
+beforeEach(() => analytics.track.mockClear());
 afterEach(() => resetDriveModeForTests());
 
 describe('drive-mode store', () => {
@@ -30,7 +34,7 @@ describe('drive-mode store', () => {
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 
-  it('arms on a swipe, goes live once lit, and counts the climbs lit while live', () => {
+  it("arms on a swipe, goes live once lit, and counts the climbs lit, the swipe's own included", () => {
     enterDriveMode({ sessionId: 'session-1', boardId: null, now: 1_000 });
     expect(getDriveMode()).toEqual({
       phase: 'arming',
@@ -43,10 +47,12 @@ describe('drive-mode store', () => {
     noteDriveClimbLit();
     expect(getDriveMode()?.climbsLit).toBe(0);
     markDriveLive({ boardId: 7 });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 7, startedAt: 1_000 });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', boardId: 7, startedAt: 1_000, climbsLit: 1 });
+    // A second read of the same live drive counts nothing.
+    markDriveLive({ boardId: 7 });
     noteDriveClimbLit();
     noteDriveClimbLit();
-    expect(getDriveMode()?.climbsLit).toBe(2);
+    expect(getDriveMode()?.climbsLit).toBe(3);
   });
 
   it('keeps the board it knew when going live without one', () => {
@@ -110,6 +116,45 @@ describe('drive-mode store', () => {
     expect(phase.result.current).toBe('off');
     expect(drive.result.current).toBeNull();
     expect(stopped.result.current).toBe(true);
+  });
+});
+
+describe('Drive Mode Ended', () => {
+  it('fires once when a drive ends, with how long it lasted and what it lit', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(31_400);
+    enterDriveMode({ sessionId: 'session-1', boardId: 7, now: 1_000 });
+    markDriveLive();
+    noteDriveClimbLit();
+    exitDriveMode('link_dropped');
+    exitDriveMode('signed_out');
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', {
+      reason: 'link_dropped',
+      durationSec: 30,
+      climbsLit: 2,
+      inSession: true,
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('reports a press on the frosted button as stopped, and a solo stop with no drive as nothing', () => {
+    stopDrivingForLink();
+    expect(analytics.track).not.toHaveBeenCalled();
+    enterDriveMode({ sessionId: null, boardId: 7 });
+    stopDrivingForLink();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'stopped', climbsLit: 0, inSession: false }),
+    );
+  });
+
+  it('reports a swipe whose connect failed', () => {
+    enterDriveMode({ sessionId: null, boardId: null });
+    exitDriveMode('connect_failed');
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'connect_failed', climbsLit: 0 }),
+    );
   });
 });
 

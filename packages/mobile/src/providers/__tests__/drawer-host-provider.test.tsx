@@ -437,6 +437,7 @@ import type { BoardSheetClimbAction } from '../../components/board-presence/Boar
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { setSetting } from '../../settings/hooks';
+import { enterDriveMode, markDriveLive, resetDriveModeForTests } from '../../components/play-drawer/drive-mode-store';
 import {
   publishRoutePlayerBusy,
   registerRoutePlayer,
@@ -962,6 +963,32 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       previewIsWallClimb: true,
       playlistSuggestionSource: wallTrack,
     });
+  });
+
+  // #7113: driving the wall lights a board-history tap too, in a crew included.
+  it.each([
+    ['in a crew', true, true],
+    ['with Light the board when I tap a climb off', false, false],
+  ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew, light) => {
+    queue.isSharedSession = crew;
+    setSetting('lightOnClimbTap', light);
+    enterDriveMode({ sessionId: null, boardId: 7 });
+    markDriveLive();
+    try {
+      renderHost(() => {});
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
+
+      const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+      act(() => {
+        getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+      });
+
+      expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }), {
+        playlistSuggestionSource: wallTrack,
+      });
+    } finally {
+      resetDriveModeForTests();
+    }
   });
 
   it('reuses queue, playlist, and climb-actions handlers for board-sheet climbs', async () => {

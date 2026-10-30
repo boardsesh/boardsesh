@@ -8,6 +8,14 @@ import { stopDrivingForLink } from './drive-mode-store';
 import { useWallControlShown } from './use-wall-control-shown';
 import type { WallControlModel } from './wall-control';
 
+/**
+ * What starting a drive did (#7113). `started`: arming, the climb is going up
+ * and the connect (if any) is on its way. `needs_handoff`: a crewmate holds the
+ * board, and taking it needs their phone to let go first (PR 4); nothing
+ * changed. `unavailable`: the control offers no swipe here (`swipeAction`).
+ */
+export type DriveStartOutcome = 'started' | 'needs_handoff' | 'unavailable';
+
 /** What the player runs for each tap action. The handler decides which, from the model. */
 export type WallControlRunners = {
   /** Connect, put the preview up, or re-light the climb on screen. */
@@ -29,6 +37,12 @@ export type WallControlRunners = {
    * crew session moves too), connect, and light it. A preview is put up first.
    */
   moveToBoard: () => void;
+  /**
+   * Start driving the wall (#7113): commit the climb on screen without the
+   * busy-wall question, connect if needed, light it, and every change of
+   * climb lights the wall from then on.
+   */
+  drive: () => DriveStartOutcome;
 };
 
 export type UseWallControlOptions = {
@@ -57,6 +71,11 @@ export const DISCONNECT_TAP_GUARD_MS = 600;
 export type WallControlHandlers = {
   press: (control: WallControlSurface) => void;
   longPress: (control: WallControlSurface) => void;
+  /**
+   * Start driving the wall (#7113): the wall button's swipe and its "Light
+   * every climb" action, from any view, while the model offers it.
+   */
+  drive: (control: WallControlSurface) => DriveStartOutcome;
 };
 
 /**
@@ -164,5 +183,15 @@ export function useWallControl({
     run.openSheet();
   }, []);
 
-  return { press, longPress };
+  // The view is named for Wall Control Swiped (#7113 PR 3), which the swipe
+  // fires; the swipe owns its own haptics (threshold, then the light).
+  const drive = useCallback((_control: WallControlSurface): DriveStartOutcome => {
+    const { model: current, runners: run } = latest.current;
+    // `swipeAction` is the one rule for where a drive can start: never while a
+    // connect is in flight, the busy-wall question is up, or already driving.
+    if (current.swipeAction !== 'drive') return 'unavailable';
+    return run.drive();
+  }, []);
+
+  return { press, longPress, drive };
 }

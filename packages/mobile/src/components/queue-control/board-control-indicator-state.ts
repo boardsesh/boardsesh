@@ -41,7 +41,33 @@ type BoardControlIndicatorVisualInput = {
    * Color is on, which brings back the outline.
    */
   solidGlyphs?: boolean;
+  /**
+   * Driving the wall (#7113): the bulb on the wall button's live fill, so a
+   * tap on any climb reads as lighting it. Only with this phone's link and
+   * lights (`resolveWallBulbLook` says `driving`).
+   */
+  driving?: DrivingBulbColors | null;
 };
+
+/** The wall button's live look, for the bulb of a driver (#7113). */
+export type DrivingBulbColors = {
+  /** The live fill behind the glyph (`brandColors.live`). */
+  fillColor: string;
+  /** The glyph on that fill: the wall button's lit label colour. */
+  iconColor: string;
+};
+
+/**
+ * The wall button's live look (`WallControlButton`): the `live` fill, with its
+ * lit label colour on top (dark ink on the dark scheme's pale amber, white on
+ * the light scheme's deep amber).
+ */
+export function drivingBulbColors(
+  brand: { live: string; onAccent: string; onPrimary: string },
+  colorScheme: string,
+): DrivingBulbColors {
+  return { fillColor: brand.live, iconColor: colorScheme === 'dark' ? brand.onAccent : brand.onPrimary };
+}
 
 /**
  * Maps the board-connection tri-state to the accessory bar's leading control
@@ -58,7 +84,11 @@ export function getBoardControlIndicatorVisual({
   ledless = false,
   wallHeldColor,
   solidGlyphs = false,
+  driving = null,
 }: BoardControlIndicatorVisualInput): BoardControlIndicatorVisual {
+  if (driving && !ledless && boardConnection === 'connectedByMe') {
+    return { iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor };
+  }
   if (ledless) {
     switch (boardConnection) {
       case 'connectedByMe': {
@@ -101,8 +131,9 @@ export function getPaneWallControlVisual({
   disconnectedColor,
   wallHeldColor,
   solidGlyphs = false,
+  driving = null,
 }: {
-  look: 'off' | 'ready' | 'lit';
+  look: 'off' | 'ready' | 'lit' | 'driving';
   holder: 'self' | 'crew' | null;
   state: string | null;
   connectedColor: string;
@@ -110,12 +141,17 @@ export function getPaneWallControlVisual({
   disconnectedColor: string | OpaqueColorValue;
   wallHeldColor: string;
   solidGlyphs?: boolean;
+  /** The live fill for `look: 'driving'` (#7113); without it, driving draws as lit. */
+  driving?: DrivingBulbColors | null;
 }): BoardControlIndicatorVisual {
+  if (look === 'driving' && driving) {
+    return { iconName: 'lightbulb.fill', iconColor: driving.iconColor, haloColor: driving.fillColor };
+  }
   if (state === 'release_wall')
     return { iconName: 'pin.fill', iconColor: wallHeldColor, haloColor: `${wallHeldColor}24` };
   if (state === 'take_wall') return { iconName: solidGlyphs ? 'pin.fill' : 'pin', iconColor: disconnectedColor };
   if (holder === 'crew') return { iconName: 'person.fill', iconColor: peerColor };
-  if (look === 'lit')
+  if (look === 'lit' || look === 'driving')
     return { iconName: 'lightbulb.fill', iconColor: connectedColor, haloColor: `${connectedColor}24` };
   if (look === 'ready') return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: connectedColor };
   return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: disconnectedColor };

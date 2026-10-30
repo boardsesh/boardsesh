@@ -358,3 +358,94 @@ describe('climbChangeStaysViewOnly', () => {
     }
   });
 });
+
+// #7113: the swipe rule while driving the wall.
+describe('getSwipeNavigationTarget while driving', () => {
+  const current = makeItem('current');
+  const next = makeItem('next');
+  const preview = makeItem('preview');
+
+  it('commits in a crew, with Light on swipe off, and from a tracked preview', () => {
+    for (const [lightOnSwipe, inSharedSession] of [
+      [true, true],
+      [false, false],
+      [false, true],
+    ] as const) {
+      expect(
+        getSwipeNavigationTarget({
+          previewItem: null,
+          previewSuggestionSource: null,
+          targetItem: next,
+          lightOnSwipe,
+          inSharedSession,
+          driving: true,
+        }),
+      ).toEqual({ viewOnly: false });
+    }
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: preview,
+        previewSuggestionSource: makePreviewSource(current),
+        targetItem: next,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+      }),
+    ).toEqual({ viewOnly: false });
+  });
+
+  it('leaves a tracked preview of a climb from another board a preview', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: preview,
+        previewSuggestionSource: makePreviewSource(current),
+        targetItem: next,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+        previewOnOtherBoard: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: next });
+  });
+
+  it('a stop on this link keeps solo swipes previews with the setting on', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: next,
+        lightOnSwipe: true,
+        stoppedForLink: true,
+      }),
+    ).toEqual({ viewOnly: true, targetItem: next });
+  });
+
+  it('the chrome agrees: no browse latch while driving, back once it ends', () => {
+    const source = makePreviewSource(current);
+    expect(
+      swipeStaysViewOnly({
+        previewItem: preview,
+        previewSuggestionSource: source,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: true,
+      }),
+    ).toBe(false);
+    expect(
+      swipeStaysViewOnly({
+        previewItem: preview,
+        previewSuggestionSource: source,
+        lightOnSwipe: true,
+        inSharedSession: true,
+        driving: false,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('getSimilarClimbTapMode while driving', () => {
+  it('queues for a member in a crew, never for the signed-out reader', () => {
+    expect(getSimilarClimbTapMode('member', { inSharedSession: true, driving: true })).toBe('queue');
+    expect(getSimilarClimbTapMode('anonymous', { inSharedSession: false, driving: true })).toBe('preview');
+  });
+});

@@ -5,19 +5,25 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const analytics = vi.hoisted(() => ({ tapped: vi.fn(), shown: vi.fn(), opened: vi.fn() }));
+const analytics = vi.hoisted(() => ({ tapped: vi.fn(), shown: vi.fn(), opened: vi.fn(), ended: vi.fn() }));
 const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
   trackWallControlShown: analytics.shown,
+  trackDriveModeEnded: analytics.ended,
 }));
 vi.mock('../../../lib/analytics-board-connect', () => ({ trackBoardControlsOpened: analytics.opened }));
 vi.mock('../../../lib/haptics', () => haptics);
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { DISCONNECT_TAP_GUARD_MS, useWallControl, type WallControlRunners } from '../use-wall-control';
+import {
+  DISCONNECT_TAP_GUARD_MS,
+  useWallControl,
+  type DriveStartOutcome,
+  type WallControlRunners,
+} from '../use-wall-control';
 import { EMPTY_WALL_CONTROL, type WallControlAction, type WallControlModel } from '../wall-control';
 import {
   enterDriveMode,
@@ -28,7 +34,9 @@ import {
   resetDriveModeForTests,
 } from '../drive-mode-store';
 
-type MockRunners = { [Name in keyof WallControlRunners]: ReturnType<typeof vi.fn<() => void>> };
+type MockRunners = {
+  [Name in Exclude<keyof WallControlRunners, 'drive'>]: ReturnType<typeof vi.fn<() => void>>;
+} & { drive: ReturnType<typeof vi.fn<() => DriveStartOutcome>> };
 
 function runners(): MockRunners {
   return {
@@ -38,6 +46,7 @@ function runners(): MockRunners {
     openSheet: vi.fn<() => void>(),
     lightAgain: vi.fn<() => void>(),
     moveToBoard: vi.fn<() => void>(),
+    drive: vi.fn<() => DriveStartOutcome>(() => 'started'),
   };
 }
 
@@ -247,5 +256,41 @@ describe('useWallControl', () => {
     hook.rerender({ model: modelFor('connect', 'connect') });
     expect(analytics.shown).toHaveBeenCalledOnce();
     expect(analytics.shown).toHaveBeenCalledWith({ state: 'connect', climbUuid: 'climb-1' });
+  });
+});
+
+// #7113: the wall button's swipe and its "Light every climb" action share one runner.
+describe('useWallControl drive', () => {
+  it('starts a drive where the model offers the swipe, and passes the outcome back', () => {
+    const { hook, run } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive' }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(outcome).toBe('started');
+    // A start is not a tap: it logs no Wall Control Tapped.
+    expect(analytics.tapped).not.toHaveBeenCalled();
+  });
+
+  it("passes a refusal for a crewmate's board back untouched", () => {
+    const run = runners();
+    run.drive.mockReturnValue('needs_handoff');
+    const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(outcome).toBe('needs_handoff');
+  });
+
+  it('runs nothing where the model offers no swipe', () => {
+    const { hook, run } = setup(modelFor('crew', 'relay', { swipeAction: null }));
+    let outcome: DriveStartOutcome | null = null;
+    act(() => {
+      outcome = hook.result.current.drive('button');
+    });
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(outcome).toBe('unavailable');
   });
 });

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { trackDriveModeEnded } from '../../lib/analytics-wall-control';
 
 /**
  * Driving the wall (#7113): a swipe on the wall button connects (or takes the
@@ -24,11 +25,15 @@ export type DriveModeState = {
   boardId: number | null;
   /** `Date.now()` when the swipe landed. */
   startedAt: number;
-  /** Climbs lit while live, for Drive Mode Ended. */
+  /** Climbs lit on this phone's link, the swipe's own included, for Drive Mode Ended. */
   climbsLit: number;
 };
 
-/** Why driving ended, for Drive Mode Ended (#7113 PR 3). */
+/**
+ * Why driving ended, for Drive Mode Ended. Sent as `DriveModeEndReason`
+ * (shared analytics), so a reason added here fails to compile until it is
+ * added there.
+ */
 export type DriveModeExitReason =
   /** A press on the frosted button: the link stays, swipes go back to previews. */
   | 'stopped'
@@ -107,6 +112,17 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+/** Drive Mode Ended, once per drive: whichever exit ran first reports it. */
+function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = Date.now()): void {
+  trackDriveModeEnded({
+    reason,
+    startedAt: ended.startedAt,
+    endedAt: now,
+    climbsLit: ended.climbsLit,
+    inSession: ended.sessionId !== null,
+  });
+}
+
 /** A swipe on the wall button landed: start arming. A fresh drive clears an earlier stop. */
 export function enterDriveMode({
   sessionId,
@@ -123,12 +139,16 @@ export function enterDriveMode({
   emit();
 }
 
-/** The swipe's climb is lit on this phone's link: every change of climb lights from now on. */
+/**
+ * The swipe's climb is lit on this phone's link: every change of climb lights
+ * from now on. That first climb counts as lit.
+ */
 export function markDriveLive({ boardId }: { boardId?: number | null } = {}): void {
   if (!driveMode) return;
   const nextBoardId = boardId ?? driveMode.boardId;
   if (driveMode.phase === 'live' && nextBoardId === driveMode.boardId) return;
-  driveMode = { ...driveMode, phase: 'live', boardId: nextBoardId };
+  const climbsLit = driveMode.phase === 'arming' ? driveMode.climbsLit + 1 : driveMode.climbsLit;
+  driveMode = { ...driveMode, phase: 'live', boardId: nextBoardId, climbsLit };
   emit();
 }
 
@@ -146,6 +166,7 @@ export function exitDriveMode(reason: DriveModeExitReason): DriveModeState | nul
   driveMode = null;
   lastExitReason = reason;
   emit();
+  reportEnded(ended, reason);
   return ended;
 }
 
@@ -161,6 +182,7 @@ export function stopDrivingForLink(): DriveModeState | null {
     stoppedForLink = true;
     emit();
   }
+  if (ended) reportEnded(ended, 'stopped');
   return ended;
 }
 

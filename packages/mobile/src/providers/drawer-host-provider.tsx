@@ -62,7 +62,7 @@ import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-acti
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
-import { getSetting } from '../settings/hooks';
+import { readClimbChangeLights } from '../components/play-drawer/use-climb-change-lights';
 import { usePhoneSplit } from '../hooks/use-phone-split';
 import {
   armPlayerScrollHandoff,
@@ -1189,7 +1189,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // A board-history row (the sheet and the iPad wall column) plays from the
   // wall's history like any list (issue #6665): swipes walk back through what
   // was lit. Like every list it reads Light the board when I tap a climb, and
-  // in a crew it opens a preview, so looking never takes a crewmate's wall.
+  // in a crew it opens a preview, so looking never takes a crewmate's wall,
+  // unless this phone is driving the wall (#7113).
   // The queue entry the wall's climb already has is reused either way, so
   // putting it up from the preview doesn't queue a second copy.
   const handleBoardSheetClimbPress = useCallback(
@@ -1199,7 +1200,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         ? undefined
         : action.boardConfig;
       const track = action.track ?? null;
-      if (isSharedSessionRef.current || !getSetting('lightOnClimbTap')) {
+      // Driving the wall lights it, in a crew too (#7113): the list's one rule.
+      if (!readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current })) {
         openPlayDrawer(action.climb, {
           previewQueueItem: item,
           previewIsWallClimb: action.isWallClimb ?? false,

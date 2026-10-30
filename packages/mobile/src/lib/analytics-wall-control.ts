@@ -1,4 +1,4 @@
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { driveModeEnded, SHARED_EVENTS, type DriveModeEndedInput } from '@boardsesh/analytics';
 import { track } from './analytics';
 import type { WallControlAction, WallControlState } from '../components/play-drawer/wall-control';
 
@@ -31,4 +31,10 @@ export function trackWallControlTapped({
   control: WallControlSurface;
 }): void {
   track(SHARED_EVENTS.WallControlTapped, { state: state ?? 'none', action, control });
+}
+
+/** Driving the wall ended (#7113): once per drive, from the drive-mode store. */
+export function trackDriveModeEnded(input: DriveModeEndedInput): void {
+  const { name, properties } = driveModeEnded(input);
+  track(name, properties);
 }

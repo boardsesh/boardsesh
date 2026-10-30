@@ -531,6 +531,7 @@ vi.mock('../../../lib/ble/bluetooth-status-store', async (importOriginal) => ({
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: wallControlTapped,
   trackWallControlShown: vi.fn(),
+  trackDriveModeEnded: vi.fn(),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({

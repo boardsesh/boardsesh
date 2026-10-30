@@ -66,6 +66,7 @@ import { toSchemaClimb } from '../climb-types';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { LoadedListTrackLoader } from './loaded-list-pages';
 import { getSetting } from '../../settings/hooks';
+import { isDrivingWall, readClimbChangeLights } from '../../components/play-drawer/use-climb-change-lights';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
 import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
@@ -222,7 +223,8 @@ export type UsePlaylistActivationOptions = {
    * Same landing as `viewOnlyBoard`, different reason — that one is "this climb
    * is on a board you're not on", this one is "there are other climbers in this
    * session, so a row tap must not take their wall". Read live at tap time, so a
-   * crew forming or breaking up between render and tap is honoured.
+   * crew forming or breaking up between render and tap is honoured. Driving the
+   * wall (#7113) overrides it: the tap plays the climb and lights it.
    */
   previewOnly?: boolean;
   /**
@@ -1447,7 +1449,10 @@ export function usePlaylistActivation({
 
       // Read at the tap, so the callback does not change identity when the
       // climber flips it. Only lists that opted in can load into the queue.
-      const tapLoadsQueue = honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue');
+      // Never in a crew, driving or not: replacing a crew's whole queue is the
+      // loudest write in the app, and a row tap must never be it.
+      const tapLoadsQueue =
+        honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue') && !(previewOnlyRef.current && isDrivingWall());
 
       // Two reasons to preview, either one enough: there are other climbers in
       // the session (`previewOnly`), so a tap must not take their wall; or the
@@ -1462,7 +1467,16 @@ export function usePlaylistActivation({
       //
       // Ordered ahead of the replace deliberately: replacing a crew's whole
       // queue is the loudest write in the app, and a row tap must never be it.
-      if (previewOnlyRef.current || (!activationOptions?.deliberate && !getSetting('lightOnClimbTap'))) {
+      //
+      // Driving the wall (#7113) overrides both: every change of climb lights
+      // it, in a crew too, so the tap plays from the list. One rule for every
+      // change of climb (`climbChangeStaysViewOnly`), read at the tap.
+      if (
+        !readClimbChangeLights('tap', {
+          inSharedSession: previewOnlyRef.current,
+          deliberate: activationOptions?.deliberate === true,
+        })
+      ) {
         openListPreview();
         return Promise.resolve();
       }
