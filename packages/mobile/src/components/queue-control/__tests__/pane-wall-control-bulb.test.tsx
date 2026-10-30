@@ -59,8 +59,8 @@ const LIT: WallControlModel = {
   holder: 'self',
   tapAction: 'disconnect',
   longPress: 'sheet',
-  labelKey: 'youHaveBoard',
-  a11yLabelKey: 'youHaveBoardLit',
+  labelKey: 'disconnectBoard',
+  a11yValueKey: 'youHaveBoardLit',
   a11yHintKey: 'litHint',
   look: 'lit',
   selected: true,
@@ -77,7 +77,9 @@ describe('PaneWallControlBulb', () => {
   it('says what the covered wall button says, and runs the pane’s tap and hold', () => {
     const { getByRole, press, longPress } = renderBulb(LIT);
     const bulb = getByRole('button');
-    expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.youHaveBoardLit');
+    expect(bulb.getAttribute('aria-label')).toBe(
+      'playView.wallControl.disconnectBoard, playView.wallControl.youHaveBoardLit',
+    );
     expect(bulb.getAttribute('data-hint')).toBe('playView.wallControl.litHint');
     expect(bulb.getAttribute('data-actions')).toBe('playView.wallControl.boardOptions');
     fireEvent.click(bulb);

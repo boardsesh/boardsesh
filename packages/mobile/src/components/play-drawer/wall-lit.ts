@@ -12,7 +12,7 @@
  * - `lit` — the climb on screen is the one lit on the board.
  * - `notLit` — anything else: a preview while the wall shows another climb, a
  *   climb only this climber sees in a crew, no live link, or the board kept the
- *   current climb dark. The wall button says Put on the wall or Connect board.
+ *   current climb dark. The wall button says Put on board.
  */
 export type WallLitState = 'lit' | 'notLit';
 

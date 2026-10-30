@@ -3,18 +3,22 @@
 // is it". It took the place of the first row's bulb, the header's On the wall
 // chip, the "Lit on the wall" text and Put on the wall.
 //
-//   connect      tonal  [💡      Connect board              ]  tap connects, then lights it
-//   put_on_wall  tonal  [💡      Put on the wall        (me)]  tap puts the preview up
-//                       [💡    Put on Sam's board      (Sam)]  …on a crewmate's board
-//   dark         tonal  [💡      Put on the wall        (me)]  tap re-lights the climb
-//   lit          amber  [💡     You have the board      (me)]  tap disconnects
-//   crew         tonal  [💡      On Sam's board        (Sam)]  tap relays to their phone
+//   connect      tonal  [💡        Put on board             ]  tap connects, then lights it
+//   put_on_wall  tonal  [💡        Put on board         (me)]  tap puts the preview up
+//                       [💡        Put on board        (Sam)]  …on a crewmate's board
+//   dark         tonal  [💡        Put on board         (me)]  tap re-lights the climb
+//   lit          tonal  [💡      Disconnect board       (me)]  tap disconnects
+//   lit, driving frost  [💡  You are driving the wall   (me)]  tap stops driving (#7113)
+//   crew         tonal  [💡        Put on board        (Sam)]  tap relays to their phone
+//
+// The label says what a press does (#7113, Marco); the bulb's fill shows the
+// connection and the face whose board it is.
 //
 // The bulb sits at the leading edge in every state, and whoever holds the board
 // (this phone's climber, or a crewmate) at the trailing edge, at the same
 // inset, so the label stays centred whether or not there is a face. Holding
 // the button opens the board sheet (Re-light, Turn off all lights, Disconnect)
-// while this phone holds the link. Only You have the board disconnects on a tap.
+// while this phone holds the link. Only Disconnect board disconnects on a tap.
 //
 // It draws a `WallControlModel` (`resolveWallControl`) and nothing else: no
 // presence or profile reads of its own, so the face can't outlive the link.

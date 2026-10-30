@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type {
   WallControlA11yHintKey,
-  WallControlA11yHolderKey,
+  WallControlA11yValueKey,
   WallControlBulbValueKey,
   WallControlLabelKey,
   WallControlModel,
@@ -17,7 +17,7 @@ import type {
 export type WallControlText = {
   /** The wall button's label. Empty with nothing to offer. */
   label: string;
-  /** The wall button's screen-reader label: the label, then who has the board. */
+  /** The wall button's screen-reader label: the label, then where things stand ("Put on board, Sam has the board"). */
   accessibilityLabel: string;
   /** What a tap does; the scanning and writing hints win while they apply. */
   accessibilityHint: string | undefined;
@@ -36,20 +36,14 @@ function labelText(
   board: string | null,
 ): string {
   switch (key) {
-    case 'connect':
-      return t('playView.wallControl.connect');
-    case 'onWall':
-      return t('playView.wallControl.onWall');
-    case 'putOnWall':
-      return t('playView.wallState.putOnWall');
+    case 'putOnBoard':
+      return t('playView.wallControl.putOnBoard');
     case 'setActive':
       return t('playView.setActive');
-    case 'putOnBoard':
-      return t('playView.wallControl.putOnBoard', { name });
-    case 'putOnCrewBoard':
-      return t('playView.wallControl.putOnCrewBoard');
-    case 'youHaveBoard':
-      return t('playView.wallControl.youHaveBoard');
+    case 'disconnectBoard':
+      return t('playView.wallControl.disconnectBoard');
+    case 'youAreDriving':
+      return t('playView.wallControl.youAreDriving');
     case 'onBoard':
       return t('playView.wallControl.onBoard', { name });
     case 'onCrewBoard':
@@ -65,14 +59,22 @@ function labelText(
   }
 }
 
-function holderText(t: TFunction, key: WallControlA11yHolderKey, name: string | null): string {
+function valueText(t: TFunction, key: WallControlA11yValueKey, name: string | null): string {
   switch (key) {
     case 'youHaveBoard':
       return t('playView.wallControl.youHaveBoard');
+    case 'youHaveBoardLit':
+      return t('playView.wallControl.youHaveBoardLit');
+    case 'drivingEveryClimb':
+      return t('playView.wallControl.drivingEveryClimb');
     case 'holderHasBoard':
       return t('playView.wallControl.holderHasBoard', { name });
     case 'crewHasBoard':
       return t('playView.wallControl.crewHasBoard');
+    case 'onOtherPhone':
+      return t('playView.wallControl.onOtherPhone');
+    case 'onWall':
+      return t('playView.wallControl.onWall');
   }
 }
 
@@ -86,6 +88,8 @@ function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null
       return t('playView.wallControl.lightAgainHint');
     case 'litHint':
       return t('playView.wallControl.litHint');
+    case 'stopDrivingHint':
+      return t('playView.wallControl.stopDrivingHint');
     case 'relayHint':
       return t('playView.wallControl.relayHint', { name });
     case 'relayHintCrew':
@@ -121,13 +125,7 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
   const name = model.holderName;
   const board = model.gymBoardName;
   const label = model.labelKey ? labelText(t, tSettings, model.labelKey, name, board) : '';
-  const spokenLabel =
-    model.a11yLabelKey === 'youHaveBoardLit'
-      ? t('playView.wallControl.youHaveBoardLit')
-      : model.a11yLabelKey
-        ? labelText(t, tSettings, model.a11yLabelKey, name, board)
-        : '';
-  const spokenHolder = model.a11yHolderKey ? holderText(t, model.a11yHolderKey, name) : null;
+  const spokenValue = model.a11yValueKey ? valueText(t, model.a11yValueKey, name) : null;
   let accessibilityHint: string | undefined = model.a11yHintKey
     ? hintText(t, model.a11yHintKey, name, board)
     : undefined;
@@ -135,7 +133,7 @@ export function wallControlText(model: WallControlModel, t: TFunction, tSettings
   else if (model.writing) accessibilityHint = tSettings('ble.writing');
   return {
     label,
-    accessibilityLabel: spokenHolder ? `${spokenLabel}, ${spokenHolder}` : spokenLabel,
+    accessibilityLabel: spokenValue ? `${label}, ${spokenValue}` : label,
     accessibilityHint,
     bulbAccessibilityLabel: t('playView.wallControl.bulbAria'),
     bulbValue: bulbValueText(t, model.bulbValueKey, name),

@@ -78,7 +78,7 @@ export type ScenarioOverrides = {
     busyWall?: { holderName: string; climbName: string };
     /**
      * This phone holds the board, for the board control's model only (the
-     * filled bulb, You have the board). Bluetooth itself stays unlinked.
+     * filled bulb, Disconnect board). Bluetooth itself stays unlinked.
      */
     selfHoldsBoard?: boolean;
   };

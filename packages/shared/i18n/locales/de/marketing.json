@@ -686,11 +686,11 @@
       "breadcrumb": "Board und Bluetooth",
       "hero": {
         "title": "Verbinde dein Handy mit dem Board",
-        "subtitle": "Tipp auf Board verbinden, wähl dein Board, und dein Boulder leuchtet."
+        "subtitle": "Tipp auf Am Board beleuchten, wähl dein Board, und dein Boulder leuchtet."
       },
       "connect": {
         "title": "Verbinden",
-        "p1": "In einem Boulder tippst du auf Board verbinden unter dem Board oder auf die Glühbirne in der oberen Leiste. Dann tippst du in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
+        "p1": "In einem Boulder tippst du auf Am Board beleuchten unter dem Board oder auf die Glühbirne in der oberen Leiste. Dann tippst du in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
         "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
         "shotAlt": "Das Sheet Board auswählen",
         "shotCaption": "Stärkstes Signal zuerst, mit Seriennummern.",
@@ -701,13 +701,13 @@
       },
       "hidden": {
         "title": "Board-Steuerung",
-        "p1": "Solange du verbunden bist, hältst du den Button unter dem Board gedrückt. Steht dort „Du hast das Board“, trennt ein kurzes Tippen die Verbindung. In einem Boulder öffnet sie auch ⋯ und dann Board-Steuerung, und ebenso die gedrückte Glühbirne oben in der Leiste.",
+        "p1": "Solange du verbunden bist, hältst du den Button unter dem Board gedrückt. Steht dort „Board trennen“, trennt ein kurzes Tippen die Verbindung. Steht dort „Du steuerst das Board“, beendet ein kurzes Tippen das Steuern, und das Board bleibt verbunden. In einem Boulder öffnet sie auch ⋯ und dann Board-Steuerung, und ebenso die gedrückte Glühbirne oben in der Leiste.",
         "row1": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
         "row2": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
         "row3": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
         "row4": "Griff darüber beleuchten. Nur MoonBoard.",
         "p2": "„Automatisch trennen“, „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ findest du unter Einstellungen, dann Board, und im Menü der Glühbirne oben in der Leiste. Automatisch trennen gibt das Board nach 30 Sekunden Leerlauf frei. Schalt beide Beleuchtungsschalter aus, und Stöbern ändert die Wand nicht mehr.",
-        "p3": "Ohne verbundenes Board verbindet Board verbinden, oder ein kurzer Tipp auf die Glühbirne oben in der Leiste, mit deinem letzten Board."
+        "p3": "Ohne verbundenes Board verbindet Am Board beleuchten, oder ein kurzer Tipp auf die Glühbirne oben in der Leiste, mit deinem letzten Board."
       },
       "failed": {
         "title": "Wenn es nicht verbindet",

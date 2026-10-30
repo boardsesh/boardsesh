@@ -101,6 +101,7 @@ import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOn
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
 import { CrewHolderSuspicionSync } from '../src/providers/crew-holder-suspicion';
+import { DriveModeWatcher } from '../src/components/play-drawer/DriveModeWatcher';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { FoldHingeObserver } from '../src/components/navigation/FoldHingeObserver';
 import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
@@ -792,6 +793,9 @@ function RootLayout() {
                                                                         {/* A crewmate's hold presence hasn't confirmed yet (#7017): renders
                                                                             nothing; asks the feed to confirm it, and lets it go in 10 s. */}
                                                                         <CrewHolderSuspicionSync />
+                                                                        {/* Driving the wall (#7113): renders nothing; ends the drive
+                                                                            when the link drops, the session or board changes, or on sign-out. */}
+                                                                        <DriveModeWatcher />
                                                                         {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and

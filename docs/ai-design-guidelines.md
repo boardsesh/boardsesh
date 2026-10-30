@@ -441,7 +441,7 @@ board art (#7000). A tester found the "Not on the wall" badge from #6939 distrac
 Live pill that said the opposite.
 
 New status goes beside the art instead: the header's back chip, the top bar's second line (the caption), or the
-action bar's rows, like the wall button's "You have the board" (`WallControlButton`).
+action bar's rows, like the wall button's "Disconnect board" (`WallControlButton`).
 
 Allowed over the board, and nothing else:
 
@@ -468,14 +468,15 @@ fill, the "Lit on the wall" text and the purple button. Now one board control sa
 button in the second row; View options › Buttons › Board control can make it the first row's bulb instead. Either
 way it looks like this:
 
-- Tonal violet for what the climber can do: "Connect board", "Put on the wall", "On Sam's board". The fill is 20% of
+- Tonal violet for what the climber can do: "Put on board", "Disconnect board". The label says what a press does
+  (#7113); the bulb and the face show the connection and whose board it is. The fill is 20% of
   the brand fill, strong enough not to read as disabled and the most the violet label keeps 4.5:1 on.
 - **Lit while you drive the board: the climb's holds glow in it (look F1b).** Only while this climber is driving: the
   climb on screen is lit on this phone's link and a swipe from here changes what the wall shows (#7017, Marco: "The
   special coloured state for the button should only be shown when the current user is driving the board"). That is
-  solo "You have the board". In a crew swipes browse, so the holder's "You have the board" keeps its filled bulb
-  and face on the plain tonal look, and a crewmate's "On Sam's board" is tonal with an outline bulb; the same
-  account on another device reads "On your other phone". The glow, in the full-width and the workout button: every
+  solo with lighting on swipes, or a drive started by a swipe on the button (#7113), and the label says "You are
+  driving the wall". In a crew swipes browse, so the holder's "Disconnect board" keeps its filled bulb and face on
+  the plain tonal look, and a crewmate's board is tonal with an outline bulb. The glow, in the full-width and the workout button: every
   lit hold of the climb, turned a quarter clockwise so the
   climb reads start (left) to finish (right), as a soft blob of the colour the player draws its role (Aura or
   classic, with the climber's overrides). The blobs screen together on a near-black `#0E0D12` with an 8% white
@@ -495,8 +496,8 @@ way it looks like this:
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
 
-A tap lights the climb, or on You have the board disconnects (a warning buzz, and "Board disconnected" for screen
-readers); a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only the
+A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen
+readers), or on You are driving the wall stops driving and keeps the link; a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only the
 back chip, which names where back goes: "My pick" for the climber's own climb, "On the wall" for the wall's.
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall

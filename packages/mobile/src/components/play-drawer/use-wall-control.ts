@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
 import { trackWallControlTapped, type WallControlSurface } from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
-import { hapticMedium, hapticWarning } from '../../lib/haptics';
+import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
+import { stopDrivingForLink } from './drive-mode-store';
 import { useWallControlShown } from './use-wall-control-shown';
 import type { WallControlModel } from './wall-control';
 
@@ -44,10 +45,12 @@ export type UseWallControlOptions = {
 };
 
 /**
- * After a tap-disconnect, how long further taps are dropped. The provider marks
- * the link down before the adapter's disconnect finishes, so the second tap of
- * a double tap would otherwise read Connect board and start a connect (the
- * picker, or a 15 s scan) mid-disconnect.
+ * After a tap that changes what the next tap does, how long further taps are
+ * dropped. After a disconnect: the provider marks the link down before the
+ * adapter's disconnect finishes, so the second tap of a double tap would
+ * otherwise read Put on board and start a connect (the picker, or a 15 s scan)
+ * mid-disconnect. After a stop: the second tap would land on Disconnect board,
+ * and a crew's board has no Undo.
  */
 export const DISCONNECT_TAP_GUARD_MS = 600;
 
@@ -75,10 +78,12 @@ export function useWallControl({
   linked,
 }: UseWallControlOptions): WallControlHandlers {
   const { t: tSettings } = useTranslation('settings');
-  const latest = useRef({ model, runners });
-  latest.current = { model, runners };
-  // A tap-disconnect in flight: when it started, and whether the drop still owes its announcement.
-  const disconnectTappedAtRef = useRef<number | null>(null);
+  const { t } = useTranslation('session');
+  const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
+  const latest = useRef({ model, runners, stoppedDrivingLabel });
+  latest.current = { model, runners, stoppedDrivingLabel };
+  // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
+  const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
 
   useWallControlShown({ state: model.state, climbUuid, playerOpen, visible });
@@ -98,9 +103,10 @@ export function useWallControl({
     const { model: current, runners: run } = latest.current;
     // A connect in flight: the spinner says so, and a second tap waits.
     if (current.pending) return;
-    // The second tap of a double tap on You have the board: the link already
-    // reads down, but the adapter is still letting go. Drop it.
-    const tappedAt = disconnectTappedAtRef.current;
+    // The second tap of a double tap on Disconnect board (the link already
+    // reads down, but the adapter is still letting go) or on You are driving
+    // the wall (it now reads Disconnect board). Drop it.
+    const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
     trackWallControlTapped({ state: current.state, action: current.tapAction, control });
     if (current.state === 'on_wall_unlinked' && current.tapAction !== 'noop') {
@@ -114,10 +120,18 @@ export function useWallControl({
         // buzzes like a warning; a screen reader hears it once the link drops.
         // It forgets the board on purpose, as the board sheet's Disconnect
         // does: it frees the board for the next climber.
-        disconnectTappedAtRef.current = Date.now();
+        guardedTapAtRef.current = Date.now();
         announceDropRef.current = true;
         hapticWarning();
         run.disconnect();
+        return;
+      case 'stop_driving':
+        // Stop driving and keep the link: swipes go back to previews. A light
+        // buzz, since nothing was let go; the next tap disconnects.
+        guardedTapAtRef.current = Date.now();
+        hapticLight();
+        stopDrivingForLink();
+        announceQueued(latest.current.stoppedDrivingLabel);
         return;
       case 'connect':
       case 'put_on_wall':

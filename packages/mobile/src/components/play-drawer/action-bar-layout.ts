@@ -109,10 +109,10 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
  *
  * ```
  * Mirror board (Tension, Decoy, Woods)   [⇄]  [⏮]  [✓]  [⏭]  [☰]      (♡ in ⋯)
- *                                        [ 💡      You have the board     (S) ]
+ *                                        [ 💡    You are driving the wall   (S) ]
  * Other boards (Kilter, MoonBoard)       [♡]  [⏮]  [✓]  [⏭]  [☰]
- *                                        [ 💡        Connect board            ]
- * Fell / Sent                            [⏮]  [ 💡  You have the board ]  [⏭]   (♡ ✓ ☰ in ⋯)
+ *                                        [ 💡        Put on board             ]
+ * Fell / Sent                            [⏮]  [ 💡  Disconnect board ]  [⏭]    (♡ ✓ ☰ in ⋯)
  *                                        [ Fell              Sent             ]
  * The busy-wall question                 [♡]  [⏮]  [✓]  [⏭]  [☰]
  *                                        [ (T) Keep Test2's ] [ 💡 Put mine up ]

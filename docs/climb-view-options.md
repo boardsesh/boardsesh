@@ -40,8 +40,8 @@ wall button.
 Every view of it draws one model and runs one handler:
 
 - **The model** is `resolveWallControl` (`play-drawer/wall-control.ts`): the state, the holder and their face, the
-  tap action, whether a hold opens the sheet, and ids for the label, the screen-reader label, the hint and the bulb's
-  value. `wall-control-text.ts` turns the ids into words, with every key spelled out once.
+  tap action, the swipe action, whether a hold opens the sheet, and ids for the label, the screen-reader value, the
+  hint and the bulb's value. `wall-control-text.ts` turns the ids into words, with every key spelled out once.
 - **The handler** is `useWallControl` (`play-drawer/use-wall-control.ts`): it runs the tap action, opens the board
   sheet on a hold, buzzes, announces a disconnect, and fires `Wall Control Tapped`, `Board Controls Opened` and
   `Wall Control Shown` once each, with the view that was used.
@@ -57,26 +57,49 @@ Every view of it draws one model and runs one handler:
 The wall button is the default; View options › Buttons › **Board control** picks **Wall button** or **Lightbulb**
 (see [Board control setting](#board-control-setting)). Both use the same model and the same tap and hold rules.
 
+**The label says what a press does** (#7113, Marco). The bulb's fill, outline or spinner already shows the
+connection, and the face whose board it is, so the label doesn't restate either. Every press that puts the climb on a
+board, connecting first when needed, says "Put on board"; screen readers hear where things stand after it ("Put on
+board, Sam has the board").
+
 | State (`resolveWallControlState`) | The button | A tap |
 | --- | --- | --- |
-| No board linked (`connect`) | tonal "💡 Connect board" | connects, and the connect lights it |
-| No link, but presence says the climb on screen is the wall's, lit under an hour ago (`on_wall_unlinked`, QA #147) | amber outline "💡 On the wall", the sheet's label colour, no face, no frost | connects and lights it again: the climber's own climb re-asserted (through the #4979 hold), a preview put up; never left to the auto-send |
-| Preview or crew browse (`put_on_wall`) | tonal "💡 Put on the wall" ("Put on Sam's board" on a crewmate's board, "Set active" where no wall is reachable) | puts it up, connecting first if needed |
-| Linked, this climb dark (`dark`) | tonal "💡 Put on the wall" | re-lights it (clears a Turn off all lights and the #4979 hold) |
-| This phone holds the board, climb lit (`lit`) | "💡 You have the board": the frost (or filled amber) while driving; in a crew the plain tonal look, filled bulb and face | disconnects this phone (the board sheet's Disconnect) |
-| A crewmate holds the board (`crew`) | tonal "💡 On Sam's board", outline bulb, their face, never the frost | relays a preview to their phone |
-| This account holds it on another device (`crew`, `holderIsSelfAccount`) | tonal "💡 On your other phone", no face | relays a preview to that phone |
+| No board linked (`connect`) | tonal "💡 Put on board" | connects, and the connect lights it |
+| No link, but presence says the climb on screen is the wall's, lit under an hour ago (`on_wall_unlinked`, QA #147) | amber outline "💡 Put on board", the sheet's label colour, no face, no frost; screen readers hear "On the wall" | connects and lights it again: the climber's own climb re-asserted (through the #4979 hold), a preview put up; never left to the auto-send |
+| Preview or crew browse (`put_on_wall`) | tonal "💡 Put on board" (on a crewmate's board too, their face at the edge; "Set active" where no wall is reachable, since the press only makes it the current climb) | puts it up, connecting first if needed |
+| Linked, this climb dark (`dark`) | tonal "💡 Put on board" | re-lights it (clears a Turn off all lights and the #4979 hold) |
+| This phone holds the board, climb lit, not driving (`lit`) | tonal "💡 Disconnect board", filled bulb and face | disconnects this phone (the board sheet's Disconnect) |
+| This phone holds the board, climb lit, driving (`lit`, `driving`) | "💡 You are driving the wall": the frost (or filled amber); screen readers hear "every climb you pick lights up" and "Tap to stop driving" | stops driving and keeps the link (`stop_driving`, #7113) |
+| A crewmate holds the board (`crew`) | tonal "💡 Put on board", outline bulb, their face, never the frost | relays the climb to their phone |
+| This account holds it on another device (`crew`, `holderIsSelfAccount`) | tonal "💡 Put on board", no face; screen readers hear "On your other phone" | relays it to that phone |
+| A crewmate's board, nothing to relay | tonal "💡 On Sam's board" / "On your other phone" / "On your crew's board": the only labels left that say where things stand | nothing |
 | A wall with no lights | Take the wall / Release the wall | as the bulb always did |
 | Nothing to offer (`null`) | an empty slot of the same height | nothing |
 
 - **One icon, one face.** The bulb sits at the leading edge in every state. Whoever holds the board sits at the
   trailing edge at the same inset, as a 24 pt face (`model.holder`): this phone's climber when this phone holds
   it, the crewmate when theirs does, nobody with no live link. The label stays centred either way. Screen readers hear
-  the label, then who has the board ("Put on the wall, You have the board"); the face itself is hidden. You have the
-  board reads "You have the board, lit on the wall", with the hint "Tap to disconnect. Hold for board controls."
-- **Only You have the board disconnects on a tap.** Marco tried it on the phones: once the climb is lit and the
+  the label, then where things stand ("Put on board, You have the board"); the face itself is hidden. Disconnect
+  board reads "Disconnect board, You have the board, lit on the wall", with the hint "Tap to disconnect. Hold for
+  board controls."
+- **Only Disconnect board disconnects on a tap.** Marco tried it on the phones: once the climb is lit and the
   board is yours, the next thing you want is to let go of it. The tap buzzes as a warning and a screen reader hears
-  "Board disconnected". Every other state keeps its tap (connect, put on the wall, re-light, relay). Holding any
+  "Board disconnected". Every other state keeps its tap (connect, put on the wall, re-light, relay).
+- **A press on the frost stops driving and keeps the link** (#7113). One rule, solo included: a press on "You are
+  driving the wall" stops driving (a light buzz, "Stopped driving the wall" for screen readers), the frost fades to
+  the tonal "Disconnect board", and swipes go back to previews; the next press disconnects. Disconnecting a crew's
+  board has no Undo and breaks every crewmate's relay, so it never happens in one press from the frost. Solo with
+  Light the board as I swipe on, the stop holds until the link drops; it never flips the setting. A second tap
+  inside 600 ms of a stop or a disconnect is dropped.
+- **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
+  first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
+  (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
+  arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
+  nothing. A press's "stopped" lasts until that link drops. The model's `swipeAction` is `drive` on Put on board
+  (this phone's board or Sam's) and on Disconnect board while not driving; never on a relay, Set active, a wall with
+  no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
+  (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
+  the setting decides solo and a crew previews. Nothing can enter drive mode until the swipe ships. Holding any
   view, in any state, or ⋯ › Board controls opens the board sheet (Re-light, Turn off all lights, Disconnect, plus
   the MoonBoard "Light the hold above") while this phone holds the link; screen readers get the hold as a named
   action, "Board options". Every view runs the same tap. The player's sheet leaves out auto-disconnect and the two lighting switches, which live in Settings ›
@@ -88,17 +111,18 @@ The wall button is the default; View options › Buttons › **Board control** p
   (`resolveWallControlAction`'s `confirmArmed`).
 - **Lit only with a live link.** `resolveWallLit` (`play-drawer/wall-lit.ts`) decides it: this phone's link or a
   crewmate's. The server's board presence never clears and can name a climb lit 8 hours ago, so with no link the
-  button says Connect board. A preview of another climb, the #4979 hold and "Turn off all lights" read as dark.
+  button offers a connect (Put on board). A preview of another climb, the #4979 hold and "Turn off all lights" read as dark.
 - **Look.** The tonal fill is 20% of the brand violet (`WALL_CONTROL_TONAL_ALPHA`), up from 14%, which read as
   disabled; the violet label keeps at least 4.6:1 on every Liquid Glass and Material sheet, light and dark
   (`wall-control-button-contrast.test.ts`). **The coloured lit look means you are driving the board** (#7017,
   Marco): the model's `driving` is true only while the climb on screen is lit on this phone's link and a swipe or
-  Next from here commits to the wall (`navigationCommits`: solo with lighting on swipes, not a browse). Then the
+  Next from here commits to the wall (`navigationCommits`: solo with lighting on swipes, not a browse; or a live
+  drive, #7113), and no press stopped it on this link. Then the
   button glows with the climb's holds (look F1b, `wall-glow.ts`, `WallGlow.tsx`, described in
   `ai-design-guidelines.md`); with no holds it is the `live` amber with white text, dark text on the dark scheme's
-  pale amber. In a crew swipes open previews (#4281), so nobody drives: the holder's lit button keeps "You have the
-  board", its filled bulb and face on the plain tonal look, and a crewmate's "On Sam's board" is tonal with an
-  outline bulb. Lightbulb mode's bulb keeps its own fill rule (`resolveWallBulbLook`). The glow is a view of the same
+  pale amber, and the label says "You are driving the wall". In a crew swipes open previews (#4281), so nobody drives
+  until a swipe on the button starts a drive: the holder's lit button says "Disconnect board", with its filled bulb
+  and face on the plain tonal look, and a crewmate's board is tonal with an outline bulb. Lightbulb mode's bulb keeps its own fill rule (`resolveWallBulbLook`). The glow is a view of the same
   model: PlayCore hands the button the lit holds (`useParseFrames` on the playback frame, colours from
   `use-hold-state-colors.ts`, the source Active holds uses), memoised on climb, frame, mirror and colours. 44 pt tall on iOS, 48 dp on Android; the second row's fixed height is built from it, so nothing moves
   between states. The row's padding matches the Logbook card's edges below it. A long label (German, a long name)
@@ -119,8 +143,9 @@ floors both flanks; the words cap at 96 pt, so they can't squeeze the climb name
 **Trusting board presence without a link (QA #147).** Aurora and MoonBoard boxes keep their LEDs after a phone
 disconnects, so with no live link (this phone's or a crewmate's) presence's wall climb is trusted for an hour after it
 was lit (`presence-freshness.ts`: `isPresenceFresh`, `usePresenceFresh`, which re-renders once when the hour runs
-out). Inside the hour the wall's climb reads On the wall (`on_wall_unlinked`), `resolveWallLit` reads it lit, and the
-back chip can go back to it; past the hour the button says Connect board on it, never Put on the wall, and the Climbs
+out). Inside the hour the wall's climb is `on_wall_unlinked` (screen readers hear On the wall), `resolveWallLit` reads
+it lit, and the back chip can go back to it; past the hour the button's press connects (`connect`), never a
+preview's put-up, and the Climbs
 header's wall capsule hides (#7095, `trustedWallCapsuleClimb`). With a live link the link decides and freshness
 doesn't matter.
 
@@ -131,7 +156,8 @@ doesn't matter.
   shows a climb.
 - `Wall Control Tapped {state, action, control}`: every tap on any view, `control` saying which: `button` (the wall
   button, full width or in a workout's top row), `bulb`, or `mini_bar` (the MiniPlayer's bulb standing in for a
-  tablet or open-Duo player's). A tap on You have the board logs `{state: 'lit', action: 'disconnect'}`.
+  tablet or open-Duo player's). A tap on Disconnect board logs `{state: 'lit', action: 'disconnect'}`; a tap on
+  You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`.
 - `Board Controls Opened {surface: 'play_drawer', source}`: a hold on `button`, `bulb` or `mini_bar`, or
   `player_menu`. A tap never opens it. Pre-release QA builds sent `wall_control`, `bulb_long_press` and
   `open_sheet`; no store build did.
@@ -159,10 +185,10 @@ bar, the player's ⋯ menu and the preview all read it, so they can't disagree.
 
 ```
 Wall button (the default)
-Kilter, MoonBoard          [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡        Connect board            ]
-Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡     You have the board      (me) ]
+Kilter, MoonBoard          [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡        Put on board             ]
+Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡      Disconnect board       (me) ]
 Busy wall                  [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
-Fell / Sent                [⏮] [ 💡  You have the board  (me) ] [⏭]  /  [ Fell              Sent ]
+Fell / Sent                [⏮] [ 💡   Disconnect board   (me) ] [⏭]  /  [ Fell              Sent ]
 
 Lightbulb
 Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [♡] ······················ [☰]
@@ -236,8 +262,8 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   disconnected" is announced when the link actually drops. A dropped link, or the wall coming back to the cleared
   climb, forgets a Turn off all lights.
 - **The bulb fills whenever this phone holds the board.** In the wall button and in Lightbulb mode, the 💡 glyph is
-  filled amber while `model.holder === 'self'`, in any state: "Put on the wall" on a preview with the link up,
-  "You have the board", a dark climb. Otherwise it is an outline. The frost (the lit glow) shows only while this
+  filled amber while `model.holder === 'self'`, in any state: Put on board on a preview with the link up,
+  Disconnect board, a dark climb. Otherwise it is an outline. The frost (the lit glow) shows only while this
   climber drives the board (`model.driving`), so a preview, and anything in a crew, has none: swiping there doesn't
   change the board.
 - The bulb reads the same model as the wall button: grey outline with no board, filled amber while this phone holds

@@ -171,6 +171,7 @@ import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
 import { useWallControl } from './use-wall-control';
+import { useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
@@ -445,7 +446,13 @@ export function PlayCore({
   const isSharedSession = useIsSharedSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  const [lightOnSwipeSetting] = useSetting('lightOnSwipe');
+  // Driving the wall (#7113). A press on the frosted button stops it and keeps
+  // the link; solo swipes then stay previews until the link drops, whatever
+  // Light the board as I swipe says (the setting never flips).
+  const driveModePhase = useDriveModePhase();
+  const drivingStopped = useDrivingStoppedForLink();
+  const lightOnSwipe = lightOnSwipeSetting && !drivingStopped;
   const [enhancementSnapshot, setEnhancementSnapshot] = usePrivacyScopedState<PlayCoreEnhancementSnapshot>();
   const handleEnhancementSnapshot = useCallback(
     (snapshot: PlayCoreEnhancementSnapshot | null) => setEnhancementSnapshot(snapshot),
@@ -1334,6 +1341,8 @@ export function PlayCore({
         autoDisconnectWarning: bluetooth?.autoDisconnectWarning ?? false,
         // Driving the board: a swipe from here goes up on the wall (#7017).
         navigationCommits: navigationCommits && !browseLatchActive,
+        driveMode: driveModePhase,
+        drivingStopped,
       }),
     [
       commitButton,
@@ -1363,6 +1372,8 @@ export function PlayCore({
       bluetooth?.autoDisconnectWarning,
       navigationCommits,
       browseLatchActive,
+      driveModePhase,
+      drivingStopped,
     ],
   );
   const wallControlState: WallControlState = wallControl.state;
@@ -1600,11 +1611,12 @@ export function PlayCore({
         ...step,
         surface: 'player',
         inSharedSession: browseByDefault,
-        lightOnSwipe,
+        // The climber's setting, not a stop on this link.
+        lightOnSwipe: lightOnSwipeSetting,
         boardType: navigationBoardType,
         layoutId: navigationLayoutId,
       }),
-    [browseByDefault, lightOnSwipe, navigationBoardType, navigationLayoutId],
+    [browseByDefault, lightOnSwipeSetting, navigationBoardType, navigationLayoutId],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   const handleOpenQueueFromBar = useCallback(() => {
@@ -1791,7 +1803,7 @@ export function PlayCore({
       // On the crew's gym board the relay commits the preview to the session;
       // the bulb's own press would connect this phone to its own board.
       toggle: climbOnCrewGymBoard ? handleRelayToHolder : handleLightbulb,
-      // You have the board: let go of it, as the board sheet's Disconnect does.
+      // Disconnect board: let go of it, as the board sheet's Disconnect does.
       // That forgets the board on purpose: it frees it for the next climber.
       disconnect: disconnectAllBluetooth,
       openSheet: openBoardSheet,

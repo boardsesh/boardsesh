@@ -143,3 +143,28 @@ export function getSimilarClimbTapMode(
   if (viewer === 'anonymous') return 'preview';
   return inSharedSession ? 'preview' : 'queue';
 }
+
+/**
+ * Whether a change of climb (a swipe, Next, Prev, a list tap) stays a preview
+ * instead of lighting the wall (#7113). One rule for every entry point:
+ *
+ * - driving the wall (a live drive on this phone's link) always lights, in a
+ *   crew too;
+ * - otherwise the climber's own setting (Light the board as I swipe, or as I
+ *   tap a climb) decides solo, and in a crew a change is a preview (#4281);
+ * - a press on the frosted button stopped driving on this link: solo changes
+ *   stay previews too, until the link drops. The setting itself never flips.
+ */
+export function climbChangeStaysViewOnly({
+  driving,
+  inSharedSession,
+  lightSetting,
+  stoppedForLink = false,
+}: {
+  driving: boolean;
+  inSharedSession: boolean;
+  lightSetting: boolean;
+  stoppedForLink?: boolean;
+}): boolean {
+  return !driving && (!lightSetting || inSharedSession || stoppedForLink);
+}

@@ -6,7 +6,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analytics = vi.hoisted(() => ({ tapped: vi.fn(), shown: vi.fn(), opened: vi.fn() }));
-const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn() }));
+const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
@@ -19,6 +19,14 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 
 import { DISCONNECT_TAP_GUARD_MS, useWallControl, type WallControlRunners } from '../use-wall-control';
 import { EMPTY_WALL_CONTROL, type WallControlAction, type WallControlModel } from '../wall-control';
+import {
+  enterDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  isDrivingStoppedForLink,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../drive-mode-store';
 
 type MockRunners = { [Name in keyof WallControlRunners]: ReturnType<typeof vi.fn<() => void>> };
 
@@ -95,6 +103,44 @@ describe('useWallControl', () => {
     });
   });
 
+  // #7113: a press on the frosted button stops driving and keeps the link.
+  it('stops driving on You are driving the wall: no disconnect, a light buzz, and says so', () => {
+    resetDriveModeForTests();
+    enterDriveMode({ sessionId: 'session-1', boardId: 7 });
+    markDriveLive();
+    const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    act(() => hook.result.current.press('button'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    for (const runner of ['light', 'toggle', 'disconnect', 'openSheet', 'lightAgain', 'moveToBoard'] as const) {
+      expect(run[runner]).not.toHaveBeenCalled();
+    }
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(haptics.hapticWarning).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_driving', control: 'button' });
+    resetDriveModeForTests();
+  });
+
+  // A double tap on the frost must not stop driving and then let go of a crew's board.
+  it('drops the second tap of a double tap on You are driving the wall', () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, run } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => hook.result.current.press('button'));
+      hook.rerender({ model: modelFor('lit', 'disconnect') });
+      act(() => hook.result.current.press('button'));
+      expect(run.disconnect).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(DISCONNECT_TAP_GUARD_MS);
+      act(() => hook.result.current.press('button'));
+      expect(run.disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      resetDriveModeForTests();
+    }
+  });
+
   it('lets go of the board with a warning buzz, and says so once the link drops', () => {
     const { hook } = setup(modelFor('lit', 'disconnect'));
     act(() => hook.result.current.press('bulb'));
@@ -116,13 +162,13 @@ describe('useWallControl', () => {
   });
 
   // Fable review: the provider marks the link down before the adapter lets go,
-  // so a double tap's second tap read Connect board and started a connect.
-  it('turns a double tap on You have the board into one disconnect and no connect', () => {
+  // so a double tap's second tap read Put on board and started a connect.
+  it('turns a double tap on Disconnect board into one disconnect and no connect', () => {
     vi.useFakeTimers();
     try {
       const { hook, run } = setup(modelFor('lit', 'disconnect'));
       act(() => hook.result.current.press('button'));
-      // The link already reads down: the model says Connect board.
+      // The link already reads down: the model says Put on board.
       hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
       act(() => hook.result.current.press('button'));
       expect(run.disconnect).toHaveBeenCalledOnce();

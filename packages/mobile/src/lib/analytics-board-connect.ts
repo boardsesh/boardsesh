@@ -75,7 +75,7 @@ export type BoardControlsSurface = Extract<
 /**
  * How the player's own sheet was opened (#7000): a hold on one view of the
  * board control (`button`, `bulb`, or the open Duo's `mini_bar`), or ⋯ › Board
- * controls (`player_menu`). A tap never opens it: on You have the board a tap
+ * controls (`player_menu`). A tap never opens it: on Disconnect board a tap
  * disconnects.
  */
 export type PlayerBoardControlsSource = 'button' | 'bulb' | 'mini_bar' | 'player_menu';

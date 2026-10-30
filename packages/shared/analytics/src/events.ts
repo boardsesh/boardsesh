@@ -480,10 +480,12 @@ export const SHARED_EVENTS = {
   // board at this gym, #7076; 'on_wall_unlinked': On the wall per presence, lit under an hour ago, with
   // no live link; its tap connects and lights it again, 'relight' for the
   // climber's own climb, 'put_on_wall' for a preview). `action`:
-  // 'disconnect' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
+  // 'disconnect' | 'stop_driving' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
   // 'take_wall' | 'release_wall' | 'move_to_board' | 'noop', what the tap did ('disconnect' is a
-  // tap on You have the board, state 'lit'; QA builds before Marco's phone
-  // test sent 'open_sheet' there instead). `control`: 'button' (the wall
+  // tap on Disconnect board, state 'lit', called You have the board before
+  // #7113; QA builds before Marco's phone test sent 'open_sheet' there instead;
+  // 'stop_driving' (#7113) is a tap on You are driving the wall, state 'lit':
+  // driving stops and the link stays). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's
   // bulb, back for the busy-wall question or chosen in View options) |
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).

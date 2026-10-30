@@ -686,11 +686,11 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Tocca Connetti pannello, scegli il pannello e il tuo blocco si illumina."
+        "subtitle": "Tocca Metti sul pannello, scegli il pannello e il tuo blocco si illumina."
       },
       "connect": {
         "title": "Connetti",
-        "p1": "In un blocco, tocca Connetti pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
+        "p1": "In un blocco, tocca Metti sul pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
         "shotAlt": "Il foglio Seleziona pannello",
         "shotCaption": "Segnale più forte per primo, con i numeri di serie.",
@@ -701,13 +701,13 @@
       },
       "hidden": {
         "title": "Controlli del pannello",
-        "p1": "Quando sei connesso, tieni premuto il pulsante sotto il pannello. Quando dice Hai tu il pannello, un tocco breve lo disconnette. In un blocco li apri anche da ⋯ e poi Controlli del pannello, o tenendo premuta la lampadina della barra in alto.",
+        "p1": "Quando sei connesso, tieni premuto il pulsante sotto il pannello. Quando dice Disconnetti pannello, un tocco breve lo disconnette. Quando dice Guidi tu il pannello, un tocco breve smette di guidare e il pannello resta connesso. In un blocco li apri anche da ⋯ e poi Controlli del pannello, o tenendo premuta la lampadina della barra in alto.",
         "row1": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
         "row2": "Spegni tutte le luci. Il telefono resta connesso.",
         "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
         "row4": "Illumina la presa sopra. Solo MoonBoard.",
         "p2": "Disconnessione automatica, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu che apre la lampadina della barra in alto. La disconnessione automatica libera il pannello dopo 30 secondi di inattività. Disattiva entrambe le opzioni di illuminazione e sfogliare non cambierà più il blocco in parete.",
-        "p3": "Senza pannello connesso, Connetti pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
+        "p3": "Senza pannello connesso, Metti sul pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
       },
       "failed": {
         "title": "Quando non si connette",

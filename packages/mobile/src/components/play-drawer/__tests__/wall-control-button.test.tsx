@@ -197,18 +197,21 @@ function measure(width = 360, height = 44) {
 
 const YOU = 'playView.wallControl.youHaveBoard';
 const SAM = 'playView.wallControl.holderHasBoard:{"name":"Sam"}';
+const PUT_ON_BOARD = 'playView.wallControl.putOnBoard';
+const DRIVING = 'playView.wallControl.youAreDriving, playView.wallControl.drivingEveryClimb';
 
 describe('WallControlButton', () => {
-  // The label, then who has the board, which the face alone would leave unsaid.
+  // The label says what a press does (#7113); then who has the board, which the
+  // face alone would leave unsaid.
   it.each([
-    ['connect', null, 'playView.wallControl.connect'],
-    ['put_on_wall', null, 'playView.wallState.putOnWall'],
-    ['put_on_wall', 'self', `playView.wallState.putOnWall, ${YOU}`],
-    ['put_on_wall', 'crew', `playView.wallControl.putOnBoard:{"name":"Sam"}, ${SAM}`],
-    ['dark', 'self', `playView.wallState.putOnWall, ${YOU}`],
-    // Marco's phone test: the label says whose board it is, the screen reader also that it's lit.
-    ['lit', 'self', 'playView.wallControl.youHaveBoardLit'],
-    ['crew', 'crew', `playView.wallControl.onBoard:{"name":"Sam"}, ${SAM}`],
+    ['connect', null, PUT_ON_BOARD],
+    ['put_on_wall', null, PUT_ON_BOARD],
+    ['put_on_wall', 'self', `${PUT_ON_BOARD}, ${YOU}`],
+    ['put_on_wall', 'crew', `${PUT_ON_BOARD}, ${SAM}`],
+    ['dark', 'self', `${PUT_ON_BOARD}, ${YOU}`],
+    // Solo with lighting on swipes: driving, so a press stops it.
+    ['lit', 'self', DRIVING],
+    ['crew', 'crew', `${PUT_ON_BOARD}, ${SAM}`],
     ['take_wall', null, 'ble.takeWall'],
     ['release_wall', 'self', `ble.releaseWall, ${YOU}`],
   ] as Array<[WallControlState, 'self' | 'crew' | null, string]>)(
@@ -221,7 +224,7 @@ describe('WallControlButton', () => {
 
   // The bulb is the same in every state, and fills whenever this phone holds the
   // board, whatever the state (#7000, Marco's QA): "Put on the wall" on a
-  // preview with the link up, and "You have the board", fill too.
+  // preview with the link up, and Disconnect board, fill too.
   it('shows the same bulb in every state, filled whenever you hold the board, an outline otherwise', () => {
     const cases: Array<[WallControlState, WallHolder]> = [
       ['connect', null],
@@ -274,18 +277,16 @@ describe('WallControlButton', () => {
 
   it('names the crew’s board when nobody is known', () => {
     const { getByRole } = renderButton(modelFor('crew', { holder: 'crew', crewName: null }));
-    expect(getByRole('button').getAttribute('aria-label')).toBe(
-      'playView.wallControl.onCrewBoard, playView.wallControl.crewHasBoard',
-    );
+    expect(getByRole('button').getAttribute('aria-label')).toBe(`${PUT_ON_BOARD}, playView.wallControl.crewHasBoard`);
     cleanup();
     const preview = renderButton(modelFor('put_on_wall', { holder: 'crew', crewName: null }));
     expect(preview.getByRole('button').getAttribute('aria-label')).toBe(
-      'playView.wallControl.putOnCrewBoard, playView.wallControl.crewHasBoard',
+      `${PUT_ON_BOARD}, playView.wallControl.crewHasBoard`,
     );
   });
 
   it('reads as selected only when lit, and says a tap disconnects and a hold opens the controls', () => {
-    const lit = renderButton(modelFor('lit', { holder: 'self' }));
+    const lit = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
     expect(lit.getByRole('button').getAttribute('aria-selected')).toBe('true');
     expect(lit.getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.litHint');
     // The hold is a named action, "Board options".
@@ -298,10 +299,17 @@ describe('WallControlButton', () => {
     ).toBe('false');
   });
 
-  it('says You have the board on a lit climb this phone holds', () => {
-    const lit = renderButton(modelFor('lit', { holder: 'self' }));
-    expect(lit.getAllByText('playView.wallControl.youHaveBoard').length).toBeGreaterThan(0);
+  it('says Disconnect board on a lit climb this phone holds', () => {
+    const lit = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(lit.getAllByText('playView.wallControl.disconnectBoard').length).toBeGreaterThan(0);
     expect(lit.getByTestId('play-drawer-wall-control-holder')).toBeTruthy();
+  });
+
+  it('says You are driving the wall while driving, and that a tap stops it', () => {
+    const driving = renderButton(modelFor('lit', { holder: 'self' }));
+    expect(driving.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
+    expect(driving.getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.stopDrivingHint');
+    expect(driving.getByTestId('play-drawer-wall-control-holder')).toBeTruthy();
   });
 
   it('runs the tap, and the hold only while the model offers the sheet', () => {
@@ -318,7 +326,7 @@ describe('WallControlButton', () => {
 
   it('draws the same states in the narrower workout button', () => {
     const { getByRole } = renderButton(modelFor('lit', { holder: 'self' }), { compact: true });
-    expect(getByRole('button').getAttribute('aria-label')).toBe('playView.wallControl.youHaveBoardLit');
+    expect(getByRole('button').getAttribute('aria-label')).toBe(DRIVING);
     expect(getByRole('button').getAttribute('data-style')).toContain('"paddingHorizontal":8');
   });
 
@@ -370,7 +378,7 @@ describe('WallControlButton', () => {
       ['dark', 'screen', '#0E0D12', 'rgba(255, 255, 255, 0.2)'],
       ['light', 'multiply', '#F6F3FB', 'rgba(0, 0, 0, 0.12)'],
     ] as const)(
-      'glows on You have the board in %s, with its own fill and a plain hairline',
+      'glows on You are driving the wall in %s, with its own fill and a plain hairline',
       (scheme, blend, base, border) => {
         themeCtrl.scheme = scheme;
         const view = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW });
@@ -381,7 +389,7 @@ describe('WallControlButton', () => {
         expect(style).toContain(`"backgroundColor":"${base}"`);
         expect(style).toContain(`"borderColor":"${border}"`);
         expect(style).toContain('"borderWidth":1');
-        expect(view.getAllByText('playView.wallControl.youHaveBoard').length).toBeGreaterThan(0);
+        expect(view.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
       },
     );
 
@@ -396,14 +404,14 @@ describe('WallControlButton', () => {
       expect(crew.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Sam');
     });
 
-    it('keeps the crew holder’s label, filled bulb and face on the plain look, no frost', () => {
+    it('keeps the crew holder’s Disconnect board, filled bulb and face on the plain look, no frost', () => {
       const holder = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }), { glow: GLOW });
       measure();
       expect(holder.queryByTestId('wall-glow')).toBeNull();
       const style = holder.getByRole('button').getAttribute('data-style') ?? '';
       expect(style).toContain('"backgroundColor":"#6D28D9"');
       expect(style).not.toContain('#B45309');
-      expect(holder.getAllByText('playView.wallControl.youHaveBoard').length).toBeGreaterThan(0);
+      expect(holder.getAllByText('playView.wallControl.disconnectBoard').length).toBeGreaterThan(0);
       expect(holder.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
       expect(holder.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Me');
     });
@@ -443,7 +451,7 @@ describe('WallControlButton', () => {
 
   // QA #147: on the wall per presence with no link: an amber outline, the
   // sheet's label colour, no fill, no face.
-  it('outlines On the wall in amber with the sheet’s label colour, and no face', () => {
+  it('outlines the wall’s climb in amber with the sheet’s label colour, and no face', () => {
     const model = resolveWallControl({
       commitButton: null,
       pressAction: 'connect',
@@ -471,7 +479,7 @@ describe('WallControlButton', () => {
     expect(style).toContain('"backgroundColor":"transparent"');
     expect(style).toContain('"borderColor":"#B45309"');
     expect(style).toContain('"borderWidth":1.5');
-    expect(getByRole('button').getAttribute('aria-label')).toBe('playView.wallControl.onWall');
+    expect(getByRole('button').getAttribute('aria-label')).toBe(`${PUT_ON_BOARD}, playView.wallControl.onWall`);
     expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.lightAgainHint');
     expect(container.querySelector('[data-avatar]')).toBeNull();
   });
