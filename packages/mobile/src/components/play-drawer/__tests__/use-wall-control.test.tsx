@@ -289,13 +289,13 @@ describe('useWallControl drive', () => {
 
   it("passes a refusal for a crewmate's board back untouched", () => {
     const run = runners();
-    run.drive.mockReturnValue('needs_handoff');
+    run.drive.mockReturnValue('held_by_crew');
     const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
     let outcome: DriveStartOutcome | null = null;
     act(() => {
       outcome = hook.result.current.drive('button');
     });
-    expect(outcome).toBe('needs_handoff');
+    expect(outcome).toBe('held_by_crew');
   });
 
   it('runs nothing where the model offers no swipe', () => {
@@ -329,7 +329,7 @@ describe('useWallControl swipe', () => {
 
   it('logs a refusal when nothing starts', () => {
     const run = runners();
-    run.drive.mockReturnValue('needs_handoff');
+    run.drive.mockReturnValue('held_by_crew');
     const { hook } = setup(modelFor('put_on_wall', 'put_on_wall', { swipeAction: 'drive', holder: 'crew' }), run);
     act(() => {
       hook.result.current.swipe('button');

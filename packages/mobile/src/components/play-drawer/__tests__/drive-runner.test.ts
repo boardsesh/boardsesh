@@ -97,9 +97,9 @@ describe('startDrive', () => {
       { model: { swipeAction: 'drive' as const, holder: 'crew' as const } },
     ],
     ['presence says another account holds it', { wallHeldByOtherUser: true }],
-  ])('refuses with needs_handoff when %s, and changes nothing', (_case, overrides) => {
+  ])('refuses with held_by_crew when %s, and changes nothing', (_case, overrides) => {
     const run = input({ committing: true, ...overrides });
-    expect(startDrive(run)).toBe('needs_handoff');
+    expect(startDrive(run)).toBe('held_by_crew');
     expect(getDriveMode()).toBeNull();
     expect(run.commit).not.toHaveBeenCalled();
     expect(run.connect).not.toHaveBeenCalled();

@@ -87,8 +87,8 @@ const HINTS: readonly Variant[] = [
   { label: 'Flag off: no swipe, no hint', model: PUT_ON_WALL, swipe: false },
   { label: 'A, chevrons: Put on board', model: PUT_ON_WALL, preview: {} },
   { label: 'A+B, the peek mid-play: Put on board', model: PUT_ON_WALL, preview: { peek: true } },
-  // Taking Sam's board needs his phone to let go first: no swipe until the hand-off (#7113 PR 4).
-  { label: "Sam's board: no swipe until the hand-off", model: PUT_ON_SAMS_BOARD, preview: { peek: true } },
+  // Sam's phone holds his board: no swipe on it by design, Put on board relays to him.
+  { label: "Sam's board: no swipe", model: PUT_ON_SAMS_BOARD, preview: { peek: true } },
   { label: 'A+B with no link', model: CONNECT, preview: { peek: true } },
   { label: 'A on Disconnect board (you hold it, not driving)', model: DISCONNECT, preview: {} },
 ];

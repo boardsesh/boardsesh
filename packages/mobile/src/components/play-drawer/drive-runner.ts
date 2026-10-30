@@ -33,9 +33,9 @@ export type StartDriveInput = {
  *
  * 1. Refuse where the control offers no swipe or a drive is already on
  *    (`unavailable`), or where a
- *    crewmate holds the board (`needs_handoff`): Aurora and MoonBoard boxes
- *    stop advertising once linked, so taking it needs their phone to let go
- *    first. Nothing changes either way.
+ *    crewmate holds the board (`held_by_crew`): their phone holds it, so there
+ *    is no swipe on it by design (Put on board relays the climb to that
+ *    phone). Nothing changes either way.
  * 2. Arm the drive.
  * 3. Put the climb on screen up when it is a preview, with no busy-wall
  *    question: the climber who drives never sees it. Nothing going up ends
@@ -52,7 +52,7 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
   // Read synchronously: two starts in one frame (a swipe and the screen-reader
   // action, or a double fire) both see a model rendered before either armed.
   if (getDriveMode()) return 'unavailable';
-  if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'needs_handoff';
+  if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'held_by_crew';
   enterDriveMode({ sessionId: input.sessionId, boardId: null, startedBy: input.startedBy });
   const startedAt = getDriveMode()?.startedAt ?? null;
   const endThisDrive = (reason: 'connect_failed' | 'commit_failed') => {

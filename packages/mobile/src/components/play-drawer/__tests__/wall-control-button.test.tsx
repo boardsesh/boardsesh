@@ -228,7 +228,7 @@ function renderButton(
   extra: {
     onLongPress?: () => void;
     onDrive?: () => void;
-    onSwipe?: () => 'started' | 'needs_handoff' | 'unavailable';
+    onSwipe?: () => 'started' | 'held_by_crew' | 'unavailable';
     compact?: boolean;
     spansRow?: boolean;
     glow?: WallGlowInput | null;
@@ -655,7 +655,7 @@ describe('WallControlButton', () => {
       expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.connectHint');
     });
 
-    it("offers no swipe on a crewmate's board until the hand-off ships", () => {
+    it("offers no swipe on a crewmate's board", () => {
       const sams = renderButton(modelFor('put_on_wall', { holder: 'crew', navigationCommits: false }), { onSwipe });
       expect(sams.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
       expect(swipeCtrl.options.at(-1)?.enabled).toBe(false);
