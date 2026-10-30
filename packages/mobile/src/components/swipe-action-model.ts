@@ -7,6 +7,9 @@ export const SWIPE_FRICTION = 1;
  * 10px with no vertical bail, so the sideways drift of a normal thumb scroll
  * slid rows open mid-scroll. 30px needs a deliberate sideways drag. */
 export const SWIPE_ACTIVATION_OFFSET = 30;
+/** Travel that decides a touch's direction: vertical first locks the swipe out
+ * for the whole touch, sideways first lets it run. See useSwipeDirectionLock. */
+export const SWIPE_DIRECTION_LOCK = 10;
 export type SwipeDirection = 'left' | 'right';
 export function fullSwipeDirection(translationX: number): SwipeDirection | null {
   'worklet';

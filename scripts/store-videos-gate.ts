@@ -191,6 +191,63 @@ export async function gate(
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${open ? `Open train v${version}` : reason}\n`);
 }
 
+/** A dispatch's page selection, resolved against the recording source's storyboards. */
+export interface StoreVideoSelection {
+  /** Selected variants in canonical order. */
+  variants: string[];
+  /** Selected variants whose cut includes a live crew take. */
+  crew: string[];
+  /** Selected variants whose cut ends on the retained physical Live Activity footage. */
+  liveActivity: string[];
+  /** Board families whose reviewed physical footage those endings need. */
+  footage: string[];
+}
+
+/** Parse `all` or a comma list of page variants; reject unknown, empty and repeated names. */
+export function parseVariantSelection(input: string | undefined, known: readonly string[]): string[] {
+  const requested = (input ?? '').trim();
+  if (requested === '' || requested === 'all') return [...known];
+  const names = requested.split(',').map((name) => name.trim());
+  for (const name of names) {
+    if (!name) throw new Error('Empty variant in the variants list');
+    if (name === 'all') throw new Error('Pass all on its own, not inside a list');
+    if (!known.includes(name))
+      throw new Error(`Unknown variant ${name}; expected all or a comma list of ${known.join(', ')}`);
+  }
+  if (new Set(names).size !== names.length) throw new Error('Repeated variant in the variants list');
+  return known.filter((name) => names.includes(name));
+}
+
+/** The default page borrows the Kilter Live Activity ending; every other ending is its own family. */
+export const liveActivityFamily = (variant: string): string => (variant === 'default' ? 'kilter' : variant);
+
+export function storeVideoSelection(
+  input: string | undefined,
+  known: readonly string[],
+  takeIds: (variant: string) => readonly string[],
+): StoreVideoSelection {
+  const variants = parseVariantSelection(input, known);
+  const crew = variants.filter((variant) => takeIds(variant).includes('crew'));
+  const liveActivity = variants.filter((variant) => takeIds(variant).includes('lock-screen'));
+  return { variants, crew, liveActivity, footage: [...new Set(liveActivity.map(liveActivityFamily))] };
+}
+
+/** Reviewed physical footage the selected endings need; unselected families are not checked. */
+export function missingLiveActivityFootage(manifest: unknown, families: readonly string[]): string[] {
+  const footage =
+    manifest && typeof manifest === 'object' ? (manifest as { footage?: Record<string, unknown> }).footage : undefined;
+  return families.filter((family) => {
+    const source = footage?.[family] as { boardFamily?: unknown; sha256?: unknown; key?: unknown } | undefined;
+    return !(
+      source &&
+      source.boardFamily === family &&
+      typeof source.sha256 === 'string' &&
+      /^[a-f0-9]{64}$/.test(source.sha256) &&
+      source.key === `sources/live-activity/${source.sha256}.zip`
+    );
+  });
+}
+
 async function main(): Promise<void> {
   const [command, argument] = process.argv.slice(2);
   if (command === 'gate') {
@@ -232,7 +289,38 @@ async function main(): Promise<void> {
     console.log(takes.join(','));
     return;
   }
-  throw new Error('Usage: store-videos-gate.ts gate [draft-source.json] | refdata FILE | takes VARIANT');
+  if (command === 'plan') {
+    // Resolve against this checkout's storyboards, so a cut that drops its Live Activity ending needs no footage.
+    const { storeSearchTakeIds, STORE_SEARCH_LOCALES, STORE_SEARCH_VARIANTS } =
+      await import('./lib/showcase-video/store-search');
+    const selection = storeVideoSelection(argument, STORE_SEARCH_VARIANTS, (variant) =>
+      storeSearchTakeIds(variant as (typeof STORE_SEARCH_VARIANTS)[number]),
+    );
+    const missing = missingLiveActivityFootage(
+      JSON.parse(readFileSync('app-stores/apple/live-activity-captures/manifest.json', 'utf8')),
+      selection.footage,
+    );
+    if (missing.length)
+      throw new Error(
+        `Missing reviewed retained ${missing.join(' and ')} footage; import one physical take before recording, or leave ${selection.liveActivity.filter((variant) => missing.includes(liveActivityFamily(variant))).join(', ')} out of variants.`,
+      );
+    const output = [
+      `variants=${JSON.stringify(selection.variants)}`,
+      `variants_csv=${selection.variants.join(',')}`,
+      `crew=${JSON.stringify(selection.crew)}`,
+      `live_activity=${JSON.stringify(selection.liveActivity)}`,
+      `exports=${selection.variants.length * STORE_SEARCH_LOCALES.length}`,
+      '',
+    ].join('\n');
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output);
+    console.log(
+      `Recording ${selection.variants.join(', ')} (${selection.variants.length * STORE_SEARCH_LOCALES.length} videos); crew: ${selection.crew.join(', ') || 'none'}; physical footage: ${selection.footage.join(', ') || 'none'}`,
+    );
+    return;
+  }
+  throw new Error(
+    'Usage: store-videos-gate.ts gate [draft-source.json] | refdata FILE | takes VARIANT | plan all|VARIANT[,VARIANT...]',
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -7,6 +7,11 @@ on:
     # Draft runs report main as head_branch. Their title and source artifact
     # identify release/next; a branches filter would drop version-only releases.
   workflow_dispatch:
+    inputs:
+      variants:
+        type: string
+        default: all
+        description: 'Page variants to record, render and publish: all, or a comma list of default, kilter, tension, moonboard, spray.'
 
 permissions:
   contents: read
@@ -127,4 +132,6 @@ jobs:
     with:
       source_sha: ${{ needs.editable.outputs.source_sha }}
       version: ${{ needs.editable.outputs.version }}
+      # Automatic runs have no inputs and keep the full five-variant matrix.
+      variants: ${{ inputs.variants || 'all' }}
     secrets: inherit
