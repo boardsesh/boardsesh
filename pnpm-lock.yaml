@@ -1244,6 +1244,9 @@ importers:
 
   packages/shared/consent:
     devDependencies:
+      '@types/node':
+        specifier: ^25.9.5
+        version: 25.9.5
       typescript:
         specifier: ~7.0.2
         version: 7.0.2

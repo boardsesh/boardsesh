@@ -155,3 +155,15 @@ export {
   type GymQrSearchParams,
   type GymQrLanding,
 } from './gym-funnel';
+// The www /support page (#2 of the Q4 support plan). www-only, like the gym
+// funnel; the app's support link is SHARED_EVENTS.SupportLinkTapped.
+export {
+  SUPPORT_EVENTS,
+  supportCtaClicked,
+  type SupportCadence,
+  type SupportCtaClickedInput,
+  type SupportCtaCurrency,
+  type SupportCtaPlacement,
+  type SupportEventName,
+  type SupportEventPayload,
+} from './support-events';

@@ -41,6 +41,17 @@ export type UserPreferenceKeyMap = {
    * future visits. The owner variant of the card is not dismissible.
    */
   'homeGymCard:dismissed': boolean;
+  /**
+   * The month (`YYYY-MM`, UTC) the visitor closed the homepage's support banner
+   * in (`components/home/home-support-banner.tsx`). It stays closed for the
+   * rest of that month and comes back on the 1st of the next.
+   */
+  'supportBanner:closedMonth': string;
+  /**
+   * The visitor reached the thank-you state on `/support?thanks=1`. The
+   * homepage's support banner never shows again in this browser.
+   */
+  'supportBanner:supporter': boolean;
   lastUsedGrade: number;
   /**
    * A random UUID that a signed-out visitor's feature-flag requests bucket on,
