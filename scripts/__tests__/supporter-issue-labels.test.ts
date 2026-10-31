@@ -56,6 +56,8 @@ function fakeDeps(options: {
   dryRun?: boolean;
   failOn?: number;
   sponsorErrors?: boolean;
+  /** Authors whose issue lookup comes back as a GraphQL error naming them. */
+  issueErrorsFor?: string[];
 }): { deps: SupporterLabelDeps; recorded: Recorded; sponsorQueries: Record<string, string>[] } {
   const recorded: Recorded = { ensured: [], added: [], logs: [] };
   const sponsorQueries: Record<string, string>[] = [];
@@ -76,20 +78,23 @@ function fakeDeps(options: {
       },
     };
   };
-  const issuesGraphql: GithubGraphql = (_query, variables) => ({
-    data: {
-      repository: {
-        issues: {
-          pageInfo: { hasNextPage: false, endCursor: null },
-          nodes: (options.issuesByAuthor[variables.author] ?? []).map((issue) => ({
-            number: issue.number,
-            author: { login: variables.author },
-            labels: { nodes: issue.labels.map((name) => ({ name })) },
-          })),
-        },
-      },
-    },
-  });
+  const issuesGraphql: GithubGraphql = (_query, variables) =>
+    options.issueErrorsFor?.includes(variables.author)
+      ? { errors: [{ message: `Could not resolve to a User with the login of '${variables.author}'.` }] }
+      : {
+          data: {
+            repository: {
+              issues: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: (options.issuesByAuthor[variables.author] ?? []).map((issue) => ({
+                  number: issue.number,
+                  author: { login: variables.author },
+                  labels: { nodes: issue.labels.map((name) => ({ name })) },
+                })),
+              },
+            },
+          },
+        };
   const deps: SupporterLabelDeps = {
     owner: 'boardsesh',
     repo: 'boardsesh',
@@ -136,7 +141,7 @@ describe('labelSupporterIssues', () => {
       [10, 'supporter'],
       [20, 'supporter'],
     ]);
-    expect(result).toEqual({ sponsors: 2, openIssuesBySponsors: 3, labelled: 2, failed: 0 });
+    expect(result).toEqual({ sponsors: 2, openIssuesBySponsors: 3, labelled: 2, failed: 0, lookupsFailed: 0 });
   });
 
   it('logs counts only, never a sponsor login or an issue number', () => {
@@ -184,6 +189,25 @@ describe('labelSupporterIssues', () => {
     const result = labelSupporterIssues(deps);
     expect(recorded.added).toEqual([[2, 'supporter']]);
     expect(result).toMatchObject({ labelled: 1, failed: 1 });
+  });
+
+  it("counts a sponsor whose issues can't be listed, keeps going, and never logs GitHub's message", () => {
+    const { deps, recorded } = fakeDeps({
+      sponsorPages: [
+        [
+          { __typename: 'User', login: 'secret-sponsor' },
+          { __typename: 'User', login: 'beta' },
+        ],
+      ],
+      issuesByAuthor: { beta: [{ number: 2, labels: [] }] },
+      issueErrorsFor: ['secret-sponsor'],
+    });
+    const result = labelSupporterIssues(deps);
+    expect(recorded.added).toEqual([[2, 'supporter']]);
+    expect(result).toMatchObject({ labelled: 1, failed: 0, lookupsFailed: 1 });
+    const log = recorded.logs.join('\n');
+    expect(log).toContain('1 issue lookups failed');
+    expect(log).not.toContain('secret-sponsor');
   });
 
   it('touches nothing when no sponsor has an open issue to label', () => {

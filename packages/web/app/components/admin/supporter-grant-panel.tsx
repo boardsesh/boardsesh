@@ -104,12 +104,19 @@ export default function SupporterGrantPanel({ getNow = () => new Date() }: Suppo
     },
   });
 
-  const handleSelect = useCallback((user: UserResult) => {
-    setUserId(user.id);
-    setSelectedName(user.displayName ?? null);
-    setSearchQuery('');
-    setSearchResults([]);
-  }, []);
+  // A result shown under a different account would read as that account's
+  // grant, so any change to the target clears it.
+  const { reset: resetGrant } = grant;
+  const handleSelect = useCallback(
+    (user: UserResult) => {
+      setUserId(user.id);
+      setSelectedName(user.displayName ?? null);
+      setSearchQuery('');
+      setSearchResults([]);
+      resetGrant();
+    },
+    [resetGrant],
+  );
 
   const handleGrant = useCallback(() => {
     if (!trimmedUserId || months === null) return;
@@ -165,6 +172,7 @@ export default function SupporterGrantPanel({ getNow = () => new Date() }: Suppo
           onChange={(event) => {
             setUserId(event.target.value);
             setSelectedName(null);
+            resetGrant();
           }}
           size="small"
           fullWidth

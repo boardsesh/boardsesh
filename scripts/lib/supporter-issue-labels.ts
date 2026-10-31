@@ -74,7 +74,10 @@ export type SupporterLabelResult = {
   sponsors: number;
   openIssuesBySponsors: number;
   labelled: number;
+  /** Label writes that failed. */
   failed: number;
+  /** Sponsors whose open issues could not be listed; their issues were skipped. */
+  lookupsFailed: number;
 };
 
 type GraphqlErrors = { errors?: { message?: string }[] };
@@ -146,7 +149,8 @@ export function fetchOpenIssuesBy(graphql: GithubGraphql, owner: string, repo: s
     const response = graphql(OPEN_ISSUES_BY_AUTHOR_QUERY, variables) as GraphqlErrors & {
       data?: { repository?: { issues?: { pageInfo?: PageInfo; nodes?: IssueNode[] } } | null };
     };
-    throwOnErrors(response);
+    // No GitHub message here: it can quote the author's login, and this log is public.
+    if (response.errors?.length) throw new Error("GitHub could not list a sponsor's open issues.");
     const connection = response.data?.repository?.issues;
     if (!connection || !Array.isArray(connection.nodes)) {
       throw new Error('GitHub did not return a valid issues connection.');
@@ -166,15 +170,22 @@ export function fetchOpenIssuesBy(graphql: GithubGraphql, owner: string, repo: s
 }
 
 /**
- * Label every open issue by a current sponsor. A sponsor lookup failure
- * throws before any write. A single label write that fails is counted and the
- * rest still run, so one locked issue cannot strand the others.
+ * Label every open issue by a current sponsor. A sponsorships failure throws
+ * before any write. One sponsor's issue lookup or one label write that fails
+ * is counted and the rest still run, so one bad call cannot strand the others.
+ * Errors are counted, never logged: their text can name a login or an issue.
  */
 export function labelSupporterIssues(deps: SupporterLabelDeps): SupporterLabelResult {
   const sponsorLogins = fetchCurrentSponsorLogins(deps.sponsorsGraphql, deps.sponsorOrg);
-  const issues = [...sponsorLogins].flatMap((login) =>
-    fetchOpenIssuesBy(deps.issuesGraphql, deps.owner, deps.repo, login),
-  );
+  const issues: OpenIssue[] = [];
+  let lookupsFailed = 0;
+  for (const login of sponsorLogins) {
+    try {
+      issues.push(...fetchOpenIssuesBy(deps.issuesGraphql, deps.owner, deps.repo, login));
+    } catch {
+      lookupsFailed += 1;
+    }
+  }
   const toLabel = planSupporterLabels(issues, sponsorLogins);
 
   let labelled = 0;
@@ -192,10 +203,11 @@ export function labelSupporterIssues(deps: SupporterLabelDeps): SupporterLabelRe
     }
   }
 
-  const result = { sponsors: sponsorLogins.size, openIssuesBySponsors: issues.length, labelled, failed };
+  const result = { sponsors: sponsorLogins.size, openIssuesBySponsors: issues.length, labelled, failed, lookupsFailed };
   deps.log(
     `[supporter-labels] ${result.sponsors} current sponsors, ${result.openIssuesBySponsors} open issues by them, ` +
-      `${deps.dryRun ? `${toLabel.length} would be labelled (dry run)` : `${labelled} labelled, ${failed} failed`}`,
+      `${deps.dryRun ? `${toLabel.length} would be labelled (dry run)` : `${labelled} labelled, ${failed} failed`}` +
+      (lookupsFailed > 0 ? `, ${lookupsFailed} issue lookups failed` : ''),
   );
   return result;
 }

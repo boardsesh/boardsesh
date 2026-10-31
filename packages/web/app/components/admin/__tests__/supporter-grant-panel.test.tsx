@@ -97,6 +97,10 @@ describe('SupporterGrantPanel', () => {
       creditUntil: '2027-01-31T09:00:00.000Z',
     });
     await screen.findByText(/Supporter until/);
+
+    // Pointing the form at another account clears the old result.
+    fireEvent.change(screen.getByLabelText('Account id'), { target: { value: 'user-43' } });
+    expect(screen.queryByText(/Supporter until/)).toBeNull();
   });
 
   it('sends the admin source when chosen', async () => {
