@@ -690,8 +690,29 @@ describe('WallControlButton', () => {
       const solo = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
-      expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('true');
+      expect(solo.queryByTestId('wall-swipe-wipe')).toBeNull();
+      expect(solo.queryByTestId('wall-glow')).not.toBeNull();
     });
+
+    it.each(['peek', 'drag', 'committed'] as const)(
+      'keeps one full frost without a decorative wipe while %s, with the drive callback wired',
+      (phase) => {
+        swipeCtrl.frostArmed = phase !== 'committed';
+        swipeCtrl.releaseArmed = phase === 'drag';
+        swipeCtrl.committed = phase === 'committed';
+        const startDrive = vi.fn(() => 'started' as const);
+        const view = renderButton(putOnWall(), { onSwipe: startDrive, glow: GLOW });
+        measure();
+        expect(view.queryAllByTestId('wall-glow')).toHaveLength(1);
+        expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
+        expect(swipeCtrl.options.at(-1)?.enabled).toBe(true);
+        expect(swipeCtrl.options.at(-1)?.onSwipe).toBe(startDrive);
+        expect(startDrive).not.toHaveBeenCalled();
+        expect(swipeCtrl.options.at(-1)?.onSwipe?.()).toBe('started');
+        expect(startDrive).toHaveBeenCalledOnce();
+        if (phase === 'drag') expect(view.queryByText('playView.wallControl.releaseToDrive')).not.toBeNull();
+      },
+    );
 
     it('wipes the flat amber in for a climb with no holds', () => {
       swipeCtrl.frostArmed = true;

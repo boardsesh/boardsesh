@@ -392,7 +392,7 @@ function WallControlButtonComponent({
         chevrons: (alpha) => withAlpha(fullGlow ? fullGlow.surface.label : brandColors.primary, alpha),
         resting: true,
       })}
-      {wiping && size.w > 0 ? (
+      {wiping && !fullGlow && size.w > 0 ? (
         <WallSwipeWipe
           progress={swipe.progress}
           opacity={swipe.opacity}
