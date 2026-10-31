@@ -269,6 +269,30 @@ describe('grantSupporter', () => {
     expect(status).toMatchObject({ isSupporter: true, source: 'github_sponsors', creditUntil: until });
   });
 
+  it('never shortens tag time the climber already has from gifts', async () => {
+    const longer = new Date(Date.now() + 200 * DAY_MS);
+    await db
+      .insert(dbSchema.stripeSupporters)
+      .values({ userId: SUPPORTER, creditUntil: longer, supportedAt: new Date() });
+    const status = await supportMutations.grantSupporter(
+      {},
+      { userId: SUPPORTER, source: 'github_sponsors', creditUntil: until },
+      ctx(ADMIN),
+    );
+    expect(status).toMatchObject({ isSupporter: true, source: 'stripe', creditUntil: longer.toISOString() });
+  });
+
+  it('ends the credit when given a past date', async () => {
+    await supportMutations.grantSupporter({}, { userId: SUPPORTER, source: 'admin', creditUntil: until }, ctx(ADMIN));
+    const past = new Date(Date.now() - DAY_MS).toISOString();
+    const status = await supportMutations.grantSupporter(
+      {},
+      { userId: SUPPORTER, source: 'admin', creditUntil: past },
+      ctx(ADMIN),
+    );
+    expect(status).toMatchObject({ isSupporter: false, creditUntil: past });
+  });
+
   it.each([
     [{ source: 'stripe', creditUntil: until }, 'source'],
     [{ source: 'admin', creditUntil: 'not a date' }, 'creditUntil'],

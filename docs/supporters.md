@@ -123,7 +123,7 @@ Schema in `packages/shared-schema/src/schema/support.ts`.
 | `createSupportClaim(cadence, currency, src)`    | signed in  | Returns the claim id.                                                                     |
 | `updateSupporterVisibility(showPublicly)`       | signed in  | Works before the first payment lands.                                                     |
 | `claimSupporterByEmail`                         | signed in  | Needs a verified email and `STRIPE_SECRET_KEY`. Rate-limited (5 per window). Idempotent. |
-| `grantSupporter(userId, source, creditUntil)`   | admin only | `source` is `github_sponsors` or `admin`. Global admin role required.                     |
+| `grantSupporter(userId, source, creditUntil)`   | admin only | `source` is `github_sponsors` or `admin`. Global admin role required. A future date only extends existing tag time and a Stripe supporter keeps source `stripe`; a past date ends the credit (revoke). |
 
 `claimSupporterByEmail` reads completed Checkout Sessions with
 `GET /v1/checkout/sessions?customer_details[email]=…&status=complete` (up to

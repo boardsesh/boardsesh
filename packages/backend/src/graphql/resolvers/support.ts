@@ -238,10 +238,15 @@ export const supportMutations = {
     const row = await db.transaction(async (tx) => {
       if (!(await lockSupportAccount(tx, userId))) return null;
       const existing = await loadSupporterRow(tx, userId);
-      // The admin's date is stored as given, so a past date ends a grant.
+      // A future date only ever extends: a grant never cuts short tag time a
+      // climber already has from their own gifts. A past date ends the credit,
+      // which is how an admin revokes a grant. A Stripe supporter keeps the
+      // 'stripe' source, so the grant does not hide where their support came from.
+      const existingUntil = existing?.creditUntil ?? null;
+      const creditUntil = until > now && existingUntil && existingUntil > until ? existingUntil : until;
       const values = {
-        source: grantSource,
-        creditUntil: until,
+        source: existing?.source === 'stripe' ? 'stripe' : grantSource,
+        creditUntil,
         supportedAt: existing?.supportedAt ?? now,
         updatedAt: now,
       } as const;
