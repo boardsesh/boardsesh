@@ -280,6 +280,9 @@ describe('regular primary capture identity', () => {
       expect(variables).toContain(
         `SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID=^store-current-driving-${board.uuid}-${climb.uuid}$`,
       );
+      expect(variables).toContain(
+        `SCREENSHOT_PRIMARY_KIOSK_DRIVING_ID=^store-kiosk-driving-${board.uuid}-${climb.uuid}$`,
+      );
       const row = variables
         .find((variable) => variable.startsWith('SCREENSHOT_PRIMARY_CLIMB_ROW='))!
         .split('=')

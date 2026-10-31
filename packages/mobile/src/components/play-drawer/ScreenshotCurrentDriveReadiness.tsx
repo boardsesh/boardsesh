@@ -11,7 +11,7 @@ import { useDriveMode } from './drive-mode-store';
 import { useWallClimb } from './use-wall-climb';
 
 /** Observe the real drive after the player closes; never starts or changes it. */
-export function ScreenshotCurrentDriveReadiness() {
+export function ScreenshotCurrentDriveReadiness({ surface = 'current' }: { surface?: 'current' | 'kiosk' }) {
   const request = useSyncExternalStore(
     subscribeScreenshotDriveRequest,
     getScreenshotDriveRequest,
@@ -51,7 +51,7 @@ export function ScreenshotCurrentDriveReadiness() {
   if (!ready) return null;
   return (
     <View
-      testID={`store-current-driving-${request.boardUuid}-${request.climbUuid}`}
+      testID={`store-${surface}-driving-${request.boardUuid}-${request.climbUuid}`}
       style={styles.marker}
       pointerEvents="none"
       collapsable={false}

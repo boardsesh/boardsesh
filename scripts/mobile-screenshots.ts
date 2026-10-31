@@ -3790,6 +3790,7 @@ export function buildIosCampaignMaestroEnv(
           SCREENSHOT_PRIMARY_DRIVING: iosCampaignPrimaryDriveEnabled(primary) ? '1' : '0',
           SCREENSHOT_PRIMARY_DRIVING_ID: `^store-driving-${cppReadinessSelector(primary.board.uuid)}-${cppReadinessSelector(primary.climb.uuid)}$`,
           SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID: `^store-current-driving-${cppReadinessSelector(primary.board.uuid)}-${cppReadinessSelector(primary.climb.uuid)}$`,
+          SCREENSHOT_PRIMARY_KIOSK_DRIVING_ID: `^store-kiosk-driving-${cppReadinessSelector(primary.board.uuid)}-${cppReadinessSelector(primary.climb.uuid)}$`,
           SCREENSHOT_PRIMARY_CLIMB_ROW: cppClimbRowReadinessSelector(primary.climb.name, locale),
           SCREENSHOT_PRIMARY_CLIMB_TITLE: cppReadinessSelector(primary.climb.name),
           SCREENSHOT_PRIMARY_WALL_PAINTED_ID: `^${cppReadinessSelector(primary.paintedId)}$`,

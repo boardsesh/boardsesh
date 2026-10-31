@@ -243,6 +243,21 @@ describe('current driving screenshot proof', () => {
     expect(view.queryByTestId(readyId)).toBeNull();
   });
 
+  it('uses a distinct kiosk marker with the same live-state guards', () => {
+    act(() => requestScreenshotDrive('board-a', 'climb-a'));
+    const view = render(<ScreenshotCurrentDriveReadiness surface="kiosk" />);
+    const kioskId = 'store-kiosk-driving-board-a-climb-a';
+    expect(view.getByTestId(kioskId)).toBeTruthy();
+    expect(view.queryByTestId(readyId)).toBeNull();
+    state.writing = true;
+    view.rerender(<ScreenshotCurrentDriveReadiness surface="kiosk" />);
+    expect(view.queryByTestId(kioskId)).toBeNull();
+    state.writing = false;
+    state.driveAvailable = false;
+    view.rerender(<ScreenshotCurrentDriveReadiness surface="kiosk" />);
+    expect(view.queryByTestId(kioskId)).toBeNull();
+  });
+
   it('survives observer remounts only while the actual exact drive remains live', () => {
     act(() => requestScreenshotDrive('board-a', 'climb-a'));
     const first = render(<ScreenshotCurrentDriveReadiness />);
