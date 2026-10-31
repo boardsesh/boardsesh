@@ -560,7 +560,12 @@ that the second simulator caused the failure.
 To check the crew take on the standard Intel 14 GiB CI runner, dispatch
 **Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
 It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
-source SHA, and skips rendering and publishing. It uses the existing repository
+source SHA, and skips rendering and publishing. The outer job gets 90 minutes for
+a cold native build (about 36 minutes observed on ARM), the existing 45-minute
+crew capture allowance and setup headroom. Build and recording remain separate
+`build.json` / `crew-check.json` measurements. Native, launch, Maestro, take and
+private-session cleanup deadlines are unchanged; other modes and the production
+all-locale job budgets are unchanged. It uses the existing repository
 recording-account secrets and shares the normal crew account lock. For release
 train validation, use a candidate ref containing the exact `release/next` source
 plus the recorder fix; a run from `main` builds a different native app.

@@ -64,6 +64,25 @@ describe('store video workflow handoff', () => {
     expect(measure.jobs.render.if).toBe("inputs.mode == 'measure'");
   });
 
+  it.each([
+    ['record-crew', 90],
+    ['record-english', 60],
+    ['diagnose-profile-filter', 45],
+    ['record-profile', 45],
+    ['measure', 180],
+  ])('reserves the bounded outer build-plus-capture budget for %s', (mode, minutes) => {
+    const record = workflow('mobile-store-videos-measure').jobs.record;
+    const expression = String(record['timeout-minutes']).replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    expect(runInNewContext(expression, { inputs: { mode } })).toBe(minutes);
+    expect(record.steps?.find((step) => step.name === 'Build dev-client on cache miss')?.run).toContain(
+      'build metrics/build.json',
+    );
+    expect(record.steps?.find((step) => step.if === "inputs.mode == 'record-crew'")?.run).toContain(
+      'crew-check metrics/crew-check.json',
+    );
+    expect(workflow('mobile-store-videos-pipeline').jobs.crew['timeout-minutes']).toBe(240);
+  });
+
   it('captures only the English crew take on a feature ref without render or publish access', () => {
     const measure = workflow('mobile-store-videos-measure');
     const evaluate = (expression: unknown) =>
@@ -73,7 +92,7 @@ describe('store video workflow handoff', () => {
         format: (template: string, argument: string) => template.replace('{0}', argument),
       }) as unknown;
     expect(measure.jobs.record['runs-on']).toBe(workflow('mobile-store-videos-pipeline').jobs.crew['runs-on']);
-    expect(evaluate(measure.jobs.record['timeout-minutes'])).toBe(45);
+    expect(evaluate(measure.jobs.record['timeout-minutes'])).toBe(90);
     expect(evaluate(measure.concurrency?.group)).toBe(
       workflow('mobile-store-videos-pipeline').jobs.crew.concurrency?.group,
     );
