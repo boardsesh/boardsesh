@@ -227,6 +227,17 @@ describe('parseArgs', () => {
 });
 
 describe('buildScreenshotEnv', () => {
+  it.each(['app-store', 'app-store-campaign'] as const)('opts %s board heroes into fake-Bluetooth driving', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBe('1');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it.each(['help', 'smoke', 'onboarding'] as const)('does not inherit screenshot driving for %s', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv({ EXPO_PUBLIC_SCREENSHOT_DRIVING: '1' }));
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBeUndefined();
+  });
+
   it('always enables screenshot mode and bakes the theme', () => {
     const env = buildScreenshotEnv(makeOptions({ theme: 'dark' }), baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_MODE).toBe('1');
@@ -561,9 +572,12 @@ describe('iOS store capture content readiness', () => {
   ])('blocks %s %s until physical backgrounds and the holds have displayed', (flow, screenshot) => {
     const prerequisites = prerequisitesFor(flow, screenshot);
     expect(canCapture(prerequisites, ['play-drawer-board-overlay'])).toBe(false);
-    expect(canCapture(prerequisites, ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'])).toBe(
-      true,
-    );
+    const paintedIds = ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'];
+    if (screenshot !== '14-spray-board-view') {
+      expect(canCapture(prerequisites, paintedIds)).toBe(false);
+      paintedIds.push('store-driving-board-uuid-climb-uuid');
+    }
+    expect(canCapture(prerequisites, paintedIds)).toBe(true);
   });
 
   it.each([

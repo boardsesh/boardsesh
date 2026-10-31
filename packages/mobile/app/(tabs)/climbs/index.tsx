@@ -1,3 +1,4 @@
+import { clearScreenshotDriveRequest, requestScreenshotDrive } from '../../../src/lib/screenshot-driving';
 import { scheduleIdleTask } from '../../../src/lib/schedule-idle-task';
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useHorizontalSafeArea } from '../../../src/hooks/use-horizontal-safe-area';
@@ -279,6 +280,7 @@ function ClimbListInner() {
   // row (the help flow's 11-climb-actions shot).
   const {
     screenshotOpenFirst,
+    screenshotDrive,
     screenshotClimbId,
     screenshotMinGrade,
     screenshotMaxGrade,
@@ -291,6 +293,7 @@ function ClimbListInner() {
     screenshotOpenClimbActions,
   } = useLocalSearchParams<{
     screenshotOpenFirst?: string;
+    screenshotDrive?: string;
     screenshotClimbId?: string;
     screenshotMinGrade?: string;
     screenshotMaxGrade?: string;
@@ -1341,7 +1344,7 @@ function ClimbListInner() {
     }
     // When a specific board is requested, wait until it's the active board.
     if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    const captureIdentity = `${activeBoard?.uuid}:${screenshotCppScene ?? ''}:${screenshotClimbId ?? 'first'}`;
+    const captureIdentity = `${activeBoard?.uuid}:${screenshotCppScene ?? ''}:${screenshotClimbId ?? 'first'}:${screenshotDrive ?? ''}`;
     if (!activeBoard || screenshotOpenedForBoardRef.current === captureIdentity) return;
     const requestedClimb = selectScreenshotClimb(
       visibleClimbs,
@@ -1356,10 +1359,16 @@ function ClimbListInner() {
     );
     if (!requestedClimb) return;
     screenshotOpenedForBoardRef.current = captureIdentity;
+    if (screenshotDrive === '1' && activeBoard.boardType !== 'spray') {
+      requestScreenshotDrive(activeBoard.uuid, requestedClimb.uuid);
+    } else {
+      clearScreenshotDriveRequest();
+    }
     handleClimbPress(requestedClimb);
   }, [
     isFocused,
     screenshotOpenFirst,
+    screenshotDrive,
     screenshotClimbId,
     screenshotGradesReadyFor,
     screenshotDefaultSearchReady,

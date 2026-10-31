@@ -1965,11 +1965,24 @@ describe('custom product page captures', () => {
       const { page, boards, coverage } = scenario(target);
       const commands = cppNavigationCommands(page, coverage, boards, false);
       expect(commands['hero-1'].route).toContain('screenshotCppScene=hero-1');
+      for (const [scene, command] of Object.entries(commands)) {
+        const variant = [...page.heroBoards, ...page.otherBoards].find((board) => board.selector === command.selector);
+        const shouldDrive = /^(hero|other)-[1-3]$/.test(scene) && variant?.boardType !== 'spray';
+        expect(new URL(command.route, 'http://localhost').searchParams.get('screenshotDrive')).toBe(
+          shouldDrive ? '1' : null,
+        );
+      }
       expect(commands.search.route).toContain('screenshotOpenFilters=1');
       expect(commands.logbook.route).toContain(`screenshotBoardType=${target}`);
       expect(commands.island.route).toContain('screenshotCppScene=island');
       for (const device of IOS_SCREENSHOT_DEVICES) {
         const source = renderCppMaestroFlow(target, device, coverage);
+        const heroSection = source.slice(0, source.indexOf('scene=search'));
+        const ledHeroCount = [...page.heroBoards, ...page.otherBoards].filter(
+          (board) => board.boardType !== 'spray',
+        ).length;
+        expect([...heroSection.matchAll(/id: "\^store-driving-/g)]).toHaveLength(ledHeroCount);
+        expect(source.slice(source.indexOf('scene=search'))).not.toContain('store-driving-');
         expect(source).toContain('acknowledged');
         expect(source).toContain('/status?waitFor=');
         expect(source).toContain('maxRetries: 3');

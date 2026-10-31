@@ -1,3 +1,4 @@
+import { clearScreenshotDriveRequest, getScreenshotDriveRequest } from '../../../../src/lib/screenshot-driving';
 // @vitest-environment jsdom
 vi.mock('../../../../src/lib/schedule-idle-task', () => ({
   scheduleIdleTask: (callback: () => void) => {
@@ -2258,6 +2259,39 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       view.rerender(<ClimbList />);
       await act(async () => {});
       expect(mocks.activateClimb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('publishes an exact driving intent before a board hero opens and retains it across blur', async () => {
+    await withScreenshotMode(async () => {
+      const originalDriving = process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING;
+      const originalFakeBle = process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE;
+      process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING = '1';
+      process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
+      try {
+        clearScreenshotDriveRequest();
+        const board = gradeScene();
+        mocks.searchClimbs = [{ ...mocks.climb, boardType: 'kilter', layoutId: 1, angle: 40 }];
+        mocks.searchParams = { screenshotOpenFirst: '1', screenshotDrive: '1' };
+        const view = render(<ClimbList />);
+        await waitFor(() => expect(mocks.activateClimb).toHaveBeenCalledTimes(1));
+        expect(getScreenshotDriveRequest()).toMatchObject({ boardUuid: board.uuid, climbUuid: mocks.climb.uuid });
+        const requested = getScreenshotDriveRequest();
+        mocks.isFocused = false;
+        view.rerender(<ClimbList />);
+        expect(getScreenshotDriveRequest()).toBe(requested);
+        mocks.isFocused = true;
+        mocks.searchParams = { screenshotOpenFirst: '1', screenshotCppScene: 'accessory-prepare' };
+        view.rerender(<ClimbList />);
+        await waitFor(() => expect(mocks.activateClimb).toHaveBeenCalledTimes(2));
+        expect(getScreenshotDriveRequest()).toBeNull();
+      } finally {
+        clearScreenshotDriveRequest();
+        if (originalDriving === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING;
+        else process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING = originalDriving;
+        if (originalFakeBle === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE;
+        else process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = originalFakeBle;
+      }
     });
   });
 

@@ -834,7 +834,13 @@ export function buildScreenshotEnv(
     // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
-  if (options.flow === 'app-store-campaign' || options.cpp) env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
+  const storeCapture = options.flow === 'app-store' || options.flow === 'app-store-campaign' || !!options.cpp;
+  if (storeCapture) {
+    env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
+    env.EXPO_PUBLIC_SCREENSHOT_DRIVING = '1';
+  } else {
+    delete env.EXPO_PUBLIC_SCREENSHOT_DRIVING;
+  }
   if (options.flow === 'app-store-campaign' && !options.cpp && options.iosCampaignPrimaryCapture) {
     const { board } = options.iosCampaignPrimaryCapture;
     // A regular seven-board capture must not enable CPP's six-slot board mapping.
@@ -2755,6 +2761,12 @@ export function renderCppMaestroFlow(
         '- longPressOn:\n    point: "50%,3%"',
         '- extendedWaitUntil:\n    visible: "Next climb"\n    timeout: 15000',
       );
+    if (scene.filename && scene.variant && scene.variant.boardType !== 'spray' && !scene.wallEditor) {
+      const drivingId = selectedHero
+        ? `^${cppReadinessSelector(`store-driving-${selectedHero.boardId}-${selectedHero.climbId}${mirrorHero ? '-mirrored' : ''}`)}$`
+        : '^store-driving-.+$';
+      commands.push(`- extendedWaitUntil:\n    visible:\n      id: ${JSON.stringify(drivingId)}\n    timeout: 60000`);
+    }
     if (ipad) commands.push(...collapseSidebarCommands);
     if (scene.filename) commands.push(`- takeScreenshot: ${scene.filename}`);
     if (tabletWallEditor) {

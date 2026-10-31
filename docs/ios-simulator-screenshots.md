@@ -195,6 +195,18 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   `packages/mobile/src/lib/showcase-anchor.ts`; the contract it must match is
   `scripts/lib/showcase-video/contract.ts`.
 
+Store board heroes opt into `EXPO_PUBLIC_SCREENSHOT_DRIVING=1` as well as fake
+Bluetooth. Their routes carry `screenshotDrive=1`; after the exact real climb
+opens, the player runs the normal drive action once. Capture waits for a
+`store-driving-<board UUID>-<climb UUID>` marker backed by a live drive, a local
+connection, and the displayed climb being lit. A connection failure blocks the
+capture instead of substituting the label. The open Duo uses this same intent
+without taps. Tension keeps its normal solo Mirror action and mirrored paint gate.
+
+Only board-hero routes request driving. Wall-status, accessory, crew, editor,
+help, smoke and video flows do not. Spray and walls without LEDs keep their
+normal no-lights controls; they cannot truthfully show the LED driving state.
+
 Every gate inlines the raw `process.env` comparison, so both fold away in normal builds.
 
 `run` resets the simulator keychain by default (the shared `group.com.boardsesh.app` keychain

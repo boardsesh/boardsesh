@@ -68,7 +68,7 @@ name: multiboard App Store campaign sources
     notVisible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -82,6 +82,10 @@ name: multiboard App Store campaign sources
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 10-moonboard-board-view
 
 # Dismiss the previous player before selecting another wall.
@@ -112,7 +116,7 @@ name: multiboard App Store campaign sources
     notVisible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -126,6 +130,10 @@ name: multiboard App Store campaign sources
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 11-woods-board-view
 
 # Dismiss the previous player before selecting another wall.
@@ -156,7 +164,7 @@ name: multiboard App Store campaign sources
     notVisible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -170,6 +178,10 @@ name: multiboard App Store campaign sources
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 12-decoy-board-view
 
 # Dismiss the previous player before selecting another wall.
@@ -200,7 +212,7 @@ name: multiboard App Store campaign sources
     notVisible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
@@ -214,6 +226,10 @@ name: multiboard App Store campaign sources
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 13-grasshopper-board-view
 
 # Dismiss the previous player before selecting another wall.

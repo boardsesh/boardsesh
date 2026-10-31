@@ -29,7 +29,7 @@ name: app-store screenshots (iPhone Duo, open)
 #   the run instead of capturing the dialog or the previous screen.
 
 # Board view — the first climb with its holds lit, beside the climb list.
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotDrive=1
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - extendedWaitUntil:
@@ -39,6 +39,10 @@ name: app-store screenshots (iPhone Duo, open)
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 00-board-view
 
 # Home — the global "Everyone" feed, the lit climb still in the left pane.
@@ -59,6 +63,10 @@ name: app-store screenshots (iPhone Duo, open)
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 03-home
 
 # Playlist detail — a smart playlist (crowd favourites), the lit climb beside it.
@@ -80,6 +88,10 @@ name: app-store screenshots (iPhone Duo, open)
       id: '^cpp-climb-painted-.+$'
     timeout: 30000
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 04-playlist-detail
 
 # Climbs — the browse list beside the lit climb.
@@ -105,13 +117,17 @@ name: app-store screenshots (iPhone Duo, open)
       id: '^cpp-climb-painted-.+$'
     timeout: 30000
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 02-climbs
 
 # Board view on the second pinned wall. The phone flow taps the player's close
 # button first; here the app is relaunched instead, so the first climb's painted
 # marker cannot satisfy this wait.
 # duo: relaunch
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1&screenshotDrive=1
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - extendedWaitUntil:
@@ -121,4 +137,8 @@ name: app-store screenshots (iPhone Duo, open)
     visible:
       id: '^cpp-climb-painted-.+$'
     timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 01-board-view-2

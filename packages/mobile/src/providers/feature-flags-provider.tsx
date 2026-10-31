@@ -634,8 +634,8 @@ export function useWorkoutTimedBlocksFlag(): boolean {
  * sheet's row. A POSITIVE rollout flag read strictly: unresolved or off is
  * today's button, so the first frames of a cold open never offer a swipe a
  * flag then takes back. Dev builds read it as on unless a tester turns it off
- * on the Feature Flags screen; screenshot mode never offers it, so store
- * captures and the E2E smokes keep the button they have today.
+ * on the Feature Flags screen. Explicit store hero captures opt in through
+ * screenshot driving; other screenshot flows and E2E smokes keep it off.
  */
 export function useWallSwipeToDriveEnabled(): boolean {
   return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
@@ -643,7 +643,9 @@ export function useWallSwipeToDriveEnabled(): boolean {
 
 /** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
 export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boolean {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+    return process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
+  }
   return __DEV__ ? flag !== false : flag === true;
 }
 

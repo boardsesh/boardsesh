@@ -49,7 +49,7 @@ name: app-store screenshots android
     visible:
       id: 'home-screen'
     timeout: 90000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1&screenshotDrive=1
 - extendedWaitUntil:
     visible:
       id: 'climb-row'
@@ -60,6 +60,10 @@ name: app-store screenshots android
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 00-tension-board-view
 
 # Kilter board view — explicitly return to SCREENSHOT_BOARDS[0] after the Tension
@@ -69,7 +73,7 @@ name: app-store screenshots android
     visible:
       id: 'home-screen'
     timeout: 90000
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=0
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=0&screenshotDrive=1
 - extendedWaitUntil:
     visible:
       id: 'climb-row'
@@ -80,6 +84,10 @@ name: app-store screenshots android
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
 - takeScreenshot: 01-kilter-board-view
 
 # Home — relaunch after the full-screen board-view overlay, then wait for the real feed.
@@ -242,7 +250,7 @@ name: app-store screenshots android
           visible:
             id: 'home-screen'
           timeout: 90000
-      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2&screenshotDrive=1
       - extendedWaitUntil:
           visible:
             id: 'climb-row'
@@ -253,6 +261,10 @@ name: app-store screenshots android
           timeout: 60000
       - waitForAnimationToEnd:
           timeout: 30000
+      - extendedWaitUntil:
+          visible:
+            id: '^store-driving-.+$'
+          timeout: 60000
       - takeScreenshot: 08-moonboard-board-view
 
 # More compatible boards, using the three extra selectors in the campaign bundle.
@@ -265,7 +277,7 @@ name: app-store screenshots android
           visible:
             id: 'home-screen'
           timeout: 90000
-      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3&screenshotDrive=1
       - extendedWaitUntil:
           visible:
             id: 'climb-row'
@@ -276,13 +288,17 @@ name: app-store screenshots android
           timeout: 60000
       - waitForAnimationToEnd:
           timeout: 30000
+      - extendedWaitUntil:
+          visible:
+            id: '^store-driving-.+$'
+          timeout: 60000
       - takeScreenshot: 11-woods-board-view
       - launchApp
       - extendedWaitUntil:
           visible:
             id: 'home-screen'
           timeout: 90000
-      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4&screenshotDrive=1
       - extendedWaitUntil:
           visible:
             id: 'climb-row'
@@ -293,13 +309,17 @@ name: app-store screenshots android
           timeout: 60000
       - waitForAnimationToEnd:
           timeout: 30000
+      - extendedWaitUntil:
+          visible:
+            id: '^store-driving-.+$'
+          timeout: 60000
       - takeScreenshot: 12-grasshopper-board-view
       - launchApp
       - extendedWaitUntil:
           visible:
             id: 'home-screen'
           timeout: 90000
-      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5&screenshotDrive=1
       - extendedWaitUntil:
           visible:
             id: 'climb-row'
@@ -310,6 +330,10 @@ name: app-store screenshots android
           timeout: 60000
       - waitForAnimationToEnd:
           timeout: 30000
+      - extendedWaitUntil:
+          visible:
+            id: '^store-driving-.+$'
+          timeout: 60000
       - takeScreenshot: 13-moonboard-2024-view
 
 # The wall stays on the seeded first climb while this climber picks a different
