@@ -390,8 +390,10 @@ name: multiboard App Store campaign sources
     visible:
       id: 'play-drawer-board-overlay'
     timeout: 60000
-- tapOn:
-    id: '^play-drawer-queue-badge$'
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_QUEUE_LABEL}
+    timeout: 60000
+- tapOn: ${SCREENSHOT_QUEUE_LABEL}
 - swipe:
     start: "50%,54%"
     end: "50%,15%"

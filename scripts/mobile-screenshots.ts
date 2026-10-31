@@ -3740,6 +3740,27 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
 }
 
+type QueueButtonLabels = {
+  queueCountAria: string;
+  queueUpNextAria_zero: string;
+  queueUpNextAria_one: string;
+  queueUpNextAria_other: string;
+};
+
+/** Match the real queue button in either mode; the optional drawn badge is not a control. */
+export function queueButtonReadinessSelector(labels: QueueButtonLabels): string {
+  const templates = [
+    labels.queueCountAria,
+    labels.queueUpNextAria_zero,
+    labels.queueUpNextAria_one,
+    labels.queueUpNextAria_other,
+  ];
+  const alternatives = templates.map((template) =>
+    template.split('{{count}}').map(cppReadinessSelector).join('[0-9]+'),
+  );
+  return `^(?:${[...new Set(alternatives)].join('|')})$`;
+}
+
 /** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosCampaignMaestroEnv(
   locale: Locale,
@@ -3752,7 +3773,7 @@ export function buildIosCampaignMaestroEnv(
     mobileJoin: { join: string };
     mobile: { boardPresence: { stripA11yLabelWithSender: string } };
     queueDrawer: { title: string };
-    playView: { closeAria: string; actionBar: { queueCountAria: string; moreActionsForAria: string } };
+    playView: { closeAria: string; actionBar: QueueButtonLabels & { moreActionsForAria: string } };
   };
   const labels = {
     ...(primary
@@ -3767,7 +3788,7 @@ export function buildIosCampaignMaestroEnv(
     SCREENSHOT_SHARED_SESSION_ID: capture?.sharedSessionId ?? '',
     SCREENSHOT_JOIN_LABEL: catalog.mobileJoin.join,
     SCREENSHOT_CLOSE_LABEL: catalog.playView.closeAria,
-    SCREENSHOT_QUEUE_LABEL: catalog.playView.actionBar.queueCountAria.replace('{{count}}', '.*'),
+    SCREENSHOT_QUEUE_LABEL: queueButtonReadinessSelector(catalog.playView.actionBar),
     SCREENSHOT_QUEUE_TITLE: catalog.queueDrawer.title,
     SCREENSHOT_WALL_STATUS_LABEL: catalog.mobile.boardPresence.stripA11yLabelWithSender
       .replace('{{name}}', 'Lightest Pair of Shorts')

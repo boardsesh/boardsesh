@@ -19,6 +19,7 @@ import {
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
   runIosScreenshotMaestro,
+  queueButtonReadinessSelector,
   buildScreenshotSessionEnv,
   collectScreenshots,
   deviceSlug,
@@ -423,7 +424,7 @@ describe('iOS campaign capture', () => {
       const env = buildIosCampaignMaestroEnv(locale, capture);
       expect(env).toContain('SCREENSHOT_SHARED_SESSION_ID=crew');
       expect(env.some((entry) => entry.startsWith('SCREENSHOT_JOIN_LABEL=') && entry.length > 22)).toBe(true);
-      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('.*'))).toBe(true);
+      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('[0-9]+'))).toBe(true);
       expect(env.join(' ')).not.toContain('{{count}}');
       expect(
         env.some(
@@ -466,26 +467,60 @@ describe('iOS campaign capture', () => {
     },
   );
 
-  it('opens the populated crew queue by its native badge despite the Up next accessibility label', () => {
-    const catalog = JSON.parse(readFileSync('packages/shared/i18n/locales/it/session.json', 'utf8')) as {
-      playView: { actionBar: { queueCountAria: string; queueUpNextAria_other: string } };
+  it.each(allAppLocales)('matches the real %s queue button in both count and Up next modes', (locale) => {
+    const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+      playView: { actionBar: Parameters<typeof queueButtonReadinessSelector>[0] };
     };
     const labels = catalog.playView.actionBar;
-    const actualLabel = labels.queueUpNextAria_other.replace('{{count}}', '5');
-    expect(actualLabel).toBe('Coda, 5 blocchi in arrivo');
-    expect(new RegExp(`^${labels.queueCountAria.replace('{{count}}', '.*')}$`).test(actualLabel)).toBe(false);
+    const selector = queueButtonReadinessSelector(labels);
+    const nativeButton = new RegExp(selector);
+    for (const count of [0, 1, 2, 123]) {
+      const countLabel = labels.queueCountAria.replace('{{count}}', String(count));
+      const upNextTemplate =
+        count === 0
+          ? labels.queueUpNextAria_zero
+          : count === 1
+            ? labels.queueUpNextAria_one
+            : labels.queueUpNextAria_other;
+      const upNextLabel = upNextTemplate.replace('{{count}}', String(count));
+      expect(nativeButton.test(countLabel)).toBe(true);
+      expect(nativeButton.test(upNextLabel)).toBe(true);
+      expect(nativeButton.test(`prefix ${countLabel}`)).toBe(false);
+      expect(nativeButton.test(`${upNextLabel} suffix`)).toBe(false);
+    }
+    expect(nativeButton.test(labels.queueCountAria.replace('{{count}}', 'not a number'))).toBe(false);
+    expect(buildIosCampaignMaestroEnv(locale)).toContain(`SCREENSHOT_QUEUE_LABEL=${selector}`);
+  });
 
+  it('treats catalog punctuation literally when matching a numeric queue count', () => {
+    const literal = 'Queue (literal)+[x]. {{count}} climbs?';
+    const nativeButton = new RegExp(
+      queueButtonReadinessSelector({
+        queueCountAria: literal,
+        queueUpNextAria_zero: 'Queue: zero',
+        queueUpNextAria_one: literal,
+        queueUpNextAria_other: literal,
+      }),
+    );
+    expect(nativeButton.test('Queue (literal)+[x]. 5 climbs?')).toBe(true);
+    expect(nativeButton.test('Queue literalxxxx 5 climbs')).toBe(false);
+    expect(nativeButton.test('Queue (literal)+[x]. .* climbs?')).toBe(false);
+  });
+
+  it('opens the crew queue through its real button and keeps title and content gates', () => {
     const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
     const steps = parseAllDocuments(campaign)[1].toJS() as {
       tapOn?: { id: string } | string;
       extendedWaitUntil?: { visible: string };
       takeScreenshot?: string;
     }[];
-    const queueTap = steps.findIndex(
-      (step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$',
+    const queueReady = steps.findIndex((step) => step.extendedWaitUntil?.visible === '${SCREENSHOT_QUEUE_LABEL}');
+    const queueTap = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}');
+    expect(queueReady).toBeGreaterThan(0);
+    expect(queueReady).toBeLessThan(queueTap);
+    expect(steps.some((step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$')).toBe(
+      false,
     );
-    expect(queueTap).toBeGreaterThan(0);
-    expect(steps.some((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}')).toBe(false);
     const titleGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*${SCREENSHOT_QUEUE_TITLE}.*');
     const contentGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*Wax On.*');
     const capture = steps.findIndex((step) => step.takeScreenshot === '15-crew-queue');
