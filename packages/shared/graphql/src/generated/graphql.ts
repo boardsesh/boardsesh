@@ -16637,6 +16637,25 @@ export type SprayWallImportProgressQuery = {
   }>;
 };
 
+export type GrantSupporterMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+  source: Scalars['String']['input'];
+  creditUntil: Scalars['String']['input'];
+}>;
+
+export type GrantSupporterMutation = {
+  __typename?: 'Mutation';
+  grantSupporter: {
+    __typename?: 'MySupporterStatus';
+    isSupporter: boolean;
+    showPublicly: boolean;
+    source?: string | null;
+    creditUntil?: string | null;
+    hasSubscription: boolean;
+    cancelAtPeriodEnd: boolean;
+  };
+};
+
 export type GetTicksQueryVariables = Exact<{
   input: GetTicksInput;
 }>;
@@ -27304,6 +27323,70 @@ export const SprayWallImportProgressDocument = {
     },
   ],
 } as unknown as DocumentNode<SprayWallImportProgressQuery, SprayWallImportProgressQueryVariables>;
+export const GrantSupporterDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'GrantSupporter' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'source' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'creditUntil' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'grantSupporter' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'source' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'source' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'creditUntil' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'creditUntil' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'isSupporter' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'showPublicly' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'creditUntil' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasSubscription' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'cancelAtPeriodEnd' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GrantSupporterMutation, GrantSupporterMutationVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

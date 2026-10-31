@@ -165,6 +165,51 @@ backend host: `WS_HOSTNAME` in `infra/cloudflare/config.ts`; the Cloudflare
 rules there only filter GET requests, so Stripe's POST passes) subscribed to
 the seven events above. Copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
 
+## Admin grants
+
+Global admins grant supporter status from the **Supporters** tab of the web
+admin page (`/admin`, `packages/web/app/components/admin/supporter-grant-panel.tsx`).
+Find the account by name or paste its id, pick the source (`github_sponsors`
+or `admin`) and a whole number of months from 1 to 120. The form sends
+`grantSupporter` with `creditUntil` = today plus those calendar months in UTC
+(the same month arithmetic as the credit rule). The backend stores that date
+as given: a second grant replaces the first end date instead of adding to it,
+and it does not touch a linked Stripe subscription. It also replaces time a
+Stripe one-off gift bought and sets `source` to the granted one, so a grant
+shorter than the account's current `credit_until` cuts that gift's time short.
+
+## Triage label (internal)
+
+Internal ops only. Never mention this label in product copy, tooltips, locale
+strings or public docs.
+
+Issues from current supporters get the GitHub label `supporter`, so the
+maintainers can see them in the tracker. Every current supporter counts, not
+only those who chose public credit. Two paths add it, and neither ever
+removes a label:
+
+- **In-app bug reports.** `submitAppFeedback` checks the signed-in reporter
+  with `isAccountCurrentSupporter` (`packages/backend/src/services/supporter-lookup.ts`,
+  the `isCurrentSupporter` rule) and adds the label to the issue it opens.
+  The title and body do not change, so the label is the only sign on the
+  public issue. A failed lookup means no label and is logged; the report is
+  still filed. The `app_feedback` row stores nothing extra: the reporter's
+  `user_id` is on the row, and their status can be looked up there.
+- **GitHub Sponsors.** The `label-supporter-issues` job in
+  `refresh-acknowledgements.yml` runs weekly (Monday 07:00 UTC) and on dispatch.
+  It lists the org's current sponsorships (`activeOnly: true`,
+  `includePrivate: true`) with a Repo Bot App token that has only
+  Organization Members: read, then adds the label to each OPEN issue those
+  sponsors wrote and that does not carry it yet. Writes use the job's
+  `GITHUB_TOKEN` with `issues: write`, the only job in that workflow that has
+  it. The log prints counts only, never a login or an issue number: `gh`
+  failures are rethrown without their command line, and GitHub's error text
+  for a per-sponsor issue lookup is dropped. One sponsor's failed lookup or
+  one failed label write is counted, the rest still run, and the job then
+  fails. Script:
+  `scripts/label-supporter-issues.ts` (`--dry-run` to plan without writing).
+  An issue a sponsor opens mid-week is labelled on the next run.
+
 ## Account deletion
 
 `deleteAccount` runs as a billing operation (`withSupportOperation`, kind

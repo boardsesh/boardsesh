@@ -67,6 +67,16 @@ describe('buildFeedbackIssue', () => {
     expect(draft?.labels).toEqual(['bug', 'user-feedback', 'ios']);
   });
 
+  it('adds the supporter triage label only for a supporter, and says nothing about it in the issue', () => {
+    const plain = buildFeedbackIssue(bugPayload({ reporterIsSupporter: false }));
+    const supporter = buildFeedbackIssue(bugPayload({ reporterIsSupporter: true }));
+    expect(plain?.labels).toEqual(['bug', 'user-feedback', 'ios']);
+    expect(supporter?.labels).toEqual(['bug', 'user-feedback', 'ios', 'supporter']);
+    // The repo is public: the label is the only trace, never the title or body.
+    expect(supporter?.title).toBe(plain?.title);
+    expect(supporter?.body).toBe(plain?.body);
+  });
+
   it('truncates a long title to 120 chars', () => {
     const draft = buildFeedbackIssue(bugPayload({ comment: 'x'.repeat(300) }));
     expect(draft?.title.length).toBeLessThanOrEqual(120);

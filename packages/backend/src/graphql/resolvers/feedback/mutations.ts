@@ -14,6 +14,7 @@ import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
 import { enrichReleaseContext } from '../../../services/mobile-release-status';
+import { isAccountCurrentSupporter } from '../../../services/supporter-lookup';
 
 export const feedbackMutations = {
   submitAppFeedback: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
@@ -74,6 +75,9 @@ export const feedbackMutations = {
     if (row) {
       void (async () => {
         try {
+          // Every current supporter's bug report gets the quiet triage label,
+          // whether or not they chose public credit (docs/supporters.md).
+          const reporterIsSupporter = isBugReport && userId ? await isAccountCurrentSupporter(userId) : false;
           const outcome = await createFeedbackGithubIssue({
             feedbackId: row.id,
             rating,
@@ -90,6 +94,7 @@ export const feedbackMutations = {
             releaseContext,
             contactConsent,
             screenshotUrls: screenshotPublicUrls(screenshotKeys),
+            reporterIsSupporter,
           });
 
           // `outcome?.` — same reason as the QA mirror: the issue-link write-back
