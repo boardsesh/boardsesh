@@ -7,7 +7,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import HelpInstallSection from '../help-install-section';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpScreenshot } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
 
 /**
  * 2,326 climbers hit a failed board connection in 90 days, which makes this the
@@ -33,11 +34,6 @@ export default function BoardAndBluetoothContent() {
       <PageSection id="connect" title={t('help.bluetooth.connect.title')}>
         <HelpShots>
           <HelpScreenshot
-            shot="board-sheet"
-            alt={t('help.bluetooth.connect.shotAlt')}
-            caption={t('help.bluetooth.connect.shotCaption')}
-          />
-          <HelpScreenshot
             shot="board-view"
             alt={t('help.bluetooth.connect.litShotAlt')}
             caption={t('help.bluetooth.connect.litShotCaption')}
@@ -47,6 +43,19 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.bluetooth.connect.p2')}</Prose>
         <Prose>{t('help.bluetooth.connect.p3')}</Prose>
         <Prose>{t('help.bluetooth.connect.p4')}</Prose>
+      </PageSection>
+
+      <PageSection id="driving" title={t('help.bluetooth.driving.title')}>
+        <HelpShots>
+          <HelpClip
+            name="wall-swipe-to-drive"
+            alt={t('help.bluetooth.driving.clipAlt')}
+            caption={t('help.bluetooth.driving.clipCaption')}
+          />
+        </HelpShots>
+        <Prose>{t('help.bluetooth.driving.p1')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p2')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p3')}</Prose>
       </PageSection>
 
       <PageSection id="failed" title={t('help.bluetooth.failed.title')} lead={t('help.bluetooth.failed.intro')}>
@@ -61,6 +70,13 @@ export default function BoardAndBluetoothContent() {
       </PageSection>
 
       <PageSection id="hold-the-lightbulb" title={t('help.bluetooth.hidden.title')}>
+        <HelpShots>
+          <HelpScreenshot
+            shot="board-sheet"
+            alt={t('help.bluetooth.hidden.shotAlt')}
+            caption={t('help.bluetooth.hidden.shotCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.bluetooth.hidden.p1')}</Prose>
         <ProseList>
           <li>{t('help.bluetooth.hidden.row1')}</li>

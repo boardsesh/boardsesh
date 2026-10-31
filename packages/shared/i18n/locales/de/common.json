@@ -583,7 +583,7 @@
           "label": "Board-Steuerung",
           "wallButton": "Wand-Button",
           "lightbulb": "Glühbirne",
-          "footer": "Beide verbinden, beleuchten den Boulder und zeigen, wessen Board es ist. Halten für die Board-Optionen. Die Glühbirne sitzt rechts außen in der oberen Reihe."
+          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Am Wand-Button bedeuten mattierte Farben und Du steuerst das Board, dass jeder gewählte Boulder beleuchtet wird; Tippen beendet das Steuern und hält die Verbindung. Die Glühbirne sitzt oben rechts."
         }
       },
       "climbView": {

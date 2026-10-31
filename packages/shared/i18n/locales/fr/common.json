@@ -583,7 +583,7 @@
           "label": "Commande de la board",
           "wallButton": "Bouton du mur",
           "lightbulb": "Ampoule",
-          "footer": "Les deux connectent, allument le bloc et montrent à qui est la board. Maintiens pour les options de la board. L’ampoule prend le bout droit de la rangée du haut."
+          "footer": "Les deux commandes connectent, allument le bloc et montrent qui tient la board. Quand la board est connectée, maintiens pour les options. Sur le bouton du mur, l’effet givré et Tu pilotes la board indiquent que chaque bloc choisi s’allume ; touche-le pour arrêter de piloter en restant connecté. L’ampoule est en haut à droite."
         }
       },
       "climbView": {

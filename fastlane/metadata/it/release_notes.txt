@@ -1,5 +1,9 @@
 Boardsesh ora è disponibile in italiano.
 
+Sappi quando illumini il pannello
+
+Illumina il pannello connette e illumina il tuo blocco. L’effetto satinato del pulsante nel player indica che guidi tu: ogni blocco che scegli si illumina in parete. Scorri il pulsante a sinistra per iniziare; toccalo per smettere di guidare e sfogliare senza disconnetterti.
+
 iPad e iPhone Duo: più spazio per il pannello
 
 Su iPad, i blocchi occupano tutto lo schermo e il blocco illuminato in parete resta in un mini player in basso. Toccalo per aprire il player. In orizzontale, il pannello affianca i prossimi blocchi, il diario e la beta. Fissa un iPad vicino al pannello e apri Schermo parete dal mini player: il blocco riempie lo schermo ed è leggibile dal materasso.

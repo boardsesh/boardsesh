@@ -1,7 +1,6 @@
 Nouveautés de 2.7 :
-- Boardsesh est maintenant disponible en italien.
-- Ton compte à rebours de repos s'affiche dans la notification de séance, avec une tonalité à la fin.
-- Crée des entraînements en phases : échauffement, pyramide, puis volume.
-- Balayer te garde dans la liste touchée. Balaye un bloc pour le mettre juste après ou à la fin.
-- Trie et filtre les playlists, Aimées et Projets.
-- Carnet, likes et playlists fonctionnent sans réseau. Les scans trouvent les MoonBoards.
+- Allumer sur la board connecte et allume ton bloc. Bouton givré : chaque bloc choisi s’allume. Balaye-le à gauche pour commencer ; touche-le pour arrêter sans te déconnecter.
+- Maintenant en italien. Repos avec compte à rebours et son dans la notification.
+- Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
+- Trie et filtre playlists, Aimées et Projets.
+- Carnet, likes et playlists hors ligne. Les scans trouvent les MoonBoards.

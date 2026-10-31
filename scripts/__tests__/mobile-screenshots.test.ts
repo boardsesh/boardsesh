@@ -235,7 +235,13 @@ describe('buildScreenshotEnv', () => {
     expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
   });
 
-  it.each(['help', 'smoke', 'onboarding'] as const)('does not inherit screenshot driving for %s', (flow) => {
+  it('opts help screenshots into the real wall controls with a simulated board', () => {
+    const env = buildScreenshotEnv(makeOptions({ flow: 'help' }), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBe('1');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it.each(['smoke', 'onboarding'] as const)('does not inherit screenshot driving for %s', (flow) => {
     const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv({ EXPO_PUBLIC_SCREENSHOT_DRIVING: '1' }));
     expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBeUndefined();
   });
@@ -342,6 +348,42 @@ describe('buildScreenshotEnv', () => {
       capture,
     );
     expect(overrideEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('Custom Tension|Custom Kilter');
+  });
+});
+
+describe('help wall-control capture', () => {
+  it('captures the lit player and its real controls before a stopped preview', () => {
+    const flow = readFileSync('packages/mobile/.maestro/help.yaml', 'utf8');
+    const documents = parseAllDocuments(flow);
+    for (const document of documents) expect(document.errors).toEqual([]);
+    const commands = documents[1].toJS() as Array<{
+      openLink?: string;
+      takeScreenshot?: string;
+      longPressOn?: { point: string };
+      extendedWaitUntil?: { visible?: { id: string }; notVisible?: { id: string } };
+    }>;
+    const driveRequest = commands.findIndex((command) => command.openLink?.includes('screenshotDrive=1'));
+    const drivingReady = commands.findIndex(
+      (command) => command.extendedWaitUntil?.visible?.id === '^store-driving-.+$',
+    );
+    const litPlayer = commands.findIndex((command) => command.takeScreenshot === '10-board-view');
+    const controls = commands.findIndex((command) => command.takeScreenshot === '09-board-sheet');
+    const drivingStopped = commands.findIndex(
+      (command) => command.extendedWaitUntil?.notVisible?.id === '^store-driving-.+$',
+    );
+    const preview = commands.findIndex((command) => command.takeScreenshot === '12-preview');
+
+    expect(driveRequest).toBeGreaterThan(-1);
+    expect(drivingReady).toBeGreaterThan(driveRequest);
+    expect(litPlayer).toBeGreaterThan(drivingReady);
+    expect(controls).toBeGreaterThan(litPlayer);
+    expect(commands.slice(litPlayer + 1, controls).some((command) => command.longPressOn)).toBe(true);
+    expect(drivingStopped).toBeGreaterThan(controls);
+    expect(preview).toBeGreaterThan(drivingStopped);
+    expect(
+      commands.slice(drivingStopped + 1, preview).some((command) => command.openLink?.includes('screenshotDrive=')),
+    ).toBe(false);
+    expect(flow).not.toContain('screenshotOpenBoardSheet=1');
   });
 });
 

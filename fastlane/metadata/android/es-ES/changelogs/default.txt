@@ -1,7 +1,6 @@
 Novedades de 2.7:
-- Boardsesh ya está disponible en italiano.
-- Tu cuenta atrás de descanso aparece en la notificación de la sesión, con un tono al terminar.
-- Monta entrenamientos por fases: calentamiento, pirámide y luego volumen.
-- Al deslizar te quedas en la lista que tocaste. Desliza un bloque para ponerlo a continuación o al final.
+- Poner en el plafón conecta y enciende tu bloque. Botón esmerilado: cada bloque elegido se enciende. Deslízalo a la izquierda para empezar; tócalo para parar sin desconectarte.
+- Ya en italiano. Descanso con cuenta atrás y tono en la notificación.
+- Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
 - Ordena y filtra playlists, Favoritos y Proyectos.
-- Logbook, favoritos y playlists funcionan sin cobertura. Los escaneos encuentran MoonBoards.
+- Logbook, favoritos y playlists sin cobertura. Los escaneos encuentran MoonBoards.

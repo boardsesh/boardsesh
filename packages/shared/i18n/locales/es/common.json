@@ -855,7 +855,7 @@
           "label": "Control del plafón",
           "wallButton": "Botón del muro",
           "lightbulb": "Bombilla",
-          "footer": "Los dos conectan, encienden el bloque y muestran de quién es el plafón. Mantén pulsado para las opciones del plafón. La bombilla ocupa el extremo derecho de la fila de arriba."
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. En el botón del muro, el efecto esmerilado y Estás al mando del plafón indican que cada bloque que elijas se enciende; tócalo para dejar el mando sin desconectarte. La bombilla queda arriba a la derecha."
         }
       },
       "climbView": {

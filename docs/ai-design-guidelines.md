@@ -487,9 +487,11 @@ way it looks like this:
   existing tonal surface. The climber's own face sits at the trailing edge either way.
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
   the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
-  The header's “You're driving, your climb” capsule uses the same `WallGlow` background, hold-role
+  The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
   colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
+  That capsule's frost means this phone holds the board, including when a crew's swipes browse;
+  read the Play drawer button's "You are driving the wall" label to identify driving.
   Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
   the frost base and grain without inventing hold colours; its words use the frost label colour and shadow.
   The wall-with-no-lights capsule keeps its existing status surface.
@@ -517,9 +519,9 @@ readers), or on You are driving the wall stops driving and keeps the link; a hol
 back chip, which names where back goes: "My pick" for the climber's own climb, "On the wall" for the wall's.
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
-  under an hour ago, the button reads "On the wall" with an outline bulb and no face. Its connect action uses
-  frost when hold geometry is available; without it the amber outline and sheet label remain. A tap still
-  connects and lights it again.
+  under an hour ago, the button reads "Put on board", with "On the wall" as its screen-reader status,
+  an outline bulb and no face. Its connect action uses frost when hold geometry is available;
+  without it the amber outline and sheet label remain. A tap still connects and lights it again.
 
 - **A face means a live link.** The holder's face, on the button's trailing edge or the bulb's corner, comes only
   from the model, which needs this phone's link or a crewmate's authoritative one. Board presence alone never puts a

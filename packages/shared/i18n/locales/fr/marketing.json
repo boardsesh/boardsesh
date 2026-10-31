@@ -577,15 +577,16 @@
       },
       "wall": {
         "title": "Qui allume le mur",
-        "p1": "Une board prend une connexion Bluetooth à la fois. Sur tous les autres téléphones, ouvre l'aperçu d'un bloc et touche Allumer au mur, et le téléphone connecté l'allume pour toi.",
+        "p1": "Une board prend une connexion Bluetooth à la fois. Sur les autres téléphones, ouvre l’aperçu d’un bloc et touche Allumer sur la board : le téléphone connecté l’allume pour toi.",
         "p2": "Sur un mur sans lumières, le bouton sous la board dit Prendre le mur.",
         "bluetoothLink": "Se connecter à une board"
       },
       "crowd": {
         "title": "Explorer sans bouger le mur",
-        "p1": "Avec quelqu'un d'autre dans ta session, faire défiler n'allume plus la board. Touche Allumer au mur quand tu veux le tien, ou touche Au mur en haut pour revenir au bloc au mur.",
-        "p2": "Tu grimpes seul ? Dans Paramètres, puis Board, désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler.",
-        "previewLink": "Voir un bloc depuis n'importe quelle liste"
+        "p1": "Avec quelqu’un d’autre dans ta session, faire défiler permet d’explorer sans changer le mur, sauf si tu pilotes. Touche Allumer sur la board pour allumer un bloc, ou Au mur en haut pour revenir au bloc allumé.",
+        "p2": "Si le bouton givré du lecteur affiche Tu pilotes la board, touche-le pour arrêter de piloter en gardant la connexion. En solo, désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler dans Paramètres, puis Board, pour explorer sans allumer.",
+        "previewLink": "Voir un bloc depuis n'importe quelle liste",
+        "drivingLink": "Comment commencer et arrêter de piloter la board"
       },
       "history": {
         "title": "Les sessions de ton profil",
@@ -713,28 +714,28 @@
       "breadcrumb": "Board et Bluetooth",
       "hero": {
         "title": "Connecte ton téléphone à la board",
-        "subtitle": "Touche Allumer sur la board, choisis ta board, et ton bloc s'allume."
+        "subtitle": "Touche Allumer sur la board pour allumer ton bloc. L’effet givré du bouton du lecteur indique quand chaque bloc choisi s’allumera."
       },
       "connect": {
         "title": "Se connecter",
-        "p1": "Dans un bloc, touche Allumer sur la board sous la board, ou touche l'ampoule dans la barre du haut. Puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
+        "p1": "Dans un bloc, touche le grand bouton Allumer sur la board. Il se connecte si besoin et allume le bloc à l’écran. Si Sélectionner une board s’ouvre, touche la tienne : le signal le plus fort est en premier, avec un numéro de série par ligne. L’ampoule de la barre du haut permet aussi de se connecter.",
         "p2": "La première fois, iOS demande le Bluetooth. Android demande les appareils à proximité, ou la localisation sur Android 11 et antérieur.",
-        "shotAlt": "La fiche Sélectionner une board",
-        "shotCaption": "Signal le plus fort en premier, avec les numéros de série.",
-        "litShotAlt": "Un bloc allumé",
-        "litShotCaption": "Un bloc allumé sur la board.",
+        "litShotAlt": "Le lecteur avec son grand bouton du mur",
+        "litShotCaption": "Lis le bouton du mur : Tu pilotes la board signifie que le prochain bloc choisi s’allume aussi.",
         "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar.",
-        "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. L’ampoule prend le bout droit de la rangée du haut à la place du bouton du mur, et une touche ou un appui long fait la même chose."
+        "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. Elle prend le bout droit de la rangée du haut. Les deux commandes connectent et allument les blocs ; maintiens-les pour les options quand la board est connectée. Le bouton du mur permet aussi de glisser pour piloter et de toucher pour arrêter."
       },
       "hidden": {
         "title": "Commandes de la board",
-        "p1": "Une fois connecté, garde appuyé le bouton sous la board. Quand il affiche Déconnecter la board, une touche brève la déconnecte. Quand il affiche Tu pilotes la board, une touche brève arrête de piloter et la board reste connectée. Dans un bloc, ⋯ puis Commandes de la board les ouvre aussi, tout comme garder l'ampoule de la barre du haut appuyée.",
+        "p1": "Une fois connecté, maintiens le bouton du mur pour ouvrir Commandes de la board. Dans un bloc, ⋯ puis Commandes de la board les ouvre aussi, tout comme maintenir l’ampoule du haut. Une touche brève suit le libellé : Tu pilotes la board arrête le pilotage en gardant la connexion ; Déconnecter la board déconnecte.",
         "row1": "Rallumer la board. Renvoie le bloc aux LED.",
         "row2": "Tout éteindre. Ton téléphone reste connecté.",
         "row3": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
         "row4": "Allumer la prise du dessus. MoonBoard uniquement.",
-        "p2": "Déconnexion automatique, Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler sont dans Paramètres, puis Board, et dans le menu qu'ouvre l'ampoule de la barre du haut. La déconnexion automatique libère la board après 30 secondes d'inactivité. Désactive les deux réglages d'allumage et explorer ne change plus le mur.",
-        "p3": "Sans board connectée, Allumer sur la board, ou une touche courte sur l'ampoule de la barre du haut, connecte à la dernière board utilisée."
+        "p2": "Déconnexion automatique, Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler sont dans Paramètres, puis Board, et dans le menu de l’ampoule du haut. La déconnexion automatique libère la board après 30 secondes d’inactivité. Pour explorer sans allumer, arrête de piloter puis désactive les deux réglages d’allumage. Quand tu pilotes, chaque bloc choisi s’allume même si ces réglages sont désactivés.",
+        "p3": "Sans board connectée, Allumer sur la board connecte et allume le bloc à l’écran. En solo, tu commences aussi à piloter. En crew, une touche n’allume que ce bloc. L’ampoule du haut peut reconnecter la dernière board utilisée.",
+        "shotAlt": "Les commandes d’une board connectée",
+        "shotCaption": "Rallume, éteins toutes les lumières ou déconnecte. Allumer chaque bloc commence le pilotage quand l’option est disponible."
       },
       "failed": {
         "title": "Quand ça ne se connecte pas",
@@ -759,7 +760,7 @@
       },
       "control": {
         "title": "Quand quelqu'un d'autre a la board",
-        "p1": "En session, un seul téléphone tient la board. Sur les autres, ouvre l'aperçu d'un bloc et touche Allumer au mur, et le téléphone qui la tient l'allume.",
+        "p1": "En session, un seul téléphone tient la board. Sur les autres, ouvre l’aperçu d’un bloc et touche Allumer sur la board : le téléphone connecté l’allume. Son avatar indique qui tient la connexion. Ce bouton de relais ne permet pas de glisser pour piloter.",
         "p2": "Sur les murs sans lumières, le bouton affiche Prendre le mur.",
         "sessionsLink": "Plus sur le partage d'un mur"
       },
@@ -774,6 +775,14 @@
         "title": "Pour aller plus loin",
         "findingClimbs": "Trouver quelque chose à mettre au mur",
         "hub": "Tous les sujets d'aide"
+      },
+      "driving": {
+        "title": "Savoir quand tu pilotes la board",
+        "p1": "Quand le bouton du mur du lecteur a un effet givré et affiche Tu pilotes la board, chaque bloc que tu choisis s’allume, même en crew. Être connecté ne veut pas toujours dire piloter. En solo, toucher Allumer sur la board commence le pilotage ; en crew, une touche allume un seul bloc.",
+        "p2": "Pour piloter quand le bouton affiche ‹‹, glisse le bouton du mur vers la gauche. L’effet givré suit ton doigt. Relâche quand il affiche Relâche pour allumer chaque bloc. Il se connecte si besoin, allume le bloc à l’écran et ceux que tu choisis ensuite. Glisser sur le dessin de la board change de bloc.",
+        "p3": "Touche Tu pilotes la board pour arrêter de piloter et explorer en restant connecté. Le bouton affiche alors Déconnecter la board ; le toucher déconnecte. Tu peux aussi commencer avec Allumer chaque bloc dans ⋯, puis Commandes de la board, ou dans les actions du lecteur d’écran du bouton.",
+        "clipAlt": "Glisser le bouton du mur à gauche pour piloter, puis le toucher pour arrêter",
+        "clipCaption": "Glisse le bouton à gauche, relâche pour allumer chaque bloc, puis touche le bouton givré pour arrêter de piloter en gardant la connexion."
       }
     },
     "climbActions": {
@@ -794,11 +803,12 @@
       "preview": {
         "title": "Voir un bloc sans allumer la board",
         "intro": "Aperçu est le premier élément de la liste.",
-        "p1": "Ça ouvre le bloc dans le lecteur sans toucher à ta file. Ton glissement suivant te ramène à ta file.",
-        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, un bouton en haut te ramène : Mon choix pour ton bloc, Au mur pour le bloc allumé. La ligne sous le nom indique Toi seul le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Allumer au mur (ou Activer) sous la board quand tu veux le bloc.",
+        "p1": "Aperçu ouvre le bloc dans le lecteur sans toucher à ta file. Quand un aperçu vient avec une liste, les glissements suivent cette liste. Un aperçu isolé peut ne pas avoir de bloc suivant.",
+        "p2": "Quand tu explores sans allumer, le bouton du haut te ramène : Mon choix à ton bloc, Au mur au bloc allumé. Sous le nom, tu lis Toi seul le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Allumer sur la board (ou Activer) quand tu veux ce bloc. Si le bouton du lecteur affiche Tu pilotes la board, les changements de bloc suivants allument le mur ; touche-le d’abord pour arrêter de piloter.",
         "sessionsLink": "Comment une session garde le mur tranquille",
-        "clipAlt": "Le bouton Mon choix",
-        "clipCaption": "Le bouton arrive après le glissement. Le mur ne bouge pas."
+        "clipAlt": "Explorer une liste dans le lecteur sans allumer ses blocs",
+        "clipCaption": "Explore la liste pendant que le mur garde son bloc. Allumer sur la board l’allume quand tu le choisis.",
+        "drivingLink": "Comment commencer et arrêter de piloter la board"
       },
       "quick": {
         "title": "Les trois boutons du haut",

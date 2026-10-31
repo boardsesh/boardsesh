@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +42,7 @@ describe('help clip table', () => {
       'zone-filter-drag',
       'grade-range-tap',
       'preview-browsing',
+      'wall-swipe-to-drive',
       'start-playlist-queue',
     ]);
   });
@@ -178,7 +181,7 @@ describe('resolving a delivery', () => {
 
   it('names every absent recording at once rather than failing one at a time', () => {
     expect(() => resolveHelpClipSet(rawDir, {}, present(everything.slice(0, 2)))).toThrow(
-      /Missing 7 of 9 help clip recording\(s\)/,
+      new RegExp(`Missing ${HELP_CLIPS.length - 2} of ${HELP_CLIPS.length} help clip recording\\(s\\)`),
     );
   });
 
@@ -189,7 +192,7 @@ describe('resolving a delivery', () => {
       present(everything.slice(0, 2)),
     );
     expect(resolved.map((clip) => clip.entry.name)).toEqual(['long-press-climb-actions', 'swipe-row-queue-playlist']);
-    expect(missing).toHaveLength(7);
+    expect(missing).toHaveLength(HELP_CLIPS.length - 2);
     expect(missing[0]).toBe('remove-from-playlist.mov');
   });
 

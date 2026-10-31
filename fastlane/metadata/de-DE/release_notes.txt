@@ -1,8 +1,12 @@
 Boardsesh gibt es jetzt auch auf Italienisch.
 
+SIEH, WANN DU DAS BOARD BELEUCHTEST
+
+Am Board beleuchten verbindet und beleuchtet deinen Boulder. Die mattierte Taste im Player zeigt, dass du steuerst: Jeder gewählte Boulder leuchtet auf. Wische die Taste nach links, um zu starten; tippe darauf, um die Steuerung zu stoppen und verbunden weiterzustöbern.
+
 iPad und iPhone Duo: mehr Platz fürs Board
 
-Auf dem iPad bekommen deine Boulder den ganzen Bildschirm, und der Boulder an der Wand sitzt unten in einem Mini-Player. Tippe darauf, um den Player zu öffnen. Im Querformat sitzt das Board neben Als Nächstes, deinem Routenbuch und der Beta. Montiere ein iPad neben deinem Board und öffne über den Mini-Player die Wandanzeige, um den Boulder im Vollbild zu zeigen, groß genug, um ihn von der Matte aus zu lesen.
+Auf dem iPad bekommen deine Boulder den ganzen Bildschirm, und der Boulder an der Wand sitzt unten in einem Mini-Player. Tippe darauf, um den Player zu öffnen. Im Querformat sitzt das Board neben Als Nächstes, deinem Routenbuch und der Beta. Montiere ein iPad am Board und öffne die Wandanzeige im Mini-Player: der Boulder im Vollbild, von der Matte aus lesbar.
 
 Öffne dein iPhone Duo, und das Board sitzt neben deiner Liste. Baue ein Workout auf einem geöffneten Duo und sieh die geplanten Boulder neben deinen Blöcken.
 
@@ -18,7 +22,7 @@ Baue eine Session aus Blöcken: Aufwärmen, dann eine Pyramide, dann Volumen. F�
 
 ABSPIELEN AUS DER LISTE, DIE DU ANGETIPPT HAST
 
-Der Player zeigt, aus welcher Liste du kletterst, und beim Wischen bleibst du in dieser Liste, von deinem Routenbuch und deinen Sessions bis zu Profilen und ähnlichen Bouldern. Playlists laufen, ohne deine Warteschlange anzutasten. Wische in jeder Liste über einen Boulder, um ihn als Nächstes oder als Letztes zu spielen.
+Der Player zeigt deine Liste, und beim Wischen bleibst du darin: Routenbuch, Sessions, Profile oder ähnliche Boulder. Playlists laufen, ohne deine Warteschlange anzutasten. Wische in jeder Liste über einen Boulder, um ihn als Nächstes oder als Letztes zu spielen.
 
 MEHR NACH DEINEM GESCHMACK
 
@@ -31,10 +35,10 @@ MEHR NACH DEINEM GESCHMACK
 
 KORREKTUREN FÜR DEINE NÄCHSTE SESSION
 
-- Dein Routenbuch, deine Likes und deine Playlists funktionieren ohne Empfang, und heruntergeladene Boards werden nicht mehr jede Woche neu geladen.
+- Routenbuch, Likes und Playlists funktionieren ohne Empfang. Heruntergeladene Boards werden nicht mehr wöchentlich neu geladen.
 - Board-Scans finden MoonBoards und neuere Kilter-Boxen, die nächstgelegenen zuerst. Boardsesh fragt beim ersten Scan nach Bluetooth, nicht beim Start.
 - Nach unten wischen schließt den Player wieder. Beleuchtete Griffe bleiben beim Stöbern sichtbar.
-- In Hallen mit mehreren Boards folgt die Verbindung dem Board deines aktuellen Boulders. Die Lichttaste zeigt, ob es leuchtet, verbindet oder aus ist, auch wenn deine Crew es ausschaltet.
+- In Hallen mit mehreren Boards folgt die Verbindung dem Board deines aktuellen Boulders. Die Taste zeigt den Lichtstatus, auch wenn deine Crew das Licht ausschaltet.
 - Gespiegelte Boulder behalten ihre Ausrichtung im Routenbuch und im Warteschlangenverlauf.
 - Lösche mehrere Routenbucheinträge nacheinander oder die Tageseinträge eines Boulders zusammen.
 - Boulder, die du entlikest, verschwinden sofort aus Gelikt.

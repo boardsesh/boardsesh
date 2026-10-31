@@ -1,0 +1,59 @@
+appId: com.boardsesh.app
+name: help clip - swipe the wall button to drive
+---
+# Clip: wall-swipe-to-drive -> packages/web/public/videos/help/wall-swipe-to-drive.mp4
+#
+# Records the real player: swipe its wall button left to start driving, swipe
+# the board to another climb while driving, then tap the frosted wall button
+# to stop driving without disconnecting. Review Let go to light every climb,
+# You are driving the wall, and the final Disconnect board label in the take.
+#
+# Before recording, open a tracked climb with screenshotOpenFirst=1 and leave
+# screenshotDrive unset. Start with Put on board and chevrons, with no link, or
+# Disconnect board and chevrons after stopping an earlier drive. Do not tap
+# Put on board first: solo taps can start driving before this gesture. A slower drag keeps the wipe and release label readable.
+#
+# Use mobile:ios-shots --backend local. Its existing store-capture environment
+# supplies EXPO_PUBLIC_SCREENSHOT_DRIVING=1 and
+# EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1. The simulator has no Bluetooth; this
+# records the app's actual state changes using its simulated board adapter,
+# not physical BLE delivery. The automatic frost peek stays suppressed.
+#
+# Measured on Boardsesh Release Help 20261031, iPhone 16 Pro Max, dark,
+# 1320 x 2868, source d5f10c24dc, captured 2026-10-31:
+#   86%,90% -> 15%,90%  swipe the wall button left past its commit point
+#   85%,50% -> 18%,50%  swipe the board to the next climb
+#   50%,90%             tap the driving button to stop, retaining the link
+#
+# Percentages must be whole numbers. The caller navigates before recording;
+# the flow stays in the player and never presses Disconnect board.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 600
+    optional: true
+
+- swipe:
+    start: '86%,90%'
+    end: '15%,90%'
+    duration: 2500
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1200
+    optional: true
+
+- swipe:
+    start: '85%,50%'
+    end: '18%,50%'
+    duration: 700
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1000
+    optional: true
+
+- tapOn:
+    point: '50%,90%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1000
+    optional: true

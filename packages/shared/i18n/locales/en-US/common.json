@@ -583,7 +583,7 @@
           "label": "Board control",
           "wallButton": "Wall button",
           "lightbulb": "Lightbulb",
-          "footer": "Either one connects, lights the climb and shows whose board it is. Hold it for board options. The lightbulb takes the top row's right end."
+          "footer": "Both controls connect, light the climb and show who holds the board. Hold while connected for board options. On the wall button, frosted colours and You are driving the wall mean each climb you pick lights up; tap it to stop driving and stay connected. The lightbulb sits at the top right."
         }
       },
       "climbView": {

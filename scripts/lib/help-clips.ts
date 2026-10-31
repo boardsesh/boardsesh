@@ -117,7 +117,16 @@ export const HELP_CLIPS = [
   {
     name: 'preview-browsing',
     source: 'preview-browsing',
+    trim: { start: 13.5, end: 25.5 },
+    poster: 8.5,
     description: 'Browse the next climb without losing the one on the wall.',
+  },
+  {
+    name: 'wall-swipe-to-drive',
+    source: 'wall-swipe-to-drive',
+    // The native take is pre-trimmed to 12 s, removing only idle capture waits.
+    poster: 4,
+    description: 'Swipe the wall button left to drive, change climbs, then tap to stop driving.',
   },
   {
     name: 'start-playlist-queue',

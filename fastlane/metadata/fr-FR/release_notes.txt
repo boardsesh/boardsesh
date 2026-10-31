@@ -1,5 +1,9 @@
 Boardsesh est maintenant disponible en italien.
 
+SACHE QUAND TU ALLUMES LA BOARD
+
+Allumer sur la board connecte et allume ton bloc. L’effet givré du bouton du lecteur indique que tu pilotes : chaque bloc choisi s’allume au mur. Balaye le bouton vers la gauche pour commencer ; touche-le pour arrêter de piloter et parcourir les blocs sans te déconnecter.
+
 iPad et iPhone Duo : plus de place pour la board
 
 Sur iPad, tes blocs passent en plein écran et le bloc au mur reste dans un mini-lecteur en bas. Touche-le pour ouvrir le lecteur. En mode paysage, la board se place à côté de À suivre, de ton carnet et de la beta. Fixe un iPad près de ta board et ouvre Affichage mural depuis le mini-lecteur pour afficher le bloc en plein écran, assez grand pour le lire depuis le tapis.
@@ -18,7 +22,7 @@ Compose une séance en phases : échauffement, puis une pyramide, puis du volume
 
 LANCE LES BLOCS DE LA LISTE QUE TU AS TOUCHÉE
 
-Le lecteur indique la liste dans laquelle tu grimpes, et balayer te garde dans cette liste, de ton carnet et tes séances aux profils et aux blocs similaires. Les playlists se lancent sans toucher à ta file. Balaye un bloc dans n'importe quelle liste pour le mettre juste après ou à la fin.
+Le lecteur indique ta liste, et balayer t’y garde : carnet, séances, profils ou blocs similaires. Les playlists se lancent sans toucher à ta file. Balaye un bloc dans n'importe quelle liste pour le mettre juste après ou à la fin.
 
 PLUS D'OPTIONS À TON GOÛT
 
@@ -34,7 +38,7 @@ CORRECTIONS POUR TA PROCHAINE SÉANCE
 - Ton carnet, tes likes et tes playlists fonctionnent sans réseau, et les boards téléchargées ne se retéléchargent plus chaque semaine.
 - Les scans de boards trouvent les MoonBoards et les boîtiers Kilter récents, les plus proches d'abord. Boardsesh demande le Bluetooth à ton premier scan, pas au lancement.
 - Balayer vers le bas ferme de nouveau le lecteur. Les prises allumées restent visibles pendant que tu navigues.
-- Dans les salles avec plusieurs boards, la connexion suit la board du bloc actuel. Le bouton des lumières indique si elle est allumée, en connexion ou éteinte, même quand ta crew l'éteint.
+- Dans les salles avec plusieurs boards, la connexion suit la board du bloc actuel. Le bouton indique son état, même quand ta crew l’éteint.
 - Les blocs en miroir gardent leur orientation dans ton carnet et l'historique de la file.
 - Supprime plusieurs entrées du carnet à la suite, ou celles d'un bloc regroupées sur une journée.
 - Les blocs que tu n'aimes plus quittent Aimées tout de suite.
