@@ -26,7 +26,7 @@ import {
   singleTapFlow,
 } from './lib/session-input-observation/guards';
 import { applyObservationWrapper } from './lib/session-input-observation/wrapper';
-import { startObservationProxy } from './lib/session-input-observation/proxy';
+import { startPinnedObservationReplay } from './lib/session-input-observation/replay';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIRECTORY = join(ROOT, '.boardsesh/session-input-observation');
@@ -44,13 +44,14 @@ const publicReport: Record<string, unknown> = {
   attempts: [],
   confounds: [
     'one-primary-one-metro-one-worker-reduced-load',
-    'live-read-proxy-blocks-application-writes',
+    'pinned-replay-account-backend-differ-from-failed-live-crew-run',
+    'pinned-clock-and-prime-match-successful-local-control',
     'no-secondary',
     'observation-logs-affect-timing',
   ],
 };
 let ownedUdid: string | null = null;
-let proxy: Awaited<ReturnType<typeof startObservationProxy>> | null = null;
+let replay: Awaited<ReturnType<typeof startPinnedObservationReplay>> | null = null;
 let activeAttempt = 0;
 const snapshots: Record<string, unknown>[] = [];
 class ObservationFailure extends Error {}
@@ -307,8 +308,6 @@ async function main(): Promise<number> {
     !existsSync(APP)
   )
     fail('exact_native_cache_required_no_build');
-  if (!process.env.SCREENSHOT_USER_EMAIL || !process.env.SCREENSHOT_USER_PASSWORD)
-    fail('live_account_credentials_missing');
   const deadline = setTimeout(() => CONTROLLER.abort(), 23 * 60_000);
   const interrupted = () => CONTROLLER.abort();
   process.once('SIGINT', interrupted);
@@ -384,7 +383,16 @@ async function main(): Promise<number> {
       topology: { primarySimulators: 1, metros: 1, metroWorkers: 1 },
       confounds: publicReport.confounds,
     });
-    proxy = await startObservationProxy(memorySnapshot);
+    replay = await startPinnedObservationReplay(join(PRIVATE, 'replay.log'), join(PRIVATE, 'fixtures'), memorySnapshot);
+    writePublic('fixture-manifest.json', {
+      reference: replay.reference,
+      frozenNow: replay.frozenNow,
+      account: 'synthetic-pinned-fixture-account',
+      matchesLocalBaseline: true,
+      mode: 'replay',
+      upstream: null,
+      backendStats: replay.stats(),
+    });
     writeFileSync(
       join(ROOT, '.boardsesh/qa-notes.md'),
       '1. Open Session; the visibility switch starts ON.\n2. Tap the thumb; the invite-only subtitle should appear.\n3. Leave without pressing Start.\n',
@@ -400,8 +408,9 @@ async function main(): Promise<number> {
       EXPO_PUBLIC_SCREENSHOT_FAKE_BLE: '1',
       EXPO_PUBLIC_SCREENSHOT_THEME: 'dark',
       EXPO_PUBLIC_SCREENSHOT_LOCALE: 'en-US',
-      EXPO_PUBLIC_SCREENSHOT_USER_EMAIL: process.env.SCREENSHOT_USER_EMAIL,
-      EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: process.env.SCREENSHOT_USER_PASSWORD,
+      EXPO_PUBLIC_SCREENSHOT_USER_EMAIL: 'test@boardsesh.com',
+      EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: 'test',
+      EXPO_PUBLIC_SCREENSHOT_NOW: replay.frozenNow,
       EXPO_PUBLIC_NATIVE_INPUT_TRACE: '1',
     };
     const metro = spawn(
@@ -424,7 +433,12 @@ async function main(): Promise<number> {
       signal: AbortSignal.timeout(30_000),
     }).then((response) => response.json())) as { launchAsset?: { url?: string } };
     const bundle = new URL(manifest.launchAsset?.url ?? '');
-    if (bundle.origin !== metroUrl.origin) fail('bundle_origin_changed');
+    if (
+      bundle.protocol !== 'http:' ||
+      !['localhost', '127.0.0.1'].includes(bundle.hostname) ||
+      bundle.port !== metroUrl.port
+    )
+      fail('bundle_origin_changed');
     const bundleResponse = await fetch(bundle, { signal: AbortSignal.timeout(300_000) });
     if (!bundleResponse.ok) fail('prewarm_failed');
     for await (const _chunk of bundleResponse.body!) {
@@ -604,9 +618,9 @@ async function main(): Promise<number> {
       cleanup.metro = 'failed';
     }
     try {
-      await proxy?.close();
+      await replay?.close();
     } catch {
-      cleanup.proxy = 'failed';
+      cleanup.replay = 'failed';
     }
     try {
       if (existsSync(METRO_LOG))
@@ -624,7 +638,7 @@ async function main(): Promise<number> {
     }
     publicReport.cleanup = cleanup;
     publicReport.cleanupFailed = Object.values(cleanup).some((result) => result !== 0);
-    publicReport.proxy = proxy?.counters;
+    publicReport.replay = replay?.stats();
     publicReport.snapshots = snapshots.length;
     publicReport.ownedUdid = ownedUdid;
     writePublic('result.json', publicReport);

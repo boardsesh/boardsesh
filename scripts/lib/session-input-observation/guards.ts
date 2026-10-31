@@ -1,5 +1,3 @@
-import { getOperationAST, parse } from 'graphql';
-
 export const VISIBILITY_TITLE = 'Show this session live';
 export const VISIBILITY_ON = `${VISIBILITY_TITLE}, Your crew and climbers on this board can see it and join.`;
 export const VISIBILITY_OFF = `${VISIBILITY_TITLE}, Only people with your invite link can join.`;
@@ -185,64 +183,10 @@ export function classifyAttempt(traces: Record<string, unknown>[], offConfirmed:
     return { reproduced: true, boundary: 'parent_instance_changed' };
   return { reproduced: false, boundary: 'none_observed' };
 }
-export function permitGraphqlRead(input: unknown): boolean {
-  const operations = Array.isArray(input) ? input : [input];
-  return (
-    operations.length > 0 &&
-    operations.every((operation) => {
-      const record = objectRecord(operation);
-      if (typeof record?.query !== 'string') return false;
-      try {
-        const selected = getOperationAST(
-          parse(record.query),
-          typeof record.operationName === 'string' ? record.operationName : undefined,
-        );
-        return selected?.operation === 'query' || selected?.operation === 'subscription';
-      } catch {
-        return false;
-      }
-    })
-  );
-}
 export function singleTapFlow(point: { x: number; y: number }): string {
   if (![point.x, point.y].every((coordinate) => Number.isInteger(coordinate) && coordinate >= 0))
     throw new Error('invalid_tap_point');
-  return `appId: com.boardsesh.app\n---\n- evalScript: \${http.get('http://127.0.0.1:8119/__observation/before')}\n- tapOn:\n    point: '${point.x},${point.y}'\n    repeat: 1\n    retryTapIfNoChange: false\n- evalScript: \${http.get('http://127.0.0.1:8119/__observation/after')}\n`;
-}
-
-/** Only operation names survive; variables, headers, bodies and parser errors never do. */
-export function blockedOperationNames(input: unknown): string[] {
-  return (Array.isArray(input) ? input : [input]).map((operation) => {
-    const record = objectRecord(operation);
-    if (typeof record?.query !== 'string') return 'non_read_graphql';
-    try {
-      const selected = getOperationAST(
-        parse(record.query),
-        typeof record.operationName === 'string' ? record.operationName : undefined,
-      );
-      const name = selected?.name?.value;
-      return selected?.operation === 'mutation' && name && /^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(name)
-        ? name
-        : 'non_read_graphql';
-    } catch {
-      return 'non_read_graphql';
-    }
-  });
-}
-export function observationHttpPolicy(
-  method: string | undefined,
-  pathname: string,
-  payload: unknown,
-): 'auth' | 'read' | 'blocked' {
-  if (
-    method === 'POST' &&
-    ['/auth/native/credentials', '/auth/native/refresh', '/auth/native/revoke'].includes(pathname)
-  )
-    return 'auth';
-  if (method === 'POST' && ['/graphql', '/graphql/batch'].includes(pathname) && permitGraphqlRead(payload))
-    return 'read';
-  if (method === 'GET' && (pathname.startsWith('/static/') || pathname === '/health')) return 'read';
-  return 'blocked';
+  return `appId: com.boardsesh.app\n---\n- evalScript: \${http.get('http://127.0.0.1:8120/__observation/before')}\n- tapOn:\n    point: '${point.x},${point.y}'\n    repeat: 1\n    retryTapIfNoChange: false\n- evalScript: \${http.get('http://127.0.0.1:8120/__observation/after')}\n`;
 }
 
 export function mayAttemptFreshLaunch(result: {

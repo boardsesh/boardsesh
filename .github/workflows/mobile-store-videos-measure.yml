@@ -60,6 +60,16 @@ jobs:
           set -euo pipefail
           test "$CACHE_HIT" = true || { echo 'Observation requires cache hit; no build permitted.'; exit 1; }
           test "$CACHE_KEY" = macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a
+      - name: Record exact cache metadata for finite observation
+        if: inputs.mode == 'observe-session-input'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: |
+          set -euo pipefail
+          mkdir -p .boardsesh/session-input-observation/public
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/caches" -f key="$CACHE_KEY" --jq '.actions_caches | map({id, key, ref, size_in_bytes, created_at, last_accessed_at})' > .boardsesh/session-input-observation/public/cache-metadata.json
+          jq -e 'length > 0 and all(.[]; .key == env.CACHE_KEY)' .boardsesh/session-input-observation/public/cache-metadata.json > /dev/null
       - name: Build dev-client on cache miss
         if: inputs.mode != 'observe-session-input' && steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
@@ -93,8 +103,6 @@ jobs:
           SESSION_INPUT_OBSERVATION: '1'
           OBSERVATION_CACHE_HIT: ${{ steps.app-cache.outputs.cache-hit }}
           OBSERVATION_CACHE_KEY: ${{ steps.appkey.outputs.key }}
-          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
-          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
         run: vp exec tsx scripts/observe-session-input.ts
       - name: Retain only redacted finite-observation evidence
         if: always() && inputs.mode == 'observe-session-input'

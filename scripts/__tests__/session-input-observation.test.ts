@@ -1,26 +1,30 @@
 import { linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createServer } from 'node:http';
-import { WebSocket, WebSocketServer } from 'ws';
-import { afterEach, describe, expect, it } from 'vitest';
+import { request as httpRequest } from 'node:http';
+import { WebSocket } from 'ws';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import { runInNewContext } from 'node:vm';
 import {
-  blockedOperationNames,
   classifyAttempt,
   hierarchyNode,
   inside,
   inspectVisibility,
   mayAttemptFreshLaunch,
-  observationHttpPolicy,
   OBSERVATION_STAGES,
-  permitGraphqlRead,
   redactedTrace,
   singleTapFlow,
 } from '../lib/session-input-observation/guards';
 import { applyObservationWrapper } from '../lib/session-input-observation/wrapper';
-import { startObservationProxy, websocketText } from '../lib/session-input-observation/proxy';
+import {
+  assertObservationFixture,
+  OBSERVATION_FIXTURE,
+  observationReplayOptions,
+  replayOperationCounter,
+} from '../lib/session-input-observation/replay';
+import { createScreenshotBackend } from '../lib/screenshot-backend';
+import { emptyManifest } from '../lib/screenshot-fixtures';
 
 const fixture = JSON.parse(
   readFileSync('scripts/__tests__/fixtures/showcase-session-visibility/ios-maestro-2.6.1.json', 'utf8'),
@@ -91,7 +95,7 @@ describe('finite session-input observation guards', () => {
     expect(flow).toHaveLength(3);
     expect(flow[1]).toEqual({ tapOn: { point: '369,487', repeat: 1, retryTapIfNoChange: false } });
     expect(JSON.stringify(flow)).not.toMatch(/Start|join|secondary|longPress/);
-    expect(JSON.stringify(flow[0])).toContain('/before');
+    expect(JSON.stringify(flow[0])).toContain('127.0.0.1:8120/__observation/before');
     expect(JSON.stringify(flow[2])).toContain('/after');
   });
   it('retains only generic trace stages, primitive diagnostic fields and safe IDs', () => {
@@ -163,33 +167,26 @@ describe('finite session-input observation guards', () => {
     ])
       expect(mayAttemptFreshLaunch({ ...success, ...failure })).toBe(false);
   });
-  it('allows live GraphQL reads and only exact existing-account auth routes', () => {
-    expect(permitGraphqlRead({ query: 'query GetMyBoards { myBoards { __typename } }' })).toBe(true);
-    expect(permitGraphqlRead({ query: 'subscription Watch { queue { __typename } }' })).toBe(true);
-    expect(
-      permitGraphqlRead([
-        { query: '{ __typename }' },
-        { query: 'mutation StartSession { startSession { __typename } }' },
-      ]),
-    ).toBe(false);
-    expect(permitGraphqlRead({ query: 'mutation StartSession { startSession { __typename } }' })).toBe(false);
-    expect(permitGraphqlRead({ query: 'query Safe { __typename } mutation Bad { x }', operationName: 'Safe' })).toBe(
-      true,
+  it('pins the exact local-baseline replay snapshot and never configures a live upstream', () => {
+    expect(OBSERVATION_FIXTURE).toMatchObject({
+      sha256: '03ddb626f41d3627f587f3bff1686e2d0cc098630973d14a730f348dfe546ed1',
+      bytes: 1663568,
+      files: 346,
+    });
+    expect(() => assertObservationFixture(OBSERVATION_FIXTURE)).not.toThrow();
+    expect(() => assertObservationFixture({ ...OBSERVATION_FIXTURE, sha256: '0'.repeat(64) })).toThrow('pin_changed');
+    expect(() => assertObservationFixture({ ...OBSERVATION_FIXTURE, bytes: OBSERVATION_FIXTURE.bytes + 1 })).toThrow(
+      'pin_changed',
     );
-    expect(permitGraphqlRead({ query: 'query Safe { __typename } mutation Bad { x }' })).toBe(false);
-    for (const path of ['/auth/native/credentials', '/auth/native/refresh', '/auth/native/revoke'])
-      expect(observationHttpPolicy('POST', path, null)).toBe('auth');
-    for (const path of [
-      '/auth/native/register',
-      '/auth/native/credentials/extra',
-      '/auth/native/oauth',
-      '/profile',
-      '/graphql',
-    ])
-      expect(observationHttpPolicy('POST', path, { query: 'mutation Write { x }' })).toBe('blocked');
-    expect(
-      blockedOperationNames({ query: 'mutation StartSession($token:String){x}', variables: { token: 'secret' } }),
-    ).toEqual(['StartSession']);
+    expect(observationReplayOptions('/owned/fixtures', '2026-09-19T14:39:54Z', () => {})).toMatchObject({
+      mode: 'replay',
+      upstreamUrl: null,
+    });
+    const retained = replayOperationCounter(
+      '[screenshot-backend] MISS graphql GetProfile abcd variables={"email":"private@example.invalid","token":"secret"}',
+    );
+    expect(retained).toEqual({ outcome: 'MISS', operationName: 'GetProfile' });
+    expect(replayOperationCounter('[screenshot-backend] HIT auth email=private@example.invalid')).toBeNull();
   });
   it('isolates hardlinked wrappers and rejects symlinks outside the owned checkout', () => {
     const directory = mkdtempSync(join(tmpdir(), '7154-wrapper-'));
@@ -235,6 +232,14 @@ describe('finite session-input observation guards', () => {
         .filter((step: { uses?: string }) => step.uses?.includes('upload-artifact'))
         .map((step: { with: { path: string } }) => step.with.path),
     ).toEqual(['.boardsesh/session-input-observation/public/']);
+    const observation = eligible.find((step: { run?: string }) =>
+      step.run?.includes('scripts/observe-session-input.ts'),
+    );
+    expect(JSON.stringify(observation.env)).not.toMatch(/secrets|SCREENSHOT_USER/);
+    const harness = readFileSync('scripts/observe-session-input.ts', 'utf8');
+    expect(harness).not.toMatch(/startObservationProxy|process\.env\.SCREENSHOT_USER|ws\.boardsesh\.com/);
+    expect(harness).toContain('startPinnedObservationReplay');
+    expect(harness).toContain('EXPO_PUBLIC_SCREENSHOT_NOW: replay.frozenNow');
     expect(evaluate(workflow.jobs.render.if)).toBe(false);
     expect(evaluate(workflow.jobs.timings.if)).toBe(false);
     expect(
@@ -246,85 +251,92 @@ describe('finite session-input observation guards', () => {
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
 });
-describe('live-read proxy enforcement on loopback', () => {
-  it('forwards queries/auth but never forwards HTTP or WebSocket mutations', async () => {
-    const httpRequests: { method: string | undefined; path: string | undefined }[] = [];
-    const upstream = createServer((request, response) => {
-      httpRequests.push({ method: request.method, path: request.url });
-      request.resume();
-      response.setHeader('content-type', 'application/json');
-      response.end('{"data":{"__typename":"Query"}}');
+describe('fixture-only backend observation', () => {
+  it('keeps auth, unsafe query names, WS subscriptions, static misses and unknown routes local', async () => {
+    const directory = mkdtempSync(join(tmpdir(), '7154-replay-'));
+    cleanup.push(async () => {
+      rmSync(directory, { recursive: true, force: true });
     });
-    const websocket = new WebSocketServer({ server: upstream });
-    const remoteFrames: Record<string, unknown>[] = [];
-    websocket.on('connection', (socket) =>
-      socket.on('message', (bytes) => {
-        const frame = JSON.parse(websocketText(bytes));
-        remoteFrames.push(frame);
-        if (frame.type === 'connection_init') socket.send('{"type":"connection_ack"}');
-        if (frame.id === 'read') socket.send('{"id":"read","type":"next","payload":{"data":{"__typename":"Query"}}}');
-      }),
+    writeFileSync(
+      join(directory, 'manifest.json'),
+      JSON.stringify(
+        emptyManifest({
+          recordedAt: '2026-09-19T14:39:54Z',
+          frozenNow: '2026-09-19T14:39:54Z',
+          upstream: 'https://example.invalid',
+          accountEmail: 'test@boardsesh.com',
+          accountUserId: '11111111-2222-3333-4444-555555555555',
+          flow: 'app-store',
+        }),
+      ),
     );
-    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
-    const port = (upstream.address() as { port: number }).port;
-    cleanup.push(async () => {
-      for (const client of websocket.clients) client.terminate();
-      await new Promise<void>((resolve) => websocket.close(() => upstream.close(() => resolve())));
-    });
-    const proxy = await startObservationProxy(() => ({}), {
-      port: 0,
-      upstream: `http://127.0.0.1:${port}`,
-      websocketUpstream: `ws://127.0.0.1:${port}/graphql`,
-    });
-    cleanup.push(() => proxy.close());
-    const endpoint = `http://127.0.0.1:${proxy.port}`;
-    const post = (path: string, payload: unknown) =>
-      fetch(endpoint + path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
+    const outbound = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected_outbound'));
+    const backend = createScreenshotBackend(observationReplayOptions(directory, '2026-09-19T14:39:54Z', () => {}));
+    cleanup.push(() => backend.close());
+    const port = await backend.listen(0, '127.0.0.1');
+    const send = (path: string, method = 'GET', payload?: unknown) =>
+      new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const request = httpRequest(
+          `http://127.0.0.1:${port}${path}`,
+          { method, headers: { 'content-type': 'application/json' } },
+          (response) => {
+            let body = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => {
+              body += chunk;
+            });
+            response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+          },
+        );
+        request.on('error', reject);
+        request.end(payload ? JSON.stringify(payload) : undefined);
       });
-    expect((await post('/graphql', { query: 'query Read { __typename }' })).status).toBe(200);
     expect(
-      (await post('/auth/native/credentials', { email: 'fake@example.invalid', password: 'do-not-retain' })).status,
+      (await send('/auth/native/credentials', 'POST', { email: 'test@boardsesh.com', password: 'test' })).status,
     ).toBe(200);
-    expect(
-      (await post('/graphql', { query: 'mutation StartSession { x }', variables: { token: 'do-not-retain' } })).status,
-    ).toBe(403);
-    expect((await post('/auth/native/register', { email: 'fake@example.invalid' })).status).toBe(403);
-    expect(httpRequests.map((request) => request.path)).toEqual(['/graphql', '/auth/native/credentials']);
-    const client = new WebSocket(`ws://127.0.0.1:${proxy.port}/graphql`, 'graphql-transport-ws');
-    cleanup.push(async () => {
-      client.terminate();
+    const unsafeNamedQuery = await send('/graphql', 'POST', {
+      query: 'query BetaLinks { betaLinks { __typename } }',
+      operationName: 'BetaLinks',
     });
-    const received: Record<string, unknown>[] = [];
-    const completed = new Promise<void>((resolve, reject) => {
-      client.on('error', reject);
-      client.on('message', (bytes) => {
-        const frame = JSON.parse(websocketText(bytes));
-        received.push(frame);
-        if (frame.type === 'connection_ack') {
-          client.send(
-            JSON.stringify({ id: 'read', type: 'subscribe', payload: { query: 'query Read { __typename }' } }),
-          );
-          client.send(
+    expect(unsafeNamedQuery.status).toBe(200);
+    expect(unsafeNamedQuery.body).toContain('fixture miss');
+    expect((await send('/static/not-recorded.png')).status).toBe(404);
+    expect((await send('/unknown')).status).toBe(404);
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws');
+    cleanup.push(async () => {
+      socket.terminate();
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.on('error', reject);
+      socket.on('message', (bytes) => {
+        const frame = JSON.parse(
+          Buffer.isBuffer(bytes) ? bytes.toString('utf8') : Buffer.from(bytes as ArrayBuffer).toString('utf8'),
+        );
+        if (frame.type === 'connection_ack')
+          socket.send(
             JSON.stringify({
-              id: 'write',
+              id: 'controller',
               type: 'subscribe',
-              payload: { query: 'mutation JoinSession { x }', variables: { secret: 'do-not-retain' } },
+              payload: {
+                query: 'subscription ControllerEvents { controllerEvents { __typename } }',
+                operationName: 'ControllerEvents',
+              },
             }),
           );
-        }
-        if (received.some((entry) => entry.id === 'read') && received.some((entry) => entry.id === 'write')) resolve();
+        if (frame.id === 'controller') resolve();
       });
-      client.once('open', () => client.send('{"type":"connection_init","payload":{"authorization":"do-not-retain"}}'));
+      socket.once('open', () => socket.send('{"type":"connection_init","payload":{}}'));
     });
-    await completed;
-    expect(remoteFrames.some((frame) => frame.id === 'write')).toBe(false);
-    expect(received.find((frame) => frame.id === 'write')?.type).toBe('error');
-    expect(proxy.counters.blockedOperationNames).toEqual({ StartSession: 1, non_auth_http: 1, JoinSession: 1 });
-    expect(JSON.stringify(proxy.counters)).not.toContain('do-not-retain');
+    expect(outbound).not.toHaveBeenCalled();
+    expect(backend.stats().recorded).toBe(0);
+    expect(() =>
+      createScreenshotBackend({
+        ...observationReplayOptions(directory, '2026-09-19T14:39:54Z', () => {}),
+        upstreamUrl: 'https://example.invalid',
+      }),
+    ).toThrow('no outbound requests');
   });
 });
