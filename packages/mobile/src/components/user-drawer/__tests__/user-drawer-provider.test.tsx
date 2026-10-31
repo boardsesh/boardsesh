@@ -236,6 +236,9 @@ vi.mock('../../../lib/support-asks', () => ({ useSupportAsksAllowed: () => suppo
 // donation-links probes the Storefront native module at import; only its URL
 // builder runs here.
 vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
+vi.mock('../../../lib/graphql/hooks/use-is-admin', () => ({
+  useIsAdmin: () => ({ isAdmin: false, isLoading: false }),
+}));
 vi.mock('../../../lib/analytics-support-link', () => supportAnalytics);
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: drawerState.isAuthenticated, signOut: signOutMock }),

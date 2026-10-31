@@ -450,7 +450,7 @@ sanctions. The Acknowledgements screen renders exactly one of those two, and
 The same answer gates the Support Boardsesh row in Account and the monthly
 card on Home (days 1 to 7 of each month) (`packages/mobile/src/lib/support-asks.ts`), which also need the
 climber's own "Show support asks" switch in Settings › General to be on. The
-Home card is US iPhones only: it never shows in the Expo browser app, where the
+Home card is US iPhones (and admins' phones, for QA) only: it never shows in the Expo browser app, where the
 Account row and the Acknowledgements link are the only asks.
 
 **On a phone, the code enforces the platform and the region; the flag is only

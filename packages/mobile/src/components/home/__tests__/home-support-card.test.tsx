@@ -61,6 +61,9 @@ vi.mock('../../../hooks/use-today', () => ({ useToday: () => state.today }));
 // The real supportUrlFor; only the store-rule answer is stubbed.
 vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => undefined }));
+vi.mock('../../../lib/graphql/hooks/use-is-admin', () => ({
+  useIsAdmin: () => ({ isAdmin: false, isLoading: false }),
+}));
 vi.mock('../../../lib/donation-links', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/donation-links')>()),
   useDonationLinksAllowed: () => state.linksAllowed,
