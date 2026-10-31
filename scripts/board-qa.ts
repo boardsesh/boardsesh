@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { EXAMPLE_CONFIG, loadConfig, loadPasswords } from './board-qa/config';
-import { Evidence, lease, QaFailure, abortRun } from './board-qa/evidence';
+import { Evidence, lease, QaFailure, abortRun, runFailure, abortOnObserverFailure } from './board-qa/evidence';
 import { command, drivers, cancelCommands } from './board-qa/drivers';
 import { record } from './board-qa/config';
 import { Backend } from './board-qa/backend';
@@ -49,10 +49,13 @@ export async function main(argv: string[]): Promise<number> {
   const passwords = loadPasswords(config.credentialsFile, [config.phones.ios.email, config.phones.android.email]);
   Object.values(passwords).forEach((password) => evidence.secret(password));
   const backend = new Backend(config, evidence);
+  abortOnObserverFailure(backend, cancelCommands, evidence);
   const fixture = new Fixture(config.serialPort, runId, evidence);
   let phoneDrivers: Awaited<ReturnType<typeof drivers>> | undefined;
   let suite: Suite | undefined;
   let release: (() => void) | undefined;
+  let exitCode = 0;
+  let reportedFailure = false;
   const interrupted = () => {
     abortRun();
     void cancelCommands();
@@ -169,24 +172,22 @@ export async function main(argv: string[]): Promise<number> {
       if (boards.some((board) => !status.boards.some((candidate) => candidate.uuid === board.uuid)))
         throw new QaFailure('Fixture is advertising another gym', 'blocked');
     });
-    if (action === 'doctor') {
-      console.log(`[qa:boards] Preflight passed. Evidence: ${evidence.directory}`);
-      return 0;
+    if (action !== 'doctor') {
+      if (!phoneDrivers) throw new Error('Driver setup did not complete');
+      await backend.observe(boards);
+      suite = new Suite(config, phoneDrivers, fixture, backend, boards, evidence);
+      await evidence.scenario('prepare/accounts-and-real-history-dwell', [], () => suite!.prepare());
+      if (action === 'solo' || action === 'all') await suite.solo();
+      if (action === 'sessions' || action === 'all') await suite.sessions();
     }
-    if (!phoneDrivers) throw new Error('Driver setup did not complete');
-    await backend.observe(boards);
-    suite = new Suite(config, phoneDrivers, fixture, backend, boards, evidence);
-    await evidence.scenario('prepare/accounts-and-real-history-dwell', [], () => suite!.prepare());
-    if (action === 'solo' || action === 'all') await suite.solo();
-    if (action === 'sessions' || action === 'all') await suite.sessions();
-    console.log(`[qa:boards] Physical scenarios passed. Evidence: ${evidence.directory}`);
-    return 0;
   } catch (error) {
+    const cause = runFailure() ?? error;
     await suite?.failureArtifacts();
-    const message = evidence.redact(error instanceof Error ? error.message : String(error));
+    const message = evidence.redact(cause instanceof Error ? cause.message : String(cause));
     evidence.event('run-error', { message });
+    reportedFailure = true;
     console.error(`[qa:boards] ${message}\nEvidence: ${evidence.directory}`);
-    return error instanceof QaFailure && error.kind === 'blocked' ? 2 : 1;
+    exitCode = cause instanceof QaFailure && cause.kind === 'blocked' ? 2 : 1;
   } finally {
     await cancelCommands();
     backend.close();
@@ -210,6 +211,19 @@ export async function main(argv: string[]): Promise<number> {
     process.removeListener('SIGTERM', interrupted);
     release?.();
   }
+  const aborted = runFailure();
+  if (aborted) {
+    exitCode = aborted.kind === 'blocked' ? 2 : 1;
+    if (!reportedFailure) {
+      evidence.event('run-error', { message: aborted.message });
+      console.error(`[qa:boards] ${evidence.redact(aborted.message)}\nEvidence: ${evidence.directory}`);
+    }
+  }
+  if (exitCode === 0)
+    console.log(
+      `[qa:boards] ${action === 'doctor' ? 'Preflight' : 'Physical scenarios'} passed. Evidence: ${evidence.directory}`,
+    );
+  return exitCode;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2))

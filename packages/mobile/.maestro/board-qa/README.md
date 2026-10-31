@@ -11,9 +11,14 @@ the selected locale; the last two are native accessibility labels. Device
 selection uses the resolved saved-board UUID, never the first discovered row.
 
 `connect.yaml` and `put.yaml` initiate real UI actions. The host then distinguishes
-a remembered-device success from an actual picker or expected busy-wall dialog.
-It runs `select-device.yaml` or `confirm-takeover.yaml` only when that state was
-observed. An unexpected state fails the scenario; recovery is a separate phase.
+a remembered-device success from an actual picker, selecting only the exact
+saved board. Physical takeover uses this same connection path; the busy-wall
+question belongs to a different crew browsing conflict and is rejected here.
+An unexpected state fails the scenario; recovery is a separate phase.
+
+`wait-app-ready.yaml` observes the real Home/Climbs screen and navigation labels
+after an Android restart or simulator binding, before account or invite links.
+Its bounded wait never treats native activity startup alone as app readiness.
 
 Account inspection reads `account-user-<user ID>` and
 `app-runtime-<metro|release>-<runtime version|none>-<update ID|embedded>` from

@@ -1,6 +1,32 @@
 import type { CatalogClimb } from './config';
 import type { FixtureBoard } from './fixture';
+import type { Snapshot } from './backend';
 import { canonical, QaFailure } from './evidence';
+
+/** A takeover must displace the peer's live writer, not reconnect a free wall. */
+export function requireTakeoverBaseline(
+  physical: FixtureBoard,
+  presence: Snapshot,
+  climb: CatalogClimb,
+  expectedPeer: string,
+  angle: number,
+): void {
+  const current = presence.recent[0];
+  if (
+    physical.connections !== 1 ||
+    physical.handles.length !== 1 ||
+    !physical.handles.includes(physical.connectionHandle) ||
+    physical.connectionGeneration <= 0 ||
+    physical.sequence <= 0 ||
+    canonical(physical.commands) !== canonical(climb.commands) ||
+    presence.holder?.userId !== expectedPeer ||
+    current?.climbUuid !== climb.uuid ||
+    current.sentByUserId !== expectedPeer ||
+    current.angle !== angle ||
+    current.mirrored !== false
+  )
+    throw new QaFailure('Takeover requires the expected peer actively holding and lighting this same climb', 'blocked');
+}
 
 export function requireSessionIdentity(
   users: Record<string, unknown>[],

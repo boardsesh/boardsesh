@@ -325,6 +325,78 @@ describe('recorded Android execution', () => {
   });
 });
 
+describe('Android restart navigation readiness', () => {
+  it('keeps restart pending until real mounted navigation is visible on the exact device', async () => {
+    const root = directory();
+    let releaseReady: () => void = () => {
+      throw new Error('Readiness not started');
+    };
+    const ready = new Promise<string>((resolveReady) => {
+      releaseReady = () => resolveReady('ready');
+    });
+    const run = vi.fn(async (executable: string, args: string[]) => {
+      if (executable !== 'maestro') return '';
+      expect(args.slice(0, 2)).toEqual(['--device', 'owned-android']);
+      const commands = readFlow(args.at(-1)!, { APP_ID: 'com.boardsesh.app.dev' });
+      expect(commands).toEqual([
+        { extendedWaitUntil: { visible: { id: '(home-screen|climbs-screen)' }, timeout: 30000 } },
+        { assertVisible: 'Home' },
+        { assertVisible: 'Climbs' },
+      ]);
+      return await ready;
+    });
+    const driver = new AndroidDriver(
+      { id: 'owned-android', appId: 'com.boardsesh.app.dev', scheme: 'com.boardsesh.app', email: 'qa@example.com' },
+      '/owned/adb',
+      new Evidence(join(root, 'evidence')),
+      run,
+    );
+    let nextAccountIntent = false;
+    const restarted = driver.restart().then(() => {
+      nextAccountIntent = true;
+    });
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(3));
+    expect(nextAccountIntent).toBe(false);
+    expect(run.mock.calls.slice(0, 2)).toEqual([
+      ['/owned/adb', ['-s', 'owned-android', 'shell', 'am', 'force-stop', 'com.boardsesh.app.dev']],
+      [
+        '/owned/adb',
+        [
+          '-s',
+          'owned-android',
+          'shell',
+          'monkey',
+          '-p',
+          'com.boardsesh.app.dev',
+          '-c',
+          'android.intent.category.LAUNCHER',
+          '1',
+        ],
+      ],
+    ]);
+    releaseReady();
+    await restarted;
+    expect(nextAccountIntent).toBe(true);
+  });
+  it('fails a blank or timed-out app without sending the next account route or replaying restart', async () => {
+    const root = directory();
+    const run = vi.fn(async (executable: string) => {
+      if (executable === 'maestro') throw new Error('Normal app navigation timed out');
+      return '';
+    });
+    const driver = new AndroidDriver(
+      { id: 'owned-android', appId: 'com.boardsesh.app.dev', scheme: 'com.boardsesh.app', email: 'qa@example.com' },
+      '/owned/adb',
+      new Evidence(join(root, 'evidence')),
+      run,
+    );
+    const account = vi.fn();
+    await expect(driver.restart().then(account)).rejects.toThrow('navigation timed out');
+    expect(account).not.toHaveBeenCalled();
+    expect(run.mock.calls.map(([executable]) => executable)).toEqual(['/owned/adb', '/owned/adb', 'maestro']);
+  });
+});
+
 describe('selected physical iPhone runner', () => {
   it('executes deep links and physical UI actions against the pinned WDA API contract, rejecting unknown routes', async () => {
     const root = directory();
@@ -332,9 +404,10 @@ describe('selected physical iPhone runner', () => {
     evidence.secret('private-password');
     const calls: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
     const fetch = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const url = new URL(String(input));
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
       const method = options?.method ?? 'GET';
-      const body = options?.body ? (JSON.parse(String(options.body)) as Record<string, unknown>) : {};
+      if (options?.body && typeof options.body !== 'string') throw new Error('Expected serialized JSON body');
+      const body = typeof options?.body === 'string' ? (JSON.parse(options.body) as Record<string, unknown>) : {};
       calls.push({ method, path: url.pathname, body });
       const success = (value: unknown) => Response.json({ value });
       if (method === 'GET' && url.pathname === '/status')

@@ -5,12 +5,21 @@ import { tmpdir } from 'node:os';
 import type { Led } from './config';
 
 export type Verdict = 'passed' | 'failed' | 'blocked' | 'infrastructure';
-let interrupted = false;
-export function abortRun(): void {
-  interrupted = true;
+let firstFailure: QaFailure | undefined;
+const abortController = new AbortController();
+export function abortRun(reason?: QaFailure): QaFailure {
+  firstFailure ??= reason ?? new QaFailure('QA run interrupted', 'blocked');
+  if (!abortController.signal.aborted) abortController.abort(firstFailure);
+  return firstFailure;
+}
+export function runFailure(): QaFailure | undefined {
+  return firstFailure;
+}
+export function runAbortSignal(): AbortSignal {
+  return abortController.signal;
 }
 export function requireRunning(): void {
-  if (interrupted) throw new QaFailure('QA run interrupted', 'blocked');
+  if (firstFailure) throw firstFailure;
 }
 export class QaFailure extends Error {
   constructor(
@@ -37,6 +46,7 @@ export async function until<T>(
   do {
     requireRunning();
     const snapshot = await read();
+    requireRunning();
     if (matches(snapshot)) return snapshot;
     if (Date.now() >= deadline) break;
     await new Promise((resume) => setTimeout(resume, 250));
@@ -75,17 +85,31 @@ export class Evidence {
   async scenario(name: string, issues: number[], execute: () => Promise<void>): Promise<void> {
     console.log(`[qa:boards] ${name}`);
     try {
+      requireRunning();
       await execute();
+      requireRunning();
       this.results.push({ name, issues, verdict: 'passed' });
     } catch (error) {
-      const message = this.redact(error instanceof Error ? error.message : String(error));
-      this.results.push({ name, issues, verdict: error instanceof QaFailure ? error.kind : 'infrastructure', message });
+      const cause = runFailure() ?? error;
+      const message = this.redact(cause instanceof Error ? cause.message : String(cause));
+      this.results.push({ name, issues, verdict: cause instanceof QaFailure ? cause.kind : 'infrastructure', message });
       this.event('scenario-error', { name, message });
-      throw error;
+      throw cause;
     } finally {
       this.save('report.json', { schemaVersion: 1, results: this.results });
     }
   }
+}
+export function abortOnObserverFailure(
+  observer: { setObserverFailureHandler(handler: (reason: QaFailure) => void): void },
+  cancel: () => Promise<void>,
+  evidence: Evidence,
+): void {
+  observer.setObserverFailureHandler((reason) => {
+    const cause = abortRun(reason);
+    evidence.event('run-aborted', { kind: cause.kind, message: cause.message });
+    void cancel().catch(() => evidence.event('cleanup-failed', { target: 'owned-command-cancellation' }));
+  });
 }
 export function lease(resources: string[]): () => void {
   const owned: string[] = [];

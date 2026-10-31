@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import { buildSchema, parse, validate } from 'graphql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { typeDefs } from '../../packages/shared-schema/src/schema';
@@ -14,7 +15,7 @@ import {
   requireStaticFrames,
 } from './backend';
 import { EXAMPLE_CONFIG, type Board, type QaConfig } from './config';
-import { Evidence } from './evidence';
+import { Evidence, QaFailure } from './evidence';
 
 const socketState = vi.hoisted(() => ({
   sent: [] as Record<string, unknown>[],
@@ -23,11 +24,18 @@ const socketState = vi.hoisted(() => ({
   acknowledge: true,
   protocolPongs: true,
   options: [] as unknown[],
+  bufferedAmount: 0,
+  completeSends: true,
+  sendError: undefined as Error | undefined,
+  completions: [] as Array<{ type: unknown; complete: (error?: Error) => void }>,
 }));
 vi.mock('ws', () => ({
   default: class {
     static OPEN = 1;
     readyState = 1;
+    get bufferedAmount() {
+      return socketState.bufferedAmount;
+    }
     constructor(_url: unknown, _protocol: unknown, options: unknown) {
       socketState.created++;
       socketState.options.push(options);
@@ -38,9 +46,12 @@ vi.mock('ws', () => ({
       listeners.push(listener);
       socketState.listeners.set(event, listeners);
     }
-    send(encoded: string) {
+    send(encoded: string, complete: (error?: Error) => void) {
       const message = JSON.parse(encoded) as Record<string, unknown>;
       socketState.sent.push(message);
+      socketState.completions.push({ type: message.type, complete });
+      if (socketState.completeSends) complete(socketState.sendError);
+      if (socketState.sendError) return;
       if (message.type === 'connection_init' && socketState.acknowledge)
         queueMicrotask(() =>
           socketState.listeners
@@ -79,6 +90,10 @@ afterEach(() => {
   socketState.acknowledge = true;
   socketState.protocolPongs = true;
   socketState.options.length = 0;
+  socketState.bufferedAmount = 0;
+  socketState.completeSends = true;
+  socketState.sendError = undefined;
+  socketState.completions.length = 0;
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -94,6 +109,20 @@ const board = {
 } satisfies Board;
 function wire(bytes: number[]): Uint8Array {
   return Uint8Array.from(bytes);
+}
+function socketEvent(event: string, ...arguments_: unknown[]): void {
+  socketState.listeners.get(event)?.forEach((listener) => listener(...arguments_));
+}
+function socketMessage(message: Record<string, unknown>): void {
+  socketEvent('message', Buffer.from(JSON.stringify(message)));
+}
+function lifecycleEvents(report: Evidence): Array<{ state: string; [key: string]: unknown }> {
+  return readFileSync(join(report.directory, 'events.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { kind: string; payload: { state: string; [key: string]: unknown } })
+    .filter((entry) => entry.kind === 'board-observer')
+    .map((entry) => entry.payload);
 }
 const presence = {
   climbUuid: 'climb-uuid',
@@ -152,6 +181,217 @@ describe('independent physical packet evidence', () => {
 });
 
 describe('production observer contracts without network access', () => {
+  it('matches only the pending sequence and measures delayed pong RTT without logging arbitrary payloads', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    socketState.protocolPongs = false;
+    const report = evidence();
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    const failed = vi.fn();
+    backend.setObserverFailureHandler(failed);
+    await backend.observe([board]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    socketMessage({ type: 'pong', payload: { qaSequence: 0, untrusted: 'do-not-record-payload' } });
+    await vi.advanceTimersByTimeAsync(1_234);
+    socketMessage({ type: 'pong', payload: { qaSequence: 1 } });
+    socketMessage({ type: 'pong', payload: { qaSequence: 1 } });
+    const pongs = lifecycleEvents(report).filter((event) => event.state === 'protocol-pong-received');
+    expect(pongs).toMatchObject([
+      { matched: false, receivedSequence: 0, expectedSequence: 1, roundTripMs: null },
+      { matched: true, receivedSequence: 1, expectedSequence: 1, roundTripMs: 1_234 },
+      { matched: false, receivedSequence: 1, expectedSequence: null, roundTripMs: null },
+    ]);
+    await vi.advanceTimersByTimeAsync(3_766);
+    socketMessage({ type: 'pong', payload: { qaSequence: '2', untrusted: 'do-not-record-payload' } });
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(failed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(failed).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: expect.stringContaining('heartbeat') }),
+    );
+    expect(lifecycleEvents(report)).toContainEqual(
+      expect.objectContaining({
+        state: 'protocol-pong-timeout',
+        sequence: 2,
+        heartbeatAgeMs: 20_000,
+        deadlineLagMs: 0,
+        closeInitiator: 'heartbeat-timeout',
+      }),
+    );
+    expect(lifecycleEvents(report)).toContainEqual(
+      expect.objectContaining({ state: 'closed', closeInitiator: 'heartbeat-timeout' }),
+    );
+    expect(readFileSync(join(report.directory, 'events.jsonl'), 'utf8')).not.toContain('do-not-record-payload');
+    expect(socketState.created).toBe(1);
+    backend.close();
+  });
+
+  it('records send completion, buffering and public transport counters without network addresses', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const report = evidence();
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    await backend.observe([board]);
+    const transport = Object.assign(new EventEmitter(), {
+      bytesRead: 111,
+      bytesWritten: 222,
+      readableLength: 3,
+      writableLength: 4,
+      writableNeedDrain: true,
+      destroyed: false,
+      readyState: 'open',
+      remoteFamily: 'IPv6',
+      remoteAddress: 'private-network-address',
+      localAddress: 'private-local-address',
+    });
+    socketEvent('upgrade', { socket: transport });
+    socketState.completeSends = false;
+    socketState.bufferedAmount = 128;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const completion = socketState.completions.at(-1);
+    expect(completion?.type).toBe('ping');
+    expect(
+      lifecycleEvents(report).filter((event) => event.state === 'send-completed' && event.messageType === 'ping'),
+    ).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(321);
+    completion?.complete();
+    expect(lifecycleEvents(report)).toContainEqual(
+      expect.objectContaining({
+        state: 'send-completed',
+        messageType: 'ping',
+        sequence: 1,
+        sendElapsedMs: 321,
+        bufferedAmount: 128,
+        socketReadyState: 1,
+        transportBytesRead: 111,
+        transportBytesWritten: 222,
+        transportReadableBytes: 3,
+        transportWritableBytes: 4,
+        transportNeedsDrain: true,
+        transportFamily: 'IPv6',
+      }),
+    );
+    transport.emit('drain');
+    transport.emit('end');
+    transport.emit('close', true);
+    expect(lifecycleEvents(report).map((event) => event.state)).toEqual(
+      expect.arrayContaining(['transport-drain', 'transport-ended', 'transport-closed']),
+    );
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).not.toContain('private-network-address');
+    expect(saved).not.toContain('private-local-address');
+    backend.close();
+  });
+
+  it('notifies once on send failure, redacts diagnostics and preserves that exact first failure', async () => {
+    vi.useFakeTimers();
+    const report = evidence();
+    report.secret('private-send-token');
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    const failed = vi.fn();
+    backend.setObserverFailureHandler(failed);
+    await backend.observe([board]);
+    socketState.sendError = new Error('write failed private-send-token Bearer sensitive-token');
+    await vi.advanceTimersByTimeAsync(5_000);
+    const firstFailure: unknown = failed.mock.calls[0]?.[0];
+    expect(firstFailure).toBeInstanceOf(QaFailure);
+    expect(firstFailure).toMatchObject({ message: 'Board observer socket send failed', kind: 'infrastructure' });
+    socketEvent('close', 1006, Buffer.alloc(0));
+    socketEvent('error', new Error('later socket error'));
+    socketMessage({ type: 'error' });
+    backend.setObserverFailureHandler(failed);
+    await expect(backend.snapshot(board)).rejects.toBe(firstFailure);
+    expect(failed).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(socketState.sent.filter((message) => message.type === 'ping')).toHaveLength(1);
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).toContain('send-error');
+    expect(saved).not.toContain('private-send-token');
+    expect(saved).not.toContain('sensitive-token');
+    backend.close();
+  });
+
+  it('delivers an already latched failure once and contains asynchronous handler rejection', async () => {
+    const report = evidence();
+    report.secret('private-handler-token');
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    await backend.observe([board]);
+    socketEvent('close', 1006, Buffer.alloc(0));
+    const failed = vi.fn(async (_failure: QaFailure) => {
+      throw new Error('handler private-handler-token');
+    });
+    backend.setObserverFailureHandler(failed);
+    await Promise.resolve();
+    await Promise.resolve();
+    const replacement = vi.fn();
+    backend.setObserverFailureHandler(replacement);
+    socketEvent('error', new Error('second failure'));
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(replacement).not.toHaveBeenCalled();
+    await expect(backend.snapshot(board)).rejects.toBe(failed.mock.calls[0]?.[0]);
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).toContain('board-observer-failure-handler-error');
+    expect(saved).not.toContain('private-handler-token');
+    expect(lifecycleEvents(report)).toContainEqual(
+      expect.objectContaining({ state: 'closed', closeInitiator: 'remote' }),
+    );
+    backend.close();
+  });
+
+  it('contains a synchronous handler exception and ignores failures after normal teardown', async () => {
+    const report = evidence();
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    const failed = vi.fn(() => {
+      throw new Error('handler exception');
+    });
+    backend.setObserverFailureHandler(failed);
+    await backend.observe([board]);
+    socketMessage({ type: 'complete', id: board.uuid });
+    expect(failed).toHaveBeenCalledTimes(1);
+    await expect(backend.snapshot(board)).rejects.toMatchObject({
+      message: 'Invalid or rejected board subscription evidence',
+    });
+    backend.close();
+    expect(lifecycleEvents(report)).toContainEqual(
+      expect.objectContaining({ state: 'closed', closeInitiator: 'runner' }),
+    );
+
+    // A separate normal observer has no failure to deliver, including late I/O callbacks.
+    socketState.listeners.clear();
+    const normal = new Backend(EXAMPLE_CONFIG, evidence());
+    const normalFailed = vi.fn();
+    normal.setObserverFailureHandler(normalFailed);
+    await normal.observe([board]);
+    normal.close();
+    socketState.completions.at(-1)?.complete(new Error('late write error'));
+    socketEvent('error', new Error('late socket error'));
+    socketMessage({ type: 'error' });
+    expect(normalFailed).not.toHaveBeenCalled();
+  });
+
+  it('routes acknowledgement timeout and malformed pre-ack evidence through the same failure callback', async () => {
+    vi.useFakeTimers();
+    socketState.acknowledge = false;
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    const failed = vi.fn();
+    backend.setObserverFailureHandler(failed);
+    const observing = backend.observe([board]);
+    const assertion = expect(observing).rejects.toThrow('acknowledgement timed out');
+    await vi.advanceTimersByTimeAsync(20_000);
+    await assertion;
+    expect(failed).toHaveBeenCalledTimes(1);
+    backend.close();
+
+    socketState.listeners.clear();
+    const invalid = new Backend(EXAMPLE_CONFIG, evidence());
+    const invalidFailed = vi.fn();
+    invalid.setObserverFailureHandler(invalidFailed);
+    const invalidObserving = invalid.observe([board]);
+    const invalidAssertion = expect(invalidObserving).rejects.toThrow('Invalid or rejected');
+    socketEvent('message', Buffer.from('not-json'));
+    await invalidAssertion;
+    expect(invalidFailed).toHaveBeenCalledTimes(1);
+    invalid.close();
+  });
+
   it('keeps one read-only observer alive using app-contract protocol pings and records both heartbeat layers', async () => {
     vi.useFakeTimers();
     const report = evidence();

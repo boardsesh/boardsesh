@@ -33,6 +33,38 @@ For a physical Android build, use `vp run mobile:android-apk -- --require-fresh 
 
 The first product or infrastructure failure stops dependent scenarios so leftover state cannot produce misleading passes. Unrun scenarios are not passes. The report distinguishes `failed`, `blocked`, and `infrastructure`; known bugs are not silently skipped. Exit code 1 indicates a test or infrastructure failure. A driver endpoint disappearing does not establish an app crash.
 
+## Fallback: physical iPhone with an Android emulator peer
+
+Use this separate local profile when the second physical phone is unavailable. The iPhone is the only Bluetooth holder; the native Android emulator joins as another signed-in climber and relays requests through that iPhone. The existing `qa:boards all` matrix remains unchanged. Do not describe a successful fallback run as a complete physical-device matrix.
+
+1. Prepare an isolated Android emulator with the normal development app installed and the second QA account signed in. Keep the iPhone signed into the first account. Use an exact `emulator-PORT` serial; the runner checks Android's virtual-machine property and never targets the unavailable physical phone. Sign in normally before running; this profile records no password entry and preserves app data.
+2. Launch dedicated production-connected Metro from this checkout with `EXPO_PUBLIC_SCREENSHOT_MODE=0`, `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=0`, and `EXPO_PUBLIC_BACKEND_URL=https://ws.boardsesh.com`. Retain its actual listening PID and loopback URL. Normal app source and native runtime must match; do not load screenshot-mode or fake-Bluetooth JavaScript.
+3. Run the two commands below, replacing the example serial, PID and port. The physical fixture must have no existing links or owner. `doctor` checks prerequisites without acquiring Bluetooth or creating a crew session; `run` performs the selected scenarios.
+
+```sh
+vp run qa:boards:simulator-peer -- doctor --peer emulator-5588 --metro-pid PID --metro-url http://127.0.0.1:8179
+vp run qa:boards:simulator-peer -- run --peer emulator-5588 --metro-pid PID --metro-url http://127.0.0.1:8179
+```
+
+`--config FILE` uses the existing private physical configuration for the iPhone, accounts, fixture and catalog. The emulator serial replaces its Android device ID in memory only. `--peer-app-id APP_ID` optionally selects the installed emulator package; `--output DIR` selects the private evidence directory. The profile retains the configured Android account and scheme. It never uninstalls, clears data or enters credentials.
+
+Preflight checks the actual Metro listener and normal-mode flags without saving its process environment. On the exact emulator, it verifies or creates the matching `adb reverse` port mapping and refuses a conflicting destination. It then restarts only that emulator app and launches its selected package using the configured scheme and `http://127.0.0.1:PORT` development-client URL. A bounded wait for existing native app content precedes the account link; native activity launch alone is insufficient. The signed-in account and `app-runtime-metro-...` marker must then match. There is no startup retry or fixed delay. Native versions, actual runtime markers, Metro metadata and participant capabilities are recorded separately. A Metro checkout marker identifies the server; the explicit launch plus native account/runtime checks bind the peer process. The physical iPhone keeps its independently recorded installed update/runtime.
+
+For all three families, this profile tests iPhone connect, Drive and real Next, stop, private preview, deliberate Put, peer preview/history and Disconnect. It also tests iPhone-only board switching. Foreground crew cases cover invite/join, both identities and rosters, peer preview isolation, remote Put, physical clear and peer re-light, history, observed Leave to one member, rejoin and End. Every claimed send still requires a fresh exact USB-decoded pattern, the expected physical connection generation, iPhone holder attribution, subscription event and durable history. Clear requires a fresh empty physical packet on that same connection, a clear event, retained holder, the holder’s dark state, and the peer’s current climb moving into its exact fresh history row. The peer then re-lights that same climb; this still requires a fresh physical delivery and the complete backend evidence chain. Clear does not invent a climb-history entry. Other boards must remain untouched. Each board retains the real 65-second history dwell.
+
+Before each case, the runner verifies zero physical links and a real Record screen with no retained session, then safely restarts the iPhone and rechecks the same account/runtime to bound stacked preview routes. It never restarts a live holder. Private `fallback-FAMILY-driving.png` and `fallback-FAMILY-preview-plain.png` captures support visual review of driving frost and the plain preview state. Normal Disconnect, or a targeted drop while this run still owns the firmware lease, precedes fixture release during cleanup.
+
+`coverage.json` identifies the physical iOS holder and emulator peer, their capabilities and the final selected-scope outcome. Physical Android holder behavior, physical handoff/takeover, Android background/notification delivery, and suspended-iOS wake/recovery remain explicitly **unrun**. Simulator UI and remote relay coverage do not establish those capabilities. `allMatrixPassed` is always false for this profile, including when every selected scenario passes.
+
+When no native peer can launch, explicitly select the narrower physical-iPhone-only mode:
+
+```sh
+vp run qa:boards:simulator-peer -- doctor --holder-only
+vp run qa:boards:simulator-peer -- run --holder-only
+```
+
+This mode runs exactly six cases: three iPhone solo cases and three iPhone board-switch isolation cases. It keeps all physical payload, generation, backend subscription/history, safe case-boundary and cleanup requirements, plus the six driving/plain-preview screenshots. Only the iPhone visits each board for the real history dwell. The existing private configuration is retained, but the runner neither leases nor accesses its Android device, constructs a peer driver, reads a peer password, signs in a peer, checks Metro, or invokes any peer UI. No `--peer` or Metro arguments are required. Coverage records only the physical holder, `verifiedPeer: false`, all peer observations and all crew/roster/relay/clear/re-light scenarios as **unrun**. This mode is opt-in; the default simulator-peer profile and original physical `all` matrix retain their prerequisites.
+
 ## What counts as a send
 
 For each send the runner requires a newer ESP32 completed-command sequence, an exact decoded position/color pattern, the expected connection generation, matching live holder attribution, a matching subscription event, and durable history on the same saved wall UUID. A title change, bulb icon, first ATT chunk, LED count alone, or queued mutation is insufficient. The other two boards must receive no writes.
@@ -43,7 +75,7 @@ MoonBoard multi-chunk tests require more than one received write. Diagnostic col
 
 The passive observer only queries/subscribes. It never joins the crew, claims a wall, writes presence, or logs a tick. Histories are checked relative to their starting sequences; existing records are retained. No climbing activity is invented through direct backend mutations.
 
-The observer uses the app's five-second protocol keepalive and answers native WebSocket pings. It records socket lifecycle, close codes and reasons. A closed connection or missing heartbeat fails the run as infrastructure; it does not reconnect across a gap in the evidence.
+The observer uses the app's five-second protocol keepalive, requires the matching pong within 20 seconds, and answers native WebSocket pings. It records send completion, matching sequence/round-trip time, bounded socket counters and buffering, deadline lag, close codes/reasons and whether shutdown was locally requested. Diagnostics omit socket addresses and authentication headers. A closed connection or missing heartbeat latches the first infrastructure failure, immediately cancels this runner's pending UI commands and blocks subsequent mutations. An OS action already dispatched may finish; without the full evidence chain its output is unconfirmed. Read-only failure artifacts remain available, and cleanup releases owned resources. The observer never reconnects across a gap in the evidence.
 
 Native versions and launched Expo runtime/update identifiers are recorded separately. Metro builds identify their development mode; the checkout SHA in `run.json` is not independent proof of which JavaScript a remote Metro client loaded. Keep development-source and installed-release verdicts distinct.
 

@@ -1,7 +1,0 @@
-appId: ${APP_ID}
-name: Explicitly confirm the expected busy-wall takeover
----
-- assertVisible:
-    id: busy-wall-question
-- tapOn:
-    id: busy-wall-put

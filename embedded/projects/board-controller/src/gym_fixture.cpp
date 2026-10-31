@@ -21,6 +21,7 @@ extern "C" esp_err_t __wrap_esp_bt_controller_init(esp_bt_controller_config_t* c
 #include "gym/buttons.h"
 #include "gym/cache.h"
 #include "gym/client.h"
+#include "gym/qa_output.h"
 
 #include <ArduinoJson.h>
 #include <esp_web_server.h>
@@ -33,6 +34,8 @@ extern "C" esp_err_t __wrap_esp_bt_controller_init(esp_bt_controller_config_t* c
 #include <config_manager.h>
 #include <log_buffer.h>
 #include <mbedtls/sha256.h>
+#include <memory>
+#include <new>
 #include <utility>
 #include <vector>
 #include <waveshare_amoled_display.h>
@@ -187,7 +190,30 @@ bool validQaRequestId(const String& requestId) {
 
 // USB is the QA control plane; no network endpoint can acquire this temporary
 // radio policy, drop links, or read packet evidence. No command writes NVS.
-void serialQa(const String& encoded) {
+bool writeQaReply(JsonDocument& response) {
+    const size_t encodedLength = measureJson(response);
+    const size_t frameLength = gym_fixture::qaFrameLength(encodedLength);
+    std::unique_ptr<char[]> frame(frameLength ? new (std::nothrow) char[frameLength + 1] : nullptr);
+    if (frame &&
+        gym_fixture::buildQaFrame(frame.get(), frameLength + 1, encodedLength, [&](char* destination, size_t capacity) {
+            return serializeJson(response, destination, capacity);
+        }) == frameLength)
+        return gym_fixture::writeQaLine(Serial, frame.get(), frameLength);
+
+    // Allocation/serialization must finish before any tag reaches USB. Keep the
+    // fallback on the stack and retain the validated, ASCII-only request ID.
+    char failure[320];
+    const char* requestId = response["requestId"] | "";
+    const int length = snprintf(failure, sizeof(failure),
+                                "BOARDSESH_QA {\"schemaVersion\":1,\"requestId\":\"%s\",\"ok\":false,"
+                                "\"error\":\"Cannot allocate a complete QA response\"}\n",
+                                requestId);
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(failure))
+        return false;
+    return gym_fixture::writeQaLine(Serial, failure, static_cast<size_t>(length));
+}
+
+bool serialQa(const String& encoded) {
     JsonDocument request;
     JsonDocument response;
     String error;
@@ -278,9 +304,7 @@ void serialQa(const String& encoded) {
         response["ok"] = false;
         response["error"] = "Insufficient memory for a complete QA snapshot";
     }
-    Serial.print("BOARDSESH_QA ");
-    serializeJson(response, Serial);
-    Serial.println();
+    return writeQaReply(response);
 }
 
 bool activate(JsonVariantConst manifest, String& error) {
@@ -484,8 +508,10 @@ void serviceSerial() {
                     rejectionHandled = false;
                 } else if (command.startsWith("fixture-config "))
                     serialConfigure(command.substring(15));
-                else if (command.startsWith("fixture-qa "))
-                    serialQa(command.substring(11));
+                else if (command.startsWith("fixture-qa ")) {
+                    if (!serialQa(command.substring(11)))
+                        Logger.logln("Fixture QA USB reply was not written completely");
+                }
             }
             command = "";
             overflow = false;

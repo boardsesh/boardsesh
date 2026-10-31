@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { parseAllDocuments, stringify } from 'yaml';
 import { selectorPredicate, swipeActions, percentagePoint } from '../lib/mobile-profile-wda';
 import { record, string, type Phone, type QaConfig, type Role } from './config';
-import { Evidence, QaFailure, requireRunning } from './evidence';
+import { Evidence, QaFailure, requireRunning, runFailure, runAbortSignal } from './evidence';
 
 class CommandExitFailure extends QaFailure {}
 const ownedCommands = new Set<{ stop: () => void; stopped: Promise<void> }>();
@@ -23,8 +23,9 @@ export async function command(
   args: string[],
   timeoutMs = 30_000,
   env = process.env,
+  diagnostic = false,
 ): Promise<string> {
-  requireRunning();
+  if (!diagnostic) requireRunning();
   return await new Promise((resolveResult, reject) => {
     const ownsGroup = process.platform !== 'win32';
     const child = spawn(executable, args, { env, detached: ownsGroup, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -51,7 +52,7 @@ export async function command(
         signal('SIGKILL');
         ownedCommands.delete(owned);
         stopped();
-        reject(new QaFailure(`${executable} ${reason}`, 'infrastructure'));
+        reject((!diagnostic && runFailure()) || new QaFailure(`${executable} ${reason}`, 'infrastructure'));
       }, 1000);
     };
     const owned = { stop: () => stop('cancelled'), stopped: completion };
@@ -71,11 +72,12 @@ export async function command(
     });
     child.on('error', () => {
       clearTimers();
-      reject(new QaFailure(`Cannot start ${executable}`, 'infrastructure'));
+      reject((!diagnostic && runFailure()) || new QaFailure(`Cannot start ${executable}`, 'infrastructure'));
     });
     child.on('close', (code) => {
       clearTimers();
-      if (stopping) reject(new QaFailure(`${executable} ${stopping}`, 'infrastructure'));
+      if (!diagnostic && runFailure()) reject(runFailure());
+      else if (stopping) reject(new QaFailure(`${executable} ${stopping}`, 'infrastructure'));
       else if (code === 0) resolveResult(output);
       else reject(new CommandExitFailure(`${executable} exited ${code}: ${output.slice(-2000)}`, 'infrastructure'));
     });
@@ -340,17 +342,20 @@ export class AndroidDriver implements Driver {
     private evidence: Evidence,
     private runCommand: typeof command = command,
   ) {}
-  async flow(name: string, variables: Record<string, string> = {}): Promise<void> {
+  async flow(name: string, variables: Record<string, string> = {}, diagnostic = false): Promise<void> {
+    if (!diagnostic) requireRunning();
     const filename = flowFilename(name);
     // Expanded flow is owner-only, never carries credentials in process arguments.
     // Delete it even when Maestro dies. Console output is redacted before retention.
     const expanded = readFlow(filename, { APP_ID: this.phone.appId, APP_SCHEME: this.phone.scheme, ...variables });
     assertRecordedAndroidFlow(expanded);
+    if (diagnostic && expanded.some((step) => Object.keys(step).length !== 1 || !('takeScreenshot' in step)))
+      throw new Error('Only screenshot capture may run as a diagnostic flow');
     const groups = androidFlowGroups(expanded);
     const privateDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-board-qa-flow-'));
     try {
       for (const group of groups) {
-        requireRunning();
+        if (!diagnostic) requireRunning();
         if (group.kind === 'link') {
           const logs = await this.runCommand(this.adb, [
             '-s',
@@ -385,10 +390,13 @@ export class AndroidDriver implements Driver {
           ],
           180_000,
           { ...process.env, PATH: `${dirname(this.adb)}:${process.env.PATH ?? ''}` },
+          diagnostic,
         );
+        if (!diagnostic) requireRunning();
         this.evidence.event('android-flow', { name, logs });
       }
     } catch (error) {
+      if (!diagnostic) requireRunning();
       const kind = error instanceof CommandExitFailure ? 'failed' : 'infrastructure';
       throw new QaFailure(this.evidence.redact(error instanceof Error ? error.message : String(error)), kind);
     } finally {
@@ -396,12 +404,20 @@ export class AndroidDriver implements Driver {
     }
   }
   async hierarchy(): Promise<string> {
-    return await this.runCommand(this.adb, ['-s', this.phone.id, 'exec-out', 'uiautomator', 'dump', '/dev/tty']);
+    return await this.runCommand(
+      this.adb,
+      ['-s', this.phone.id, 'exec-out', 'uiautomator', 'dump', '/dev/tty'],
+      30_000,
+      process.env,
+      true,
+    );
   }
   async background(): Promise<void> {
+    requireRunning();
     await this.runCommand(this.adb, ['-s', this.phone.id, 'shell', 'input', 'keyevent', 'KEYCODE_HOME']);
   }
   async foreground(): Promise<void> {
+    requireRunning();
     await this.runCommand(this.adb, [
       '-s',
       this.phone.id,
@@ -415,11 +431,14 @@ export class AndroidDriver implements Driver {
     ]);
   }
   async restart(): Promise<void> {
+    requireRunning();
     await this.runCommand(this.adb, ['-s', this.phone.id, 'shell', 'am', 'force-stop', this.phone.appId]);
     await this.foreground();
+    // MainActivity can exist before React navigation accepts account/join links.
+    await this.flow('wait-app-ready');
   }
   async screenshot(name: string): Promise<void> {
-    await this.flow('capture', { CAPTURE_NAME: join(this.evidence.directory, name) });
+    await this.flow('capture', { CAPTURE_NAME: join(this.evidence.directory, name) }, true);
   }
   async close(): Promise<void> {
     /* No persistent Android UI session. */
@@ -464,12 +483,17 @@ export class IosDriver implements Driver {
     body?: unknown,
     timeoutMs = 15_000,
   ): Promise<Record<string, unknown>> {
+    const diagnostic =
+      (method === 'GET' && /(?:^\/status$|\/source(?:\?|$)|\/screenshot$)/.test(path)) ||
+      (method === 'DELETE' && path === this.path(''));
+    if (!diagnostic) requireRunning();
     const startedAt = Date.now();
     const safePath = path
       .split('?')[0]
       .replace(/^\/session\/[^/]+/, '/session/:session')
       .replace(/\/element\/[^/]+/, '/element/:element');
-    const signal = AbortSignal.timeout(timeoutMs);
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = diagnostic ? timeout : AbortSignal.any([timeout, runAbortSignal()]);
     let status: number | null = null;
     let failureKind: WdaFailureKind = 'transport';
     let webdriverError: string | undefined;
@@ -483,6 +507,7 @@ export class IosDriver implements Driver {
       status = response.status;
       failureKind = response.ok ? 'invalid-response' : 'http';
       const payload = record(await response.json());
+      if (!diagnostic) requireRunning();
       if (
         payload.value &&
         typeof payload.value === 'object' &&
@@ -506,6 +531,18 @@ export class IosDriver implements Driver {
       });
       return payload;
     } catch (cause) {
+      if (!diagnostic && runFailure()) {
+        this.evidence.event('ios-request', {
+          ...this.requestContext,
+          method,
+          path: safePath,
+          status,
+          elapsedMs: Date.now() - startedAt,
+          timeoutMs,
+          outcome: 'run-aborted',
+        });
+        throw runFailure();
+      }
       const nativeName = cause instanceof Error ? cause.name : '';
       if (signal.aborted || nativeName === 'TimeoutError') failureKind = 'timeout';
       const errorName =
@@ -663,6 +700,7 @@ export class IosDriver implements Driver {
     ).then((matches) => matches[index]);
   }
   async flow(name: string, variables: Record<string, string> = {}): Promise<void> {
+    requireRunning();
     const filename = flowFilename(name);
     const commands = readFlow(filename, { APP_ID: this.phone.appId, APP_SCHEME: this.phone.scheme, ...variables });
     assertIosFlow(commands);

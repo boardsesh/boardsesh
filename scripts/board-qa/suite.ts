@@ -6,7 +6,7 @@ import type { Driver } from './drivers';
 import { Fixture, type FixtureBoard, type FixtureStatus } from './fixture';
 import { canonical, Evidence, QaFailure, until } from './evidence';
 import { notificationPrevious } from './notifications';
-import { requirePhysicalDelivery, requireSessionIdentity } from './confirmation';
+import { requirePhysicalDelivery, requireSessionIdentity, requireTakeoverBaseline } from './confirmation';
 
 const ROLES: Role[] = ['ios', 'android'];
 export const QA_SESSION_QUEUE_QUERY = `query QaSessionQueue($id: ID!) {
@@ -251,7 +251,7 @@ export class Suite {
     flow: string,
     options: {
       picker?: boolean;
-      takeover?: boolean;
+      takeoverFrom?: Role;
       writer?: Role;
       multiChunk?: boolean;
       background?: boolean;
@@ -265,16 +265,27 @@ export class Suite {
     const started = Date.now();
     const backendBefore = options.baseline?.presence ?? (await this.backend.snapshot(board));
     const baselineSeq = Math.max(0, ...backendBefore.recent.map((entry) => entry.seq));
+    if (options.takeoverFrom) {
+      if (options.takeoverFrom === role || !options.picker)
+        throw new QaFailure('Physical takeover requires a different peer and an exact-board connection', 'blocked');
+      requireTakeoverBaseline(prior, backendBefore, climb, this.user(options.takeoverFrom), board.angle);
+    }
     if (options.action) await options.action();
     else await this.phones[role].flow(flow);
-    if (options.takeover) await this.phones[role].flow('confirm-takeover');
     if (options.picker) {
       // Remembered devices bypass the picker. Otherwise select only the exact saved wall.
       await until(
         async () => {
           const current = await this.fixture.request('status');
-          if (this.device(current, board).sequence > prior.sequence) return true;
+          const actual = this.device(current, board);
+          const connected =
+            actual.sequence > prior.sequence &&
+            (!options.takeoverFrom || actual.connectionGeneration > prior.connectionGeneration);
+          if (!options.takeoverFrom && connected) return true;
           const tree = await this.phones[role].hierarchy();
+          if (options.takeoverFrom && tree.includes('busy-wall-question'))
+            throw new QaFailure('Unexpected crew busy-wall question during physical takeover', 'blocked');
+          if (connected) return true;
           if (tree.includes(`ble-device-${board.uuid}`)) {
             await this.phones[role].flow('select-device', { BOARD_UUID: board.uuid });
             return true;
@@ -286,6 +297,8 @@ export class Suite {
         'exact-board picker or remembered connection',
       );
     }
+    if (options.takeoverFrom && (await this.phones[role].hierarchy()).includes('busy-wall-question'))
+      throw new QaFailure('Unexpected crew busy-wall question during physical takeover', 'blocked');
     const writer = options.writer ?? role;
     const after = await until(
       () => this.fixture.request('status'),
@@ -294,6 +307,7 @@ export class Suite {
         return (
           current.sequence > prior.sequence &&
           current.updates > prior.updates &&
+          (!options.takeoverFrom || current.connectionGeneration > prior.connectionGeneration) &&
           canonical(current.commands) === canonical(climb.commands)
         );
       },
@@ -427,14 +441,19 @@ export class Suite {
           await this.unchanged(board, () => this.open(peer, board, board.catalog[2]));
           await this.disconnect(holder, board);
           await this.send(peer, board, board.catalog[2], 'connect', { picker: true });
+          // The previous writer must really be driving so its supersession is
+          // observable. Same-climb Drive setup is physical-only (history dedup).
+          await this.ensureDriving(peer, board, board.catalog[2]);
           await this.open(holder, board, board.catalog[2]);
-          await this.send(holder, board, board.catalog[2], 'connect', { picker: true, takeover: true });
+          await this.send(holder, board, board.catalog[2], 'connect', { picker: true, takeoverFrom: peer });
           await until(
             () => this.phones[peer].hierarchy(),
             (tree) => !tree.includes('-driving'),
             30_000,
             'superseded driver stops',
           );
+          await this.assertId(peer, 'wall-control-.*-(none|crew)-idle');
+          await this.unchanged(board, () => this.open(peer, board, board.catalog[0]));
           const settleUntil = Date.now() + 3000;
           await until(
             async () => {
@@ -553,17 +572,24 @@ export class Suite {
             await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
             await this.history(peer, board, board.catalog[0], this.user(holder));
-            await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
+            const lit = (await this.backend.snapshot(board)).recent[0];
+            if (!lit || lit.climbUuid !== board.catalog[1].uuid || lit.sentByUserId !== this.user(holder))
+              throw new QaFailure('Clear requires the freshly confirmed shared climb');
+            // This exact peer hero must be visible before absence can prove a
+            // clear. Keep the panel at its top until the negative assertion.
+            await this.assertId(peer, `board-current-${lit.climbUuid}-${this.user(holder)}`);
             await this.open(holder, board, board.catalog[1]);
-            const beforeClear = this.device(await this.fixture.request('status'), board);
+            const beforeClearStatus = await this.fixture.request('status');
+            const beforeClear = this.device(beforeClearStatus, board);
             const clearEventIndex = this.backend.events.length;
             await this.phones[holder].flow('clear');
-            await until(
+            const afterClearStatus = await until(
               () => this.fixture.request('status'),
               (snapshot) => {
                 const current = this.device(snapshot, board);
                 return (
                   current.sequence > beforeClear.sequence &&
+                  current.updates > beforeClear.updates &&
                   current.writes > beforeClear.writes &&
                   current.commands.length === 0 &&
                   current.connections === 1
@@ -572,16 +598,42 @@ export class Suite {
               30_000,
               'fresh clear retains physical connection',
             );
+            requirePhysicalDelivery(
+              beforeClear,
+              this.device(afterClearStatus, board),
+              { ...board.catalog[1], commands: [] },
+              false,
+              false,
+            );
+            for (const untouched of this.boards.filter((candidate) => candidate.uuid !== board.uuid)) {
+              const initial = this.device(beforeClearStatus, untouched),
+                after = this.device(afterClearStatus, untouched);
+              if (initial.writes !== after.writes || initial.updates !== after.updates)
+                throw new QaFailure('Clear reached an unrelated board');
+            }
             await until(
               async () => this.backend.events.slice(clearEventIndex),
               (events) =>
                 events.some(
-                  (entry) => entry.boardUuid === board.uuid && entry.event.__typename === 'BoardClimbCleared',
+                  (entry) =>
+                    entry.boardUuid === board.uuid &&
+                    entry.event.__typename === 'BoardClimbCleared' &&
+                    Number(entry.event.seq) > lit.seq,
                 ),
               30_000,
               'shared clear event',
             );
-            await this.assertId(peer, 'wall-control-dark-crew-idle');
+            if ((await this.backend.snapshot(board)).holder?.userId !== this.user(holder))
+              throw new QaFailure('Clear lost the confirmed physical holder');
+            await this.assertId(holder, 'wall-control-dark-self-idle');
+            await this.phones[peer].flow('observe-clear-history', {
+              BOARD_UUID: board.uuid,
+              CLIMB_UUID: lit.climbUuid,
+              WRITER_ID: this.user(holder),
+              HISTORY_SEQ: String(lit.seq),
+            });
+            await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
+            await this.assertId(peer, 'wall-control-crew-crew-idle');
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
             await this.fixture.request('drop', board.uuid);
             await until(

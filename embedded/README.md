@@ -172,7 +172,11 @@ the owning run ID, the active `policy`, and `leaseRemainingMs`. `boards` contain
 UUIDs, active writer handles, counters, latest completed sequence and writer
 generation, angle, and decoded `{position,r,g,b}` commands sorted by position
 then RGB. The decoded payload remains available after the display consumes it;
-an incomplete packet never replaces it. No keys, WiFi settings or phone addresses
+an incomplete packet never replaces it. Complete tagged replies are built before
+one HWCDC enqueue. The gym target disables NimBLE console logs because IDF's
+secondary USB console can otherwise write the same FIFO during deferred HWCDC
+transmission; a stdout lock does not protect that later drain. Short writes and
+exceptional console output still fail the strict host parser. No keys, WiFi settings or phone addresses
 are included. Request IDs contain 1–80 letters, digits, dots, hyphens or underscores;
 run IDs use the same bounds without dots.
 
