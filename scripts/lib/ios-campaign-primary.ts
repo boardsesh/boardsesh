@@ -16,7 +16,7 @@ import {
 } from '../../packages/mobile/src/lib/screenshot-board-matching';
 
 export interface IosCampaignPrimaryCapture {
-  board: CppRecordedBoard & { setIds: string };
+  board: CppRecordedBoard & { setIds: string; hasLeds?: boolean };
   climb: { uuid: string; name: string; frames: string; angle: number };
   paintedId: string;
 }
@@ -25,7 +25,7 @@ export interface IosCampaignPrimaryCapture {
 export function readIosCampaignPrimaryCapture(
   fixturesDir: string,
   selector: string,
-  recordedBoards: readonly (CppRecordedBoard & ScreenshotBoardMatchingFields)[],
+  recordedBoards: readonly (CppRecordedBoard & ScreenshotBoardMatchingFields & { hasLeds?: boolean })[],
 ): IosCampaignPrimaryCapture {
   const canonicalSets = (setIds: string) =>
     setIds

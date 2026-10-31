@@ -33,6 +33,34 @@ name: app-store screenshots (iPad)
     commands:
       - evalScript: ${output.primaryBoardAcknowledged = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/status?waitFor=' + output.primaryBoardSequence).body).acknowledged}
       - assertTrue: ${output.primaryBoardAcknowledged == output.primaryBoardSequence}
+# The explicit primary hero intent opens the real player and starts driving through
+# its existing controller. Close it normally before the list/Home sources; the
+# tablet's existing MiniPlayer carries the live bulb, without inventing header copy.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PRIMARY_DRIVING == '1'}
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: '^play-drawer-board-overlay$'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: '^cpp-climb-painted-.+$'
+          timeout: 90000
+      - extendedWaitUntil:
+          visible:
+            id: ${SCREENSHOT_PRIMARY_DRIVING_ID}
+          timeout: 90000
+      - tapOn: ${SCREENSHOT_CLOSE_LABEL}
+      - extendedWaitUntil:
+          notVisible:
+            id: '^play-drawer-board-overlay$'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: ${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}
+          timeout: 90000
 # Each navigation also handles a sidebar left collapsed by a previous run.
 
 # Climbs — the browse list.
@@ -71,6 +99,14 @@ name: app-store screenshots (iPad)
       childOf:
         id: '^climb-list$'
     timeout: 90000
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PRIMARY_DRIVING == '1'}
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: ${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}
+          timeout: 90000
 - takeScreenshot: 02-climbs
 
 # Home — the "Everyone" feed, with the persistent wall rail showing the lit climb.
@@ -113,6 +149,14 @@ name: app-store screenshots (iPad)
     visible:
       id: 'session-feed-card'
     timeout: 90000
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PRIMARY_DRIVING == '1'}
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: ${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}
+          timeout: 90000
 - takeScreenshot: 01-home
 
 # Wall display — the wall-mounted kiosk HERO: the lit board + the current climb big
@@ -241,6 +285,14 @@ name: app-store screenshots (iPad)
       id: '^wall-display-controls-faded$'
     timeout: 15000
 - waitForAnimationToEnd
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PRIMARY_DRIVING == '1'}
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: ${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}
+          timeout: 90000
 - takeScreenshot: 00-wall
 # Any touch brings Exit back. Leave the display so the sidebar steps below can run.
 - retry:
