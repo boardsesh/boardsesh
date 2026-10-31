@@ -18,7 +18,8 @@
   "tabs": {
     "roles": "Rôles",
     "settings": "Paramètres",
-    "gyms": "Salles"
+    "gyms": "Salles",
+    "supporters": "Soutiens"
   },
   "nav": {
     "retention": "Tableau de rétention",
@@ -541,5 +542,31 @@
       "unlisted": "Non répertoriée",
       "private": "Privée"
     }
+  },
+  "supporters": {
+    "heading": "Soutiens",
+    "description": "Enregistrez le statut de soutien d'un sponsor GitHub ou d'un don fait hors de Stripe. Il prend fin à la date ci-dessous, et une nouvelle attribution remplace l'ancienne date de fin.",
+    "search": {
+      "label": "Trouver un compte",
+      "placeholder": "Nom",
+      "resultsLabel": "Comptes correspondants"
+    },
+    "userId": {
+      "label": "Identifiant du compte",
+      "selected": "Sélectionné : {{name}}"
+    },
+    "source": {
+      "label": "Source",
+      "githubSponsors": "GitHub Sponsors",
+      "admin": "Don enregistré par un admin"
+    },
+    "months": {
+      "label": "Mois",
+      "until": "Prend fin le {{date}}",
+      "invalid": "Mois entiers, de 1 à 120"
+    },
+    "grant": "Attribuer le statut de soutien",
+    "granted": "Soutien jusqu'au {{date}}.",
+    "grantFailed": "Impossible d'attribuer ce statut. Vérifiez l'identifiant du compte et réessayez."
   }
 }

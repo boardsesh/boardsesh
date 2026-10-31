@@ -48,6 +48,29 @@ describe('refresh acknowledgements workflow', () => {
     expect(commit).toContain('git rebase origin/main');
   });
 
+  it("labels sponsors' issues from its own job, the only one that may write issues", () => {
+    const labelStart = workflow.indexOf('\n  label-supporter-issues:\n');
+    const notifyStart = workflow.indexOf('\n  notify:\n');
+    const labelJob = workflow.slice(labelStart, notifyStart);
+    const everythingElse = workflow.slice(0, labelStart) + workflow.slice(notifyStart);
+
+    expect(labelStart).toBeGreaterThanOrEqual(0);
+    expect(notifyStart).toBeGreaterThan(labelStart);
+    expect(labelJob).toContain('environment: Production');
+    expect(labelJob).toMatch(/permissions:\n\s+contents: read\n\s+issues: write\n/);
+    expect(everythingElse).not.toContain('issues: write');
+    // The App token only reads sponsorships; it never gets contents or issues.
+    expect(labelJob).toContain('permission-members: read');
+    expect(labelJob).not.toContain('permission-contents');
+    expect(labelJob).not.toContain('permission-issues');
+    expect(labelJob).toContain('persist-credentials: false');
+    expect(labelJob).toContain('cache: false');
+    expect(labelJob).toContain('SPONSORS_GH_TOKEN: ${{ steps.sponsor_reader.outputs.token }}');
+    expect(labelJob).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(labelJob).toContain('scripts/label-supporter-issues.ts');
+    expect(labelJob).not.toContain('--dry-run');
+  });
+
   it('notifies the deployments channel after both successful and failed runs', () => {
     const notifyStart = workflow.indexOf('\n  notify:\n');
     const notify = workflow.slice(notifyStart);

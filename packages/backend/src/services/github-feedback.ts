@@ -52,7 +52,15 @@ export type FeedbackIssuePayload = {
    * trust check lives in `services/feedback-screenshot-urls.ts`.
    */
   screenshotUrls?: string[] | null;
+  /**
+   * The signed-in reporter is currently a supporter (docs/supporters.md). Adds
+   * the quiet triage label only; nothing about it goes in the title or body.
+   */
+  reporterIsSupporter?: boolean;
 };
+
+/** Triage label for issues from current supporters. Internal only, never shown in the app. */
+export const SUPPORTER_LABEL = 'supporter';
 
 export type FeedbackIssueDraft = {
   title: string;
@@ -172,7 +180,7 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
   return {
     title: buildTitle(redactedComment),
     body,
-    labels: ['bug', 'user-feedback', payload.platform],
+    labels: ['bug', 'user-feedback', payload.platform, ...(payload.reporterIsSupporter ? [SUPPORTER_LABEL] : [])],
   };
 }
 

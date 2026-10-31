@@ -17,6 +17,7 @@ import type { CommunityRoleAssignment } from '@boardsesh/shared-schema';
 import RoleManagement from '@/app/components/admin/role-management';
 import CommunitySettingsPanel from '@/app/components/admin/community-settings-panel';
 import GymSettingsPanel from '@/app/components/admin/gym-settings-panel';
+import SupporterGrantPanel from '@/app/components/admin/supporter-grant-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { rolesGrantGlobalAdmin, rolesGrantScopedAdmin } from '@/app/lib/admin/admin-scope';
 
@@ -132,12 +133,14 @@ export default function AdminPage() {
           <Tab label={t('tabs.roles')} sx={{ textTransform: 'none' }} />
           <Tab label={t('tabs.settings')} sx={{ textTransform: 'none' }} />
           <Tab label={t('tabs.gyms')} sx={{ textTransform: 'none' }} />
+          <Tab label={t('tabs.supporters')} sx={{ textTransform: 'none' }} />
         </Tabs>
       </Box>
 
       {tab === 0 && <RoleManagement />}
       {tab === 1 && <CommunitySettingsPanel />}
       {tab === 2 && <GymSettingsPanel />}
+      {tab === 3 && <SupporterGrantPanel />}
     </Container>
   );
 }

@@ -18,7 +18,8 @@
   "tabs": {
     "roles": "Roles",
     "settings": "Ajustes",
-    "gyms": "Rocódromos"
+    "gyms": "Rocódromos",
+    "supporters": "Apoyos"
   },
   "roles": {
     "heading": "Roles de la comunidad",
@@ -541,5 +542,31 @@
       "unlisted": "No listado",
       "private": "Privado"
     }
+  },
+  "supporters": {
+    "heading": "Apoyos",
+    "description": "Registra el estado de apoyo de un patrocinador de GitHub o de una donación hecha fuera de Stripe. Termina en la fecha de abajo, y una nueva concesión reemplaza la fecha de fin anterior.",
+    "search": {
+      "label": "Buscar una cuenta",
+      "placeholder": "Nombre",
+      "resultsLabel": "Cuentas que coinciden"
+    },
+    "userId": {
+      "label": "ID de la cuenta",
+      "selected": "Seleccionada: {{name}}"
+    },
+    "source": {
+      "label": "Origen",
+      "githubSponsors": "GitHub Sponsors",
+      "admin": "Donación registrada por admin"
+    },
+    "months": {
+      "label": "Meses",
+      "until": "Termina el {{date}}",
+      "invalid": "Meses enteros, de 1 a 120"
+    },
+    "grant": "Conceder estado de apoyo",
+    "granted": "Apoyo hasta el {{date}}.",
+    "grantFailed": "No se pudo conceder. Revisa el ID de la cuenta y vuelve a intentarlo."
   }
 }

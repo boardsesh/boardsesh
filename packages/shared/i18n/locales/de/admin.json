@@ -18,7 +18,8 @@
   "tabs": {
     "roles": "Rollen",
     "settings": "Einstellungen",
-    "gyms": "Hallen"
+    "gyms": "Hallen",
+    "supporters": "Unterstützer*innen"
   },
   "nav": {
     "retention": "Retention-Dashboard",
@@ -541,5 +542,31 @@
       "unlisted": "Nicht gelistet",
       "private": "Privat"
     }
+  },
+  "supporters": {
+    "heading": "Unterstützer*innen",
+    "description": "Trag den Unterstützungsstatus für GitHub-Sponsor*innen oder eine Spende außerhalb von Stripe ein. Er endet am Datum unten; eine neue Vergabe ersetzt das alte Enddatum.",
+    "search": {
+      "label": "Konto suchen",
+      "placeholder": "Name",
+      "resultsLabel": "Passende Konten"
+    },
+    "userId": {
+      "label": "Konto-ID",
+      "selected": "Ausgewählt: {{name}}"
+    },
+    "source": {
+      "label": "Quelle",
+      "githubSponsors": "GitHub Sponsors",
+      "admin": "Admin-Spende"
+    },
+    "months": {
+      "label": "Monate",
+      "until": "Endet am {{date}}",
+      "invalid": "Ganze Monate, 1 bis 120"
+    },
+    "grant": "Unterstützungsstatus vergeben",
+    "granted": "Unterstützer*in bis {{date}}.",
+    "grantFailed": "Das hat nicht geklappt. Prüf die Konto-ID und versuch es noch mal."
   }
 }

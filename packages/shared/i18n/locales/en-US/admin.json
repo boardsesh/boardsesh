@@ -18,7 +18,8 @@
   "tabs": {
     "roles": "Roles",
     "settings": "Settings",
-    "gyms": "Gyms"
+    "gyms": "Gyms",
+    "supporters": "Supporters"
   },
   "nav": {
     "retention": "Retention dashboard",
@@ -541,5 +542,31 @@
       "unlisted": "Unlisted",
       "private": "Private"
     }
+  },
+  "supporters": {
+    "heading": "Supporters",
+    "description": "Record supporter status for a GitHub sponsor or a gift made outside Stripe. It ends on the date below, and a new grant replaces the old end date.",
+    "search": {
+      "label": "Find an account",
+      "placeholder": "Name",
+      "resultsLabel": "Matching accounts"
+    },
+    "userId": {
+      "label": "Account id",
+      "selected": "Selected: {{name}}"
+    },
+    "source": {
+      "label": "Source",
+      "githubSponsors": "GitHub Sponsors",
+      "admin": "Admin gift"
+    },
+    "months": {
+      "label": "Months",
+      "until": "Ends {{date}}",
+      "invalid": "Whole months, 1 to 120"
+    },
+    "grant": "Grant supporter status",
+    "granted": "Supporter until {{date}}.",
+    "grantFailed": "Couldn't grant that. Check the account id and try again."
   }
 }

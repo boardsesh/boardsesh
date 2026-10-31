@@ -4,6 +4,8 @@ name: Refresh Acknowledgements
 # `boardsesh` org sponsors — and the bundled OSS license attribution. The
 # repository App commits the generated snapshot directly to protected main. A
 # partial refresh fails instead of silently preserving stale acknowledgements.
+# A separate job adds the internal `supporter` triage label to open issues by
+# current sponsors (docs/supporters.md); only that job can write issues.
 on:
   schedule:
     - cron: '0 7 * * 1' # 07:00 UTC every Monday
@@ -108,6 +110,55 @@ jobs:
             git fetch origin main
             git rebase origin/main
           done
+
+  label-supporter-issues:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The Repo Bot App key lives in Production, which permits only main.
+    environment: Production
+    # The only job here that writes issues. GITHUB_TOKEN adds the labels; the
+    # App token below only reads sponsorships.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Require repository App credentials
+        env:
+          APP_ID: ${{ vars.OTA_PUSH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$APP_ID" ] || { echo '::error::Missing OTA_PUSH_APP_ID.'; exit 1; }
+          [ -n "$APP_PRIVATE_KEY" ] || { echo '::error::Missing OTA_PUSH_APP_PRIVATE_KEY.'; exit 1; }
+
+      # Members:read only, so it can list private sponsors and nothing else.
+      - name: Mint sponsor-read App token
+        id: sponsor_reader
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-members: read
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Label open issues by current sponsors
+        env:
+          SPONSORS_GH_TOKEN: ${{ steps.sponsor_reader.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: node --import tsx scripts/label-supporter-issues.ts
 
   notify:
     needs: refresh

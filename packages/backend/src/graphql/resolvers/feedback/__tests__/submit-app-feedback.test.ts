@@ -281,6 +281,65 @@ describe('submitAppFeedback', () => {
     expect(issuePayload().screenshotUrls).toEqual([]);
   });
 
+  describe('supporter triage label', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const seedSupporter = (
+      userId: string,
+      fields: {
+        creditUntil?: Date | null;
+        subscriptionId?: string | null;
+        status?: string | null;
+        showPublicly?: boolean;
+        source?: string;
+      },
+    ) =>
+      db.execute(sql`
+        INSERT INTO stripe_supporters (user_id, stripe_subscription_id, subscription_status, credit_until, show_publicly, source, supported_at)
+        VALUES (${userId}, ${fields.subscriptionId ?? null}, ${fields.status ?? null}, ${fields.creditUntil?.toISOString() ?? null},
+                ${fields.showPublicly ?? false}, ${fields.source ?? 'stripe'}, now())
+      `);
+
+    const reportAndReadFlag = async (ctx: ConnectionContext, input = bugInput()): Promise<boolean | undefined> => {
+      await feedbackMutations.submitAppFeedback(null, { input }, ctx);
+      await vi.waitFor(() => expect(createFeedbackGithubIssueMock).toHaveBeenCalledTimes(1));
+      return issuePayload().reporterIsSupporter;
+    };
+
+    it('flags a live monthly supporter who kept public credit off', async () => {
+      // Owner decision: every current supporter, not only the publicly credited ones.
+      const reporter = await freshReporter();
+      await seedSupporter(reporter, { subscriptionId: 'sub_live', status: 'active', showPublicly: false });
+      expect(await reportAndReadFlag(authCtx(reporter))).toBe(true);
+    });
+
+    it('flags a supporter whose granted time has not run out', async () => {
+      const reporter = await freshReporter();
+      await seedSupporter(reporter, {
+        creditUntil: new Date(Date.now() + 30 * DAY_MS),
+        source: 'github_sponsors',
+      });
+      expect(await reportAndReadFlag(authCtx(reporter))).toBe(true);
+    });
+
+    it('does not flag a supporter whose time ran out or whose subscription ended', async () => {
+      const lapsed = await freshReporter();
+      await seedSupporter(lapsed, {
+        creditUntil: new Date(Date.now() - DAY_MS),
+        subscriptionId: 'sub_gone',
+        status: 'canceled',
+        showPublicly: true,
+      });
+      expect(await reportAndReadFlag(authCtx(lapsed))).toBe(false);
+    });
+
+    it('does not flag an account with no supporter row, or an anonymous report', async () => {
+      const reporter = await freshReporter();
+      expect(await reportAndReadFlag(authCtx(reporter))).toBe(false);
+      createFeedbackGithubIssueMock.mockClear();
+      expect(await reportAndReadFlag(anonCtx())).toBe(false);
+    });
+  });
+
   it('refuses a bug report with no usable description', async () => {
     const reporter = await freshReporter();
 

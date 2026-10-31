@@ -37,6 +37,7 @@ export const LABEL_COLORS: Record<string, string> = {
   'qa-approved': '0e8a16',
   'qa-declined': 'd73a4a',
   backend: '006b75',
+  supporter: 'c5def5',
 };
 
 export function githubHeaders(token: string): Record<string, string> {
