@@ -16,13 +16,12 @@ import {
   parseDarwinVmStat,
   topResidentProcesses,
 } from './store-video-measure';
-import { countHomeReady } from './lib/showcase-video/record';
+import { startInputObservationChannel } from './lib/session-input-observation/channel';
 import {
   classifyAttempt,
   inspectVisibility,
   mayAttemptFreshLaunch,
   objectRecord,
-  redactedTrace,
   singleTapFlow,
 } from './lib/session-input-observation/guards';
 import { applyObservationWrapper } from './lib/session-input-observation/wrapper';
@@ -35,7 +34,6 @@ const PUBLIC = join(DIRECTORY, 'public');
 const BASE = '6e8c46f203385c6587dcf2669e29df1c9d611cf8';
 const CACHE_KEY = 'macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a';
 const APP = join(ROOT, 'packages/mobile/.app-cache/Boardsesh.app');
-const METRO_LOG = join(ROOT, '.boardsesh/mobile-metro.log');
 const CONTROLLER = new AbortController();
 const children = new Set<ChildProcess>();
 const publicReport: Record<string, unknown> = {
@@ -52,6 +50,7 @@ const publicReport: Record<string, unknown> = {
 };
 let ownedUdid: string | null = null;
 let replay: Awaited<ReturnType<typeof startPinnedObservationReplay>> | null = null;
+let channel: Awaited<ReturnType<typeof startInputObservationChannel>> | undefined;
 let activeAttempt = 0;
 const snapshots: Record<string, unknown>[] = [];
 class ObservationFailure extends Error {}
@@ -66,7 +65,7 @@ function sensor(command: string, args: string[], timeout = 1000): string | null 
   const result = spawnSync(command, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
   return result.status === 0 ? result.stdout : null;
 }
-function memorySnapshot(phase: 'before' | 'after') {
+function memorySnapshot(phase: 'initial' | 'failure' | 'before' | 'after') {
   const startedAt = new Date().toISOString();
   const processes = sensor('ps', ['-axo', 'pid=,ppid=,rss=,comm='], 2000);
   const vm = sensor('vm_stat', []),
@@ -289,13 +288,13 @@ async function redactedScreenshot(label: string, visibility: Awaited<ReturnType<
     .toFile(join(PUBLIC, `${label}.png`));
   return rectangle;
 }
-async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number) {
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number, failure = 'readiness_timeout') {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end && !CONTROLLER.signal.aborted) {
     if (await predicate()) return;
     await sleep(1000, undefined, { signal: CONTROLLER.signal });
   }
-  fail('readiness_timeout');
+  fail(failure);
 }
 async function main(): Promise<number> {
   mkdirSync(PRIVATE, { recursive: true });
@@ -383,7 +382,11 @@ async function main(): Promise<number> {
       topology: { primarySimulators: 1, metros: 1, metroWorkers: 1 },
       confounds: publicReport.confounds,
     });
-    replay = await startPinnedObservationReplay(join(PRIVATE, 'replay.log'), join(PRIVATE, 'fixtures'), memorySnapshot);
+    channel = await startInputObservationChannel();
+    replay = await startPinnedObservationReplay(join(PRIVATE, 'replay.log'), join(PRIVATE, 'fixtures'), (phase) => {
+      if (phase === 'before') channel!.freezeBaseline(`baseline-${activeAttempt}`);
+      return memorySnapshot(phase);
+    });
     writePublic('fixture-manifest.json', {
       reference: replay.reference,
       frozenNow: replay.frozenNow,
@@ -412,6 +415,8 @@ async function main(): Promise<number> {
       EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: 'test',
       EXPO_PUBLIC_SCREENSHOT_NOW: replay.frozenNow,
       EXPO_PUBLIC_NATIVE_INPUT_TRACE: '1',
+      EXPO_PUBLIC_NATIVE_INPUT_TRACE_URL: channel.traceUrl,
+      EXPO_PUBLIC_SCREENSHOT_READY_URL: channel.readinessUrl,
     };
     const metro = spawn(
       'vp',
@@ -469,13 +474,11 @@ async function main(): Promise<number> {
     for (activeAttempt = 1; activeAttempt <= 2; activeAttempt++) {
       if (activeAttempt > 1)
         await checked('fresh-terminate', 'xcrun', ['simctl', 'terminate', ownedUdid, 'com.boardsesh.app']);
-      const logOffset = existsSync(METRO_LOG) ? statSync(METRO_LOG).size : 0;
+      channel.beginLaunch();
+      memorySnapshot('initial');
+      publicReport.phase = `launch-${activeAttempt}`;
       await checked(`launch-${activeAttempt}`, 'xcrun', ['simctl', 'launch', ownedUdid, 'com.boardsesh.app']);
-      await waitFor(
-        async () =>
-          existsSync(METRO_LOG) && countHomeReady(readFileSync(METRO_LOG).subarray(logOffset).toString('utf8')) > 0,
-        240_000,
-      );
+      await waitFor(async () => channel!.homeReady(), 240_000, 'direct_home_readiness_unverified');
       const prime = join(PRIVATE, `prime-${activeAttempt}.yaml`);
       writeFileSync(
         prime,
@@ -488,12 +491,28 @@ async function main(): Promise<number> {
         prime,
       ]);
       if (primeResult.status !== 0) fail('prime_failed');
+      await waitFor(
+        async () => {
+          try {
+            channel!.baseline();
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        15_000,
+        'trace_transport_unverified',
+      );
+      channel.requestAcknowledgement(`baseline-${activeAttempt}`);
+      await waitFor(async () => channel!.acknowledged(`baseline-${activeAttempt}`), 5000, 'trace_transport_unverified');
+      const traceBaseline = channel.freezeBaseline(`baseline-${activeAttempt}`);
+      writePublic(`trace-baseline-${activeAttempt}.json`, traceBaseline);
       const before = await captureHierarchy(`before-${activeAttempt}`, true);
       const mask = await redactedScreenshot(`before-${activeAttempt}`, before);
       writePublic(`before-${activeAttempt}.json`, { ...before, screenshotMask: mask });
       const tapFlow = join(PRIVATE, `tap-${activeAttempt}.yaml`);
       writeFileSync(tapFlow, singleTapFlow(before.point));
-      const traceOffset = statSync(METRO_LOG).size;
+      publicReport.phase = `contact-${activeAttempt}`;
       const tapResult = await maestro(`tap-${activeAttempt}`, [
         'test',
         '--debug-output',
@@ -502,15 +521,18 @@ async function main(): Promise<number> {
       ]);
       const evidence = nativeEvidence(tapResult.startedAt);
       await sleep(10_000, undefined, { signal: CONTROLLER.signal });
-      const traces = readFileSync(METRO_LOG)
-        .subarray(traceOffset)
-        .toString('utf8')
-        .split('\n')
-        .flatMap((line) => {
-          const trace = redactedTrace(line);
-          return trace ? [trace] : [];
-        });
+      let transportVerified = false;
+      let traces: Record<string, unknown>[] = [];
+      channel.closeWindow(`window-${activeAttempt}`);
+      try {
+        await waitFor(async () => channel!.acknowledged(`window-${activeAttempt}`), 5000, 'trace_transport_unverified');
+        traces = channel.finishWindow(`window-${activeAttempt}`);
+        transportVerified = true;
+      } catch {
+        /* Unverified transport never becomes a missing-application-event verdict. */
+      }
       writePublic(`traces-${activeAttempt}.json`, traces);
+      writePublic(`trace-channel-${activeAttempt}.json`, channel.snapshot());
       let after: Awaited<ReturnType<typeof captureHierarchy>> | null = null;
       let offConfirmed = false;
       try {
@@ -541,9 +563,11 @@ async function main(): Promise<number> {
         (phase) =>
           snapshots.filter((snapshot) => snapshot.attempt === activeAttempt && snapshot.phase === phase).length === 1,
       );
-      const result = validTap
-        ? classifyAttempt(traces, offConfirmed)
-        : { reproduced: false, boundary: 'input_delivery_unverified' };
+      const result = !transportVerified
+        ? { reproduced: false, boundary: 'trace_transport_unverified' }
+        : validTap
+          ? classifyAttempt(traces, offConfirmed, traceBaseline)
+          : { reproduced: false, boundary: 'input_delivery_unverified' };
       const attempt = {
         attempt: activeAttempt,
         ...result,
@@ -555,6 +579,7 @@ async function main(): Promise<number> {
         offConfirmed,
         validTap,
         completeHooks,
+        transportVerified,
         postScreenshot,
       };
       (publicReport.attempts as unknown[]).push(attempt);
@@ -564,7 +589,7 @@ async function main(): Promise<number> {
           attempt: activeAttempt,
           reproduced: result.reproduced,
           validTap,
-          completeHooks,
+          completeHooks: completeHooks && transportVerified,
           offConfirmed,
           commandStatus: tapResult.status,
         })
@@ -579,6 +604,11 @@ async function main(): Promise<number> {
     );
     return 0;
   } catch (error) {
+    try {
+      memorySnapshot('failure');
+    } catch {
+      publicReport.failurePressure = 'unavailable';
+    }
     publicReport.status = 'observation_failed';
     publicReport.failure = error instanceof ObservationFailure ? error.message : 'unexpected_error_redacted';
     return 1;
@@ -623,18 +653,17 @@ async function main(): Promise<number> {
       cleanup.replay = 'failed';
     }
     try {
-      if (existsSync(METRO_LOG))
-        writePublic(
-          'traces-all.json',
-          readFileSync(METRO_LOG, 'utf8')
-            .split('\n')
-            .flatMap((line) => {
-              const trace = redactedTrace(line);
-              return trace ? [trace] : [];
-            }),
-        );
+      if (channel) {
+        writePublic('trace-channel-final.json', channel.snapshot());
+        writePublic('traces-all.json', channel.allTraces());
+      }
     } catch {
       cleanup.traceHarvest = 'failed';
+    }
+    try {
+      await channel?.close();
+    } catch {
+      cleanup.traceChannel = 'failed';
     }
     publicReport.cleanup = cleanup;
     publicReport.cleanupFailed = Object.values(cleanup).some((result) => result !== 0);

@@ -14,7 +14,12 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
-import { nativeInputInstanceId, nativeInputInteraction, traceNativeInput } from '../../../lib/native-input-diagnostic';
+import {
+  nativeInputInstanceId,
+  nativeInputInteraction,
+  startNativeInputHeartbeat,
+  traceNativeInput,
+} from '../../../lib/native-input-diagnostic';
 import { prepareWorkoutRun } from '../../../lib/workout-run-store';
 import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
 import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
@@ -180,7 +185,11 @@ export function PreSessionView({
   const diagnosticQueued = useRef<ReturnType<typeof nativeInputInteraction>>(undefined);
   useEffect(() => {
     traceNativeInput('pre-session-mounted', { componentId: diagnosticComponentId });
-    return () => traceNativeInput('pre-session-unmounted', { componentId: diagnosticComponentId });
+    const stopHeartbeat = startNativeInputHeartbeat(diagnosticComponentId);
+    return () => {
+      traceNativeInput('pre-session-unmounted', { componentId: diagnosticComponentId });
+      stopHeartbeat();
+    };
   }, [diagnosticComponentId]);
   useEffect(() => {
     traceNativeInput('pre-session-state-committed', {
@@ -525,7 +534,12 @@ export function PreSessionView({
               disabled={isStartPending}
             />
           ) : (
-            <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStartPending} />
+            <SessionVisibilityRow
+              isPublic={isPublic}
+              onChange={handleVisibilityChange}
+              disabled={isStartPending}
+              diagnosticParentId={diagnosticComponentId}
+            />
           )}
         </View>
 

@@ -21,4 +21,7 @@ export type SwitchRowProps = {
   onValueChange: (next: boolean) => void;
   /** Dims the control and ignores taps. */
   disabled?: boolean;
+  /** Observation-only identity, never passed to native modifiers. */
+  diagnosticParentId?: string;
+  diagnosticRole?: 'session-visibility';
 };

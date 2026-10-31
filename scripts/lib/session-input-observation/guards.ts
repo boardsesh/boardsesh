@@ -143,11 +143,23 @@ export function redactedTrace(line: string): Record<string, unknown> | null {
     return null;
   }
 }
-export function classifyAttempt(traces: Record<string, unknown>[], offConfirmed: boolean) {
+export function classifyAttempt(
+  traces: Record<string, unknown>[],
+  offConfirmed: boolean,
+  baseline?: { runtimeId: string; parentId: string; switchRowId: string },
+) {
   const raw = traces.filter((trace) => trace.stage === 'raw-wrapper');
   if (raw.length !== 1)
     return { reproduced: true, boundary: raw.length === 0 ? 'before_raw_js_event' : 'unexpected_multiple_raw_events' };
   const event = raw[0];
+  if (
+    baseline &&
+    (event.runtimeId !== baseline.runtimeId ||
+      event.parentId !== baseline.parentId ||
+      event.switchRowId !== baseline.switchRowId ||
+      event.semanticRole !== 'session-visibility')
+  )
+    return { reproduced: false, boundary: 'trace_transport_unverified' };
   const matching = traces.filter(
     (trace) =>
       trace.attemptId === event.attemptId &&
@@ -186,7 +198,7 @@ export function classifyAttempt(traces: Record<string, unknown>[], offConfirmed:
 export function singleTapFlow(point: { x: number; y: number }): string {
   if (![point.x, point.y].every((coordinate) => Number.isInteger(coordinate) && coordinate >= 0))
     throw new Error('invalid_tap_point');
-  return `appId: com.boardsesh.app\n---\n- evalScript: \${http.get('http://127.0.0.1:8120/__observation/before')}\n- tapOn:\n    point: '${point.x},${point.y}'\n    repeat: 1\n    retryTapIfNoChange: false\n- evalScript: \${http.get('http://127.0.0.1:8120/__observation/after')}\n`;
+  return `appId: com.boardsesh.app\n---\n- assertTrue: \${JSON.parse(http.get('http://127.0.0.1:8120/__observation/before').body).ok === true}\n- tapOn:\n    point: '${point.x},${point.y}'\n    repeat: 1\n    retryTapIfNoChange: false\n- assertTrue: \${JSON.parse(http.get('http://127.0.0.1:8120/__observation/after').body).ok === true}\n`;
 }
 
 export function mayAttemptFreshLaunch(result: {

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSegments } from 'expo-router';
 import { trackScreen } from '../../lib/analytics';
 import { normalizeScreenPath } from '../../lib/analytics-screen-path';
+import { nativeInputReadyUrl } from '../../lib/native-input-diagnostic';
 import { useAnalyticsConsent } from '../../lib/consent-hooks';
 
 // Reports every Expo Router navigation using the route pattern (e.g.
@@ -38,7 +39,7 @@ export function AnalyticsScreenTracker(): null {
         const pingUntilDelivered = async () => {
           for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-              const readinessResponse = await fetch(readyUrl);
+              const readinessResponse = await fetch(nativeInputReadyUrl(readyUrl));
               if (readinessResponse.ok) return;
             } catch {
               // Retry below.

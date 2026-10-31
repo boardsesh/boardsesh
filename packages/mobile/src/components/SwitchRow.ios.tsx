@@ -35,20 +35,39 @@ import type { SwitchRowProps } from './SwitchRow.types';
 const ROW_MIN_HEIGHT = 48;
 const ROW_MIN_HEIGHT_WITH_SUBTITLE = 64;
 
-export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
+export function SwitchRow({
+  label,
+  description,
+  value,
+  onValueChange,
+  disabled = false,
+  diagnosticParentId,
+  diagnosticRole,
+}: SwitchRowProps) {
   const { brandColors, colorScheme } = useTheme();
   const diagnosticMount = useRef<string | undefined>(undefined);
   if (!diagnosticMount.current) diagnosticMount.current = nativeInputInstanceId('switch-row');
   const componentId = diagnosticMount.current;
   const handleToggle = makeToggleHandler(onValueChange, disabled);
-  registerNativeInputHandler(handleToggle, componentId);
+  registerNativeInputHandler(handleToggle, componentId, diagnosticParentId, diagnosticRole);
   useEffect(() => {
-    traceNativeInput('switch-row-mounted', { componentId, label });
-    return () => traceNativeInput('switch-row-unmounted', { componentId, label });
-  }, [componentId, label]);
+    traceNativeInput('switch-row-mounted', { componentId, parentId: diagnosticParentId, semanticRole: diagnosticRole });
+    return () =>
+      traceNativeInput('switch-row-unmounted', {
+        componentId,
+        parentId: diagnosticParentId,
+        semanticRole: diagnosticRole,
+      });
+  }, [componentId, diagnosticParentId, diagnosticRole]);
   useEffect(() => {
-    traceNativeInput('switch-row-props-committed', { componentId, label, value, disabled });
-  }, [componentId, label, value, disabled]);
+    traceNativeInput('switch-row-props-committed', {
+      componentId,
+      parentId: diagnosticParentId,
+      semanticRole: diagnosticRole,
+      value,
+      disabled,
+    });
+  }, [componentId, diagnosticParentId, diagnosticRole, value, disabled]);
   // On-track colour: the brand control tint (HIG Color: one accent for every
   // control). Not the brand FILL — that one fails 3:1 on a dark grouped card.
   const onTrack = brandControlTint(brandColors);

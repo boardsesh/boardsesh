@@ -18,9 +18,15 @@ type SessionVisibilityRowProps = {
   isPublic: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  diagnosticParentId?: string;
 };
 
-export function SessionVisibilityRow({ isPublic, onChange, disabled = false }: SessionVisibilityRowProps) {
+export function SessionVisibilityRow({
+  isPublic,
+  onChange,
+  disabled = false,
+  diagnosticParentId,
+}: SessionVisibilityRowProps) {
   const { t } = useTranslation('session');
   return (
     <Card>
@@ -36,6 +42,8 @@ export function SessionVisibilityRow({ isPublic, onChange, disabled = false }: S
           value={isPublic}
           onValueChange={onChange}
           disabled={disabled}
+          diagnosticParentId={diagnosticParentId}
+          diagnosticRole="session-visibility"
         />
       </View>
     </Card>
