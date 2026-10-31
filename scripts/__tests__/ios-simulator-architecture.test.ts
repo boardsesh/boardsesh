@@ -122,8 +122,8 @@ describe('host-native simulator architecture', () => {
     expect(builder.indexOf('const architecture = simulatorArchitecture();')).toBeLessThan(
       builder.indexOf('ensureNativeProject(options.clean)'),
     );
-    expect(builder).toContain('assertAppSimulatorArchitecture(appPath, architecture');
-    expect(builder.indexOf('assertAppSimulatorArchitecture(appPath, architecture')).toBeLessThan(
+    expect(builder).toMatch(/assertAppSimulatorArchitecture\(\s*appPath,\s*targetArchitecture/);
+    expect(builder.indexOf('assertAppSimulatorArchitecture(')).toBeLessThan(
       builder.indexOf('const destination = exportBuiltApp'),
     );
   });
@@ -170,8 +170,10 @@ describe('Intel video producer and recorder handoff', () => {
       expect(tools?.with).toMatchObject({
         ref: '${{ github.workflow_sha }}',
         'persist-credentials': false,
-        'sparse-checkout': 'scripts/lib/ios-simulator-architecture.mjs',
       });
+      expect(String(tools?.with?.['sparse-checkout']).trim().split('\n')).toContain(
+        'scripts/lib/ios-simulator-architecture.mjs',
+      );
       const source = job.steps.findIndex((step) => step.run?.endsWith(' source .'));
       const build = job.steps.findIndex((step) => step.run?.includes('mobile:build-sim-app'));
       const validate = job.steps.findIndex((step) => step.name === 'Validate actual simulator app slices before use');
@@ -180,7 +182,7 @@ describe('Intel video producer and recorder handoff', () => {
       expect(source).toBeLessThan(build);
       expect(validate).toBeGreaterThan(build);
       expect(validate).toBeLessThan(save);
-      expect(job.steps[validate].if).toBeUndefined();
+      expect(job.steps[validate].if).toBe(job === measurement ? "inputs.mode != 'record-crew'" : undefined);
       expect(job.steps.find((step) => step.uses === 'actions/cache/restore@v4')?.with?.['lookup-only']).not.toBe(true);
       expect(job.steps.find((step) => step.name === 'Compute screenshot app cache key')?.run).toContain(
         '${{ runner.arch }}',

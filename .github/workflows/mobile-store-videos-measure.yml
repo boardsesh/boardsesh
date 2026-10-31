@@ -20,13 +20,79 @@ concurrency:
   cancel-in-progress: ${{ inputs.mode != 'record-crew' }}
 
 jobs:
+  crew-app:
+    # Artifact-only cross-build experiment; ordinary modes and production pipeline stay unchanged.
+    if: inputs.mode == 'record-crew'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    outputs:
+      archive-sha: ${{ steps.pack.outputs.archive-sha }}
+      manifest-sha: ${{ steps.pack.outputs.manifest-sha }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      TOOLCHAINS: com.apple.dt.toolchain.XcodeDefault
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      EXPO_PUBLIC_USE_RN_FETCH: '1'
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout workflow-owned crew cross-build tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/video-arch-tools
+          sparse-checkout: |
+            scripts/lib/ios-simulator-architecture.mjs
+            scripts/lib/ios-crew-cross-artifact.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Verify exact stable toolchain and Intel simulator SDK support
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-crew-cross-artifact.mjs preflight . metrics/crew-toolchain.json
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - name: Install cross-build dependencies
+        run: vp install --frozen-lockfile
+      - name: Build the original Intel simulator product once on ARM
+        run: vp exec tsx scripts/store-video-measure.ts build metrics/crew-cross-build.json -- vp run mobile:build-sim-app -- --clean --crew-cross-build-receipt metrics/crew-toolchain.json
+      - name: Archive the untouched original app with exact provenance
+        id: pack
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-crew-cross-artifact.mjs pack . packages/mobile/ios/build/Build/Products/Debug-iphonesimulator/Boardsesh.app metrics/crew-toolchain.json .boardsesh/crew-cross-export
+      - name: Hand off only this run's verified app and manifest for one day
+        uses: actions/upload-artifact@v4
+        with:
+          name: crew-cross-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .boardsesh/crew-cross-export/app.tar
+            .boardsesh/crew-cross-export/manifest.json
+          retention-days: 1
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+      - name: Retain bounded cross-build metadata and measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crew-cross-build-metrics
+          path: |
+            metrics/crew-toolchain.json
+            metrics/crew-cross-build.json
+          retention-days: 7
+
   record:
+    needs: crew-app
+    if: ${{ !cancelled() && (inputs.mode != 'record-crew' || needs['crew-app'].result == 'success') }}
     runs-on: macos-26-intel
     # Three locale children already measured 91 minutes; four plus setup can
-    # exceed two hours. Single crew includes a cold build (~36 minutes observed on
-    # ARM), its existing 45-minute capture allowance and setup headroom: 90 total.
-    # Other diagnostics get 45 minutes; English gets 60. Input/take deadlines stay fixed.
-    timeout-minutes: ${{ inputs.mode == 'record-crew' && 90 || inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile') && 45 || 180 }}
+    # exceed two hours. Crew cold build has its separate 60-minute producer; this
+    # consumer allows 45 minutes capture + 15 minutes dependency/artifact/tool setup.
+    # Other diagnostics get 45 minutes; English gets 60. Inner UI/take deadlines stay fixed.
+    timeout-minutes: ${{ inputs.mode == 'record-crew' && 60 || inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile') && 45 || 180 }}
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -41,7 +107,9 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           path: .boardsesh/video-arch-tools
-          sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
+          sparse-checkout: |
+            scripts/lib/ios-simulator-architecture.mjs
+            scripts/lib/ios-crew-cross-artifact.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Reject recording sources without the reviewed host-native builder
@@ -53,27 +121,42 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Compute screenshot app cache key
+        if: inputs.mode != 'record-crew'
         id: appkey
         run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/lib/ios-simulator-architecture.mjs', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
       - name: Restore screenshot dev-client
+        if: inputs.mode != 'record-crew'
         id: app-cache
         uses: actions/cache/restore@v4
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
       - name: Build dev-client on cache miss
-        if: steps.app-cache.outputs.cache-hit != 'true'
+        if: inputs.mode != 'record-crew' && steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
       - name: Validate actual simulator app slices before use
+        if: inputs.mode != 'record-crew'
         env:
           VIDEO_APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
         run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Save screenshot dev-client
-        if: steps.app-cache.outputs.cache-hit != 'true'
+        if: inputs.mode != 'record-crew' && steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
+      - name: Download only this run's crew native artifact
+        if: inputs.mode == 'record-crew'
+        uses: actions/download-artifact@v4
+        with:
+          name: crew-cross-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .boardsesh/crew-cross-received
+      - name: Verify exact artifact and Intel runtime before any installation
+        if: inputs.mode == 'record-crew'
+        env:
+          CREW_ARCHIVE_SHA: ${{ needs.crew-app.outputs.archive-sha }}
+          CREW_MANIFEST_SHA: ${{ needs.crew-app.outputs.manifest-sha }}
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-crew-cross-artifact.mjs verify . .boardsesh/crew-cross-received packages/mobile/.app-cache/Boardsesh.app
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -124,6 +207,7 @@ jobs:
       - name: Record one English crew take without publishing
         if: inputs.mode == 'record-crew'
         env:
+          BOARDSESH_CREW_EXPECT_IOS_RUNTIME: '26.5'
           SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
           SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
