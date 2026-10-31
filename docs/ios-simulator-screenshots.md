@@ -301,6 +301,9 @@ the SDK27.1 control used951×669 and retained its board pane. These results just
 rejecting the incompatible cached product; they do not attribute the difference
 to one compiler or SDK component in isolation. A cache mismatch stops the shard
 without silently building a replacement there.
+The shard passes the optional SDK minimum through explicit shell branches: Duo
+adds `--minimum-sdk 27.1`; phones and iPads omit it. This keeps the preflight
+compatible with macOS Bash3.2 under `set -euo pipefail`, including helper failures.
 
 ## Store capture device coverage
 

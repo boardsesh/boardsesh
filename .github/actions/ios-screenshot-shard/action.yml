@@ -142,9 +142,11 @@ runs:
         MINIMUM_SDK: ${{ inputs.device-slug == 'iphone-duo' && '27.1' || '' }}
       run: |
         set -euo pipefail
-        minimum=()
-        if [ -n "$MINIMUM_SDK" ]; then minimum=(--minimum-sdk "$MINIMUM_SDK"); fi
-        node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app "${minimum[@]}"
+        if [ -n "$MINIMUM_SDK" ]; then
+          node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app --minimum-sdk "$MINIMUM_SDK"
+        else
+          node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
+        fi
 
     # The iPhone Duo simulator exists only in Xcode 27.1+ with the iOS 27.1
     # runtime, which the runner's default Xcode may not be. Pick the newest
