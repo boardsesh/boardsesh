@@ -164,6 +164,7 @@ runs:
       run: |
         set -euo pipefail
         source "$CACHE_TOOLING_ROOT/scripts/select-screenshot-xcode.sh"
+        select_screenshot_xcode
         runtimes="$(xcrun simctl list runtimes)"
         if ! grep -Eq '^iOS 27\.([1-9]|[1-9][0-9])' <<<"$runtimes"; then
           for attempt in 1 2 3; do
@@ -180,7 +181,7 @@ runs:
         fi
         device_types="$(xcrun simctl list devicetypes)"
         if ! grep -q 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo' <<<"$device_types"; then
-          echo "::error::Xcode at $xcode has no iPhone Duo simulator device type."
+          echo "::error::Xcode at $DEVELOPER_DIR has no iPhone Duo simulator device type."
           exit 1
         fi
 

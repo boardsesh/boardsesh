@@ -266,7 +266,10 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 The shared Debug dev-client cache uses a v2 key containing native source inputs,
 runner architecture, the selected Xcode build, and the simulator SDK version and
 build. The screenshot producer selects release Xcode27.1+ **before** looking up
-that key. Other video and smoke producers record their actual selected toolchain;
+that key. Selection resolves each installed app alias to its physical directory
+before rejecting beta/RC names, reading its version or exporting
+`DEVELOPER_DIR`. Accepted alias, canonical path and version are logged; a
+release-candidate alias cannot enter the build through a stable-looking name. Other video and smoke producers record their actual selected toolchain;
 they can share a product only when those identities match.
 
 Cache helpers and the two capture/record actions come from a separate sparse
