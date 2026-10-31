@@ -40,6 +40,10 @@ Set these on the **backend** service (Railway or any `docker run`):
 | `BACKEND_PUBLIC_URL` | no       | `https://ws.boardsesh.com`                    | Public backend origin; builds the claim verify link (`/api/gym-claims/verify`).                     |
 | `WEB_PUBLIC_URL`     | no       | `BOARDSESH_URL` → `https://www.boardsesh.com` | Public web origin; builds the `/admin/gym-claims` review link.                                      |
 
+`PROJECT_NEWS_UNSUBSCRIBE_SECRET` (32+ characters) signs the project news
+unsubscribe links. Required before any project news send; see
+[project-news-email.md](./project-news-email.md).
+
 ### Port / `secure` pairing
 
 `secure: true` means the connection is TLS from the first byte — correct for port

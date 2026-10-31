@@ -303,6 +303,12 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
 /** Personal archives: selected climbing fields only, with no credentials or catalogue writes. */
 const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name', 'email', 'created_at'] },
+  // The archive's `projectNewsEmail` history (docs/project-news-email.md).
+  {
+    table: 'user_project_news_email_events',
+    privileges: ['SELECT'],
+    columns: ['id', 'user_id', 'subscribed', 'source', 'decided_at'],
+  },
   // The shared spray visibility predicate reads only access-control fields.
   { table: 'spray_walls', privileges: ['SELECT'], columns: ['board_uuid', 'layout_id', 'deleted_at', 'hidden_at'] },
   {

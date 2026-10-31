@@ -1014,13 +1014,15 @@
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "lastUpdated": "Última actualización: 17 de octubre de 2026",
+    "lastUpdated": "Última actualización: 29 de octubre de 2026",
     "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos.",
     "collect": {
       "title": "Qué recogemos",
       "accountLabel": "Información de cuenta.",
-      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
+      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación y, solo si lo activas, para enviarte novedades del proyecto. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
+      "projectNewsLabel": "Correos con novedades del proyecto.",
+      "projectNewsBody": "Solo si activas «Enviarme novedades del proyecto» (en la app, en Ajustes → Cuenta, o en la página de Ajustes de la web), usamos tu correo para enviarte unos pocos correos al año sobre las novedades de Boardsesh y cómo puedes apoyarlo. Está desactivado salvo que lo actives, vivas donde vivas. La base legal es tu consentimiento. Guardamos cuándo y desde dónde lo activaste y desactivaste, como prueba del consentimiento, hasta que eliminas tu cuenta. Cada correo indica quién lo envía e incluye un enlace para darte de baja que funciona sin iniciar sesión, y puedes desactivarlo en Ajustes en cualquier momento. Al desactivarlo dejas de recibir estos correos. Nunca los enviamos a nadie que no lo haya activado.",
       "activityLabel": "Actividad de escalada.",
       "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
       "locationLabel": "Ubicación.",

@@ -32,6 +32,7 @@ export * from './hold-outline-overrides';
 export * from './user-data-export';
 export * from './privacy';
 export * from './analytics-consent';
+export * from './project-news-email';
 export * from './apple-ads-attribution';
 export * from './release-context';
 

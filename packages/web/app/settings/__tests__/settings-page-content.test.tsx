@@ -59,6 +59,11 @@ vi.mock('@/app/components/account/set-password-section', () => ({
   default: () => <div data-testid="set-password-section" />,
 }));
 
+// Covered by `components/account/__tests__/project-news-email-card.test.tsx`.
+vi.mock('@/app/components/account/project-news-email-card', () => ({
+  default: () => <div data-testid="project-news-email-card" />,
+}));
+
 import SettingsPageContent from '../settings-page-content';
 
 beforeEach(() => {
@@ -84,6 +89,12 @@ describe('SettingsPageContent', () => {
 
     expect(screen.getByTestId('set-password-section')).toBeTruthy();
     expect(screen.getByTestId('controllers-section')).toBeTruthy();
+  });
+
+  it('renders the project news email switch', async () => {
+    await renderSettings();
+
+    expect(screen.getByTestId('project-news-email-card')).toBeTruthy();
   });
 
   it('renders the page title', async () => {

@@ -9,7 +9,10 @@ sheet. They can save the JSON file or send it to another app. Expo web keeps
 
 Boardsesh JSON supports every shared `SUPPORTED_BOARDS` entry, including
 MoonBoard, Woods, and spray walls. Schema version 1 contains account identity,
-ticks, favorites, owned playlists, and authored climbs including drafts. It
+ticks, favorites, owned playlists, and authored climbs including drafts, plus
+`projectNewsEmail`: every "Email me project news" opt-in and opt-out, oldest
+first, with where it was made (account-wide, so every board's file carries it;
+see [project-news-email.md](./project-news-email.md)). It
 preserves raw/canonical identifiers, statuses, notes, mirror flags, ratings,
 dates, board/layout references, playlist order, and raw climb frames. Bigint IDs
 are strings; unresolved climb references remain present. This is a personal

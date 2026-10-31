@@ -79,6 +79,11 @@ const analyticsConsentSchema = readFileSync(
   new URL('../../../db/drizzle/0262_analytics_consent_and_user_activity.sql', import.meta.url),
   'utf8',
 );
+// The "Email me project news" opt-in log, from its generated migration.
+const projectNewsEmailSchema = readFileSync(
+  new URL('../../../db/drizzle/0288_project_news_email_consent.sql', import.meta.url),
+  'utf8',
+);
 
 const sessionBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0055_enhanced-sessions.sql', import.meta.url),
@@ -2207,6 +2212,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS user_analytics_consent_events;
   DROP TABLE IF EXISTS user_activity_days;
   ${analyticsConsentSchema}
+  DROP TABLE IF EXISTS user_project_news_email_events;
+  ${projectNewsEmailSchema}
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
