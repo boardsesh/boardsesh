@@ -244,6 +244,45 @@ export class Suite {
     }
     await this.fixture.start();
   }
+  private async requireZeroLinks(): Promise<void> {
+    const snapshot = await this.fixture.request('status');
+    if (
+      snapshot.boards.length !== this.boards.length ||
+      this.boards.some((board) => !snapshot.boards.some((actual) => actual.uuid === board.uuid)) ||
+      snapshot.boards.some((board) => board.connections !== 0)
+    )
+      throw new QaFailure('Independent case boundary requires the exact fixture boards with zero links', 'blocked');
+  }
+  private async caseBoundary(): Promise<void> {
+    if (this.sessionId) throw new QaFailure('Independent case boundary requires an ended QA session', 'blocked');
+    await this.requireZeroLinks();
+    this.evidence.save(
+      'inspect-inactive-record.yaml',
+      'appId: ${APP_ID}\n---\n- openLink: ${RECORD_URL}\n- extendedWaitUntil:\n    visible:\n      id: session-start\n    timeout: 10000\n- assertNotVisible:\n    id: session-active-.+\n',
+    );
+    // Check both real Record surfaces before restarting either participant.
+    // A local empty sessionId alone does not rule out a retained session.
+    for (const role of ROLES)
+      try {
+        await this.phones[role].flow(join(this.evidence.directory, 'inspect-inactive-record.yaml'), {
+          RECORD_URL: this.url(role, '/record'),
+        });
+      } catch (error) {
+        if (error instanceof QaFailure && error.kind === 'failed')
+          throw new QaFailure(`${role}: Record must show no active session before the case restart`, 'blocked');
+        throw error;
+      }
+    for (const role of ROLES) {
+      // Recheck all boards immediately before each terminate, never while a
+      // test's cross-board or active-session continuity is in progress.
+      await this.requireZeroLinks();
+      await this.phones[role].restart();
+      // Android restart uses its mounted root View. Native iOS tab controls
+      // expose visibility reliably where the root View identifier does not.
+      if (role === 'ios') await this.phones[role].flow('wait-ios-app-ready');
+      await this.identity(role);
+    }
+  }
   private async send(
     role: Role,
     board: Board,
@@ -473,7 +512,7 @@ export class Suite {
       }
     await this.mixedBoards();
   }
-  private async mixedBoards(): Promise<void> {
+  async mixedBoards(): Promise<void> {
     for (const role of ROLES)
       for (let index = 0; index < this.boards.length; index++) {
         const source = this.boards[index],
@@ -482,6 +521,7 @@ export class Suite {
           `mixed/${source.family}-to-${target.family}/${role}`,
           [7001, 7076, 7047],
           async () => {
+            await this.caseBoundary();
             await this.open(role, source, source.catalog[0]);
             await this.send(role, source, source.catalog[0], 'connect', { picker: true });
             const beforeForeign = this.device(await this.fixture.request('status'), source);
@@ -548,6 +588,7 @@ export class Suite {
           `session/${board.family}/${holder}`,
           [7013, 7018, 7114, 7019, 7015, 7046, 7025],
           async () => {
+            await this.caseBoundary();
             await this.open(holder, board, board.catalog[0]);
             await this.send(holder, board, board.catalog[0], 'connect', { picker: true });
             await this.phones[holder].flow('start-session', { RECORD_URL: this.url(holder, '/record') });

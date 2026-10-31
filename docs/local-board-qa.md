@@ -17,6 +17,7 @@ The scenarios come from [release QA #7010](https://github.com/boardsesh/boardses
 ```sh
 vp run qa:boards -- doctor
 vp run qa:boards -- solo
+vp run qa:boards -- mixed
 vp run qa:boards -- sessions
 vp run qa:boards -- all
 ```
@@ -29,7 +30,9 @@ For a physical Android build, use `vp run mobile:android-apk -- --require-fresh 
 
 `doctor` checks physical devices, tooling, account access, pinned static climbs, WDA attachment and read-only fixture status. It does not take a BLE connection, acquire the firmware QA lease, or create a session. A missing prerequisite exits with code 2.
 
-`solo` and `sessions` each run all three board families with each platform taking a turn as holder. They require normal English UI for native End/Leave labels. Each board has a real 65-second membership dwell before durable-history assertions. Foreground delivery has a 30-second completion deadline; supported background delivery has 60 seconds. These deadlines are completion bounds, not latency targets.
+`solo` runs six single-board cases followed by six cross-board cases. `mixed` runs only those six cross-board cases, making an affected-scope retry explicit. `sessions` runs six shared-session cases. Each scope covers all three board families with each platform taking a turn as holder; `all` retains all eighteen cases. They require normal English UI for native End/Leave labels. Each board has a real 65-second membership dwell before durable-history assertions. Foreground delivery has a 30-second completion deadline; supported background delivery has 60 seconds. These deadlines are completion bounds, not latency targets.
+
+Before each independent cross-board or shared-session case, the runner requires zero fixture links and a visibly inactive Record screen, then restarts the relevant app and verifies the same account/runtime. It rechecks zero links immediately before termination. This bounds accumulated native navigation without restarting within source → target → Previous continuity or an active session.
 
 The first product or infrastructure failure stops dependent scenarios so leftover state cannot produce misleading passes. Unrun scenarios are not passes. The report distinguishes `failed`, `blocked`, and `infrastructure`; known bugs are not silently skipped. Exit code 1 indicates a test or infrastructure failure. A driver endpoint disappearing does not establish an app crash.
 

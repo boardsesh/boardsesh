@@ -12,6 +12,21 @@ import { Backend } from './board-qa/backend';
 import { Fixture } from './board-qa/fixture';
 import { Suite } from './board-qa/suite';
 
+export const PHYSICAL_SCOPES = {
+  solo: { singleBoard: 6, mixedBoards: 6, crewSessions: 0, total: 12 },
+  mixed: { singleBoard: 0, mixedBoards: 6, crewSessions: 0, total: 6 },
+  sessions: { singleBoard: 0, mixedBoards: 0, crewSessions: 6, total: 6 },
+  all: { singleBoard: 6, mixedBoards: 6, crewSessions: 6, total: 18 },
+} as const;
+export async function runPhysicalScope(
+  action: keyof typeof PHYSICAL_SCOPES,
+  suite: Pick<Suite, 'solo' | 'mixedBoards' | 'sessions'>,
+): Promise<void> {
+  if (action === 'solo' || action === 'all') await suite.solo(); // solo includes mixedBoards.
+  if (action === 'mixed') await suite.mixedBoards();
+  if (action === 'sessions' || action === 'all') await suite.sessions();
+}
+
 export async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv.filter((argument) => argument !== '--'),
@@ -25,12 +40,12 @@ export async function main(argv: string[]): Promise<number> {
   const action = positionals[0] ?? 'doctor';
   if (values.help) {
     console.log(
-      'vp run qa:boards -- init|doctor|solo|sessions|all [--config FILE] [--output DIR]\nLocal physical iPhone + Android QA only. init writes a nonsecret example; doctor never acquires BLE or starts a session.',
+      'vp run qa:boards -- init|doctor|solo|mixed|sessions|all [--config FILE] [--output DIR]\nLocal physical iPhone + Android QA only. init writes a nonsecret example; doctor never acquires BLE or starts a session.\nScopes: solo = 6 single-board + 6 mixed cases; mixed = 6 cross-board cases; sessions = 6 crew cases; all = 18 cases.',
     );
     return 0;
   }
-  if (positionals.length > 1 || !['init', 'doctor', 'solo', 'sessions', 'all'].includes(action))
-    throw new Error('Choose init, doctor, solo, sessions, or all');
+  if (positionals.length > 1 || !['init', 'doctor', 'solo', 'mixed', 'sessions', 'all'].includes(action))
+    throw new Error('Choose init, doctor, solo, mixed, sessions, or all');
   const configFile = resolve(values.config ?? '.boardsesh/board-qa.json');
   if (action === 'init') {
     mkdirSync(resolve('.boardsesh'), { recursive: true, mode: 0o700 });
@@ -177,8 +192,10 @@ export async function main(argv: string[]): Promise<number> {
       await backend.observe(boards);
       suite = new Suite(config, phoneDrivers, fixture, backend, boards, evidence);
       await evidence.scenario('prepare/accounts-and-real-history-dwell', [], () => suite!.prepare());
-      if (action === 'solo' || action === 'all') await suite.solo();
-      if (action === 'sessions' || action === 'all') await suite.sessions();
+      if (action === 'solo' || action === 'mixed' || action === 'sessions' || action === 'all') {
+        evidence.event('selected-scope', { action, ...PHYSICAL_SCOPES[action] });
+        await runPhysicalScope(action, suite);
+      }
     }
   } catch (error) {
     const cause = runFailure() ?? error;

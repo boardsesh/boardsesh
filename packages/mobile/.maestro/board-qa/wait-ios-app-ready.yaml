@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Wait for the mounted native iOS tab navigation after a launch
+---
+- extendedWaitUntil:
+    visible:
+      text: Tab Bar
+    timeout: 30000
+- assertVisible: Home
+- assertVisible: Climbs
