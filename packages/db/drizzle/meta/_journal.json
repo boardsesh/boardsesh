@@ -2017,6 +2017,13 @@
       "when": 1793343933993,
       "tag": "0287_climb_mutation_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 288,
+      "version": "7",
+      "when": 1793439944938,
+      "tag": "0288_stripe_supporters",
+      "breakpoints": true
     }
   ]
 }
