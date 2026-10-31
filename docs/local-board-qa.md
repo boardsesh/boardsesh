@@ -37,6 +37,8 @@ The first product or infrastructure failure stops dependent scenarios so leftove
 
 For each send the runner requires a newer ESP32 completed-command sequence, an exact decoded position/color pattern, the expected connection generation, matching live holder attribution, a matching subscription event, and durable history on the same saved wall UUID. A title change, bulb icon, first ATT chunk, LED count alone, or queued mutation is insufficient. The other two boards must receive no writes.
 
+Public climb links open private previews. The driving check queues a pinned successor through Play next, reopens the committed climb from its mini-player, and uses the real Next control. Entering Drive can reassert that same climb within the server's ten-second history deduplication window; this setup is recorded separately as `physical-drive-setup`. The following Next still requires fresh physical delivery, subscription and history evidence.
+
 MoonBoard multi-chunk tests require more than one received write. Diagnostic colors are firmware-decoded colors: Aurora v3 red/green peak at 252 after quantization, not 255. Timing artifacts measure host-request-to-observation, including UI-driver and polling overhead; they are not radio durations or latency percentiles.
 
 The passive observer only queries/subscribes. It never joins the crew, claims a wall, writes presence, or logs a tick. Histories are checked relative to their starting sequences; existing records are retained. No climbing activity is invented through direct backend mutations.

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Board, CatalogClimb, QaConfig, Role } from './config';
-import { record } from './config';
+import { record, string } from './config';
 import { Backend, type Snapshot } from './backend';
 import type { Driver } from './drivers';
 import { Fixture, type FixtureBoard, type FixtureStatus } from './fixture';
@@ -9,6 +9,40 @@ import { notificationPrevious } from './notifications';
 import { requirePhysicalDelivery, requireSessionIdentity } from './confirmation';
 
 const ROLES: Role[] = ['ios', 'android'];
+export const QA_SESSION_QUEUE_QUERY = `query QaSessionQueue($id: ID!) {
+  session(sessionId: $id) {
+    queueState { queue { uuid climb { uuid } } currentClimbQueueItem { uuid climb { uuid } } }
+  }
+}`;
+export type QaQueueSnapshot = {
+  queue: Array<{ uuid: string; climb: { uuid: string } }>;
+  currentClimbQueueItem: { uuid: string; climb: { uuid: string } } | null;
+};
+export function previousQueueWitness(
+  before: QaQueueSnapshot,
+  after: QaQueueSnapshot,
+  currentClimbUuid: string,
+  previousClimbUuid: string,
+): { currentSlotUuid: string; previousSlotUuid: string } | null {
+  const current = after.currentClimbQueueItem;
+  if (!current || current.climb.uuid !== currentClimbUuid || before.queue.some((item) => item.uuid === current.uuid))
+    return null;
+  const currentSlots = after.queue.filter((item) => item.uuid === current.uuid);
+  if (currentSlots.length !== 1 || currentSlots[0].climb.uuid !== currentClimbUuid) return null;
+  const currentIndex = after.queue.findIndex((item) => item.uuid === current.uuid);
+  const previous = after.queue[currentIndex - 1];
+  if (
+    !previous ||
+    previous.climb.uuid !== previousClimbUuid ||
+    after.queue.filter((item) => item.uuid === previous.uuid).length !== 1
+  )
+    return null;
+  return { currentSlotUuid: current.uuid, previousSlotUuid: previous.uuid };
+}
+
+function climbLabelPattern(climb: CatalogClimb): string {
+  return `.*${climb.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`;
+}
 export class Suite {
   private identities = new Map<Role, string>();
   private sessionId = '';
@@ -34,14 +68,139 @@ export class Suite {
     return device;
   }
   private async open(role: Role, board: Board, climb: CatalogClimb): Promise<void> {
-    const escapedName = climb.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     await this.phones[role].flow('open-climb', {
       CLIMB_URL: this.url(role, `/b/${board.slug}/${board.angle}/play/${climb.uuid}`),
-      CLIMB_LABEL_PATTERN: `.*${escapedName}.*`,
+      CLIMB_LABEL_PATTERN: climbLabelPattern(climb),
     });
   }
   private async assertId(role: Role, id: string): Promise<void> {
     await this.phones[role].flow('assert-id', { EXPECTED_ID: id });
+  }
+  private async queueNext(role: Role, board: Board, current: CatalogClimb, next: CatalogClimb): Promise<void> {
+    await this.unchanged(board, async () => {
+      await this.open(role, board, next);
+      await this.phones[role].flow('queue-next', {
+        CLIMB_ACTIONS_LABEL: 'Climb actions',
+        PLAY_NEXT_LABEL: 'Play next',
+      });
+      await this.phones[role].flow('return-current', {
+        CURRENT_CLIMB_UUID: current.uuid,
+        CURRENT_CLIMB_LABEL_PATTERN: climbLabelPattern(current),
+      });
+    });
+  }
+  private async ensureDriving(role: Role, board: Board, current: CatalogClimb): Promise<void> {
+    await this.assertId(role, 'wall-control-.*-self-(idle|driving)');
+    if (!/wall-control-[a-z_]+-self-driving/.test(await this.phones[role].hierarchy())) {
+      await this.assertId(role, 'wall-control-.*-self-idle');
+      const before = await this.fixture.request('status');
+      const previous = this.device(before, board);
+      await this.phones[role].flow('drive');
+      const after = await until(
+        () => this.fixture.request('status'),
+        (snapshot) => {
+          const actual = this.device(snapshot, board);
+          return (
+            actual.sequence > previous.sequence &&
+            actual.updates > previous.updates &&
+            canonical(actual.commands) === canonical(current.commands)
+          );
+        },
+        30_000,
+        'fresh physical Drive setup',
+      );
+      const actual = this.device(after, board);
+      requirePhysicalDelivery(previous, actual, current, false, false);
+      for (const untouched of this.boards.filter((candidate) => candidate.uuid !== board.uuid)) {
+        const initial = this.device(before, untouched),
+          latest = this.device(after, untouched);
+        if (latest.writes !== initial.writes || latest.updates !== initial.updates)
+          throw new QaFailure('Drive setup reached an unrelated board');
+      }
+      // A same-climb reassert can be history-deduplicated for ten seconds.
+      // This proves physical setup; the following Next requires the full chain.
+      this.evidence.event('physical-drive-setup', { role, boardUuid: board.uuid, sequence: actual.sequence });
+    }
+    await this.assertId(role, 'wall-control-.*-self-driving');
+  }
+  private async sessionQueue(): Promise<QaQueueSnapshot> {
+    const response = await this.backend.query(QA_SESSION_QUEUE_QUERY, { id: this.sessionId });
+    const snapshot = record(record(response.session).queueState);
+    if (!Array.isArray(snapshot.queue)) throw new QaFailure('Invalid observed session queue', 'infrastructure');
+    const queueItem = (candidate: unknown) => {
+      const item = record(candidate);
+      return { uuid: string(item.uuid), climb: { uuid: string(record(item.climb).uuid) } };
+    };
+    return {
+      queue: snapshot.queue.map(queueItem),
+      currentClimbQueueItem: snapshot.currentClimbQueueItem === null ? null : queueItem(snapshot.currentClimbQueueItem),
+    };
+  }
+  private async requirePreviousQueue(
+    before: QaQueueSnapshot,
+    current: CatalogClimb,
+    previous: CatalogClimb,
+  ): Promise<void> {
+    let after: QaQueueSnapshot;
+    try {
+      after = await until(
+        () => this.sessionQueue(),
+        (snapshot) => Boolean(previousQueueWitness(before, snapshot, current.uuid, previous.uuid)),
+        30_000,
+        'pinned notification Previous queue slots',
+      );
+    } catch (error) {
+      if (error instanceof QaFailure && error.kind === 'failed')
+        throw new QaFailure(
+          'Notification Previous requires a fresh current slot and its pinned predecessor',
+          'blocked',
+        );
+      throw error;
+    }
+    this.evidence.event('notification-queue-witness', {
+      ...previousQueueWitness(before, after, current.uuid, previous.uuid),
+      currentClimbUuid: current.uuid,
+      previousClimbUuid: previous.uuid,
+      trackContext: 'source-contract-derived trackless commit from a fresh public-link preview',
+    });
+  }
+  private async resumeIos(
+    board: Board,
+    peer: Role,
+    suspendedBaseline: { fixture: FixtureStatus; presence: Snapshot },
+    fallbackPicker: boolean,
+  ): Promise<void> {
+    if (!fallbackPicker) {
+      // Retained pending delivery keeps the original pre-request baseline so
+      // foregrounding cannot hide an already completed send.
+      await this.send('ios', board, board.catalog[0], 'put', {
+        baseline: suspendedBaseline,
+        action: () => this.phones.ios.foreground(),
+      });
+      return;
+    }
+    await this.phones[peer].flow('dismiss-picker', { BOARD_UUID: board.uuid });
+    await this.phones.ios.foreground();
+    await this.open('ios', board, board.catalog[0]);
+    const resumed = { fixture: await this.fixture.request('status'), presence: await this.backend.snapshot(board) };
+    const original = this.device(suspendedBaseline.fixture, board);
+    const actual = this.device(resumed.fixture, board);
+    if (
+      actual.sequence > original.sequence &&
+      actual.updates > original.updates &&
+      canonical(actual.commands) === canonical(board.catalog[0].commands)
+    ) {
+      // A picker can follow a committed queue change; foregrounding may
+      // already deliver it. Validate the original request once, without a tap.
+      await this.send('ios', board, board.catalog[0], 'put', {
+        baseline: suspendedBaseline,
+        action: () => Promise.resolve(),
+      });
+    } else {
+      // The route only previews. If still undelivered, require the real Put UI
+      // and fresh baselines before a deliberate retry.
+      await this.send('ios', board, board.catalog[0], 'put', { baseline: resumed });
+    }
   }
   private async identity(role: Role): Promise<void> {
     try {
@@ -257,10 +416,11 @@ export class Suite {
         await this.evidence.scenario(`solo/${board.family}/${holder}`, [7023], async () => {
           await this.open(holder, board, board.catalog[0]);
           await this.send(holder, board, board.catalog[0], 'connect', { picker: true });
-          // In solo mode the wall control starts driving. Its next displayed climb must light.
-          await this.send(holder, board, board.catalog[1], 'drive', {
-            action: () => this.open(holder, board, board.catalog[1]),
-          });
+          // Public links preview. Queue the pinned successor, reopen current,
+          // then use actual Next while driving with a fresh delivery baseline.
+          await this.queueNext(holder, board, board.catalog[0], board.catalog[1]);
+          await this.ensureDriving(holder, board, board.catalog[0]);
+          await this.send(holder, board, board.catalog[1], 'next');
           await this.phones[holder].flow('stop-driving');
           await this.unchanged(board, () => this.open(holder, board, board.catalog[2]));
           await this.send(holder, board, board.catalog[2], 'put');
@@ -430,8 +590,14 @@ export class Suite {
               30_000,
               'forced BLE loss releases holder',
             );
+            const beforeNotificationQueue =
+              holder === 'android' && board.family === 'moonboard' ? await this.sessionQueue() : undefined;
             await this.open(holder, board, board.catalog[2]);
             await this.send(holder, board, board.catalog[2], 'connect', { picker: true });
+            if (beforeNotificationQueue) {
+              await this.ensureDriving(holder, board, board.catalog[2]);
+              await this.requirePreviousQueue(beforeNotificationQueue, board.catalog[2], board.catalog[1]);
+            }
             await this.phones[holder].background();
             let suspendedBaseline: { fixture: FixtureStatus; presence: Snapshot } | undefined;
             let fallbackPicker = false;
@@ -486,16 +652,7 @@ export class Suite {
             }
             if (holder === 'ios') {
               if (!suspendedBaseline) throw new Error('Missing suspended request baseline');
-              if (fallbackPicker) await this.phones[peer].flow('dismiss-picker', { BOARD_UUID: board.uuid });
-              // Observe against the pre-request baseline so an already completed
-              // pending send is accepted without issuing a duplicate command.
-              await this.send(holder, board, board.catalog[0], 'put', {
-                baseline: suspendedBaseline,
-                action: async () => {
-                  await this.phones[holder].foreground();
-                  if (fallbackPicker) await this.open(holder, board, board.catalog[0]);
-                },
-              });
+              await this.resumeIos(board, peer, suspendedBaseline, fallbackPicker);
             } else await this.phones[holder].foreground();
             await this.phones[peer].flow('leave-session', {
               RECORD_URL: this.url(peer, '/record'),
