@@ -140,7 +140,7 @@ type Step = {
 type Job = { 'runs-on'?: string; steps: Step[] };
 const workflow = (name: string) =>
   parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8')) as { jobs: Record<string, Job> };
-describe('Intel video producer and recorder handoff', () => {
+describe('host-native video producer and recorder handoff', () => {
   it('hashes the shared architecture helper in every main-branch simulator app producer', () => {
     for (const name of [
       'mobile-store-videos-pipeline',
@@ -155,12 +155,11 @@ describe('Intel video producer and recorder handoff', () => {
       expect(producers[0].run).toContain("'scripts/lib/ios-simulator-architecture.mjs'");
     }
   });
-  it('moves the producer and every native video consumer together, retaining ordinary mode timeouts and Linux jobs', () => {
+  it('keeps the normal producer and every native video consumer on ARM, retaining Linux jobs', () => {
     const jobs = workflow('mobile-store-videos-pipeline').jobs;
-    for (const name of ['app', 'record', 'crew']) expect(jobs[name]['runs-on']).toBe('macos-26-intel');
+    for (const name of ['app', 'record', 'crew']) expect(jobs[name]['runs-on']).toBe('macos-26');
     for (const name of ['preflight', 'render', 'publish', 'timings'])
       expect(jobs[name]['runs-on']).toBe('ubuntu-latest');
-    expect(workflow('mobile-store-videos-measure').jobs.record['runs-on']).toBe('macos-26-intel');
   });
   it('runs workflow-owned source refusal before a historical build and inspects restored bytes even on cache hits', () => {
     const pipeline = workflow('mobile-store-videos-pipeline').jobs;

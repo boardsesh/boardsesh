@@ -50,12 +50,13 @@ are not recorded as measurements. This dispatch does not write to R2 or Apple.
 
 ### Video simulator architecture and memory
 
-The ordinary video app producer, record matrix, crew job and measurement captures
-use `macos-26-intel`: GitHub documents 14 GB on this standard Intel runner, and
-standard runners are free for public repositories ([runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)).
-This keeps the SDK 26.5 phone capture contract separate from the SDK 27 Duo
-screenshot pipeline; no larger paid runner or account setting is required. More
-RAM is headroom, not evidence that memory caused an earlier failed tap.
+The ordinary video app producer, record matrix, crew job and non-crew measurement
+modes retain the original ARM `macos-26` runner. Intel is isolated to the explicit
+artifact-only `record-crew` measurement experiment; it is not a production rollout.
+The 14 GiB Intel experiment built and launched an x86_64 app, but did not confirm
+privacy-off or produce crew frames. Its sampled pressure-free percentage was
+63–86% with no swap. More capacity has not been shown to fix the input failure;
+near-full non-free memory alone does not establish memory pressure.
 
 The simulator builder validates Node against `RUNNER_ARCH` and builds one native
 slice: ARM64 hosts retain `arm64`, Intel hosts use `x86_64`. The main executable
@@ -101,7 +102,15 @@ part of this experiment. Handoffs bind run attempt as well as run ID: rerunning
 only a failed consumer intentionally cannot reuse a prior-attempt app; any further
 dispatch requires a new reviewed decision.
 
-An actual Intel private crew capture remains required: privacy-off gate before
+The artifact-only run `41227619662` passed cross-build, slice and same-run artifact
+validation, then failed a later Home relaunch and the built-in retry's visibility-off
+gate. Start was never tapped; no secondary or frames were produced. The retained
+Intel row overflowed its viewport, while the original ARM failure's thumb was fully
+visible. These are different observed boundaries; neither proves a memory cause.
+The normal SDK 58 Intel cold-build path also has a demonstrated Swift compiler
+crash, so ordinary jobs must retain ARM while investigation continues.
+
+An actual private crew capture remains required: privacy-off gate before
 Start, invite/secondary join, complete frames, session/device/process cleanup,
 and primary/secondary warmup plus pressure/RSS/compression/swap metrics. Preserve
 one-worker Metros and deferred secondary preparation. Measure throughput before
@@ -585,7 +594,7 @@ CI memory diagnostics and a complete crew take remain the check that these
 reductions fit the runner; occupancy near 99% with one simulator is not proof
 that the second simulator caused the failure.
 
-To check the crew take on the standard Intel 14 GiB CI runner, dispatch
+For an explicitly reviewed artifact-only Intel diagnostic, dispatch
 **Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
 It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
 source SHA, and skips rendering and publishing. The cross-build experiment has

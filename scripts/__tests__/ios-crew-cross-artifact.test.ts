@@ -407,6 +407,16 @@ const evaluate = (expression: string, mode: string, result = 'skipped', cancelle
     cancelled: () => cancelled,
   }) as unknown;
 describe('artifact-only measurement lane and preserved ordinary behavior', () => {
+  it('keeps ordinary ARM measurement as the default, with no cross producer', () => {
+    const configuration = parse(readFileSync('.github/workflows/mobile-store-videos-measure.yml', 'utf8')) as {
+      on: { workflow_dispatch: { inputs: { mode: { default: string } } } };
+    };
+    const mode = configuration.on.workflow_dispatch.inputs.mode.default;
+    expect(mode).toBe('measure');
+    expect(evaluate(measurement().record['runs-on']!, mode)).toBe('macos-26');
+    expect(evaluate(measurement()['crew-app'].if!, mode)).toBe(false);
+    expect(evaluate(measurement().record.if!, mode, 'skipped')).toBe(true);
+  });
   it('runs a canonical secrets-free ARM producer only for record-crew, with no cache', () => {
     const producer = measurement()['crew-app'];
     expect(producer['runs-on']).toBe('xcode-27');
@@ -447,7 +457,9 @@ describe('artifact-only measurement lane and preserved ordinary behavior', () =>
   });
   it('does not reuse/build/save an Intel cache in the crew consumer and verifies before capture', () => {
     const consumer = measurement().record;
-    expect(consumer['runs-on']).toBe('macos-26-intel');
+    expect(evaluate(consumer['runs-on']!, 'record-crew')).toBe('macos-26-intel');
+    for (const mode of ['measure', 'record-english', 'record-profile', 'diagnose-profile-filter'])
+      expect(evaluate(consumer['runs-on']!, mode)).toBe('macos-26');
     expect(consumer.needs).toBe('crew-app');
     for (const result of ['failure', 'skipped', 'cancelled'])
       expect(evaluate(consumer.if!, 'record-crew', result)).toBe(false);

@@ -87,7 +87,8 @@ jobs:
   record:
     needs: crew-app
     if: ${{ !cancelled() && (inputs.mode != 'record-crew' || needs['crew-app'].result == 'success') }}
-    runs-on: macos-26-intel
+    # Intel is isolated to the artifact-only diagnostic; ordinary modes retain ARM.
+    runs-on: ${{ inputs.mode == 'record-crew' && 'macos-26-intel' || 'macos-26' }}
     # Three locale children already measured 91 minutes; four plus setup can
     # exceed two hours. Crew cold build has its separate 60-minute producer; this
     # consumer allows 45 minutes capture + 15 minutes dependency/artifact/tool setup.

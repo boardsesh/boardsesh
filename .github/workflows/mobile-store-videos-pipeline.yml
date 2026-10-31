@@ -97,7 +97,7 @@ jobs:
 
   app:
     needs: preflight
-    runs-on: macos-26-intel
+    runs-on: macos-26
     timeout-minutes: 60
     outputs:
       cache-key: ${{ steps.appkey.outputs.key }}
@@ -153,7 +153,7 @@ jobs:
 
   record:
     needs: [preflight, app]
-    runs-on: macos-26-intel
+    runs-on: macos-26
     # Measured English MoonBoard recording: 38.45 min x 4 locales + setup exceeds 120 min.
     timeout-minutes: 180
     environment: Production
@@ -216,7 +216,7 @@ jobs:
     # the shared recording account participates in only one live session.
     needs: [preflight, app, record]
     if: needs.preflight.outputs.crew != '[]'
-    runs-on: macos-26-intel
+    runs-on: macos-26
     timeout-minutes: 240
     environment: Production
     concurrency:
