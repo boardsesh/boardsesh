@@ -1,4 +1,5 @@
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
+import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screenshot-maestro';
 /// <reference types="node" />
 
 /**
@@ -951,6 +952,28 @@ function runInherit(command: string, args: string[], env: NodeJS.ProcessEnv, cwd
   guardSimulatorCommand(command, args, ROOT_DIR);
   const result = spawnSync(command, args, { cwd, env, stdio: 'inherit' });
   return result.status ?? 1;
+}
+
+/** Bound every iOS Maestro process, including each tapless Duo inner-display pass. */
+export function runIosScreenshotMaestro(
+  maestroArgs: readonly string[],
+  context: { deviceId: string; cpp: boolean; captureDir: string; env?: NodeJS.ProcessEnv },
+  execution: { guard?: typeof guardSimulatorCommand; run?: typeof runInherit } = {},
+): number {
+  const checkLease = execution.guard ?? guardSimulatorCommand;
+  checkLease('maestro', ['--device', context.deviceId], ROOT_DIR);
+  const runCommand = execution.run ?? runInherit;
+  return runCommand(
+    'tsx',
+    [
+      resolve(ROOT_DIR, 'scripts/mobile-screenshot-maestro.ts'),
+      '--capture-timeout-ms',
+      String(context.cpp ? CPP_MAESTRO_TIMEOUT_MS : IOS_MAESTRO_TIMEOUT_MS),
+      ...maestroArgs,
+    ],
+    context.env ?? process.env,
+    context.captureDir,
+  );
 }
 
 function runCapture(
@@ -3048,10 +3071,7 @@ function captureIosDevice(
     // (`ps aux`) for the run's duration. This is acceptable here: CI runs on an
     // ephemeral, single-tenant runner, and locally it's the developer's own
     // machine. Revisit with `--env-file` if/when we bump to a Maestro that has it.
-    // The CPP supervisor changes the executable; keep the same lease boundary.
-    if (options.cpp) guardSimulatorCommand('maestro', ['--device', device.udid], ROOT_DIR);
     const maestroArgs = (maestroFlowFile: string): string[] => [
-      ...(options.cpp ? [resolve(ROOT_DIR, 'scripts/mobile-screenshot-maestro.ts')] : []),
       '--device',
       device.udid,
       'test',
@@ -3072,7 +3092,13 @@ function captureIosDevice(
         ? buildIosSidebarMaestroEnv(localeTarget.appLocale)
         : []),
     ];
-    const maestroStatus = runInherit(options.cpp ? 'tsx' : 'maestro', maestroArgs(flowFile), process.env, captureDir);
+    const runIosMaestroFlow = (maestroFlowFile: string) =>
+      runIosScreenshotMaestro(maestroArgs(maestroFlowFile), {
+        deviceId: device.udid,
+        cpp: Boolean(options.cpp),
+        captureDir,
+      });
+    const maestroStatus = runIosMaestroFlow(flowFile);
     if (options.flow === 'smoke') {
       // No screenshots to collect: the run is judged on evidence, pass or fail.
       const smokeStatus = judgeSmokeAttempt({
@@ -3122,7 +3148,7 @@ function captureIosDevice(
         const shotFlowFile = join(captureDir, `duo-inner-${String(index).padStart(2, '0')}.yaml`);
         writeFileSync(shotFlowFile, shot.flow);
         console.log(`${LOG} Duo inner display: ${shot.name}...`);
-        const shotStatus = runInherit('maestro', maestroArgs(shotFlowFile), process.env, captureDir);
+        const shotStatus = runIosMaestroFlow(shotFlowFile);
         if (shotStatus !== 0) {
           console.error(`${LOG} FAILED: Maestro exited with ${shotStatus} before Duo shot ${shot.name}.`);
           return shotStatus;

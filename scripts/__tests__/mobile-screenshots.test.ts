@@ -18,6 +18,7 @@ import {
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
+  runIosScreenshotMaestro,
   buildScreenshotSessionEnv,
   collectScreenshots,
   deviceSlug,
@@ -1971,5 +1972,59 @@ describe('appendNotesToStepSummary', () => {
     appendNotesToStepSummary([], summaryPath);
     appendNotesToStepSummary(['a note'], undefined);
     expect(readdirSync(summaryDir)).toEqual([]);
+  });
+});
+
+describe('bounded iOS Maestro invocation', () => {
+  it.each([false, true])('checks the simulator lease and preserves every raw argument (CPP %s)', (cpp) => {
+    const maestroArgs = [
+      '--device',
+      'owned-simulator',
+      'test',
+      '/capture/a flow.yaml',
+      '-e',
+      'SCREENSHOT_USER_PASSWORD=fixture has spaces',
+    ];
+    const env = baseEnv({ NODE_ENV: 'test' });
+    const operations: string[] = [];
+    const guard = vi.fn(() => {
+      operations.push('lease');
+    });
+    const run = vi.fn(() => {
+      operations.push('run');
+      return 7;
+    });
+    const context = { deviceId: 'owned-simulator', cpp, captureDir: '/capture', env };
+    expect(runIosScreenshotMaestro(maestroArgs, context, { guard, run })).toBe(7);
+    expect(operations).toEqual(['lease', 'run']);
+    expect(guard).toHaveBeenCalledWith('maestro', ['--device', 'owned-simulator'], expect.any(String));
+    expect(run).toHaveBeenCalledWith(
+      'tsx',
+      [
+        expect.stringMatching(/scripts\/mobile-screenshot-maestro\.ts$/),
+        '--capture-timeout-ms',
+        String((cpp ? 30 : 45) * 60 * 1000),
+        ...maestroArgs,
+      ],
+      env,
+      '/capture',
+    );
+  });
+
+  it('does not start the wrapper when the simulator lease is rejected', () => {
+    const run = vi.fn();
+    expect(() =>
+      runIosScreenshotMaestro(
+        ['--device', 'foreign-simulator'],
+        { deviceId: 'foreign-simulator', cpp: false, captureDir: '/capture' },
+        {
+          guard: () => {
+            throw new Error('lease rejected');
+          },
+          run,
+        },
+      ),
+    ).toThrow('lease rejected');
+    expect(run).not.toHaveBeenCalled();
   });
 });

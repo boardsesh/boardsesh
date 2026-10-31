@@ -345,3 +345,16 @@ but with `xcrun simctl io <udid> recordVideo --codec h264 --force
 5–12 seconds, portrait, silent, named exactly as the clip table names it. The recording
 contract, the conversion command and the size budget are in
 [docs/help-clips.md](help-clips.md).
+
+### Bounded store capture processes
+
+Every iOS capture invokes Maestro through the existing subprocess supervisor,
+including each Duo inner-display pass. Default captures have a 45-minute ceiling;
+CPP captures retain their 30-minute ceiling. A JVM main-thread crash or a reached
+deadline stops that owned process group so the orchestrator can preserve its
+partial frames and logs. The wrapper accepts only a leading
+`--capture-timeout-ms` integer from 1 to 3,600,000; all Maestro arguments pass
+through unchanged. Android capture is unchanged.
+
+CI retains capture debug artifacts for cancelled default captures as well as
+failures, including the bounded device-log collection and Maestro evidence.

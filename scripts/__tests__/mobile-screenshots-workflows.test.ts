@@ -1080,7 +1080,7 @@ describe('ios-screenshot-shard composite action', () => {
     }
   });
 
-  it('uploads recovered CPP failure evidence without changing the capture result', () => {
+  it('uploads recovered CPP and cancelled default capture evidence without changing the result', () => {
     const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
     for (const name of ['Collect capture debug artifacts', 'Upload capture debug artifacts']) {
       const step = action.runs.steps.find((candidate) => candidate.name === name);
@@ -1099,7 +1099,7 @@ describe('ios-screenshot-shard composite action', () => {
         [false, true, false, false],
         [false, true, true, true],
         [true, true, false, true],
-        [true, false, false, false],
+        [true, false, false, true],
       ]) {
         expect(
           runInNewContext(expression, { failed: false, cancelled, isCpp, hadFailedAttempt, debugAlways: false }),
