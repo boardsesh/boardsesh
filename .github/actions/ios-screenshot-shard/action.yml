@@ -134,6 +134,17 @@ runs:
         key: ${{ inputs.app-cache-key }}
         fail-on-cache-miss: true
 
+    - name: Verify prebuilt simulator app identity
+      shell: bash
+      env:
+        APP_CACHE_KEY: ${{ inputs.app-cache-key }}
+        MINIMUM_SDK: ${{ inputs.device-slug == 'iphone-duo' && '27.1' || '' }}
+      run: |
+        set -euo pipefail
+        minimum=()
+        if [ -n "$MINIMUM_SDK" ]; then minimum=(--minimum-sdk "$MINIMUM_SDK"); fi
+        node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app "${minimum[@]}"
+
     # The iPhone Duo simulator exists only in Xcode 27.1+ with the iOS 27.1
     # runtime, which the runner's default Xcode may not be. Pick the newest
     # installed RELEASE Xcode at 27.1 or later (a beta, or a 27.0 that cannot
@@ -149,24 +160,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        candidates=""
-        for candidate in /Applications/Xcode.app /Applications/Xcode_27*.app /Applications/Xcode-27*.app; do
-          [ -d "$candidate" ] || continue
-          case "$candidate" in *[Bb]eta*|*_RC*|*-RC*|*Release_Candidate*) continue ;; esac
-          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
-          [ -n "$version" ] || continue
-          # Keep only 27.1 or later.
-          lowest="$(printf '%s\n%s\n' 27.1 "$version" | sort -V | head -n 1)"
-          [ "$lowest" = "27.1" ] || continue
-          candidates="${candidates}${version} ${candidate}"$'\n'
-        done
-        xcode="$(printf '%s' "$candidates" | sort -V | tail -n 1 | cut -d' ' -f2-)"
-        if [ -z "$xcode" ]; then
-          echo "::error::The iPhone Duo shard needs a release Xcode 27.1 or later; found none under /Applications."
-          exit 1
-        fi
-        sudo xcode-select --switch "$xcode/Contents/Developer"
-        xcodebuild -version
+        source scripts/select-screenshot-xcode.sh
         runtimes="$(xcrun simctl list runtimes)"
         if ! grep -Eq '^iOS 27\.([1-9]|[1-9][0-9])' <<<"$runtimes"; then
           for attempt in 1 2 3; do

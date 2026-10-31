@@ -9,6 +9,7 @@ import { SHOWCASE_TAKES } from '../lib/showcase-video/takes';
 import { STORE_SEARCH_VARIANTS, storeSearchTakeIds } from '../lib/showcase-video/store-search';
 
 interface Step {
+  id?: string;
   name?: string;
   uses?: string;
   run?: string;
@@ -349,11 +350,10 @@ describe('store video workflow handoff', () => {
   it('uses the screenshot cache and Maestro pin, and publishes only finalized search exports', () => {
     const pipeline = workflow('mobile-store-videos-pipeline');
     const screenshot = workflow('mobile-screenshots-ios');
-    const videoKey = pipeline.jobs.app.steps?.find((step) => step.run?.includes('screenshot-sim-app-v1'))?.run;
-    const screenshotKey = screenshot.jobs['ios-build'].steps?.find((step) =>
-      step.run?.includes('screenshot-sim-app-v1'),
-    )?.run;
-    expect(videoKey).toBe(screenshotKey);
+    const videoKey = pipeline.jobs.app.steps?.find((step) => step.id === 'appkey');
+    const screenshotKey = screenshot.jobs['ios-build'].steps?.find((step) => step.id === 'appkey');
+    expect(videoKey?.run).toContain('ios-screenshot-app-cache.ts key');
+    expect(videoKey?.env?.NATIVE_INPUT_HASH).toBe(screenshotKey?.env?.NATIVE_INPUT_HASH);
     const action = readFileSync('.github/actions/ios-store-video-tools/action.yml', 'utf8');
     const screenshotAction = readFileSync('.github/actions/ios-screenshot-shard/action.yml', 'utf8');
     const maestroHash = /MAESTRO_SHA256: ([a-f0-9]+)/.exec(action)?.[1];
