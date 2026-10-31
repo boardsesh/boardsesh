@@ -1,7 +1,7 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import {
   simulatorArchitecture,
@@ -10,7 +10,14 @@ import {
   assertSimulatorCacheArchitecture,
 } from '../lib/ios-simulator-architecture.mjs';
 const scratch: string[] = [];
+beforeEach(() => {
+  // Explicit undefined uses production defaults; missing-env fixtures must remove
+  // the real CI environment rather than inherit this runner's identity.
+  vi.stubEnv('RUNNER_ARCH', undefined);
+  vi.stubEnv('CI', undefined);
+});
 afterEach(() => {
+  vi.unstubAllEnvs();
   scratch.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true }));
 });
 function directory() {
@@ -45,6 +52,23 @@ describe('host-native simulator architecture', () => {
     ['ppc64', 'X64'],
   ])('rejects unsupported/mismatched CI identity %s/%s', (node, runner) => {
     expect(() => simulatorArchitecture(node!, runner, true)).toThrow();
+  });
+  it.each([
+    ['arm64', 'ARM64', 'arm64', '1'],
+    ['x64', 'X64', 'x86_64', '1'],
+    ['arm64', 'ARM64', 'arm64', 'true'],
+    ['x64', 'X64', 'x86_64', 'true'],
+  ])('reads controlled CI defaults for %s/%s to %s with CI=%s', (node, runner, expected, ci) => {
+    vi.stubEnv('RUNNER_ARCH', runner);
+    vi.stubEnv('CI', ci);
+    expect(simulatorArchitecture(node, undefined)).toBe(expected);
+    vi.stubEnv('RUNNER_ARCH', undefined);
+    expect(() => simulatorArchitecture(node)).toThrow('architecture mismatch');
+  });
+  it('defaults to the actual Node host while checking its controlled runner identity', () => {
+    vi.stubEnv('RUNNER_ARCH', process.arch === 'arm64' ? 'ARM64' : 'X64');
+    vi.stubEnv('CI', '1');
+    expect(simulatorArchitecture()).toBe(process.arch === 'arm64' ? 'arm64' : 'x86_64');
   });
   it('keeps X64 and ARM cache identities separate', () => {
     expect(() => assertSimulatorCacheArchitecture('macOS-X64-screenshot-sim-app-v1-digest', 'x86_64')).not.toThrow();
