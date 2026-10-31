@@ -66,7 +66,7 @@ export function createInputTraceTransport(options: {
     closed = false,
     inFlight = false,
     scheduled = false;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const heartbeats = new Set<ReturnType<typeof setInterval>>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   let cancelDeadline: (() => void) | undefined;
@@ -177,10 +177,10 @@ export function createInputTraceTransport(options: {
   return {
     emit,
     counters,
-    startHeartbeat(fields: () => Record<string, unknown>) {
+    startHeartbeat(fields: () => Record<string, unknown>): () => void {
+      let ownedTimer: ReturnType<typeof setInterval> | undefined;
       try {
-        if (heartbeat) clearInterval(heartbeat);
-        heartbeat = setInterval(() => {
+        ownedTimer = setInterval(() => {
           try {
             emit({ stage: 'diagnostic-heartbeat', timestamp: new Date().toISOString(), ...fields() });
           } catch {
@@ -188,16 +188,24 @@ export function createInputTraceTransport(options: {
             dropped++;
           }
         }, 1000);
+        heartbeats.add(ownedTimer);
       } catch {
         errors++;
         dropped++;
       }
+      return () => {
+        if (ownedTimer) {
+          clearInterval(ownedTimer);
+          heartbeats.delete(ownedTimer);
+          ownedTimer = undefined;
+        }
+      };
     },
     close() {
       closed = true;
       pendingChallenge = undefined;
-      if (heartbeat) clearInterval(heartbeat);
-      heartbeat = undefined;
+      for (const heartbeat of heartbeats) clearInterval(heartbeat);
+      heartbeats.clear();
       if (timer) clearTimeout(timer);
       timer = undefined;
       controller?.abort();

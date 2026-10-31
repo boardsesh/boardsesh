@@ -116,13 +116,38 @@ describe('nonblocking native input diagnostic transport', () => {
     for (let index = 0; index < 150; index++) instance.emit({ stage: 'raw-wrapper' });
     expect(instance.counters().dropped).toBeGreaterThan(0);
   });
-  it('cleans heartbeat and hanging-request timers on unmount', async () => {
+  it('cleans all heartbeat and hanging-request timers when transport closes', async () => {
     const instance = transport({ request: vi.fn(() => new Promise<Response>(() => {})) });
     instance.startHeartbeat(() => ({ componentId: 'parent-1' }));
     await vi.advanceTimersByTimeAsync(1000);
     expect(vi.getTimerCount()).toBeGreaterThan(0);
     instance.close();
     await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('stops only the owned heartbeat and lets lifecycle events drain across remount', async () => {
+    const packets: string[] = [];
+    const instance = transport({
+      request: vi.fn<InputTraceRequest>(async (_url, init) => {
+        packets.push(init.body);
+        return new Response('{}');
+      }),
+    });
+    const stopFirst = instance.startHeartbeat(() => ({ componentId: 'parent-1' }));
+    instance.emit({ stage: 'pre-session-mounted', componentId: 'parent-1' });
+    await vi.advanceTimersByTimeAsync(0);
+    instance.emit({ stage: 'pre-session-unmounted', componentId: 'parent-1' });
+    stopFirst();
+    expect(vi.getTimerCount()).toBe(0);
+    const stopSecond = instance.startHeartbeat(() => ({ componentId: 'parent-2' }));
+    instance.emit({ stage: 'pre-session-mounted', componentId: 'parent-2' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(packets.join('')).toContain('pre-session-unmounted');
+    expect(packets.join('')).toContain('parent-2');
+    expect(instance.counters()).toMatchObject({ errors: 0, dropped: 0 });
+    stopFirst();
+    expect(vi.getTimerCount()).toBe(1);
+    stopSecond();
     expect(vi.getTimerCount()).toBe(0);
   });
   it('counts rejected HTTP responses and heartbeat field errors', async () => {

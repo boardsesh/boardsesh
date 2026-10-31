@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { observationMemorySnapshot, boundedObservationSensor } from '../lib/session-input-observation/sensors';
+import { startObservationSensorServer } from '../lib/session-input-observation/replay';
 import { startInputObservationChannel } from '../lib/session-input-observation/channel';
 import { singleTapFlow } from '../lib/session-input-observation/guards';
 import {
@@ -52,7 +54,12 @@ async function fixture(role = 'session-visibility') {
     else channel.requestAcknowledgement(challenge);
     await send([{ stage: 'trace-window-ack', challengeId: challenge }], counters);
   };
-  return { channel, send, ack };
+  const contact = async () => {
+    channel.beginContact('contact-1');
+    await send([{ stage: 'trace-window-ack', challengeId: 'contact-1' }]);
+    channel.releaseContact('contact-1');
+  };
+  return { channel, send, ack, contact };
 }
 describe('independent finite observation channel', () => {
   it('completes real HTTP baseline and post-window acknowledgements with the app transport', async () => {
@@ -95,6 +102,10 @@ describe('independent finite observation channel', () => {
       source.emit({ stage: 'diagnostic-heartbeat' });
       await wait(() => channel.acknowledged('baseline-real'));
       channel.freezeBaseline('baseline-real');
+      channel.beginContact('contact-real');
+      source.emit({ stage: 'diagnostic-heartbeat' });
+      await wait(() => channel.contactAcknowledged('contact-real'));
+      channel.releaseContact('contact-real');
       channel.closeWindow('window-real');
       source.emit({ stage: 'diagnostic-heartbeat' });
       await wait(() => channel.acknowledged('window-real'));
@@ -155,9 +166,10 @@ describe('independent finite observation channel', () => {
     expect(() => channel.baseline()).toThrow();
   });
   it('requires a fresh drained post-window acknowledgement and seals evidence against late healing', async () => {
-    const { channel, ack, send } = await fixture();
+    const { channel, ack, send, contact } = await fixture();
     await ack('baseline-1');
     channel.freezeBaseline('baseline-1');
+    await contact();
     await send([
       {
         stage: 'raw-wrapper',
@@ -181,9 +193,10 @@ describe('independent finite observation channel', () => {
   it.each([{ errors: 1 }, { dropped: 1 }, { queueDepth: 1 }])(
     'fails closed on source counters %j',
     async (counters) => {
-      const { channel, ack } = await fixture();
+      const { channel, ack, contact } = await fixture();
       await ack('baseline-1');
       channel.freezeBaseline('baseline-1');
+      await contact();
       await ack('window-1', counters);
       expect(channel.acknowledged('window-1')).toBe(false);
       expect(() => channel.finishWindow('window-1')).toThrow('trace_transport_unverified');
@@ -210,9 +223,10 @@ describe('independent finite observation channel', () => {
     expect(channel.acknowledged('baseline-1')).toBe(true);
   });
   it('rejects replaced/unmounted target instances even with a healthy transport ACK', async () => {
-    const { channel, ack, send } = await fixture();
+    const { channel, ack, send, contact } = await fixture();
     await ack('baseline-1');
     channel.freezeBaseline('baseline-1');
+    await contact();
     await send([
       { stage: 'switch-row-unmounted', componentId: 'row-1' },
       { stage: 'switch-row-mounted', componentId: 'row-2', parentId: 'parent-1', semanticRole: 'session-visibility' },
@@ -228,9 +242,10 @@ describe('independent finite observation channel', () => {
     expect(channel.snapshot().rejected).toBe(2);
   });
   it('never heals a window with a delayed application event', async () => {
-    const { channel, ack, send } = await fixture();
+    const { channel, ack, send, contact } = await fixture();
     await ack('baseline-1');
     channel.freezeBaseline('baseline-1');
+    await contact();
     channel.closeWindow('window-1');
     await send([{ stage: 'raw-wrapper', isOn: false }]);
     await ack('window-1');
@@ -243,6 +258,97 @@ describe('independent finite observation channel', () => {
     expect(row).toContain('diagnosticRole="session-visibility"');
     expect(row).toContain('diagnosticParentId={diagnosticParentId}');
     expect(parent).toContain('diagnosticParentId={diagnosticComponentId}');
+  });
+  it('drains unmount/remount lifecycle and accepts a new healthy baseline', async () => {
+    const { channel, send, ack } = await fixture();
+    await send([
+      { stage: 'switch-row-unmounted', componentId: 'row-1' },
+      { stage: 'pre-session-unmounted', componentId: 'parent-1' },
+      { stage: 'pre-session-mounted', componentId: 'parent-2' },
+      { stage: 'pre-session-state-committed', componentId: 'parent-2', isPublic: true, isStartPending: false },
+    ]);
+    await send([
+      { stage: 'switch-row-mounted', componentId: 'row-2', parentId: 'parent-2', semanticRole: 'session-visibility' },
+      {
+        stage: 'switch-row-props-committed',
+        componentId: 'row-2',
+        parentId: 'parent-2',
+        semanticRole: 'session-visibility',
+        value: true,
+        disabled: false,
+      },
+    ]);
+    await ack('baseline-remount');
+    expect(channel.freezeBaseline('baseline-remount')).toMatchObject({ parentId: 'parent-2', switchRowId: 'row-2' });
+  });
+  it('requires a new contact challenge after baseline and newer queued source events', async () => {
+    const { channel, send, ack } = await fixture();
+    await ack('baseline-1');
+    channel.freezeBaseline('baseline-1');
+    await send([{ stage: 'diagnostic-heartbeat' }], { sourceSequence: 7, queueDepth: 1 });
+    expect(channel.acknowledged('baseline-1')).toBe(false);
+    expect(() => channel.releaseContact('baseline-1')).toThrow();
+    channel.beginContact('contact-new');
+    await send([{ stage: 'diagnostic-heartbeat' }]);
+    expect(() => channel.releaseContact('contact-new')).toThrow();
+    await send([{ stage: 'trace-window-ack', challengeId: 'contact-new' }]);
+    expect(channel.contactAcknowledged('contact-new')).toBe(true);
+    expect(() => channel.releaseContact('contact-new')).not.toThrow();
+    await send([{ stage: 'diagnostic-heartbeat' }]);
+    expect(channel.contactAcknowledged('contact-new')).toBe(true);
+  });
+  it('rejects a newer source gap and target replacement after a baseline ACK', async () => {
+    const { channel, send, ack } = await fixture();
+    await ack('baseline-1');
+    channel.freezeBaseline('baseline-1');
+    await fetch(channel.traceUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        runtimeId: 'runtime-1',
+        events: [{ runtimeId: 'runtime-1', stage: 'diagnostic-heartbeat', sourceSequence: 7 }],
+        counters: { sourceSequence: 7, queueDepth: 0, dropped: 0, errors: 0 },
+      }),
+    });
+    expect(channel.acknowledged('baseline-1')).toBe(false);
+    expect(() => channel.releaseContact('baseline-1')).toThrow();
+    await send([{ stage: 'switch-row-unmounted', componentId: 'row-1' }]);
+    expect(() => channel.beginContact('contact-replaced')).toThrow();
+  });
+  it('bounds unsupported and stalled sensor subprocesses', async () => {
+    expect(await boundedObservationSensor('/does-not-exist-7154', [], 20)).toBeNull();
+    expect(await boundedObservationSensor(process.execPath, ['-e', 'setTimeout(()=>{},10000)'], 20)).toBeNull();
+  });
+  it('awaits delayed async sensors while trace ACK requests continue', async () => {
+    const { channel, ack } = await fixture();
+    let release: () => void = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started = false,
+      responded = false;
+    const sensors = await startObservationSensorServer(async () => {
+      started = true;
+      await observationMemorySnapshot('before', 1, async () => {
+        await barrier;
+        return null;
+      });
+    }, 0);
+    const pending = fetch(sensors.url + '/__observation/before').then((response) => {
+      responded = true;
+      return response;
+    });
+    try {
+      while (!started) await new Promise((resolve) => setTimeout(resolve, 1));
+      await ack('baseline-during-sensors');
+      expect(channel.acknowledged('baseline-during-sensors')).toBe(true);
+      expect(responded).toBe(false);
+      release();
+      expect(await (await pending).json()).toEqual({ ok: true });
+    } finally {
+      release();
+      await sensors.close();
+    }
+    expect(readFileSync('scripts/lib/session-input-observation/sensors.ts', 'utf8')).not.toContain('spawnSync');
   });
   it('makes a failed before hook stop Maestro before contact', () => {
     const commands = parse(singleTapFlow({ x: 369, y: 487 }).split('---\n')[1]) as { assertTrue?: string }[];

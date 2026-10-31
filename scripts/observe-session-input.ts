@@ -3,19 +3,13 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { freemem, totalmem } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CriticalChildProcessGroup, criticalChildProcessSpawnOptions } from './lib/dev-child-process-lifecycle';
-import {
-  parseDarwinMemoryPressure,
-  parseDarwinSwapUsage,
-  parseDarwinVmStat,
-  topResidentProcesses,
-} from './store-video-measure';
+import { observationMemorySnapshot } from './lib/session-input-observation/sensors';
 import { startInputObservationChannel } from './lib/session-input-observation/channel';
 import {
   classifyAttempt,
@@ -61,42 +55,8 @@ const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).dige
 function writePublic(name: string, payload: unknown): void {
   writeFileSync(join(PUBLIC, name), JSON.stringify(payload, null, 2) + '\n');
 }
-function sensor(command: string, args: string[], timeout = 1000): string | null {
-  const result = spawnSync(command, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
-  return result.status === 0 ? result.stdout : null;
-}
-function memorySnapshot(phase: 'initial' | 'failure' | 'before' | 'after') {
-  const startedAt = new Date().toISOString();
-  const processes = sensor('ps', ['-axo', 'pid=,ppid=,rss=,comm='], 2000);
-  const vm = sensor('vm_stat', []),
-    swap = sensor('sysctl', ['vm.swapusage']),
-    pressure = sensor('memory_pressure', ['-Q']);
-  const simulatorList = sensor('xcrun', ['simctl', 'list', 'devices', '--json'], 2000);
-  let booted: string[] | null = null;
-  try {
-    const listing = JSON.parse(simulatorList ?? '{}') as {
-      devices?: Record<string, { udid: string; state: string }[]>;
-    };
-    booted = Object.values(listing.devices ?? {})
-      .flat()
-      .filter((device) => device.state === 'Booted')
-      .map((device) => device.udid);
-  } catch {
-    /* nullable unsupported sensor */
-  }
-  const snapshot = {
-    attempt: activeAttempt,
-    phase,
-    startedAt,
-    completedAt: new Date().toISOString(),
-    totalMiB: totalmem() / 1024 ** 2,
-    nonFreeMiB: (totalmem() - freemem()) / 1024 ** 2,
-    vm: vm ? parseDarwinVmStat(vm) : null,
-    swap: swap ? parseDarwinSwapUsage(swap) : null,
-    pressureFreePercent: pressure ? parseDarwinMemoryPressure(pressure) : null,
-    topProcesses: processes ? topResidentProcesses(processes) : null,
-    topology: { primarySimulators: 1, metros: 1, metroWorkers: 1, secondary: false, bootedUdid: booted },
-  };
+async function memorySnapshot(phase: 'initial' | 'failure' | 'before' | 'after') {
+  const snapshot = await observationMemorySnapshot(phase, activeAttempt);
   snapshots.push(snapshot);
   writePublic('memory.json', snapshots);
   return snapshot;
@@ -383,10 +343,20 @@ async function main(): Promise<number> {
       confounds: publicReport.confounds,
     });
     channel = await startInputObservationChannel();
-    replay = await startPinnedObservationReplay(join(PRIVATE, 'replay.log'), join(PRIVATE, 'fixtures'), (phase) => {
-      if (phase === 'before') channel!.freezeBaseline(`baseline-${activeAttempt}`);
-      return memorySnapshot(phase);
-    });
+    replay = await startPinnedObservationReplay(
+      join(PRIVATE, 'replay.log'),
+      join(PRIVATE, 'fixtures'),
+      async (phase) => {
+        const snapshot = await memorySnapshot(phase);
+        if (phase === 'before') {
+          const challenge = `contact-${activeAttempt}`;
+          channel!.beginContact(challenge);
+          await waitFor(async () => channel!.contactAcknowledged(challenge), 5000, 'trace_transport_unverified');
+          channel!.releaseContact(challenge);
+        }
+        return snapshot;
+      },
+    );
     writePublic('fixture-manifest.json', {
       reference: replay.reference,
       frozenNow: replay.frozenNow,
@@ -475,7 +445,7 @@ async function main(): Promise<number> {
       if (activeAttempt > 1)
         await checked('fresh-terminate', 'xcrun', ['simctl', 'terminate', ownedUdid, 'com.boardsesh.app']);
       channel.beginLaunch();
-      memorySnapshot('initial');
+      await memorySnapshot('initial');
       publicReport.phase = `launch-${activeAttempt}`;
       await checked(`launch-${activeAttempt}`, 'xcrun', ['simctl', 'launch', ownedUdid, 'com.boardsesh.app']);
       await waitFor(async () => channel!.homeReady(), 240_000, 'direct_home_readiness_unverified');
@@ -605,7 +575,7 @@ async function main(): Promise<number> {
     return 0;
   } catch (error) {
     try {
-      memorySnapshot('failure');
+      await memorySnapshot('failure');
     } catch {
       publicReport.failurePressure = 'unavailable';
     }

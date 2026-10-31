@@ -71,6 +71,7 @@ export async function startInputObservationChannel() {
     totalEvents = 0,
     sealed = false;
   let frozen: InputBaseline | undefined;
+  let contact: { challengeId: string; afterSequence: number; released: boolean } | undefined;
   let windowClosed = false,
     lateApplicationEvents = 0;
   const events = () =>
@@ -88,11 +89,16 @@ export async function startInputObservationChannel() {
     )
       return false;
     const latest = latestCounters.get(ack.runtimeId);
-    if (latest?.dropped || latest?.errors) return false;
-    const list = events().filter((event) => Number(event.sourceSequence) <= ack.counters.sourceSequence);
-    return (
-      list.length === ack.counters.sourceSequence && list.every((event, index) => event.sourceSequence === index + 1)
-    );
+    if (
+      !latest ||
+      latest.queueDepth ||
+      latest.dropped ||
+      latest.errors ||
+      latest.sourceSequence < ack.counters.sourceSequence
+    )
+      return false;
+    const list = events();
+    return list.length === latest.sourceSequence && list.every((event, index) => event.sourceSequence === index + 1);
   }
   function baseline(): InputBaseline {
     if (!runtimeId) throw Error('trace_transport_unverified');
@@ -245,6 +251,7 @@ export async function startInputObservationChannel() {
       for (const known of traces.keys()) retired.add(known);
       runtimeId = undefined;
       frozen = undefined;
+      contact = undefined;
       challengeId = undefined;
       sealed = false;
       windowClosed = false;
@@ -257,6 +264,68 @@ export async function startInputObservationChannel() {
     requestAcknowledgement(challenge: string) {
       if (!id(challenge)) throw Error('invalid_ack_challenge');
       challengeId = challenge;
+    },
+    beginContact(challenge: string) {
+      if (!id(challenge) || acknowledgements.has(challenge) || contact) throw Error('trace_transport_unverified');
+      const current = baseline();
+      if (
+        !frozen ||
+        current.runtimeId !== frozen.runtimeId ||
+        current.parentId !== frozen.parentId ||
+        current.switchRowId !== frozen.switchRowId
+      )
+        throw Error('trace_transport_unverified');
+      contact = {
+        challengeId: challenge,
+        afterSequence: latestCounters.get(current.runtimeId)?.sourceSequence ?? current.sourceSequence,
+        released: false,
+      };
+      challengeId = challenge;
+    },
+    contactAcknowledged(challenge: string) {
+      const ack = acknowledgements.get(challenge);
+      if (
+        !contact ||
+        contact.challengeId !== challenge ||
+        !healthy(ack) ||
+        !ack ||
+        ack.counters.sourceSequence <= contact.afterSequence
+      )
+        return false;
+      try {
+        const current = baseline();
+        return Boolean(
+          frozen &&
+          current.runtimeId === frozen.runtimeId &&
+          current.parentId === frozen.parentId &&
+          current.switchRowId === frozen.switchRowId,
+        );
+      } catch {
+        return false;
+      }
+    },
+    releaseContact(challenge: string) {
+      const ack = acknowledgements.get(challenge);
+      if (
+        !contact ||
+        contact.released ||
+        contact.challengeId !== challenge ||
+        !healthy(ack) ||
+        !ack ||
+        ack.counters.sourceSequence <= contact.afterSequence
+      )
+        throw Error('trace_transport_unverified');
+      const current = baseline();
+      if (
+        !frozen ||
+        current.runtimeId !== frozen.runtimeId ||
+        current.parentId !== frozen.parentId ||
+        current.switchRowId !== frozen.switchRowId
+      )
+        throw Error('trace_transport_unverified');
+      frozen = current;
+      contact.released = true;
+      return { ...current };
     },
     closeWindow(challenge: string) {
       if (!id(challenge)) throw Error('invalid_ack_challenge');
@@ -280,7 +349,13 @@ export async function startInputObservationChannel() {
       return { ...current };
     },
     finishWindow(challenge: string) {
-      if (!frozen || !windowClosed || lateApplicationEvents || !healthy(acknowledgements.get(challenge)))
+      if (
+        !frozen ||
+        !contact?.released ||
+        !windowClosed ||
+        lateApplicationEvents ||
+        !healthy(acknowledgements.get(challenge))
+      )
         throw Error('trace_transport_unverified');
       const list = events().filter((event) => Number(event.sourceSequence) > frozen!.sourceSequence);
       const targetChanged = list.some(
@@ -300,6 +375,7 @@ export async function startInputObservationChannel() {
       return {
         runtimeId,
         frozen,
+        contact,
         traceCount: events().length,
         rejected,
         staleReady,

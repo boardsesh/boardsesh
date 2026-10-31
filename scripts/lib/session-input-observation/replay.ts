@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { appendFileSync } from 'node:fs';
 import { createScreenshotBackend, readScreenshotFixtureManifest } from '../screenshot-backend';
 import {
@@ -52,7 +53,29 @@ export async function startPinnedObservationReplay(
       }
     }),
   );
-  const sensors = createServer((request, response) => {
+  let sensors: Awaited<ReturnType<typeof startObservationSensorServer>>;
+  try {
+    await backend.listen(8119, '127.0.0.1');
+    sensors = await startObservationSensorServer(snapshot);
+  } catch (error) {
+    await backend.close();
+    throw error;
+  }
+  return {
+    reference,
+    frozenNow: manifest.frozenNow,
+    stats() {
+      return { ...backend.stats(), operations: counters };
+    },
+    async close() {
+      await sensors.close();
+      await backend.close();
+    },
+  };
+}
+
+export async function startObservationSensorServer(snapshot: (phase: 'before' | 'after') => unknown, port = 8120) {
+  const sensors = createServer(async (request, response) => {
     const phase =
       request.method === 'GET' && request.url === '/__observation/before'
         ? 'before'
@@ -65,7 +88,7 @@ export async function startPinnedObservationReplay(
       return;
     }
     try {
-      snapshot(phase);
+      await snapshot(phase);
       response.setHeader('content-type', 'application/json');
       response.end('{"ok":true}');
     } catch {
@@ -73,26 +96,15 @@ export async function startPinnedObservationReplay(
       response.end('{"error":"bounded_sensor_snapshot_failed"}');
     }
   });
-  try {
-    await backend.listen(8119, '127.0.0.1');
-    await new Promise<void>((resolve, reject) => {
-      sensors.once('error', reject);
-      sensors.listen(8120, '127.0.0.1', resolve);
-    });
-  } catch (error) {
-    await backend.close();
-    throw error;
-  }
+  await new Promise<void>((resolve, reject) => {
+    sensors.once('error', reject);
+    sensors.listen(port, '127.0.0.1', resolve);
+  });
   return {
-    reference,
-    frozenNow: manifest.frozenNow,
-    stats() {
-      return { ...backend.stats(), operations: counters };
-    },
+    url: `http://127.0.0.1:${(sensors.address() as AddressInfo).port}`,
     async close() {
       sensors.closeAllConnections();
       await new Promise<void>((resolve) => sensors.close(() => resolve()));
-      await backend.close();
     },
   };
 }

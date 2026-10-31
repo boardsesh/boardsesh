@@ -66,17 +66,13 @@ export function registerNativeInputHandler(
 }
 export function startNativeInputHeartbeat(parentId: string): () => void {
   try {
-    transport?.startHeartbeat(() => ({ componentId: parentId, parentId, semanticRole: 'session-visibility' }));
+    return (
+      transport?.startHeartbeat(() => ({ componentId: parentId, parentId, semanticRole: 'session-visibility' })) ??
+      (() => {})
+    );
   } catch {
-    /* diagnostic transport only */
+    return () => {}; /* diagnostic bookkeeping only */
   }
-  return () => {
-    try {
-      transport?.close();
-    } catch {
-      /* diagnostic cleanup only */
-    }
-  };
 }
 if (enabled)
   globalThis.__boardseshNativeInputRawEvent = (stage, fields, handler) => {
