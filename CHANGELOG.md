@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- On a US iPhone, Acknowledgements now links straight to the Boardsesh support page ([#7172](https://github.com/boardsesh/boardsesh/pull/7172))
 - Scroll climbs and your logbook without accidentally opening row actions. ([#7161](https://github.com/boardsesh/boardsesh/pull/7161))
 - Opening Boardsesh for the first time from a shared link no longer crashes after the privacy prompt ([#7153](https://github.com/boardsesh/boardsesh/pull/7153))
 

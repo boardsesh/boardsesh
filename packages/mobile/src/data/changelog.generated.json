@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-31T08:15:56.373Z",
+  "generatedAt": "2026-10-31T09:34:17.223Z",
   "entries": [
+    {
+      "prNumber": 7172,
+      "category": "fixed",
+      "title": "On a US iPhone, Acknowledgements now links straight to the Boardsesh support page",
+      "mergedAt": "2026-10-31T08:52:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7172"
+    },
     {
       "prNumber": 7161,
       "category": "fixed",
