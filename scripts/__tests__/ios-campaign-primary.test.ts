@@ -231,6 +231,21 @@ describe('regular primary capture identity', () => {
       ).toThrow(/seed/);
     },
   );
+  it.each([{ boardType: 'spray' }, { hasLeds: false }])('preserves non-driving captures for %j', (change) => {
+    const primary = readIosCampaignPrimaryCapture(fixture(), board.name, [board]);
+    const fallback = { ...primary, board: { ...primary.board, ...change } };
+    const env = buildScreenshotEnv(
+      { ...parseArgs(['--flow', 'app-store-campaign']), iosCampaignPrimaryCapture: fallback },
+      {},
+      'en-US',
+      '2026-10-13T12:00:00.000Z',
+      19869,
+    );
+    const command = JSON.parse(env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS!)['hero-1'];
+    expect(command.route).toBe('/climbs?screenshotBoardIndex=0');
+    expect(buildIosCampaignMaestroEnv('en-US', undefined, fallback)).toContain('SCREENSHOT_PRIMARY_DRIVING=0');
+  });
+
   it('uses the separate regular command endpoint while retaining seven board slots', () => {
     const primary = readIosCampaignPrimaryCapture(fixture(), board.name, [board]);
     const options = {
@@ -254,12 +269,20 @@ describe('regular primary capture identity', () => {
     expect(JSON.parse(env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS!)['hero-1']).toEqual({
       selector: board.name,
       identity: { uuid: board.uuid, boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26, 27, 28, 29], angle: 35 },
-      route: '/climbs?screenshotBoardIndex=0',
+      route: `/climbs?screenshotBoardIndex=0&screenshotOpenFirst=1&screenshotDrive=1&screenshotClimbId=${climb.uuid}`,
     });
     for (const locale of ['en-US', 'es', 'fr', 'de', 'it'] as const) {
       const variables = buildIosCampaignMaestroEnv(locale, undefined, primary);
       expect(variables).toContain(`SCREENSHOT_PRIMARY_WALL_PAINTED_ID=^${primary.paintedId}$`);
       expect(variables).toContain(`SCREENSHOT_PRIMARY_CLIMB_TITLE=${climb.name}`);
+      expect(variables).toContain('SCREENSHOT_PRIMARY_DRIVING=1');
+      expect(variables).toContain(`SCREENSHOT_PRIMARY_DRIVING_ID=^store-driving-${board.uuid}-${climb.uuid}$`);
+      expect(variables).toContain(
+        `SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID=^store-current-driving-${board.uuid}-${climb.uuid}$`,
+      );
+      expect(variables).toContain(
+        `SCREENSHOT_PRIMARY_KIOSK_DRIVING_ID=^store-kiosk-driving-${board.uuid}-${climb.uuid}$`,
+      );
       const row = variables
         .find((variable) => variable.startsWith('SCREENSHOT_PRIMARY_CLIMB_ROW='))!
         .split('=')

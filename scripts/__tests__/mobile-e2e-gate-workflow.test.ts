@@ -21,7 +21,7 @@ const ANDROID_CAPTURE_PATH = '.github/workflows/mobile-screenshots-android.yml';
 const IOS_CAPTURE_PATH = '.github/workflows/mobile-screenshots-ios.yml';
 const ANDROID_ACTION_PATH = '.github/actions/android-emulator-capture/action.yml';
 const ANDROID_ACTION_USES = './.github/actions/android-emulator-capture';
-const IOS_ACTION_USES = './.github/actions/ios-screenshot-shard';
+const IOS_ACTION_USES = './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard';
 
 const TESTED_SHA = '${{ needs.resolve.outputs.sha }}';
 
@@ -149,13 +149,26 @@ describe('mobile-e2e-gate.yml jobs', () => {
 
   it('pins every checkout to the resolved commit', () => {
     const checkouts = Object.entries(workflow.jobs).flatMap(([name, job]) =>
-      stepsUsing(job, 'actions/checkout@').map((step) => ({ name, ref: step.with?.ref })),
+      stepsUsing(job, 'actions/checkout@').map((step) => ({
+        name,
+        ref: step.with?.ref,
+        tooling: step.with?.path === '.boardsesh/cache-tooling',
+      })),
     );
-    expect(checkouts.map((checkout) => checkout.name)).toEqual(['android-smoke', 'ios-smoke', 'verdict']);
+    expect(checkouts.filter((checkout) => !checkout.tooling).map((checkout) => checkout.name)).toEqual([
+      'android-smoke',
+      'ios-smoke',
+      'verdict',
+    ]);
+    expect(checkouts.filter((checkout) => checkout.tooling).map((checkout) => checkout.name)).toEqual(['ios-smoke']);
     for (const checkout of checkouts) {
       // The verdict falls back to the triggering commit only when `resolve`
       // failed, and then fails on the missing SHA.
-      const expected = checkout.name === 'verdict' ? '${{ needs.resolve.outputs.sha || github.sha }}' : TESTED_SHA;
+      const expected = checkout.tooling
+        ? '${{ github.workflow_sha }}'
+        : checkout.name === 'verdict'
+          ? '${{ needs.resolve.outputs.sha || github.sha }}'
+          : TESTED_SHA;
       expect(checkout.ref, `${checkout.name} checkout`).toBe(expected);
     }
   });
@@ -193,11 +206,13 @@ describe('mobile-e2e-gate.yml jobs', () => {
     expect(withoutCommentLines(source).join('\n')).not.toContain('SCREENSHOT_USER_');
   });
 
-  it('shares the simulator app cache with the capture workflow, key for key', () => {
-    const keyLine = (text: string) =>
-      text.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
-    expect(keyLine(source)).toBeTruthy();
-    expect(keyLine(source)?.trim()).toBe(keyLine(readFileSync(IOS_CAPTURE_PATH, 'utf8'))?.trim());
+  it('shares the simulator app native-input recipe with the capture workflow', () => {
+    const capture = parse(readFileSync(IOS_CAPTURE_PATH, 'utf8')) as typeof workflow;
+    const key = (steps: Step[]) => steps.find((step) => step.id === 'appkey');
+    const smokeKey = key(workflow.jobs['ios-smoke'].steps ?? []);
+    const captureKey = key(capture.jobs['ios-build'].steps ?? []);
+    expect(smokeKey?.run).toContain('ios-screenshot-app-cache.ts key');
+    expect(smokeKey?.env?.NATIVE_INPUT_HASH).toBe(captureKey?.env?.NATIVE_INPUT_HASH);
   });
 
   it('reads each smoke result on every outcome', () => {

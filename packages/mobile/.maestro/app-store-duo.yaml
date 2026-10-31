@@ -12,7 +12,8 @@ name: app-store screenshots (iPhone Duo, closed)
 #
 # Deep links only, as in app-store.yaml (see its header for the screenshot-mode
 # query params). No coordinate or percentage gestures anywhere in the Duo flows:
-# Maestro reports the open Duo with the wrong geometry.
+# Maestro reports stale geometry on both Duo displays. Bounded ID waits keep
+# the real content gates without calculating visibility against that geometry.
 
 - setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
 
@@ -48,12 +49,17 @@ name: app-store screenshots (iPhone Duo, closed)
     notVisible:
       id: 'horizontal-scroll-section-loading'
     timeout: 60000
-- scrollUntilVisible:
-    element:
+- extendedWaitUntil:
+    visible:
+      id: 'progress-tab-loaded'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
       id: 'profile-board-overview'
-    direction: UP
-    centerElement: false
-    visibilityPercentage: 100
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: '^profile-board-row-.+$'
     timeout: 60000
 - waitForAnimationToEnd
 - takeScreenshot: 05-profile
@@ -77,10 +83,9 @@ name: app-store screenshots (iPhone Duo, closed)
     visible:
       id: 'pre-session-footer'
     timeout: 90000
-- scrollUntilVisible:
-    element:
+- extendedWaitUntil:
+    visible:
       id: 'pre-session-board-summary'
-    direction: UP
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000

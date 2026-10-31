@@ -131,6 +131,77 @@ function verifyRecordInputs(log: Buffer, target: CppTarget, producerSha: string)
     return fail();
 }
 
+const LEGACY_CAPTURE_ACTION = './.github/actions/ios-screenshot-shard';
+const TOOLING_CAPTURE_ACTION = './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard';
+const TOOLING_IDENTITY_STEP = 'Verify application and cache tooling identities';
+const TOOLING_PATH = '.boardsesh/cache-tooling';
+
+function unconditionalStep(step: Record<string, unknown>): boolean {
+  return step.if === undefined && step['continue-on-error'] === undefined;
+}
+function officialCheckout(step: Record<string, unknown>): boolean {
+  return (
+    step.uses === 'actions/checkout@v4' &&
+    unconditionalStep(step) &&
+    object(step.with) &&
+    (step.with.repository === undefined || step.with.repository === 'boardsesh/boardsesh')
+  );
+}
+/** Only the two reviewed capture topologies are trusted; no archive reads happen here. */
+function retainedCaptureStep(
+  captureSteps: Record<string, unknown>[],
+  currentCaptureSteps: Record<string, unknown>[],
+): Record<string, unknown> {
+  const captures = captureSteps.filter(
+    (step) =>
+      step.uses === LEGACY_CAPTURE_ACTION ||
+      step.uses === TOOLING_CAPTURE_ACTION ||
+      step.name === 'Capture target-specific native scenes',
+  );
+  const checkouts = captureSteps.filter(
+    (step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'),
+  );
+  const identities = captureSteps.filter((step) => step.name === TOOLING_IDENTITY_STEP);
+  if (captures.length !== 1 || !unconditionalStep(captures[0])) return fail();
+  const capture = captures[0];
+  const roots = checkouts.filter((step) => object(step.with) && step.with.path === undefined);
+  if (roots.length !== 1) return fail();
+  const checkout = roots[0];
+  if (
+    !officialCheckout(checkout) ||
+    !object(checkout.with) ||
+    checkout.with.ref !== '${{ needs.setup.outputs.source_sha }}' ||
+    captureSteps.indexOf(checkout) >= captureSteps.indexOf(capture)
+  )
+    return fail();
+  if (capture.uses === LEGACY_CAPTURE_ACTION) {
+    if (checkouts.length !== 1 || identities.length !== 0) return fail();
+    return capture;
+  }
+  if (capture.uses !== TOOLING_CAPTURE_ACTION || checkouts.length !== 2 || identities.length !== 1) return fail();
+  const tooling = checkouts.find((step) => object(step.with) && step.with.path === TOOLING_PATH);
+  const identity = identities[0];
+  const currentIdentities = currentCaptureSteps.filter((step) => step.name === TOOLING_IDENTITY_STEP);
+  if (
+    !tooling ||
+    !officialCheckout(tooling) ||
+    !object(tooling.with) ||
+    tooling.with.ref !== '${{ github.workflow_sha }}' ||
+    !unconditionalStep(identity) ||
+    !object(identity.env) ||
+    identity.env.APP_SOURCE_SHA !== '${{ needs.setup.outputs.source_sha }}' ||
+    identity.env.CACHE_TOOLING_SHA !== '${{ github.workflow_sha }}' ||
+    typeof identity.run !== 'string' ||
+    currentIdentities.length !== 1 ||
+    canonicalJson(identity) !== canonicalJson(currentIdentities[0]) ||
+    captureSteps.indexOf(checkout) >= captureSteps.indexOf(tooling) ||
+    captureSteps.indexOf(tooling) >= captureSteps.indexOf(identity) ||
+    captureSteps.indexOf(identity) >= captureSteps.indexOf(capture)
+  )
+    return fail();
+  return capture;
+}
+
 /** Reconcile carried successes with their original executions; all four devices remain mandatory. */
 export function verifyRetainedCppProducer(options: RetainedCppOptions, client: RetainedCppClient): Producer {
   if (
@@ -186,21 +257,22 @@ export function verifyRetainedCppProducer(options: RetainedCppOptions, client: R
     source.jobs.setup.outputs.source_sha !== '${{ steps.compute.outputs.source_sha }}' ||
     !object(currentWorkflow) ||
     !object(currentWorkflow.jobs) ||
-    !object(currentWorkflow.jobs.setup)
+    !object(currentWorkflow.jobs.setup) ||
+    !object(currentWorkflow.jobs['cpp-capture'])
   )
     return fail();
   const sourceCompute = list(source.jobs.setup.steps).find((step) => step.id === 'compute');
   const currentCompute = list(currentWorkflow.jobs.setup.steps).find((step) => step.id === 'compute');
   if (!sourceCompute || !currentCompute || canonicalJson(sourceCompute) !== canonicalJson(currentCompute))
     return fail();
-  const captureSteps = list(source.jobs['cpp-capture'].steps);
-  const checkout = captureSteps.find((step) => step.uses === 'actions/checkout@v4');
-  const capture = captureSteps.find((step) => step.uses === './.github/actions/ios-screenshot-shard');
+  // The run above is a verified direct workflow_dispatch. Only here does the
+  // immutable workflow_sha identify this producer commit, rather than a caller
+  // or a workflow_run's separate application source.
+  const capture = retainedCaptureStep(
+    list(source.jobs['cpp-capture'].steps),
+    list(currentWorkflow.jobs['cpp-capture'].steps),
+  );
   if (
-    !checkout ||
-    !object(checkout.with) ||
-    checkout.with.ref !== '${{ needs.setup.outputs.source_sha }}' ||
-    !capture ||
     !object(capture.with) ||
     capture.with.fixtures !== "${{ inputs.fixtures || 'replay' }}" ||
     capture.with.flow !== 'app-store'

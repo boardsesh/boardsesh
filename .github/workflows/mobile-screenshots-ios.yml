@@ -166,7 +166,7 @@ on:
         type: string
         default: ''
       devices:
-        description: 'Default-listing capture devices. phone-pro and phone-pro-max capture one iPhone 16 Pro or Pro Max. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
+        description: 'Default-listing capture devices. phone-pro and phone-pro-max capture one iPhone 16 Pro or Pro Max; duo captures only iPhone Duo. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
         type: choice
         default: common
         options:
@@ -175,6 +175,7 @@ on:
           - ipads
           - phone-pro
           - phone-pro-max
+          - duo
       render_mode:
         description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
         type: choice
@@ -472,7 +473,7 @@ jobs:
           flow="$FLOW"
           upload="$UPLOAD_INPUT"
           gate="$GATE_INPUT"
-          case "$DEVICE_SELECTION" in common|phones|ipads|phone-pro|phone-pro-max) ;; *) echo '::error::devices must be common, phones, ipads, phone-pro, or phone-pro-max'; exit 1 ;; esac
+          case "$DEVICE_SELECTION" in common|phones|ipads|phone-pro|phone-pro-max|duo) ;; *) echo '::error::devices must be common, phones, ipads, phone-pro, phone-pro-max, or duo'; exit 1 ;; esac
           if [ "$DEVICE_SELECTION" != common ]; then
             if [ "$upload" = true ] || [ "$PUBLISH_BASELINE" = true ] || [ "$CPP_TARGET" != none ]; then
               echo '::error::narrowed devices are capture-only; uploads, baselines and CPPs require common'
@@ -543,6 +544,8 @@ jobs:
             capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select((.slug | startswith("iphone-")) and .slug != "iphone-duo")]')
           elif [ "$DEVICE_SELECTION" = ipads ]; then
             capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug | startswith("ipad-"))]')
+          elif [ "$DEVICE_SELECTION" = duo ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-duo")]')
           elif [ "$DEVICE_SELECTION" = phone-pro ]; then
             capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-16-pro")]')
           elif [ "$DEVICE_SELECTION" = phone-pro-max ]; then
@@ -588,7 +591,8 @@ jobs:
   # modules, pnpm's patch/override
   # policy, and the root @expo/cli pin). JS/TS-only and web-only
   # changes (incl. pnpm-lock.yaml churn) do NOT bust it, so the common path is a cache
-  # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
+  # hit and skips the ~30-min native build. The selected Xcode and SDK identify
+  # a separate v2 Debug cache entry; a different toolchain cannot reuse it.
   # runner.arch is in the key because a simulator .app is arch-specific.
   ios-build:
     needs: setup
@@ -614,6 +618,33 @@ jobs:
           # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -621,9 +652,14 @@ jobs:
 
       # Compute the .app cache key ONCE and surface it as a job output so every
       # ios-capture shard restores the exact same bucket.
+      - name: Select the screenshot build toolchain
+        run: bash .boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh
+
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH" --minimum-sdk 27.1
 
       # lookup-only: this job only needs to KNOW whether the .app is cached (the
       # shards do the actual restore), so on a hit we skip downloading a .app this
@@ -649,6 +685,12 @@ jobs:
 
       # Save for the ios-capture shards (and future runs). Only on a miss — on a
       # hit the entry already exists.
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app --minimum-sdk 27.1
+
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -706,8 +748,35 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - name: Capture the probe shard
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
@@ -858,8 +927,35 @@ jobs:
           # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - name: Capture shard
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
@@ -1275,8 +1371,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.setup.outputs.source_sha }}
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - name: Capture target-specific native scenes
-        uses: ./.github/actions/ios-screenshot-shard
+        uses: ./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard
         env:
           SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
           SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
