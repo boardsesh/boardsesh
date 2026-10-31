@@ -255,9 +255,17 @@ describe('AcknowledgementsScreen', () => {
     publicSupporters.isFetchNextPageError = false;
     render(<AcknowledgementsScreen />);
     expect(screen.queryByRole('button', { name: 'Ada Supporter' })).toBeNull();
+    // The Retry button says what failed, not just "Try again" under Sponsors.
+    expect(screen.getByText('mobile.acknowledgements.supportersLoadError')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'actions.retry' }));
     expect(publicSupporters.refetch).toHaveBeenCalledOnce();
     expect(publicSupporters.fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('shows no supporter error line while the list loads fine', () => {
+    render(<AcknowledgementsScreen />);
+    expect(screen.queryByText('mobile.acknowledgements.supportersLoadError')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'actions.retry' })).toBeNull();
   });
 
   it('thanks private sponsors as an anonymous count', () => {

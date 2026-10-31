@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SUPPORTED_LOCALES } from '../config';
 
 const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'locales');
-const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
 
 /**
  * The supporter tag and the Acknowledgements supporter list (docs/supporters.md)
@@ -38,10 +38,11 @@ const PERKS_LANGUAGE =
   /unlock|early access|priority|premium|perk|reward|exclusive|faster|desbloquea|acceso anticipado|prioritari|exclusiv|recompensa|débloque|accès anticipé|récompense|freischalt|früher zugang|vorrangig|exklusiv|belohnung/i;
 const PAYMENT_NAMES = /stripe|paypal|github|patreon|apple|google|app store|play store|ko-fi/i;
 
-describe.each(LOCALES)('supporter copy (%s)', (locale) => {
+describe.each(SUPPORTED_LOCALES)('supporter copy (%s)', (locale) => {
   const webTag = readString(load(locale, 'profile'), 'page.supporterTag');
   const mobileTag = readString(load(locale, 'you'), 'mobile.social.supporterTag');
   const listBody = readString(load(locale, 'common'), 'mobile.acknowledgements.supportersBody');
+  const listError = readString(load(locale, 'common'), 'mobile.acknowledgements.supportersLoadError');
 
   it('shows the same tag on web and mobile profiles', () => {
     expect(webTag.trim()).not.toBe('');
@@ -51,9 +52,11 @@ describe.each(LOCALES)('supporter copy (%s)', (locale) => {
   it('promises nothing in the tag or the supporter list line', () => {
     expect(webTag).not.toMatch(PERKS_LANGUAGE);
     expect(listBody).not.toMatch(PERKS_LANGUAGE);
+    expect(listError).not.toMatch(PERKS_LANGUAGE);
   });
 
-  it('names no payment processor or store in the supporter list line', () => {
+  it('names no payment processor or store in the supporter list copy', () => {
     expect(listBody).not.toMatch(PAYMENT_NAMES);
+    expect(listError).not.toMatch(PAYMENT_NAMES);
   });
 });

@@ -262,8 +262,15 @@ export default function AcknowledgementsScreen() {
   );
   const supportersRetryBlock = useMemo(
     () =>
-      isError || isFetchNextPageError ? <Button title={t('actions.retry')} onPress={handleRetrySupporters} /> : null,
-    [handleRetrySupporters, isError, isFetchNextPageError, t],
+      isError || isFetchNextPageError ? (
+        <View style={styles.supportersError}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {t('mobile.acknowledgements.supportersLoadError')}
+          </Text>
+          <Button title={t('actions.retry')} onPress={handleRetrySupporters} />
+        </View>
+      ) : null,
+    [handleRetrySupporters, isError, isFetchNextPageError, systemColors.secondaryLabel, t],
   );
   const listFooter = useMemo(
     () => (
@@ -415,6 +422,9 @@ const styles = StyleSheet.create({
     padding: spacing[3],
     marginBottom: spacing[2],
     alignItems: 'flex-start',
+  },
+  supportersError: {
+    gap: spacing[2],
   },
   // Same corner as the cards below it (one card radius per screen).
   hero: {

@@ -665,6 +665,7 @@
       "sponsorsTitle": "Sponsors",
       "sponsorsBody": "Les grimpeurs qui font vivre le projet via GitHub Sponsors.",
       "supportersBody": "Les grimpeurs et grimpeuses qui participent pour faire vivre Boardsesh. Merci.",
+      "supportersLoadError": "Impossible de charger la liste des soutiens.",
       "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
       "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
       "becomeSponsor": "Soutenir Boardsesh",

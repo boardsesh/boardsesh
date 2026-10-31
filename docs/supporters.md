@@ -153,6 +153,8 @@ Where it shows:
   `DraftChip` shape). Same rule: only `true`.
 - **Mobile Acknowledgements**: a paged `FlashList` of `publicSupporters`, 30 per
   end-reach (`use-public-supporters.ts`), each opening that climber's profile.
+  A failed page says so in one line above a Retry button; the rows already
+  loaded stay.
   Its copy names no payment processor or store, because the screen ships in
   every storefront.
 - The labels are `profile:page.supporterTag` (web) and

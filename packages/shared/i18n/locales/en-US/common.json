@@ -665,6 +665,7 @@
       "sponsorsTitle": "Sponsors",
       "sponsorsBody": "Climbers keeping the lights on through GitHub Sponsors.",
       "supportersBody": "Climbers who chip in to keep Boardsesh going. Thank you.",
+      "supportersLoadError": "Couldn't load the supporter list.",
       "sponsorsEmpty": "No sponsors yet — want to be the first?",
       "privateSponsorsThanks": "and {{count}} more sponsoring privately — thank you too",
       "becomeSponsor": "Support Boardsesh",

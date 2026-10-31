@@ -937,6 +937,7 @@
       "sponsorsTitle": "Patrocinadores",
       "sponsorsBody": "Escaladores que mantienen esto en marcha a través de GitHub Sponsors.",
       "supportersBody": "Escaladores que aportan para que Boardsesh siga adelante. Gracias.",
+      "supportersLoadError": "No se pudo cargar la lista de mecenas.",
       "sponsorsEmpty": "Aún no hay patrocinadores, ¿quieres ser el primero?",
       "privateSponsorsThanks": "y {{count}} más patrocinando en privado — gracias también",
       "becomeSponsor": "Apoya Boardsesh",
