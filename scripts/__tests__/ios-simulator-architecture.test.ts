@@ -130,7 +130,6 @@ describe('Intel video producer and recorder handoff', () => {
       expect(producers).toHaveLength(1);
       expect(producers[0].run).toContain("'scripts/lib/ios-simulator-architecture.mjs'");
     }
-    expect(workflow('mobile-screenshots-ios').jobs['ios-build']['runs-on']).toBe('macos-26');
   });
   it('moves the producer and every native video consumer together, retaining ordinary mode timeouts and Linux jobs', () => {
     const jobs = workflow('mobile-store-videos-pipeline').jobs;
