@@ -476,6 +476,9 @@ export const tickQueries = {
     const needsGrades =
       isFieldSelected(selected, 'boardseshDifficulty') || isFieldSelected(selected, 'boardseshConfidence');
     const needsRatings = isFieldSelected(selected, 'effectiveQuality');
+    // The wall-name join feeds `boardDisplayName` only. Same rule as above: pay
+    // for it only when a client asks for the field.
+    const needsBoard = isFieldSelected(selected, 'boardDisplayName');
     // Public query, no authentication required — so an absent context is an
     // ANONYMOUS reader, never a hopeful value.
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
@@ -527,6 +530,17 @@ export const tickQueries = {
           boardseshDifficulty: needsGrades ? boardseshDifficultyExpr : sql<null>`NULL`,
           boardseshConfidence: needsGrades ? boardseshConfidenceExpr : sql<null>`NULL`,
           effectiveQuality: needsRatings ? effectiveQualityExpr : sql<null>`NULL`,
+          // The tick's own wall — `user_boards` row the tick was logged against.
+          // Only the name is read; `boardIdentityVisibleCondition` decides who may
+          // see it, the same rule `userAscentsFeed` uses below.
+          boardName: needsBoard ? dbSchema.userBoards.name : sql<string | null>`NULL`,
+          boardIdentityVisible: needsBoard
+            ? boardIdentityVisibleCondition(
+                dbSchema.boardseshTicks.boardId,
+                viewerUserId,
+                dbSchema.boardseshTicks.userId,
+              )
+            : sql<boolean | null>`NULL`,
         })
         .from(dbSchema.boardseshTicks)
         // Resolve dedup-merged climbs to their canonical UUID before joining
@@ -575,11 +589,22 @@ export const tickQueries = {
       if (needsGrades) query.leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN);
       // Synced-rating fallback for quality — see boardClimbRatingsJoinCondition.
       if (needsRatings) query.leftJoin(dbSchema.boardClimbRatings, boardClimbRatingsJoinCondition);
+      // 1:1 PK join (tick → its wall), so leaving it out never changes the row set.
+      if (needsBoard) query.leftJoin(dbSchema.userBoards, eq(dbSchema.boardseshTicks.boardId, dbSchema.userBoards.id));
       return query.where(and(...conditions)).orderBy(desc(dbSchema.boardseshTicks.climbedAt));
     });
 
     return results.map(
-      ({ tick, layoutId, effectiveDifficulty, boardseshDifficulty, boardseshConfidence, effectiveQuality }) => ({
+      ({
+        tick,
+        layoutId,
+        effectiveDifficulty,
+        boardseshDifficulty,
+        boardseshConfidence,
+        effectiveQuality,
+        boardName,
+        boardIdentityVisible,
+      }) => ({
         uuid: tick.uuid,
         userId: tick.userId,
         boardType: tick.boardType,
@@ -607,6 +632,12 @@ export const tickQueries = {
         auroraId: tick.auroraId,
         auroraSyncedAt: tick.auroraSyncedAt,
         layoutId,
+        // The wall's own name, gated by the same rule as `userAscentsFeed`: the
+        // tick's climber always sees it, anyone else only when the board's own
+        // policy lets them (never through an unlisted link). A private wall's
+        // name must not surface on a public profile even though the wall's
+        // climbs are already filtered out above.
+        boardDisplayName: boardIdentityVisible === true ? boardName : null,
       }),
     );
   },

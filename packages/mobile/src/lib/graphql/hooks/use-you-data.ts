@@ -69,6 +69,7 @@ function toLogbookEntry(tick: GetUserTicksQueryResponse['userTicks'][number], bo
     layoutId: tick.layoutId,
     boardType,
     climbUuid: tick.climbUuid,
+    boardDisplayName: tick.boardDisplayName,
   };
 }
 

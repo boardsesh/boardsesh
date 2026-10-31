@@ -1685,7 +1685,7 @@ type Tick {
   layoutId: Int
   "Board entity ID if tick was associated with a board"
   boardId: Int
-  "Physical board name, populated by updateTick for immediate editor refresh."
+  "The wall's own name (user_boards.name), e.g. Garage for a spray wall. Served by userTicks (charts label a runtime-created wall with it) and by updateTick for an immediate editor refresh. Null when the tick has no board, or when the viewer may not see the board's identity."
   boardDisplayName: String
   # Social aggregates are only populated by read queries (e.g. `ticks`).
   # Mutation resolvers (`saveTick`, `updateTick`) don't compute them so they
