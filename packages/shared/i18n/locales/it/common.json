@@ -894,6 +894,16 @@
       "yes": "Sì",
       "no": "No",
       "unknown": "Sconosciuto"
+    },
+    "supportAsks": {
+      "accountRow": "Sostieni Boardsesh",
+      "cardTitle": "Aiuta a sviluppare Boardsesh",
+      "cardBody": "Boardsesh è gratis per ogni climber. Il sostegno mensile finanzia il tempo necessario a svilupparlo.",
+      "giveMonthly": "Dona ogni mese",
+      "giveOnce": "Dona una volta",
+      "hideCard": "Nascondi questa scheda",
+      "settingTitle": "Mostra le richieste di sostegno",
+      "settingFooter": "Una voce Sostieni Boardsesh in Account e una scheda in Home nella prima settimana di ogni mese."
     }
   },
   "lightControl": {

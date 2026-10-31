@@ -161,10 +161,15 @@
       "eyebrow": "Gratis, e continuerà a esserlo",
       "title": "Boardsesh va avanti grazie ai climber che contribuiscono",
       "p1": "Niente pubblicità, niente schermate bloccate, niente versione premium. Ogni parte di Boardsesh resta aperta a tutti, sostenitori o no, self-hosting incluso.",
-      "p2": "Hosting, database e le bollette che ci stanno dietro li pagano le persone che lo usano.",
+      "p2": "Le persone che lo usano finanziano il tempo necessario a svilupparlo.",
       "chipIn": "Dai una mano",
       "source": "Leggi il codice",
       "otherWays": "Non hai soldi da parte?"
+    },
+    "supportBanner": {
+      "text": "Boardsesh resta gratis grazie ai contributi dei climber. Sostienilo ogni mese e finanzia il tempo necessario a svilupparlo.",
+      "cta": "Dona ogni mese",
+      "close": "Chiudi"
     }
   },
   "about": {
@@ -214,13 +219,17 @@
   "support": {
     "hero": {
       "title": "Aiuta Boardsesh a restare online",
-      "subtitle": "Gratis, open source e pagato dai climber"
+      "subtitle": "Gratis, open source e pagato dai climber",
+      "ctaMonthly": "Dona ogni mese"
     },
     "promise": "Niente schermate bloccate, niente versione premium, niente pubblicità. Il tuo contributo paga le bollette, nient'altro.",
+    "promiseMonthly": "Niente schermate bloccate, niente versione premium, niente pubblicità. Il tuo contributo finanzia le ore dedicate a sviluppare Boardsesh, nient'altro.",
     "why": {
       "title": "Perché esiste questa pagina",
       "p1": "Boardsesh è gratis e open source, e lo resterà. Farlo andare costa soldi veri: hosting, database e infrastruttura pesano di più a ogni climber che arriva.",
-      "p2": "Promettiamo di non peggiorare Boardsesh per fare soldi, e il self-hosting resterà sempre possibile. Se ti serve e puoi permettertelo, il tuo contributo tiene le luci accese."
+      "p2": "Promettiamo di non peggiorare Boardsesh per fare soldi, e il self-hosting resterà sempre possibile. Se ti serve e puoi permettertelo, il tuo contributo tiene le luci accese.",
+      "p1Monthly": "Boardsesh è gratis e open source, e lo resterà. Svilupparlo richiede ore ogni settimana, e il sostegno mensile finanzia quel tempo.",
+      "p2Monthly": "Promettiamo di non peggiorare Boardsesh per fare soldi, e il self-hosting resterà sempre possibile. Se ti serve e puoi permettertelo, il tuo contributo permette di continuare a svilupparlo."
     },
     "rails": {
       "title": "Modi per contribuire"
@@ -234,6 +243,18 @@
       "title": "Donazione una tantum",
       "body": "Paga con carta, Apple Pay o Google Pay nel browser. Nessun account richiesto.",
       "cta": "Dona una volta"
+    },
+    "chooser": {
+      "cadenceLabel": "Frequenza",
+      "monthly": "Mensile",
+      "once": "Dona una volta",
+      "currencyLabel": "Valuta",
+      "aud": "AUD",
+      "usd": "USD",
+      "perMonth": "{{amount}}/mese",
+      "monthlyBody": "Il sostegno mensile finanzia il tempo necessario a sviluppare Boardsesh. Paga con carta, Apple Pay o Google Pay nel browser. Nessun account richiesto.",
+      "publicName": "Se inserisci un nome al pagamento, potremmo mostrarlo pubblicamente quando ringraziamo chi ci sostiene. Lascia il campo vuoto per donare in modo anonimo.",
+      "manage": "Doni già ogni mese? Modifica o interrompi la donazione su Stripe →"
     },
     "otherWays": {
       "title": "Altri modi per aiutare",
@@ -262,11 +283,17 @@
     "honesty": {
       "title": "Le cose da sapere",
       "p1": "Le donazioni non sono deducibili dalle tasse. Boardsesh non è un ente benefico, solo climber che pagano la bolletta dei server.",
-      "p2": "I tuoi soldi vanno a hosting, database e infrastruttura. Non sbloccano niente in più nell'app: ogni parte di Boardsesh resta aperta a tutti, sostenitori o no."
+      "p1Monthly": "Le donazioni non sono deducibili dalle tasse. Boardsesh non è un ente benefico, solo climber che finanziano il tempo necessario a svilupparlo.",
+      "p2": "I tuoi soldi vanno a hosting, database e infrastruttura. Non sbloccano niente in più nell'app: ogni parte di Boardsesh resta aperta a tutti, sostenitori o no.",
+      "p2Monthly": "I tuoi soldi finanziano il tempo necessario a sviluppare Boardsesh. Non sbloccano niente in più nell'app: ogni parte di Boardsesh resta aperta a tutti, sostenitori o no."
     },
     "thanks": {
       "title": "Grazie",
       "body": "A chi sostiene già Boardsesh, segnala bug, manda patch o traduce una schermata: grazie. Siete voi a far andare avanti tutto."
+    },
+    "thanksState": {
+      "title": "Grazie",
+      "body": "Il tuo contributo è andato a buon fine. Va direttamente allo sviluppo di Boardsesh."
     },
     "aboutLink": "Leggi di più sul progetto →",
     "docsLink": "Scopri come è fatto nella documentazione per sviluppatori →",
@@ -1013,7 +1040,7 @@
   },
   "privacy": {
     "title": "Informativa sulla privacy",
-    "lastUpdated": "Ultimo aggiornamento: 17 ottobre 2026",
+    "lastUpdated": "Ultimo aggiornamento: 29 ottobre 2026",
     "intro1": "Boardsesh è un'app open source per controllare via Bluetooth i pannelli di allenamento in arrampicata (Kilter, Tension, MoonBoard). Questa informativa spiega quali dati raccogliamo, perché e cosa ne facciamo.",
     "intro2ProductAnalytics": "In breve: raccogliamo solo ciò che serve a far funzionare l'app. Non vendiamo i tuoi dati, non mostriamo pubblicità e non condividiamo dati con inserzionisti terzi o data broker.",
     "collect": {
@@ -1064,17 +1091,21 @@
       "expoLink": "la documentazione di Expo Observe",
       "hostingBody": "Usiamo Railway per l'hosting dell'applicazione e del database, e Cloudflare per la distribuzione dei contenuti, l'hosting dell'app per browser e l'archiviazione dei media. Questi fornitori elaborano le richieste necessarie a fornire Boardsesh. Vedi ",
       "sentryBody": "Usiamo Sentry per il monitoraggio degli errori in base al legittimo interesse a far funzionare Boardsesh. La raccolta predefinita di informazioni personali è disattivata; i report di errore sono limitati e i campi sensibili vengono rimossi. Questo servizio resta attivo anche se rifiuti l'analisi. Vedi ",
-      "expoBody": "Usiamo Expo Observe per tempi di prestazione, informazioni su dispositivo e build e diagnostica degli errori sul nostro server, in base al legittimo interesse a far funzionare Boardsesh. La diagnostica resta attiva anche se rifiuti l'analisi. L'installazione dell'SDK e gli identificatori di sessione supportano lo stato degli aggiornamenti; non assegniamo a Observe alcuna identità dell'account Boardsesh. Vedi "
+      "expoBody": "Usiamo Expo Observe per tempi di prestazione, informazioni su dispositivo e build e diagnostica degli errori sul nostro server, in base al legittimo interesse a far funzionare Boardsesh. La diagnostica resta attiva anche se rifiuti l'analisi. L'installazione dell'SDK e gli identificatori di sessione supportano lo stato degli aggiornamenti; non assegniamo a Observe alcuna identità dell'account Boardsesh. Vedi ",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Se doni dalla nostra pagina di sostegno, Stripe gestisce il pagamento. Stripe riceve i dati della carta o del portafoglio digitale, il tuo indirizzo email, il paese di fatturazione e il nome o l'indirizzo che inserisci al pagamento. Boardsesh non vede mai il numero completo della tua carta. Vediamo la tua email, il nome che inserisci, l'importo, il paese di fatturazione (più il CAP o l'indirizzo quando richiesti al pagamento), il circuito della carta, le ultime 4 cifre e la scadenza, e un breve codice che indica la pagina da cui provieni. Usiamo queste informazioni per eseguire il pagamento che hai richiesto, inviare ricevute e rispondere alle domande, e le conserviamo perché la normativa fiscale impone di conservare la documentazione dei pagamenti. La base giuridica è l'esecuzione del pagamento che hai richiesto e il nostro obbligo legale di conservare questi dati. Un nome che inserisci può essere mostrato quando ringraziamo chi ci sostiene; lascia il campo vuoto per restare anonimo. Vedi ",
+      "stripeLink": "l'informativa sulla privacy di Stripe"
     },
     "sharing": {
       "title": "Condivisione dei dati",
-      "body1ProductAnalytics": "Non vendiamo i tuoi dati, non mostriamo pubblicità e non condividiamo informazioni con inserzionisti o data broker. I fornitori descritti sopra elaborano dati per hosting, archiviazione, affidabilità del servizio e analisi facoltativa. La sincronizzazione con Aurora Climbing avviene quando la attivi.",
+      "body1ProductAnalytics": "Non vendiamo i tuoi dati, non mostriamo pubblicità e non condividiamo informazioni con inserzionisti o data broker. I fornitori descritti sopra elaborano dati per hosting, archiviazione, pagamenti, affidabilità del servizio e analisi facoltativa. La sincronizzazione con Aurora Climbing avviene quando la attivi.",
       "body2": "Gli altri utenti di Boardsesh possono vedere il tuo nome utente, il tuo profilo e i blocchi che hai registrato se partecipi a funzioni social come la Modalità party. È visibile nell'app e fa parte di come funziona il prodotto.",
       "body3SprayPhotos": "Non diamo a nessun altro le foto delle Spraywall né le prese che segni per addestrare modelli. L'unico modello addestrato su di esse è il nostro rilevatore di prese. Gli altri vedono la foto di una Spraywall come consente la sua impostazione di visibilità, e i membri di una palestra vedono le Spraywall collegate a quella palestra, comprese quelle private. La foto di una Spraywall pubblica è sul web aperto."
     },
     "retention": {
       "title": "Conservazione dei dati",
-      "body": "Conserviamo i dati del tuo account e la tua cronologia di arrampicata finché il tuo account è attivo. Se smetti di usare Boardsesh, i tuoi dati restano finché non elimini l'account."
+      "body": "Conserviamo i dati del tuo account e la tua cronologia di arrampicata finché il tuo account è attivo. Se smetti di usare Boardsesh, i tuoi dati restano finché non elimini l'account.",
+      "donations": "I dati delle donazioni restano in Stripe e nella nostra contabilità per il tempo richiesto dalla normativa fiscale. Non sono collegati al tuo account Boardsesh, quindi eliminare l'account non li rimuove. Domande sui dati di una donazione? Scrivici."
     },
     "deletion": {
       "title": "Eliminazione dell'account",

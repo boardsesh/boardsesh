@@ -606,7 +606,8 @@
       "clearAll": "Cancella tutto",
       "nameToken": "“{{name}}”",
       "drafts": "Le mie bozze",
-      "popularityUnrepeated": "Mai ripetuti"
+      "popularityUnrepeated": "Mai ripetuti",
+      "wallDrafts": "Bozze"
     },
     "search": {
       "recentFilters": "Recenti",
@@ -828,7 +829,8 @@
         "campusLabel": "Campus (senza piedi)",
         "campusDescription": "Solo mani: niente piedi",
         "anyFeetLabel": "Piedi liberi",
-        "anyFeetDescription": "I piedi possono usare qualsiasi presa, non solo quelle segnate"
+        "anyFeetDescription": "I piedi possono usare qualsiasi presa, non solo quelle segnate",
+        "wallDraftDescription": "Chiunque abbia accesso a questa Spraywall può provare le bozze che hai salvato."
       },
       "drafts": {
         "holds_one": "{{count}} presa",
@@ -856,7 +858,8 @@
         "done": "Salvato",
         "draftToast": "Bozza salvata",
         "publishedToast": "Blocco pubblicato",
-        "needsHold": "Disegna una presa per salvare"
+        "needsHold": "Disegna una presa per salvare",
+        "beforeLogging": "Salva questo blocco prima di registrare una salita."
       },
       "autosave": {
         "onDevice": "Bozza salvata su questo telefono",
@@ -866,7 +869,8 @@
         "unsyncedEdits": "Le ultime modifiche sono solo su questo telefono",
         "notStored": "Accedi per tenere questa bozza",
         "saveFailed": "Impossibile salvare sul tuo account. Tocca Salva per riprovare.",
-        "keptToast": "Bozza tenuta su questo telefono. Riapri l'editor per finirla."
+        "keptToast": "Bozza tenuta su questo telefono. Riapri l'editor per finirla.",
+        "waitingToSync": "Salvato su questo dispositivo · In attesa di sincronizzazione"
       },
       "newClimb": {
         "confirm": {
