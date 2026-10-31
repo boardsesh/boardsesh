@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Render the stage and three current-app takes; recording steps are in docs/help-clips.md.
 import { chromium, type Page } from '@playwright/test';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
@@ -182,7 +182,7 @@ type Scene = { id: string; start: number; length: number };
 async function renderStills(page: Page, client: Cdp, scenes: Scene[]): Promise<void> {
   const dir = resolve(WORK_DIR, 'stills');
   mkdirSync(dir, { recursive: true });
-  const tiles: sharp.OverlayOptions[] = [];
+  const tiles: OverlayOptions[] = [];
   const cell = { width: 270, height: 480 };
   const picks = scenes.flatMap((scene) => [0.35, 0.8].map((at) => scene.start + Math.round(scene.length * at)));
   for (const [index, frame] of picks.entries()) {
