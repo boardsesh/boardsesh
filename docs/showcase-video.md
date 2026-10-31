@@ -508,7 +508,10 @@ so this needs a live backend.
 
 On iOS, `session-private.yaml` waits for the localized visibility switch, including
 SwiftUI's subtitle, then taps `90%,50%` within that matched element's bounds to
-reach the trailing thumb. This is an element-relative tap: pinned Maestro 2.6.1
+reach the trailing thumb. The subtitle is mandatory: Maestro selects the deepest
+matching node, and a pattern that also accepts the bare title selects its text
+child. The committed native hierarchy fixture records that title tap outside
+the thumb and the combined-label target inside it. This is an element-relative tap: pinned Maestro 2.6.1
 maps YAML `text` plus `point` to `TapOnElementCommand.relativePoint` in
 [`YamlFluentCommand.tapCommand`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/yaml/YamlFluentCommand.kt),
 and [`Orchestra.tapOnElement`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/Orchestra.kt)

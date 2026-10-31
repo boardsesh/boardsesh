@@ -159,7 +159,7 @@ describe('private-session iOS switch targeting', () => {
     ) as { mobile: { sessionVisibility: { title: string; descriptionOn: string; descriptionOff: string } } };
     const visibility = catalog.mobile.sessionVisibility;
     const pattern = new RegExp(showcaseSessionVisibilityPattern(visibility.title));
-    expect(pattern.test(visibility.title)).toBe(true);
+    expect(pattern.test(visibility.title)).toBe(false);
     expect(pattern.test(`${visibility.title}, ${visibility.descriptionOn}`)).toBe(true);
     expect(pattern.test(`${visibility.title}, ${visibility.descriptionOff}`)).toBe(true);
     expect(pattern.test(`${visibility.title} unrelated`)).toBe(false);
@@ -169,6 +169,45 @@ describe('private-session iOS switch targeting', () => {
     const pattern = new RegExp(showcaseSessionVisibilityPattern('Live (crew) [now]?'));
     expect(pattern.test('Live (crew) [now]?, By invitation')).toBe(true);
     expect(pattern.test('Live crew now')).toBe(false);
+  });
+
+  it('targets the real Toggle instead of its deepest matching title child', () => {
+    type NativeHierarchyNode = {
+      attributes: { accessibilityText: string; bounds: string; checked: string };
+      children: NativeHierarchyNode[];
+    };
+    const fixture = JSON.parse(
+      readFileSync(new URL('./fixtures/showcase-session-visibility/ios-maestro-2.6.1.json', import.meta.url), 'utf8'),
+    ) as { hierarchy: NativeHierarchyNode; observedTap: { point: [number, number] } };
+    // Maestro 2.6.1 Filters.deepestMatchingElement returns matching children
+    // before their matching parent. Preserve that behavior from the live tree.
+    const deepestMatches = (node: NativeHierarchyNode, pattern: RegExp): NativeHierarchyNode[] => {
+      const children = node.children.flatMap((child) => deepestMatches(child, pattern));
+      return children.length ? children : pattern.test(node.attributes.accessibilityText) ? [node] : [];
+    };
+    const bounds = (node: NativeHierarchyNode): number[] => node.attributes.bounds.match(/\d+/g)?.map(Number) ?? [];
+    const tapPoint = (node: NativeHierarchyNode): [number, number] => {
+      const [left, top, right, bottom] = bounds(node);
+      return [Math.floor(left + (right - left) * 0.9), Math.floor(top + (bottom - top) * 0.5)];
+    };
+    const insideThumb = ([horizontal, vertical]: [number, number]): boolean => {
+      const [left, top, right, bottom] = bounds(fixture.hierarchy.children[2]);
+      return horizontal >= left && horizontal <= right && vertical >= top && vertical <= bottom;
+    };
+    const selected = deepestMatches(
+      fixture.hierarchy,
+      new RegExp(showcaseSessionVisibilityPattern('Show this session live')),
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toBe(fixture.hierarchy);
+    expect(selected[0].attributes.checked).toBe('true');
+    expect(tapPoint(selected[0])).toEqual([369, 487]);
+    expect(insideThumb(tapPoint(selected[0]))).toBe(true);
+
+    const oldSelected = deepestMatches(fixture.hierarchy, /^Show this session live(?:, [^\r\n]+)?$/);
+    expect(oldSelected[0]).toBe(fixture.hierarchy.children[0]);
+    expect(tapPoint(oldSelected[0])).toEqual(fixture.observedTap.point);
+    expect(insideThumb(tapPoint(oldSelected[0]))).toBe(false);
   });
 
   it('taps the trailing thumb relative to the matched iOS switch', () => {
