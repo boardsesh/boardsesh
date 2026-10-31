@@ -378,9 +378,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     // Full history: the scope step below diffs against the baseline's own
     // commit, which a shallow clone might not reach.
     expect(steps[0].with?.['fetch-depth']).toBe(0);
-    expect(steps[1].uses).toBe('./.github/actions/ios-screenshot-shard');
-    expect(steps[1].with?.locale).toBe('en-US');
-    expect(steps[1].with?.['device-slug']).toBe('iphone-16-pro-max');
+    const shard = steps.find((step) => step.name === 'Capture the probe shard');
+    expect(shard?.uses).toBe('./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard');
+    expect(shard?.with?.locale).toBe('en-US');
+    expect(shard?.with?.['device-slug']).toBe('iphone-16-pro-max');
 
     const runs = steps.map((step) => step.run ?? '').join('\n');
     expect(runs).toContain('vp run screenshot:baseline -- fetch');
@@ -434,9 +435,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
 
     const steps = capture.steps ?? [];
     expect(steps[0].uses).toBe('actions/checkout@v4');
-    expect(steps[1].uses).toBe('./.github/actions/ios-screenshot-shard');
-    expect(steps[1].with?.locale).toBe('${{ matrix.locale }}');
-    expect(steps[1].with?.['device-name']).toBe('${{ matrix.device.name }}');
+    const shard = steps.find((step) => step.name === 'Capture shard');
+    expect(shard?.uses).toBe('./.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard');
+    expect(shard?.with?.locale).toBe('${{ matrix.locale }}');
+    expect(shard?.with?.['device-name']).toBe('${{ matrix.device.name }}');
   });
 
   it('captures the full 16-shard matrix when the probe crashed or was skipped, and the 15-shard one only on probe success', () => {
@@ -630,7 +632,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const key = buildSteps.find((step) => step.id === 'appkey');
     expect(key?.run).toContain('ios-screenshot-app-cache.ts key');
     expect(key?.env?.NATIVE_INPUT_HASH).toContain("'packages/mobile/react-native.config.js'");
-    expect(key?.env?.NATIVE_INPUT_HASH).toContain("'scripts/ios-screenshot-app-cache.ts'");
+    expect(key?.env?.NATIVE_INPUT_HASH).toContain("'.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts'");
     expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('pnpm-lock.yaml');
     expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('packages/mobile/src/');
     expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('packages/mobile/app/');
@@ -755,10 +757,13 @@ describe('screenshot captures follow the native deploys', () => {
     for (const [jobName, job] of Object.entries(workflow.jobs)) {
       const checkouts = (job.steps ?? []).filter((step) => (step.uses ?? '').startsWith('actions/checkout@'));
       for (const step of checkouts) {
-        expect(step.with?.ref, `${jobName} must pin the source sha`).toBe(
-          entry.platform === 'ios' && jobName.startsWith('cpp-')
-            ? '${{ needs.setup.outputs.source_sha }}'
-            : SOURCE_SHA_EXPRESSION,
+        const tooling = step.with?.path === '.boardsesh/cache-tooling';
+        expect(step.with?.ref, `${jobName} must pin its application or tooling sha`).toBe(
+          tooling
+            ? '${{ github.workflow_sha }}'
+            : entry.platform === 'ios' && jobName.startsWith('cpp-')
+              ? '${{ needs.setup.outputs.source_sha }}'
+              : SOURCE_SHA_EXPRESSION,
         );
       }
     }
@@ -904,7 +909,9 @@ describe('iOS CPP capture and publication isolation', () => {
     expect(capture.needs).toEqual(['setup', 'ios-build', 'cpp-bootstrap']);
     expect(flatten(capture.if)).toContain("(inputs.cpp_target || 'none') != 'none'");
     expect(capture.strategy?.matrix).toBe('${{ fromJSON(needs.setup.outputs.cpp_matrix) }}');
-    const shard = capture.steps?.find((step) => step.uses === './.github/actions/ios-screenshot-shard');
+    const shard = capture.steps?.find(
+      (step) => step.uses === './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard',
+    );
     expect(shard?.with?.['cpp-target']).toBe('${{ matrix.target }}');
     expect(shard?.with?.['cpp-scenario']).toBe(
       "${{ inputs.cpp_scenario || needs.cpp-bootstrap.outputs.scenario || '' }}",

@@ -1,4 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import {
@@ -147,7 +152,9 @@ describe('cache boundary ordering', () => {
   });
   it('selects the screenshot compiler before key creation and enforces the proven SDK floor', () => {
     const steps = workflowJob('mobile-screenshots-ios.yml', 'ios-build');
-    const selectIndex = steps.findIndex((step) => step.run === 'bash scripts/select-screenshot-xcode.sh');
+    const selectIndex = steps.findIndex(
+      (step) => step.run === 'bash .boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh',
+    );
     const keyIndex = steps.findIndex((step) => step.id === 'appkey');
     expect(selectIndex).toBeGreaterThan(-1);
     expect(selectIndex).toBeLessThan(keyIndex);
@@ -180,7 +187,7 @@ describe('cache boundary ordering', () => {
       expect(validateIndex).toBeLessThan(
         steps.findIndex((step) => step.name?.startsWith('Install pinned Maestro') || step.name === 'Install Maestro'),
       );
-      expect(steps[validateIndex].run).toContain('ios-screenshot-app-cache.ts validate');
+      expect(steps[validateIndex].run).toContain('ios-screenshot-app-cache.ts" validate');
       expect(steps[validateIndex].env?.APP_CACHE_KEY).toBe('${{ inputs.app-cache-key }}');
       if (action === 'ios-screenshot-shard') {
         expect(steps[validateIndex].env?.MINIMUM_SDK).toBe("${{ inputs.device-slug == 'iphone-duo' && '27.1' || '' }}");
@@ -188,4 +195,171 @@ describe('cache boundary ordering', () => {
       }
     },
   );
+});
+
+describe('historical application source with current cache tooling', () => {
+  const fixtures = 'scripts/__tests__/fixtures/historical-screenshot-cache';
+  const sourceManifest = JSON.parse(readFileSync(`${fixtures}/source.json`, 'utf8')) as {
+    sourceSha: string;
+    files: Record<string, string>;
+  };
+  const toolingFiles = [
+    'scripts/ios-screenshot-app-cache.ts',
+    'scripts/select-screenshot-xcode.sh',
+    '.github/actions/ios-screenshot-shard/action.yml',
+    '.github/actions/ios-store-video-tools/action.yml',
+  ];
+  function runGit(directory: string, args: string[]): string {
+    const result = spawnSync('git', ['-C', directory, ...args], {
+      encoding: 'utf8',
+      timeout: 10000,
+      env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout.trim();
+  }
+  function commitFixture(directory: string): string {
+    runGit(directory, ['init', '--quiet']);
+    runGit(directory, ['add', '--all']);
+    runGit(directory, [
+      '-c',
+      'user.name=Cache fixture',
+      '-c',
+      'user.email=cache-fixture@example.invalid',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '--quiet',
+      '-m',
+      'Fixture identity',
+    ]);
+    return runGit(directory, ['rev-parse', 'HEAD']);
+  }
+  it('runs the real workflow key command when the requested historical source lacks new helpers', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'boardsesh-historical-cache-'));
+    try {
+      const source = join(directory, 'source');
+      mkdirSync(source);
+      for (const [name, expectedHash] of Object.entries(sourceManifest.files)) {
+        const contents = readFileSync(join(fixtures, name));
+        expect(createHash('sha256').update(contents).digest('hex')).toBe(expectedHash);
+        mkdirSync(dirname(join(source, name)), { recursive: true });
+        writeFileSync(join(source, name), contents);
+      }
+      expect(sourceManifest.sourceSha).toBe('6e8c46f203385c6587dcf2669e29df1c9d611cf8');
+      const applicationHead = commitFixture(source);
+      expect(existsSync(join(source, 'scripts/ios-screenshot-app-cache.ts'))).toBe(false);
+      expect(existsSync(join(source, 'scripts/select-screenshot-xcode.sh'))).toBe(false);
+      const tooling = join(source, '.boardsesh/cache-tooling');
+      for (const name of toolingFiles) {
+        mkdirSync(dirname(join(tooling, name)), { recursive: true });
+        writeFileSync(join(tooling, name), readFileSync(name));
+      }
+      const toolingHead = commitFixture(tooling);
+      const bin = join(directory, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'xcodebuild'), '#!/bin/sh\nprintf "Xcode 27.1\\nBuild version 27A9275\\n"\n', {
+        mode: 0o755,
+      });
+      writeFileSync(
+        join(bin, 'xcrun'),
+        '#!/bin/sh\ncase "$3" in\n  --show-sdk-version) echo 27.1 ;;\n  --show-sdk-build-version) echo 24A94232 ;;\n  *) exit 1 ;;\nesac\n',
+        { mode: 0o755 },
+      );
+      const mockPlatform = join(directory, 'mock-platform.mjs');
+      writeFileSync(mockPlatform, "Object.defineProperty(process, 'platform', { value: 'darwin' });\n");
+      const output = join(directory, 'github-output');
+      const steps = workflowJob('mobile-screenshots-ios.yml', 'ios-build');
+      const receipt = steps.find((step) => step.name === 'Verify application and cache tooling identities')!;
+      const key = steps.find((step) => step.id === 'appkey')!;
+      const environment = {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        NODE_OPTIONS: `--import=${pathToFileURL(mockPlatform).href}`,
+        RUNNER_OS: 'macOS',
+        RUNNER_ARCH: 'ARM64',
+        NATIVE_INPUT_HASH: identity.nativeHash,
+        GITHUB_OUTPUT: output,
+        APP_SOURCE_SHA: applicationHead,
+        CACHE_TOOLING_SHA: toolingHead,
+      };
+      const receiptResult = spawnSync('bash', ['-c', receipt.run!], {
+        cwd: source,
+        env: environment,
+        encoding: 'utf8',
+        timeout: 15000,
+      });
+      expect(receiptResult.status, receiptResult.stderr).toBe(0);
+      expect(receiptResult.stdout).toContain(applicationHead);
+      expect(receiptResult.stdout).toContain(toolingHead);
+      const wrongSource = spawnSync('bash', ['-c', receipt.run!], {
+        cwd: source,
+        env: { ...environment, APP_SOURCE_SHA: 'a'.repeat(40) },
+        encoding: 'utf8',
+        timeout: 15000,
+      });
+      expect(wrongSource.status).toBe(1);
+      const result = spawnSync('bash', ['-c', key.run!], {
+        cwd: source,
+        env: environment,
+        encoding: 'utf8',
+        timeout: 15000,
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8')).toContain(`key=${screenshotAppCacheKey(identity)}`);
+      expect(runGit(source, ['rev-parse', 'HEAD'])).toBe(applicationHead);
+      expect(runGit(source, ['status', '--porcelain'])).toBe('');
+      for (const [name, expectedHash] of Object.entries(sourceManifest.files))
+        expect(
+          createHash('sha256')
+            .update(readFileSync(join(source, name)))
+            .digest('hex'),
+        ).toBe(expectedHash);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('delivers immutable tooling before every producer and consumer without replacing application source', () => {
+    const jobs = [
+      ['mobile-screenshots-ios.yml', 'ios-build'],
+      ['mobile-screenshots-ios.yml', 'probe'],
+      ['mobile-screenshots-ios.yml', 'ios-capture'],
+      ['mobile-screenshots-ios.yml', 'cpp-capture'],
+      ['mobile-e2e-gate.yml', 'ios-smoke'],
+      ['mobile-store-videos-pipeline.yml', 'app'],
+      ['mobile-store-videos-pipeline.yml', 'record'],
+      ['mobile-store-videos-pipeline.yml', 'crew'],
+      ['mobile-store-videos-measure.yml', 'record'],
+    ];
+    for (const [path, job] of jobs) {
+      const steps = workflowJob(path, job);
+      const checkouts = steps.filter((step) => step.uses === 'actions/checkout@v4');
+      expect(checkouts).toHaveLength(2);
+      expect(checkouts[0].with ?? {}).not.toHaveProperty('path');
+      expect(checkouts[1].with?.path).toBe('.boardsesh/cache-tooling');
+      expect(checkouts[1].with?.ref).toBe('${{ github.workflow_sha }}');
+      expect(checkouts[1].with?.['persist-credentials']).toBe(false);
+      const selectedPaths = String(checkouts[1].with?.['sparse-checkout']).trim().split('\n');
+      expect(selectedPaths).toEqual(toolingFiles);
+      const receiptIndex = steps.findIndex((step) => step.name === 'Verify application and cache tooling identities');
+      expect(receiptIndex).toBeGreaterThan(steps.indexOf(checkouts[1]));
+      const boundary = steps.findIndex(
+        (step) => step.id === 'appkey' || step.uses?.startsWith('./.boardsesh/cache-tooling/.github/actions/'),
+      );
+      expect(receiptIndex, `${path}/${job}`).toBeLessThan(boundary);
+      expect(steps[receiptIndex].env?.APP_SOURCE_SHA).toBe(checkouts[0].with?.ref ?? '${{ github.sha }}');
+      expect(steps[receiptIndex].env?.CACHE_TOOLING_SHA).toBe('${{ github.workflow_sha }}');
+      if (steps[boundary].id === 'appkey') {
+        expect(steps[boundary].run).toContain('.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts');
+        expect(steps[boundary].env?.NATIVE_INPUT_HASH).toContain(
+          "'.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts'",
+        );
+      }
+    }
+    for (const action of ['ios-screenshot-shard', 'ios-store-video-tools']) {
+      const validator = actionSteps(action).find((step) => step.name === 'Verify prebuilt simulator app identity');
+      expect(validator?.env?.CACHE_TOOLING_ROOT).toBe('${{ github.action_path }}/../../..');
+      expect(validator?.run).toContain('"$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts"');
+    }
+  });
 });

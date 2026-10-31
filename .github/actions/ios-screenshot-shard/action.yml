@@ -138,12 +138,13 @@ runs:
       shell: bash
       env:
         APP_CACHE_KEY: ${{ inputs.app-cache-key }}
+        CACHE_TOOLING_ROOT: ${{ github.action_path }}/../../..
         MINIMUM_SDK: ${{ inputs.device-slug == 'iphone-duo' && '27.1' || '' }}
       run: |
         set -euo pipefail
         minimum=()
         if [ -n "$MINIMUM_SDK" ]; then minimum=(--minimum-sdk "$MINIMUM_SDK"); fi
-        node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app "${minimum[@]}"
+        node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app "${minimum[@]}"
 
     # The iPhone Duo simulator exists only in Xcode 27.1+ with the iOS 27.1
     # runtime, which the runner's default Xcode may not be. Pick the newest
@@ -158,9 +159,11 @@ runs:
     - name: Select Xcode 27 for the iPhone Duo
       if: ${{ inputs.device-slug == 'iphone-duo' }}
       shell: bash
+      env:
+        CACHE_TOOLING_ROOT: ${{ github.action_path }}/../../..
       run: |
         set -euo pipefail
-        source scripts/select-screenshot-xcode.sh
+        source "$CACHE_TOOLING_ROOT/scripts/select-screenshot-xcode.sh"
         runtimes="$(xcrun simctl list runtimes)"
         if ! grep -Eq '^iOS 27\.([1-9]|[1-9][0-9])' <<<"$runtimes"; then
           for attempt in 1 2 3; do

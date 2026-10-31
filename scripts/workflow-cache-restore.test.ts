@@ -236,7 +236,14 @@ function sensitivityReasons(workflow: Workflow, job: Job): string[] {
 }
 
 function loadRepoAction(uses: string): CompositeAction | null {
-  const dir = uses.replace(/^\.\//, '').replace(/\/$/, '');
+  // These two current-workflow actions are checked out independently of an old
+  // captured app. Inspect their reviewed repository definitions, preserving all
+  // nested cache detection and the existing per-step allowlist.
+  const canonicalUses = uses.replace(
+    /^\.\/\.boardsesh\/cache-tooling\/\.github\/actions\/(ios-screenshot-shard|ios-store-video-tools)\/?$/,
+    './.github/actions/$1',
+  );
+  const dir = canonicalUses.replace(/^\.\//, '').replace(/\/$/, '');
   for (const file of ['action.yml', 'action.yaml']) {
     try {
       return parse(readFileSync(join(dir, file), 'utf8')) as CompositeAction;
@@ -301,6 +308,16 @@ describe('shared cache restores in sensitive jobs', () => {
 });
 
 describe('cache restore detection', () => {
+  it('still expands the immutable tooling checkout actions', () => {
+    const found = restoringSteps(
+      [{ uses: './.boardsesh/cache-tooling/.github/actions/ios-store-video-tools' }],
+      loadRepoAction,
+    );
+    expect(found).toContainEqual({
+      label: 'ios-store-video-tools > actions/cache/restore@v4',
+      mechanism: 'actions/cache/restore',
+    });
+  });
   const noActions = (): CompositeAction | null => null;
 
   it('flags setup-vp, bundler and actions/cache restores, and skips lookups and saves', () => {
