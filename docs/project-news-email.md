@@ -24,7 +24,7 @@ There is no bulk sender in this repo. Build one only against the rules below.
 ## Storage
 
 `user_project_news_email_events` (`packages/db/src/schema/app/project-news-email.ts`,
-migration `0285_project_news_email_consent`), append-only:
+migration `0288_project_news_email_consent`), append-only:
 
 | Column       | Meaning                                                         |
 | ------------ | --------------------------------------------------------------- |
