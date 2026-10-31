@@ -5,7 +5,7 @@ name: help screenshots
 #
 # Not a store flow. `--flow help` is not `app-store`, so `collectScreenshots`
 # (scripts/mobile-screenshots.ts) skips the `screenshot:frame` pass entirely and
-# writes these PNGs straight to app-stores/apple/screenshots/<locale>/<device>/ —
+# writes these PNGs to app-stores/help/apple/screenshots/<locale>/<device>/ —
 # no device frame, no caption bar, no entry in the recipe table in
 # scripts/lib/screenshot-presentation.ts. That is deliberate: a help page draws
 # its own callouts around the screen, so the capture has to be the bare screen.
@@ -26,15 +26,17 @@ name: help screenshots
 # packages/mobile/src/lib/screenshot-mode.ts):
 #     ://profile?screenshotTab=sessions   -> Sessions tab; auto-opens the newest session
 #     ://profile?screenshotTab=logbook    -> profile Logbook tab
-#     ://climbs?screenshotOpenBoardSheet=1 -> opens the board sheet over the climb list
-#     ://climbs?screenshotOpenFirst=1     -> auto-opens the first climb's play drawer
+#     ://climbs?screenshotOpenFirst=1&screenshotDrive=1 -> opens and lights the first climb
 #     ://climbs?screenshotOpenClimbActions=1 -> opens the long-press reaction menu
 #     ://climbs?screenshotOpenPreview=1   -> play drawer in its browse/preview state
 #     ://share-beta?screenshotShareBeta=1 -> the share matcher, on the account's own beta
 #     ://profile?screenshotBetaShelf=1    -> pushes the signed-in climber's beta grid
-# There are NO coordinate taps. That is also why 11-climb-actions needs a param of
-# its own: the menu behind it is a 400ms long-press on a climb ROW, and the row is
-# one of the elements the tree does not expose, so there is nothing to press.
+# The wall-control tail also uses three measured points on an iPhone 16 Pro Max
+# at 1320 x 2868: hold the wall button at 50%,90%, dismiss its controls from the
+# scrim at 50%,15%, and tap the same button to stop driving. The explicitly
+# exposed store-driving marker proves the fake board was lit before capture.
+# 11-climb-actions keeps its deep-link param: climb rows are not exposed to the
+# accessibility tree, and a row coordinate varies with the current list header.
 #
 # The two filter sub-routes (://climbs/holds, ://climbs/zone) are normally PUSHED
 # by ClimbFilterSheet with the sheet's board config as route params, and a deep
@@ -59,17 +61,17 @@ name: help screenshots
 #   visit, so no stale param leaks into it. That is why 01-discover precedes
 #   02-playlist-detail, and why the two ://climbs param visits are last.
 # - Anything that opens a drawer or overlay goes LAST, because it covers the whole
-#   app and would bleed into every shot after it. The tail is 09-board-sheet (a
-#   sheet over the climb list), then the three drawer shots: 10-board-view,
-#   11-climb-actions, 12-preview.
+#   app and would bleed into every shot after it. The tail is 10-board-view,
+#   09-board-sheet (the connected player's real controls), 12-preview, and then
+#   11-climb-actions. The filename numbers are display order, not capture order.
 #
-#   Each of those four is preceded by a throwaway ://home hop, and that is load
-#   bearing. A deep link to the route that is ALREADY current does not remount it
-#   — expo-router calls setParams on the mounted screen — so the previous shot's
-#   overlay is still up when the next param lands. Without the hop the run came
-#   back with all four byte-identical: the board sheet from 09 covering 10, 11 and
-#   12. Leaving the climbs route is what closes the overlay. (The run's own
-#   duplicate check is what caught it, and still guards this.)
+#   10 starts the real screenshot drive and waits for its readiness marker.
+#   09 opens Board controls by holding that lit player's wall button; the old
+#   screenshotOpenBoardSheet param opens board history and cannot teach controls.
+#   The controls are dismissed, then driving is stopped before opening a preview.
+#   A ://home hop separates the preview and reaction-menu deep links, because a
+#   deep link to an already mounted route only updates its params. The menu is
+#   modal-backed and must stay last; navigation cannot dismiss that modal.
 #
 #   The two beta shots are plain screens and sit just before that tail;
 #   13-share-beta is a root modal, so 14-beta-shelf's tab navigation is what
@@ -293,60 +295,47 @@ name: help screenshots
 - takeScreenshot: 03-home-live
 
 
-# Board sheet — the board picker / BLE board sheet over the climb list.
-# It overlays the climb list, so it opens the overlay tail — anything shot after
-# it would risk carrying an overlay. It opens over ://climbs, so the plain
-# climb-list state is already spent by this point; nothing below needs it.
-# Clear whatever overlay the previous shot left up.
-#
-# A repeat deep link to a route that is ALREADY the current route does not
-# remount it — expo-router calls setParams on the mounted screen — so the sheet
-# or drawer the last shot opened is still sitting there when the next param
-# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
-# exactly that reason: the board sheet from 09 covered the three drawer shots
-# after it, and the run's own duplicate check caught it.
-#
-# Bouncing through ://home leaves the climbs route, which tears the overlay down,
-# so the next ://climbs link mounts clean. Each of the four params has its own
-# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
-# that has already fired.
+# Board view — a real drive lights the first climb through the existing fake
+# adapter. Wait for both painted artwork and the live drive, not just animation
+# settles: a static player with a dark/disconnected button is the wrong lesson.
 - openLink: com.boardsesh.app://home
 - waitForAnimationToEnd
-- openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotDrive=1
 - tapOn:
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^store-driving-.+$'
+    timeout: 60000
+- takeScreenshot: 10-board-view
+
+# Board controls — hold the driving player's wall button. This is the connected
+# control sheet with Re-light / Turn off all lights / Disconnect, not the
+# separate board-history sheet opened from the list header. Rows depend on state.
+# Coordinates measured on iPhone 16 Pro Max, 1320 x 2868, dark appearance.
+- longPressOn:
+    point: '50%,90%'
 - waitForAnimationToEnd
 - takeScreenshot: 09-board-sheet
 
-# Board view — the wall lit with a climb and the play drawer open. First of the
-# three drawer shots that close the flow: the drawer overlays the whole app, so
-# nothing that isn't itself an overlay may follow it. The screenshot-mode param
-# opens the first climb's drawer (no coordinate tap); the second settle is the
-# drawer's own animation after the list has resolved.
-# Clear whatever overlay the previous shot left up.
-#
-# A repeat deep link to a route that is ALREADY the current route does not
-# remount it — expo-router calls setParams on the mounted screen — so the sheet
-# or drawer the last shot opened is still sitting there when the next param
-# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
-# exactly that reason: the board sheet from 09 covered the three drawer shots
-# after it, and the run's own duplicate check caught it.
-#
-# Bouncing through ://home leaves the climbs route, which tears the overlay down,
-# so the next ://climbs link mounts clean. Each of the four params has its own
-# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
-# that has already fired.
-- openLink: com.boardsesh.app://home
-- waitForAnimationToEnd
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+# The sheet starts at 19% height; its scrim at 15% dismisses it. Then stop
+# driving on the frosted button while retaining the link. The explicit still
+# request was already consumed, so it cannot restart driving after this tap.
 - tapOn:
-    text: 'Open'
-    optional: true
+    point: '50%,15%'
 - waitForAnimationToEnd
-- waitForAnimationToEnd
-- takeScreenshot: 10-board-view
+- tapOn:
+    point: '50%,90%'
+- extendedWaitUntil:
+    notVisible:
+      id: '^store-driving-.+$'
+    timeout: 10000
 
 # Preview runs BEFORE the reaction menu, and the order is not cosmetic.
 #
@@ -359,12 +348,10 @@ name: help screenshots
 # The play drawer IS a route, so it dismisses normally and can safely precede
 # anything. Keep the modal-backed shot last.
 
-# Preview — the play drawer in its browse state: the Browsing pill, the viewfinder
-# brackets and the commit row, i.e. what you get from the menu's "Preview" action
-# without lighting the wall. The effect behind the param also turns `lightOnSwipe`
-# off and marks the one-shot browse notice seen (see climbs/index.tsx), so the shot
-# is the steady state rather than a first-run card. Last, because the drawer covers
-# everything.
+# Preview — the player's back chip and Put on board button, without lighting the
+# wall. The helper turns lightOnSwipe off and marks the one-shot browse notice
+# seen. Driving was stopped above and screenshotDrive is absent here, so this
+# preview cannot silently inherit or restart the preceding still's live drive.
 # Clear whatever overlay the previous shot left up.
 #
 # A repeat deep link to a route that is ALREADY the current route does not

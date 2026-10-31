@@ -583,7 +583,7 @@
           "label": "Controllo del pannello",
           "wallButton": "Pulsante parete",
           "lightbulb": "Lampadina",
-          "footer": "Entrambi connettono, illuminano il blocco e mostrano di chi è il pannello. Tieni premuto per le opzioni del pannello. La lampadina occupa l'estremo destro della riga in alto."
+          "footer": "Entrambi i controlli connettono, illuminano il blocco e mostrano chi tiene il pannello. Quando sei connesso, tieni premuto per le opzioni. Leggi l’etichetta del pulsante parete: Guidi tu il pannello significa che ogni blocco scelto si illumina; tocca quell’etichetta per smettere di guidare restando connesso. La lampadina è in alto a destra."
         }
       },
       "climbView": {

@@ -1,5 +1,9 @@
 Boardsesh ya está disponible en italiano.
 
+SABE CUÁNDO ESTÁS ENCENDIENDO EL PLAFÓN
+
+“Poner en el plafón” conecta y enciende tu bloque. Lee el botón esmerilado del reproductor: “Estás al mando del plafón” significa que cada bloque elegido se enciende. Deslízalo a la izquierda para empezar; toca “Estás al mando del plafón” para parar y navegar sin desconectarte.
+
 iPad y iPhone Duo: más espacio para el plafón
 
 En iPad, tus bloques ocupan toda la pantalla y el bloque del muro queda en un minirreproductor abajo. Tócalo para abrir el reproductor. En horizontal, el plafón queda junto a la Cola, tu logbook y la beta. Fija un iPad junto a tu plafón y abre Pantalla de muro desde el minirreproductor para mostrar el bloque a pantalla completa, lo bastante grande para leerlo desde la colchoneta.
@@ -34,7 +38,7 @@ CORRECCIONES PARA TU PRÓXIMA SESIÓN
 - Tu logbook, tus favoritos y tus playlists funcionan sin cobertura, y los plafones descargados ya no se descargan de nuevo cada semana.
 - Los escaneos de plafones encuentran MoonBoards y cajas Kilter más nuevas, primero los más cercanos. Boardsesh pide Bluetooth en tu primer escaneo, no al abrir la app.
 - Deslizar hacia abajo vuelve a cerrar el reproductor. Las presas iluminadas siguen visibles mientras navegas.
-- En rocódromos con varios plafones, la conexión sigue al plafón del bloque actual. El botón de luces muestra si está iluminado, conectando o apagado, también cuando alguien de tu crew lo apaga.
+- En rocódromos con varios plafones, la conexión sigue al plafón del bloque actual. El botón indica si está encendido, conectando o apagado, también cuando tu crew lo apaga.
 - Los bloques en espejo conservan su orientación en tu logbook y en el historial de la cola.
 - Borra varias entradas del logbook seguidas, o las de un bloque agrupadas en un mismo día.
 - Los bloques que quitas de Favoritos salen de la lista al instante.

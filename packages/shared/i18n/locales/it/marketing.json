@@ -577,15 +577,16 @@
       },
       "wall": {
         "title": "Chi illumina il pannello",
-        "p1": "Un pannello accetta una sola connessione Bluetooth alla volta. Su tutti gli altri telefoni, guarda l'anteprima di un blocco e tocca Metti in parete: il telefono connesso lo illumina per te.",
+        "p1": "Un pannello accetta una sola connessione Bluetooth alla volta. Sugli altri telefoni, apri l’anteprima di un blocco e tocca Illumina il pannello: il telefono connesso lo illumina per te.",
         "p2": "Su un pannello senza luci il pulsante sotto il pannello dice Prendi il pannello.",
         "bluetoothLink": "Connettersi a un pannello"
       },
       "crowd": {
         "title": "Sfogliare senza cambiare il blocco in parete",
-        "p1": "Con qualcun altro nella tua session, scorrere smette di illuminare il pannello. Tocca Metti in parete quando vuoi mettere su il tuo, oppure tocca In parete in alto per tornare al blocco in parete.",
-        "p2": "Arrampichi da solo? In Impostazioni, poi Pannello, disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro.",
-        "previewLink": "Anteprima di un blocco da qualsiasi lista"
+        "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che tu stia guidando. Tocca Illumina il pannello per un blocco, oppure In parete in alto per tornare al blocco illuminato.",
+        "p2": "Se il pulsante del lettore dice Guidi tu il pannello, toccalo per smettere di guidare senza disconnetterti. Da solo, disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro in Impostazioni, poi Pannello, per sfogliare senza illuminare.",
+        "previewLink": "Anteprima di un blocco da qualsiasi lista",
+        "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
       "history": {
         "title": "Le session nel tuo profilo",
@@ -713,28 +714,28 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Tocca Illumina il pannello, scegli il pannello e il tuo blocco si illumina."
+        "subtitle": "Leggi il pulsante parete satinato: Illumina il pannello illumina questo blocco. Guidi tu il pannello significa che ogni blocco scelto si illumina."
       },
       "connect": {
         "title": "Connetti",
-        "p1": "In un blocco, tocca Illumina il pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
+        "p1": "In un blocco, tocca il grande pulsante Illumina il pannello. Si connette se serve e illumina il blocco sullo schermo. Se si apre Seleziona pannello, tocca il tuo: il segnale più forte viene prima, con un numero di serie per riga. Anche la lampadina della barra in alto può connettere.",
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
-        "shotAlt": "Il foglio Seleziona pannello",
-        "shotCaption": "Segnale più forte per primo, con i numeri di serie.",
-        "litShotAlt": "Un blocco illuminato",
-        "litShotCaption": "Un blocco illuminato sul pannello.",
+        "litShotAlt": "Il lettore con il grande pulsante parete",
+        "litShotCaption": "Leggi il pulsante parete: Guidi tu il pannello significa che anche il prossimo blocco scelto si illumina.",
         "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
-        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. La lampadina occupa l'estremo destro della riga in alto al posto del pulsante parete, e toccarla o tenerla premuta fa lo stesso."
+        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere."
       },
       "hidden": {
         "title": "Controlli del pannello",
-        "p1": "Quando sei connesso, tieni premuto il pulsante sotto il pannello. Quando dice Disconnetti pannello, un tocco breve lo disconnette. Quando dice Guidi tu il pannello, un tocco breve smette di guidare e il pannello resta connesso. In un blocco li apri anche da ⋯ e poi Controlli del pannello, o tenendo premuta la lampadina della barra in alto.",
+        "p1": "Quando sei connesso, tieni premuto il pulsante parete per i Controlli del pannello. In un blocco li apri anche da ⋯, poi Controlli del pannello, o tenendo premuta la lampadina in alto. Un tocco breve segue l’etichetta: Guidi tu il pannello smette di guidare mantenendo la connessione; Disconnetti pannello disconnette.",
         "row1": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
         "row2": "Spegni tutte le luci. Il telefono resta connesso.",
         "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
         "row4": "Illumina la presa sopra. Solo MoonBoard.",
-        "p2": "Disconnessione automatica, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu che apre la lampadina della barra in alto. La disconnessione automatica libera il pannello dopo 30 secondi di inattività. Disattiva entrambe le opzioni di illuminazione e sfogliare non cambierà più il blocco in parete.",
-        "p3": "Senza pannello connesso, Illumina il pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
+        "p2": "Disconnessione automatica, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu della lampadina in alto. La disconnessione automatica libera il pannello dopo 30 secondi di inattività. Per sfogliare senza illuminare, smetti prima di guidare e disattiva entrambe le opzioni di illuminazione. Mentre guidi, ogni blocco scelto si illumina anche con queste opzioni disattivate.",
+        "p3": "Senza pannello connesso, Illumina il pannello connette e illumina il blocco sullo schermo. Se arrampichi da solo, inizi anche a guidare. In una crew, un tocco illumina solo quel blocco. La lampadina in alto può riconnettere l’ultimo pannello usato.",
+        "shotAlt": "I controlli di un pannello connesso",
+        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti. Illumina ogni blocco avvia la guida quando disponibile."
       },
       "failed": {
         "title": "Quando non si connette",
@@ -759,7 +760,7 @@
       },
       "control": {
         "title": "Quando il pannello ce l'ha qualcun altro",
-        "p1": "In una session, un telefono gestisce il pannello. Sugli altri, guarda l'anteprima di un blocco e tocca Metti in parete: il telefono che lo gestisce lo illumina.",
+        "p1": "In una session, un telefono tiene il pannello. Sugli altri, apri l’anteprima di un blocco e tocca Illumina il pannello: il telefono connesso lo illumina. Il suo avatar indica chi tiene la connessione. Questo pulsante di inoltro non permette di scorrere per guidare.",
         "p2": "Sui pannelli senza luci il pulsante dice Prendi il pannello.",
         "sessionsLink": "Altro sulla condivisione di un pannello"
       },
@@ -774,6 +775,14 @@
         "title": "Continua",
         "findingClimbs": "Trova qualcosa da mettere in parete",
         "hub": "Tutti gli argomenti di aiuto"
+      },
+      "driving": {
+        "title": "Riconosci quando guidi il pannello",
+        "p1": "Il pulsante parete satinato controlla il pannello fisico. Leggi l’etichetta: Illumina il pannello connette se serve e illumina il blocco sullo schermo; Guidi tu il pannello significa che ogni blocco scelto si illumina, anche in una crew. Da solo, toccare Illumina il pannello avvia la guida; in una crew, un tocco illumina un blocco.",
+        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Scorrere sul disegno del pannello cambia blocco.",
+        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare restando connesso. L’etichetta cambia in Disconnetti pannello; toccarla disconnette. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
+        "clipAlt": "Scorrere il pulsante parete a sinistra per guidare, poi toccarlo per smettere",
+        "clipCaption": "Scorri il pulsante a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per smettere di guidare senza disconnetterti."
       }
     },
     "climbActions": {
@@ -794,11 +803,12 @@
       "preview": {
         "title": "Guarda l'anteprima di un blocco senza illuminare il pannello",
         "intro": "Anteprima è la prima voce della lista.",
-        "p1": "Apre il blocco nel cassetto di riproduzione senza toccare la tua coda. Il tuo prossimo scorrimento ti riporta alla coda.",
-        "p2": "In una session, o con Illumina il pannello mentre scorro disattivato, in alto compare un pulsante per tornare indietro: La mia scelta per il tuo blocco, In parete per il blocco illuminato. La riga sotto il nome dice Lo vedi solo tu in una session, oppure Anteprima, non illuminato quando un pannello è connesso o un blocco è illuminato. Tocca Metti in parete (o Imposta attivo) sotto il pannello quando vuoi quel blocco.",
+        "p1": "Anteprima apre il blocco nel lettore senza toccare la tua coda. Quando l’anteprima ha una lista, gli scorrimenti seguono quella lista. Un’anteprima singola potrebbe non avere un blocco successivo da raggiungere.",
+        "p2": "Quando sfogli senza illuminare, il pulsante in alto ti riporta indietro: La mia scelta al tuo blocco, In parete al blocco illuminato. Sotto il nome leggi Lo vedi solo tu in una session, oppure Anteprima, non illuminato quando un pannello è connesso o un blocco è illuminato. Tocca Illumina il pannello (o Imposta attivo) quando vuoi il blocco. Se il pulsante del lettore dice Guidi tu il pannello, i cambi di blocco successivi illuminano il pannello; toccalo prima per smettere di guidare.",
         "sessionsLink": "Come una session ti fa sfogliare senza cambiare il blocco in parete",
-        "clipAlt": "Il pulsante La mia scelta",
-        "clipCaption": "Il pulsante arriva dopo lo scorrimento. Il blocco in parete resta lo stesso."
+        "clipAlt": "Sfogliare una lista nel lettore senza illuminare i suoi blocchi",
+        "clipCaption": "Sfoglia la lista mentre il blocco in parete resta lo stesso. Illumina il pannello lo illumina quando scegli tu.",
+        "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
       "quick": {
         "title": "I tre pulsanti in alto",

@@ -117,7 +117,16 @@ export const HELP_CLIPS = [
   {
     name: 'preview-browsing',
     source: 'preview-browsing',
+    trim: { start: 6.5, end: 18.5 },
+    poster: 8,
     description: 'Browse the next climb without losing the one on the wall.',
+  },
+  {
+    name: 'wall-swipe-to-drive',
+    source: 'wall-swipe-to-drive',
+    trim: { start: 18.5, end: 30.5 },
+    poster: 4,
+    description: 'Swipe the wall button left to drive, change climbs, then tap to stop driving.',
   },
   {
     name: 'start-playlist-queue',
