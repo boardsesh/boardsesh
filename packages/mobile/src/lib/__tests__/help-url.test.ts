@@ -16,6 +16,7 @@ describe('buildHelpUrl', () => {
 
   it('falls back to English for a language www does not serve', () => {
     expect(buildHelpUrl('spray-walls', 'pt-BR', BASE)).toBe('https://www.boardsesh.com/help/spray-walls');
+    expect(buildHelpUrl('spray-walls', 'zh-Hans', BASE)).toBe('https://www.boardsesh.com/help/spray-walls');
     expect(buildHelpUrl('spray-walls', undefined, BASE)).toBe('https://www.boardsesh.com/help/spray-walls');
   });
 

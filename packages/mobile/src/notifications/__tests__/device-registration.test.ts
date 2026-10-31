@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getStored: vi.fn(),
   setStored: vi.fn(),
   transport: vi.fn(),
+  i18n: { language: 'fr' },
 }));
 
 vi.mock('expo-notifications', () => ({
@@ -34,7 +35,7 @@ vi.mock('../../lib/graphql/client', () => ({ getGraphQLHttpUrl: () => 'https://b
 vi.mock('../../lib/client-identity', () => ({
   clientIdentityHeaders: () => ({ 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' }),
 }));
-vi.mock('../../lib/i18n/config', () => ({ default: { language: 'fr' } }));
+vi.mock('../../lib/i18n/config', () => ({ default: mocks.i18n }));
 
 function sentRequest(index = 0) {
   const request = mocks.transport.mock.calls[index][1] as RequestInit;
@@ -51,6 +52,7 @@ describe('account notification device registration', () => {
     mocks.platform.OS = 'ios';
     mocks.credentials.generation = 1;
     mocks.credentials.bearer = 'account-one';
+    mocks.i18n.language = 'fr';
     mocks.getAuthToken.mockImplementation(async () => mocks.credentials.bearer);
     mocks.getPermissions.mockResolvedValue({ status: 'granted' });
     mocks.requestPermissions.mockResolvedValue({ status: 'granted' });
@@ -80,6 +82,13 @@ describe('account notification device registration', () => {
       },
     });
     expect(mocks.requestPermissions).not.toHaveBeenCalled();
+  });
+
+  it('registers an app-only language for the English push copy the backend accepts', async () => {
+    mocks.i18n.language = 'zh-Hans';
+    const { registerNotificationDevice } = await import('../device-registration');
+    await expect(registerNotificationDevice()).resolves.toBe(true);
+    expect(sentRequest()).toMatchObject({ body: { variables: { input: { locale: 'en-US' } } } });
   });
 
   it('does not prompt at launch and denial does not reject importing', async () => {

@@ -31,6 +31,29 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_ROOT = resolve(REPO_ROOT, 'packages/mobile');
 const LOCALES_DIR = resolve(MOBILE_ROOT, 'locales');
 
+/**
+ * App locales whose JS catalogs ship before their native declaration.
+ *
+ * `packages/mobile/locales/` and APP_LOCALIZATIONS are hashed into the native
+ * fingerprint, so they can only change on `release/next`. The catalogs are plain
+ * JS and reach the installed fleet by OTA from `main`. A locale listed here is
+ * in that gap: the app renders it (expo-localization reports the device tag
+ * whether or not the binary declares the language), while the iOS permission
+ * prompts and the App Store "Languages" list still wait for the binary.
+ *
+ * Each entry names the follow-up that removes it. Delete the entry in the same
+ * change that adds `locales/<lang>.json` and the APP_LOCALIZATIONS entry; the
+ * last test in this file fails if an entry outlives its native declaration.
+ *
+ *   - zh-Hans: JS catalogs in PR 8b (base main). Native file
+ *     `locales/zh-Hans.json`, APP_LOCALIZATIONS and a script-aware
+ *     `languageSubtag` follow in PR 8c (base release/next).
+ */
+const JS_FIRST_LOCALES: readonly string[] = ['zh-Hans'];
+
+/** The app locales that must already have a native declaration. */
+const NATIVE_DECLARED_LOCALES = SUPPORTED_LOCALES.filter((locale) => !JS_FIRST_LOCALES.includes(locale));
+
 /** Language subtag of an app locale — 'en-US' -> 'en'. */
 function languageSubtag(locale: string): string {
   return locale.split('-')[0];
@@ -67,8 +90,24 @@ function nonIosKeys(language: string): string[] {
 describe('mobile locale parity', () => {
   it('declares a localization for every app locale', () => {
     const declared: readonly string[] = APP_LOCALIZATIONS;
-    for (const locale of SUPPORTED_LOCALES) {
+    for (const locale of NATIVE_DECLARED_LOCALES) {
       expect({ locale, declared: declared.includes(languageSubtag(locale)) }).toEqual({ locale, declared: true });
+    }
+  });
+
+  it('exempts only real app locales that still lack a native declaration', () => {
+    const supported: readonly string[] = SUPPORTED_LOCALES;
+    const declared: readonly string[] = APP_LOCALIZATIONS;
+    for (const locale of JS_FIRST_LOCALES) {
+      // A typo here would exempt nothing and read as coverage.
+      expect({ locale, supported: supported.includes(locale) }).toEqual({ locale, supported: true });
+      // Once the binary declares the language (by full id or by language
+      // subtag), the exemption is stale and hides real drift. Remove it.
+      expect({
+        locale,
+        stillUndeclared: !declared.includes(locale) && !declared.includes(languageSubtag(locale)),
+      }).toEqual({ locale, stillUndeclared: true });
+      expect({ locale, hasNativeFile: localeFileNames().includes(locale) }).toEqual({ locale, hasNativeFile: false });
     }
   });
 
