@@ -254,7 +254,7 @@ describe('physical iPhone request diagnostics', () => {
     },
   );
 
-  it('distinguishes the actual fetch deadline from a native WebDriver/HTTP failure', async () => {
+  it('reports an exhausted assertion deadline while retaining safe fetch-timeout diagnostics', async () => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
       const controller = new AbortController();
@@ -276,12 +276,159 @@ describe('physical iPhone request diagnostics', () => {
     await vi.advanceTimersByTimeAsync(14999);
     expect(finished).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(await completed).toMatchObject({ kind: 'infrastructure', failureKind: 'timeout' });
+    expect(await completed).toMatchObject({ kind: 'failed', message: 'Deadline exceeded: iPhone assertVisible' });
     expect(harness.events()).toContain(
       '"status":null,"elapsedMs":15000,"timeoutMs":15000,"outcome":"timeout","errorName":"TimeoutError"',
     );
     expect(harness.events()).not.toContain('Private timeout detail');
   });
+
+  it('keeps a full 15-second query timeout as infrastructure when the original wait still has budget', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs);
+      return controller.signal;
+    });
+    const harness = await diagnosticDriver(
+      async (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+        }),
+    );
+    writeFileSync(
+      harness.flow,
+      'appId: ${APP_ID}\n---\n- extendedWaitUntil:\n    visible:\n      id: actual-control\n    timeout: 30000\n',
+    );
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(await completed).toMatchObject({ kind: 'infrastructure', failureKind: 'timeout' });
+    expect(harness.calls.filter((call) => call.path.endsWith('/elements'))).toHaveLength(1);
+  });
+
+  it.each(['visible', 'notVisible'] as const)(
+    'fails the %s assertion when its clamped final query times out; it never treats a timeout as absence',
+    async (condition) => {
+      vi.useFakeTimers();
+      const timeouts = vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs);
+        return controller.signal;
+      });
+      const harness = await diagnosticDriver(
+        async (_url, options) =>
+          new Promise((resolve, reject) => {
+            const reply = setTimeout(
+              () => resolve(Response.json({ value: condition === 'visible' ? [] : [{ ELEMENT: 'still-present' }] })),
+              490,
+            );
+            options?.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(reply);
+                reject(options.signal?.reason);
+              },
+              { once: true },
+            );
+          }),
+      );
+      writeFileSync(
+        harness.flow,
+        `appId: \${APP_ID}\n---\n- extendedWaitUntil:\n    ${condition}:\n      id: actual-control\n    timeout: 30000\n`,
+      );
+      const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(await completed).toMatchObject({ kind: 'failed', message: 'Deadline exceeded: iPhone extendedWaitUntil' });
+      expect(timeouts.mock.calls.at(-1)?.[0]).toBeLessThan(490);
+      expect(harness.calls.filter((call) => call.path.endsWith('/elements')).length).toBeGreaterThan(30);
+      expect(harness.events()).toContain('"outcome":"timeout"');
+      expect(harness.events()).not.toContain('"kind":"ios-query-retry"');
+    },
+  );
+  it.each([
+    ['http', () => Response.json({ value: null }, { status: 503 })],
+    ['webdriver', () => Response.json({ value: { error: 'invalid session id' } }, { status: 404 })],
+  ] as const)(
+    'keeps a native %s rejection as infrastructure even at the assertion deadline',
+    async (failureKind, reply) => {
+      vi.useFakeTimers();
+      const harness = await diagnosticDriver(async () => {
+        vi.setSystemTime(Date.now() + 30000);
+        return reply();
+      });
+      writeFileSync(
+        harness.flow,
+        'appId: ${APP_ID}\n---\n- extendedWaitUntil:\n    notVisible:\n      id: actual-control\n    timeout: 30000\n',
+      );
+      await expect(harness.driver.flow(harness.flow)).rejects.toMatchObject({ kind: 'infrastructure', failureKind });
+    },
+  );
+});
+
+describe('native rejection and concurrent assertion expiry', () => {
+  it.each(['invalid-response', 'transport'] as const)(
+    'preserves %s infrastructure failure when the timer expires concurrently',
+    async (failureKind) => {
+      vi.useFakeTimers();
+      vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs);
+        return controller.signal;
+      });
+      const harness = await diagnosticDriver(async (_url, options) => {
+        const waitForExpiry = async () => {
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+          expect(options?.signal?.aborted).toBe(true);
+        };
+        if (failureKind === 'transport') {
+          await waitForExpiry();
+          throw Object.assign(new TypeError('Private connection reset detail'), { code: 'ECONNRESET' });
+        }
+        const response = new Response('{malformed-json');
+        const parseJson = response.json.bind(response);
+        vi.spyOn(response, 'json').mockImplementation(async () => {
+          await waitForExpiry();
+          return parseJson();
+        });
+        return response;
+      });
+      writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- assertNotVisible:\n    id: actual-control\n');
+      const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(await completed).toMatchObject({ kind: 'infrastructure', failureKind });
+      expect(harness.events()).toContain(`"outcome":"${failureKind}"`);
+      expect(harness.events()).not.toContain('Private connection reset detail');
+      expect(harness.calls.filter((call) => call.path.endsWith('/elements'))).toHaveLength(1);
+    },
+  );
+  it.each([
+    ['http', { value: null }, 503],
+    ['webdriver', { value: { error: 'invalid session id' } }, 404],
+  ] as const)(
+    'preserves a parsed native %s rejection when the original assertion timer actually aborts concurrently',
+    async (failureKind, payload, status) => {
+      vi.useFakeTimers();
+      vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException('Timeout', 'TimeoutError')), timeoutMs);
+        return controller.signal;
+      });
+      const harness = await diagnosticDriver(async (_url, options) => {
+        const response = Response.json(payload, { status });
+        vi.spyOn(response, 'json').mockImplementation(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+          expect(options?.signal?.aborted).toBe(true);
+          return payload;
+        });
+        return response;
+      });
+      writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- assertNotVisible:\n    id: actual-control\n');
+      const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(await completed).toMatchObject({ kind: 'infrastructure', failureKind });
+      expect(harness.events()).toContain(`"outcome":"${failureKind}"`);
+    },
+  );
 });
 
 describe('fresh iPhone element-query retries', () => {

@@ -653,7 +653,7 @@ export function InSessionView({
         </PressableSurface>
       ) : null}
 
-      <SessionPresenceRow users={sessionUsers} />
+      <SessionPresenceRow sessionId={sessionId} users={sessionUsers} />
 
       {/* Solo teaching row for the chrome's bare share glyph (tab mode). A glass
           square can't hold a label, so the affordance is explained here until a

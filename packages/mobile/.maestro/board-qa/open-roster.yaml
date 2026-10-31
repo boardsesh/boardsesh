@@ -4,9 +4,7 @@ name: Inspect the actual session roster
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:
     visible:
-      id: session-active-${SESSION_ID}
+      id: session-presence-${SESSION_ID}-${EXPECTED_ROSTER_COUNT}
     timeout: 30000
-- assertVisible:
-    id: session-roster-${EXPECTED_ROSTER_COUNT}
 - assertVisible:
     id: session-user-${USER_ID}-CONNECTED

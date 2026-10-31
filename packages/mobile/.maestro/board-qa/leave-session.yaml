@@ -4,7 +4,7 @@ name: Leave this QA session without ending the host's session
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:
     visible:
-      id: session-active-${SESSION_ID}
+      id: session-presence-${SESSION_ID}-[1-9][0-9]*
     timeout: 30000
 # Native UIKit bar items expose their translated accessibility label, rather
 # than a React Native testID. The host supplies the exact current-locale label.

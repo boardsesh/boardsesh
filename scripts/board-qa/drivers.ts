@@ -544,7 +544,9 @@ export class IosDriver implements Driver {
         throw runFailure();
       }
       const nativeName = cause instanceof Error ? cause.name : '';
-      if (signal.aborted || nativeName === 'TimeoutError') failureKind = 'timeout';
+      const timeoutCause =
+        nativeName === 'TimeoutError' || (signal.aborted && (cause === signal.reason || nativeName === 'AbortError'));
+      if (failureKind !== 'http' && failureKind !== 'webdriver' && timeoutCause) failureKind = 'timeout';
       const errorName =
         failureKind === 'webdriver'
           ? 'WebDriverError'
@@ -679,7 +681,16 @@ export class IosDriver implements Driver {
     do {
       requireRunning();
       if (Date.now() >= deadline) break;
-      const elements = await this.freshElements(selector, deadline);
+      let elements: string[];
+      try {
+        elements = await this.freshElements(selector, deadline);
+      } catch (error) {
+        // The final read can be shorter than the native query's normal cost.
+        // Expiring the original assertion budget is an assertion failure;
+        // a capped query timeout with budget left is still infrastructure.
+        if (error instanceof WdaRequestFailure && error.failureKind === 'timeout' && Date.now() >= deadline) break;
+        throw error;
+      }
       // Even a late successful response cannot satisfy an expired assertion.
       if (Date.now() > deadline) break;
       if (matches(elements)) return elements;

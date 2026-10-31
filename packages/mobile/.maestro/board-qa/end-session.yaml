@@ -4,7 +4,7 @@ name: End only the session created by this QA run
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:
     visible:
-      id: session-active-${SESSION_ID}
+      id: session-presence-${SESSION_ID}-[1-9][0-9]*
     timeout: 30000
 - tapOn: ${SESSION_EXIT_LABEL}
 - extendedWaitUntil:
@@ -15,7 +15,7 @@ name: End only the session created by this QA run
     id: sheet-top-bar-trailing
 - extendedWaitUntil:
     notVisible:
-      id: session-active-${SESSION_ID}
+      id: session-presence-${SESSION_ID}-[1-9][0-9]*
     timeout: 30000
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:

@@ -10,5 +10,5 @@ name: Join through the normal invite confirmation
     id: session-join-confirm
 - extendedWaitUntil:
     visible:
-      id: session-active-${SESSION_ID}
+      id: session-presence-${SESSION_ID}-2
     timeout: 30000

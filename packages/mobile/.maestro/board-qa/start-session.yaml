@@ -15,5 +15,5 @@ name: Start a real Record session
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:
     visible:
-      id: session-active-.+
+      id: session-presence-[0-9a-fA-F-]{36}-1
     timeout: 30000
