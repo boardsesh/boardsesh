@@ -45,6 +45,8 @@ export type Climb = {
   userAttempts?: number | null;
   created_at?: string | null;
   published_at?: string | null;
+  /** Device-only pending write state; stripped before a party queue broadcast. */
+  localWritePending?: boolean;
   // Multi-frame playback metadata: how many snapshots the climb has and the
   // setter-chosen per-frame pace (ms). Carried through queue conversion so
   // multi-frame playback uses the setter's pace instead of DEFAULT_PACE_MS.
@@ -230,7 +232,14 @@ export type ClimbAuthoredPatch = Pick<Climb, 'name' | 'frames'> &
   Partial<
     Pick<
       Climb,
-      'description' | 'is_draft' | 'published_at' | 'is_no_match' | 'characteristics' | 'framesCount' | 'framesPace'
+      | 'description'
+      | 'is_draft'
+      | 'published_at'
+      | 'is_no_match'
+      | 'characteristics'
+      | 'framesCount'
+      | 'framesPace'
+      | 'localWritePending'
     >
   >;
 

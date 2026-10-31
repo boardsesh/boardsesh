@@ -786,26 +786,42 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
     }
   });
 
-  it('keeps draft, other-wall content and private sender gates separate from the held link', async () => {
+  it('shares same-wall drafts while keeping other-wall, catalogue draft and sender privacy gates', async () => {
     const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Separate Gates');
     const elsewhere = await makeSprayBoard(makeUnlistedBoard, 'Spray Different Layout');
     const publicClimb = await makeSprayClimbDisplay(board);
     const draft = await makeSprayClimbDisplay(board);
     const otherWall = await makeSprayClimbDisplay(elsewhere);
-    await db.update(dbSchema.boardClimbs).set({ isDraft: true }).where(eq(dbSchema.boardClimbs.uuid, draft.climbUuid));
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({ isDraft: true, isListed: false })
+      .where(eq(dbSchema.boardClimbs.uuid, draft.climbUuid));
+    const catalogueDraft = { ...draft, climbUuid: `${PREFIX}catalogue-draft-${counter++}`, name: 'Catalogue draft' };
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: catalogueDraft.climbUuid,
+      boardType: 'tension',
+      layoutId: 9,
+      userId: OWNER,
+      name: catalogueDraft.name,
+      frames: catalogueDraft.frames,
+      isDraft: true,
+      isListed: false,
+    });
     await db.insert(dbSchema.userProfiles).values({ userId: OTHER_STRANGER, isPrivate: true });
     vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([
       { ...publicClimb, sentByUserId: OTHER_STRANGER, sentByDisplayName: 'Private Sender' },
-      draft,
+      { ...draft, sentByUserId: OTHER_STRANGER, sentByDisplayName: 'Private Sender' },
       otherWall,
+      catalogueDraft,
     ]);
     for (const ctx of [anonCtx(), authCtx(STRANGER)]) {
-      const [visible, ...concealed] = await boardPresenceQueries.boardRecentClimbs(
+      const [visible, sharedDraft, ...concealed] = await boardPresenceQueries.boardRecentClimbs(
         undefined,
         { boardId: board.id, boardUuid: board.uuid },
         ctx,
       );
       expect(visible).toMatchObject({ name: publicClimb.name, frames: publicClimb.frames, sentByDisplayName: null });
+      expect(sharedDraft).toMatchObject({ name: draft.name, frames: draft.frames, sentByDisplayName: null });
       expect(concealed).toHaveLength(2);
       for (const returned of concealed) expect(returned).toMatchObject({ name: null, frames: null });
     }
@@ -898,10 +914,23 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
         name: current.climb.name,
         frames: display.frames,
       });
-      // The setter takes the climb back to a draft: it is theirs alone again.
+      // A draft on the held wall stays shared, while producers still publish
+      // no capability-derived details to viewers without that wall's link.
       await db
         .update(dbSchema.boardClimbs)
-        .set({ isDraft: true })
+        .set({ isDraft: true, isListed: false })
+        .where(eq(dbSchema.boardClimbs.uuid, display.climbUuid));
+      const sharedDraft = iterator.next();
+      emit?.(fromQuery!);
+      expect((await sharedDraft).value?.boardQueuePreview.current).toMatchObject({
+        name: current.climb.name,
+        frames: display.frames,
+      });
+      expect((await getBoardQueuePreviewSnapshot(board.id))?.current).toMatchObject({ name: null, frames: null });
+      // Catalogue drafts never inherit the wall's sharing rule.
+      await db
+        .update(dbSchema.boardClimbs)
+        .set({ boardType: 'tension', layoutId: 9 })
         .where(eq(dbSchema.boardClimbs.uuid, display.climbUuid));
       const restricted = iterator.next();
       emit?.(fromQuery!);
@@ -911,61 +940,84 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
     }
   });
 
-  it.each(['cached query', 'live event'] as const)(
-    'removes a now-draft hardest-send name from the %s without changing aggregate grades',
-    async (kind) => {
-      const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Cached Hardest');
-      const display = await makeSprayClimbDisplay(board);
-      const cached: BoardPresenceStats = {
-        climbsSentCount: 3,
-        distinctClimbersCount: 2,
-        hardestGrade: 'V2',
-        hardestSend: {
-          climbUuid: display.climbUuid,
-          climbOwnerId: OWNER,
-          name: display.name,
-          grade: 'V2',
-          sentByUserId: null,
-          sentAt: display.sentAt,
-        },
-      };
-      vi.spyOn(presenceStats, 'getCachedBoardPresenceStats').mockResolvedValue(cached);
-      const args = { boardId: board.id, boardUuid: board.uuid };
-      expect((await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx())).hardestSend?.name).toBe(
-        display.name,
-      );
-      await db
-        .update(dbSchema.boardClimbs)
-        .set({ isDraft: true })
-        .where(eq(dbSchema.boardClimbs.uuid, display.climbUuid));
-      let projected: BoardPresenceStats | undefined;
-      if (kind === 'cached query') {
-        projected = await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx());
-      } else {
-        let emit: ((event: BoardPresenceEvent) => void) | undefined;
-        vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
-          emit = listener;
-          return () => {};
-        });
-        const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, args, anonCtx());
-        try {
-          const pending = iterator.next();
-          await vi.waitFor(() => expect(emit).toBeDefined());
-          emit?.({ __typename: 'BoardStatsUpdated', stats: cached, seq: 2 });
-          const event = (await pending).value?.boardNowPlaying;
-          if (event?.__typename === 'BoardStatsUpdated') projected = event.stats;
-        } finally {
-          await iterator.return(undefined);
-        }
-      }
-      expect(projected).toMatchObject({
-        climbsSentCount: 3,
-        distinctClimbersCount: 2,
-        hardestGrade: 'V2',
-        hardestSend: null,
+  it.each(
+    (['cached query', 'live event'] as const).flatMap((kind) =>
+      (['same-wall draft', 'other-wall draft', 'catalogue draft'] as const).map((change) => ({ kind, change })),
+    ),
+  )('projects a $change through the $kind without changing aggregate grades', async ({ kind, change }) => {
+    const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Cached Hardest');
+    const display = await makeSprayClimbDisplay(board);
+    const cached: BoardPresenceStats = {
+      climbsSentCount: 3,
+      distinctClimbersCount: 2,
+      hardestGrade: 'V2',
+      hardestSend: {
+        climbUuid: display.climbUuid,
+        climbOwnerId: OWNER,
+        name: display.name,
+        grade: 'V2',
+        sentByUserId: null,
+        sentAt: display.sentAt,
+      },
+    };
+    vi.spyOn(presenceStats, 'getCachedBoardPresenceStats').mockResolvedValue(cached);
+    const args = { boardId: board.id, boardUuid: board.uuid };
+    expect((await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx())).hardestSend?.name).toBe(
+      display.name,
+    );
+    let elsewhereLayoutId: number | undefined;
+    if (change === 'other-wall draft') {
+      const elsewhere = await makeSprayBoard(makeUnlistedBoard, 'Other Hardest Wall');
+      const [elsewhereBoard] = await db
+        .select({ layoutId: dbSchema.userBoards.layoutId })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.id, elsewhere.id));
+      elsewhereLayoutId = Number(elsewhereBoard.layoutId);
+    }
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({
+        isDraft: true,
+        isListed: false,
+        ...(change === 'catalogue draft' ? { boardType: 'tension', layoutId: 9 } : {}),
+        ...(elsewhereLayoutId !== undefined ? { layoutId: elsewhereLayoutId } : {}),
+      })
+      .where(eq(dbSchema.boardClimbs.uuid, display.climbUuid));
+    let projected: BoardPresenceStats | undefined;
+    if (kind === 'cached query') {
+      projected = await boardPresenceQueries.boardPresenceStats(undefined, args, anonCtx());
+    } else {
+      let emit: ((event: BoardPresenceEvent) => void) | undefined;
+      vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(async (_boardId, listener) => {
+        emit = listener;
+        return () => {};
       });
-    },
-  );
+      const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, args, anonCtx());
+      try {
+        const pending = iterator.next();
+        await vi.waitFor(() => expect(emit).toBeDefined());
+        emit?.({ __typename: 'BoardStatsUpdated', stats: cached, seq: 2 });
+        const event = (await pending).value?.boardNowPlaying;
+        if (event?.__typename === 'BoardStatsUpdated') projected = event.stats;
+      } finally {
+        await iterator.return(undefined);
+      }
+    }
+    expect(projected).toMatchObject({
+      climbsSentCount: 3,
+      distinctClimbersCount: 2,
+      hardestGrade: 'V2',
+      hardestSend:
+        change === 'same-wall draft'
+          ? expect.objectContaining({
+              name: display.name,
+              sentByUserId: null,
+              sentByDisplayName: null,
+              sentByAvatarUrl: null,
+            })
+          : null,
+    });
+  });
 
   it('preserves missing-catalog aggregate grades without replaying a cached hardest-send name', async () => {
     const board = await makeSprayBoard(makeUnlistedBoard, 'Spray Unknown Hardest');

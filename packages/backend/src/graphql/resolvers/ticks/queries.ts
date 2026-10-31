@@ -546,7 +546,11 @@ export const tickQueries = {
             eq(dbSchema.boardClimbs.boardType, boardType),
             // A published climb is readable whoever set it; a draft by its owner alone.
             climbDraftVisibilityCondition(
-              { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+              {
+                boardType: dbSchema.boardClimbs.boardType,
+                isDraft: dbSchema.boardClimbs.isDraft,
+                userId: dbSchema.boardClimbs.userId,
+              },
               viewerUserId,
             ),
             sprayClimbVisibilityCondition(
@@ -1678,7 +1682,11 @@ export const tickQueries = {
                 eq(dbSchema.boardClimbs.boardType, boardType),
                 // A published climb is readable whoever set it; a draft by its owner alone.
                 climbDraftVisibilityCondition(
-                  { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+                  {
+                    boardType: dbSchema.boardClimbs.boardType,
+                    isDraft: dbSchema.boardClimbs.isDraft,
+                    userId: dbSchema.boardClimbs.userId,
+                  },
                   viewerUserId,
                 ),
                 sprayClimbVisibilityCondition(
@@ -1718,7 +1726,11 @@ export const tickQueries = {
                 eq(dbSchema.boardClimbs.boardType, boardType),
                 // A published climb is readable whoever set it; a draft by its owner alone.
                 climbDraftVisibilityCondition(
-                  { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+                  {
+                    boardType: dbSchema.boardClimbs.boardType,
+                    isDraft: dbSchema.boardClimbs.isDraft,
+                    userId: dbSchema.boardClimbs.userId,
+                  },
                   viewerUserId,
                 ),
                 sprayClimbVisibilityCondition(

@@ -477,7 +477,10 @@ export function logbookViewSource(
       eq(climbs.uuid, smartRowsColumn('climb_uuid')),
     )!,
     where: and(
-      climbDraftVisibilityCondition({ userId: climbs.userId, isDraft: climbs.isDraft }, viewerUserId),
+      climbDraftVisibilityCondition(
+        { boardType: climbs.boardType, userId: climbs.userId, isDraft: climbs.isDraft },
+        viewerUserId,
+      ),
       sprayClimbVisibilityCondition({ boardType: climbs.boardType, layoutId: climbs.layoutId }, viewerUserId ?? null),
     ),
     refColumns: {

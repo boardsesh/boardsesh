@@ -48,6 +48,7 @@ export * from './background-job-runs';
 export * from './provider-sync-controls';
 export * from './climb-stats-recompute-pending';
 export * from './climb-revisions';
+export * from './climb-mutation-receipts';
 
 export * from './notification-devices';
 

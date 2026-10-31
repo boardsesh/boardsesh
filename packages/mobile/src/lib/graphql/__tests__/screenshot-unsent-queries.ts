@@ -79,6 +79,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSessionHealthExport',
   // F3 resync (#6666): only in now-slot mode. Screenshot mode runs no PostHog and pins no env value for queue-now-slot.
   'GetSessionQueueStateNowSlot',
+  // Spray-only detail; the recorded capture flows use catalogue boards.
+  'GetSprayClimb',
   'GetSprayWallArchive',
   'GetSprayWallArt',
   'GetSprayWallByLayout',

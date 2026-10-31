@@ -12,11 +12,17 @@ import { DELETE_CLIMB_MUTATION } from '@boardsesh/graphql/operations/new-climb-f
 const ctrl = vi.hoisted(() => ({
   request: vi.fn(),
   removeFromDevice: vi.fn(async (_climb: unknown, _generation: number) => {}),
+  assertReady: vi.fn(async () => {}),
+  authCurrent: true,
 }));
 
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: ctrl.request }) }));
-vi.mock('../../../auth-store', () => ({ captureAuthCredentialGeneration: () => 7 }));
+vi.mock('../../../auth-store', () => ({
+  captureAuthCredentialGeneration: () => 7,
+  isAuthCredentialGenerationCurrent: () => ctrl.authCurrent,
+}));
 vi.mock('../../../../offline/remove-deleted-climb', () => ({ removeDeletedClimbFromDevice: ctrl.removeFromDevice }));
+vi.mock('../../../../offline/assert-climb-delete-ready', () => ({ assertClimbDeleteReady: ctrl.assertReady }));
 
 import { useDeleteClimb } from '../use-delete-climb';
 
@@ -33,9 +39,30 @@ const variables = { uuid: 'climb-1', boardType: 'spray' };
 beforeEach(() => {
   ctrl.request.mockReset();
   ctrl.removeFromDevice.mockClear();
+  ctrl.assertReady.mockReset();
+  ctrl.authCurrent = true;
 });
 
 describe('useDeleteClimb', () => {
+  it('does not delete a climb while its local writes remain unsent', async () => {
+    ctrl.assertReady.mockRejectedValue(new Error('Sync your saved climb before deleting it'));
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteClimb(), { wrapper: Wrapper });
+    await expect(result.current.mutateAsync(variables)).rejects.toThrow('Sync your saved climb');
+    expect(ctrl.request).not.toHaveBeenCalled();
+    expect(ctrl.removeFromDevice).not.toHaveBeenCalled();
+  });
+
+  it('stops if the account changes while inspecting local writes', async () => {
+    ctrl.assertReady.mockImplementationOnce(async () => {
+      ctrl.authCurrent = false;
+    });
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteClimb(), { wrapper: Wrapper });
+    await expect(result.current.mutateAsync(variables)).rejects.toThrow('Account changed');
+    expect(ctrl.request).not.toHaveBeenCalled();
+  });
+
   it('posts DELETE_CLIMB, then clears the downloaded copy with the auth generation from before the request', async () => {
     ctrl.request.mockResolvedValue({ deleteClimb: true });
     const { Wrapper } = makeWrapper();

@@ -14,6 +14,7 @@ import { followedAuthorsLocalCondition } from './followed-authors-local';
 import {
   buildJoinAndWhere,
   effectiveStatsSql,
+  effectiveDisplayDifficultySql,
   isCrossAngleStats,
   isOfflineSearchSupported,
 } from './search-climbs-local';
@@ -104,7 +105,7 @@ export async function getHoldHeatmapLocalWithCount(
   const statsColumns = withStats
     ? `,
        ${effectiveStatsSql('ascensionist_count', crossAngle)} AS ascensionist_count,
-       ${effectiveStatsSql('display_difficulty', crossAngle)} AS display_difficulty`
+       ${effectiveDisplayDifficultySql(input.boardName, crossAngle)} AS display_difficulty`
     : '';
 
   // Let SQLite choose the board/filter index once, rather than scanning every

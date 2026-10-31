@@ -22,6 +22,7 @@ import { isUserStartedTrigger } from './download-keep-awake';
 import { markUserStartedDownload } from './download-keep-awake-store';
 import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
+import { rememberSprayWallDownloadCapability } from './opened-spray-wall-pins';
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
 export type ToggleSource =
@@ -155,6 +156,7 @@ export function useBoardDownloads() {
     (list: UserBoard[], options?: { trigger?: OfflineDownloadTrigger; source?: ToggleSource }) => {
       const trigger = options?.trigger ?? 'unknown';
       const source = options?.source ?? 'manage';
+      void rememberSprayWallDownloadCapability(list);
       // Two boards can share one offline scope — the key is board type + layout +
       // size, so a climber who follows two gyms with the same wall gets one entry
       // in `syncEnabledBoards` and ONE download for both. The enable work is

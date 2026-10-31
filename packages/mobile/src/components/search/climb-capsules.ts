@@ -209,10 +209,11 @@ export function buildClimbCapsules(
     capsules.push({
       kind: 'menu',
       key: 'collection',
-      label: collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t),
+      label:
+        collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t, isSprayWall),
       active: collection !== 'any',
       options: visibleCollectionValues({ canFilterPersonalCollections, isSprayWall, current: collection }).map(
-        (value) => ({ value, label: collectionChipLabel(value, t) }),
+        (value) => ({ value, label: collectionChipLabel(value, t, isSprayWall) }),
       ),
       selected: collection,
       onSelect: (value) => {

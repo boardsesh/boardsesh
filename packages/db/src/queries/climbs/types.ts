@@ -76,6 +76,7 @@ export type ClimbSearchParams = {
    */
   useMyGrades?: boolean;
   onlyDrafts?: boolean;
+  draftScope?: 'OWN' | 'WALL';
   /**
    * Only climbs the user has hearted on this board. A heart belongs to the
    * climb, not to an angle (`user_favorites.angle` is recorded but never
@@ -162,6 +163,7 @@ export type ClimbSearchInputLike = {
   onlyRatedByMe?: boolean | null;
   useMyGrades?: boolean | null;
   onlyDrafts?: boolean | null;
+  draftScope?: 'OWN' | 'WALL' | null;
   onlyFavorited?: boolean | null;
   projectsOnly?: boolean | null;
   holdIntegrity?: string | null;
@@ -292,6 +294,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     onlyRatedByMe: input.onlyRatedByMe ?? undefined,
     useMyGrades: input.useMyGrades ?? undefined,
     onlyDrafts: input.onlyDrafts ?? undefined,
+    draftScope: input.draftScope ?? undefined,
     // false is the same as omitted, so it collapses and leaves the cache key alone.
     onlyFavorited: input.onlyFavorited || undefined,
     projectsOnly: input.projectsOnly ?? undefined,

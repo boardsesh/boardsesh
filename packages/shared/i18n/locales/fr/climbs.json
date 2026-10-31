@@ -602,7 +602,8 @@
       "clearAll": "Tout effacer",
       "nameToken": "« {{name}} »",
       "drafts": "Mes brouillons",
-      "popularityUnrepeated": "Non répétés"
+      "popularityUnrepeated": "Non répétés",
+      "wallDrafts": "Brouillons"
     },
     "search": {
       "recentFilters": "Récents",
@@ -825,7 +826,8 @@
         "campusLabel": "Campus (sans pieds)",
         "campusDescription": "Mains seulement, sans les pieds",
         "anyFeetLabel": "Pieds libres",
-        "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées"
+        "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées",
+        "wallDraftDescription": "Toute personne ayant accès à ce Spraywall peut grimper tes brouillons enregistrés."
       },
       "drafts": {
         "holds_one": "{{count}} prise",
@@ -853,7 +855,8 @@
         "done": "Enregistré",
         "draftToast": "Brouillon enregistré",
         "publishedToast": "Voie publiée",
-        "needsHold": "Ajoute une prise pour enregistrer"
+        "needsHold": "Ajoute une prise pour enregistrer",
+        "beforeLogging": "Enregistre ce bloc avant de le noter."
       },
       "autosave": {
         "onDevice": "Brouillon enregistré sur ce téléphone",
@@ -863,7 +866,8 @@
         "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
         "notStored": "Connectez-vous pour garder ce brouillon",
         "saveFailed": "Impossible d'enregistrer sur votre compte. Touchez Enregistrer pour réessayer.",
-        "keptToast": "Brouillon gardé sur ce téléphone. Rouvrez l'éditeur pour la terminer."
+        "keptToast": "Brouillon gardé sur ce téléphone. Rouvrez l'éditeur pour la terminer.",
+        "waitingToSync": "Enregistré sur cet appareil · En attente de synchronisation"
       },
       "newClimb": {
         "confirm": {

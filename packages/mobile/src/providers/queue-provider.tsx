@@ -141,6 +141,7 @@ import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-sug
 import { createBoardSuggestionCompatibilityCache } from './queue/board-suggestion-compatibility-cache';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
+import { useQueueClimbWriteDelivery } from './queue/use-queue-climb-write-delivery';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
@@ -3075,6 +3076,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     },
     [credentialGeneration],
   );
+  const refreshDeliveredClimb = useCallback(
+    (climbUuid: string, patch: ClimbAuthoredPatch) => {
+      if (credentialGeneration !== getCredentialGeneration()) return;
+      refreshAuthoredClimb(climbUuid, patch);
+      const current = stateRef.current.currentClimbQueueItem;
+      if (current?.climb.uuid === climbUuid) {
+        // The first party write may have arrived before the offline create.
+        setCurrentClimb({ ...current, climb: { ...current.climb, ...patch } }, { trigger: 'climb_saved' });
+      }
+    },
+    [credentialGeneration, refreshAuthoredClimb, setCurrentClimb],
+  );
+  useQueueClimbWriteDelivery(refreshDeliveredClimb);
 
   // One skip run gets one notice. A held swipe can fire nextClimb twice for the
   // same current item before the dispatch commits — that is one run — so latch

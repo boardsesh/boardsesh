@@ -4,6 +4,8 @@ import { graphqlErrorRejectsUnknownInputField } from './error-classification';
 export type GraphQLFetch = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
 
 const MUTATIONS: Record<string, string> = {
+  SaveClimb: `mutation SaveClimb($input: SaveClimbInput!) { saveClimb(input: $input) { uuid } }`,
+  UpdateClimb: `mutation UpdateClimb($input: UpdateClimbInput!) { updateClimb(input: $input) { uuid } }`,
   SaveTick: `mutation SaveTick($input: SaveTickInput!) { saveTick(input: $input) { uuid } }`,
   UpdateTick: `mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) { updateTick(uuid: $uuid, input: $input) { uuid } }`,
   DeleteTick: `mutation DeleteTick($uuid: ID!) { deleteTick(uuid: $uuid) }`,
@@ -101,6 +103,20 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
   }
 
   switch (mutation.table_name) {
+    case 'board_climbs':
+      switch (mutation.operation) {
+        case 'create':
+          return { mutationName: 'SaveClimb', variables: { input: payload } };
+        case 'update':
+          return {
+            mutationName: 'UpdateClimb',
+            variables: {
+              input: { ...payload, clientMutationId: mutation.idempotency_key.replace(/^climb:update:/, '') },
+            },
+          };
+        default:
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
+      }
     case 'boardsesh_ticks':
       switch (mutation.operation) {
         case 'create':

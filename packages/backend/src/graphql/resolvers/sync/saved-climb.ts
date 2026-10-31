@@ -1,6 +1,10 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import {
+  privateSafeFirstAscentName,
+  privateSafeFirstAscentAt,
+  sprayClimbVisibilityCondition,
+} from '@boardsesh/db/queries';
 import type { ConnectionContext, SyncClimbDocuments } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { requireAuthenticated } from '../shared/helpers';
@@ -99,17 +103,34 @@ export async function syncClimbDocuments(
             eq(boardClimbs.uuid, validClimbUuid),
             eq(boardClimbs.boardType, validBoardType),
             eq(boardClimbs.layoutId, validLayoutId),
-            or(
-              eq(boardClimbs.userId, ctx.userId!),
-              and(eq(boardClimbs.boardType, 'spray'), eq(boardClimbs.isDraft, false)),
-            ),
+            or(eq(boardClimbs.userId, ctx.userId!), eq(boardClimbs.boardType, 'spray')),
             sprayClimbVisibilityCondition(boardClimbs, ctx.userId, validWallUuid),
           ),
         );
       // Missing, deleted, private and inaccessible rows deliberately look alike.
       if (!climb) return null;
       const stats = await transaction
-        .select(statsColumns)
+        .select({
+          ...statsColumns,
+          fa_username: privateSafeFirstAscentName(
+            {
+              boardType: boardClimbStats.boardType,
+              climbUuid: boardClimbStats.climbUuid,
+              angle: boardClimbStats.angle,
+              username: boardClimbStats.faUsername,
+            },
+            ctx.userId,
+          ),
+          fa_at: privateSafeFirstAscentAt(
+            {
+              boardType: boardClimbStats.boardType,
+              climbUuid: boardClimbStats.climbUuid,
+              angle: boardClimbStats.angle,
+              at: boardClimbStats.faAt,
+            },
+            ctx.userId,
+          ),
+        })
         .from(boardClimbStats)
         .where(and(eq(boardClimbStats.boardType, validBoardType), eq(boardClimbStats.climbUuid, validClimbUuid)));
       return { viewerId: ctx.userId!, climb: normalizeRow(climb), stats: stats.map(normalizeRow) };

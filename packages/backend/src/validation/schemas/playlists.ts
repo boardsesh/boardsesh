@@ -101,40 +101,43 @@ export const GetPlaylistsForClimbsInputSchema = z.object({
  * so a bound tightened for search (the holds-filter cap, the seed format, the
  * zone box) tightens here too.
  */
-export const PlaylistClimbViewInputSchema = ClimbSearchInputSchema.pick({
-  sortOrder: true,
-  sortSeed: true,
-  name: true,
-  minGrade: true,
-  maxGrade: true,
-  gradeAccuracy: true,
-  gradeSource: true,
-  useMyGrades: true,
-  minAscents: true,
-  minRating: true,
-  onlyBenchmarks: true,
-  setter: true,
-  onlyFollowedAuthors: true,
-  onlyTallClimbs: true,
-  onlyWideClimbs: true,
-  onlyWithBetaVideos: true,
-  boulders: true,
-  routes: true,
-  projectsOnly: true,
-  hideAttempted: true,
-  hideCompleted: true,
-  showOnlyAttempted: true,
-  showOnlyCompleted: true,
-  minUserRating: true,
-  onlyRatedByMe: true,
-  onlyFavorited: true,
-  holdsFilter: true,
-  zoneBox: true,
-  zoneMode: true,
-}).extend({
-  sortBy: z.enum(PLAYLIST_SORT_OPTIONS).optional(),
-  onlyActiveBoard: z.boolean().optional(),
-});
+export const PlaylistClimbViewInputSchema = z
+  .object(ClimbSearchInputSchema.shape)
+  .pick({
+    sortOrder: true,
+    sortSeed: true,
+    name: true,
+    minGrade: true,
+    maxGrade: true,
+    gradeAccuracy: true,
+    gradeSource: true,
+    useMyGrades: true,
+    minAscents: true,
+    minRating: true,
+    onlyBenchmarks: true,
+    setter: true,
+    onlyFollowedAuthors: true,
+    onlyTallClimbs: true,
+    onlyWideClimbs: true,
+    onlyWithBetaVideos: true,
+    boulders: true,
+    routes: true,
+    projectsOnly: true,
+    hideAttempted: true,
+    hideCompleted: true,
+    showOnlyAttempted: true,
+    showOnlyCompleted: true,
+    minUserRating: true,
+    onlyRatedByMe: true,
+    onlyFavorited: true,
+    holdsFilter: true,
+    zoneBox: true,
+    zoneMode: true,
+  })
+  .extend({
+    sortBy: z.enum(PLAYLIST_SORT_OPTIONS).optional(),
+    onlyActiveBoard: z.boolean().optional(),
+  });
 
 /**
  * The active board for a view's active-board filters (`activeBoardName` …

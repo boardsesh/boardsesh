@@ -121,14 +121,49 @@ describe('saved climb canonical mirror', () => {
     ).rejects.toThrow();
   });
 
-  it('never exposes another setter draft, including to its public or private wall owner', async () => {
+  it('shares spray drafts with wall readers while retaining the wall access boundary', async () => {
     await db.execute(sql`UPDATE board_climbs SET is_draft = true WHERE uuid = ${CLIMB_UUID}`);
-    expect(await syncClimbDocuments({}, scope, context(OWNER))).toBeNull();
-    expect(await syncClimbDocuments({}, scope, context('other-reader'))).toBeNull();
+    expect(await syncClimbDocuments({}, scope, context(OWNER))).toMatchObject({ viewerId: OWNER });
+    expect(await syncClimbDocuments({}, scope, context('other-reader'))).toMatchObject({ viewerId: 'other-reader' });
     expect(await syncClimbDocuments({}, scope, context(SETTER))).toMatchObject({ viewerId: SETTER });
     await db.execute(sql`UPDATE user_boards SET is_public = false WHERE uuid = ${WALL_UUID}`);
-    expect(await syncClimbDocuments({}, scope, context(OWNER))).toBeNull();
+    expect(await syncClimbDocuments({}, scope, context(OWNER))).toMatchObject({ viewerId: OWNER });
     expect(await syncClimbDocuments({}, scope, context(SETTER))).toBeNull();
+  });
+
+  it('replays a stable create once without overwriting subsequent edits', async () => {
+    const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
+    const uuid = 'ABCDEF0123456789ABCDEF0123456789';
+    const input = {
+      uuid,
+      boardType: 'kilter',
+      layoutId: LAYOUT_ID,
+      name: 'Offline draft',
+      isDraft: true,
+      frames: 'p1r12',
+      angle: 40,
+    };
+    const [first, replay] = await Promise.all([
+      climbMutations.saveClimb({}, { input }, context(SETTER)),
+      climbMutations.saveClimb({}, { input }, context(SETTER)),
+    ]);
+    expect({ ...first, replayed: undefined }).toEqual({ ...replay, replayed: undefined });
+    expect([first, replay].filter((climbResult) => climbResult.replayed)).toHaveLength(1);
+    expect(first.uuid).toBe(uuid);
+    await db.execute(sql`UPDATE board_climbs SET name = 'Edited later' WHERE uuid = ${uuid}`);
+    await expect(climbMutations.saveClimb({}, { input }, context(SETTER))).resolves.toMatchObject({ replayed: true });
+    const mirrored = await syncClimbDocuments({}, { ...scope, boardType: 'kilter', climbUuid: uuid }, context(SETTER));
+    expect(mirrored?.climb).toMatchObject({ uuid, name: 'Edited later' });
+    await expect(climbMutations.saveClimb({}, { input }, context(OWNER))).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_ID_CONFLICT' },
+    });
+    await expect(
+      climbMutations.saveClimb({}, { input: { ...input, layoutId: LAYOUT_ID + 1 } }, context(SETTER)),
+    ).rejects.toMatchObject({ extensions: { code: 'CLIMB_ID_CONFLICT' } });
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${uuid}`);
+    await expect(climbMutations.saveClimb({}, { input }, context(SETTER))).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_NOT_FOUND' },
+    });
   });
 
   it('allows the wall owner to mirror another setter published climb without changing attribution', async () => {

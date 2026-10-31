@@ -279,13 +279,13 @@ composite-keyed sync table must keep this true (or version the encoding).
 
 - Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
   `sizeId` ignored for moonboard], the climb's audience (`contentVisibilityCondition`) and the draft rule
-  (`climbDraftVisibilityCondition`): a draft (`is_draft IS TRUE`) only when `user_id = $viewer`, so a draft with no
-  Boardsesh owner (imported from a Kilter or Tension account) goes to nobody. Unlisted climbs ship; the device's lists
+  (`climbDraftVisibilityCondition`): spray drafts follow current wall access, including a matching `sprayWallUuid`
+  capability; other drafts require `user_id = $viewer`, so ownerless non-spray drafts go to nobody. Unlisted climbs ship; the device's lists
   hide them. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data), except a draft with an owner
-  (`is_draft IS TRUE`), which gets `user_id = OLD.user_id`: only the setter can read a draft, so only the setter's
-  devices are told it is gone (0280, #6150).
+  on a non-spray board (`is_draft IS TRUE`), which gets `user_id = OLD.user_id`. Shared spray drafts use NULL like
+  published spray climbs, so every cached reader can remove the deleted row (0283).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
   `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
@@ -338,11 +338,11 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Scope: `board_type = $boardType` [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId
 AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table has no `layout_id`, so it correlates
   back to `board_climbs`, with fully-qualified cursor columns]. The same EXISTS carries the climb's audience and the
-  draft rule, so a draft's stats go only to its owner. Seq: **`sync_seq`**. Hook: no.
+  draft rule: spray draft stats follow wall access; other draft stats go only to their owner. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`(board_type, climb_uuid, angle)`** (B9). table-config: change `['climb_uuid','angle']` →
   **`['board_type','climb_uuid','angle']`**.
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`,
-  except when the climb is a draft with an owner: the trigger looks the climb up (it still exists, since
+  except when the climb is a non-spray draft with an owner: the trigger looks the climb up (it still exists, since
   `deleteClimbDependentRows` runs first) and sets `user_id` to the setter, as `board_climbs` does (0280, #6150).
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
   `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
@@ -442,15 +442,15 @@ splitting on `:` with a fixed expected segment count is safe. `pull-client.ts` a
 ## Exact saved-climb documents
 
 `syncClimbDocuments(boardType, layoutId, climbUuid, sprayWallUuid?)` is an
-additive authenticated read for the author's own climb or a published spray
-climb on a wall the viewer may read. It returns
+additive authenticated read for the author's own climb or any spray
+climb, draft or published, on a wall the viewer may read. It returns
 one canonical `board_climbs` document and all matching `board_climb_stats`
 documents from a repeatable-read primary snapshot. Its snake_case columns and
 Postgres timestamp/sequence precision match ordinary pull documents.
 
 The exact UUID, board type and layout must match. Authors can mirror their own
-drafts; every other spray row must be published and pass the existing wall
-visibility rule. Other authors' drafts are never returned, even to wall owners.
+drafts; every spray row, including another setter's draft, must pass the existing wall
+visibility rule. Non-spray drafts remain owner-only.
 An explicitly supplied matching unlisted wall UUID grants that existing
 capability; hidden/deleted/private/inaccessible rows return null.
 This read bypasses the ordinary pull stability window for one saved UUID, and

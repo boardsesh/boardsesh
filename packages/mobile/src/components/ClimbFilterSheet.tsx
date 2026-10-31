@@ -661,10 +661,12 @@ export function ClimbFilterSheet({
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
       ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
       // My drafts and Liked are auth-only: both are the climber's own climbs.
-      ...(isAuthenticated && offerDrafts ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+      ...((isAuthenticated || isSprayWall) && offerDrafts
+        ? [{ key: 'drafts' as const, label: isSprayWall ? t('mobile.filter.wallDrafts') : t('mobile.filter.drafts') }]
+        : []),
       ...(isAuthenticated && offerLiked ? [{ key: 'liked' as const, label: t('mobile.filter.collection.liked') }] : []),
     ],
-    [t, isAuthenticated, offerBenchmarks, offerDrafts, offerLiked],
+    [t, isAuthenticated, isSprayWall, offerBenchmarks, offerDrafts, offerLiked],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
