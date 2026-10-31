@@ -463,6 +463,10 @@ switch.**
   withdrawn.
 - **Screenshot mode never shows it**, so App Store captures and the replayed
   screenshot fixtures stay free of donation asks.
+- **Admin accounts see it on any phone, for QA.** With the flag on, an admin
+  (`useIsAdmin`) gets the link on iOS in any storefront and on Android, so the
+  maintainer can check it from Australia. App Review never signs in as an admin.
+  It is still covered by the kill switch and by screenshot mode.
 
 **Why the key ends in `-v2`.** Every Android bundle from #5523 (17 Sep 2026)
 until #7057 (31 Oct 2026) returns `true` on Android whenever the old

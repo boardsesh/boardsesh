@@ -27,6 +27,13 @@
  *   without the native module (#5522) get null from `requireOptionalNativeModule`
  *   and stay on the unlinked fallback. That is the designed degradation.
  *
+ * Admin accounts are the one exception, for QA: an admin sees the link on iOS
+ * in any storefront and on Android, so the link and its tap event can be
+ * checked on our own phones from Australia. App Review never signs in as an
+ * admin, and the only admin is the maintainer. It still needs the flag on, so
+ * the kill switch covers it, and screenshot mode still wins. `useIsAdmin`
+ * fails closed: signed out, loading or an error all read as not admin.
+ *
  * Screenshot mode always reads "not allowed", so App Store captures and the
  * replayed screenshot fixtures never show a donation ask.
  *
@@ -40,6 +47,7 @@ import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useFeatureFlag } from '../providers/feature-flags-provider';
+import { useIsAdmin } from './graphql/hooks/use-is-admin';
 
 type StorefrontNativeModule = {
   /** The App Store storefront country as a StoreKit alpha-3 code, or null. */
@@ -123,6 +131,8 @@ function readStorefrontCountry(): Promise<string | null> {
  */
 export function useDonationLinksAllowed(): boolean {
   const flagEnabled = useFeatureFlag('donation-links-v2') === true;
+  // Only asked once the flag is on, so a killed flag costs no request.
+  const { isAdmin } = useIsAdmin({ enabled: flagEnabled });
   // Seeded from the module-level answer, which is null until the first read
   // lands. So the very first mount of the app starts on the fallback and every
   // later one starts on the truth — and "not read yet" and "not the US" are the
@@ -141,6 +151,8 @@ export function useDonationLinksAllowed(): boolean {
   }, [flagEnabled]);
 
   if (!flagEnabled || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  // QA: the maintainer's admin account, on a phone, whatever the region.
+  if (isAdmin && (Platform.OS === 'ios' || Platform.OS === 'android')) return true;
   if (Platform.OS === 'ios') return storefrontCountry === US_STOREFRONT_COUNTRY;
   // Android: never, whatever the flag says (see the header). Expo web and
   // anything else: no way to know the reader's region. Stay on the unlinked copy.
