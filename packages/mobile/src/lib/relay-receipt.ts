@@ -24,6 +24,8 @@ export type RelayReceipt = {
   correlationId: string | null;
   /** `performance.now()` when the event reached the queue stream handler. */
   receivedAt: number;
+  /** Session participant who moved the current climb, when supported by the server. */
+  currentChangedBy?: string | null;
 };
 
 /**
@@ -101,21 +103,28 @@ export function noteRelayReceipt({
   localQueueItemUuid,
   correlationId,
   ownEcho = false,
+  currentChangedBy,
+  participantId,
 }: {
   eventType: RelayEventType;
   incomingQueueItemUuid: string | null | undefined;
   localQueueItemUuid: string | null | undefined;
   correlationId?: string | null;
   ownEcho?: boolean;
+  currentChangedBy?: string | null;
+  participantId?: string | null;
 }): void {
   if (!incomingQueueItemUuid || incomingQueueItemUuid === localQueueItemUuid || ownEcho) return;
+  const knownActor = !!currentChangedBy && !!participantId;
+  if (knownActor && currentChangedBy === participantId) return;
   const receivedAt = relayClockMs();
-  if (isRecentOwnMove(incomingQueueItemUuid, receivedAt)) return;
+  if (!knownActor && isRecentOwnMove(incomingQueueItemUuid, receivedAt)) return;
   pendingReceipt = {
     queueItemUuid: incomingQueueItemUuid,
     eventType,
     correlationId: correlationId ?? null,
     receivedAt,
+    ...(currentChangedBy === undefined ? {} : { currentChangedBy }),
   };
   for (const listener of crewMoveListeners) listener(incomingQueueItemUuid);
 }

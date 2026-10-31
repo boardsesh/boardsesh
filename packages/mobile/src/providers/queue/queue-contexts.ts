@@ -410,6 +410,8 @@ export const QueueHasActiveClimbContext = createContext<QueueHasActiveClimbConte
 type QueueDataContextValue = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /** Server-bound participant who last changed the current queue item. */
+  currentChangedBy?: string | null;
   /**
    * F3 now-slot mode: the History / Up next line while nothing is current
    * (`upNextStart` reads it). Null or absent in legacy mode, which every reader

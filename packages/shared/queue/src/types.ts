@@ -397,6 +397,8 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
    * `findIndex + 1`, or 0 with nothing current.
    */
   historyCount?: number | null;
+  /** Server-bound participant who last changed the current queue item, never its queue author. */
+  currentChangedBy?: string | null;
   /**
    * Now-slot mode: the `queue-now-slot` flag is on and, in a session, the
    * connected backend serves the F3 fields. Opens go through `placeOnWall`
@@ -427,7 +429,13 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'SET_CLIMB_SEARCH_PARAMS'; payload: TSearchParams }
   | {
       type: 'UPDATE_QUEUE';
-      payload: { queue: ClimbQueue; currentClimbQueueItem?: ClimbQueueItem | null; historyCount?: number | null };
+      payload: {
+        queue: ClimbQueue;
+        currentClimbQueueItem?: ClimbQueueItem | null;
+        historyCount?: number | null;
+        /** Explicit null clears session attribution when credentials change but the climb stays. */
+        currentChangedBy?: string | null;
+      };
     }
   | {
       type: 'INITIAL_QUEUE_DATA';
@@ -455,6 +463,7 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          * the #4979 hold's clock from it (docs/current-climb-outside-queue.md, section 6).
          */
         currentChangedAt?: string | null;
+        currentChangedBy?: string | null;
       };
     }
   /** Turn now-slot mode on or off (section 7). Legacy mode stores `historyCount: null`. */
@@ -474,6 +483,7 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
         shouldAddToQueue?: boolean;
         insertAfterCurrent?: boolean;
         isServerEvent?: boolean;
+        currentChangedBy?: string | null;
         eventClientId?: string;
         myClientId?: string;
         correlationId?: string;

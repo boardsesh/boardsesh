@@ -50,4 +50,6 @@ export type QueueState = {
   /** When the current climb last changed to a different climb, ISO 8601. Absent
    *  or null from a pre-F3 server. */
   currentChangedAt?: string | null;
+  /** Server-bound SessionUser.id of the mover, not the queue item's author. */
+  currentChangedBy?: string | null;
 };

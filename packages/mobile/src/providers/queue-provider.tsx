@@ -92,7 +92,13 @@ import {
   shouldDefaultToBrowse,
 } from '@boardsesh/play-view';
 import { useQueueNowSlotEnabled, useSharedSessionBrowseEnabled } from './feature-flags-provider';
-import { clampSyncedQueue, probeNowSlotServer, reportQueueServerProbe } from './queue/now-slot-server';
+import {
+  clampSyncedQueue,
+  isAttributionValidationError,
+  probeQueueServerCapabilities,
+  reportQueueServerProbe,
+} from './queue/now-slot-server';
+import { buildSessionQueueStateQuery } from '@boardsesh/graphql/operations/queue-session';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
@@ -392,6 +398,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // The probe's answer for the current connection: null before the first
   // probe (or with the flag off), false for a backend without F3.
   const nowSlotServerRef = useRef<boolean | null>(null);
+  const attributionServerRef = useRef(false);
   const setNowSlotMode = useCallback((enabled: boolean) => {
     nowSlotModeRef.current = enabled;
     dispatch({ type: 'SET_NOW_SLOT_MODE', payload: enabled });
@@ -810,7 +817,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // payload before React's next commit. Keep list order and current selection.
         resetQueueMutationLane();
         invalidateStoredQueueSnapshot();
-        const snapshot = sanitizeQueueSnapshot(stateRef.current);
+        const snapshot = { ...sanitizeQueueSnapshot(stateRef.current), currentChangedBy: null };
+        attributionServerRef.current = false;
         stateRef.current = snapshot;
         playlistSuggestionSourceRef.current = null;
         boardSuggestionCompatibilityCache.clear();
@@ -1029,7 +1037,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // there. With the flag off nothing is probed and the mode is legacy.
           // The probe and the join both read the live client (#6766): one read
           // before an await can be disposed by the time the send goes out.
-          const nowSlotServer = nowSlotFlagRef.current ? await probeNowSlotServer(getWsClient) : null;
+          const capabilities = await probeQueueServerCapabilities(getWsClient);
+          attributionServerRef.current = capabilities.attribution;
+          const nowSlotServer = nowSlotFlagRef.current ? capabilities.nowSlot : null;
           nowSlotServerRef.current = nowSlotServer;
           if (nowSlotServer !== null) reportQueueServerProbe(nowSlotServer, 'probe');
           setNowSlotMode(nowSlotFlagRef.current && nowSlotServer === true);
@@ -1163,6 +1173,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (sessionId) return;
     nowSlotServerRef.current = null;
+    attributionServerRef.current = false;
     setNowSlotMode(nowSlotFlagEnabled);
   }, [nowSlotFlagEnabled, sessionId, setNowSlotMode]);
 
@@ -1414,12 +1425,32 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // F3: in now-slot mode the snapshot carries the line, so a resync with
         // nothing current keeps History as History. A backend that rejects the
         // document falls back to today's, like every other `_NOW_SLOT` request.
-        const requestSnapshot = (document: string) =>
-          getHttpClient().request<GetSessionQueueStateQueryResponse>(document, { sessionId: activeSessionId });
+        const requestSnapshot = async (nowSlot: boolean) => {
+          const legacyDocument = nowSlot ? GET_SESSION_QUEUE_STATE_NOW_SLOT : GET_SESSION_QUEUE_STATE;
+          if (!attributionServerRef.current) {
+            return getHttpClient().request<GetSessionQueueStateQueryResponse>(legacyDocument, {
+              sessionId: activeSessionId,
+            });
+          }
+          try {
+            return await getHttpClient().request<GetSessionQueueStateQueryResponse>(
+              buildSessionQueueStateQuery({ nowSlot, attribution: true }),
+              { sessionId: activeSessionId },
+            );
+          } catch (snapshotError) {
+            if (!mayApplyResult() || !isAttributionValidationError(snapshotError)) throw snapshotError;
+            // HTTP can land on an older replica than the WebSocket probe.
+            // Disable only attribution, preserving the independent now-slot mode.
+            attributionServerRef.current = false;
+            return getHttpClient().request<GetSessionQueueStateQueryResponse>(legacyDocument, {
+              sessionId: activeSessionId,
+            });
+          }
+        };
         let response: GetSessionQueueStateQueryResponse;
         if (nowSlotModeRef.current && nowSlotServerRef.current === true) {
           try {
-            response = await requestSnapshot(GET_SESSION_QUEUE_STATE_NOW_SLOT);
+            response = await requestSnapshot(true);
           } catch (snapshotError) {
             if (!isNowSlotValidationError(snapshotError)) throw snapshotError;
             // Same bookkeeping as a rejected mutation: this connection is legacy
@@ -1428,10 +1459,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             nowSlotServerRef.current = false;
             reportQueueServerProbe(false, 'validation-error');
             setNowSlotMode(false);
-            response = await requestSnapshot(GET_SESSION_QUEUE_STATE);
+            response = await requestSnapshot(false);
           }
         } else {
-          response = await requestSnapshot(GET_SESSION_QUEUE_STATE);
+          response = await requestSnapshot(false);
         }
         // Account, room or queue intent can change while the HTTP request waits.
         // Check the captured origin before any state, sync-gate or fallback effect.
@@ -1480,6 +1511,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             historyCount: queueState.historyCount ?? null,
             // The #4979 hold's clock reseeds from it, like a subscribe FullSync.
             currentChangedAt: queueState.currentChangedAt ?? null,
+            currentChangedBy: queueState.currentChangedBy ?? null,
           },
         });
         // Re-baseline the sync gate to this snapshot's authoritative
@@ -1558,6 +1590,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     setParticipantId,
     locallyEndingSessionIdRef,
     suppressedRemoteEndSessionIdRef,
+    attributionServerRef,
   });
 
   // After a queue mutation fails in a party session, reconcile against the
@@ -3609,9 +3642,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     () => ({
       queue: state.queue,
       currentClimbQueueItem: state.currentClimbQueueItem,
+      currentChangedBy: state.currentChangedBy ?? null,
       historyCount: state.historyCount ?? null,
     }),
-    [state.queue, state.currentClimbQueueItem, state.historyCount],
+    [state.queue, state.currentClimbQueueItem, state.currentChangedBy, state.historyCount],
   );
 
   // SessionId-only selector: identity changes only when a session starts/ends,

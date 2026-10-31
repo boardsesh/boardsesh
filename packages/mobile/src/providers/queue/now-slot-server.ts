@@ -6,31 +6,49 @@
 import { clampNowSlotPayload, clampQueueAroundCurrent, type ClimbQueueItem } from '@boardsesh/queue';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { execute, type ClientSource } from '@boardsesh/graphql-client';
-import { QUEUE_STATE_FIELDS_PROBE } from '@boardsesh/graphql/operations/queue-session';
+import { QUEUE_CAPABILITIES_PROBE } from '@boardsesh/graphql/operations/queue-session';
 import { track } from '../../lib/analytics';
 
 /** The `QueueState` fields a backend must serve before a phone sends the `_NOW_SLOT` documents. */
 const NOW_SLOT_QUEUE_STATE_FIELDS = ['historyCount', 'currentChangedAt'] as const;
 
-type QueueStateFieldsProbeResponse = {
-  __type?: { fields?: ReadonlyArray<{ name: string }> | null } | null;
+type QueueCapabilitiesProbeResponse = {
+  queueState?: { fields?: ReadonlyArray<{ name: string }> | null } | null;
+  currentClimbChanged?: { fields?: ReadonlyArray<{ name: string }> | null } | null;
 };
 
-/**
- * Does the backend behind `client` serve the Now slot fields? One
- * `__type(name: "QueueState")` query, run on every socket connect before the
- * join; the caller caches the answer for that connection. Fails closed: any
- * error reads as a backend without F3, so the phone keeps today's documents.
- */
-export async function probeNowSlotServer(client: ClientSource): Promise<boolean> {
+export type QueueServerCapabilities = { nowSlot: boolean; attribution: boolean };
+
+/** Probe every connection, including when the now-slot feature flag is off. */
+export async function probeQueueServerCapabilities(client: ClientSource): Promise<QueueServerCapabilities> {
   try {
-    const response = await execute<QueueStateFieldsProbeResponse>(client, { query: QUEUE_STATE_FIELDS_PROBE });
-    const fieldNames = new Set((response?.__type?.fields ?? []).map(({ name }) => name));
-    return NOW_SLOT_QUEUE_STATE_FIELDS.every((fieldName) => fieldNames.has(fieldName));
+    const response = await execute<QueueCapabilitiesProbeResponse>(client, { query: QUEUE_CAPABILITIES_PROBE });
+    const stateFields = new Set((response?.queueState?.fields ?? []).map(({ name }) => name));
+    const eventFields = new Set((response?.currentClimbChanged?.fields ?? []).map(({ name }) => name));
+    return {
+      nowSlot: NOW_SLOT_QUEUE_STATE_FIELDS.every((fieldName) => stateFields.has(fieldName)),
+      attribution: stateFields.has('currentChangedBy') && eventFields.has('currentChangedBy'),
+    };
   } catch (probeError) {
-    if (__DEV__) console.warn('[queue] Now slot server probe failed; staying on the legacy documents', probeError);
-    return false;
+    if (__DEV__) console.warn('[queue] Server capability probe failed; staying on legacy documents', probeError);
+    return { nowSlot: false, attribution: false };
   }
+}
+
+/** Only schema validation failures permit an actor-free retry. */
+export function isAttributionValidationError(error: unknown): boolean {
+  if (Array.isArray(error)) return error.some((entry: unknown) => isAttributionValidationError(entry));
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : '';
+  return (
+    message.includes('currentChangedBy') && /cannot query field|graphql_validation_failed|is not defined/i.test(message)
+  );
 }
 
 let reportedNowSlotServerThisLaunch = false;

@@ -228,9 +228,13 @@ function currentQueue(queueRef: RefObject<QueueHandle | null>): QueueHandle {
 
 /** Server-side records of membership-requiring mutations from `fromIndex` on. */
 function sessionMutationsSince(fromIndex: number) {
-  return server.operations
-    .slice(fromIndex)
-    .filter((operation) => operation.operationName !== 'JoinSession' && operation.outcome !== 'subscribed');
+  return server.operations.slice(fromIndex).filter(
+    (operation) =>
+      operation.operationName !== 'JoinSession' &&
+      // Introspection is a read before JOIN, not a membership-requiring mutation.
+      operation.operationName !== 'QueueCapabilitiesProbe' &&
+      operation.outcome !== 'subscribed',
+  );
 }
 
 async function waitForLiveSession() {

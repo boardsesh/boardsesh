@@ -14,7 +14,10 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 const ws = vi.hoisted(() => {
   type WsEventName = 'connected' | 'closed';
-  type QueueUpdatesSink = { next: (payload: { data?: { queueUpdates?: unknown } }) => void };
+  type QueueUpdatesSink = {
+    next: (payload: { data?: { queueUpdates?: unknown } }) => void;
+    error?: (error: unknown) => void;
+  };
   let queueUpdatesSink: QueueUpdatesSink | null = null;
   const listeners: Record<WsEventName, Set<() => void>> = { connected: new Set(), closed: new Set() };
   return {
@@ -40,7 +43,10 @@ const ws = vi.hoisted(() => {
 });
 
 const flags = vi.hoisted(() => ({ nowSlot: true }));
-const probe = vi.hoisted(() => ({ fields: ['sequence', 'historyCount', 'currentChangedAt'] as string[] }));
+const probe = vi.hoisted(() => ({
+  fields: ['sequence', 'historyCount', 'currentChangedAt'] as string[],
+  eventFields: [] as string[],
+}));
 const graph = vi.hoisted(() => ({ execute: vi.fn() }));
 const http = vi.hoisted(() => ({ request: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
@@ -370,6 +376,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
   beforeEach(() => {
     flags.nowSlot = true;
     probe.fields = ['sequence', 'historyCount', 'currentChangedAt'];
+    probe.eventFields = [];
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -388,8 +395,11 @@ describe('QueueProvider now-slot mode (F3)', () => {
     analytics.track.mockClear();
     graph.execute.mockReset();
     graph.execute.mockImplementation(async (_client: unknown, operation: { query: string }) => {
-      if (operation.query.includes('QueueStateFieldsProbe')) {
-        return { __type: { fields: probe.fields.map((name) => ({ name })) } };
+      if (operation.query.includes('QueueCapabilitiesProbe')) {
+        return {
+          queueState: { fields: probe.fields.map((name) => ({ name })) },
+          currentClimbChanged: { fields: probe.eventFields.map((name) => ({ name })) },
+        };
       }
       return {
         joinSession: {
@@ -654,7 +664,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
   describe('in a session', () => {
     it('probe yes: the _NOW_SLOT join and subscription, and opens send placement with no queue-add', async () => {
       const latest = await renderSession([A, B, C], B);
-      expect(executedQueries().some((query) => query.includes('QueueStateFieldsProbe'))).toBe(true);
+      expect(executedQueries().some((query) => query.includes('QueueCapabilitiesProbe'))).toBe(true);
       expect(executedQueries().some((query) => query.includes('JoinSessionNowSlot'))).toBe(true);
       expect(subscribedQueries().some((query) => query.includes('QueueUpdatesNowSlot'))).toBe(true);
       expect(capturedMutationDeps.current?.shouldUseNowSlotDocuments?.()).toBe(true);
@@ -730,14 +740,109 @@ describe('QueueProvider now-slot mode (F3)', () => {
       expect(uuidsOf(latest())).toEqual(['a', 'b', 'c-prime', 'c']);
     });
 
-    it('flag off: no probe at all, and today’s documents', async () => {
+    it('flag off: still probes attribution, and keeps today’s now-slot documents', async () => {
       flags.nowSlot = false;
       await renderSession([A, B, C], B);
-      expect(executedQueries().some((query) => query.includes('QueueStateFieldsProbe'))).toBe(false);
+      expect(executedQueries().some((query) => query.includes('QueueCapabilitiesProbe'))).toBe(true);
       expect(subscribedQueries().some((query) => query.includes('QueueUpdatesNowSlot'))).toBe(false);
       expect(analytics.track.mock.calls.some(([eventName]) => eventName === SHARED_EVENTS.QueueServerProbe)).toBe(
         false,
       );
+    });
+
+    it('reads mover attribution even with the now-slot flag off', async () => {
+      flags.nowSlot = false;
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      expect(subscribedQueries().some((query) => query.includes('currentChangedBy'))).toBe(true);
+      expect(latest().state.nowSlotMode).toBe(false);
+      act(() =>
+        ws.getQueueUpdatesSink()?.next({
+          data: {
+            queueUpdates: {
+              __typename: 'CurrentClimbChanged',
+              sequence: 2,
+              stateHash: 'hash-2',
+              currentItem: C,
+              currentChangedBy: 'participant-peer',
+              clientId: 'client-peer',
+            },
+          },
+        }),
+      );
+      await waitFor(() => expect(latest().state.currentChangedBy).toBe('participant-peer'));
+      expect(takeRelayReceipt('c')).toMatchObject({ currentChangedBy: 'participant-peer' });
+    });
+
+    it('retries a rejected attribution subscription once without disabling now-slot', async () => {
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      const before = subscribedQueries().filter((query) => query.includes('queueUpdates')).length;
+      act(() =>
+        ws.getQueueUpdatesSink()?.error?.([{ message: 'Cannot query field "currentChangedBy" on type "QueueState".' }]),
+      );
+      await waitFor(() =>
+        expect(subscribedQueries().filter((query) => query.includes('queueUpdates')).length).toBe(before + 1),
+      );
+      const query = subscribedQueries()
+        .filter((query) => query.includes('queueUpdates'))
+        .at(-1);
+      expect(query).not.toContain('currentChangedBy');
+      expect(query).toContain('historyCount');
+      expect(latest().state.nowSlotMode).toBe(true);
+    });
+
+    it('retries an older HTTP replica without attribution and keeps now-slot enabled', async () => {
+      probe.fields.push('currentChangedBy');
+      probe.eventFields = ['currentChangedBy'];
+      const latest = await renderSession([A, B, C], B);
+      const snapshots: string[] = [];
+      http.request.mockImplementation(async (query: string) => {
+        if (query.includes('SessionStatus')) return statusResponse();
+        snapshots.push(query);
+        if (query.includes('currentChangedBy'))
+          throw new Error('Cannot query field "currentChangedBy" on type "QueueState".');
+        return {
+          session: {
+            queueState: { sequence: 2, stateHash: 'hash-2', queue: [B, C], currentClimbQueueItem: B, historyCount: 0 },
+          },
+        };
+      });
+      queueMutations.removeQueueItem.mockRejectedValueOnce(new Error('offline'));
+      act(() => latest().removeQueueItems(['a']));
+      await waitFor(() => expect(snapshots.length).toBe(2));
+      expect(snapshots[0]).toContain('currentChangedBy');
+      expect(snapshots[1]).not.toContain('currentChangedBy');
+      expect(snapshots[1]).toContain('historyCount');
+      expect(latest().state.nowSlotMode).toBe(true);
+    });
+
+    it('does not relay a live snapshot whose current loses to the protected optimistic move', async () => {
+      const latest = await renderSession([A, B, C], B);
+      act(() => latest().setCurrentClimb(C));
+      clearRelayReceipt();
+      act(() =>
+        ws.getQueueUpdatesSink()?.next({
+          data: {
+            queueUpdates: {
+              __typename: 'FullSync',
+              sequence: 1,
+              state: {
+                sequence: 1,
+                stateHash: 'hash-1',
+                queue: [A, B, C],
+                currentClimbQueueItem: B,
+                currentChangedBy: 'participant-peer',
+                historyCount: 1,
+              },
+            },
+          },
+        }),
+      );
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+      expect(takeRelayReceipt('b')).toBeNull();
     });
 
     // #7014: the BLE auto-sender times a crewmate's climb from the moment this
@@ -754,7 +859,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
                 __typename: 'CurrentClimbChanged',
                 sequence: 2,
                 stateHash: 'hash-2',
-                item,
+                currentItem: item,
                 clientId,
                 correlationId,
               },

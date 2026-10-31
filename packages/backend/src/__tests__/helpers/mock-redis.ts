@@ -292,6 +292,7 @@ export const createMockRedis = (): MockRedis => {
         // F3 (#6666): the History / Up next line and the current climb's uuid.
         const historyCount = args[14] as string;
         const currentUuid = args[15] as string;
+        const incomingActor = (args[16] as string | undefined) ?? '';
 
         const stored = hashes.get(sessionKey);
         if (stored?.version === undefined && floorsKnown !== '1') {
@@ -321,6 +322,20 @@ export const createMockRedis = (): MockRedis => {
           stored.currentUuid !== currentUuid
             ? now
             : stored.currentChangedAt;
+        const actorFresh =
+          stored?.currentChangedByVersion !== undefined &&
+          stored.currentChangedByVersion !== '' &&
+          Number(stored.currentChangedByVersion) === (Number(stored?.version) || 0);
+        const currentChangedBy =
+          currentUuid === ''
+            ? ''
+            : storedFieldsFresh && stored?.currentUuid === currentUuid
+              ? actorFresh
+                ? (stored.currentChangedBy ?? '')
+                : ''
+              : storedFieldsFresh || (stored?.version === undefined && versionFloor === 0)
+                ? incomingActor
+                : '';
         if (!hashes.has(sessionKey)) hashes.set(sessionKey, {});
         Object.assign(hashes.get(sessionKey)!, {
           sessionId,
@@ -334,11 +349,21 @@ export const createMockRedis = (): MockRedis => {
           historyCountVersion: String(newVersion),
           currentUuid,
           currentChangedAt,
+          currentChangedBy,
+          currentChangedByVersion: String(newVersion),
           lastActivity: now,
         });
         await mockRedis.zadd(recentKey, Number(now), sessionId);
 
-        return ['OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered, currentChangedAt];
+        return [
+          'OK',
+          newVersion,
+          newSequence,
+          priorStateHash,
+          priorStateHashOrdered,
+          currentChangedAt,
+          currentChangedBy,
+        ];
       }
 
       if (_script === MARK_RECONNECTING_IF_IDLE_SCRIPT) {

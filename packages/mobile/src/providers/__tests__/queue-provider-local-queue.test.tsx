@@ -129,7 +129,13 @@ vi.mock('react-native', () => ({
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
-  execute: graph.execute,
+  // Keep capability reads separate from the JOIN mock and its sequencing assertions.
+  execute: (...args: Parameters<typeof import('@boardsesh/graphql-client').execute>) => {
+    if (args[1].query.includes('query QueueCapabilitiesProbe')) {
+      return Promise.resolve({ queueState: { fields: [] }, currentClimbChanged: { fields: [] } });
+    }
+    return graph.execute(...args);
+  },
 }));
 vi.mock('@boardsesh/queue-react', () => ({
   useQueueMutations: (deps: CapturedMutationDeps) => {
