@@ -79,7 +79,8 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children }: Children) => createElement('span', null, children),
+  LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
+    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -330,6 +331,18 @@ describe('WallControlButton', () => {
     const nobody = renderButton(modelFor('connect'));
     expect(nobody.container.querySelector('[data-avatar]')).toBeNull();
     expect(nobody.container.querySelector('[data-testid="play-drawer-wall-control-holder"]')).toBeNull();
+  });
+
+  it('places the live wall-state identifier on the native viewer host and preserves the button identifier', () => {
+    const idle = { ...modelFor('lit', { holder: 'self' }), driving: false };
+    const { getByTestId, rerender } = renderButton(idle);
+    const state = getByTestId('wall-control-lit-self-idle');
+    expect(state.getAttribute('data-native-viewer')).toBe('true');
+    expect(getByTestId('play-drawer-wall-control').contains(state)).toBe(true);
+    rerender(
+      createElement(WallControlButton, { model: { ...idle, driving: true }, onPress: vi.fn(), onLongPress: vi.fn() }),
+    );
+    expect(getByTestId('wall-control-lit-self-driving').getAttribute('data-native-viewer')).toBe('true');
   });
 
   // Marco's bug: after a tap-disconnect the face stayed, read from stale presence.

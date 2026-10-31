@@ -150,6 +150,7 @@ export function ClimbCapsule({
         />
       ) : null}
       <AccessoryPlayLink
+        testID={`mini-player-current-${currentClimb.uuid}`}
         style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
         accessibilityLabel={currentClimb.name}
         onOpen={openPlay}

@@ -2745,6 +2745,7 @@ export function PlayCore({
                               <View style={[sheetStyles.indicator, styles.grabber]} />
                               {/* A chevron, not an xmark: the player minimises, it isn't closed. */}
                               <ChromeIconButton
+                                testID="play-drawer-close"
                                 icon="chevron.down"
                                 onPress={handleDismiss}
                                 accessibilityLabel={t('playView.closeAria')}

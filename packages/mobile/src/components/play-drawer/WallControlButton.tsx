@@ -307,16 +307,16 @@ function WallControlButtonComponent({
         )}
       </View>
       <LargeContentViewer
+        testID={
+          rowColors.resting
+            ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
+            : undefined
+        }
         title={label}
         onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
       >
         <Text
-          testID={
-            rowColors.resting
-              ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
-              : undefined
-          }
           variant="subheadline"
           color={rowColors.foreground}
           numberOfLines={1}
