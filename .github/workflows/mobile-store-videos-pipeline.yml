@@ -112,12 +112,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
-          path: .video-arch-tools
+          path: .boardsesh/video-arch-tools
           sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Reject recording sources without the reviewed host-native builder
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
       - name: Compute screenshot app cache key
         id: appkey
         run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/lib/ios-simulator-architecture.mjs', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
@@ -139,7 +139,7 @@ jobs:
       - name: Validate actual simulator app slices before use
         env:
           VIDEO_APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - uses: actions/cache/save@v4
         if: steps.app-cache.outputs.cache-hit != 'true'
         with:
@@ -173,7 +173,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
-          path: .video-arch-tools
+          path: .boardsesh/video-arch-tools
           sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
@@ -183,7 +183,7 @@ jobs:
       - name: Validate restored app slices before recorder installation
         env:
           VIDEO_APP_CACHE_KEY: ${{ needs.app.outputs.cache-key }}
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Record ordinary app takes in all four locales
         env:
           KIND: ${{ matrix.kind }}
@@ -233,7 +233,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
-          path: .video-arch-tools
+          path: .boardsesh/video-arch-tools
           sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
@@ -243,7 +243,7 @@ jobs:
       - name: Validate restored app slices before recorder installation
         env:
           VIDEO_APP_CACHE_KEY: ${{ needs.app.outputs.cache-key }}
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Record the selected crew stories serially
         env:
           CREW_KINDS: ${{ needs.preflight.outputs.crew }}
