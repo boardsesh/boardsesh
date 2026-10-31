@@ -43,6 +43,12 @@ const tracker = vi.hoisted(() => ({
   end: null as ((event: { translationX: number }) => void) | null,
 }));
 const swipeable = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+const rowGestures = vi.hoisted(() => ({
+  manual: null as unknown,
+  pan: null as unknown,
+  compositions: new Map<unknown, { kind: 'exclusive' | 'simultaneous'; gestures: unknown[] }>(),
+  mounted: [] as unknown[],
+}));
 const panels = vi.hoisted(() => ({ enabled: false, language: '' }));
 const a11y = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 // Controls the app-wide "Show Boardsesh grades" toggle for the row. Default OFF
@@ -115,12 +121,29 @@ vi.mock('react-native-gesture-handler', () => {
     Gesture: {
       Tap: gestureChain,
       LongPress: gestureChain,
-      Pan: () => gestureChain(true),
-      Manual: gestureChain,
-      Simultaneous: (...gestures: unknown[]) => gestures[0],
-      Exclusive: (...g: unknown[]) => g[0],
+      Pan: () => {
+        rowGestures.pan = gestureChain(true);
+        return rowGestures.pan;
+      },
+      Manual: () => {
+        rowGestures.manual = gestureChain();
+        return rowGestures.manual;
+      },
+      Simultaneous: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+        return composition;
+      },
+      Exclusive: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+        return composition;
+      },
     },
-    GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    GestureDetector: ({ children, gesture }: { children?: ReactNode; gesture: unknown }) => {
+      rowGestures.mounted.push(gesture);
+      return createElement('div', null, children);
+    },
   };
 });
 // Capture the swipeable's props so tests can fire onSwipeableWillOpen directly.
@@ -251,6 +274,10 @@ beforeEach(() => {
   boardsesh.active = false;
   panels.enabled = false;
   panels.language = '';
+  rowGestures.compositions.clear();
+  rowGestures.mounted = [];
+  rowGestures.manual = null;
+  rowGestures.pan = null;
 });
 
 describe('LogbookRow swipe feedback lifetime', () => {
@@ -497,6 +524,24 @@ describe('LogbookRow — meta line', () => {
 });
 
 describe('LogbookRow — swipe wiring', () => {
+  it('mounts the swipe lock ahead of the full-swipe tracker in the row detector', () => {
+    renderRow(ascent(), { onEdit: vi.fn(), onDeleteRequest: vi.fn(), onOpenActions: vi.fn() });
+    const lock = swipeable.props?.requireExternalGestureToFail;
+    const fullSwipe = swipeable.props?.simultaneousWithExternalGesture;
+    expect(lock).toBe(rowGestures.manual);
+    expect(fullSwipe).toBe(rowGestures.pan);
+    const mountedRow = rowGestures.mounted.find(
+      (gesture) => rowGestures.compositions.get(gesture)?.kind === 'simultaneous',
+    );
+    const rowComposition = rowGestures.compositions.get(mountedRow);
+    expect(rowComposition?.gestures).toHaveLength(2);
+    const guardedSwipe = rowGestures.compositions.get(rowComposition?.gestures[1]);
+    expect(guardedSwipe?.kind).toBe('exclusive');
+    expect(guardedSwipe?.gestures).toHaveLength(2);
+    expect(guardedSwipe?.gestures[0]).toBe(lock);
+    expect(guardedSwipe?.gestures[1]).toBe(fullSwipe);
+  });
+
   it('maps the swipe directions onto delete (right-to-left) and edit (left-to-right)', () => {
     const item = ascent();
     const onEdit = vi.fn();
