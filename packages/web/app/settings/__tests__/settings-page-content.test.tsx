@@ -59,6 +59,11 @@ vi.mock('@/app/components/account/set-password-section', () => ({
   default: () => <div data-testid="set-password-section" />,
 }));
 
+// Covered by `components/support/__tests__/supporter-panel.test.tsx`.
+vi.mock('@/app/components/support/supporter-settings-card', () => ({
+  default: () => <div data-testid="supporter-settings-card" />,
+}));
+
 import SettingsPageContent from '../settings-page-content';
 
 beforeEach(() => {
@@ -84,6 +89,13 @@ describe('SettingsPageContent', () => {
 
     expect(screen.getByTestId('set-password-section')).toBeTruthy();
     expect(screen.getByTestId('controllers-section')).toBeTruthy();
+  });
+
+  // Public supporter credit and "Already gave? Link it" live here, next to consent.
+  it('renders the supporter card', async () => {
+    await renderSettings();
+
+    expect(screen.getByTestId('supporter-settings-card')).toBeTruthy();
   });
 
   it('renders the page title', async () => {

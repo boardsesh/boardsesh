@@ -22,6 +22,7 @@ import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import { SUPPORT_BANNER_SUPPORTER_KEY } from '@/app/components/home/support-banner-window';
 import { setPreference } from '@/app/lib/user-preferences-db';
 import type { SupportPageOptions } from './support-links';
+import SupporterPanel from '@/app/components/support/supporter-panel';
 import SupportChooser, { SUPPORT_CHOOSER_ID } from './support-chooser';
 import { trackSupportCta } from './support-analytics';
 import styles from './support.module.css';
@@ -112,6 +113,9 @@ export default function SupportContent({ options, src, thanks }: SupportContentP
           <Typography variant="body1" component="p" color="text.secondary">
             {t('support.thanksState.body')}
           </Typography>
+          {/* Signed in: link this gift and choose public credit. Signed out: a
+              sign-in that comes back here. */}
+          <SupporterPanel variant="thanks" />
         </PageCard>
       ) : null}
 

@@ -214,6 +214,13 @@
       "title": "La suite",
       "body": "Plus de boards, un meilleur mode hors ligne, et sortir tes données aussi facilement qu'elles sont entrées. La feuille de route est publique et on en débat sur Discord.",
       "cta": "Lis la feuille de route"
+    },
+    "supporters": {
+      "title": "Soutiens",
+      "body": "Merci aux grimpeurs et grimpeuses qui participent pour faire vivre Boardsesh et ont choisi d’être nommés ici.",
+      "accountsTitle": "Sur Boardsesh",
+      "githubTitle": "GitHub Sponsors",
+      "cta": "Participez sur la page Soutenir →"
     }
   },
   "support": {

@@ -143,6 +143,78 @@ export function withSupportSource(url: string, src: string): string {
   return tagged.toString();
 }
 
+/** What `createSupportClaim` returns: `sc_` plus 32 hex (docs/supporters.md). */
+const SUPPORT_CLAIM_ID_PATTERN = /^sc_[0-9a-f]{32}$/;
+
+/**
+ * The link for a signed-in climber: the claim id in `client_reference_id` (the
+ * webhook links the payment through it), `utm_source` still the page tag, and
+ * the account's email prefilled so a later claim by email finds it too.
+ * Throws on anything that is not a claim id, so a caller falls back to
+ * `withSupportSource` instead of sending a stray value to Stripe.
+ */
+export function withSupportClaim(
+  url: string,
+  { claimId, src, email }: { claimId: string; src: string; email?: string | null },
+): string {
+  if (!SUPPORT_CLAIM_ID_PATTERN.test(claimId)) throw new Error('not a support claim id');
+  const tagged = new URL(url);
+  tagged.searchParams.set('client_reference_id', claimId);
+  tagged.searchParams.set('utm_source', src);
+  const prefilledEmail = email?.trim();
+  if (prefilledEmail) tagged.searchParams.set('prefilled_email', prefilledEmail);
+  else tagged.searchParams.delete('prefilled_email');
+  return tagged.toString();
+}
+
+/** The server route every Stripe button goes through (`app/support/go/route.ts`). */
+export const SUPPORT_GO_PATH = '/support/go';
+
+export type SupportCadence = 'monthly' | 'once';
+
+/**
+ * A button's name for its Payment Link, so the page never hands the browser a
+ * raw URL to bounce through: `monthly-aud-2` is the second AUD tier (1-based),
+ * `once-usd` the USD one-off link.
+ */
+export function supportLinkKey(cadence: SupportCadence, currency: SupportCurrency, option = 1): string {
+  return cadence === 'monthly' ? `monthly-${currency}-${option}` : `once-${currency}`;
+}
+
+export type ResolvedSupportLink = { url: string; cadence: SupportCadence; currency: SupportCurrency };
+
+const SUPPORT_LINK_KEY_PATTERN = /^(monthly|once)-(aud|usd)(?:-([1-9][0-9]?))?$/;
+
+/**
+ * The configured Payment Link a key names, or undefined. This is the only way
+ * `/support/go` picks a destination, so it can never redirect anywhere the env
+ * did not list.
+ */
+export function resolveSupportLinkKey(
+  config: SupportLinksConfig,
+  rawKey: string | null | undefined,
+): ResolvedSupportLink | undefined {
+  const match = SUPPORT_LINK_KEY_PATTERN.exec(rawKey ?? '');
+  if (!match) return undefined;
+  const cadence: SupportCadence = match[1] === 'monthly' ? 'monthly' : 'once';
+  const currency = parseCurrencyParam(match[2]);
+  if (!currency) return undefined;
+  if (cadence === 'once') {
+    if (match[3] !== undefined) return undefined;
+    const url = config.once[currency];
+    return url ? { url, cadence, currency } : undefined;
+  }
+  if (match[3] === undefined) return undefined;
+  const url = config.monthly[currency]?.[Number(match[3]) - 1]?.url;
+  return url ? { url, cadence, currency } : undefined;
+}
+
+/** The button href for a key: `/support/go?link=<key>&src=<src>`. */
+export function supportGoHref(key: string, src: string): string {
+  const params = new URLSearchParams({ link: key, src });
+  return `${SUPPORT_GO_PATH}?${params.toString()}`;
+}
+
 export function parseCurrencyParam(rawValue: string | string[] | undefined): SupportCurrency | undefined {
   const value = (Array.isArray(rawValue) ? rawValue[0] : rawValue)?.toLowerCase();
   return SUPPORT_CURRENCIES.find((currency) => currency === value);
@@ -157,7 +229,11 @@ export function defaultSupportCurrency(country: string | null, available: readon
   return available.includes(preferred) ? preferred : (available[0] ?? preferred);
 }
 
-/** What the client renders: finished hrefs (already tagged with `src`) and labels. */
+/**
+ * What the client renders: finished hrefs and labels. Every Stripe href goes
+ * through `/support/go`, which links a signed-in climber's payment to their
+ * account and otherwise redirects with the `src` tag, as the page always did.
+ */
 export type SupportPageOptions = {
   monthly: Partial<Record<SupportCurrency, SupportLink[]>>;
   once: Partial<Record<SupportCurrency, string>>;
@@ -184,10 +260,12 @@ export function buildSupportPageOptions({
   for (const currency of SUPPORT_CURRENCIES) {
     const monthlyLinks = config.monthly[currency];
     if (monthlyLinks?.length) {
-      monthly[currency] = monthlyLinks.map((link) => ({ label: link.label, url: withSupportSource(link.url, src) }));
+      monthly[currency] = monthlyLinks.map((link, index) => ({
+        label: link.label,
+        url: supportGoHref(supportLinkKey('monthly', currency, index + 1), src),
+      }));
     }
-    const onceUrl = config.once[currency];
-    if (onceUrl) once[currency] = withSupportSource(onceUrl, src);
+    if (config.once[currency]) once[currency] = supportGoHref(supportLinkKey('once', currency), src);
   }
   const currencies = SUPPORT_CURRENCIES.filter((currency) => monthly[currency] || once[currency]);
   const defaultCurrency =

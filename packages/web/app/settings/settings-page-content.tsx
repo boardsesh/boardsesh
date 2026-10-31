@@ -17,16 +17,18 @@ import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import ControllersSection from '@/app/components/account/controllers-section';
 import SetPasswordSection from '@/app/components/account/set-password-section';
+import SupporterSettingsCard from '@/app/components/support/supporter-settings-card';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
- * (Web Bluetooth/serial hardware that never moved to the SPA) and set a first
+ * (Web Bluetooth/serial hardware that never moved to the SPA), set a first
  * password for an OAuth-only account (the app has reset-password, not
- * set-password). Profile, board accounts and account deletion all live in the
- * app now — W-21 (#4440).
+ * set-password), and link a gift made on www's `/support` to the account.
+ * Profile, board accounts and account deletion all live in the app now — W-21
+ * (#4440).
  *
  * The destination is named explicitly rather than mirroring this pathname: the
  * two `/settings` routes are the same idea on different origins, but the app's
@@ -151,6 +153,9 @@ export default function SettingsPageContent() {
         }}
       >
         <ConsentSettingsCard />
+        <MuiDivider sx={{ my: 2 }} />
+        {/* Public supporter credit is a privacy choice, so it sits with consent. */}
+        <SupporterSettingsCard />
         <MuiDivider sx={{ my: 2 }} />
         <SetPasswordSection
           hasPassword={profile?.hasPassword ?? false}

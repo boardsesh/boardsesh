@@ -643,5 +643,41 @@
     "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen, auch wenn es in Suche und Karte nicht auftaucht. Der Link enthält den Namen des Boards, er ist also nicht geheim. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
     "publishLink": "Per Link teilen",
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
+  },
+  "supporter": {
+    "title": "Öffentlicher Dank",
+    "intro": "Du hast auf der Unterstützen-Seite etwas gegeben? Verknüpfe es mit diesem Konto und wähle dann, ob dein Name und das Label Unterstützer*in öffentlich erscheinen. Das Label ist ein Dankeschön und ändert sonst nichts in der App.",
+    "status": {
+      "loading": "Deine Unterstützung wird geprüft…",
+      "error": "Deine Unterstützung lässt sich gerade nicht laden. Versuch es später noch mal.",
+      "none": "Mit diesem Konto ist noch keine Spende verknüpft.",
+      "monthly": "Deine monatliche Unterstützung ist mit diesem Konto verknüpft.",
+      "monthlyEnding": "Deine monatliche Unterstützung ist verknüpft und endet mit diesem Abrechnungszeitraum.",
+      "until": "Dein Label Unterstützer*in läuft bis zum {{date}}.",
+      "current": "Du unterstützt Boardsesh. Danke.",
+      "ended": "Deine Unterstützung ist ausgelaufen. Danke, dass du etwas gegeben hast.",
+      "confirming": "Stripe braucht manchmal eine Minute, bis es uns eine neue Spende meldet. Lade die Seite gleich neu oder verknüpfe sie unten."
+    },
+    "visibility": {
+      "label": "Meinen Namen und das Label Unterstützer*in zeigen",
+      "hint": "Solange du unterstützt, erscheinen dein Boardsesh-Name und das Label Unterstützer*in auf deinem Profil und auf der Über-uns-Seite. Beträge zeigen wir nie. Aus, bis du es einschaltest.",
+      "error": "Das wurde nicht gespeichert. Versuch es noch mal."
+    },
+    "link": {
+      "cta": "Schon gegeben? Mit deinem Konto verknüpfen",
+      "pending": "Suche in Stripe…",
+      "hint": "Wir suchen nach Zahlungen mit {{email}}.",
+      "linked": "Gefunden. Deine Unterstützung ist mit diesem Konto verknüpft.",
+      "expired": "Wir haben deine frühere Unterstützung gefunden, aber ihre Zeit ist abgelaufen.",
+      "notFound": "Wir haben keine Zahlung mit {{email}} gefunden. Eine Spende mit einer anderen E-Mail-Adresse lässt sich hier nicht verknüpfen.",
+      "emailNotVerified": "Bestätige zuerst deine E-Mail-Adresse und versuch es dann noch mal.",
+      "unavailable": "Verknüpfen geht gerade nicht. Versuch es später noch mal.",
+      "rateLimited": "Zu viele Versuche. Warte ein paar Minuten und versuch es dann noch mal.",
+      "failed": "Etwas ist schiefgelaufen. Versuch es noch mal."
+    },
+    "signedOut": {
+      "body": "Melde dich an, um diese Spende mit deinem Konto zu verknüpfen. Danach wählst du, ob dein Name und das Label Unterstützer*in auf deinem Profil und auf der Über-uns-Seite erscheinen.",
+      "cta": "Anmelden und Spende verknüpfen"
+    }
   }
 }

@@ -643,5 +643,41 @@
     "publishLinkMessage": "Cualquiera con el enlace puede abrir este plafón, aunque no aparezca en la búsqueda ni en el mapa. El enlace se forma con el nombre del plafón, así que no es secreto. Mantén su ubicación oculta si no quieres compartirla.",
     "publishLink": "Compartir enlace",
     "publishResourceMessage": "Cualquiera puede abrir esta sesión o este plafón. El resto de tu actividad privada sigue limitado a las personas que apruebes."
+  },
+  "supporter": {
+    "title": "Reconocimiento de apoyo",
+    "intro": "¿Aportaste en la página de apoyo? Vincúlalo a esta cuenta y elige si tu nombre y la etiqueta Mecenas se muestran públicamente. La etiqueta es un agradecimiento y no cambia nada más en la app.",
+    "status": {
+      "loading": "Comprobando tu apoyo…",
+      "error": "Ahora mismo no podemos cargar tu apoyo. Inténtalo más tarde.",
+      "none": "Todavía no hay ningún aporte vinculado a esta cuenta.",
+      "monthly": "Tu aporte mensual está vinculado a esta cuenta.",
+      "monthlyEnding": "Tu aporte mensual está vinculado y termina al final de este periodo de facturación.",
+      "until": "Tu etiqueta Mecenas dura hasta el {{date}}.",
+      "current": "Apoyas Boardsesh. Gracias.",
+      "ended": "Tu apoyo ha terminado. Gracias por aportar.",
+      "confirming": "Stripe puede tardar un minuto en avisarnos de un aporte nuevo. Recarga esta página en un rato o vincúlalo abajo."
+    },
+    "visibility": {
+      "label": "Mostrar mi nombre y la etiqueta Mecenas",
+      "hint": "Mientras apoyes Boardsesh, tu nombre de Boardsesh y la etiqueta Mecenas se muestran en tu perfil y en la página Acerca de. Nunca mostramos importes. Desactivado hasta que lo actives.",
+      "error": "No se ha guardado. Inténtalo de nuevo."
+    },
+    "link": {
+      "cta": "¿Ya aportaste? Vincúlalo a tu cuenta",
+      "pending": "Buscando en Stripe…",
+      "hint": "Buscamos pagos hechos con {{email}}.",
+      "linked": "Encontrado. Tu apoyo está vinculado a esta cuenta.",
+      "expired": "Encontramos tu apoyo anterior, pero su tiempo ya ha terminado.",
+      "notFound": "No encontramos ningún pago hecho con {{email}}. Un aporte pagado con otro correo no se puede vincular desde aquí.",
+      "emailNotVerified": "Primero verifica tu correo y vuelve a intentarlo.",
+      "unavailable": "Ahora mismo no se puede vincular. Inténtalo más tarde.",
+      "rateLimited": "Demasiados intentos. Espera unos minutos y vuelve a intentarlo.",
+      "failed": "Algo ha fallado. Inténtalo de nuevo."
+    },
+    "signedOut": {
+      "body": "Inicia sesión para vincular este aporte a tu cuenta. Después eliges si tu nombre y la etiqueta Mecenas se muestran en tu perfil y en la página Acerca de.",
+      "cta": "Inicia sesión para vincular tu aporte"
+    }
   }
 }

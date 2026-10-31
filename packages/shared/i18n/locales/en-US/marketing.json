@@ -214,6 +214,13 @@
       "title": "What's next",
       "body": "More boards, better offline, and getting your data out as easily as it went in. The roadmap is public and the arguments about it happen on Discord.",
       "cta": "Read the roadmap"
+    },
+    "supporters": {
+      "title": "Supporters",
+      "body": "Thanks to the climbers who chip in to keep Boardsesh going and chose to be named here.",
+      "accountsTitle": "Climbers on Boardsesh",
+      "githubTitle": "GitHub Sponsors",
+      "cta": "Chip in on the Support page →"
     }
   },
   "support": {

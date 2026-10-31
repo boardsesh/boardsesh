@@ -214,6 +214,13 @@
       "title": "Qué viene ahora",
       "body": "Más plafones, mejor modo sin conexión y poder sacar tus datos tan fácil como entraron. La hoja de ruta es pública y se discute en Discord.",
       "cta": "Lee la hoja de ruta"
+    },
+    "supporters": {
+      "title": "Mecenas",
+      "body": "Gracias a quienes escalan y aportan para que Boardsesh siga adelante y eligieron aparecer aquí.",
+      "accountsTitle": "En Boardsesh",
+      "githubTitle": "GitHub Sponsors",
+      "cta": "Aporta en la página de apoyo →"
     }
   },
   "support": {

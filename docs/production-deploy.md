@@ -774,6 +774,11 @@ They never go in the repo, the i18n catalogs, an issue or an analytics event.
   `utm_source=<src>`, where `src` is the page's own `?src=` lowercased and cut
   to `[a-z0-9-]`, at most 40 characters, and `web-support` when empty. The
   app uses `app-<surface>`, the homepage banner `web-home-banner`.
+- **Signed-in linking.** The buttons point at `/support/go?link=<key>&src=<src>`,
+  never at Stripe directly. For a signed-in visitor that route swaps
+  `client_reference_id` for a supporter claim id and adds `prefilled_email`, so
+  the payment links to the account; signed out, or if the claim fails, it
+  redirects exactly as above. See [supporters.md](./supporters.md#web).
 - **Thank-you state.** Set each Payment Link's after-payment redirect to
   `https://www.boardsesh.com/support?thanks=1` (keep any `src`), and the page
   opens with a short thank-you card.

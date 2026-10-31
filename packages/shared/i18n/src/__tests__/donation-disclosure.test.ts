@@ -21,8 +21,12 @@ const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'l
 
 type Catalog = Record<string, unknown>;
 
+function loadCatalog(locale: string, namespace: string): Catalog {
+  return JSON.parse(readFileSync(join(LOCALES_DIR, locale, `${namespace}.json`), 'utf8'));
+}
+
 function loadMarketing(locale: string): Catalog {
-  return JSON.parse(readFileSync(join(LOCALES_DIR, locale, 'marketing.json'), 'utf8'));
+  return loadCatalog(locale, 'marketing');
 }
 
 function readString(catalog: Catalog, dottedKey: string): string {
@@ -57,6 +61,14 @@ const PERKS_LANGUAGE: Record<string, RegExp> = {
   es: /desbloquea|acceso anticipado|soporte prioritario|exclusiv|recompensa|early access|unlock/i,
   fr: /débloque|accès anticipé|support prioritaire|exclusi|récompense|early access|unlock/i,
   de: /schalte.{0,12}frei|freischalt|früher zugang|vorrangig|exklusiv|belohnung|early access|unlock/i,
+};
+
+/** Each locale's "amounts are never shown" on the public-credit switch. */
+const AMOUNTS_NEVER_SHOWN: Record<string, RegExp> = {
+  'en-US': /amounts are never shown/i,
+  es: /nunca mostramos importes/i,
+  fr: /montants ne sont jamais affichés/i,
+  de: /beträge zeigen wir nie/i,
 };
 
 /** Cardinals that would turn the rails heading into a promise, per locale. */
@@ -125,7 +137,44 @@ const SUPPORT_COPY_KEYS = [
   // The monthly banner on the homepage.
   'home.supportBanner.text',
   'home.supportBanner.cta',
+  // The /about supporter list.
+  'about.supporters.title',
+  'about.supporters.body',
+  'about.supporters.accountsTitle',
+  'about.supporters.cta',
 ];
+
+/**
+ * Every string under `prefix`, as `[dottedKey, copy]` pairs, so a key added
+ * later is checked without anyone remembering to list it.
+ */
+function collectStrings(catalog: Catalog, prefix: string): Array<[string, string]> {
+  const collected: Array<[string, string]> = [];
+  const walk = (node: unknown, path: string) => {
+    if (typeof node === 'string') {
+      collected.push([path, node]);
+      return;
+    }
+    if (typeof node !== 'object' || node === null) return;
+    for (const [segment, child] of Object.entries(node)) walk(child, `${path}.${segment}`);
+  };
+  let root: unknown = catalog;
+  for (const segment of prefix.split('.')) {
+    root = typeof root === 'object' && root !== null ? (root as Record<string, unknown>)[segment] : undefined;
+  }
+  walk(root, prefix);
+  return collected;
+}
+
+/**
+ * The supporter panel (`settings` namespace `supporter.*`): the `/support`
+ * thank-you card and `/settings`. It names the Supporter tag, so it is the
+ * copy most likely to drift into selling it. Every string under it is checked.
+ */
+const SUPPORTER_PANEL_PREFIX = 'supporter';
+
+/** Words a thank-you tag must never sit beside, in any locale (the tag is a label, not a tier). */
+const TAG_PERKS_LANGUAGE = /priority|premium|faster|prioritari|premium|plus rapide|schneller|más rápido/i;
 
 describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale) => {
   const catalog = loadMarketing(locale);
@@ -148,6 +197,22 @@ describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale
     for (const key of SUPPORT_COPY_KEYS) {
       expect(readString(catalog, key), `${locale}: ${key} must not promise a perk`).not.toMatch(PERKS_LANGUAGE[locale]);
     }
+  });
+
+  it('keeps the supporter panel a thank-you, not a perk', () => {
+    const panelStrings = collectStrings(loadCatalog(locale, 'settings'), SUPPORTER_PANEL_PREFIX);
+    expect(panelStrings.length).toBeGreaterThan(20);
+    for (const [key, copy] of panelStrings) {
+      expect(copy, `${locale}: ${key} must not promise a perk`).not.toMatch(PERKS_LANGUAGE[locale]);
+      expect(copy, `${locale}: ${key} must not promise a perk`).not.toMatch(TAG_PERKS_LANGUAGE);
+    }
+  });
+
+  // Public credit is opt-in. The switch's hint must say amounts never show, so
+  // nobody turns it on expecting a number beside their name.
+  it('says amounts are never shown beside public credit', () => {
+    const hint = readString(loadCatalog(locale, 'settings'), 'supporter.visibility.hint');
+    expect(hint).toMatch(AMOUNTS_NEVER_SHOWN[locale]);
   });
 
   // `withBrandTitle` in the web app appends " | Boardsesh" unless the title

@@ -643,5 +643,41 @@
     "publishLinkMessage": "Anyone with the link can open this board, even though it stays off search and the map. The link is built from the board's name, so it isn't secret. Keep its location hidden unless you choose to share it.",
     "publishLink": "Share by link",
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
+  },
+  "supporter": {
+    "title": "Supporter credit",
+    "intro": "Chipped in on the Support page? Link it to this account, then choose whether your name and a Supporter tag show publicly. The tag is a thank-you and changes nothing else in the app.",
+    "status": {
+      "loading": "Checking your support…",
+      "error": "We couldn't load your support right now. Try again later.",
+      "none": "No gift is linked to this account yet.",
+      "monthly": "Your monthly support is linked to this account.",
+      "monthlyEnding": "Your monthly support is linked and stops at the end of this billing period.",
+      "until": "Your Supporter tag runs until {{date}}.",
+      "current": "You're a supporter. Thank you.",
+      "ended": "Your support has run out. Thanks for chipping in.",
+      "confirming": "Stripe can take a minute to tell us about a new gift. Refresh this page soon, or link it below."
+    },
+    "visibility": {
+      "label": "Show my name and a Supporter tag",
+      "hint": "While you're a supporter, your Boardsesh name and a Supporter tag show on your profile and on the About page. Amounts are never shown. Off until you switch it on.",
+      "error": "That didn't save. Try again."
+    },
+    "link": {
+      "cta": "Already gave? Link it to your account",
+      "pending": "Looking in Stripe…",
+      "hint": "We look for payments made with {{email}}.",
+      "linked": "Found it. Your support is linked to this account.",
+      "expired": "We found your past support, but its time has run out.",
+      "notFound": "We found no payment made with {{email}}. A gift paid with another email can't be linked from here.",
+      "emailNotVerified": "Verify your email first, then try again.",
+      "unavailable": "Linking isn't available right now. Try again later.",
+      "rateLimited": "Too many tries. Wait a few minutes, then try again.",
+      "failed": "Something went wrong. Try again."
+    },
+    "signedOut": {
+      "body": "Sign in to link this gift to your account. Then you choose whether your name and a Supporter tag show on your profile and the About page.",
+      "cta": "Sign in to link your gift"
+    }
   }
 }
