@@ -284,6 +284,151 @@ describe('physical iPhone request diagnostics', () => {
   });
 });
 
+describe('fresh iPhone element-query retries', () => {
+  const stale = () =>
+    Response.json({ value: { error: 'stale element reference', message: 'private-stale-detail' } }, { status: 404 });
+  const visible = () => Response.json({ value: [{ ELEMENT: 'fresh-element' }] });
+  const negative = (filename: string, timeout: number) =>
+    writeFileSync(
+      filename,
+      `appId: \${APP_ID}\n---\n- extendedWaitUntil:\n    notVisible:\n      id: disappearing-control\n    timeout: ${timeout}\n`,
+    );
+
+  it('requires a fresh empty result after stale and clamps the retry to the original remaining deadline', async () => {
+    vi.useFakeTimers();
+    const timeouts = vi.spyOn(AbortSignal, 'timeout');
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => {
+      if (++queries === 1) {
+        vi.setSystemTime(Date.now() + 12322);
+        return stale();
+      }
+      return Response.json({ value: [] });
+    });
+    negative(harness.flow, 20000);
+    const completed = harness.driver.flow(harness.flow);
+    await vi.advanceTimersByTimeAsync(250);
+    await completed;
+    expect(queries).toBe(2);
+    expect(timeouts.mock.calls.at(-1)).toEqual([7428]);
+    expect(harness.events()).toContain('"kind":"ios-query-retry"');
+    expect(harness.events()).not.toContain('private-stale-detail');
+  });
+
+  it('does not satisfy a negative assertion when the fresh query still finds the control', async () => {
+    vi.useFakeTimers();
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => (++queries === 1 ? stale() : visible()));
+    negative(harness.flow, 1000);
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await completed).toMatchObject({ message: 'Deadline exceeded: iPhone extendedWaitUntil' });
+    expect(queries).toBeGreaterThan(1);
+  });
+
+  it('fails persistent stale queries as infrastructure after at most three attempts', async () => {
+    vi.useFakeTimers();
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => {
+      queries++;
+      return stale();
+    });
+    negative(harness.flow, 30000);
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await completed).toMatchObject({ kind: 'infrastructure', webdriverError: 'stale element reference' });
+    expect(queries).toBe(3);
+  });
+
+  it('stops a stale retry sequence at the shared assertion deadline', async () => {
+    vi.useFakeTimers();
+    const timeouts = vi.spyOn(AbortSignal, 'timeout');
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => {
+      queries++;
+      vi.setSystemTime(Date.now() + 400);
+      return stale();
+    });
+    negative(harness.flow, 700);
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await completed).toMatchObject({ kind: 'infrastructure', webdriverError: 'stale element reference' });
+    expect(queries).toBe(2);
+    expect(timeouts.mock.calls.at(-1)).toEqual([50]);
+  });
+
+  it('rejects even a fresh empty result received after the assertion deadline', async () => {
+    vi.useFakeTimers();
+    const harness = await diagnosticDriver(async () => {
+      vi.setSystemTime(Date.now() + 1001);
+      return Response.json({ value: [] });
+    });
+    negative(harness.flow, 1000);
+    await expect(harness.driver.flow(harness.flow)).rejects.toThrow('Deadline exceeded');
+  });
+
+  it('never replays a stale click after finding a fresh element', async () => {
+    let queries = 0,
+      clicks = 0;
+    const harness = await diagnosticDriver(async (url) => {
+      if (url.pathname.endsWith('/elements')) {
+        queries++;
+        return visible();
+      }
+      if (url.pathname.endsWith('/click')) {
+        clicks++;
+        return stale();
+      }
+      throw new Error('Unexpected route');
+    });
+    writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- tapOn:\n    id: real-control\n');
+    await expect(harness.driver.flow(harness.flow)).rejects.toMatchObject({
+      kind: 'infrastructure',
+      webdriverError: 'stale element reference',
+    });
+    expect(queries).toBe(1);
+    expect(clicks).toBe(1);
+    expect(harness.events()).not.toContain('"kind":"ios-query-retry"');
+  });
+
+  it('rejects a late conditional empty result before any nested tap', async () => {
+    vi.useFakeTimers();
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => {
+      if (++queries === 1) return stale();
+      vi.setSystemTime(Date.now() + 15000);
+      return Response.json({ value: [] });
+    });
+    writeFileSync(
+      harness.flow,
+      'appId: ${APP_ID}\n---\n- runFlow:\n    when:\n      notVisible:\n        id: disappearing-control\n    commands:\n      - tapOn:\n          id: real-control\n',
+    );
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await completed).toMatchObject({
+      kind: 'infrastructure',
+      message: 'Deadline exceeded: iPhone element query',
+    });
+    expect(queries).toBe(2);
+    expect(harness.calls.some((call) => call.path.endsWith('/click'))).toBe(false);
+  });
+
+  it('does not retry an invalid session response from the query endpoint', async () => {
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => {
+      queries++;
+      return Response.json({ value: { error: 'invalid session id' } }, { status: 404 });
+    });
+    negative(harness.flow, 30000);
+    await expect(harness.driver.flow(harness.flow)).rejects.toMatchObject({
+      kind: 'infrastructure',
+      webdriverError: 'invalid session id',
+    });
+    expect(queries).toBe(1);
+    expect(harness.events()).not.toContain('"kind":"ios-query-retry"');
+  });
+});
+
 describe('owned iPhone UI-driver staging', () => {
   it('preserves the profiling runner default and its existing handoff shape', () => {
     const { source, stage } = fixture();

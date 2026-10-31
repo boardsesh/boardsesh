@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { parseAllDocuments, stringify } from 'yaml';
 import { selectorPredicate, swipeActions, percentagePoint } from '../lib/mobile-profile-wda';
 import { record, string, type Phone, type QaConfig, type Role } from './config';
-import { Evidence, QaFailure, until, requireRunning } from './evidence';
+import { Evidence, QaFailure, requireRunning } from './evidence';
 
 class CommandExitFailure extends QaFailure {}
 const ownedCommands = new Set<{ stop: () => void; stopped: Promise<void> }>();
@@ -587,23 +587,76 @@ export class IosDriver implements Driver {
     });
     this.session = string(record(created.value).sessionId ?? created.sessionId);
   }
-  private async elements(selector: unknown): Promise<string[]> {
+  private async elements(selector: unknown, timeoutMs: number): Promise<string[]> {
     const literal = typeof selector === 'string' ? selector : record(selector);
-    const response = await this.request(this.path('/elements'), 'POST', {
-      using: 'predicate string',
-      value: selectorPredicate(literal),
-    });
+    const response = await this.request(
+      this.path('/elements'),
+      'POST',
+      {
+        using: 'predicate string',
+        value: selectorPredicate(literal),
+      },
+      timeoutMs,
+    );
     if (!Array.isArray(response.value)) throw new QaFailure('Invalid WDA selector response', 'infrastructure');
     return response.value.map((entry) => {
       const element = record(entry);
       return string(element['element-6066-11e4-a52e-4f735466cecf'] ?? element.ELEMENT);
     });
   }
+  private async freshElements(selector: unknown, deadline: number): Promise<string[]> {
+    let stale: WdaRequestFailure | undefined;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      requireRunning();
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      try {
+        const elements = await this.elements(selector, Math.min(15_000, remainingMs));
+        requireRunning();
+        if (Date.now() > deadline) throw new QaFailure('Deadline exceeded: iPhone element query', 'infrastructure');
+        return elements;
+      } catch (error) {
+        // A disappearing native view can go stale while WDA serializes its
+        // find result. Only repeat this read; never replay an interaction.
+        if (!(error instanceof WdaRequestFailure) || error.webdriverError !== 'stale element reference') throw error;
+        stale = error;
+        if (attempt === 3 || Date.now() >= deadline) break;
+        this.evidence.event('ios-query-retry', {
+          ...this.requestContext,
+          reason: 'stale element reference',
+          attempt,
+          remainingMs: deadline - Date.now(),
+        });
+        await new Promise((resume) => setTimeout(resume, Math.min(250, deadline - Date.now())));
+      }
+    }
+    throw stale ?? new QaFailure('iPhone query deadline exhausted', 'infrastructure');
+  }
+  private async waitForElements(
+    selector: unknown,
+    matches: (elements: string[]) => boolean,
+    timeoutMs: number,
+    label: string,
+  ): Promise<string[]> {
+    const deadline = Date.now() + timeoutMs;
+    do {
+      requireRunning();
+      if (Date.now() >= deadline) break;
+      const elements = await this.freshElements(selector, deadline);
+      // Even a late successful response cannot satisfy an expired assertion.
+      if (Date.now() > deadline) break;
+      if (matches(elements)) return elements;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await new Promise((resume) => setTimeout(resume, Math.min(250, remainingMs)));
+    } while (Date.now() < deadline);
+    throw new QaFailure(`Deadline exceeded: ${label}`);
+  }
   private async element(selector: unknown): Promise<string> {
     const fields = typeof selector === 'string' ? {} : record(selector);
     const index = Number(fields.index ?? 0);
-    return await until(
-      () => this.elements(selector),
+    return await this.waitForElements(
+      selector,
       (matches) => Boolean(matches[index]),
       15_000,
       'iPhone control visible',
@@ -638,8 +691,8 @@ export class IosDriver implements Driver {
         const selector = action === 'extendedWaitUntil' ? (wait.visible ?? wait.notVisible) : argument;
         const wanted = action === 'assertVisible' || Boolean(wait.visible);
         const index = typeof selector === 'string' ? 0 : Number(record(selector).index ?? 0);
-        await until(
-          () => this.elements(selector),
+        await this.waitForElements(
+          selector,
           (matches) => Boolean(matches[index]) === wanted,
           Number(wait.timeout ?? 15_000),
           `iPhone ${action}`,
@@ -704,7 +757,10 @@ export class IosDriver implements Driver {
         const include = typeof argument === 'string' ? { file: argument } : record(argument);
         if (include.when) {
           const when = record(include.when);
-          if (Boolean((await this.elements(when.visible ?? when.notVisible)).length) !== Boolean(when.visible))
+          if (
+            Boolean((await this.freshElements(when.visible ?? when.notVisible, Date.now() + 15_000)).length) !==
+            Boolean(when.visible)
+          )
             continue;
         }
         if (Array.isArray(include.commands)) await this.execute(include.commands.map(record), flow, `${stepNumber}.`);
