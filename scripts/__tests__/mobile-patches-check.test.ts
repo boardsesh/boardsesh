@@ -257,6 +257,52 @@ private func postAppContextDestroysOnce() {
   });
 });
 
+describe('the shipped Expo async-function Swift compiler guard', () => {
+  const coreRule = REAL_RULES.find(
+    (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Functions/AsyncFunctionDefinition.swift',
+  )!;
+  const source = `
+      self.call(appContext, this: this, arguments: arguments) { [promise] result in
+        switch consume result {
+        case .success(let value):
+          promise.resolve(value)
+        case .failure(let error):
+          promise.reject(error)
+        }
+      }
+`;
+
+  function checkSource(installedSource: string) {
+    return checkPatchesApplied(
+      [coreRule],
+      makeEnv({
+        patchedDependencies: { [coreRule.patchedKey]: `patches/${coreRule.patchedKey}.patch` },
+        versions: { 'expo-modules-core': '58.0.28' },
+        files: { [`expo-modules-core::${coreRule.file}`]: installedSource },
+      }),
+    );
+  }
+
+  it('accepts upstream inferred failure binding with consuming success and same-error rejection', () => {
+    expect(checkSource(source).errors).toEqual([]);
+  });
+
+  it('rejects restoring the existential pattern cast that crashes Swift SILGen', () => {
+    const unsafeSource = source.replace('case .failure(let error):', 'case .failure(let error as any Error):');
+    expect(checkSource(unsafeSource).errors).toContainEqual(expect.stringContaining('contains forbidden source'));
+  });
+
+  it.each([
+    ['switch consume result {', 'switch result {'],
+    ['promise.resolve(value)', 'promise.resolve(nil)'],
+    ['promise.reject(error)', 'promise.reject(UnexpectedException(error))'],
+  ])('rejects changing the async result contract: %s', (original, replacement) => {
+    expect(checkSource(source.replace(original, replacement)).errors).toContainEqual(
+      expect.stringContaining('patch NOT applied'),
+    );
+  });
+});
+
 describe('checkPatchesApplied', () => {
   it('passes when configured, version matches, and all sentinels are present', () => {
     const env = makeEnv({

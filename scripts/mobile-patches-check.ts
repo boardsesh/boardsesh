@@ -134,6 +134,20 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'expo-modules-core@58.0.28',
   },
+  {
+    package: 'expo-modules-core',
+    file: 'ios/Core/Functions/AsyncFunctionDefinition.swift',
+    // The existential pattern cast crashes Swift 6.4.2 SILGen when consuming
+    // FunctionCallResult. Match upstream's inferred Exception binding while
+    // preserving ownership and rejecting the same error through the promise.
+    sentinels: [
+      'switch consume result {',
+      'case .success(let value):\n          promise.resolve(value)',
+      'case .failure(let error):\n          promise.reject(error)',
+    ],
+    forbiddenSubstrings: ['case .failure(let error as any Error):'],
+    patchedKey: 'expo-modules-core@58.0.28',
+  },
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
   ...(['src/index.tsx', 'lib/module/index.js', 'lib/commonjs/index.js'] as const).map((file) => ({

@@ -259,6 +259,14 @@ builds. The RN scheduler, Screens, fingerprint, dev launcher, Updates, image, UI
 and modules-core patches are retained for the new versions. Both platforms need
 matching replacement native binaries before receiving bundles for these fingerprints.
 
+The modules-core patch also follows upstream's `AsyncFunctionDefinition` failure
+pattern: bind the existing `Exception` directly instead of casting it to `any Error`
+inside `switch consume result`. The redundant existential pattern crashes Swift
+6.4.2's SIL generation during Xcode 27.2 source builds. Preserve `consume` for the
+noncopyable success value and keep the runtime-teardown patch alongside this fix.
+The installed-source guard rejects the crashing pattern. Upstream reference:
+[`AsyncFunctionDefinition.swift`](https://github.com/expo/expo/blob/sdk-58/packages/expo-modules-core/ios/Core/Functions/AsyncFunctionDefinition.swift).
+
 Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
 manifest required by iOS 27; generated native projects must be regenerated after
 this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
