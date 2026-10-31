@@ -6,7 +6,7 @@ The scenarios come from [release QA #7010](https://github.com/boardsesh/boardses
 
 ## Prepare once
 
-1. Connect and unlock both phones over USB. Enable their existing development/trust permissions, and sign in normally as the two QA accounts. The runner refuses an unexpected account and never signs it out, clears storage, or guesses a PIN. Use app builds containing the new test identifiers; older store builds fail the selector checks.
+1. Connect and unlock both phones over USB. Enable development/trust access, grant Bluetooth/Nearby devices access and Android board notifications, and sign in normally as the two QA accounts. The runner refuses an unexpected account and never signs it out, clears storage, or guesses a PIN. Use app builds containing the new test identifiers; older store builds fail the selector checks.
 2. Stage the pinned physical-iPhone driver with `vp run qa:boards:ios-driver -- stage SOURCE STAGE IPHONE_UDID TEAM_ID`. Run the exact build command it prints, then `vp run qa:boards:ios-driver -- prepare-launch STAGE`. Run both returned launch and USB-forward commands in separate terminals. The standard-library USB helper needs no `iproxy` installation. The runner validates its device process and refuses an existing WDA session. Standard Maestro cannot control physical iPhones; Android uses the installed Maestro CLI.
 3. Back up the ESP32 flash before changing firmware. Build and upload `waveshare-amoled-gym` using the pioarduino Core version supported by its platform; retain its partition layout, gym key, WiFi settings and asset cache. Do not erase flash. USB diagnostics must report QA schema 1 and the three production QA board UUIDs.
 4. Run `vp run qa:boards -- init`, then inspect `.boardsesh/board-qa.json`. Replace the device/serial placeholders and check app IDs, adb path and WDA URL. The example defaults to the separate Android development app; the Play app stays installed.
@@ -42,6 +42,8 @@ Public climb links open private previews. The driving check queues a pinned succ
 MoonBoard multi-chunk tests require more than one received write. Diagnostic colors are firmware-decoded colors: Aurora v3 red/green peak at 252 after quantization, not 255. Timing artifacts measure host-request-to-observation, including UI-driver and polling overhead; they are not radio durations or latency percentiles.
 
 The passive observer only queries/subscribes. It never joins the crew, claims a wall, writes presence, or logs a tick. Histories are checked relative to their starting sequences; existing records are retained. No climbing activity is invented through direct backend mutations.
+
+The observer uses the app's five-second protocol keepalive and answers native WebSocket pings. It records socket lifecycle, close codes and reasons. A closed connection or missing heartbeat fails the run as infrastructure; it does not reconnect across a gap in the evidence.
 
 Native versions and launched Expo runtime/update identifiers are recorded separately. Metro builds identify their development mode; the checkout SHA in `run.json` is not independent proof of which JavaScript a remote Metro client loaded. Keep development-source and installed-release verdicts distinct.
 

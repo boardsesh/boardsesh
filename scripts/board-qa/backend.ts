@@ -3,6 +3,7 @@ import { Kind, parse } from 'graphql';
 import { getAuroraBluetoothPacket } from '../../packages/shared/ble-protocol/src/aurora';
 import { getMoonboardBluetoothPacket } from '../../packages/shared/ble-protocol/src/moonboard';
 import { getLedPlacements } from '../../packages/board-constants/src/led-placements';
+import { KEEP_ALIVE_MS } from '../../packages/shared/graphql-client/src/constants';
 import { record, string, type Board, type CatalogClimb, type Led, type QaConfig } from './config';
 import { canonical, Evidence, QaFailure } from './evidence';
 
@@ -152,6 +153,10 @@ export class Backend {
   private socket?: WebSocket;
   private socketError?: Error;
   private ack?: () => void;
+  private cancelObserverAck?: () => void;
+  private observerKeepalive?: ReturnType<typeof setInterval>;
+  private observerPongDeadline?: ReturnType<typeof setTimeout>;
+  private observerClosing = false;
   readonly events: Array<{ boardUuid: string; event: Record<string, unknown> }> = [];
   constructor(
     private config: QaConfig,
@@ -282,24 +287,79 @@ export class Backend {
     return boards;
   }
   async snapshot(board: Board): Promise<Snapshot> {
-    if (this.socketError) throw new QaFailure(this.socketError.message, 'infrastructure');
+    this.requireHealthyObserver();
     const result = await this.query(QA_QUERIES.wall, { boardId: board.boardId, boardUuid: board.uuid });
+    this.requireHealthyObserver();
     return parseSnapshot(result);
   }
   async observe(boards: Board[]): Promise<void> {
+    if (this.socket)
+      throw new QaFailure('Board observer already opened; reconnect would hide an evidence gap', 'infrastructure');
     const url = new URL(this.config.backendUrl);
     url.protocol = 'wss:';
-    const socket = new WebSocket(url, 'graphql-transport-ws');
+    // Match the app client's read-only protocol keepalive. Native control-frame
+    // pong is also required by setup.ts/useServer and remains ws-managed.
+    const socket = new WebSocket(url, 'graphql-transport-ws', { autoPong: true });
     this.socket = socket;
+    const startedAt = Date.now();
+    let acknowledgedAt: number | undefined;
+    let lastMessageAt: number | undefined;
+    let lastNativePingAt: number | undefined;
+    let lastNativePongAt: number | undefined;
+    let lastProtocolPongAt: number | undefined;
+    let heartbeatSequence = 0;
+    let pendingHeartbeat: number | undefined;
+    let nextHeartbeatAt = 0;
+    const lifecycle = (state: string, details: Record<string, unknown> = {}) => {
+      const now = Date.now();
+      this.evidence.event('board-observer', {
+        state,
+        elapsedMs: now - startedAt,
+        acknowledgedAgoMs: acknowledgedAt === undefined ? null : now - acknowledgedAt,
+        lastMessageAgoMs: lastMessageAt === undefined ? null : now - lastMessageAt,
+        lastNativePingAgoMs: lastNativePingAt === undefined ? null : now - lastNativePingAt,
+        lastNativePongAgoMs: lastNativePongAt === undefined ? null : now - lastNativePongAt,
+        lastProtocolPongAgoMs: lastProtocolPongAt === undefined ? null : now - lastProtocolPongAt,
+        ...details,
+      });
+    };
+    lifecycle('connecting', {
+      boardUuids: boards.map((board) => board.uuid),
+      protocolKeepaliveMs: KEEP_ALIVE_MS,
+      autoPong: true,
+    });
+    socket.on('ping', () => {
+      lastNativePingAt = Date.now();
+      lifecycle('native-ping-received');
+    });
+    socket.on('pong', () => {
+      lastNativePongAt = Date.now();
+      lifecycle('native-pong-received');
+    });
     socket.on('message', (raw) => {
       try {
         const bytes = Array.isArray(raw)
           ? Buffer.concat(raw)
           : Buffer.from(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw);
         const message = record(JSON.parse(bytes.toString('utf8')));
+        lastMessageAt = Date.now();
         if (message.type === 'connection_ack') this.ack?.();
-        else if (message.type === 'ping') socket.send(JSON.stringify({ type: 'pong' }));
-        else if (message.type === 'next') {
+        else if (message.type === 'ping') {
+          lifecycle('protocol-ping-received');
+          socket.send(
+            JSON.stringify({ type: 'pong', ...(message.payload === undefined ? {} : { payload: message.payload }) }),
+          );
+        } else if (message.type === 'pong') {
+          lastProtocolPongAt = Date.now();
+          const payload = message.payload === undefined ? {} : record(message.payload);
+          const matched = pendingHeartbeat !== undefined && payload.qaSequence === pendingHeartbeat;
+          if (matched) {
+            pendingHeartbeat = undefined;
+            if (this.observerPongDeadline) clearTimeout(this.observerPongDeadline);
+            this.observerPongDeadline = undefined;
+          }
+          lifecycle('protocol-pong-received', { matched });
+        } else if (message.type === 'next') {
           const payload = record(message.payload);
           if (payload.errors) throw new Error('Board subscription rejected');
           if (!boards.some((board) => board.uuid === message.id))
@@ -320,27 +380,76 @@ export class Backend {
         } else if (message.type === 'error' || message.type === 'complete')
           throw new Error('Board subscription ended unexpectedly');
       } catch {
-        this.socketError = new Error('Invalid or rejected board subscription evidence');
+        this.socketError ??= new Error('Invalid or rejected board subscription evidence');
+        lifecycle('protocol-failure');
+        this.clearObserverTimers();
       }
     });
     await new Promise<void>((resolveAck, reject) => {
-      const timer = setTimeout(
-        () => reject(new QaFailure('Observer connection acknowledgement timed out', 'infrastructure')),
-        20_000,
-      );
-      this.ack = () => {
+      const timer = setTimeout(() => {
+        this.ack = undefined;
+        this.cancelObserverAck = undefined;
+        this.socketError ??= new Error('Observer connection acknowledgement timed out');
+        lifecycle('acknowledgement-timeout');
+        reject(new QaFailure(this.socketError.message, 'infrastructure'));
+      }, 20_000);
+      this.cancelObserverAck = () => {
         clearTimeout(timer);
+        this.ack = undefined;
+        reject(new QaFailure('Board observer closed before acknowledgement', 'infrastructure'));
+      };
+      this.ack = () => {
+        if (this.observerClosing) {
+          this.cancelObserverAck?.();
+          return;
+        }
+        clearTimeout(timer);
+        this.ack = undefined;
+        this.cancelObserverAck = undefined;
+        acknowledgedAt = Date.now();
+        lifecycle('acknowledged');
+        nextHeartbeatAt = Date.now() + KEEP_ALIVE_MS;
+        this.observerKeepalive = setInterval(() => {
+          const lagMs = Math.max(0, Date.now() - nextHeartbeatAt);
+          nextHeartbeatAt = Date.now() + KEEP_ALIVE_MS;
+          if (socket.readyState !== WebSocket.OPEN || pendingHeartbeat !== undefined) return;
+          pendingHeartbeat = ++heartbeatSequence;
+          lifecycle('protocol-ping-sent', { sequence: pendingHeartbeat, eventLoopLagMs: lagMs });
+          this.observerPongDeadline = setTimeout(() => {
+            this.socketError ??= new Error('Board observer protocol heartbeat response timed out');
+            lifecycle('protocol-pong-timeout', { sequence: pendingHeartbeat });
+            this.clearObserverTimers();
+            socket.close(1000, 'QA observer heartbeat timeout');
+          }, 20_000);
+          socket.send(JSON.stringify({ type: 'ping', payload: { qaSequence: pendingHeartbeat } }));
+        }, KEEP_ALIVE_MS);
         resolveAck();
       };
-      socket.on('error', () => {
+      socket.on('error', (error) => {
         clearTimeout(timer);
-        this.socketError = new Error('Board observer socket failed');
+        this.ack = undefined;
+        this.cancelObserverAck = undefined;
+        this.socketError ??= new Error('Board observer socket failed');
+        this.clearObserverTimers();
+        lifecycle('error', { message: this.evidence.redact(error.message).slice(0, 512) });
         reject(new QaFailure('Board observer socket failed', 'infrastructure'));
       });
-      socket.on('close', () => {
-        this.socketError = new Error('Board observer socket closed');
+      socket.on('close', (code, reason) => {
+        clearTimeout(timer);
+        this.ack = undefined;
+        this.cancelObserverAck = undefined;
+        this.clearObserverTimers();
+        const description = this.evidence.redact(reason.toString('utf8')).slice(0, 256);
+        lifecycle('closed', { code, reason: description, requestedByRunner: this.observerClosing });
+        if (!this.observerClosing) {
+          this.socketError ??= new Error(
+            `Board observer socket closed (code ${code}, reason ${description || 'none'})`,
+          );
+          reject(new QaFailure(this.socketError.message, 'infrastructure'));
+        }
       });
-      socket.on('open', () =>
+      socket.on('open', () => {
+        lifecycle('opened');
         socket.send(
           JSON.stringify({
             type: 'connection_init',
@@ -349,8 +458,8 @@ export class Backend {
               clientIdentity: 'boardsesh-local-qa-observer',
             },
           }),
-        ),
-      );
+        );
+      });
     });
     for (const board of boards)
       socket.send(
@@ -360,12 +469,26 @@ export class Backend {
           payload: { query: QA_SUBSCRIPTION, variables: { boardId: board.boardId, boardUuid: board.uuid } },
         }),
       );
+    lifecycle('subscribed', { boardUuids: boards.map((board) => board.uuid) });
   }
   async session(id: string): Promise<Record<string, unknown> | null> {
     return (await this.query(QA_QUERIES.session, { id })).session as Record<string, unknown> | null;
   }
   close(): void {
-    this.socket?.removeAllListeners();
-    this.socket?.close();
+    this.observerClosing = true;
+    this.cancelObserverAck?.();
+    this.cancelObserverAck = undefined;
+    this.ack = undefined;
+    this.clearObserverTimers();
+    this.socket?.close(1000, 'QA observer finished');
+  }
+  private clearObserverTimers(): void {
+    if (this.observerKeepalive) clearInterval(this.observerKeepalive);
+    if (this.observerPongDeadline) clearTimeout(this.observerPongDeadline);
+    this.observerKeepalive = undefined;
+    this.observerPongDeadline = undefined;
+  }
+  private requireHealthyObserver(): void {
+    if (this.socketError) throw new QaFailure(this.socketError.message, 'infrastructure');
   }
 }

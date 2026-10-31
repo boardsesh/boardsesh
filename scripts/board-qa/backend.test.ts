@@ -19,10 +19,18 @@ import { Evidence } from './evidence';
 const socketState = vi.hoisted(() => ({
   sent: [] as Record<string, unknown>[],
   listeners: new Map<string, Array<(...args: unknown[]) => void>>(),
+  created: 0,
+  acknowledge: true,
+  protocolPongs: true,
+  options: [] as unknown[],
 }));
 vi.mock('ws', () => ({
   default: class {
-    constructor() {
+    static OPEN = 1;
+    readyState = 1;
+    constructor(_url: unknown, _protocol: unknown, options: unknown) {
+      socketState.created++;
+      socketState.options.push(options);
       queueMicrotask(() => socketState.listeners.get('open')?.forEach((listener) => listener()));
     }
     on(event: string, listener: (...args: unknown[]) => void) {
@@ -33,17 +41,26 @@ vi.mock('ws', () => ({
     send(encoded: string) {
       const message = JSON.parse(encoded) as Record<string, unknown>;
       socketState.sent.push(message);
-      if (message.type === 'connection_init')
+      if (message.type === 'connection_init' && socketState.acknowledge)
         queueMicrotask(() =>
           socketState.listeners
             .get('message')
             ?.forEach((listener) => listener(Buffer.from('{"type":"connection_ack"}'))),
         );
+      if (message.type === 'ping' && socketState.protocolPongs)
+        queueMicrotask(() =>
+          socketState.listeners
+            .get('message')
+            ?.forEach((listener) => listener(Buffer.from(JSON.stringify({ type: 'pong', payload: message.payload })))),
+        );
     }
     removeAllListeners() {
       socketState.listeners.clear();
     }
-    close() {}
+    close(code = 1000, reason = '') {
+      this.readyState = 3;
+      socketState.listeners.get('close')?.forEach((listener) => listener(code, Buffer.from(reason)));
+    }
   },
 }));
 
@@ -55,8 +72,13 @@ function evidence(): Evidence {
 }
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   socketState.sent.length = 0;
   socketState.listeners.clear();
+  socketState.created = 0;
+  socketState.acknowledge = true;
+  socketState.protocolPongs = true;
+  socketState.options.length = 0;
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -130,6 +152,114 @@ describe('independent physical packet evidence', () => {
 });
 
 describe('production observer contracts without network access', () => {
+  it('keeps one read-only observer alive using app-contract protocol pings and records both heartbeat layers', async () => {
+    vi.useFakeTimers();
+    const report = evidence();
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    await backend.observe([board]);
+    expect(socketState.options[0]).toEqual({ autoPong: true });
+    socketState.listeners.get('ping')?.forEach((listener) => listener(Buffer.from('native')));
+    socketState.listeners.get('pong')?.forEach((listener) => listener(Buffer.from('native')));
+    await vi.advanceTimersByTimeAsync(15_000);
+    const heartbeats = socketState.sent.filter((message) => message.type === 'ping');
+    expect(heartbeats).toHaveLength(3);
+    expect(heartbeats[0]).toMatchObject({ payload: { qaSequence: 1 } });
+    expect(
+      socketState.sent.every((message) => ['connection_init', 'subscribe', 'ping'].includes(String(message.type))),
+    ).toBe(true);
+    expect(socketState.created).toBe(1);
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).toContain('native-ping-received');
+    expect(saved).toContain('native-pong-received');
+    expect(saved).toContain('protocol-pong-received');
+    backend.close();
+    const before = socketState.sent.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(socketState.sent).toHaveLength(before);
+  });
+
+  it('retains close code/reason and timing, fails snapshots, and never reconnects over an evidence gap', async () => {
+    vi.useFakeTimers();
+    const report = evidence();
+    report.secret('private-reason-token');
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    await backend.observe([board]);
+    socketState.listeners
+      .get('close')
+      ?.forEach((listener) => listener(1012, Buffer.from('Restart private-reason-token')));
+    await expect(backend.snapshot(board)).rejects.toThrow('code 1012');
+    await expect(backend.observe([board])).rejects.toThrow('reconnect would hide');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(socketState.created).toBe(1);
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).toContain('"code":1012');
+    expect(saved).toContain('Restart [REDACTED]');
+    expect(saved).not.toContain('private-reason-token');
+    expect(saved).toContain('"requestedByRunner":false');
+    backend.close();
+  });
+
+  it('rejects closure before acknowledgement immediately rather than losing its code to a generic timeout', async () => {
+    socketState.acknowledge = false;
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    const observing = backend.observe([board]);
+    const failure = expect(observing).rejects.toThrow('code 4403');
+    socketState.listeners.get('close')?.forEach((listener) => listener(4403, Buffer.from('Forbidden')));
+    await failure;
+    backend.close();
+  });
+
+  it('fails closed when the observer dies during an in-flight HTTP snapshot', async () => {
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    await backend.observe([board]);
+    let finishQuery: (result: Record<string, unknown>) => void = () => {};
+    vi.spyOn(backend, 'query').mockImplementation(
+      () =>
+        new Promise((resolveQuery) => {
+          finishQuery = resolveQuery;
+        }),
+    );
+    const reading = backend.snapshot(board);
+    const failure = expect(reading).rejects.toThrow('code 1006');
+    socketState.listeners.get('close')?.forEach((listener) => listener(1006, Buffer.alloc(0)));
+    finishQuery(wall);
+    await failure;
+    backend.close();
+  });
+
+  it('cancels a pending acknowledgement on teardown and ignores a delayed acknowledgement', async () => {
+    vi.useFakeTimers();
+    socketState.acknowledge = false;
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    const observing = backend.observe([board]);
+    const failure = expect(observing).rejects.toThrow('closed before acknowledgement');
+    backend.close();
+    await failure;
+    const before = socketState.sent.length;
+    socketState.listeners.get('message')?.forEach((listener) => listener(Buffer.from('{"type":"connection_ack"}')));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(socketState.sent).toHaveLength(before);
+  });
+
+  it('answers server protocol pings and fails a missing matching heartbeat response without retrying', async () => {
+    vi.useFakeTimers();
+    const report = evidence();
+    const backend = new Backend(EXAMPLE_CONFIG, report);
+    await backend.observe([board]);
+    socketState.listeners
+      .get('message')
+      ?.forEach((listener) => listener(Buffer.from('{"type":"ping","payload":{"probe":1}}')));
+    expect(socketState.sent.at(-1)).toEqual({ type: 'pong', payload: { probe: 1 } });
+    socketState.protocolPongs = false;
+    await vi.advanceTimersByTimeAsync(25_000);
+    await expect(backend.snapshot(board)).rejects.toThrow('heartbeat response timed out');
+    expect(socketState.sent.filter((message) => message.type === 'ping')).toHaveLength(1);
+    expect(socketState.created).toBe(1);
+    const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
+    expect(saved).toContain('protocol-pong-timeout');
+    backend.close();
+  });
+
   it('fetches pinned UUIDs directly and never selects a namesake from search', async () => {
     const fixtures = [
       { name: 'Same name', uuid: 'first' },
