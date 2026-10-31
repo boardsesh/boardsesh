@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   treeRssKiB,
@@ -110,5 +111,15 @@ malformed`);
       }
     }
     expect(times).toEqual([0, 30_000, 60_000]);
+  });
+
+  it('bounds RSS and simulator-state sampling so metrics cannot hang the capture', () => {
+    const source = readFileSync('scripts/store-video-measure.ts', 'utf8');
+    const rssOptions = source.match(/spawnSync\('ps',\s*\[[^\]]+\],\s*\{([^}]+)\}/)?.[1];
+    const simulatorOptions = source.match(/spawnSync\('xcrun',\s*\[[^\]]+\],\s*\{([^}]+)\}/)?.[1];
+    for (const options of [rssOptions, simulatorOptions]) {
+      expect(options).toContain('timeout: 2000');
+      expect(options).toContain("killSignal: 'SIGKILL'");
+    }
   });
 });
