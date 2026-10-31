@@ -9,7 +9,11 @@ import {
   parseMonthlyLinks,
   parseStripeUrl,
   readSupportLinksConfig,
+  resolveSupportLinkKey,
   sanitizeSupportSrc,
+  supportGoHref,
+  supportLinkKey,
+  withSupportClaim,
   withSupportSource,
 } from '../support-links';
 
@@ -169,11 +173,23 @@ describe('buildSupportPageOptions', () => {
     STRIPE_DONATE_URL: LINK_A,
   });
 
-  it('tags every link with src', () => {
+  // Every Stripe button goes through /support/go, which links a signed-in
+  // giver's payment; the page never hands the browser a raw Payment Link.
+  it('points every button at /support/go with its key and src', () => {
     const options = buildSupportPageOptions({ config, src: 'web-home-banner', country: 'AU' });
-    const urls = [...(options.monthly.aud ?? []).map((link) => link.url), options.once.aud ?? ''];
-    for (const url of urls) {
-      expect(new URL(url).searchParams.get('client_reference_id')).toBe('web-home-banner');
+    expect((options.monthly.aud ?? []).map((link) => link.url)).toEqual([
+      '/support/go?link=monthly-aud-1&src=web-home-banner',
+      '/support/go?link=monthly-aud-2&src=web-home-banner',
+    ]);
+    expect(options.once.aud).toBe('/support/go?link=once-aud&src=web-home-banner');
+    expect(JSON.stringify(options)).not.toContain('stripe.com/test_');
+  });
+
+  it('keeps each env label beside its own key', () => {
+    const options = buildSupportPageOptions({ config, src: 'x', country: 'AU' });
+    for (const [index, link] of (options.monthly.usd ?? []).entries()) {
+      const key = new URL(link.url, 'https://boardsesh.com').searchParams.get('link');
+      expect(resolveSupportLinkKey(config, key)?.url).toBe([LINK_A, LINK_B][index]);
     }
   });
 
@@ -191,4 +207,74 @@ describe('buildSupportPageOptions', () => {
     expect(options.defaultCurrency).toBe('aud');
     expect(options.monthlyFirst).toBe(false);
   });
+});
+
+describe('support link keys', () => {
+  const config = readSupportLinksConfig({
+    SUPPORT_MONTHLY_LINKS_AUD: MONTHLY_JSON,
+    STRIPE_DONATE_URL_USD: LINK_B,
+  });
+
+  it('names monthly tiers from 1 and one-off links by currency', () => {
+    expect(supportLinkKey('monthly', 'aud', 2)).toBe('monthly-aud-2');
+    expect(supportLinkKey('once', 'usd')).toBe('once-usd');
+  });
+
+  it('resolves a key to the configured link with its cadence and currency', () => {
+    expect(resolveSupportLinkKey(config, 'monthly-aud-2')).toEqual({
+      url: LINK_B,
+      cadence: 'monthly',
+      currency: 'aud',
+    });
+    expect(resolveSupportLinkKey(config, 'once-usd')).toEqual({ url: LINK_B, cadence: 'once', currency: 'usd' });
+  });
+
+  // The allow-list: a key can only ever name a link the env listed.
+  it.each([
+    ['a tier past the end of the list', 'monthly-aud-3'],
+    ['tier zero', 'monthly-aud-0'],
+    ['a currency with no monthly list', 'monthly-usd-1'],
+    ['a currency with no one-off link', 'once-aud'],
+    ['a one-off key with a tier', 'once-usd-1'],
+    ['a monthly key without a tier', 'monthly-aud'],
+    ['a currency we do not take', 'once-eur'],
+    ['a URL', 'https://evil.example/pay'],
+    ['a Payment Link URL', LINK_A],
+    ['nothing', null],
+  ])('rejects %s', (_label, key) => {
+    expect(resolveSupportLinkKey(config, key)).toBeUndefined();
+  });
+
+  it('builds the button href with both params encoded', () => {
+    expect(supportGoHref('once-usd', 'web-support')).toBe('/support/go?link=once-usd&src=web-support');
+  });
+});
+
+describe('withSupportClaim', () => {
+  const CLAIM_ID = `sc_${'a1'.repeat(16)}`;
+
+  it('puts the claim in client_reference_id, keeps src as utm_source and prefills the email', () => {
+    const tagged = new URL(
+      withSupportClaim(LINK_A, { claimId: CLAIM_ID, src: 'web-support', email: 'climber@example.com' }),
+    );
+    expect(tagged.searchParams.get('client_reference_id')).toBe(CLAIM_ID);
+    expect(tagged.searchParams.get('utm_source')).toBe('web-support');
+    expect(tagged.searchParams.get('prefilled_email')).toBe('climber@example.com');
+  });
+
+  it('leaves the email out when the account has none', () => {
+    const tagged = new URL(
+      withSupportClaim(`${LINK_A}?prefilled_email=old%40example.com`, { claimId: CLAIM_ID, src: 'x' }),
+    );
+    expect(tagged.searchParams.has('prefilled_email')).toBe(false);
+  });
+
+  // Only an `sc_` id may reach client_reference_id as a claim: the webhook links
+  // on that prefix, so anything else would be an unlinkable stray value.
+  it.each(['web-support', 'sc_short', `SC_${'a1'.repeat(16)}`, `sc_${'zz'.repeat(16)}`, ''])(
+    'refuses %j',
+    (claimId) => {
+      expect(() => withSupportClaim(LINK_A, { claimId, src: 'x' })).toThrow();
+    },
+  );
 });

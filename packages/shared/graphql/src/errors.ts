@@ -99,3 +99,16 @@ export function isSprayTrainingNotEligibleError(error: unknown): boolean {
     (graphqlError) => graphqlError.extensions?.code === 'SPRAY_TRAINING_NOT_ELIGIBLE',
   );
 }
+
+/**
+ * The first `extensions.code` the server attached, or null. For a screen that
+ * maps a handful of codes to its own copy (the supporter link flow reads
+ * `EMAIL_NOT_VERIFIED`, `SERVICE_UNAVAILABLE` and `RATE_LIMITED`).
+ */
+export function readGraphqlErrorCode(error: unknown): string | null {
+  for (const graphqlError of getGraphqlErrors(error)) {
+    const code = asString(graphqlError.extensions?.code);
+    if (code) return code;
+  }
+  return null;
+}

@@ -643,5 +643,41 @@
     "publishLinkMessage": "Toute personne disposant du lien peut ouvrir cette board, même si elle n'apparaît ni dans la recherche ni sur la carte. Le lien reprend le nom de la board, il n'est donc pas secret. Garde son emplacement masqué si tu ne souhaites pas le partager.",
     "publishLink": "Partager le lien",
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
+  },
+  "supporter": {
+    "title": "Remerciement public",
+    "intro": "Tu as donné sur la page Soutenir ? Relie ton don à ce compte, puis choisis si ton nom et le badge Soutien s’affichent publiquement. Le badge est un merci et ne change rien d’autre dans l’app.",
+    "status": {
+      "loading": "Vérification de ton soutien…",
+      "error": "Impossible de charger ton soutien pour le moment. Réessaie plus tard.",
+      "none": "Aucun don n’est encore relié à ce compte.",
+      "monthly": "Ton soutien mensuel est relié à ce compte.",
+      "monthlyEnding": "Ton soutien mensuel est relié et s’arrête à la fin de cette période de facturation.",
+      "until": "Ton badge Soutien reste affiché jusqu’au {{date}}.",
+      "current": "Tu soutiens Boardsesh. Merci.",
+      "ended": "Ton soutien est terminé. Merci d’avoir participé.",
+      "confirming": "Stripe peut mettre une minute à nous prévenir d’un nouveau don. Recharge cette page dans un instant, ou relie-le ci-dessous."
+    },
+    "visibility": {
+      "label": "Afficher mon nom et le badge Soutien",
+      "hint": "Tant que tu soutiens Boardsesh, ton nom Boardsesh et le badge Soutien s’affichent sur ton profil et sur la page À propos. Les montants ne sont jamais affichés. Désactivé tant que tu ne l’actives pas.",
+      "error": "Ce n’est pas enregistré. Réessaie."
+    },
+    "link": {
+      "cta": "Déjà donné ? Relie ton don à ton compte",
+      "pending": "Recherche dans Stripe…",
+      "hint": "On cherche les paiements faits avec {{email}}.",
+      "linked": "Trouvé. Ton soutien est relié à ce compte.",
+      "expired": "On a trouvé ton soutien passé, mais sa durée est écoulée.",
+      "notFound": "Aucun paiement trouvé avec {{email}}. Un don payé avec une autre adresse ne peut pas être relié d’ici.",
+      "emailNotVerified": "Vérifie d’abord ton adresse e-mail, puis réessaie.",
+      "unavailable": "Impossible de relier un don pour le moment. Réessaie plus tard.",
+      "rateLimited": "Trop d’essais. Attends quelques minutes, puis réessaie.",
+      "failed": "Un problème est survenu. Réessaie."
+    },
+    "signedOut": {
+      "body": "Connecte-toi pour relier ce don à ton compte. Tu choisis ensuite si ton nom et le badge Soutien s’affichent sur ton profil et sur la page À propos.",
+      "cta": "Connecte-toi pour relier ton don"
+    }
   }
 }

@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parse } from 'graphql';
+import {
+  deduplicatePublicSupporters,
+  fetchAllPublicSupporters,
+  PUBLIC_SUPPORTERS_MAX_PAGES,
+  PUBLIC_SUPPORTERS_PAGE_SIZE,
+  type PublicSupporter,
+} from '../operations/support';
 
 // Smoke tests over the hand-written operation strings. The dedicated
 // schema-validation suite at packages/backend/src/__tests__/operations-schema-validation.test.ts
@@ -33,6 +40,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'sessions', load: () => import('../operations/sessions') },
   { name: 'session-workouts', load: () => import('../operations/session-workouts') },
   { name: 'social', load: () => import('../operations/social') },
+  { name: 'support', load: () => import('../operations/support') },
   { name: 'ticks', load: () => import('../operations/ticks') },
 ];
 
@@ -51,6 +59,44 @@ describe('every operation string is valid GraphQL', () => {
       // failure message would require regex juggling, so let parse() report.
       expect(() => parse(operation)).not.toThrow();
     }
+  });
+});
+
+describe('supporter pagination', () => {
+  function supportersPage(count: number, prefix = 'user'): PublicSupporter[] {
+    return Array.from({ length: count }, (_, index) => ({
+      userId: `${prefix}-${index}`,
+      displayName: `Supporter ${index}`,
+    }));
+  }
+
+  it('requests every page without dropping supporters', async () => {
+    const supporters = supportersPage(PUBLIC_SUPPORTERS_PAGE_SIZE + 1);
+    const requestPage = vi.fn(async ({ limit, offset }: { limit: number; offset: number }) => ({
+      publicSupporters: supporters.slice(offset, offset + limit),
+    }));
+
+    await expect(fetchAllPublicSupporters(requestPage)).resolves.toEqual(supporters);
+    expect(requestPage).toHaveBeenNthCalledWith(1, { limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset: 0 });
+    expect(requestPage).toHaveBeenNthCalledWith(2, {
+      limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
+      offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
+    });
+  });
+
+  it('keeps the first appearance when pages overlap', () => {
+    const [first, next] = supportersPage(2);
+    const supporters = [first!, next!, { ...first!, displayName: 'Changed later' }];
+    expect(deduplicatePublicSupporters(supporters)).toEqual([first, next]);
+  });
+
+  it('stops at the page ceiling', async () => {
+    const requestPage = vi.fn().mockResolvedValue({ publicSupporters: supportersPage(PUBLIC_SUPPORTERS_PAGE_SIZE) });
+
+    const supporters = await fetchAllPublicSupporters(requestPage);
+
+    expect(requestPage).toHaveBeenCalledTimes(PUBLIC_SUPPORTERS_MAX_PAGES);
+    expect(supporters).toHaveLength(PUBLIC_SUPPORTERS_PAGE_SIZE);
   });
 });
 

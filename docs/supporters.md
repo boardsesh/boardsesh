@@ -25,6 +25,35 @@ place in any queue. Copy anywhere in the product must not suggest otherwise.
 - **The tag** shows on public profiles on web and mobile only when the climber
   opted in and is currently a supporter.
 
+## Web
+
+All in `packages/web`; copy for the supporter panel is in the `settings`
+namespace (`supporter.*`), the /about list in `marketing` (`about.supporters.*`).
+
+- **`/support/go?link=<key>&src=<src>`** (`app/support/go/route.ts`). Every
+  Stripe button on `/support` goes through it. `<key>` names one configured
+  Payment Link: `monthly-aud-2` is the second AUD tier, `once-usd` the USD
+  one-off link (`resolveSupportLinkKey` in `support-links.ts`). A key the env
+  does not have redirects to `/support`, so the route can only send a visitor
+  to a link the env listed. Signed in, it calls `createSupportClaim` with the
+  account's session token (3 s ceiling) and 302s to the link with
+  `client_reference_id=<claim id>`, `utm_source=<src>` and
+  `prefilled_email=<account email>`. Signed out, or when the claim fails, it
+  302s with `client_reference_id=<src>` as before. The response is
+  `private, no-store`. It is a GET because it is a link; a forged one can only
+  leave an unused claim on the visitor's account, which is rate-limited and
+  pruned after 30 days.
+- **Thank-you card** (`/support?thanks=1`). Signed in, it shows the supporter
+  panel: the status the backend has, the public-credit switch
+  (`updateSupporterVisibility`, works before the payment lands) and "Already
+  gave? Link it to your account" (`claimSupporterByEmail`). Until the webhook
+  arrives it says Stripe can take a minute. Signed out, it invites a sign-in
+  that comes back to the same card.
+- **`/settings`** carries the same panel in a card next to the consent card.
+- **`/about`** lists `publicSupporters` (cached 5 minutes, empty when the
+  backend does not answer) with links to their profiles, and the GitHub
+  Sponsors from `@boardsesh/acknowledgements`.
+
 ## Tables
 
 All three live in `packages/db/src/schema/app/supporters.ts` (migration
@@ -55,7 +84,8 @@ for reference.
    rate-limited (20 per window) and prunes the account's unused claims older
    than 30 days.
 2. The client opens the Payment Link with `client_reference_id=<claim id>`
-   instead of the `src` tag. The `src` is kept on the claim row.
+   instead of the `src` tag. The `src` is kept on the claim row. On web this
+   is the `/support/go` route (see [Web](#web)).
 3. Stripe sends `checkout.session.completed`. The webhook treats
    `client_reference_id` as a claim **only when it starts with `sc_`**;
    anything else (`web-support`, `app-settings`, …) is a `src` tag and the

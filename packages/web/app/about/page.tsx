@@ -4,6 +4,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import AboutContent from './about-content';
+import { getPublicSupporters } from './server-public-supporters';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -16,10 +17,10 @@ export async function generateMetadata() {
 }
 
 export default async function AboutPage() {
-  const locale = await getLocale();
+  const [locale, publicSupporters] = await Promise.all([getLocale(), getPublicSupporters()]);
   return (
     <I18nProvider locale={locale} namespaces={['marketing']}>
-      <AboutContent />
+      <AboutContent publicSupporters={publicSupporters} />
     </I18nProvider>
   );
 }

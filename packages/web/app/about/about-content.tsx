@@ -4,14 +4,22 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
+import Avatar from '@mui/material/Avatar';
 import { GitHub, GroupOutlined, FavoriteBorderOutlined, ApiOutlined, RocketLaunchOutlined } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
+import { sponsors } from '@boardsesh/acknowledgements';
+import type { PublicSupporter } from '@boardsesh/graphql/operations/support';
 import styles from './about.module.css';
 
-export default function AboutContent() {
+type AboutContentProps = {
+  /** Current supporters who chose public credit (`publicSupporters`). */
+  publicSupporters: PublicSupporter[];
+};
+
+export default function AboutContent({ publicSupporters }: AboutContentProps) {
   const { t } = useTranslation('marketing');
   return (
     <PageShell title={t('about.hero.title')} lead={t('about.hero.subtitle')} width="wide">
@@ -98,6 +106,61 @@ export default function AboutContent() {
           </Prose>
         </PageSection>
       </Box>
+
+      <PageSection
+        title={t('about.supporters.title')}
+        icon={<FavoriteBorderOutlined />}
+        className={styles.supporters}
+        id="supporters"
+      >
+        <Prose>{t('about.supporters.body')}</Prose>
+        {publicSupporters.length > 0 ? (
+          <Box className={styles.supporterGroup}>
+            <Typography variant="h5" component="h3">
+              {t('about.supporters.accountsTitle')}
+            </Typography>
+            <Box className={styles.supporterList} data-testid="about-public-supporters">
+              {publicSupporters.map((supporter) => (
+                <MuiLink
+                  key={supporter.userId}
+                  component={LocaleLink}
+                  href={`/profile/${encodeURIComponent(supporter.userId)}`}
+                  className={styles.supporter}
+                >
+                  <Avatar src={supporter.avatarUrl ?? undefined} alt="" className={styles.supporterAvatar} />
+                  {supporter.displayName}
+                </MuiLink>
+              ))}
+            </Box>
+          </Box>
+        ) : null}
+        {sponsors.length > 0 ? (
+          <Box className={styles.supporterGroup}>
+            <Typography variant="h5" component="h3">
+              {t('about.supporters.githubTitle')}
+            </Typography>
+            <Box className={styles.supporterList}>
+              {sponsors.map((sponsor) => (
+                <MuiLink
+                  key={sponsor.login}
+                  href={sponsor.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.supporter}
+                >
+                  <Avatar src={sponsor.avatarUrl} alt="" className={styles.supporterAvatar} />
+                  {sponsor.name ?? sponsor.login}
+                </MuiLink>
+              ))}
+            </Box>
+          </Box>
+        ) : null}
+        <Prose>
+          <MuiLink component={LocaleLink} href="/support">
+            {t('about.supporters.cta')}
+          </MuiLink>
+        </Prose>
+      </PageSection>
 
       <PageSection title={t('about.community.title')} icon={<FavoriteBorderOutlined />} className={styles.community}>
         <Prose>{t('about.community.body')}</Prose>

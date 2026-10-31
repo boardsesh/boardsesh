@@ -38,6 +38,11 @@ const preferences = vi.hoisted(() => ({
 }));
 vi.mock('@/app/lib/user-preferences-db', () => preferences);
 
+// The panel reads the session and the backend; its own file covers it.
+vi.mock('@/app/components/support/supporter-panel', () => ({
+  default: ({ variant }: { variant: string }) => <div data-testid={`supporter-panel-${variant}`} />,
+}));
+
 const STRIPE_URL = 'https://donate.stripe.com/test_link';
 
 /** The page as it was before monthly links: one optional one-off AUD link. */
@@ -271,6 +276,14 @@ describe('SupportContent', () => {
     expect(screen.getByTestId('support-thanks')).toBeTruthy();
   });
 
+  // Right after paying is when a giver links the gift and picks public credit.
+  it('puts the supporter panel in the thank-you card', () => {
+    renderPage(fallbackOptions(), true);
+
+    const card = screen.getByTestId('support-thanks');
+    expect(card.querySelector('[data-testid="supporter-panel-thanks"]')).toBeTruthy();
+  });
+
   // Someone who just gave is not asked again by the homepage's support banner.
   it('closes the homepage banner for good on the thank-you visit', () => {
     preferences.setPreference.mockClear();
@@ -284,6 +297,7 @@ describe('SupportContent', () => {
     renderPage();
 
     expect(screen.queryByTestId('support-thanks')).toBeNull();
+    expect(screen.queryByTestId('supporter-panel-thanks')).toBeNull();
     expect(preferences.setPreference).not.toHaveBeenCalled();
   });
 });

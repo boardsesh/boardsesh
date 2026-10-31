@@ -44,8 +44,11 @@ export default async function SupportPage({ searchParams }: SupportPageProps) {
     currencyParam: parseCurrencyParam(params.currency),
   });
   const thanks = params.thanks === '1';
+  // The thank-you card's supporter panel shares its copy with /settings, so
+  // only that visit pays for the `settings` catalog.
+  const namespaces = thanks ? (['marketing', 'settings'] as const) : (['marketing'] as const);
   return (
-    <I18nProvider locale={locale} namespaces={['marketing']}>
+    <I18nProvider locale={locale} namespaces={namespaces}>
       <SupportContent options={options} src={src} thanks={thanks} />
     </I18nProvider>
   );
