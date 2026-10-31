@@ -129,6 +129,25 @@ describe('crew capture memory lifecycle', () => {
     expect(confirmedInvite).toBeGreaterThan(copiedInvite);
     expect(secondPhone).toBeGreaterThan(confirmedInvite);
   });
+
+  it('clears only the secondary account before shutting its simulator down', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const release = source.slice(
+      source.indexOf('async function releasePhone('),
+      source.indexOf('async function relaunch('),
+    );
+    const secondaryCleanup = release.match(/if \(phone\.role === 'secondary'\) \{([\s\S]*?)\n  \}/)?.[1];
+    expect(secondaryCleanup).toBeDefined();
+    expect(secondaryCleanup).toContain("simctl(['uninstall', phone.device.udid, APP_ID])");
+    expect(secondaryCleanup).toContain("simctl(['keychain', phone.device.udid, 'reset'])");
+    const shutdown = release.indexOf("simctl(['shutdown', phone.device.udid])");
+    expect(shutdown).toBeGreaterThan(release.indexOf("simctl(['uninstall', phone.device.udid, APP_ID])"));
+    expect(shutdown).toBeGreaterThan(release.indexOf("simctl(['keychain', phone.device.udid, 'reset'])"));
+    expect(release.slice(release.indexOf(secondaryCleanup ?? '') + (secondaryCleanup?.length ?? 0))).not.toMatch(
+      /uninstall|keychain/,
+    );
+    expect(source).not.toContain("onCleanup('second phone app'");
+  });
 });
 
 describe('private-session iOS switch targeting', () => {
