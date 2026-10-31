@@ -835,8 +835,9 @@ export function buildScreenshotEnv(
     // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
-  const storeCapture = options.flow === 'app-store' || options.flow === 'app-store-campaign' || !!options.cpp;
-  if (storeCapture) {
+  const wallControlCapture =
+    options.flow === 'app-store' || options.flow === 'app-store-campaign' || options.flow === 'help' || !!options.cpp;
+  if (wallControlCapture) {
     env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
     env.EXPO_PUBLIC_SCREENSHOT_DRIVING = '1';
   } else {

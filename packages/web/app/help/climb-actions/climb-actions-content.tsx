@@ -63,6 +63,11 @@ export default function ClimbActionsContent() {
             {t('help.climbActions.preview.sessionsLink')}
           </MuiLink>
         </Prose>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/help/board-and-bluetooth#driving">
+            {t('help.climbActions.preview.drivingLink')}
+          </MuiLink>
+        </Prose>
       </PageSection>
 
       <PageSection title={t('help.climbActions.quick.title')}>

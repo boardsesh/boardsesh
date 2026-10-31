@@ -1,7 +1,6 @@
 Neu in 2.7:
-- Boardsesh gibt es jetzt auch auf Italienisch.
-- Dein Pausen-Countdown erscheint in der Session-Benachrichtigung, mit einem Ton am Ende.
-- Baue Workouts aus Blöcken: Aufwärmen, Pyramide, dann Volumen.
-- Beim Wischen bleibst du in der getippten Liste. Wische über einen Boulder, um ihn als Nächstes oder Letztes zu spielen.
-- Sortiere und filtere Playlists, Gelikt und Projekte.
-- Routenbuch, Likes und Playlists funktionieren ohne Empfang. Scans finden MoonBoards.
+- Lies die mattierte Taste: Am Board beleuchten verbindet/beleuchtet. Du steuerst das Board: Jeder gewählte Boulder leuchtet; tippen stoppt, du bleibst verbunden. Nach links wischen zum Starten.
+- Jetzt auf Italienisch. Pausen-Countdown und Endton in der Benachrichtigung.
+- Workouts in Blöcken. Wischen bleibt in deiner Liste; als Nächstes oder Letztes spielen.
+- Playlists, Gelikt und Projekte sortieren/filtern.
+- Routenbuch, Likes und Playlists offline. Scans finden MoonBoards.
