@@ -306,7 +306,8 @@ name: app-store screenshots (iPad)
           timeout: 15000
 
 # Record — the workout generator (a workout is pre-selected in screenshot mode via
-# EXPO_PUBLIC_SCREENSHOT_WORKOUT).
+# EXPO_PUBLIC_SCREENSHOT_WORKOUT). UIKit appends the blank connection badge to
+# the selected parent label; require that parent rather than its unselected child.
 - retry:
     maxRetries: 2
     commands:
@@ -319,11 +320,11 @@ name: app-store screenshots (iPad)
           visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
           timeout: 15000
       - tapOn:
-          text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
+          text: ${SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR}
           index: 0
       - extendedWaitUntil:
           visible:
-            text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
+            text: ${SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR}
             selected: true
           timeout: 5000
 - tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}

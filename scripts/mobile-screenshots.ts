@@ -3710,6 +3710,11 @@ export function iosCampaignPrimaryDriveEnabled(primary: IosCampaignPrimaryCaptur
   return primary.board.boardType !== 'spray' && primary.board.hasLeds !== false;
 }
 
+/** UIKit appends its blank native status badge to the selected Record tab label. */
+export function iosRecordTabReadinessSelector(label: string): string {
+  return `^${cppReadinessSelector(label)}(?:,\\s+)?$`;
+}
+
 /** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
@@ -3733,6 +3738,7 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
     SCREENSHOT_SIDEBAR_HOME_LABEL: common.mobile.nav.home,
     SCREENSHOT_SIDEBAR_CLIMBS_LABEL: common.mobile.nav.climbs,
     SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
+    SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR: iosRecordTabReadinessSelector(session.mobile.session.recordTab),
     SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
     SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
     // Prefer the populated MiniPlayer; older chrome keeps the Climbs menu entry.

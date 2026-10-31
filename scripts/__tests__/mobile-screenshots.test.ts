@@ -15,6 +15,7 @@ import {
   assertIosCampaignSources,
   buildIosCampaignMaestroEnv,
   buildIosSidebarMaestroEnv,
+  iosRecordTabReadinessSelector,
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
@@ -1187,7 +1188,10 @@ describe('renderMaestroFlowForIosDevice', () => {
     expect(navigation).toHaveLength(6);
     // The Wall display is no sidebar destination: its scene goes back to Climbs.
     for (const [index, segment] of ['CLIMBS', 'HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
-      const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
+      const label =
+        segment === 'RECORD'
+          ? '${SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR}'
+          : '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
       expect(navigation[index][0].runFlow).toEqual({
         when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
         commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
@@ -1251,6 +1255,55 @@ describe('renderMaestroFlowForIosDevice', () => {
     expect(ipadFlow).toContain("id: 'profile-board-overview'");
   });
 
+  it('matches the actual selected native Record parent without accepting its unselected child', () => {
+    type NativeAttributes = { accessibilityText?: string; selected?: string; 'resource-id'?: string };
+    const fixture = JSON.parse(
+      readFileSync('scripts/__tests__/fixtures/ipad-record-blank-badge-7185.json', 'utf8'),
+    ) as {
+      attempts: Array<{
+        recordParent: NativeAttributes;
+        recordChild: NativeAttributes;
+        loadedFooter: NativeAttributes;
+      }>;
+    };
+    const selector = new RegExp(iosRecordTabReadinessSelector('Sesión'));
+    const selectedMatch = (attributes: NativeAttributes) =>
+      selector.test(attributes.accessibilityText ?? '') && attributes.selected === 'true';
+    expect(fixture.attempts).toHaveLength(2);
+    for (const attempt of fixture.attempts) {
+      expect(selectedMatch(attempt.recordParent)).toBe(true);
+      expect(selector.test(attempt.recordChild.accessibilityText ?? '')).toBe(true);
+      expect(selectedMatch(attempt.recordChild)).toBe(false);
+      expect(attempt.loadedFooter['resource-id']).toBe('pre-session-footer');
+    }
+  });
+
+  it.each(allAppLocales)('matches only the literal native Record label and optional blank badge in %s', (locale) => {
+    const env = buildIosSidebarMaestroEnv(locale);
+    const label = env.find((entry) => entry.startsWith('SCREENSHOT_SIDEBAR_RECORD_LABEL='))!.split('=')[1];
+    const pattern = env.find((entry) => entry.startsWith('SCREENSHOT_SIDEBAR_RECORD_TAB_SELECTOR='))!.split('=')[1];
+    const selector = new RegExp(pattern);
+    for (const accepted of [label, `${label},  `]) expect(selector.test(accepted), accepted).toBe(true);
+    for (const rejected of [
+      `Other ${label}`,
+      `${label} extra`,
+      `${label}  `,
+      `${label},`,
+      `${label}, 1`,
+      `${label}, other`,
+    ])
+      expect(selector.test(rejected), rejected).toBe(false);
+  });
+
+  it('escapes every literal regex character in the native Record catalog label', () => {
+    const label = 'Session (crew). [1]+? $^|{2}\\';
+    const selector = new RegExp(iosRecordTabReadinessSelector(label));
+    expect(selector.test(label)).toBe(true);
+    expect(selector.test(`${label},  `)).toBe(true);
+    expect(selector.test('Session crew. 1')).toBe(false);
+    expect(selector.test(`prefix ${label}`)).toBe(false);
+  });
+
   it('provides the current native sidebar labels for every supported locale', () => {
     const expected = {
       'en-US': ['Home', 'Climbs', 'Session', 'Discover', 'Profile'],
@@ -1268,7 +1321,7 @@ describe('renderMaestroFlowForIosDevice', () => {
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
-      expect(env).toHaveLength(22);
+      expect(env).toHaveLength(24);
       expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
       expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
       for (const [index, segment] of ['HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
