@@ -24,6 +24,7 @@ const directories: string[] = [];
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
@@ -329,7 +330,19 @@ async function finish(work: Promise<void>): Promise<unknown> {
 }
 
 describe('explicit native simulator-peer preflight', () => {
+  it('refuses physical profiles in CI before invoking tools or leasing hardware', async () => {
+    vi.stubEnv('CI', '1');
+    const execute = vi.spyOn(driverTools, 'command');
+    const resourceLease = vi.spyOn(evidenceTools, 'lease');
+    for (const action of ['doctor', 'run'])
+      await expect(main([action, '--holder-only', '--config', '/never/read/qa-config.json'])).rejects.toThrow(
+        'local only',
+      );
+    expect(execute).not.toHaveBeenCalled();
+    expect(resourceLease).not.toHaveBeenCalled();
+  });
   it('holder-only doctor needs no peer credentials, lease, driver, adb or Metro prerequisites', async () => {
+    vi.stubEnv('CI', '');
     const current = harness(undefined, false);
     vi.useRealTimers();
     const credentials = join(current.directory, 'credentials.json');
