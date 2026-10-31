@@ -17,9 +17,11 @@ name: showcase setup - live session hidden
 # session running, so the pre-session view is up (with the now-playing bar, which
 # puts Start at 84%,82%).
 #
-# Coordinates (iPhone 16 Pro Max portrait):
-#   85%,52%  the "Show this session live" switch
+# Match the localized SwiftUI switch label (title plus subtitle). Its position
+# changes with the board, native layout and text size.
 
-- tapOn:
-    point: '85%,52%'
+- extendedWaitUntil:
+    visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+    timeout: 15000
+- tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
 - waitForAnimationToEnd
