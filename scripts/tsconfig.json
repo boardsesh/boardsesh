@@ -278,6 +278,7 @@
     "mobile-build-sim-app.ts",
     "ios-screenshot-app-cache.ts",
     "__tests__/ios-screenshot-app-cache.test.ts",
+    "__tests__/screenshot-xcode-selector.test.ts",
     "mobile-dev-start.ts",
     "mobile-screenshots.ts",
     "mobile-screenshot-maestro.ts",
