@@ -193,11 +193,13 @@ describe('mobile-e2e-gate.yml jobs', () => {
     expect(withoutCommentLines(source).join('\n')).not.toContain('SCREENSHOT_USER_');
   });
 
-  it('shares the simulator app cache with the capture workflow, key for key', () => {
-    const keyLine = (text: string) =>
-      text.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
-    expect(keyLine(source)).toBeTruthy();
-    expect(keyLine(source)?.trim()).toBe(keyLine(readFileSync(IOS_CAPTURE_PATH, 'utf8'))?.trim());
+  it('shares the simulator app native-input recipe with the capture workflow', () => {
+    const capture = parse(readFileSync(IOS_CAPTURE_PATH, 'utf8')) as typeof workflow;
+    const key = (steps: Step[]) => steps.find((step) => step.id === 'appkey');
+    const smokeKey = key(workflow.jobs['ios-smoke'].steps ?? []);
+    const captureKey = key(capture.jobs['ios-build'].steps ?? []);
+    expect(smokeKey?.run).toContain('ios-screenshot-app-cache.ts key');
+    expect(smokeKey?.env?.NATIVE_INPUT_HASH).toBe(captureKey?.env?.NATIVE_INPUT_HASH);
   });
 
   it('reads each smoke result on every outcome', () => {

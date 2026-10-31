@@ -476,7 +476,7 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 
   it('keys the cached screenshot app on native pnpm policy without lockfile churn', () => {
     const workflow = readWorkflow(MOBILE_SCREENSHOTS_IOS);
-    const cacheKeyStep = workflow.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
+    const cacheKeyStep = workflow.split('\n').find((line) => line.includes('NATIVE_INPUT_HASH: ${{ hashFiles('));
 
     expect(cacheKeyStep, 'mobile screenshot workflow must retain its simulator app cache key').toBeTruthy();
     expect(cacheKeyStep).toContain("'pnpm-workspace.yaml'");

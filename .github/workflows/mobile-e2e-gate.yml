@@ -286,7 +286,9 @@ jobs:
       #     when the train carries a native change.
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', 'scripts/ios-screenshot-app-cache.ts', 'scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH"
 
       # lookup-only: the shard action below does the actual restore.
       - name: Check for cached simulator app
@@ -304,6 +306,12 @@ jobs:
       - name: Build simulator dev-client app
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
 
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'

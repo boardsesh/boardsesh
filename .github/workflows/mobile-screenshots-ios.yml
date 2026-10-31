@@ -591,7 +591,8 @@ jobs:
   # modules, pnpm's patch/override
   # policy, and the root @expo/cli pin). JS/TS-only and web-only
   # changes (incl. pnpm-lock.yaml churn) do NOT bust it, so the common path is a cache
-  # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
+  # hit and skips the ~30-min native build. The selected Xcode and SDK identify
+  # a separate v2 Debug cache entry; a different toolchain cannot reuse it.
   # runner.arch is in the key because a simulator .app is arch-specific.
   ios-build:
     needs: setup
@@ -624,9 +625,14 @@ jobs:
 
       # Compute the .app cache key ONCE and surface it as a job output so every
       # ios-capture shard restores the exact same bucket.
+      - name: Select the screenshot build toolchain
+        run: bash scripts/select-screenshot-xcode.sh
+
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', 'scripts/ios-screenshot-app-cache.ts', 'scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH" --minimum-sdk 27.1
 
       # lookup-only: this job only needs to KNOW whether the .app is cached (the
       # shards do the actual restore), so on a hit we skip downloading a .app this
@@ -652,6 +658,12 @@ jobs:
 
       # Save for the ios-capture shards (and future runs). Only on a miss — on a
       # hit the entry already exists.
+      - name: Verify simulator app identity
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app --minimum-sdk 27.1
+
       - name: Save simulator app to cache
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

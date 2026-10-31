@@ -22,7 +22,7 @@ screenshot-mode auto-login):
 - **Maestro** for navigation, `--to <screen>`, and `--flow`
   (`curl -Ls "https://get.maestro.mobile.dev" | bash`). A plain `home` capture doesn't need it.
 - First run builds a Debug simulator `.app` (~30 min) unless you pass `--app-path`; it's cached
-  at `packages/mobile/.app-cache/Boardsesh.app` and reused (only native changes force a rebuild).
+  at `packages/mobile/.app-cache/Boardsesh.app` and reused when native inputs and toolchain match.
 
 When creating a missing simulator, store capture selects the newest installed
 runtime that lists the requested device type as supported. A newer runtime can
@@ -260,6 +260,25 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you
   haven't started `run` yet (or it died — check its output).
+
+## CI simulator app identity
+
+The shared Debug dev-client cache uses a v2 key containing native source inputs,
+runner architecture, the selected Xcode build, and the simulator SDK version and
+build. The screenshot producer selects release Xcode27.1+ **before** looking up
+that key. Other video and smoke producers record their actual selected toolchain;
+they can share a product only when those identities match.
+
+Every new product is checked before it is saved. Screenshot and video consumers
+check restored product metadata, ARM64 slices and Debug Metro identity before
+installation. The check uses the producer's identity from the key, rather than
+requiring the consumer's default compiler to match. Duo additionally requires a
+product built with simulator SDK27.1+. An older SDK26.5 cached product reproduced
+the narrow375×667 app window on the open Duo in a matched local comparison, while
+the SDK27.1 control used951×669 and retained its board pane. These results justify
+rejecting the incompatible cached product; they do not attribute the difference
+to one compiler or SDK component in isolation. A cache mismatch stops the shard
+without silently building a replacement there.
 
 ## Store capture device coverage
 

@@ -625,19 +625,15 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     },
   );
 
-  it('keeps the pinned simulator-app cache key in ios-build', () => {
-    // scripts/mobile-ci-env-parity.test.ts asserts the shape of this line; it must
-    // not migrate into the composite action with the rest of the shard body.
-    // Optional react-native.config.js must invalidate the cache when introduced.
-    const cacheKeyLine = source.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
-    expect(cacheKeyLine).toBe(
-      "        run: echo \"key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}\" >> \"$GITHUB_OUTPUT\"",
-    );
-    expect(cacheKeyLine).not.toContain('pnpm-lock.yaml');
-    expect(cacheKeyLine).not.toContain('packages/mobile/src/');
-    expect(cacheKeyLine).not.toContain('packages/mobile/app/');
+  it('keeps the native simulator-app identity in ios-build', () => {
     const buildSteps = workflow.jobs['ios-build'].steps ?? [];
-    expect(buildSteps.some((step) => step.name === 'Compute app cache key')).toBe(true);
+    const key = buildSteps.find((step) => step.id === 'appkey');
+    expect(key?.run).toContain('ios-screenshot-app-cache.ts key');
+    expect(key?.env?.NATIVE_INPUT_HASH).toContain("'packages/mobile/react-native.config.js'");
+    expect(key?.env?.NATIVE_INPUT_HASH).toContain("'scripts/ios-screenshot-app-cache.ts'");
+    expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('pnpm-lock.yaml');
+    expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('packages/mobile/src/');
+    expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('packages/mobile/app/');
   });
 
   it('checks the repo out in every job that runs a step from it', () => {
