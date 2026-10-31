@@ -26,8 +26,9 @@ import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
  * Web settings keeps only what the app can't do: register an ESP32 controller
  * (Web Bluetooth/serial hardware that never moved to the SPA), set a first
  * password for an OAuth-only account (the app has reset-password, not
- * set-password), and link a gift made on www's `/support` to the account. Profile, board accounts and account deletion all live in the
- * app now — W-21 (#4440).
+ * set-password), and link a gift made on www's `/support` to the account.
+ * Profile, board accounts and account deletion all live in the app now — W-21
+ * (#4440).
  *
  * The destination is named explicitly rather than mirroring this pathname: the
  * two `/settings` routes are the same idea on different origins, but the app's

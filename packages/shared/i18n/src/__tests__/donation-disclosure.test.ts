@@ -145,30 +145,33 @@ const SUPPORT_COPY_KEYS = [
 ];
 
 /**
- * The supporter panel (`settings` namespace): the `/support` thank-you card and
- * `/settings`. It names the Supporter tag, so it is the copy most likely to
- * drift into selling it. Every string is listed.
+ * Every string under `prefix`, as `[dottedKey, copy]` pairs, so a key added
+ * later is checked without anyone remembering to list it.
  */
-const SUPPORTER_PANEL_KEYS = [
-  'supporter.title',
-  'supporter.intro',
-  'supporter.status.none',
-  'supporter.status.monthly',
-  'supporter.status.monthlyEnding',
-  'supporter.status.until',
-  'supporter.status.current',
-  'supporter.status.ended',
-  'supporter.status.confirming',
-  'supporter.visibility.label',
-  'supporter.visibility.hint',
-  'supporter.link.cta',
-  'supporter.link.hint',
-  'supporter.link.linked',
-  'supporter.link.expired',
-  'supporter.link.notFound',
-  'supporter.signedOut.body',
-  'supporter.signedOut.cta',
-];
+function collectStrings(catalog: Catalog, prefix: string): Array<[string, string]> {
+  const collected: Array<[string, string]> = [];
+  const walk = (node: unknown, path: string) => {
+    if (typeof node === 'string') {
+      collected.push([path, node]);
+      return;
+    }
+    if (typeof node !== 'object' || node === null) return;
+    for (const [segment, child] of Object.entries(node)) walk(child, `${path}.${segment}`);
+  };
+  let root: unknown = catalog;
+  for (const segment of prefix.split('.')) {
+    root = typeof root === 'object' && root !== null ? (root as Record<string, unknown>)[segment] : undefined;
+  }
+  walk(root, prefix);
+  return collected;
+}
+
+/**
+ * The supporter panel (`settings` namespace `supporter.*`): the `/support`
+ * thank-you card and `/settings`. It names the Supporter tag, so it is the
+ * copy most likely to drift into selling it. Every string under it is checked.
+ */
+const SUPPORTER_PANEL_PREFIX = 'supporter';
 
 /** Words a thank-you tag must never sit beside, in any locale (the tag is a label, not a tier). */
 const TAG_PERKS_LANGUAGE = /priority|premium|faster|prioritari|premium|plus rapide|schneller|más rápido/i;
@@ -197,9 +200,9 @@ describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale
   });
 
   it('keeps the supporter panel a thank-you, not a perk', () => {
-    const settings = loadCatalog(locale, 'settings');
-    for (const key of SUPPORTER_PANEL_KEYS) {
-      const copy = readString(settings, key);
+    const panelStrings = collectStrings(loadCatalog(locale, 'settings'), SUPPORTER_PANEL_PREFIX);
+    expect(panelStrings.length).toBeGreaterThan(20);
+    for (const [key, copy] of panelStrings) {
       expect(copy, `${locale}: ${key} must not promise a perk`).not.toMatch(PERKS_LANGUAGE[locale]);
       expect(copy, `${locale}: ${key} must not promise a perk`).not.toMatch(TAG_PERKS_LANGUAGE);
     }
