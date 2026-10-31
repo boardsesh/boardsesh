@@ -24,6 +24,7 @@ vi.mock('../../services/stripe-support', async (importOriginal) => ({
 
 import { resolveProfileSupporterTag, supportMutations, supportQueries, UNUSED_CLAIM_TTL_MS } from './support';
 import { socialFollowQueries } from './social/follows';
+import { extendCredit } from '../../services/supporter-status';
 
 const SUPPORTER = 'support-resolver-supporter';
 const OTHER = 'support-resolver-other';
@@ -318,6 +319,87 @@ describe('claimSupporterByEmail', () => {
     const status = await supportMutations.claimSupporterByEmail({}, {}, ctx(SUPPORTER));
     expect(status.isSupporter).toBe(false);
     expect((await supporterRow())?.supportedAt).not.toBeNull();
+  });
+
+  it('adds nothing for a session the webhook already counted', async () => {
+    const webhookCreditUntil = new Date(Date.now() + 30 * DAY_MS);
+    await db.insert(dbSchema.stripeSupportClaims).values({
+      id: `sc_${'c'.repeat(32)}`,
+      userId: SUPPORTER,
+      cadence: 'one_time',
+      currency: 'usd',
+      checkoutSessionId: 'cs_email_one',
+    });
+    await db
+      .insert(dbSchema.stripeSupporters)
+      .values({ userId: SUPPORTER, creditUntil: webhookCreditUntil, supportedAt: new Date() });
+    sessionsList.mockResolvedValue({ data: [paidSession()], has_more: false });
+    const status = await supportMutations.claimSupporterByEmail({}, {}, ctx(SUPPORTER));
+    expect(status.creditUntil).toBe(webhookCreditUntil.toISOString());
+  });
+
+  it('adds only the unused part of a found gift, even on top of newer credit', async () => {
+    const now = Date.now();
+    // US$60 paid 5 months ago buys 6 months, so about 1 month is left.
+    const fiveMonthsAgo = new Date(now - 152 * DAY_MS);
+    const leftMs = extendCredit(null, 6, fiveMonthsAgo).getTime() - now;
+    // Newer credit (a gift the webhook linked today) runs 30 more days.
+    const newerCreditUntil = new Date(now + 30 * DAY_MS);
+    await db
+      .insert(dbSchema.stripeSupporters)
+      .values({ userId: SUPPORTER, creditUntil: newerCreditUntil, supportedAt: new Date() });
+    sessionsList.mockResolvedValue({
+      data: [paidSession({ amount_total: 6000, created: Math.floor(fiveMonthsAgo.getTime() / 1000) })],
+      has_more: false,
+    });
+    await supportMutations.claimSupporterByEmail({}, {}, ctx(SUPPORTER));
+    const creditUntil = (await supporterRow())!.creditUntil!.getTime();
+    // Newer credit plus what was left, not newer credit plus six fresh months.
+    expect(Math.abs(creditUntil - (newerCreditUntil.getTime() + leftMs))).toBeLessThan(60_000);
+  });
+
+  it('stacks several found gifts in payment order from their own dates', async () => {
+    const now = Date.now();
+    // Two US$10 gifts paid 20 and 10 days ago: the second starts when the first ends.
+    const first = Math.floor((now - 20 * DAY_MS) / 1000);
+    const second = Math.floor((now - 10 * DAY_MS) / 1000);
+    sessionsList.mockResolvedValue({
+      data: [
+        paidSession({ id: 'cs_second', amount_total: 1000, created: second }),
+        paidSession({ id: 'cs_first', amount_total: 1000, created: first }),
+      ],
+      has_more: false,
+    });
+    await supportMutations.claimSupporterByEmail({}, {}, ctx(SUPPORTER));
+    const firstEnds = extendCredit(null, 1, new Date(first * 1000));
+    const expected = extendCredit(firstEnds, 1, new Date(second * 1000));
+    const creditUntil = (await supporterRow())!.creditUntil!.getTime();
+    // Remaining time is measured from a clock read inside the resolver.
+    expect(Math.abs(creditUntil - expected.getTime())).toBeLessThan(60_000);
+  });
+
+  it('does not link a subscription another account started with its own claim', async () => {
+    await db
+      .insert(dbSchema.stripeSupportClaims)
+      .values({ id: `sc_${'d'.repeat(32)}`, userId: OTHER, cadence: 'monthly' });
+    sessionsList.mockResolvedValue({
+      data: [
+        paidSession({
+          id: 'cs_others_monthly',
+          mode: 'subscription',
+          subscription: 'sub_others',
+          client_reference_id: `sc_${'d'.repeat(32)}`,
+        }),
+      ],
+      has_more: false,
+    });
+    customersList.mockResolvedValue({ data: [{ id: 'cus_shared' }] });
+    subscriptionsList.mockResolvedValue({
+      data: [{ id: 'sub_others', customer: 'cus_shared', status: 'active', cancel_at_period_end: false, created: 1 }],
+    });
+    const status = await supportMutations.claimSupporterByEmail({}, {}, ctx(SUPPORTER));
+    expect(status.hasSubscription).toBe(false);
+    expect(await supporterRow()).toBeNull();
   });
 
   it('skips sessions in other currencies and sessions another account claimed', async () => {

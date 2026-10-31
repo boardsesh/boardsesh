@@ -88,8 +88,11 @@ Pure functions in `packages/backend/src/services/supporter-status.ts`.
   logged and ignored, and the webhook still answers 200.
 - **Monthly** payments add no `credit_until`; the subscription status is the
   whole rule.
-- **Claim by email** credits each session as of its own payment time, so a
-  gift whose months already ran out adds nothing.
+- **Claim by email** credits found gifts as of their own payment times: their
+  months stack in payment order from each payment date, and only the time
+  still left today is added (on top of any credit still running). A gift
+  whose months already ran out adds nothing; a half-used one adds its unused
+  half.
 - **Hand grants** store the admin's `credit_until` as given; a past date ends
   a grant.
 
@@ -127,8 +130,9 @@ Schema in `packages/shared-schema/src/schema/support.ts`.
 5 pages of 100) and the subscriptions of up to 10 customers found with
 `GET /v1/customers?email=…`. Stripe matches email case-sensitively, so it
 tries the stored spelling and its lowercase. A session another account
-claimed with its own `sc_` id is left alone, and a subscription already
-linked to another account is never moved.
+claimed with its own `sc_` id is left alone, so is the subscription such a
+session started, and a subscription already linked to another account is
+never moved.
 
 ## Webhook
 

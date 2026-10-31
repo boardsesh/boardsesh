@@ -4,7 +4,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { getStripeClient, stripeId, supportClaimIdFrom, supportedCurrency } from './stripe-support';
 import { withSupportOperation } from './stripe-support-operation';
 import {
-  applyOneOffCredit,
+  applyRemainingCredit,
   linkSubscription,
   loadSupporterRow,
   recordSessionOnce,
@@ -70,13 +70,14 @@ const SUBSCRIPTION_STATUS_RANK: Readonly<Record<string, number>> = { active: 0, 
 
 /**
  * Apply what the lookup found, idempotently: each paid one-off session is
- * ledgered once (keyed by session id) and adds its months, and a live
- * subscription is linked when the account has none. A session another
- * account already claimed with its `sc_` id is left to that account.
+ * ledgered once (keyed by session id), and a live subscription is linked when
+ * the account has none. A session another account already claimed with its
+ * `sc_` id is left to that account, and so is the subscription it started.
  *
- * A one-off is credited as of its own payment time: a gift whose months have
- * already run out adds nothing, so finding a two-year-old gift today does not
- * hand out fresh tag time.
+ * Found gifts are credited as of their own payment times: their months are
+ * stacked in payment order from each payment date, and only the time still
+ * left at `now` is added to the account. A two-year-old gift adds nothing,
+ * and a half-used one adds only its unused half, even on top of newer credit.
  */
 export async function applyStripeEmailMatches(
   tx: Parameters<typeof recordSessionOnce>[0],
@@ -84,13 +85,14 @@ export async function applyStripeEmailMatches(
   matches: StripeEmailMatches,
   now: Date,
 ): Promise<void> {
-  const paidOneOffs = matches.sessions
-    .filter((session) => session.mode === 'payment' && session.payment_status === 'paid')
-    .sort((left, right) => left.created - right.created);
+  const sessionsInPaymentOrder = [...matches.sessions].sort((left, right) => left.created - right.created);
+  const subscriptionsClaimedElsewhere = new Set<string>();
+  let foundCreditUntil: Date | null = null;
+  let firstPaidAt: Date | null = null;
+  let latestCustomerId: string | null = null;
+  let recordedAny = false;
 
-  for (const session of paidOneOffs) {
-    const currency = supportedCurrency(session.currency);
-    if (!currency) continue;
+  for (const session of sessionsInPaymentOrder) {
     const claimId = supportClaimIdFrom(session.client_reference_id);
     let claim: typeof dbSchema.stripeSupportClaims.$inferSelect | null = null;
     if (claimId) {
@@ -99,29 +101,44 @@ export async function applyStripeEmailMatches(
         .from(dbSchema.stripeSupportClaims)
         .where(eq(dbSchema.stripeSupportClaims.id, claimId))
         .limit(1);
-      if (found && found.userId !== userId) continue;
+      if (found && found.userId !== userId) {
+        const subscriptionId = stripeId(session.subscription);
+        if (subscriptionId) subscriptionsClaimedElsewhere.add(subscriptionId);
+        continue;
+      }
       claim = found ?? null;
     }
+    if (session.mode !== 'payment' || session.payment_status !== 'paid') continue;
+    const currency = supportedCurrency(session.currency);
+    if (!currency) continue;
     const recorded = await recordSessionOnce(tx, { userId, session, cadence: 'one_time', currency, claim });
     if (!recorded) continue;
 
+    recordedAny = true;
     const paidAt = new Date(session.created * 1000);
-    const amountMinor = session.amount_total ?? 0;
-    const months = creditMonthsFor(amountMinor, currency);
-    const stillRunning = months > 0 && extendCredit(null, months, paidAt).getTime() > now.getTime();
-    await applyOneOffCredit(tx, {
+    firstPaidAt ??= paidAt;
+    latestCustomerId = stripeId(session.customer) ?? latestCustomerId;
+    const months = creditMonthsFor(session.amount_total ?? 0, currency);
+    if (months > 0) foundCreditUntil = extendCredit(foundCreditUntil, months, paidAt);
+  }
+
+  if (recordedAny && firstPaidAt) {
+    await applyRemainingCredit(tx, {
       userId,
-      amountMinor: stillRunning ? amountMinor : 0,
-      currency,
-      customerId: stripeId(session.customer),
-      now: paidAt,
+      remainingMs: foundCreditUntil ? foundCreditUntil.getTime() - now.getTime() : 0,
+      customerId: latestCustomerId,
+      supportedAt: firstPaidAt,
+      now,
     });
   }
 
   const existing = await loadSupporterRow(tx, userId);
   if (existing?.stripeSubscriptionId && isLiveSubscriptionStatus(existing.subscriptionStatus)) return;
   const liveSubscriptions = matches.subscriptions
-    .filter((subscription) => isLiveSubscriptionStatus(subscription.status))
+    .filter(
+      (subscription) =>
+        isLiveSubscriptionStatus(subscription.status) && !subscriptionsClaimedElsewhere.has(subscription.id),
+    )
     .sort(
       (left, right) =>
         (SUBSCRIPTION_STATUS_RANK[left.status] ?? 9) - (SUBSCRIPTION_STATUS_RANK[right.status] ?? 9) ||

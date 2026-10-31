@@ -93,17 +93,63 @@ export async function applyOneOffCredit(
   },
 ): Promise<SupporterRow> {
   const { userId, amountMinor, currency, customerId, now } = input;
-  const existing = await loadSupporterRow(tx, userId);
   const months = creditMonthsFor(amountMinor, currency);
-  const creditUntil =
-    months > 0 ? extendCredit(existing?.creditUntil ?? null, months, now) : (existing?.creditUntil ?? null);
+  return upsertOneOffCredit(tx, {
+    userId,
+    customerId,
+    supportedAt: now,
+    nextCreditUntil: (current) => (months > 0 ? extendCredit(current, months, now) : null),
+  });
+}
+
+/**
+ * Add tag time that is already partly used up: claim-by-email finds gifts
+ * paid in the past, works out how much of their time is still left at `now`
+ * (`remainingMs`), and adds only that, on top of whichever is later, `now`
+ * or the current `credit_until`. Stacking a found gift's full months onto
+ * newer credit would hand out time that already ran.
+ */
+export async function applyRemainingCredit(
+  tx: SupportTransaction,
+  input: { userId: string; remainingMs: number; customerId: string | null; supportedAt: Date; now: Date },
+): Promise<SupporterRow> {
+  const { userId, remainingMs, customerId, supportedAt, now } = input;
+  return upsertOneOffCredit(tx, {
+    userId,
+    customerId,
+    supportedAt,
+    nextCreditUntil: (current) => {
+      if (remainingMs <= 0) return null;
+      const start = current && current.getTime() > now.getTime() ? current : now;
+      return new Date(start.getTime() + remainingMs);
+    },
+  });
+}
+
+/**
+ * The one upsert behind both credit writers. `nextCreditUntil` gets the
+ * current `credit_until` and returns the new one, or null to keep it.
+ */
+async function upsertOneOffCredit(
+  tx: SupportTransaction,
+  input: {
+    userId: string;
+    customerId: string | null;
+    supportedAt: Date;
+    nextCreditUntil: (current: Date | null) => Date | null;
+  },
+): Promise<SupporterRow> {
+  const { userId, customerId } = input;
+  const existing = await loadSupporterRow(tx, userId);
+  const extended = input.nextCreditUntil(existing?.creditUntil ?? null);
+  const creditUntil = extended ?? existing?.creditUntil ?? null;
   // A linked subscription's customer owns billing; a one-off paid as a guest
   // never replaces it.
   const stripeCustomerId = existing?.stripeSubscriptionId
     ? existing.stripeCustomerId
     : (customerId ?? existing?.stripeCustomerId ?? null);
-  const source = months > 0 ? 'stripe' : (existing?.source ?? 'stripe');
-  const supportedAt = existing?.supportedAt ?? new Date();
+  const source = extended ? 'stripe' : (existing?.source ?? 'stripe');
+  const supportedAt = existing?.supportedAt ?? input.supportedAt;
   const values = { stripeCustomerId, creditUntil, source, supportedAt, updatedAt: new Date() } as const;
   const [row] = await tx
     .insert(dbSchema.stripeSupporters)
