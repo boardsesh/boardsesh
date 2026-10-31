@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   focused: true,
   sessionId: null as string | null,
   boardConnected: false,
+  platform: 'ios',
 }));
 const analytics = vi.hoisted(() => ({ trackSupportLinkTapped: vi.fn() }));
 const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn().mockResolvedValue(undefined) }));
@@ -26,7 +27,11 @@ vi.mock('react-native-mmkv', () => ({
   }),
 }));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return state.platform;
+    },
+  },
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: unknown) => styles },
@@ -86,6 +91,7 @@ beforeEach(() => {
   state.focused = true;
   state.sessionId = null;
   state.boardConnected = false;
+  state.platform = 'ios';
   analytics.trackSupportLinkTapped.mockClear();
   browser.openExternalUrl.mockClear();
 });
@@ -104,6 +110,15 @@ describe('HomeSupportCard', () => {
     renderCard();
 
     expect(screen.queryByTestId('home-support-card')).toBeNull();
+  });
+
+  it('renders nothing in the browser app, where only the Account row asks, and spends none of its days', () => {
+    state.platform = 'web';
+    renderCard();
+
+    expect(screen.queryByTestId('home-support-card')).toBeNull();
+    // Nothing written: the browser app never counts a day against the card.
+    expect(getSetting('supportCardV1')).toBeNull();
   });
 
   it('renders nothing with Show support asks off', () => {

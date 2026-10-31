@@ -449,10 +449,12 @@ sanctions. The Acknowledgements screen renders exactly one of those two, and
 `useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
 The same answer gates the Support Boardsesh row in Account and the December
 card on Home (`packages/mobile/src/lib/support-asks.ts`), which also need the
-climber's own "Show support asks" switch in Settings › General to be on.
+climber's own "Show support asks" switch in Settings › General to be on. The
+Home card is US iPhones only: it never shows in the Expo browser app, where the
+Account row and the Acknowledgements link are the only asks.
 
-**The code enforces the platform and the region; the flag is only a kill
-switch.**
+**On a phone, the code enforces the platform and the region; the flag is only
+the native kill switch.**
 
 - **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
   App Store storefront of `USA`, read from the device through
@@ -464,10 +466,14 @@ switch.**
   targeting, and Google threatened AnkiDroid with removal over a donation link
   in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
   withdrawn.
-- **The Expo browser app always shows it**, flag or no flag. At `/app` the app
-  is a web page, not a store binary, so no store rule applies — the same reason
-  boardsesh.com links /support from every page. The flag could not cover it
-  anyway: it is targeted to `OS = iOS`, so a browser never sees it on.
+- **The Expo browser app shows it unless `donation-links-web-kill` is on**,
+  whatever `donation-links-v2` says. At `/app` the app is a web page, not a store
+  binary, so no store rule applies — the same reason boardsesh.com links
+  /support from every page. Turning `donation-links-v2` off is a store-policy
+  call and should not take the link off the web, so the browser app has
+  its own kill switch, an ordinary `-kill` flag: absent or unresolved leaves the
+  Account row and the link on, and turning it on in PostHog takes both off
+  `/app` without a deploy. Native builds never read it.
 - **Screenshot mode never shows it**, on any platform, so App Store captures and
   the replayed screenshot fixtures stay free of donation asks.
 - **Admin accounts see it on any phone, for QA.** With the flag on, an admin

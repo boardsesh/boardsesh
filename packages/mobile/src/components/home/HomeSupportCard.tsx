@@ -1,16 +1,21 @@
 // The December support card at the top of Home (donations plan, initiative 5).
 //
 // Every rule for when it shows lives in `planSupportCard` (lib/support-asks.ts):
-// US iPhones and the browser app only, 1–7 and 29–31 Dec 2026, two days on
+// US iPhones only, 1–7 and 29–31 Dec 2026, two days on
 // screen at most, gone after a tap or a close, never during a session or with a
 // board connected, and never with "Show support asks" off. It sits in Home's
 // list header, above the sections, so it can never cover board art (#7000).
+//
+// Never in the Expo browser app, although the Account row shows there. The plan
+// names the card for US iPhones only, and its two-day cap counts the card and
+// the boardsesh.com `/` banner together: a browser climber already gets that
+// banner, and the card's per-device count could not see it.
 //
 // Self-contained on purpose: it subscribes to its own inputs, so mounting it in
 // Home's memoised header adds nothing to that header's dependencies.
 
 import { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
@@ -30,7 +35,7 @@ import { spacing } from '../../theme/tokens';
 export function HomeSupportCard() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  const asksAllowed = useSupportAsksAllowed();
+  const asksAllowed = useSupportAsksAllowed() && Platform.OS !== 'web';
   const { sessionId } = useQueueSessionId();
   const boardConnected = useBluetoothConnectedStatus();
   const today = useToday();

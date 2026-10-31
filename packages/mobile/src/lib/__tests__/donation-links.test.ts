@@ -249,6 +249,24 @@ describe('useDonationLinksAllowed', () => {
     expect(await renderAllowed()).toBe(true);
   });
 
+  it('hides links in the Expo browser app once its own kill switch is on, with no deploy', async () => {
+    platformMock.OS = 'web';
+    flagsMock['donation-links-web-kill'] = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('ignores the browser-app kill switch on a phone', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    flagsMock['donation-links-web-kill'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    const { useDonationLinksAllowed } = await loadDonationLinks();
+    const { result } = renderHook(() => useDonationLinksAllowed());
+    await waitFor(() => expect(result.current).toBe(true));
+  });
+
   it('hides links in the Expo browser app in screenshot mode', async () => {
     platformMock.OS = 'web';
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');

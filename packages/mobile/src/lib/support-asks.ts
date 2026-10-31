@@ -11,8 +11,9 @@
  * - The climber's own "Show support asks" switch in Settings › General, on by
  *   default. Off hides the row and the card.
  *
- * The card has more rules of its own, all in `planSupportCard` so a test can
- * walk every one: the December windows, at most two days on screen, gone for
+ * The card has more rules of its own. It never shows in the Expo browser app
+ * (HomeSupportCard checks that), and the rest live in `planSupportCard` so a
+ * test can walk every one: the December windows, at most two days on screen, gone for
  * good after a tap or a close, and never while a climber is in a session or has
  * a board connected (Home is where a climber lands between climbs, and the card
  * must not sit between them and the wall).
