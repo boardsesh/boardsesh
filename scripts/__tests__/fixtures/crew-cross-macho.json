@@ -1,0 +1,7 @@
+{
+  "provenance": "Actual vtool -show-build output from preserved SDK26.5 CI app,2026-10-31. Original binaries were ARM64: formatting/platform/minOS fixtures only, not Intel compatibility evidence. Paths sanitized.",
+  "main": "/fixture/Boardsesh.app/Boardsesh:\nLoad command 11\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform IOSSIMULATOR\n    minos 16.4\n      sdk 26.5\n   ntools 1\n     tool LD\n  version 1267.0\n",
+  "vendor": "/fixture/Boardsesh.app/Frameworks/hermesvm.framework/hermesvm:\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform IOSSIMULATOR\n    minos 15.1\n      sdk 18.5\n   ntools 1\n     tool LD\n  version 955.13\n",
+  "legacyProvenance": "Actual Apple otool -arch x86_64 -l output from an explicitly synthetic Mach-O header/load-command fixture (LC_SOURCE_VERSION followed by LC_VERSION_MIN_IPHONEOS),2026-10-31. Contains no executable code; not vendor compatibility proof. Preserved app binaries were not edited.",
+  "legacy": "/fixture/legacy.dylib:\nLoad command 0\n      cmd LC_SOURCE_VERSION\n  cmdsize 16\n  version 99.0\nLoad command 1\n      cmd LC_VERSION_MIN_IPHONEOS\n  cmdsize 16\n  version 13.0\n      sdk 14.0\n"
+}

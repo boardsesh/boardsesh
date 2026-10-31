@@ -31,6 +31,8 @@ import { exportBuiltApp, assertSuccessfulBuild } from './lib/ios-build-export';
 import {
   simulatorArchitecture,
   assertAppSimulatorArchitecture,
+  crewCrossBuildArchitecture,
+  readCanonicalCrewToolchain,
   type SimulatorArchitecture,
 } from './lib/ios-simulator-architecture.mjs';
 import {
@@ -68,6 +70,7 @@ export interface BuildSimAppOptions {
   appOut: string;
   clean: boolean;
   configuration: string;
+  crewCrossBuildReceipt?: string;
 }
 
 export function parseArgs(argv: readonly string[]): BuildSimAppOptions {
@@ -88,6 +91,10 @@ export function parseArgs(argv: readonly string[]): BuildSimAppOptions {
         break;
       case '--configuration':
         options.configuration = expectValue(flag, value);
+        index++;
+        break;
+      case '--crew-cross-build-receipt':
+        options.crewCrossBuildReceipt = resolve(expectValue(flag, value));
         index++;
         break;
       case '--clean':
@@ -216,7 +223,7 @@ function podInstall(): void {
   }
 }
 
-function xcodebuild(configuration: string, architecture: SimulatorArchitecture): number {
+function xcodebuild(configuration: string, architecture: SimulatorArchitecture, crewCrossBuild = false): number {
   return run(
     'xcodebuild',
     [
@@ -244,6 +251,7 @@ function xcodebuild(configuration: string, architecture: SimulatorArchitecture):
       `CODE_SIGN_ENTITLEMENTS=${SIM_ENTITLEMENTS}`,
       // Build one host-native simulator slice. Cache keys separate ARM64/X64.
       `ARCHS=${architecture}`,
+      ...(crewCrossBuild ? ['ONLY_ACTIVE_ARCH=NO'] : []),
     ],
     IOS_DIR,
   );
@@ -270,6 +278,23 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
 
   try {
     const architecture = simulatorArchitecture();
+    if (
+      options.crewCrossBuildReceipt &&
+      (options.configuration !== 'Debug' || process.env.BOARDSESH_PROFILE_BUILD === '1')
+    )
+      throw new Error('Crew cross-build only supports the explicit diagnostic Debug lane.');
+    const sourceSha = options.crewCrossBuildReceipt
+      ? (spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 2000 }).stdout?.trim() ??
+        '')
+      : '';
+    const targetArchitecture = options.crewCrossBuildReceipt
+      ? crewCrossBuildArchitecture(
+          architecture,
+          JSON.parse(readFileSync(options.crewCrossBuildReceipt, 'utf8')) as unknown,
+          sourceSha,
+          readCanonicalCrewToolchain(),
+        )
+      : architecture;
     const paths = createMobileIosCachePaths(process.env, MOBILE_DIR);
     const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
     try {
@@ -295,20 +320,26 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
       ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
       podInstall();
 
-      let status = xcodebuild(options.configuration, architecture);
+      let status = xcodebuild(options.configuration, targetArchitecture, Boolean(options.crewCrossBuildReceipt));
       const appPath = builtAppPath(options.configuration);
-      if (status !== 0) {
+      if (status !== 0 && !options.crewCrossBuildReceipt) {
         // RN New Architecture codegen ("Generate Specs") can race the compile on a
         // cold/clean build ("Build input file cannot be found: …/ReactCodegen/
         // *-generated.mm"). The specs land during that first attempt, so a second
         // build finds them — the well-known "build twice on a clean checkout"
         // quirk that bites every fresh CI runner. Retry once.
         console.log(`${LOG} First build failed; retrying once for the cold-build codegen race...`);
-        status = xcodebuild(options.configuration, architecture);
+        status = xcodebuild(options.configuration, targetArchitecture, Boolean(options.crewCrossBuildReceipt));
       }
 
       assertSuccessfulBuild(status, appPath);
-      assertAppSimulatorArchitecture(appPath, architecture, options.configuration === 'Debug');
+      assertAppSimulatorArchitecture(appPath, targetArchitecture, options.configuration === 'Debug');
+      if (options.crewCrossBuildReceipt) {
+        // Archive the original product: ordinary cpSync export may rewrite relative
+        // framework symlinks into producer-only absolute paths.
+        console.log(`${LOG} Cross-build product retained untouched -> ${appPath}`);
+        return 0;
+      }
       const destination = exportBuiltApp(status, appPath, options.appOut);
       console.log(`${LOG} Built ${options.configuration} simulator app -> ${destination}`);
       return 0;

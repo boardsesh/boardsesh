@@ -65,7 +65,7 @@ describe('store video workflow handoff', () => {
   });
 
   it.each([
-    ['record-crew', 90],
+    ['record-crew', 60],
     ['record-english', 60],
     ['diagnose-profile-filter', 45],
     ['record-profile', 45],
@@ -77,9 +77,9 @@ describe('store video workflow handoff', () => {
     expect(record.steps?.find((step) => step.name === 'Build dev-client on cache miss')?.run).toContain(
       'build metrics/build.json',
     );
-    expect(record.steps?.find((step) => step.if === "inputs.mode == 'record-crew'")?.run).toContain(
-      'crew-check metrics/crew-check.json',
-    );
+    expect(
+      record.steps?.find((step) => step.name === 'Record one English crew take without publishing')?.run,
+    ).toContain('crew-check metrics/crew-check.json');
     expect(workflow('mobile-store-videos-pipeline').jobs.crew['timeout-minutes']).toBe(240);
   });
 
@@ -92,7 +92,7 @@ describe('store video workflow handoff', () => {
         format: (template: string, argument: string) => template.replace('{0}', argument),
       }) as unknown;
     expect(measure.jobs.record['runs-on']).toBe(workflow('mobile-store-videos-pipeline').jobs.crew['runs-on']);
-    expect(evaluate(measure.jobs.record['timeout-minutes'])).toBe(90);
+    expect(evaluate(measure.jobs.record['timeout-minutes'])).toBe(60);
     expect(evaluate(measure.concurrency?.group)).toBe(
       workflow('mobile-store-videos-pipeline').jobs.crew.concurrency?.group,
     );

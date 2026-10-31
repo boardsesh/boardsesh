@@ -72,6 +72,35 @@ workflow never overlays or silently patches the app source. Source/native hashes
 and runtime gates still apply. SDK 27 screenshot jobs and frozen ARM diagnostic
 refs are unchanged.
 
+The first cold Intel build failed in the Swift 6.3.3 compiler while lowering
+upstream ExpoModulesCore code; it never produced a validated app or started a
+session. The single `record-crew` measurement lane now provides an artifact-only
+cross-build experiment. Its producer uses the existing ARM `xcode-27` host with
+canonical Xcode 27.1 / build `27A9275` and SDK 27.1 / build `24A94232`, verifies
+actual x86_64 SDK interfaces/link stubs first, and records the observed complete
+Swift compiler identity. It does not guess a Swift patch version.
+
+That explicit cross lane builds x86_64 once with `ONLY_ACTIVE_ARCH=NO`, retaining
+the untouched original build product. It does not use or save v1/v2 app caches,
+run Metro, boot a simulator, or receive test-account credentials. A one-day tar
+and manifest bind exact app/tooling source, run/attempt, builder ARM64, target
+x86_64, compiler/SDK, native hashes, file modes and relative symlinks. The Intel
+consumer checks the same-run producer digests, simulator platforms and deployment
+floors before installation. Main/Debug must be single-slice x86_64; vendor FAT
+libraries may retain other slices when their x86_64 simulator slice supports
+runtime 26.5. Absolute or escaping app links are refused. Newer SDK compilation
+with a compatible deployment target is a changed build condition; actual launch
+on 26.5 remains a required proof.
+
+`BOARDSESH_CREW_EXPECT_IOS_RUNTIME=26.5` is scoped to that experiment. Each actual
+selected primary/secondary UDID must belong to exactly one available 26.5 runtime
+before boot, installation or launch. The secondary check runs at its existing
+deferred preparation point. Other modes and the production pipeline retain their
+ordinary host-native build/cache behavior. No Swift ownership or JSI patch is
+part of this experiment. Handoffs bind run attempt as well as run ID: rerunning
+only a failed consumer intentionally cannot reuse a prior-attempt app; any further
+dispatch requires a new reviewed decision.
+
 An actual Intel private crew capture remains required: privacy-off gate before
 Start, invite/secondary join, complete frames, session/device/process cleanup,
 and primary/secondary warmup plus pressure/RSS/compression/swap metrics. Preserve
@@ -559,12 +588,13 @@ that the second simulator caused the failure.
 To check the crew take on the standard Intel 14 GiB CI runner, dispatch
 **Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
 It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
-source SHA, and skips rendering and publishing. The outer job gets 90 minutes for
-a cold native build (about 36 minutes observed on ARM), the existing 45-minute
-crew capture allowance and setup headroom. Build and recording remain separate
-`build.json` / `crew-check.json` measurements. Native, launch, Maestro, take and
-private-session cleanup deadlines are unchanged; other modes and the production
-all-locale job budgets are unchanged. It uses the existing repository
+source SHA, and skips rendering and publishing. The cross-build experiment has
+a separate 60-minute producer and a 60-minute consumer: the existing 45-minute
+capture allowance plus 15 minutes for dependency, artifact and recording-tool
+setup. No cold build runs in the consumer, and inner input waits are unchanged. Producer build and Intel recording remain separate
+`crew-cross-build.json` / `crew-check.json` measurements. Native, launch, Maestro,
+take and private-session cleanup deadlines are unchanged; other modes and the
+production all-locale job budgets are unchanged. It uses the existing repository
 recording-account secrets and shares the normal crew account lock. For release
 train validation, use a candidate ref containing the exact `release/next` source
 plus the recorder fix; a run from `main` builds a different native app.

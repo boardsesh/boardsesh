@@ -27,6 +27,7 @@
  * lives in scripts/lib/showcase-video/record.ts. macOS only.
  */
 
+import { assertSelectedCrewRuntime } from './lib/ios-crew-cross-artifact.mjs';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -632,6 +633,20 @@ async function preparePhone(
 ): Promise<Phone> {
   const spec = showcaseDevice(role, process.env.SHOWCASE_SIMULATOR_NAME_SUFFIX);
   const device = findOrCreateIosDevice({ name: spec.name, typeId: spec.typeId, orientation: 'PORTRAIT' });
+  const expectedRuntime = process.env.BOARDSESH_CREW_EXPECT_IOS_RUNTIME;
+  if (expectedRuntime) {
+    const devices = simctl(['list', 'devices', '--json'], process.env, 10_000);
+    const runtimes = simctl(['list', 'runtimes', '--json'], process.env, 10_000);
+    if (devices.status !== 0 || runtimes.status !== 0)
+      throw new Error('Cannot verify selected crew simulator runtime.');
+    assertSelectedCrewRuntime(
+      device.udid,
+      JSON.parse(devices.stdout) as unknown,
+      JSON.parse(runtimes.stdout) as unknown,
+      expectedRuntime,
+    );
+    console.log(`${LOG} ${role}: verified iOS${expectedRuntime} for ${device.udid}`);
+  }
   console.log(`${LOG} ${role}: ${device.name} (${device.udid})`);
   const metroLog = resolve(LOG_DIR, `metro-${role}.log`);
   console.log(`${LOG} ${role}: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);

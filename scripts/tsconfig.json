@@ -270,6 +270,8 @@
     "lib/ios-build-export.ts",
     "lib/ios-simulator-architecture.d.mts",
     "__tests__/ios-simulator-architecture.test.ts",
+    "__tests__/ios-crew-cross-artifact.test.ts",
+    "lib/ios-crew-cross-artifact.d.mts",
     "lib/metro-host.ts",
     "lib/metro-dev-server.ts",
     "lib/mobile-stories.ts",

@@ -102,3 +102,89 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exitCode = 1;
   }
 }
+
+// This one diagnostic lane cross-compiles without changing ordinary host-native builds.
+export const CREW_CROSS_FORMAT = 'boardsesh-crew-cross-build-v1';
+export const CREW_DEVELOPER_DIR = '/Applications/Xcode_27.1.app/Contents/Developer';
+export function assertCanonicalCrewToolchain(identity) {
+  if (
+    identity?.developerDir !== CREW_DEVELOPER_DIR ||
+    identity?.realDeveloperDir !== CREW_DEVELOPER_DIR ||
+    identity?.realAppPath !== '/Applications/Xcode_27.1.app' ||
+    typeof identity?.compilerPath !== 'string' ||
+    !identity.compilerPath.startsWith(`${CREW_DEVELOPER_DIR}/Toolchains/XcodeDefault.xctoolchain/usr/bin/`) ||
+    identity.compilerPath.split('/').includes('..') ||
+    identity?.xcodeVersion !== '27.1' ||
+    identity?.xcodeBuild !== '27A9275' ||
+    identity?.sdkVersion !== '27.1' ||
+    identity?.sdkBuild !== '24A94232' ||
+    !['iPhoneSimulator.sdk', 'iPhoneSimulator27.1.sdk'].some(
+      (name) => identity?.sdkPath === `${CREW_DEVELOPER_DIR}/Platforms/iPhoneSimulator.platform/Developer/SDKs/${name}`,
+    ) ||
+    !['iPhoneSimulator.sdk', 'iPhoneSimulator27.1.sdk'].some(
+      (name) =>
+        identity?.realSdkPath === `${CREW_DEVELOPER_DIR}/Platforms/iPhoneSimulator.platform/Developer/SDKs/${name}`,
+    ) ||
+    typeof identity?.swiftVersion !== 'string' ||
+    !identity.swiftVersion.includes('Apple Swift version ')
+  )
+    throw new Error('Crew cross-build requires the exact canonical stable Xcode/SDK tuple.');
+  return identity;
+}
+function boundedCrewCommand(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 10_000, killSignal: 'SIGKILL' });
+  if (result.status !== 0) throw new Error(`Crew toolchain metadata command failed: ${basename(command)}`);
+  return result.stdout.trim();
+}
+export function readCanonicalCrewToolchain() {
+  if (
+    process.env.DEVELOPER_DIR !== CREW_DEVELOPER_DIR ||
+    process.env.SWIFT_EXEC ||
+    process.env.SDKROOT ||
+    (process.env.TOOLCHAINS && process.env.TOOLCHAINS !== 'com.apple.dt.toolchain.XcodeDefault')
+  )
+    throw new Error('Crew cross-build refuses alternate developer/compiler/SDK overrides.');
+  const realDeveloperDir = realpathSync(CREW_DEVELOPER_DIR);
+  const realAppPath = realpathSync('/Applications/Xcode_27.1.app');
+  if (realDeveloperDir !== CREW_DEVELOPER_DIR || realAppPath !== '/Applications/Xcode_27.1.app')
+    throw new Error('Crew canonical Xcode app/developer directory resolves to an alias.');
+  const version = boundedCrewCommand(`${CREW_DEVELOPER_DIR}/usr/bin/xcodebuild`, ['-version']);
+  const sdk = (flag) => boundedCrewCommand('/usr/bin/xcrun', ['--sdk', 'iphonesimulator', flag]);
+  const sdkPath = sdk('--show-sdk-path');
+  const compiler = `${CREW_DEVELOPER_DIR}/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc`;
+  const compilerPath = realpathSync(compiler);
+  if (!compilerPath.startsWith(`${CREW_DEVELOPER_DIR}/Toolchains/XcodeDefault.xctoolchain/usr/bin/`))
+    throw new Error('Crew compiler resolves outside the pinned default toolchain.');
+  return assertCanonicalCrewToolchain({
+    realDeveloperDir,
+    realAppPath,
+    realSdkPath: realpathSync(sdkPath),
+    compilerPath,
+    developerDir: CREW_DEVELOPER_DIR,
+    xcodeVersion: /^Xcode (.+)$/m.exec(version)?.[1],
+    xcodeBuild: /^Build version (.+)$/m.exec(version)?.[1],
+    sdkVersion: sdk('--show-sdk-version'),
+    sdkBuild: sdk('--show-sdk-build-version'),
+    sdkPath,
+    // No guessed patch version/tag: the exact pinned Xcode bundle supplies its compiler.
+    swiftVersion: boundedCrewCommand(compiler, ['--version']),
+  });
+}
+export function crewCrossBuildArchitecture(hostArchitecture, receipt, sourceSha, observedToolchain) {
+  if (
+    hostArchitecture !== 'arm64' ||
+    receipt?.format !== CREW_CROSS_FORMAT ||
+    receipt?.hostArchitecture !== 'arm64' ||
+    receipt?.targetArchitecture !== 'x86_64' ||
+    !/^[a-f0-9]{40}$/.test(sourceSha) ||
+    receipt?.sourceSha !== sourceSha ||
+    receipt?.sdkSupportVerified !== true ||
+    !/^[a-f0-9]{64}$/.test(receipt?.sdkInventorySha256 ?? '')
+  )
+    throw new Error('Crew cross-build requires its coherent ARM-to-Intel preflight receipt.');
+  assertCanonicalCrewToolchain(receipt.toolchain);
+  assertCanonicalCrewToolchain(observedToolchain);
+  if (JSON.stringify(receipt.toolchain) !== JSON.stringify(observedToolchain))
+    throw new Error('Crew compiler/SDK changed after preflight.');
+  return 'x86_64';
+}
