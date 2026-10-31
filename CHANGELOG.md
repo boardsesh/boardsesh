@@ -4,6 +4,18 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-31
+
+### Improved
+
+- Save climbs, sends and grades on your spray wall offline. ([#6911](https://github.com/boardsesh/boardsesh/pull/6911))
+  Try your crew's drafts on walls you can access.
+
+### Fixed
+
+- Scroll climbs and your logbook without accidentally opening row actions. ([#7161](https://github.com/boardsesh/boardsesh/pull/7161))
+- Opening Boardsesh for the first time from a shared link no longer crashes after the privacy prompt ([#7153](https://github.com/boardsesh/boardsesh/pull/7153))
+
 ## 2026-10-30
 
 ### App update

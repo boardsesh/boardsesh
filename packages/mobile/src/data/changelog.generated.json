@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-10-30T20:53:54.511Z",
+  "generatedAt": "2026-10-31T08:15:56.373Z",
   "entries": [
+    {
+      "prNumber": 7161,
+      "category": "fixed",
+      "title": "Scroll climbs and your logbook without accidentally opening row actions.",
+      "mergedAt": "2026-10-31T08:03:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7161"
+    },
+    {
+      "prNumber": 7153,
+      "category": "fixed",
+      "title": "Opening Boardsesh for the first time from a shared link no longer crashes after the privacy prompt",
+      "mergedAt": "2026-10-31T06:32:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7153"
+    },
+    {
+      "prNumber": 6911,
+      "category": "improved",
+      "title": "Save climbs, sends and grades on your spray wall offline.",
+      "mergedAt": "2026-10-31T05:56:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6911",
+      "body": "Try your crew's drafts on walls you can access."
+    },
     {
       "prNumber": 6617,
       "category": "fixed",
