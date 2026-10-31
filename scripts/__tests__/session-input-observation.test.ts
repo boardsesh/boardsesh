@@ -39,7 +39,8 @@ function completedTrace() {
     attemptId: 'one',
     interactionId: 'input-1',
     switchRowId: 'switch-1',
-    componentId: 'parent-1',
+    componentId: stage === 'switch-row-props-committed' ? 'switch-1' : 'parent-1',
+    value: false,
     isOn: false,
     isPublic: false,
     capturedDisabled: false,
@@ -129,6 +130,19 @@ describe('finite session-input observation guards', () => {
     expect(classifyAttempt(disabled, true).boundary).toBe('captured_guard_not_false');
     expect(classifyAttempt(complete, false).reproduced).toBe(true);
   });
+  it('rejects target unmount/remount and replacement-row commits even when parent and inherited interaction tags match', () => {
+    const rowReplaced = completedTrace();
+    rowReplaced.find((trace) => trace.stage === 'switch-row-props-committed')!.componentId = 'replacement-row';
+    expect(classifyAttempt(rowReplaced, true).boundary).toBe('row_commit_instance_changed');
+    const stillOn = completedTrace();
+    stillOn.find((trace) => trace.stage === 'switch-row-props-committed')!.value = true;
+    expect(classifyAttempt(stillOn, true).boundary).toBe('target_row_not_committed_off');
+    for (const lifecycle of ['switch-row-unmounted', 'switch-row-mounted']) {
+      const trace: Record<string, unknown>[] = completedTrace();
+      trace.push({ ...trace[0], stage: lifecycle, componentId: 'switch-1' });
+      expect(classifyAttempt(trace, true).reproduced).toBe(true);
+    }
+  });
   it('permits only one fresh launch after the first completely observed successful input', () => {
     const success = {
       attempt: 1,
@@ -207,6 +221,11 @@ describe('finite session-input observation guards', () => {
         steps: { 'app-cache': { outputs: { 'cache-hit': String(hit) } } },
         always: () => true,
       });
+    expect(
+      workflow.jobs.record.steps.find((step: { uses?: string }) => step.uses === 'actions/checkout@v4').with[
+        'fetch-depth'
+      ],
+    ).toBe(0);
     expect(evaluate(workflow.jobs.record['timeout-minutes'])).toBe(30);
     const eligible = workflow.jobs.record.steps.filter((step: { if?: string }) => !step.if || evaluate(step.if));
     expect(eligible.some((step: { run?: string }) => step.run?.includes('mobile:build-sim-app'))).toBe(false);

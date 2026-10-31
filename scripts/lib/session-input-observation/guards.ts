@@ -157,6 +157,16 @@ export function classifyAttempt(traces: Record<string, unknown>[], offConfirmed:
       trace.switchRowId === event.switchRowId,
   );
   if (event.isOn !== false) return { reproduced: true, boundary: 'raw_value_not_off' };
+  if (matching.some((trace) => trace.stage === 'switch-row-unmounted' && trace.componentId === event.switchRowId))
+    return { reproduced: true, boundary: 'target_row_unmounted' };
+  if (matching.some((trace) => trace.stage === 'switch-row-mounted' && trace.componentId === event.switchRowId))
+    return { reproduced: true, boundary: 'target_row_remounted' };
+  const rowCommits = matching.filter((trace) => trace.stage === 'switch-row-props-committed');
+  if (rowCommits.some((trace) => trace.componentId !== event.switchRowId))
+    return { reproduced: true, boundary: 'row_commit_instance_changed' };
+  if (rowCommits.some((trace) => trace.value !== false))
+    return { reproduced: true, boundary: 'target_row_not_committed_off' };
+
   for (const stage of OBSERVATION_STAGES)
     if (!matching.some((trace) => trace.stage === stage)) return { reproduced: true, boundary: `missing_${stage}` };
   if (
