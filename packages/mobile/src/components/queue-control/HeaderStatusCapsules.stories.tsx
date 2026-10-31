@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { Climb } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
 import type { StoryModule } from '../../dev/stories/types';
 import { useTheme } from '../../providers/theme-provider';
+import { BluetoothContext, useBluetoothContext } from '../../providers/bluetooth-provider';
+import { QueueDataContext, useQueueData } from '../../providers/queue/queue-contexts';
 import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { PressableSurface } from '../PressableSurface';
@@ -22,6 +24,8 @@ import { WallStatusCapsule } from './WallStatusCapsule';
 const TITLE_SLOT_WIDTH = 210;
 
 const noop = () => {};
+const noConnection = async () => false;
+const noDisconnect = async () => {};
 
 const wallClimb = (over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
   climbUuid: 'story-wall-climb',
@@ -78,6 +82,38 @@ function HeldClimb({ ledless, compact = false }: { ledless: boolean; compact?: b
       onAccessibilityAction={noop}
       accessibilityHint=""
     />
+  );
+}
+
+/** Story-local transport/queue inputs; rendering the real capsule never writes hardware. */
+function EmptyHeldCapsule({ ledless }: { ledless: boolean }) {
+  const bluetooth = useBluetoothContext();
+  const queue = useQueueData();
+  const storyBluetooth = useMemo(
+    () => ({
+      ...bluetooth,
+      isConnected: !ledless,
+      loading: false,
+      ledless,
+      virtualWallHeld: ledless,
+      canDriveWall: true,
+      connect: noConnection,
+      connectAfterBoardSwitch: noConnection,
+      disconnect: noDisconnect,
+      takeVirtualWall: noop,
+      releaseVirtualWall: noop,
+    }),
+    [bluetooth, ledless],
+  );
+  const emptyQueue = useMemo(() => ({ ...queue, currentClimbQueueItem: null }), [queue]);
+  return (
+    <BluetoothContext.Provider value={storyBluetooth}>
+      <QueueDataContext.Provider value={emptyQueue}>
+        <TitleSlot>
+          <BoardHeldCapsule ledless={ledless} />
+        </TitleSlot>
+      </QueueDataContext.Provider>
+    </BluetoothContext.Provider>
   );
 }
 
@@ -141,6 +177,19 @@ function InteractiveWallCapsule() {
 const stories: StoryModule = {
   title: 'Climbs header / Status capsules',
   stories: {
+    emptyHeld: {
+      name: 'You have the board, no climb up: LED and no lights',
+      render: () => (
+        <>
+          <StoryVariant label="LED board held, no climb up">
+            <EmptyHeldCapsule ledless={false} />
+          </StoryVariant>
+          <StoryVariant label="No-lights wall held, no climb up">
+            <EmptyHeldCapsule ledless />
+          </StoryVariant>
+        </>
+      ),
+    },
     interactive: {
       name: 'Dismiss and re-light the same climb',
       render: () => <InteractiveWallCapsule />,
