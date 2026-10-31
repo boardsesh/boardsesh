@@ -5,6 +5,7 @@ import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WallScreen } from './WallScreen';
+import { ScreenshotCurrentDriveReadiness } from '../play-drawer/ScreenshotCurrentDriveReadiness';
 import { Button } from '../Button';
 import { useKeepAwakeWhile } from '../../hooks/use-keep-awake-while';
 import { useAutoHidingChrome } from '../../hooks/use-auto-hiding-chrome';
@@ -140,6 +141,13 @@ function WallDisplayScreenComponent() {
         onTouchStart={handleTouchStart}
       >
         <WallScreen />
+        {/* The modal hides root accessibility nodes. Observe the same real drive
+            here, outside the fading controls, so kiosk captures can prove it. */}
+        {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+        process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' &&
+        process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1' ? (
+          <ScreenshotCurrentDriveReadiness surface="kiosk" />
+        ) : null}
         <Animated.View
           pointerEvents="box-none"
           style={[

@@ -11,6 +11,7 @@ type Command = {
 };
 const currentId = '${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}';
 const driveId = '${SCREENSHOT_PRIMARY_DRIVING_ID}';
+const kioskId = '${SCREENSHOT_PRIMARY_KIOSK_DRIVING_ID}';
 function commands(): Command[] {
   const documents = parseAllDocuments(readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8'));
   for (const document of documents) expect(document.errors).toEqual([]);
@@ -44,12 +45,13 @@ describe('real iPad driving capture', () => {
       const index = program.findIndex((command) => command.takeScreenshot === shot);
       expect(index).toBeGreaterThan(0);
       const gate = program[index - 1].runFlow;
+      const expectedId = shot === '00-wall' ? kioskId : currentId;
       expect(gate?.when.true).toBe("${SCREENSHOT_PRIMARY_DRIVING == '1'}");
-      expect(gate?.commands).toEqual([{ extendedWaitUntil: { visible: { id: currentId }, timeout: 90000 } }]);
+      expect(gate?.commands).toEqual([{ extendedWaitUntil: { visible: { id: expectedId }, timeout: 90000 } }]);
       const capture = (requiresDrive: boolean, live: boolean) => {
         if (
           requiresDrive &&
-          gate?.commands.some((command) => command.extendedWaitUntil?.visible?.id === currentId) &&
+          gate?.commands.some((command) => command.extendedWaitUntil?.visible?.id === expectedId) &&
           !live
         )
           throw new Error('No current real drive');

@@ -291,7 +291,7 @@ name: app-store screenshots (iPad)
     commands:
       - extendedWaitUntil:
           visible:
-            id: ${SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID}
+            id: ${SCREENSHOT_PRIMARY_KIOSK_DRIVING_ID}
           timeout: 90000
 - takeScreenshot: 00-wall
 # Any touch brings Exit back. Leave the display so the sidebar steps below can run.
