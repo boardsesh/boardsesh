@@ -63,9 +63,9 @@ type DevicePickerSheetProps = {
   /** Whether the sheet should be on screen. Defaults to true. */
   open?: boolean;
   /**
-   * The picker ended without a choice (the saved board was found, or the connect
-   * failed). The sheet dismisses itself and calls `onClosed` once that has
-   * settled, so it is never unmounted mid-present.
+   * The picker ended (a board was selected, or the connect failed). The sheet
+   * dismisses itself and calls `onClosed` once that has settled, so it is never
+   * unmounted mid-present.
    */
   closing?: boolean;
   onClosed?: () => void;
@@ -104,7 +104,7 @@ export function DevicePickerSheet({
   // clears the host's picker state on a user pan-down / backdrop.
   const visible = open && !closing;
 
-  // Closing without a choice: wait for the coordinator's dismissal to settle
+  // Closing a completed picker: wait for the coordinator's dismissal to settle
   // (immediately if the sheet never reached the screen), then let the host drop
   // the session. Unmounting straight away could tear the sheet down while it is
   // still presenting, the UIKit overlap the coordinator exists to prevent.
