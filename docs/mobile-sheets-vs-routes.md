@@ -1096,8 +1096,13 @@ and app restarts until another lighting event, including a re-light of the same
 climb. VoiceOver and TalkBack offer the same Dismiss action. Climb, status and
 dismissal scope settle together while the player covers the native header.
 
+The current-climb capsule while you hold an LED board uses the same holds-based
+background as the play drawer's driving button, including your hold colours and
+mirror setting. It reads cached geometry without starting a board-art fetch.
+
 The native story gallery shows the live and recent-history treatments side by side:
-[Liquid Glass](images/wall-capsule-glass-dark.png) and
+[Liquid Glass dark](images/wall-capsule-glass-dark.png),
+[Liquid Glass light](images/wall-capsule-glass-light.png) and
 [Material](images/wall-capsule-material-light.png).
 
 Queue removal uses the queue's scoped live-merge Undo. Logbook deletion keeps its

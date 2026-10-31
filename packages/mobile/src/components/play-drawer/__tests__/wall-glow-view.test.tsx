@@ -33,6 +33,7 @@ vi.mock('react-native', () => {
         'data-image': flat.experimental_backgroundImage ?? '',
         'data-bg': flat.backgroundColor ?? '',
         'data-faded': flat.opacity instanceof Value ? 'animated' : '',
+        'data-style': JSON.stringify(flat),
       },
       children,
     );
@@ -116,6 +117,36 @@ describe('WallGlow', () => {
     expect(view.getByTestId('wall-glow-blobs').dataset.blend).toBe('multiply');
     expect(view.queryByTestId('wall-glow-frost')).toBeNull();
     expect(view.queryByTestId('wall-glow-label-fade')).toBeNull();
+  });
+
+  it('protects both header lines and their edges with a uniform full-surface scrim before frost', () => {
+    const view = render(createElement(WallGlow, { layer: layer({ readableZone: 'full' }), width: 80 }));
+    const fade = view.getByTestId('wall-glow-label-fade');
+    expect(fade.dataset.image).toBe('');
+    expect(fade.dataset.bg).toBe('rgba(14, 13, 18, 0.2)');
+    expect(JSON.parse(fade.dataset.style ?? '{}')).toMatchObject({
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+    expect(JSON.parse(fade.dataset.style ?? '{}').width).toBeUndefined();
+    const children = [...view.getByTestId('wall-glow').children];
+    expect(children.indexOf(fade)).toBeLessThan(children.indexOf(view.getByTestId('wall-glow-frost')));
+    expect(children.indexOf(fade)).toBeGreaterThan(children.indexOf(view.getByTestId('wall-glow-blobs')));
+  });
+
+  it('retains the player’s existing centered gradient when no readable zone is supplied', () => {
+    const view = render(createElement(WallGlow, { layer: layer(), width: 360 }));
+    const fade = view.getByTestId('wall-glow-label-fade');
+    expect(fade.dataset.bg).toBe('');
+    expect(fade.dataset.image).toBe(
+      'linear-gradient(to right, transparent 0%, rgba(14, 13, 18, 0.2) 10%, rgba(14, 13, 18, 0.2) 90%, transparent 100%)',
+    );
+    const fadeStyle = JSON.parse(fade.dataset.style ?? '{}') as Record<string, unknown>;
+    expect(fadeStyle.left).toBeCloseTo(43.2);
+    expect(fadeStyle.width).toBeCloseTo(273.6);
   });
 
   it('blends nothing on old Android', () => {

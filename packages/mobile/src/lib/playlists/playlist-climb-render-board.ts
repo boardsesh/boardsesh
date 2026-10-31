@@ -53,12 +53,15 @@ function toRenderBoard(boardName: BoardName, layoutId: number, sizeId: number, s
 const RENDER_BOARD_TARGET_CACHE_LIMIT = 32;
 const renderBoardTargetCache = new Map<string, BoardCompatibilityTarget>();
 
-export function getPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): BoardCompatibilityTarget {
+export function getPlaylistRenderBoardTarget(
+  renderBoard: PlaylistRenderBoard,
+  { loadMissingSpray = true }: { loadMissingSpray?: boolean } = {},
+): BoardCompatibilityTarget {
   // A playlist row is one of the four ways a wall reaches a surface without ever
   // being the active board. Ask for it here, where the row's own board is
   // resolved: a Map lookup per row, at most one fetch per wall, and the registry
   // wakes the rows that asked when it lands. No-op for a catalogue board.
-  if (renderBoard.boardName === 'spray') ensureSprayWallLoaded(renderBoard.layoutId);
+  if (loadMissingSpray && renderBoard.boardName === 'spray') ensureSprayWallLoaded(renderBoard.layoutId);
 
   // The spray token (empty for every catalogue board) carries the wall version.
   // The cached target holds `holdsData`, which `canAddClimbToBoard` reads, so

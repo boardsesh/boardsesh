@@ -76,8 +76,8 @@ function requestSprayWall(boardConfig: BoardConfig): void {
   if (boardConfig.boardName === 'spray') ensureSprayWallLoaded(boardConfig.layoutId);
 }
 
-function withSprayWallRequested(result: ClimbRenderBoardResult): ClimbRenderBoardResult {
-  requestSprayWall(result.boardConfig);
+function withSprayWallRequested(result: ClimbRenderBoardResult, loadMissingSpray: boolean): ClimbRenderBoardResult {
+  if (loadMissingSpray) requestSprayWall(result.boardConfig);
   return result;
 }
 
@@ -103,17 +103,22 @@ function toResolverInput(climb: ClimbRenderBoardClimb, fallbackAngle: number): C
 export function resolveClimbRenderBoard(
   climb: ClimbRenderBoardClimb | null | undefined,
   activeBoardConfig: BoardConfig | null,
+  { loadMissingSpray = true }: { loadMissingSpray?: boolean } = {},
 ): ClimbRenderBoardResult | null {
-  if (!climb) return activeBoardConfig ? withSprayWallRequested(drawOnActiveBoard(activeBoardConfig)) : null;
+  if (!climb)
+    return activeBoardConfig ? withSprayWallRequested(drawOnActiveBoard(activeBoardConfig), loadMissingSpray) : null;
 
   if (!activeBoardConfig) {
     const resolved = resolvePlaylistClimbRenderBoard(toResolverInput(climb, 0), null);
     if (!resolved) return null;
-    return withSprayWallRequested({
-      boardConfig: resolved.renderBoard,
-      fit: resolved.fit,
-      incompatible: resolved.incompatible,
-    });
+    return withSprayWallRequested(
+      {
+        boardConfig: resolved.renderBoard,
+        fit: resolved.fit,
+        incompatible: resolved.incompatible,
+      },
+      loadMissingSpray,
+    );
   }
 
   const activeBoardName = toBoardName(activeBoardConfig.boardName);
@@ -126,29 +131,32 @@ export function resolveClimbRenderBoard(
 
   // No usable board signal on either side: keep today's behaviour and draw the
   // climb on the active board rather than guessing a board for it.
-  if (identity === 'unknown') return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
+  if (identity === 'unknown') return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig), loadMissingSpray);
   // A climb with no layout can only be placed by GUESSING one — the brand's
   // first layout, via `getDefaultRenderBoard`. That guess can land on exactly
   // the wrong-placement render this resolver exists to prevent, so a missing
   // layout always fails open, even when the brand disagrees with the active
   // board. (With a layout in hand the fallback is the climb's real board.)
-  if (climb.layoutId == null) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
+  if (climb.layoutId == null) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig), loadMissingSpray);
 
   const resolved = resolvePlaylistClimbRenderBoard(
     toResolverInput(climb, activeBoardConfig.angle),
     activeBoardConfig,
-    getPlaylistRenderBoardTarget(activeBoardConfig),
+    getPlaylistRenderBoardTarget(activeBoardConfig, { loadMissingSpray }),
   );
   // The climb names a board we can't build render data for (an unknown board
   // string, a retired layout). Drawing it on the active board is what happened
   // before this resolver existed, and it beats blanking the surface.
-  if (!resolved) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
+  if (!resolved) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig), loadMissingSpray);
 
-  return withSprayWallRequested({
-    boardConfig: resolved.renderBoard,
-    fit: resolved.fit,
-    incompatible: resolved.incompatible,
-  });
+  return withSprayWallRequested(
+    {
+      boardConfig: resolved.renderBoard,
+      fit: resolved.fit,
+      incompatible: resolved.incompatible,
+    },
+    loadMissingSpray,
+  );
 }
 
 /**

@@ -6,9 +6,20 @@
 // the UIKit title-view rules and the entry fade. HeaderCapsuleClimbLabel is the
 // row both capsules use for a climb: a face, then the name over a grade · sends
 // byline, laid out like the tab-bar accessory platter.
+// A held climb can supply the wall button's opaque patterned surface in place
+// of glass, keeping the same native title host and tap target.
 
 import { useContext, useMemo, type ReactNode } from 'react';
-import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+  type ColorValue,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
@@ -54,6 +65,9 @@ type HeaderStatusCapsuleProps = {
   accessibilityHint?: string;
   /** From {@link useHeaderCapsuleCompact}: the leading element has dropped out. */
   compact: boolean;
+  /** An opaque decorative surface, clipped to the capsule instead of glass/tint. */
+  background?: { content: ReactNode; color: string; borderColor: string };
+  onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
   children: ReactNode;
 };
@@ -68,6 +82,8 @@ export function HeaderStatusCapsule({
   accessibilityLabel,
   accessibilityHint,
   compact,
+  background,
+  onLayout,
   testID,
   children,
 }: HeaderStatusCapsuleProps) {
@@ -75,6 +91,7 @@ export function HeaderStatusCapsule({
   const reduceMotion = useReducedMotion();
   const nativeHeader = useContext(NativeHeaderActionContext);
   const nativeGlass = useNativeGlass();
+  const showsGlass = nativeGlass && background === undefined;
 
   // A tint composited over the neutral surface carries the status tone.
   const glassTintStyle = useMemo(
@@ -84,12 +101,26 @@ export function HeaderStatusCapsule({
 
   const capsuleStyle = [
     styles.capsule,
-    { backgroundColor: systemColors.secondaryBackground, borderColor: withAlpha(tintColor, 0.35) },
+    {
+      backgroundColor: background?.color ?? systemColors.secondaryBackground,
+      borderColor: background?.borderColor ?? withAlpha(tintColor, 0.35),
+    },
   ];
   const rowStyle = [styles.row, compact && styles.rowCompact];
   const capsuleContent = (
     <>
-      {nativeGlass ? null : <View pointerEvents="none" style={glassTintStyle} />}
+      {background ? (
+        <View
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {background.content}
+        </View>
+      ) : showsGlass ? null : (
+        <View pointerEvents="none" style={glassTintStyle} />
+      )}
       {onPress ? (
         <PressableSurface
           onPress={onPress}
@@ -122,7 +153,7 @@ export function HeaderStatusCapsule({
   // The native glass draws its own rounded edge. Opaque fills, RN borders and
   // clipping would cover or cut that lens, and opacity entry animations flatten it.
   const capsuleRadius = (nativeHeader ? NATIVE_ACTION_SIZE : CAPSULE_HEIGHT) / 2;
-  const surface = nativeGlass ? (
+  const surface = showsGlass ? (
     <GlassSurface
       glassEffectStyle="regular"
       tintColor={withAlpha(tintColor, 0.14)}
@@ -138,13 +169,27 @@ export function HeaderStatusCapsule({
   // UIKit owns this title view's layout and navigation transitions. A keyed
   // Reanimated entering transition can mutate it while the bar is laying out.
   if (nativeHeader) {
-    return <View style={nativeGlass ? styles.glassWrapper : [capsuleStyle, styles.nativeCapsule]}>{surface}</View>;
+    return (
+      <View style={showsGlass ? styles.glassWrapper : [capsuleStyle, styles.nativeCapsule]} onLayout={onLayout}>
+        {surface}
+      </View>
+    );
   }
 
-  if (nativeGlass) return <View style={styles.glassWrapper}>{surface}</View>;
+  if (showsGlass)
+    return (
+      <View style={styles.glassWrapper} onLayout={onLayout}>
+        {surface}
+      </View>
+    );
 
   return (
-    <Animated.View key={entryKey} entering={reduceMotion ? undefined : FadeIn.duration(180)} style={capsuleStyle}>
+    <Animated.View
+      key={entryKey}
+      entering={reduceMotion ? undefined : FadeIn.duration(180)}
+      style={capsuleStyle}
+      onLayout={onLayout}
+    >
       {capsuleContent}
     </Animated.View>
   );
@@ -159,6 +204,9 @@ type HeaderCapsuleClimbLabelProps = {
   /** Spoken by the Large Content Viewer when the text is too small to read. */
   largeContentTitle: string;
   onActivate?: () => void;
+  /** Patterned surfaces use their contrast-checked foreground for both lines. */
+  textColor?: ColorValue;
+  textStyle?: StyleProp<TextStyle>;
 };
 
 /** A face, then the climb's name over its byline: the accessory platter's row in a header capsule. */
@@ -169,6 +217,8 @@ export function HeaderCapsuleClimbLabel({
   compact,
   largeContentTitle,
   onActivate,
+  textColor,
+  textStyle,
 }: HeaderCapsuleClimbLabelProps) {
   const { systemColors } = useTheme();
   return (
@@ -182,22 +232,22 @@ export function HeaderCapsuleClimbLabel({
       <LargeContentViewer title={largeContentTitle} onActivate={onActivate} style={styles.climbLines}>
         <Text
           variant="caption1"
-          color={systemColors.label}
+          color={textColor ?? systemColors.label}
           numberOfLines={1}
           ellipsizeMode="tail"
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.climbName}
+          style={[styles.climbName, textStyle]}
         >
           {name}
         </Text>
         {byline ? (
           <Text
             variant="caption2"
-            color={systemColors.secondaryLabel}
+            color={textColor ?? systemColors.secondaryLabel}
             numberOfLines={1}
             ellipsizeMode="tail"
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.climbByline}
+            style={[styles.climbByline, textStyle]}
           >
             {byline}
           </Text>

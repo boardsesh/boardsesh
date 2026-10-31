@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { contrastRatioHex } from '../../../lib/color-contrast-oracle';
 import {
   LABEL_FADE_STEPS,
   MAX_WALL_GLOW_BLOBS,
@@ -7,6 +8,7 @@ import {
   wallGlowBlobs,
   wallGlowLabelContrast,
   wallGlowLabelFade,
+  wallGlowPixel,
   type GlowHold,
   type WallGlowSurface,
 } from '../wall-glow';
@@ -147,4 +149,82 @@ describe('wallGlowLabelFade', () => {
     const bright = wallGlowBlobs({ ...BOARD, holds: whiteCrowd, pill: PILL });
     expect(wallGlowLabelFade(bright, PILL, { surface: DARK, blend: 'screen' })).toBeGreaterThan(0);
   });
+
+  it('preserves the player’s original centered fade choices exactly', () => {
+    const fades = cases.map(([_case, holds, surface, blend, opacityScale]) => {
+      const blobs = wallGlowBlobs({ ...BOARD, holds, pill: PILL });
+      const options = { surface, blend, opacityScale };
+      const fade = wallGlowLabelFade(blobs, PILL, options);
+      expect(wallGlowLabelFade(blobs, PILL, { ...options, readableZone: 'center' })).toBe(fade);
+      return fade;
+    });
+    expect(fades).toEqual([0.65, 0.65, 0.5, 0.2, 0]);
+  });
+
+  it.each([80, 210])('protects a cyan hold behind the lower-right header text at %d points wide', (width) => {
+    const pill = { w: width, h: 38 };
+    const textPoint = { x: width - 12, y: 28 };
+    const blobs = wallGlowBlobs({
+      ...BOARD,
+      holds: [hold((textPoint.y / pill.h) * BOARD.boardWidth, (1 - textPoint.x / width) * BOARD.boardHeight)],
+      pill,
+    });
+    const options = { surface: DARK, blend: 'screen' as const, opacityScale: 1 };
+    const centeredFade = wallGlowLabelFade(blobs, pill, options);
+    // The player's centre scrim spans 12%..88%, with a 10% feather at each end.
+    // That drawing never protects the header's outer text as much as its centre.
+    const scrimPosition = (textPoint.x / width - 0.12) / 0.76;
+    const feather = Math.max(0, Math.min(1, scrimPosition / 0.1, (1 - scrimPosition) / 0.1));
+    const oldPixel = wallGlowPixel(textPoint, blobs, { ...options, fade: centeredFade * feather });
+    expect(contrastRatioHex(DARK.label, oldPixel)).toBeLessThan(MIN_LABEL_CONTRAST);
+
+    const fullFade = wallGlowLabelFade(blobs, pill, { ...options, readableZone: 'full' });
+    const fullPixel = wallGlowPixel(textPoint, blobs, { ...options, fade: fullFade });
+    expect(contrastRatioHex(DARK.label, fullPixel)).toBeGreaterThanOrEqual(MIN_LABEL_CONTRAST);
+  });
+
+  it.each([
+    ['dark', DARK, 'screen', 1, '#4DF5FD'],
+    ['dark', DARK, 'screen', 1, '#FFFFFF'],
+    ['light', LIGHT, 'multiply', 0.6, '#4DF5FD'],
+    ['light', LIGHT, 'multiply', 0.6, '#203040'],
+  ] as const)(
+    'keeps both header lines and edges readable across the full %s pill with %s blending (%s, %s, %s)',
+    (_scheme, surface, blend, opacityScale, color) => {
+      for (const width of [80, 210]) {
+        const pill = { w: width, h: 38 };
+        const labelPoints = [
+          { x: 12, y: 10 },
+          { x: width - 12, y: 10 },
+          { x: 12, y: 28 },
+          { x: width - 12, y: 28 },
+          { x: width / 2, y: 0 },
+          { x: width / 2, y: pill.h },
+        ];
+        for (const textPoint of labelPoints) {
+          const blobs = wallGlowBlobs({
+            ...BOARD,
+            holds: [
+              hold((textPoint.y / pill.h) * BOARD.boardWidth, (1 - textPoint.x / width) * BOARD.boardHeight, color),
+            ],
+            pill,
+          });
+          const options = { surface, blend, opacityScale, readableZone: 'full' as const };
+          const fade = wallGlowLabelFade(blobs, pill, options);
+          let worstContrast = Infinity;
+          // Check actual composited pixels more densely than the production
+          // sampling, including the top, bottom and both edges of the scrim.
+          for (let x = 0; x <= width; x += 1) {
+            for (let y = 0; y <= pill.h; y += 1) {
+              const pixel = wallGlowPixel({ x, y }, blobs, { ...options, fade });
+              worstContrast = Math.min(worstContrast, contrastRatioHex(surface.label, pixel));
+            }
+          }
+          expect(worstContrast, `${width}pt ${color} at ${textPoint.x},${textPoint.y}`).toBeGreaterThanOrEqual(
+            MIN_LABEL_CONTRAST,
+          );
+        }
+      }
+    },
+  );
 });

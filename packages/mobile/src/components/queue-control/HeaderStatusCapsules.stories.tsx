@@ -35,37 +35,43 @@ const wallClimb = (over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb =
 });
 
 const heldClimb: Climb = {
-  uuid: 'story-held-climb',
-  name: 'Kish Mud Prison',
-  frames: '',
-  setter_username: 'setter',
-  angle: 40,
-  ascensionist_count: 1400,
-  difficulty: '7a+/V7',
+  uuid: 'A6E04278AE294E03AD9DD2A8E0CDE31F',
+  name: 'Lightest Pair of Shorts',
+  // The recorded Kilter climb's real hold roles, also used by screenshot replay.
+  frames:
+    'p4131r44p4156r43p4158r43p4189r44p4201r45p4214r43p4225r45p4272r43p4292r45p4296r43p4328r43p4352r42p4408r45p4412r42',
+  boardType: 'kilter',
+  layoutId: 8,
+  setter_username: 'KilterStudio',
+  angle: 35,
+  ascensionist_count: 1862,
+  difficulty: '6b/V4',
   quality_average: '3.2',
   stars: 3,
   difficulty_error: '',
   benchmark_difficulty: null,
 };
 
-function TitleSlot({ children }: { children: ReactNode }) {
+function TitleSlot({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
     <StorySurface>
       <NativeHeaderActionContext.Provider value={true}>
-        <View style={styles.titleSlot}>{children}</View>
+        <NativeTitleMaxWidthContext.Provider value={narrow ? 80 : TITLE_SLOT_WIDTH}>
+          <View style={[styles.titleSlot, narrow && styles.narrowTitleSlot]}>{children}</View>
+        </NativeTitleMaxWidthContext.Provider>
       </NativeHeaderActionContext.Provider>
     </StorySurface>
   );
 }
 
-function HeldClimb({ ledless }: { ledless: boolean }) {
+function HeldClimb({ ledless, compact = false }: { ledless: boolean; compact?: boolean }) {
   const { brandColors } = useTheme();
   return (
     <HeldClimbCapsule
       climb={heldClimb}
       ledless={ledless}
       toneColor={ledless ? brandColors.primary : brandColors.warning}
-      compact={false}
+      compact={compact}
       onPress={noop}
       onLongPress={noop}
       accessibilityActions={undefined}
@@ -138,6 +144,16 @@ const stories: StoryModule = {
     interactive: {
       name: 'Dismiss and re-light the same climb',
       render: () => <InteractiveWallCapsule />,
+    },
+    heldCompact: {
+      name: 'Held climb in an 80-point native title',
+      render: () => (
+        <StoryVariant label="You're driving, compact title">
+          <TitleSlot narrow>
+            <HeldClimb ledless={false} compact />
+          </TitleSlot>
+        </StoryVariant>
+      ),
     },
     every: {
       name: 'On the wall and You have the board, every state',
