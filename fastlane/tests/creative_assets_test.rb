@@ -23,7 +23,7 @@ class CreativeAssetsTest < Minitest::Test
       raise "Upload unexpectedly read a placement destination" if !@destinations_available && path.match?(/appStoreVersion|appCustomProductPage|\/placements\?/)
       case path
       when "/v1/appAssetLibraryRefData"
-        [{ "attributes" => { "placementTypes" => BoardseshCreatives::PLACEMENTS.map { |placement, type| { "placementTypeId" => @supported ? type : "unsupported", "specMappings" => [{ "placementGroupId" => "creative", "specs" => [placement] }] } } } }]
+        [{ "attributes" => { "placementTypes" => BoardseshCreatives::PLACEMENTS.map { |placement, type| { "placementTypeId" => @supported ? type : "unsupported", "specMappings" => [{ "placementGroupId" => "creative", "specs" => [placement] }, { "placementGroupId" => "DEFAULT_PROFILE", "specs" => [placement] }] } } } }]
       when /appStoreVersions\?/
         @versions || [{ "id" => "version", "attributes" => { "appStoreState" => @live ? "READY_FOR_DISTRIBUTION" : "PREPARE_FOR_SUBMISSION", "createdDate" => "2026-10-01T00:00:00Z" } }]
       when /appStoreVersionLocalizations\?/
@@ -31,10 +31,15 @@ class CreativeAssetsTest < Minitest::Test
       when %r{/appAssetLibraries/library/(images|videos)}
         type = path.include?("/images") ? "appAssetLibraryImages" : "appAssetLibraryVideos"
         @assets.select { |asset| asset["type"] == type }
-      when %r{/v1/(appAssetLibraryImages|appAssetLibraryVideos)/([^/]+)/placements}
+      when %r{/v1/(appStoreVersionLocalizations|appCustomProductPageLocalizations)/([^/]+)/placements}
         type, id = path.split("/")[2, 2]
-        relation = type == "appAssetLibraryImages" ? "image" : "video"
+        relation = type == "appStoreVersionLocalizations" ? "appStoreVersionLocalization" : "appCustomProductPageLocalization"
+        query = URI.decode_www_form(URI(path).query).to_h
+        raise "Missing included placement linkage" unless query.fetch("include").split(",").sort == ["image", "video", relation].sort
         @placements.select { |placement| placement.dig("relationships", relation, "data", "id") == id }
+      when %r{/v1/(appAssetLibraryImages|appAssetLibraryVideos)/([^/]+)/placements}
+        # Live reverse listings can be empty even when the destination has a placement.
+        []
       else
         raise "Unexpected GET list #{path}"
       end
@@ -203,6 +208,131 @@ class CreativeAssetsTest < Minitest::Test
     @client.writes.clear
     assert runner.run(action: "place").all? { |result| result["action"] == "unchanged" }
     assert_empty @client.writes
+  end
+
+  def test_existing_destination_placements_are_reused_when_reverse_lists_are_empty
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements.each { |placement| placement["attributes"]["state"] = "PARENT_PREPARE_FOR_SUBMISSION" }
+    @client.reads.clear
+    @client.writes.clear
+    results = runner.run(action: "place")
+    assert results.all? { |result| result.fetch("action") == "unchanged" && result.fetch("placementState") == "PARENT_PREPARE_FOR_SUBMISSION" }
+    assert_empty @client.writes
+    placement_reads = @client.reads.select { |path| path.include?("/placements?") }
+    assert_equal 5, placement_reads.length
+    assert placement_reads.all? { |path| path.start_with?("/v1/appStoreVersionLocalizations/") }
+  end
+
+  def test_owned_destination_replacement_needs_approval
+    upload_processed_assets
+    runner.run(action: "place")
+    previous = Marshal.load(Marshal.dump(@client.assets.first))
+    previous["id"] = "previous-owned-header"
+    previous["attributes"]["fileName"] = "default-header-en-US-#{'f' * 12}.png"
+    @client.assets << previous
+    @client.placements.first["relationships"]["image"]["data"]["id"] = previous.fetch("id")
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+    assert_includes error.message, "allow_replace:true"
+    assert_empty @client.writes
+    runner.run(action: "place", allow_replace: true)
+    assert_equal %w[DELETE POST], @client.writes.map(&:first)
+  end
+
+  def test_foreign_destination_placement_is_never_deleted_even_with_replacement_approval
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements.first["relationships"]["image"]["data"]["id"] = "foreign-not-in-creative-library"
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place", allow_replace: true) }
+    assert_includes error.message, "unowned placement"
+    assert_empty @client.writes
+  end
+
+  def test_duplicate_destination_slot_blocks_every_write
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements << Marshal.load(Marshal.dump(@client.placements.last)).merge("id" => "duplicate")
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+    assert_includes error.message, "Multiple placements"
+    assert_empty @client.writes
+  end
+
+  def test_missing_asset_linkage_blocks_every_write
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements.last["relationships"].delete("video")
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+    assert_includes error.message, "missing or ambiguous asset linkage"
+    assert_empty @client.writes
+  end
+
+  def test_incorrect_destination_linkage_blocks_every_write
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements.last["relationships"]["appStoreVersionLocalization"]["data"]["type"] = "appCustomProductPageLocalizations"
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+    assert_includes error.message, "Unexpected creative placement destination"
+    assert_empty @client.writes
+  end
+
+  def test_ambiguous_asset_linkage_blocks_every_write
+    upload_processed_assets
+    runner.run(action: "place")
+    @client.placements.last["relationships"]["image"] = { "data" => { "type" => "appAssetLibraryImages", "id" => "other-image" } }
+    @client.writes.clear
+    error = assert_raises(BoardseshCreatives::Error) { runner.run(action: "place") }
+    assert_includes error.message, "missing or ambiguous asset linkage"
+    assert_empty @client.writes
+  end
+
+  def test_live_default_response_reuses_header_and_search_assignments
+    upload_processed_assets
+    @manifest["locales"] = { "en-US" => ["en-US"] }
+    @manifest["variants"]["default"]["assets"].select! { |asset| asset.fetch("locale") == "en-US" }
+    install_live_placement_fixture("default", "appStoreVersionLocalization", "en-US")
+    @client.writes.clear
+    results = runner.run(action: "place")
+    assert_equal 2, results.length
+    assert results.all? { |result| result.fetch("action") == "unchanged" && result.fetch("placementState") == "ACTIVE" }
+    assert_empty @client.writes
+  end
+
+  def test_live_cpp_response_reuses_search_assignment
+    @client = FakeCppApple.new
+    use_kilter_manifest
+    upload_processed_assets
+    @manifest["locales"] = { "en-US" => ["en-US"] }
+    @manifest["variants"]["kilter"]["assets"].select! { |asset| asset.fetch("locale") == "en-US" && asset.fetch("placement") == "search-results" }
+    install_live_placement_fixture("cpp", "appCustomProductPageLocalization", "cpp-en-US")
+    @client.writes.clear
+    cpp = { "targets" => { "kilter" => { "referenceName" => "Boardsesh Kilter" } } }
+    cpp_runner = BoardseshCreatives::Runner.new(client: @client, repo_root: @root, manifest: @manifest, app_id: "app", cpp_manifest: cpp, probe: @probe)
+    results = cpp_runner.run(action: "place", placement: "search")
+    assert_equal 1, results.length
+    assert_equal "unchanged", results.first.fetch("action")
+    assert_equal "ACTIVE", results.first.fetch("placementState")
+    assert_empty @client.writes
+  end
+
+  # Keep Apple's full response shape; substitute only this test's local identities.
+  def install_live_placement_fixture(name, relationship, destination_id)
+    fixture = JSON.parse(File.read(File.join(__dir__, "fixtures", "creative-placements", "#{name}.json")))
+    @client.placements.replace(fixture.fetch("response").fetch("data"))
+    @client.placements.each { |placement| placement.fetch("relationships").fetch(relationship).fetch("data")["id"] = destination_id }
+    @manifest.fetch("variants").each_value do |variant|
+      variant.fetch("assets").each do |entry|
+        entry["placementGroup"] = "DEFAULT_PROFILE"
+        placement = @client.placements.find { |candidate| candidate.dig("attributes", "placementType") == BoardseshCreatives::PLACEMENTS.fetch(entry.fetch("placement")) }
+        relation = entry.fetch("placement") == "header" ? "image" : "video"
+        local_asset = @client.assets.find { |asset| asset.dig("attributes", "fileName").end_with?("#{entry.fetch('sha256')[0, 12]}.#{relation == 'image' ? 'png' : 'mp4'}") }
+        local_asset["id"] = placement.fetch("relationships").fetch(relation).fetch("data").fetch("id")
+      end
+    end
   end
 
   def test_changed_placement_requires_deletion_approval
@@ -483,6 +613,11 @@ class CreativeAssetsTest < Minitest::Test
     assert_equal 10, @client.placements.length
     assert @client.placements.all? { |placement| placement.dig("relationships", "appCustomProductPageLocalization", "data", "type") == "appCustomProductPageLocalizations" }
     refute @client.placements.any? { |placement| placement.fetch("relationships").key?("appStoreVersionLocalization") }
+    @client.writes.clear
+    @client.reads.clear
+    assert cpp_runner.run(action: "place").all? { |result| result.fetch("action") == "unchanged" }
+    assert_empty @client.writes
+    assert_equal 5, @client.reads.count { |path| path.start_with?("/v1/appCustomProductPageLocalizations/") && path.include?("/placements?") }
   end
 
   def test_comma_list_reconciles_only_shipped_variants_and_rejects_bad_lists
