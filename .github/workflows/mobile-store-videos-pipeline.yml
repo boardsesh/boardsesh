@@ -67,7 +67,9 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          # No shared cache here: this job holds Production secrets, and a restored
+          # cache is writable by any branch (workflow-cache-restore.test.ts).
+          cache: false
       - run: vp install --frozen-lockfile
       - name: Resolve the selected variants and require their reviewed physical sources
         id: plan

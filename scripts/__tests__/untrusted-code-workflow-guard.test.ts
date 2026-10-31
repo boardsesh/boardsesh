@@ -72,6 +72,8 @@ const ALLOWED: Record<string, string> = {
     'source_sha is the workflow_run head on release/next, or the dispatch run commit.',
   'mobile-screenshots-android.yml ${{ github.event.workflow_run.head_sha || github.sha }}':
     'workflow_run is filtered to deploy runs on release/next (the release train); a dispatch checks out its own ref.',
+  'mobile-store-videos-pipeline.yml ${{ inputs.source_sha }}':
+    'Its one caller, mobile-store-videos.yml, passes the source_sha that scripts/store-videos-gate.ts (checked out at github.sha) prints: the release/next head, or a pinned commit the compare API reports release/next is ahead of or identical to, on the same marketing version (sourceStillOnTrain).',
   'mobile-store-draft.yml ${{ steps.ref.outputs.sha }}':
     'The live head of main or release/next, or a release_sha proven to be in main history.',
   'mobile-store-draft.yml ${{ steps.candidate.outputs.ios_build_sha }}':
