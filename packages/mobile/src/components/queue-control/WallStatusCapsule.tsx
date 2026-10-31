@@ -20,8 +20,9 @@
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
 
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { AccessibilityInfo, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { AccessibilityInfo, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -40,6 +41,7 @@ import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
 import { useClimbByline } from './use-climb-byline';
+import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
 
 // The capsule's face stands in for the platter's board thumbnail, sized to the
 // two-line name block beside it. Fixed — does not scale with Dynamic Type.
@@ -62,12 +64,15 @@ type WallStatusCapsuleProps = {
   climb: BoardPresenceClimb;
   /** The board in scope, so the grade reads on its scale. The wall payload names no board. */
   boardName?: string | null;
+  presentation?: { kind: 'live' } | { kind: 'history'; ageLabel: string };
+  occurrenceKey?: string;
+  onDismiss?: (occurrenceKey: string) => void;
 };
 
 // memo'd so a ClimbTopChrome re-render (filter/board/search change) doesn't rebuild
 // the capsule's hooks while the wall climb is unchanged — the `climb` prop is the
 // stable BoardPresenceClimb from useWallClimbIfDistinct (changes only on a wall event).
-function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
+function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, onDismiss }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
   const { variant, colorScheme, brandColors, m3, m3SurfaceContainers } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -75,6 +80,12 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const openWallPreview = useOpenWallPreview();
   const compact = useHeaderCapsuleCompact();
   const { boardConfig } = useDrawerHost();
+  const history = presentation?.kind === 'history' ? presentation : null;
+  const swipe = useWallCapsuleDismiss({
+    occurrenceKey: occurrenceKey ?? `${climb.seq}:${climb.sentAt}:${climb.climbUuid}`,
+    onDismiss,
+    reduceMotion,
+  });
 
   const name = climb.name ?? '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
@@ -86,23 +97,36 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const senderName = climb.sentByDisplayName?.trim() || null;
   const hasSenderIdentity = climb.sentByAvatarUrl != null || senderName != null;
 
-  const a11yLabel = senderName
-    ? t('mobile.boardPresence.stripA11yLabelWithSender', { name, grade: formattedGrade ?? '', sender: senderName })
-    : t('mobile.boardPresence.stripA11yLabel', { name, grade: formattedGrade ?? '' });
+  const a11yLabel = history
+    ? senderName
+      ? t('mobile.boardPresence.stripHistoryA11yLabelWithSender', {
+          name,
+          grade: formattedGrade ?? '',
+          age: history.ageLabel,
+          sender: senderName,
+        })
+      : t('mobile.boardPresence.stripHistoryA11yLabel', { name, grade: formattedGrade ?? '', age: history.ageLabel })
+    : senderName
+      ? t('mobile.boardPresence.stripA11yLabelWithSender', { name, grade: formattedGrade ?? '', sender: senderName })
+      : t('mobile.boardPresence.stripA11yLabel', { name, grade: formattedGrade ?? '' });
 
   // Announce peer-driven changes the user didn't initiate (debounced + de-duped on
   // the climb's uuid so a re-render doesn't re-announce the same climb). Done
   // explicitly rather than via accessibilityLiveRegion, because the capsule remounts
   // on each climb change (keyed Animated.View) — a fresh node has no "content
   // change" for a live region to catch.
-  const announceLabel = senderName
-    ? t('mobile.boardPresence.stripAnnounceWithSender', { name, grade: formattedGrade ?? '', sender: senderName })
-    : t('mobile.boardPresence.stripAnnounce', { name, grade: formattedGrade ?? '' });
+  const announceLabel = history
+    ? null
+    : senderName
+      ? t('mobile.boardPresence.stripAnnounceWithSender', { name, grade: formattedGrade ?? '', sender: senderName })
+      : t('mobile.boardPresence.stripAnnounce', { name, grade: formattedGrade ?? '' });
   const climbUuid = climb.climbUuid;
   // De-dupe on the announced TEXT, not the uuid: a re-render with an unchanged label
   // shouldn't re-announce, but a locale switch (same climb, new label) should.
   const lastAnnouncedRef = useRef<string | null>(null);
   useEffect(() => {
+    // History is read on focus; its minute-by-minute age is never a live announcement.
+    if (announceLabel === null) return undefined;
     if (lastAnnouncedRef.current === announceLabel) return;
     const handle = setTimeout(() => {
       lastAnnouncedRef.current = announceLabel;
@@ -118,10 +142,27 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   // other angle's sends, so that shows the grade alone. The Material band has
   // no byline, so it skips the stats read.
   const byline = useClimbByline(climbForStats, boardConfig, formattedGrade, {
-    statsEnabled: !isMaterial && climb.angle != null,
+    statsEnabled: !isMaterial && !history && climb.angle != null,
   });
 
-  const handlePress = useCallback(() => openWallPreview(climbForStats), [openWallPreview, climbForStats]);
+  const { consumePanned, dismiss } = swipe;
+  const handlePress = useCallback(() => {
+    if (consumePanned()) return;
+    openWallPreview(climbForStats);
+  }, [consumePanned, openWallPreview, climbForStats]);
+  const accessibilityActions = onDismiss
+    ? [{ name: 'dismiss', label: t('mobile.boardPresence.stripDismiss') }]
+    : undefined;
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'dismiss') dismiss();
+    },
+    [dismiss],
+  );
+  const accessibilityHint = onDismiss
+    ? t('mobile.boardPresence.stripDismissHint')
+    : t('mobile.boardPresence.stripA11yHint');
+  let capsule: ReactNode;
 
   if (isMaterial) {
     // The grade sits on the app-bar surface (the band body is transparent). In the
@@ -152,7 +193,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
       )
     ) : null;
 
-    return (
+    capsule = (
       <Animated.View
         key={climbUuid}
         entering={reduceMotion ? undefined : FadeIn.duration(180)}
@@ -166,7 +207,9 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
           rippleColor={m3.onSurfaceVariant}
           accessibilityRole="button"
           accessibilityLabel={a11yLabel}
-          accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
+          accessibilityHint={accessibilityHint}
+          accessibilityActions={accessibilityActions}
+          onAccessibilityAction={handleAccessibilityAction}
           style={styles.bandPressable}
         >
           {/* The "lit" accent: a tertiary rail down the leading edge. */}
@@ -180,9 +223,11 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
               maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
               style={[styles.bandOverline, { color: m3.tertiary }]}
             >
-              {senderName
-                ? t('mobile.boardPresence.stripOverlineWithSender', { sender: senderName })
-                : t('mobile.boardPresence.stripOverline')}
+              {history
+                ? t('mobile.boardPresence.stripHistoryOverline', { age: history.ageLabel })
+                : senderName
+                  ? t('mobile.boardPresence.stripOverlineWithSender', { sender: senderName })
+                  : t('mobile.boardPresence.stripOverline')}
             </Text>
             <View style={styles.bandMainRow}>
               {/* Inert + a11y-hidden so the band reads as one node (the profile tap
@@ -221,45 +266,80 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
         </PressableSurface>
       </Animated.View>
     );
+  } else {
+    capsule = (
+      <HeaderStatusCapsule
+        tintColor={brandColors.warning}
+        entryKey={climbUuid}
+        onPress={handlePress}
+        accessibilityLabel={a11yLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityActions={accessibilityActions}
+        onAccessibilityAction={handleAccessibilityAction}
+        compact={compact}
+      >
+        {/* One tap target and one spoken label; profile navigation lives in the preview. */}
+        <HeaderCapsuleClimbLabel
+          avatar={
+            hasSenderIdentity ? (
+              <BoardDriverAvatar
+                uri={climb.sentByAvatarUrl}
+                name={senderName}
+                userId={null}
+                size={CAPSULE_AVATAR_SIZE}
+                status="none"
+              />
+            ) : (
+              <Icon
+                maxFontSizeMultiplier={1}
+                name="profile.fill"
+                size={CAPSULE_ANON_GLYPH}
+                color={brandColors.warning}
+              />
+            )
+          }
+          name={name}
+          byline={
+            history
+              ? formattedGrade
+                ? t('mobile.boardPresence.stripHistoryByline', { age: history.ageLabel, grade: formattedGrade })
+                : t('mobile.boardPresence.stripHistoryOverline', { age: history.ageLabel })
+              : byline
+          }
+          compact={compact}
+          largeContentTitle={a11yLabel}
+          onActivate={handlePress}
+        />
+      </HeaderStatusCapsule>
+    );
   }
 
+  if (!onDismiss) return capsule;
+  // A native title view is reparented into UIKit's bar. Its own bounded gesture
+  // root keeps swipes working there without making the intrinsic title fill width.
+  const swipeContainerStyle = [styles.swipeContainer, isMaterial ? styles.bandWidth : null];
   return (
-    <HeaderStatusCapsule
-      tintColor={brandColors.warning}
-      entryKey={climbUuid}
-      onPress={handlePress}
-      accessibilityLabel={a11yLabel}
-      accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
-      compact={compact}
-    >
-      {/* One tap target and one spoken label; profile navigation lives in the preview. */}
-      <HeaderCapsuleClimbLabel
-        avatar={
-          hasSenderIdentity ? (
-            <BoardDriverAvatar
-              uri={climb.sentByAvatarUrl}
-              name={senderName}
-              userId={null}
-              size={CAPSULE_AVATAR_SIZE}
-              status="none"
-            />
-          ) : (
-            <Icon maxFontSizeMultiplier={1} name="profile.fill" size={CAPSULE_ANON_GLYPH} color={brandColors.warning} />
-          )
-        }
-        name={name}
-        byline={byline}
-        compact={compact}
-        largeContentTitle={a11yLabel}
-        onActivate={handlePress}
-      />
-    </HeaderStatusCapsule>
+    <GestureHandlerRootView style={swipeContainerStyle}>
+      <GestureDetector gesture={swipe.gesture} touchAction="pan-y">
+        <Animated.View style={[swipeContainerStyle, swipe.animatedStyle]} onLayout={swipe.onLayout}>
+          {capsule}
+        </Animated.View>
+      </GestureDetector>
+    </GestureHandlerRootView>
   );
 }
 
 export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  bandWidth: {
+    width: '100%',
+  },
   grade: {
     flexShrink: 0,
     fontVariant: ['tabular-nums'],

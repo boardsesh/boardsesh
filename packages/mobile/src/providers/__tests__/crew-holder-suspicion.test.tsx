@@ -18,6 +18,9 @@ const ctrl = vi.hoisted(() => ({
   viewerUserId: 'me' as string | null,
 }));
 
+vi.mock('react-native', () => ({
+  AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) },
+}));
 vi.mock('../queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: ctrl.sessionId, sessionMemberUserIds: ctrl.sessionMemberUserIds }),
 }));

@@ -615,7 +615,13 @@
         "openHint": "Zeigt den Boulder an der Wand im Vollbild, lesbar von der Matte.",
         "exit": "Beenden",
         "exitA11y": "Wandanzeige beenden"
-      }
+      },
+      "stripHistoryOverline": "Zuletzt an der Wand · {{age}}",
+      "stripHistoryByline": "Zuletzt an der Wand · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}, beleuchtet von {{sender}}",
+      "stripDismiss": "Ausblenden",
+      "stripDismissHint": "Zum Ausblenden nach links wischen. Öffnet den Boulder an der Wand."
     },
     "toast": {
       "sessionEnded": "Session beendet",

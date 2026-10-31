@@ -615,7 +615,13 @@
         "openHint": "Shows the climb on the wall full screen, big enough to read from the mat.",
         "exit": "Exit",
         "exitA11y": "Exit wall display"
-      }
+      },
+      "stripHistoryOverline": "Last on the wall · {{age}}",
+      "stripHistoryByline": "Last on the wall · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Last on the wall · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Last on the wall · {{age}}: {{name}}, {{grade}}, lit by {{sender}}",
+      "stripDismiss": "Dismiss",
+      "stripDismissHint": "Swipe left to dismiss. Opens the wall climb."
     },
     "toast": {
       "sessionEnded": "Session ended",

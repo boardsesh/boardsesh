@@ -615,7 +615,13 @@
         "openHint": "Affiche le bloc au mur en plein écran, lisible depuis le tapis.",
         "exit": "Quitter",
         "exitA11y": "Quitter l'affichage mural"
-      }
+      },
+      "stripHistoryOverline": "Dernier sur le mur · {{age}}",
+      "stripHistoryByline": "Dernier sur le mur · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Dernier sur le mur · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Dernier sur le mur · {{age}}: {{name}}, {{grade}}, allumé par {{sender}}",
+      "stripDismiss": "Masquer",
+      "stripDismissHint": "Balaye vers la gauche pour masquer. Ouvre le bloc sur le mur."
     },
     "toast": {
       "sessionEnded": "Session terminée",

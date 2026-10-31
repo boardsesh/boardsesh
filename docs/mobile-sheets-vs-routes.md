@@ -1087,6 +1087,15 @@ swipe reveals a labelled button; a full swipe commits once and closes, including
 when Reduce Motion settles the opening animation before the JS release callback.
 Keep reaction-menu long-press and screen-reader actions available.
 
+**Wall capsule:** the Climbs header uses the player's shared connection and
+presence-freshness rules. With no live link it reads “Last on the wall” for an
+hour from the lighting timestamp, then hides; a live link keeps the current
+presentation regardless of age. A left swipe dismisses only this device's
+header capsule, without changing the wall or queue. The choice survives navigation
+and app restarts until another lighting event, including a re-light of the same
+climb. VoiceOver and TalkBack offer the same Dismiss action. Climb, status and
+dismissal scope settle together while the player covers the native header.
+
 Queue removal uses the queue's scoped live-merge Undo. Logbook deletion keeps its
 confirmation, then hides the entry and offers eight seconds to Undo before sending
 DELETE_TICK. The root LogbookDeleteProvider owns that deadline across route changes.

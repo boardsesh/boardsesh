@@ -615,7 +615,13 @@
         "openHint": "Mostra a schermo intero il blocco in parete, abbastanza grande da leggerlo dal materasso.",
         "exit": "Esci",
         "exitA11y": "Esci dallo schermo parete"
-      }
+      },
+      "stripHistoryOverline": "Ultimo in parete · {{age}}",
+      "stripHistoryByline": "Ultimo in parete · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Ultimo in parete · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Ultimo in parete · {{age}}: {{name}}, {{grade}}, illuminato da {{sender}}",
+      "stripDismiss": "Nascondi",
+      "stripDismissHint": "Scorri a sinistra per nascondere. Apre il blocco in parete."
     },
     "toast": {
       "sessionEnded": "Session terminata",

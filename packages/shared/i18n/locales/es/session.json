@@ -615,7 +615,13 @@
         "openHint": "Muestra el bloque del muro a pantalla completa, legible desde la colchoneta.",
         "exit": "Salir",
         "exitA11y": "Salir de la pantalla de muro"
-      }
+      },
+      "stripHistoryOverline": "Último en el muro · {{age}}",
+      "stripHistoryByline": "Último en el muro · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Último en el muro · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Último en el muro · {{age}}: {{name}}, {{grade}}, encendido por {{sender}}",
+      "stripDismiss": "Ocultar",
+      "stripDismissHint": "Desliza a la izquierda para ocultar. Abre el bloque del muro."
     },
     "toast": {
       "sessionEnded": "Sesión terminada",
