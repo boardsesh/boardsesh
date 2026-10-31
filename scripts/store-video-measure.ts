@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { freemem, totalmem } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
@@ -21,6 +21,93 @@ export function treeRssKiB(processes: string, rootPid: number): number {
   return rows.reduce((sum, [pid, , rss]) => sum + (descendants.has(pid) && Number.isFinite(rss) ? rss : 0), 0);
 }
 
+/** Reclaimable file cache counts as non-free RAM; collect the other evidence too. */
+export function parseDarwinVmStat(output: string) {
+  const pageSizeBytes = Number(output.match(/page size of (\d+) bytes/)?.[1]);
+  if (!Number.isFinite(pageSizeBytes) || pageSizeBytes <= 0) return null;
+  const counters = new Map(
+    [...output.matchAll(/^([^:\n]+):\s*(\d+)\.\s*$/gm)].map((match) => [match[1].trim(), Number(match[2])]),
+  );
+  const mebibytes = (counter: string): number | null => {
+    const pages = counters.get(counter);
+    return pages === undefined ? null : (pages * pageSizeBytes) / 1024 ** 2;
+  };
+  return {
+    pageSizeBytes,
+    freeMiB: mebibytes('Pages free'),
+    activeMiB: mebibytes('Pages active'),
+    inactiveMiB: mebibytes('Pages inactive'),
+    speculativeMiB: mebibytes('Pages speculative'),
+    wiredMiB: mebibytes('Pages wired down'),
+    purgeableMiB: mebibytes('Pages purgeable'),
+    fileBackedMiB: mebibytes('File-backed pages'),
+    anonymousMiB: mebibytes('Anonymous pages'),
+    compressedMiB: mebibytes('Pages occupied by compressor'),
+    compressorUncompressedMiB: mebibytes('Pages stored in compressor'),
+  };
+}
+
+export function parseDarwinSwapUsage(output: string) {
+  const mebibytes = (counter: string): number | null => {
+    const match = output.match(new RegExp(`\\b${counter}\\s*=\\s*(\\d+(?:\\.\\d+)?)([KMGT])\\b`));
+    if (!match) return null;
+    const factors: Record<string, number> = { K: 1 / 1024, M: 1, G: 1024, T: 1024 ** 2 };
+    return Number(match[1]) * factors[match[2]];
+  };
+  const totalMiB = mebibytes('total');
+  const usedMiB = mebibytes('used');
+  const freeMiB = mebibytes('free');
+  return totalMiB === null || usedMiB === null || freeMiB === null ? null : { totalMiB, usedMiB, freeMiB };
+}
+
+export function parseDarwinMemoryPressure(output: string): number | null {
+  const match = output.match(/System-wide memory free percentage:\s*(\d+)%/);
+  return match && Number(match[1]) <= 100 ? Number(match[1]) : null;
+}
+
+/** Executable names only: process arguments can contain credentials. */
+export function topResidentProcesses(output: string) {
+  return output
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.+?)\s*$/);
+      return match
+        ? [
+            {
+              pid: Number(match[1]),
+              parentPid: Number(match[2]),
+              rssMiB: Number(match[3]) / 1024,
+              executable: basename(match[4]),
+            },
+          ]
+        : [];
+    })
+    .sort((first, second) => second.rssMiB - first.rssMiB)
+    .slice(0, 5);
+}
+
+/** Pressure tools are separate from the cheap five-second RSS sample. */
+export function memoryDiagnosticSampleDue(nowMs: number, previousMs: number | null): boolean {
+  return previousMs === null || nowMs - previousMs >= 30_000;
+}
+
+function sampleDarwinMemory(processes: string, seconds: number, nonFreeMiB: number) {
+  const options = { encoding: 'utf8' as const, timeout: 1000 };
+  const vmStat = spawnSync('vm_stat', [], options);
+  const swapUsage = spawnSync('sysctl', ['vm.swapusage'], options);
+  // -Q is query-only: never run memory_pressure's allocation/stress modes.
+  const pressure = spawnSync('memory_pressure', ['-Q'], options);
+  return {
+    seconds,
+    nonFreeMiB,
+    vm: vmStat.status === 0 ? parseDarwinVmStat(vmStat.stdout) : null,
+    swap: swapUsage.status === 0 ? parseDarwinSwapUsage(swapUsage.stdout) : null,
+    pressureFreePercent: pressure.status === 0 ? parseDarwinMemoryPressure(pressure.stdout) : null,
+    topProcesses: topResidentProcesses(processes),
+    sensorExitCodes: { vmStat: vmStat.status, swapUsage: swapUsage.status, memoryPressure: pressure.status },
+  };
+}
+
 export async function measure(argv: string[]): Promise<number> {
   const [label, output, separator, command, ...args] = argv;
   if (!label || !output || separator !== '--' || !command) {
@@ -32,16 +119,30 @@ export async function measure(argv: string[]): Promise<number> {
   let peakUsedBytes = 0;
   let simulatorState = '';
   const simulatorTransitions: { seconds: number; booted: string[] }[] = [];
+  const memoryDiagnostics: ReturnType<typeof sampleDarwinMemory>[] = [];
+  let previousMemoryDiagnosticMs: number | null = null;
   const child = spawn(command, args, { stdio: 'inherit' });
   const forwardInterrupt = () => child.kill('SIGINT');
   const forwardTerminate = () => child.kill('SIGTERM');
   process.once('SIGINT', forwardInterrupt);
   process.once('SIGTERM', forwardTerminate);
-  const sample = () => {
-    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,rss='], { encoding: 'utf8' });
+  const sample = (final = false) => {
+    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,rss=,comm='], { encoding: 'utf8' });
     if (result.status === 0 && child.pid) peakTreeKiB = Math.max(peakTreeKiB, treeRssKiB(result.stdout, child.pid));
-    peakUsedBytes = Math.max(peakUsedBytes, totalmem() - freemem());
+    const nonFreeBytes = totalmem() - freemem();
+    peakUsedBytes = Math.max(peakUsedBytes, nonFreeBytes);
     if (process.platform === 'darwin') {
+      const nowMs = Date.now();
+      if (final || memoryDiagnosticSampleDue(nowMs, previousMemoryDiagnosticMs)) {
+        previousMemoryDiagnosticMs = nowMs;
+        memoryDiagnostics.push(
+          sampleDarwinMemory(
+            result.status === 0 ? result.stdout : '',
+            (nowMs - started) / 1000,
+            nonFreeBytes / 1024 ** 2,
+          ),
+        );
+      }
       const sims = spawnSync('xcrun', ['simctl', 'list', 'devices', 'booted', '--json'], { encoding: 'utf8' });
       if (sims.status === 0) {
         const listing = JSON.parse(sims.stdout) as { devices: Record<string, { name: string; udid: string }[]> };
@@ -58,7 +159,7 @@ export async function measure(argv: string[]): Promise<number> {
       }
     }
   };
-  const timer = setInterval(sample, 5000);
+  const timer = setInterval(() => sample(), 5000);
   sample();
   let exitCode: number;
   try {
@@ -71,7 +172,7 @@ export async function measure(argv: string[]): Promise<number> {
     process.removeListener('SIGINT', forwardInterrupt);
     process.removeListener('SIGTERM', forwardTerminate);
   }
-  sample();
+  sample(true);
   const minutes = (Date.now() - started) / 60_000;
   const report = {
     label,
@@ -81,12 +182,13 @@ export async function measure(argv: string[]): Promise<number> {
     peakUsedMiB: peakUsedBytes / 1024 ** 2,
     totalMiB: totalmem() / 1024 ** 2,
     simulatorTransitions,
+    memoryDiagnostics,
   };
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY)
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `| Step | Minutes | Peak process-tree RSS (MiB) | Peak runner used (MiB) | Runner RAM (MiB) | Exit |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| ${label} | ${minutes.toFixed(2)} | ${report.peakTreeMiB.toFixed(0)} | ${report.peakUsedMiB.toFixed(0)} | ${report.totalMiB.toFixed(0)} | ${exitCode} |\n\nMemory sampled every 5 seconds; simulator/OS memory outside the process tree is included in runner used. See JSON for simulator boot transitions.\n`,
+      `| Step | Minutes | Peak process-tree RSS (MiB) | Peak runner non-free (MiB) | Runner RAM (MiB) | Exit |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| ${label} | ${minutes.toFixed(2)} | ${report.peakTreeMiB.toFixed(0)} | ${report.peakUsedMiB.toFixed(0)} | ${report.totalMiB.toFixed(0)} | ${exitCode} |\n\nRSS/non-free memory sampled every 5 seconds. Non-free includes reclaimable cache and does not establish memory pressure. macOS pressure, VM counters, swap and top-five RSS snapshots are sampled every 30 seconds and at exit (unsupported sensors are null). See JSON for these samples and simulator boot transitions.\n`,
     );
   return exitCode;
 }

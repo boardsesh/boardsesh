@@ -169,15 +169,40 @@ describe('private-session iOS switch targeting', () => {
     expect(pattern.test('Live crew now')).toBe(false);
   });
 
-  it('waits for and taps the iOS switch label', () => {
+  it('taps the trailing thumb relative to the matched iOS switch', () => {
     const steps = parseAllDocuments(
       readFileSync(showcaseFlowPath('session-private.yaml'), 'utf8'),
     )[1].toJS() as unknown[];
     expect(steps).toEqual([
       { extendedWaitUntil: { visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', timeout: 15000 } },
-      { tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}' },
+      { tapOn: { text: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', point: '90%,50%' } },
       'waitForAnimationToEnd',
     ]);
+  });
+
+  it('keeps tap evidence until the privacy postcondition, before any session Start', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const privacy = source.slice(source.indexOf('  if (take.privateSession) {'), source.indexOf('  let secondaryRun:'));
+    const flow = privacy.indexOf('const privateStatus = await runFlow(');
+    const retain = privacy.indexOf('retainDebug: true');
+    const eventGuard = privacy.indexOf('if (!sessionVisibilityIsOff(window.text))');
+    const eventFailure = privacy.slice(eventGuard);
+    const discard = privacy.indexOf('rmSync(privateDebugDirectory');
+    expect(flow).toBeGreaterThan(-1);
+    expect(retain).toBeGreaterThan(flow);
+    expect(eventGuard).toBeGreaterThan(retain);
+    expect(eventFailure).toContain('await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus)');
+    expect(eventFailure.indexOf('return failed(')).toBeGreaterThan(
+      eventFailure.indexOf('await diagnoseSessionVisibility('),
+    );
+    expect(discard).toBeGreaterThan(eventGuard);
+    expect(privacy).not.toContain('await prepareCrew(');
+    const diagnostics = source.slice(
+      source.indexOf('async function diagnoseSessionVisibility('),
+      source.indexOf('async function recordTake('),
+    );
+    expect(diagnostics).toContain('deviceScreenshot(primary, screenshotPath)');
+    expect(diagnostics).toContain('await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000)');
   });
 });
 
