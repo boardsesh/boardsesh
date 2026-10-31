@@ -10,6 +10,7 @@ import {
   INTER_CHUNK_DELAY_MS,
   MAX_BLUETOOTH_MESSAGE_SIZE,
   parseSerialNumber,
+  isRetryableAndroidConnectError,
 } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
@@ -31,6 +32,12 @@ import type {
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 
 const CONNECTION_TIMEOUT_MS = 12_000;
+const ANDROID_CONNECT_RETRY_BACKOFF_MS = 500;
+// The least connect time attempt two must be left after the backoff. A retry
+// squeezed into the last few hundred milliseconds would lose to the deadline,
+// swap the first attempt's BleError (and its codes) for a plain timeout, and
+// count as a retry that lost without having had a fair try.
+const MIN_RETRY_CONNECT_WINDOW_MS = 2_000;
 
 // The ATT MTU requested after connect. 247 (chunk 244) is the DLE-friendly
 // sweet spot: the iOS-26.5 failure cohort clusters at ATT 512 (#3230), so
@@ -40,6 +47,43 @@ const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+type DeadlineSettlement<T> =
+  | { kind: 'fulfilled'; result: T }
+  | { kind: 'rejected'; error: unknown }
+  | { kind: 'deadline' };
+
+/**
+ * Settle one connect-stage operation without extending the stage's shared
+ * deadline. Both fulfillment and rejection handlers stay attached after the
+ * deadline wins, so a late native promise cannot become an unhandled rejection.
+ */
+async function settleBeforeDeadline<T>(
+  operation: () => Promise<T>,
+  deadlineMs: number,
+): Promise<DeadlineSettlement<T>> {
+  const remainingMs = deadlineMs - performance.now();
+  if (remainingMs <= 0) return { kind: 'deadline' };
+
+  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const operationSettlement = Promise.resolve()
+    .then(operation)
+    .then(
+      (result): DeadlineSettlement<T> => ({ kind: 'fulfilled', result }),
+      (error: unknown): DeadlineSettlement<T> => ({ kind: 'rejected', error }),
+    );
+  const deadlineSettlement = new Promise<DeadlineSettlement<T>>((resolve) => {
+    deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
+  });
+
+  return Promise.race([operationSettlement, deadlineSettlement]).finally(() => {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+  });
+}
+
+function connectionTimeoutError(): Error {
+  return new Error('Connection timed out — board may be powered off');
+}
 
 /**
  * Whether the inter-chunk pacing timer will actually fire right now.
@@ -91,6 +135,21 @@ export class RNBleAdapter implements BluetoothAdapter {
   // Board-level demand for acknowledged writes (see BleAdapterOptions). Fixed
   // for the adapter's lifetime — the board it was built for doesn't change.
   private readonly preferWriteWithResponse: boolean;
+  // Whether a transient first GATT connect failure gets one in-budget retry
+  // (see BleAdapterOptions.enableAndroidConnectRetry) — Android only.
+  private readonly enableAndroidConnectRetry: boolean;
+  // GATT connect attempts made by the most recent connect, for analytics.
+  // Domain is 0/1/2: the adapter is constructed per connect
+  // (use-board-bluetooth.ts createBluetoothAdapter), so 0 means the flow never
+  // reached the GATT connect at all (board not found, scan error), 1 means a
+  // single attempt, and 2 means the retry ran.
+  private lastConnectAttemptCount = 0;
+  // Whether the retry of the most recent connect won the GATT connect. Read on
+  // the failure path too, where the thrown error carries no result object: a
+  // recovered GATT connect can still fail later at MTU negotiation or service
+  // discovery, and `lastConnectAttemptCount === 2` alone can't tell that apart
+  // from a retry that lost.
+  private lastConnectRetrySucceeded = false;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -98,6 +157,71 @@ export class RNBleAdapter implements BluetoothAdapter {
     options?: BleAdapterOptions,
   ) {
     this.preferWriteWithResponse = options?.preferWriteWithResponse ?? false;
+    this.enableAndroidConnectRetry = options?.enableAndroidConnectRetry ?? false;
+  }
+
+  /** Connect the already-selected peripheral, optionally recovering one known
+   * Android GATT handshake failure without rescanning or reopening the picker. */
+  private async connectSelectedDevice(
+    selectedDeviceId: string,
+  ): Promise<{ connected: Device; retrySucceeded: boolean }> {
+    // Monotonic clock so a mid-connect wall-clock correction cannot stretch or
+    // collapse the budget. The deadline arithmetic here relies on Vitest faking
+    // `performance.now` alongside the timers — it does by default, so never add
+    // an explicit `toFake` list that omits `performance` or the boundary tests
+    // silently freeze the clock and pass for the wrong reason.
+    const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
+    const attemptConnect = () => {
+      this.lastConnectAttemptCount += 1;
+      return settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
+    };
+    const cancelWithoutWaiting = () => {
+      void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+    };
+
+    const firstAttempt = await attemptConnect();
+    if (firstAttempt.kind === 'deadline') {
+      cancelWithoutWaiting();
+      throw connectionTimeoutError();
+    }
+    if (firstAttempt.kind === 'fulfilled') {
+      return { connected: firstAttempt.result, retrySucceeded: false };
+    }
+
+    const firstError = firstAttempt.error;
+    if (!this.enableAndroidConnectRetry || !isRetryableAndroidConnectError(firstError)) {
+      throw firstError;
+    }
+
+    // Close the failed native GATT handle before retrying. A rejection generally
+    // means it was already closed, so it must not block the retry. A hanging
+    // cleanup is bounded by the original connect deadline.
+    const cleanup = await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
+    if (cleanup.kind === 'deadline') throw firstError;
+
+    // Checked after cleanup, which can eat into the budget. With this much left
+    // the backoff always ends before the deadline, so a plain delay is enough.
+    if (deadlineMs - performance.now() < ANDROID_CONNECT_RETRY_BACKOFF_MS + MIN_RETRY_CONNECT_WINDOW_MS) {
+      throw firstError;
+    }
+    await delay(ANDROID_CONNECT_RETRY_BACKOFF_MS);
+
+    const secondAttempt = await attemptConnect();
+    if (secondAttempt.kind === 'deadline') {
+      cancelWithoutWaiting();
+      throw connectionTimeoutError();
+    }
+    if (secondAttempt.kind === 'fulfilled') {
+      this.lastConnectRetrySucceeded = true;
+      return { connected: secondAttempt.result, retrySucceeded: true };
+    }
+
+    // No third attempt. Close whatever handle attempt two left behind, whatever
+    // it failed with — a non-retryable second error strands one just as readily.
+    // Without waiting: we already hold the terminal error, so awaiting a cleanup
+    // that may hang would only keep the climber on a spinner before we show it.
+    cancelWithoutWaiting();
+    throw secondAttempt.error;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -119,8 +243,12 @@ export class RNBleAdapter implements BluetoothAdapter {
   // scan stopped so it drops its spinner.
   async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     // Reset up front so a reused adapter whose reconnect fails before MTU
-    // negotiation can't write with the previous connection's stale MTU.
+    // negotiation can't write with the previous connection's stale MTU, and
+    // whose reconnect fails before the GATT connect (scan error, board not
+    // found) reports 0 attempts rather than the previous connect's numbers.
     this.negotiatedMtu = DEFAULT_ATT_MTU;
+    this.lastConnectAttemptCount = 0;
+    this.lastConnectRetrySucceeded = false;
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;
@@ -282,18 +410,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
     }
 
-    let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    const connected = await Promise.race([
-      bleManager.connectToDevice(selectedDeviceId),
-      new Promise<never>((_resolve, reject) => {
-        connectionTimeoutId = setTimeout(() => {
-          bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
-          reject(new Error('Connection timed out — board may be powered off'));
-        }, CONNECTION_TIMEOUT_MS);
-      }),
-    ]).finally(() => {
-      if (connectionTimeoutId != null) clearTimeout(connectionTimeoutId);
-    });
+    const { connected, retrySucceeded } = await this.connectSelectedDevice(selectedDeviceId);
 
     let deviceWithServices: Device;
     let writeCharacteristic: Characteristic;
@@ -367,6 +484,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       deviceName: selectedDeviceName,
       manufacturerData: selectedManufacturerData,
       serviceData: selectedServiceData,
+      retrySucceeded,
     };
   }
 
@@ -488,6 +606,23 @@ export class RNBleAdapter implements BluetoothAdapter {
   // carries the MTU/chunking story; the park/resume fields are iOS-native-only.
   async getLastWriteDiagnostics(): Promise<BleWriteDiagnostics | null> {
     return this.lastWriteDiagnostics;
+  }
+
+  // 0 when the flow never reached the GATT connect, 1 for a single attempt,
+  // 2 when the retry ran. This is the retry denominator only — on its own it
+  // says nothing about the outcome, because the connect can still fail after a
+  // recovered GATT connect. Read it with getLastConnectRetrySucceeded().
+  getLastConnectAttemptCount(): number {
+    return this.lastConnectAttemptCount;
+  }
+
+  // True when the retry of the most recent connect won its GATT connect, even
+  // if a later stage then failed. Together with getLastConnectAttemptCount()
+  // this makes the retry hit rate unambiguous on both events:
+  // 2 + true = the retry recovered the GATT connect (a save, whether or not
+  // MTU/discovery then failed); 2 + false = the retry ran and lost.
+  getLastConnectRetrySucceeded(): boolean {
+    return this.lastConnectRetrySucceeded;
   }
 }
 
