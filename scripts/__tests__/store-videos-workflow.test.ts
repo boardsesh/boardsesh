@@ -409,7 +409,12 @@ describe('store video workflow handoff', () => {
     const screenshotKey = screenshot.jobs['ios-build'].steps?.find((step) =>
       step.run?.includes('screenshot-sim-app-v1'),
     )?.run;
-    expect(videoKey).toBe(screenshotKey);
+    // Both caches stay architecture-scoped; video additionally hashes its host/slice guard.
+    for (const cacheKey of [videoKey, screenshotKey]) {
+      expect(cacheKey).toContain('${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-');
+      expect(cacheKey).toContain("'scripts/mobile-build-sim-app.ts'");
+    }
+    expect(videoKey).toContain("'scripts/lib/ios-simulator-architecture.mjs'");
     const action = readFileSync('.github/actions/ios-store-video-tools/action.yml', 'utf8');
     const screenshotAction = readFileSync('.github/actions/ios-screenshot-shard/action.yml', 'utf8');
     const maestroHash = /MAESTRO_SHA256: ([a-f0-9]+)/.exec(action)?.[1];

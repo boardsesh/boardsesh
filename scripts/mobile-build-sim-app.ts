@@ -27,7 +27,12 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { exportBuiltApp } from './lib/ios-build-export';
+import { exportBuiltApp, assertSuccessfulBuild } from './lib/ios-build-export';
+import {
+  simulatorArchitecture,
+  assertAppSimulatorArchitecture,
+  type SimulatorArchitecture,
+} from './lib/ios-simulator-architecture.mjs';
 import {
   acquireBuildLock,
   createMobileIosCachePaths,
@@ -211,7 +216,7 @@ function podInstall(): void {
   }
 }
 
-function xcodebuild(configuration: string): number {
+function xcodebuild(configuration: string, architecture: SimulatorArchitecture): number {
   return run(
     'xcodebuild',
     [
@@ -237,11 +242,8 @@ function xcodebuild(configuration: string): number {
       // sim doesn't enforce extra keychain groups, so that's harmless.
       'CODE_SIGN_IDENTITY=-',
       `CODE_SIGN_ENTITLEMENTS=${SIM_ENTITLEMENTS}`,
-      // arm64 only: macos-26 runners and Boardsesh dev machines are all Apple
-      // Silicon, so building the x86_64 sim slice just doubles the time (and can
-      // fail on a pod that lacks x86_64-sim support) for an arch nothing installs.
-      // The actions/cache key pins runner.arch, so a future arch change busts it.
-      'ARCHS=arm64',
+      // Build one host-native simulator slice. Cache keys separate ARM64/X64.
+      `ARCHS=${architecture}`,
     ],
     IOS_DIR,
   );
@@ -267,6 +269,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   if (process.env.BOARDSESH_PROFILE_BUILD !== '1') process.env.BOARDSESH_SCREENSHOT_BUILD = '1';
 
   try {
+    const architecture = simulatorArchitecture();
     const paths = createMobileIosCachePaths(process.env, MOBILE_DIR);
     const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
     try {
@@ -292,7 +295,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
       ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
       podInstall();
 
-      let status = xcodebuild(options.configuration);
+      let status = xcodebuild(options.configuration, architecture);
       const appPath = builtAppPath(options.configuration);
       if (status !== 0) {
         // RN New Architecture codegen ("Generate Specs") can race the compile on a
@@ -301,9 +304,11 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
         // build finds them — the well-known "build twice on a clean checkout"
         // quirk that bites every fresh CI runner. Retry once.
         console.log(`${LOG} First build failed; retrying once for the cold-build codegen race...`);
-        status = xcodebuild(options.configuration);
+        status = xcodebuild(options.configuration, architecture);
       }
 
+      assertSuccessfulBuild(status, appPath);
+      assertAppSimulatorArchitecture(appPath, architecture, options.configuration === 'Debug');
       const destination = exportBuiltApp(status, appPath, options.appOut);
       console.log(`${LOG} Built ${options.configuration} simulator app -> ${destination}`);
       return 0;
