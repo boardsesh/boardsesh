@@ -55,23 +55,30 @@ Every view of it draws one model and runs one handler:
   tap-disconnect; that pip (`LightbulbHolderBadge`) is gone.
 
 The wall button is the default; View options › Buttons › **Board control** picks **Wall button** or **Lightbulb**
-(see [Board control setting](#board-control-setting)). Both use the same model and the same tap and hold rules.
+(see [Board control setting](#board-control-setting)). Both use the same model. The wall button's
+"You are driving the wall" tap stops driving while keeping the link; the bulb's tap disconnects instead.
+Holding either opens the board sheet while this phone holds the link.
 
 **The label says what a press does** (#7113, Marco). The bulb's fill, outline or spinner already shows the
 connection, and the face whose board it is, so the label doesn't restate either. Every press that puts the climb on a
 board, connecting first when needed, says "Put on board"; screen readers hear where things stand after it ("Put on
 board, Sam has the board").
 
+The full wall button's frosted surface is the shared physical-board-control look (#7175),
+not a driving-only indicator. With LED hold geometry it appears for connect, re-light,
+put-up, relay, board change, disconnect and stop-driving actions, including previews.
+The label remains authoritative; without geometry the existing flat fallbacks remain.
+
 | State (`resolveWallControlState`) | The button | A tap |
 | --- | --- | --- |
-| No board linked (`connect`) | tonal "💡 Put on board" | connects, and the connect lights it |
-| No link, but presence says the climb on screen is the wall's, lit under an hour ago (`on_wall_unlinked`, QA #147) | amber outline "💡 Put on board", the sheet's label colour, no face, no frost; screen readers hear "On the wall" | connects and lights it again: the climber's own climb re-asserted (through the #4979 hold), a preview put up; never left to the auto-send |
-| Preview or crew browse (`put_on_wall`) | tonal "💡 Put on board" (on a crewmate's board too, their face at the edge; "Set active" where no wall is reachable, since the press only makes it the current climb) | puts it up, connecting first if needed |
-| Linked, this climb dark (`dark`) | tonal "💡 Put on board" | re-lights it (clears a Turn off all lights and the #4979 hold) |
-| This phone holds the board, climb lit, not driving (`lit`) | tonal "💡 Disconnect board", filled bulb and face | disconnects this phone (the board sheet's Disconnect) |
+| No board linked (`connect`) | frosted "💡 Put on board" | connects, and the connect lights it |
+| No link, but presence says the climb on screen is the wall's, lit under an hour ago (`on_wall_unlinked`, QA #147) | frosted "💡 Put on board", amber outline, no face; without geometry the sheet's label colour and no frost; screen readers hear "On the wall" | connects and lights it again: the climber's own climb re-asserted (through the #4979 hold), a preview put up; never left to the auto-send |
+| Preview or crew browse (`put_on_wall`) | frosted "💡 Put on board" (on a crewmate's board too, their face at the edge); tonal "Set active" where no wall is reachable, since the press only makes it the current climb | puts it up, connecting first if needed |
+| Linked, this climb dark (`dark`) | frosted "💡 Put on board" | re-lights it (clears a Turn off all lights and the #4979 hold) |
+| This phone holds the board, climb lit, not driving (`lit`) | frosted "💡 Disconnect board", filled bulb and face | disconnects this phone (the board sheet's Disconnect) |
 | This phone holds the board, climb lit, driving (`lit`, `driving`) | "💡 You are driving the wall": the frost (or filled amber); screen readers hear "every climb you pick lights up" and "Tap to stop driving" | stops driving and keeps the link (`stop_driving`, #7113) |
-| A crewmate holds the board (`crew`) | tonal "💡 Put on board", outline bulb, their face, never the frost | relays the climb to their phone |
-| This account holds it on another device (`crew`, `holderIsSelfAccount`) | tonal "💡 Put on board", no face; screen readers hear "On your other phone" | relays it to that phone |
+| A crewmate holds the board (`crew`) | frosted "💡 Put on board", outline bulb and their face; no swipe-to-drive | relays the climb to their phone |
+| This account holds it on another device (`crew`, `holderIsSelfAccount`) | frosted "💡 Put on board", no face; screen readers hear "On your other phone" | relays it to that phone |
 | A crewmate's board, nothing to relay | tonal "💡 On Sam's board" / "On your other phone" / "On your crew's board": the only labels left that say where things stand | nothing |
 | A wall with no lights | Take the wall / Release the wall | as the bulb always did |
 | Nothing to offer (`null`) | an empty slot of the same height | nothing |
@@ -85,10 +92,11 @@ board, Sam has the board").
 - **Only Disconnect board disconnects on a tap.** Marco tried it on the phones: once the climb is lit and the
   board is yours, the next thing you want is to let go of it. The tap buzzes as a warning and a screen reader hears
   "Board disconnected". Every other state keeps its tap (connect, put on the wall, re-light, relay).
-- **A press on the frost stops driving and keeps the link** (#7113). One rule, solo included: a press on "You are
-  driving the wall" stops driving (a light buzz, "Stopped driving the wall" for screen readers), the frost fades to
-  the tonal "Disconnect board", and swipes go back to previews; the next press disconnects. Disconnecting a crew's
-  board has no Undo and breaks every crewmate's relay, so it never happens in one press from the frost. Solo with
+- **A press on You are driving the wall stops driving and keeps the link** (#7113). One rule, solo included: the
+  press stops driving (a light buzz, "Stopped driving the wall" for screen readers), the label changes to
+  "Disconnect board", and swipes go back to previews; the next press disconnects. The physical-control frost
+  stays when geometry is available (#7175). Disconnecting a crew's board has no Undo and breaks every crewmate's
+  relay, so a press on You are driving the wall never disconnects. Solo with
   Light the board as I swipe on, the stop holds until the link drops, or until the climber presses to put a climb
   up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
 - **Solo, a press that puts a climb up ends in driving** (#7113 QA, Marco: "When I'm alone I should just always end
@@ -127,24 +135,24 @@ board, Sam has the board").
 - **Lit only with a live link.** `resolveWallLit` (`play-drawer/wall-lit.ts`) decides it: this phone's link or a
   crewmate's. The server's board presence never clears and can name a climb lit 8 hours ago, so with no link the
   button offers a connect (Put on board). A preview of another climb, the #4979 hold and "Turn off all lights" read as dark.
-- **Look.** The tonal fill is 20% of the brand violet (`WALL_CONTROL_TONAL_ALPHA`), up from 14%, which read as
-  disabled; the violet label keeps at least 4.6:1 on every Liquid Glass and Material sheet, light and dark
-  (`wall-control-button-contrast.test.ts`). **The coloured lit look means you are driving the board** (#7017,
-  Marco): the model's `driving` is true only while the climb on screen is lit on this phone's link and a swipe or
-  Next from here commits to the wall (`navigationCommits`: solo with lighting on swipes, not a browse; or a live
-  drive, #7113), and no press stopped it on this link. Then the
-  button glows with the climb's holds (look F1b, `wall-glow.ts`, `WallGlow.tsx`, described in
-  `ai-design-guidelines.md`); with no holds it is the `live` amber with white text, dark text on the dark scheme's
-  pale amber, and the label says "You are driving the wall". In a crew swipes open previews (#4281), so nobody drives
-  until a swipe on the button starts a drive: the holder's lit button says "Disconnect board", with its filled bulb
-  and face on the plain tonal look, and a crewmate's board is tonal with an outline bulb. Lightbulb mode's bulb keeps its own fill rule (`resolveWallBulbLook`). The glow is a view of the same
-  model: PlayCore hands the button the lit holds (`useParseFrames` on the playback frame, colours from
-  `use-hold-state-colors.ts`, the source Active holds uses), memoised on climb, frame, mirror and colours. 44 pt tall on iOS, 48 dp on Android; the second row's fixed height is built from it, so nothing moves
+- **Look.** `wallControlUsesFrost` (`wall-control-frost.ts`, #7175) gives physical LED actions the climb's hold-colour
+  frost at rest: connect, re-light, put-up, relay, board change, disconnect and stop-driving. PlayCore builds the
+  glow for LED-capable boards, using the destination board for a cross-board action. Set active, boards without
+  lights and actionless crew status keep their existing surfaces. Frost therefore says neither "connected" nor
+  "driving": the label says what the press does, and only "You are driving the wall" promises that subsequent
+  supported climb changes light the wall. A crew's safe preview can have a frosted Put on board button.
+  The glow uses the displayed climb's holds (look F1b, `wall-glow.ts`, `WallGlow.tsx`, described in
+  `ai-design-guidelines.md`). Without hold geometry the old fallbacks remain: `live` amber while driving,
+  tonal violet for other actions, or the amber outline for unlinked wall presence. The tonal fill is 20% of the
+  brand violet (`WALL_CONTROL_TONAL_ALPHA`), with at least 4.6:1 label contrast on every Liquid Glass and Material
+  sheet (`wall-control-button-contrast.test.ts`). Lightbulb mode keeps its own fill rule (`resolveWallBulbLook`).
+  PlayCore supplies `useParseFrames` geometry from the playback frame and colours from `use-hold-state-colors.ts`,
+  memoised on climb, frame, mirror and colours. 44 pt tall on iOS, 48 dp on Android; the second row's fixed height is built from it, so nothing moves
   between states. The row's padding matches the Logbook card's edges below it. A long label (German, a long name)
   shrinks to 80% before it truncates. While a climb is written to the LEDs it shows the bulb's spinner, and in
   auto-disconnect's last ten seconds the bulb's amber ring.
 
-While the #4979 hold keeps the current climb dark, the wall button reads Put on the wall and nothing else
+While the #4979 hold keeps the current climb dark, the wall button reads Put on board and nothing else
 changes in the controls. The "Last on the wall …" note that used to sit under it (#7000) was removed: climbers
 didn't find the date useful.
 
@@ -172,14 +180,16 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
 - **Where.** Wherever the model's `swipeAction` is `drive` and the host hands `onSwipe`: the full-width button and the
   workout's compact one. Not on the bulb view (there the sheet row is the way in).
 - **The gesture** (`use-wall-swipe.ts`, numbers in `wall-swipe.ts`). A pan that claims a leftward drag past 10 pt and
-  gives way to a vertical one past 14 pt. The frost wipes in from the trailing edge as the finger moves, on the UI
-  thread (a clip plus `translateX`, `WallSwipeWipe.tsx`), with no React render per frame. Letting go commits past 55%
+  gives way to a vertical one past 14 pt. A button with hold geometry is already frosted at rest: it keeps that
+  surface during a swipe and adds no wipe overlay (`wiping && !fullGlow`, #7175). Without `fullGlow`, the fallback
+  `WallSwipeWipe` moves in from the trailing edge on the UI thread, with no React render per frame. Letting go commits past 55%
   of the width (189 pt of 343 pt, like the climb rows' full swipe), or on a fling faster than −800 pt/s once past
   25%. Crossing the commit point buzzes medium once and the label becomes "Let go to light every climb". Short of it
-  the frost springs back (damping 20, stiffness 300). Past it the frost fills the rest of the width in 150 ms and
-  holds until the drive goes live (a live drive whose climb doesn't read lit yet gets 1.5 s, and never an error); the
-  lit confirm buzzes success. A refusal, or a drive that ends while still arming (a failed connect), springs it back
-  with an error buzz. A pan swallows the tap and the hold it ended in, and a drag after a hold that already fired
+  the gesture springs back (damping 20, stiffness 300). Past it the fallback wipe fills the remaining width in
+  150 ms and holds until the drive goes live (a live drive whose climb doesn't read lit yet gets 1.5 s, and never
+  an error). With resting frost, the visible change is the release label, then You are driving the wall once lit;
+  the lit confirm buzzes success. A refusal, or a drive that ends while still arming (a failed connect), cancels
+  the gesture with an error buzz and springs back any fallback wipe. A pan swallows the tap and the hold it ended in, and a drag after a hold that already fired
   does nothing (the sheet is opening). A system gesture that takes the touch cancels the pan, which springs back like
   any cancel. **Android's edge Back** was the one that mattered: measured on a Pixel 8 Pro with gesture navigation,
   drags starting 35 dp or more from the screen edge drive and drags starting 28 dp or less go Back and close the
@@ -192,16 +202,19 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   between the bulb row's buttons, and the first-row button beside a MiniPlayer (a tablet's pane, away from the edge)
   are unchanged. On Expo web the detector has `touchAction="pan-y"`.
 - **No swipe on a crewmate's board**, by design: his phone holds it, and Put on board relays the climb to that
-  phone. There the button has no chevrons, no peek and no gesture. A drive the runner still can't start (presence
-  says another account holds the board) answers `held_by_crew`, and the frost springs back with an error buzz.
-- **The hint.** ‹‹ chevrons (10 pt, the brand violet at 70% and 40%) sit before the face slot wherever the swipe is
-  offered. Once per app session, the first time a swipeable state shows, the frost peeks in 28 pt from the trailing
-  edge and springs back (about 700 ms; a fade in place under Reduce Motion). At most 3 sessions, never again once a
-  swipe has driven the wall, never in screenshot mode (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`).
-- **The frost in every swipeable state.** PlayCore builds the glow input for the climb on screen wherever the swipe
-  is offered or a drive is arming, memoised as before; the button mounts the frost only once a drag gets going (or
-  the peek plays), never on a plain tap, and unmounts it once it is back at rest. With no holds the wipe is the
-  flat `live` amber. A session counts towards the peek's three only once the peek actually plays.
+  phone. That relay can be frosted, but has no chevrons, no peek and no gesture. A drive the runner still can't
+  start (presence says another account holds the board) answers `held_by_crew`, cancels with an error buzz and
+  springs back any fallback wipe.
+- **The hint.** ‹‹ chevrons (10 pt, at 70% and 40% of the readable frost foreground, or brand violet without
+  `fullGlow`) sit before the face slot wherever the swipe is offered. Once per app session, the first swipeable
+  state starts a 28 pt trailing-edge peek and spring-back (about 700 ms; a fade in place under Reduce Motion).
+  A button already showing full frost draws no extra peek overlay; the motion is visible only through the
+  fallback wipe. At most 3 sessions, never again once a swipe has driven the wall, never in screenshot mode
+  (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`). A session counts towards the three once the peek runs.
+- **The resting frost and fallback wipe.** PlayCore builds the memoised glow input whenever a physical LED action
+  uses frost, a swipe is offered or a drive is arming. With geometry, `WallGlow` stays mounted at rest and the
+  swipe does not replace it. Only when there is no `fullGlow` does a drag or peek mount the temporary
+  `WallSwipeWipe`; without holds its fill is the flat `live` amber, and it unmounts when the gesture settles.
 - **Without the swipe.** Screen readers get the named action "Light every climb" beside "Board options" (the rotor,
   or TalkBack's actions menu). The spoken hint stays the tap's: under VoiceOver and TalkBack a swipe moves focus. The board sheet's first row is **Light every climb** wherever the
   swipe is offered: the visible way in for the bulb view and for Put on board with no link, where a hold opens no
@@ -271,7 +284,7 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
 - **Second row**: with the wall button chosen, the wall button alone, full width, in every wall state. With the bulb
   chosen, the bulb takes the trailing slot and the second row stays on every board with lights, as the bar before
   #7000 did, so the board never jumps mid-swipe: the climber's other buttons on (everything after the leading
-  one), small, the first half left and the rest right, and Put on the wall in the gap for a preview, which pushes
+  one), small, the first half left and the rest right, and Put on board in the gap for a preview, which pushes
   nothing into ⋯. With no Bluetooth, on a spray wall or on a board with
   no lights there is no wall to light, so the row collapses (and there is no bulb). A preview keeps the row there
   for its Set active button.
@@ -281,8 +294,8 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   up Crimp Ladder" (`playView.wallState.busyWall.captionNamed`, the climb's name last and cut first), in place of
   "Only you see this", and VoiceOver hears it once. The answers are the wall button's row as two segments in the
   wall button's family (`BusyWallQuestionGroup`): 44 pt, pill radius, the same type, two equal halves with an 8 pt
-  gap. Put mine up is the primary and looks exactly like Put on the wall (the tonal fill, the bulb, filled amber
-  while this phone holds the board, the lavender label), since it confirms the tap the climber just made. Keep
+  gap. Put mine up keeps its tonal fill, bulb (filled amber while this phone holds the board) and lavender label.
+  It confirms the tap the climber just made, but does not acquire the physical wall button's frost (#7175). Keep
   Sam's is the neutral tonal fill with a hairline and Sam's face, and reads "Keep theirs" where the name won't fit.
   Where a label won't fit half the row (large Dynamic Type, German) the two stack full width, Put mine up on top.
   The first row stays as it was in both Board control modes; Put mine up carries the bulb, so the wall button's bulb
@@ -325,15 +338,15 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   climb, forgets a Turn off all lights.
 - **The bulb fills whenever this phone holds the board.** In the wall button and in Lightbulb mode, the 💡 glyph is
   filled amber while `model.holder === 'self'`, in any state: Put on board on a preview with the link up,
-  Disconnect board, a dark climb. Otherwise it is an outline. The frost (the lit glow) shows only while this
-  climber drives the board (`model.driving`), so a preview, and anything in a crew, has none: swiping there doesn't
-  change the board.
+  Disconnect board, a dark climb. Otherwise it is an outline. The full wall button's frost follows its physical
+  LED action (#7175), including previews and crew relays. Its label, not the frost or the bulb's fill, says
+  whether subsequent climb changes light the board.
 - The bulb reads the same model as the wall button: grey outline with no board, filled amber while this phone holds
   the board or a crewmate's climb is lit, amber outline when the board is on the wall but not this phone's. The
   holder's face sits on its corner (only from `model.holder`). Screen readers hear "Board lights", the state, and
   what a tap does.
 - **A preview in a block.** Fell / Sent only ever shows for the climb on the wall and on screen
-  (`shouldShowWorkoutOutcome`), so a preview of another climb gets Put on the wall in the second row in both modes,
+  (`shouldShowWorkoutOutcome`), so a preview of another climb gets Put on board in the second row in both modes,
   and its Fell / Sent comes back with the climb on the wall. Showing Fell / Sent there would log a climb the
   climber isn't looking at. See [One-tap Fell / Sent](#one-tap-fell--sent).
 - **The anonymous web reader** gets a read-only bar whatever the device stored: no heart, queue, bulb or wall button,
@@ -501,9 +514,9 @@ climb).
   a Mini player section with the switches only; the order changes in View options, the same rule as the player's
   buttons.
 - Defaults: Next, Previous, Mirror, Favorite and Wall display on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
-  - **Next / Previous**: step the list. Solo with Light on swipe on they move the climb; in a crew, or with Light on
-    swipe off, they open the player on a preview, so one tap never moves the room's climb. Next at the end of a
-    list opens the player.
+  - **Next / Previous**: step the list. Driving lights each supported climb change, including in a crew.
+    Otherwise solo lighting follows Light on swipe; in a crew, with Light on swipe off, or after stopping
+    driving, they open the player on a preview. Next at the end of a list opens the player.
   - **Mirror**: boards that mirror (Tension, Decoy, Woods). In a crew it sets the shared orientation; solo it
     flips what the wall lights.
   - **Favorite** and **Queue**: signed in only.
@@ -682,7 +695,8 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
   - Where the climber can't log the block (signed out, a draft, another board), the bar keeps its usual buttons
     but still drops ⏮ ⏭ (`isMiniPlayerButtonAvailable`'s `inTimedBlock`): the stage moves the wall on its own beat.
   - The Settings preview draws no workout: it shows the bar the climber set up.
-- A crew, or Light on swipe off: Next and Previous open the player on a preview.
+- Without driving, a crew, Light on swipe off or a stop on this link makes Next and Previous open the player
+  on a preview. Driving lights each supported climb change instead.
 - Signed out: no Favorite or Queue. A draft has no Share. A fixed-angle board has no Angle; a board that can't
   mirror has no Mirror.
 

@@ -855,7 +855,7 @@
           "label": "Control del plafón",
           "wallButton": "Botón del muro",
           "lightbulb": "Bombilla",
-          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. En el botón del muro, el efecto esmerilado y Estás al mando del plafón indican que cada bloque que elijas se enciende; tócalo para dejar el mando sin desconectarte. La bombilla queda arriba a la derecha."
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; toca esa etiqueta para dejar el mando sin desconectarte. La bombilla queda arriba a la derecha."
         }
       },
       "climbView": {

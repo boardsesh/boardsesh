@@ -166,7 +166,7 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
-- **Stopping it.** A press on the frosted button stops driving and keeps the link; solo, swipes
+- **Stopping it.** A press on the button labelled "You are driving the wall" stops driving and keeps the link; solo, swipes
   and taps then stay previews until the link drops or the climber presses to put a climb up
   again (the settings never flip). Solo, every such press (Put on board, a re-light, a
   connect) ends in driving: it drops the stop, and with Light on swipe off it starts a live
@@ -188,16 +188,23 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
 
 ## Player states today
 
-The wall button says what a press does and whether subsequent climb changes light the wall.
+The wall button's label says what a press does and whether subsequent climb changes light the wall.
 Its model is `resolveWallControl` in `src/components/play-drawer/wall-control.ts`.
 The header retains only the back chip from `resolveHeaderPillState` in `wall-state.ts`;
 the old Live and On the wall status pills are no longer drawn.
+
+Since #7175, the full wall button uses the frosted look for physical board actions:
+connecting, putting up or relaying a climb, changing board, stopping driving and
+disconnecting. A safe preview can therefore show a frosted **Put on board** button.
+Read the label, not the surface, to know whether subsequent climb choices light the wall.
+The labels remain authoritative when hold colours are unavailable: the existing flat fallback is
+amber while driving, or the existing tonal/outline treatment otherwise.
 
 | State | What you see | What happens next |
 | --- | --- | --- |
 | Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb. Solo, it starts driving; in a crew, it is a one-off put. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
-| Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on the plain tonal button | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
+| Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on the same frosted physical-control surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
 | Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
 | Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A long-press Preview, deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
 | A crewmate holds the board | **Put on board**, an outline bulb and their face | A tap relays the climb through their phone. There is no swipe-to-drive on that phone's connection. |

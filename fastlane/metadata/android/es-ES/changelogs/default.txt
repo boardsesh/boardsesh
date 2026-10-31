@@ -1,6 +1,6 @@
 Novedades de 2.7:
-- Poner en el plafón conecta y enciende tu bloque. Botón esmerilado: cada bloque elegido se enciende. Deslízalo a la izquierda para empezar; tócalo para parar sin desconectarte.
-- Ya en italiano. Descanso con cuenta atrás y tono en la notificación.
+- Lee el botón esmerilado: Poner en el plafón conecta y enciende. Estás al mando del plafón: cada bloque elegido se enciende; toca este texto para parar sin desconectarte. Desliza a la izquierda para empezar.
+- Italiano. Cuenta atrás y tono de descanso en la notificación.
 - Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
 - Ordena y filtra playlists, Favoritos y Proyectos.
-- Logbook, favoritos y playlists sin cobertura. Los escaneos encuentran MoonBoards.
+- Logbook, favoritos y playlists sin cobertura. Escanea MoonBoards.

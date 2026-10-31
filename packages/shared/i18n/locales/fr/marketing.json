@@ -584,7 +584,7 @@
       "crowd": {
         "title": "Explorer sans bouger le mur",
         "p1": "Avec quelqu’un d’autre dans ta session, faire défiler permet d’explorer sans changer le mur, sauf si tu pilotes. Touche Allumer sur la board pour allumer un bloc, ou Au mur en haut pour revenir au bloc allumé.",
-        "p2": "Si le bouton givré du lecteur affiche Tu pilotes la board, touche-le pour arrêter de piloter en gardant la connexion. En solo, désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler dans Paramètres, puis Board, pour explorer sans allumer.",
+        "p2": "Si le bouton du lecteur affiche Tu pilotes la board, touche-le pour arrêter de piloter en gardant la connexion. En solo, désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler dans Paramètres, puis Board, pour explorer sans allumer.",
         "previewLink": "Voir un bloc depuis n'importe quelle liste",
         "drivingLink": "Comment commencer et arrêter de piloter la board"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Board et Bluetooth",
       "hero": {
         "title": "Connecte ton téléphone à la board",
-        "subtitle": "Touche Allumer sur la board pour allumer ton bloc. L’effet givré du bouton du lecteur indique quand chaque bloc choisi s’allumera."
+        "subtitle": "Lis le bouton givré du mur : Allumer sur la board allume ce bloc. Tu pilotes la board signifie que chaque bloc choisi s’allume."
       },
       "connect": {
         "title": "Se connecter",
@@ -778,11 +778,11 @@
       },
       "driving": {
         "title": "Savoir quand tu pilotes la board",
-        "p1": "Quand le bouton du mur du lecteur a un effet givré et affiche Tu pilotes la board, chaque bloc que tu choisis s’allume, même en crew. Être connecté ne veut pas toujours dire piloter. En solo, toucher Allumer sur la board commence le pilotage ; en crew, une touche allume un seul bloc.",
-        "p2": "Pour piloter quand le bouton affiche ‹‹, glisse le bouton du mur vers la gauche. L’effet givré suit ton doigt. Relâche quand il affiche Relâche pour allumer chaque bloc. Il se connecte si besoin, allume le bloc à l’écran et ceux que tu choisis ensuite. Glisser sur le dessin de la board change de bloc.",
-        "p3": "Touche Tu pilotes la board pour arrêter de piloter et explorer en restant connecté. Le bouton affiche alors Déconnecter la board ; le toucher déconnecte. Tu peux aussi commencer avec Allumer chaque bloc dans ⋯, puis Commandes de la board, ou dans les actions du lecteur d’écran du bouton.",
+        "p1": "Le bouton givré du mur commande la board physique. Lis son libellé : Allumer sur la board connecte si besoin et allume le bloc à l’écran ; Tu pilotes la board signifie que chaque bloc choisi s’allume, même en crew. En solo, toucher Allumer sur la board commence le pilotage ; en crew, une touche allume un seul bloc.",
+        "p2": "Pour piloter quand le bouton affiche ‹‹, glisse le bouton du mur vers la gauche. Relâche quand il affiche Relâche pour allumer chaque bloc. Il se connecte si besoin, allume le bloc à l’écran et ceux que tu choisis ensuite. Glisser sur le dessin de la board change de bloc.",
+        "p3": "Touche Tu pilotes la board pour arrêter de piloter et explorer en restant connecté. Le libellé devient Déconnecter la board ; le toucher déconnecte. Tu peux aussi commencer avec Allumer chaque bloc dans ⋯, puis Commandes de la board, ou dans les actions du lecteur d’écran du bouton.",
         "clipAlt": "Glisser le bouton du mur à gauche pour piloter, puis le toucher pour arrêter",
-        "clipCaption": "Glisse le bouton à gauche, relâche pour allumer chaque bloc, puis touche le bouton givré pour arrêter de piloter en gardant la connexion."
+        "clipCaption": "Glisse le bouton à gauche et relâche pour allumer chaque bloc. Touche Tu pilotes la board pour arrêter de piloter en gardant la connexion."
       }
     },
     "climbActions": {

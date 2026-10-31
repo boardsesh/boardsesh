@@ -1,5 +1,5 @@
 Neu in 2.7:
-- Am Board beleuchten verbindet und beleuchtet deinen Boulder. Mattierte Taste: Jeder gewählte Boulder leuchtet. Nach links wischen zum Starten; tippen stoppt, du bleibst verbunden.
+- Lies die mattierte Taste: Am Board beleuchten verbindet/beleuchtet. Du steuerst das Board: Jeder gewählte Boulder leuchtet; tippen stoppt, du bleibst verbunden. Nach links wischen zum Starten.
 - Jetzt auf Italienisch. Pausen-Countdown und Endton in der Benachrichtigung.
 - Workouts in Blöcken. Wischen bleibt in deiner Liste; als Nächstes oder Letztes spielen.
 - Playlists, Gelikt und Projekte sortieren/filtern.

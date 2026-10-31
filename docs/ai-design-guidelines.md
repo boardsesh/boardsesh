@@ -501,17 +501,18 @@ way it looks like this:
   Public spray-wall previews use photo-mapped hold colours. The native preset stays at its original strength.
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
-- **Swipe to drive: the frost wipes in (#7113).** Dragging the button left wipes the same frost in from the trailing
-  edge, under the finger; the pill itself stays still. The frost has a soft edge, not a hard cut: its base colour
-  fades in over 12 pt before the edge and the holds' colours fade in over 12 pt after it. The row is drawn twice:
-  the words and chevrons the frost covers take the frost's label colour (with its shadow), the rest stay violet on
-  the tonal pill, so a label half covered reads on both. Past 55% of the width the label becomes "Let go to light
-  every climb". With no holds the wipe is the flat `live` amber, its words in the lit amber's label colour.
-- **The swipe's hint.** ‹‹ chevrons, 10 pt glyphs 2 pt apart, 4 pt before the face slot, in the brand violet at 70%
-  (the leading one) and 40%: the mocks' 25% vanished on the dark tonal pill. The one-time peek wipes the frost in
-  28 pt from the trailing edge over 250 ms, holds 150 ms and springs back (damping 20, stiffness 300), about 700 ms
-  in all; under Reduce Motion the same strip fades in and out where it stands (200 + 300 + 200 ms). Shimmer was
-  rejected (Liquid Glass already has a specular), and so was a draggable knob (it clashes with the face).
+- **Swipe to drive: read the release label (#7113, #7175).** The physical button already carries its full frost
+  at rest, so dragging it left keeps that surface. Past 55% of its width the label becomes "Let go to light
+  every climb"; a committed release changes it to "You are driving the wall". Stopping changes the label to
+  "Disconnect board" and keeps the frost. `WallSwipeWipe` is drawn only without a full glow: that fallback
+  wipes in from the trailing edge under the finger, with a soft 12 pt edge and a second readable copy of the
+  label. With no hold geometry the wipe is flat `live` amber.
+- **The swipe's hint.** ‹‹ chevrons, 10 pt glyphs 2 pt apart, sit 4 pt before the face slot. They inherit the
+  readable frost foreground on a fully frosted button; the fallback uses brand violet at 70% and 40%.
+  Only the fallback visibly peeks in 28 pt from the trailing edge over 250 ms, holds 150 ms and springs back
+  (damping 20, stiffness 300), about 700 ms in all. Under Reduce Motion that strip fades in place
+  (200 + 300 + 200 ms). A fully frosted button suppresses the wipe overlay. Shimmer and a draggable knob
+  remain excluded.
   Shots: `docs/images/7113/`.
 
 A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen

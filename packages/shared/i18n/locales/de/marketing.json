@@ -584,7 +584,7 @@
       "crowd": {
         "title": "Stöbern, ohne die Wand zu bewegen",
         "p1": "Mit jemand anderem in deiner Session stöberst du per Wischen, ohne das Board zu verändern, außer du steuerst es. Tippe auf Am Board beleuchten für einen Boulder oder oben auf Am Board, um zum beleuchteten Boulder zurückzukehren.",
-        "p2": "Zeigt die mattierte Taste im Player Du steuerst das Board, tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Allein schaltest du unter Einstellungen, dann Board, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten aus, um ohne Beleuchten zu stöbern.",
+        "p2": "Sagt der Player-Button Du steuerst das Board, tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Allein schaltest du unter Einstellungen, dann Board, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten aus, um ohne Beleuchten zu stöbern.",
         "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen",
         "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Board und Bluetooth",
       "hero": {
         "title": "Verbinde dein Handy mit dem Board",
-        "subtitle": "Tippe auf Am Board beleuchten, um deinen Boulder zu beleuchten. Die mattierte Taste im Player zeigt, wann jeder gewählte Boulder beleuchtet wird."
+        "subtitle": "Lies den mattierten Wand-Button: Am Board beleuchten beleuchtet diesen Boulder. Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird."
       },
       "connect": {
         "title": "Verbinden",
@@ -778,11 +778,11 @@
       },
       "driving": {
         "title": "Erkenne, wann du das Board steuerst",
-        "p1": "Wenn der Wand-Button im Player mattierte Farben zeigt und Du steuerst das Board sagt, wird jeder gewählte Boulder beleuchtet, auch in einer Crew. Verbunden zu sein heißt nicht immer, dass du steuerst. Allein beginnt Am Board beleuchten das Steuern; in einer Crew beleuchtet ein Tipp einen Boulder.",
-        "p2": "Zeigt der Button ‹‹, wische den Wand-Button nach links, um zu steuern. Die mattierte Fläche folgt deinem Finger. Lass los, sobald Loslassen, um jeden Boulder zu beleuchten erscheint. Das verbindet bei Bedarf, beleuchtet den Boulder auf dem Bildschirm und die danach gewählten. Wischen über die Board-Zeichnung wechselt zwischen Bouldern.",
-        "p3": "Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden weiterzustöbern. Danach steht dort Board trennen; ein Tipp darauf trennt die Verbindung. Du kannst auch mit Jeden Boulder beleuchten unter ⋯, dann Board-Steuerung, oder über die Screenreader-Aktionen des Buttons starten.",
+        "p1": "Der mattierte Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm; Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, auch in einer Crew. Allein beginnt Am Board beleuchten das Steuern; in einer Crew beleuchtet ein Tipp einen Boulder.",
+        "p2": "Zeigt der Button ‹‹, wische den Wand-Button nach links, um zu steuern. Lass los, sobald Loslassen, um jeden Boulder zu beleuchten erscheint. Das verbindet bei Bedarf, beleuchtet den Boulder auf dem Bildschirm und die danach gewählten. Wischen über die Board-Zeichnung wechselt zwischen Bouldern.",
+        "p3": "Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden weiterzustöbern. Die Beschriftung wechselt zu Board trennen; ein Tipp darauf trennt die Verbindung. Du kannst auch mit Jeden Boulder beleuchten unter ⋯, dann Board-Steuerung, oder über die Screenreader-Aktionen des Buttons starten.",
         "clipAlt": "Den Wand-Button nach links wischen, um zu steuern, dann zum Beenden antippen",
-        "clipCaption": "Wische den Button nach links, lass los, um jeden Boulder zu beleuchten, und tippe auf die mattierte Taste, um verbunden aufzuhören zu steuern."
+        "clipCaption": "Wische den Button nach links und lass los, um jeden Boulder zu beleuchten. Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden zu bleiben."
       }
     },
     "climbActions": {

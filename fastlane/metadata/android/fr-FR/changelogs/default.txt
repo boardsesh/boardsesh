@@ -1,6 +1,6 @@
 Nouveautés de 2.7 :
-- Allumer sur la board connecte et allume ton bloc. Bouton givré : chaque bloc choisi s’allume. Balaye-le à gauche pour commencer ; touche-le pour arrêter sans te déconnecter.
-- Maintenant en italien. Repos avec compte à rebours et son dans la notification.
+- Lis le bouton givré : Allumer sur la board connecte et allume. Tu pilotes la board : chaque bloc choisi s’allume ; touche ce texte pour arrêter sans te déconnecter. Balaye à gauche pour commencer.
+- Italien. Compte à rebours et son de repos dans la notification.
 - Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
 - Trie et filtre playlists, Aimées et Projets.
 - Carnet, likes et playlists hors ligne. Les scans trouvent les MoonBoards.

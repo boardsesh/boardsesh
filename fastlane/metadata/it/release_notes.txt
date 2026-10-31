@@ -2,7 +2,7 @@ Boardsesh ora è disponibile in italiano.
 
 Sappi quando illumini il pannello
 
-Illumina il pannello connette e illumina il tuo blocco. L’effetto satinato del pulsante nel player indica che guidi tu: ogni blocco che scegli si illumina in parete. Scorri il pulsante a sinistra per iniziare; toccalo per smettere di guidare e sfogliare senza disconnetterti.
+«Illumina il pannello» connette e illumina il tuo blocco. Leggi il pulsante satinato del player: «Guidi tu il pannello» significa che ogni blocco scelto si illumina. Scorri a sinistra per iniziare; tocca «Guidi tu il pannello» per smettere di guidare e sfogliare senza disconnetterti.
 
 iPad e iPhone Duo: più spazio per il pannello
 

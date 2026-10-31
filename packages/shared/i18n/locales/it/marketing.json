@@ -584,7 +584,7 @@
       "crowd": {
         "title": "Sfogliare senza cambiare il blocco in parete",
         "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che tu stia guidando. Tocca Illumina il pannello per un blocco, oppure In parete in alto per tornare al blocco illuminato.",
-        "p2": "Se il pulsante satinato del lettore dice Guidi tu il pannello, toccalo per smettere di guidare senza disconnetterti. Da solo, disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro in Impostazioni, poi Pannello, per sfogliare senza illuminare.",
+        "p2": "Se il pulsante del lettore dice Guidi tu il pannello, toccalo per smettere di guidare senza disconnetterti. Da solo, disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro in Impostazioni, poi Pannello, per sfogliare senza illuminare.",
         "previewLink": "Anteprima di un blocco da qualsiasi lista",
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Tocca Illumina il pannello per illuminare il tuo blocco. L’effetto satinato del pulsante del lettore indica quando si illuminerà ogni blocco che scegli."
+        "subtitle": "Leggi il pulsante parete satinato: Illumina il pannello illumina questo blocco. Guidi tu il pannello significa che ogni blocco scelto si illumina."
       },
       "connect": {
         "title": "Connetti",
@@ -778,11 +778,11 @@
       },
       "driving": {
         "title": "Riconosci quando guidi il pannello",
-        "p1": "Quando il pulsante parete del lettore ha un effetto satinato e dice Guidi tu il pannello, ogni blocco che scegli si illumina, anche in una crew. Essere connessi non significa sempre guidare. Da solo, toccare Illumina il pannello avvia la guida; in una crew, un tocco illumina un blocco.",
-        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. L’effetto satinato segue il dito. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Scorrere sul disegno del pannello cambia blocco.",
-        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare restando connesso. Il pulsante diventa Disconnetti pannello; toccarlo disconnette. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
+        "p1": "Il pulsante parete satinato controlla il pannello fisico. Leggi l’etichetta: Illumina il pannello connette se serve e illumina il blocco sullo schermo; Guidi tu il pannello significa che ogni blocco scelto si illumina, anche in una crew. Da solo, toccare Illumina il pannello avvia la guida; in una crew, un tocco illumina un blocco.",
+        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Scorrere sul disegno del pannello cambia blocco.",
+        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare restando connesso. L’etichetta cambia in Disconnetti pannello; toccarla disconnette. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
         "clipAlt": "Scorrere il pulsante parete a sinistra per guidare, poi toccarlo per smettere",
-        "clipCaption": "Scorri il pulsante a sinistra, rilascia per illuminare ogni blocco e tocca il pulsante satinato per smettere di guidare senza disconnetterti."
+        "clipCaption": "Scorri il pulsante a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per smettere di guidare senza disconnetterti."
       }
     },
     "climbActions": {

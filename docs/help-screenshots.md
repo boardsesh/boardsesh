@@ -4,7 +4,7 @@
 
 The current [driving player](../packages/web/public/images/help/board-view.webp)
 and [Board controls](../packages/web/public/images/help/board-sheet.webp) were
-captured from `d5f10c24dc` on an iPhone 16 Pro Max simulator, dark appearance,
+captured from `3c4fd3702d` on an iPhone 16 Pro Max simulator, dark appearance,
 1320 × 2868. The controls image now shows Re-light, Turn off all lights and
 Disconnect, and belongs beside the Board controls instructions, not the
 Bluetooth device picker. The [preview example](images/list-model/player-browsing.png)

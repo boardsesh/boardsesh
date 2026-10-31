@@ -584,7 +584,7 @@
       "crowd": {
         "title": "Cotillear sin mover el muro",
         "p1": "Con alguien más en tu sesión, deslizar permite explorar sin cambiar el plafón, salvo que estés al mando. Toca Poner en el plafón para encender un bloque, o En el plafón arriba para volver al bloque encendido.",
-        "p2": "Si el botón esmerilado del reproductor dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Si escalas solo, apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar en Ajustes, luego Plafón, para explorar sin encender.",
+        "p2": "Si el botón del reproductor dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Si escalas solo, apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar en Ajustes, luego Plafón, para explorar sin encender.",
         "previewLink": "Vista previa de un bloque desde cualquier lista",
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Plafón y Bluetooth",
       "hero": {
         "title": "Conecta el móvil al plafón",
-        "subtitle": "Toca Poner en el plafón para encender tu bloque. El efecto esmerilado del botón del reproductor indica cuándo se encenderá cada bloque que elijas."
+        "subtitle": "Lee el botón esmerilado del muro: Poner en el plafón enciende este bloque. Estás al mando del plafón significa que cada bloque que elijas se enciende."
       },
       "connect": {
         "title": "Conectar",
@@ -778,11 +778,11 @@
       },
       "driving": {
         "title": "Sabe cuándo estás al mando del plafón",
-        "p1": "Cuando el botón del muro del reproductor tiene efecto esmerilado y dice Estás al mando del plafón, cada bloque que elijas se enciende, también en grupo. Estar conectado no siempre significa tener el mando. Si escalas solo, tocar Poner en el plafón toma el mando; en un grupo, un toque enciende un bloque.",
-        "p2": "Para tomar el mando cuando el botón muestra ‹‹, desliza el botón del muro hacia la izquierda. El efecto esmerilado sigue tu dedo. Suelta cuando diga Suelta para encender cada bloque. Se conecta si hace falta, enciende el bloque de la pantalla y los que elijas después. Deslizar sobre el dibujo del plafón cambia de bloque.",
-        "p3": "Toca Estás al mando del plafón para dejar el mando y explorar sin desconectarte. El botón pasa a decir Desconectar plafón; tocarlo desconecta. También puedes tomar el mando con Encender cada bloque en ⋯, luego Controles del plafón, o en las acciones del lector de pantalla del botón.",
+        "p1": "El botón esmerilado del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla; Estás al mando del plafón significa que cada bloque que elijas se enciende, también en grupo. Si escalas solo, tocar Poner en el plafón toma el mando; en un grupo, un toque enciende un bloque.",
+        "p2": "Para tomar el mando cuando el botón muestra ‹‹, desliza el botón del muro hacia la izquierda. Suelta cuando diga Suelta para encender cada bloque. Se conecta si hace falta, enciende el bloque de la pantalla y los que elijas después. Deslizar sobre el dibujo del plafón cambia de bloque.",
+        "p3": "Toca Estás al mando del plafón para dejar el mando y explorar sin desconectarte. La etiqueta cambia a Desconectar plafón; tocarla desconecta. También puedes tomar el mando con Encender cada bloque en ⋯, luego Controles del plafón, o en las acciones del lector de pantalla del botón.",
         "clipAlt": "Deslizar el botón del muro hacia la izquierda para tomar el mando y tocarlo para dejarlo",
-        "clipCaption": "Desliza el botón a la izquierda, suelta para encender cada bloque y toca el botón esmerilado para dejar el mando sin desconectarte."
+        "clipCaption": "Desliza el botón a la izquierda y suelta para encender cada bloque. Toca Estás al mando del plafón para dejar el mando sin desconectarte."
       }
     },
     "climbActions": {

@@ -2,7 +2,7 @@ Boardsesh is now available in Italian.
 
 KNOW WHEN YOU’RE LIGHTING THE WALL
 
-Put on board connects and lights your climb. The player’s frosted button shows when you’re driving: every climb you pick lights the wall. Swipe the button left to start, or tap it to stop driving and browse while staying connected.
+“Put on board” connects and lights your climb. Read the player’s frosted button: “You are driving the wall” means every climb you pick lights up. Swipe it left to start, or tap “You are driving the wall” to stop and browse while staying connected.
 
 iPad and iPhone Duo: more room for the board
 

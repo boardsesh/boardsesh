@@ -51,7 +51,7 @@ Use a dedicated iPhone 16 Pro Max simulator in dark appearance, at 1320 × 2868,
 with the release checkout's cached dev-client and local backend:
 
 ```sh
-vp run mobile:ios-shots -- --backend local --device "Boardsesh Release Help 20261031" --app-path <cached dev-client .app>
+BOARDSESH_METRO_PORT=8191 vp run mobile:ios-shots -- --backend local --device "Boardsesh Release Help 20261031" --app-path <cached dev-client .app>
 ```
 
 This command uses the store-capture environment even without `--flow`, setting
@@ -69,8 +69,12 @@ For `wall-swipe-to-drive`, open a tracked climb and leave `screenshotDrive`
 unset. Start with Put on board or Disconnect board and visible chevrons. Record
 swiping the **button** left until Let go to light every climb, releasing into
 You are driving the wall, swiping the **board** to another climb, and tapping
-the frosted button to stop. The final label is Disconnect board: the link stays
-up. `screenshotDrive=1` is for a driving **still**; it starts driving before the
+**You are driving the wall** to stop. The final label is Disconnect board,
+still frosted: the link stays up. Physical-board buttons are frosted at rest,
+including Put on board and Disconnect board. The label identifies driving;
+frost alone does not. The physical-board button has no visible frost wipe during
+the gesture, so review the release label and climb change instead.
+`screenshotDrive=1` is for a driving **still**; it starts driving before the
 gesture and would skip the lesson this clip teaches.
 
 For `preview-browsing`, stop driving first and turn off both tap and swipe
@@ -78,8 +82,9 @@ lighting in Settings → Board. Tap a row to establish its list track, then swip
 the board once. Show the back chip and Put on board without pressing it. A
 bare long-press Preview can have no swipe track; do not use it for this take.
 
-The release wall-control captures use source `d5f10c24dc` on 2026-10-31, in the
-dedicated simulator `Boardsesh Release Help 20261031`. Record the source commit
+The release wall-control captures use source `3c4fd3702d` on 2026-10-31, in the
+dedicated simulator `Boardsesh Release Help 20261031`, with Metro on port 8191.
+Record the source commit
 and capture date again when replacing these takes. Review the button label,
 frost, back chip and unchanged/changed wall climb against each caption before
 converting or publishing the assets.

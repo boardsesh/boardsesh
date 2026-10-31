@@ -2,7 +2,7 @@ Boardsesh est maintenant disponible en italien.
 
 SACHE QUAND TU ALLUMES LA BOARD
 
-Allumer sur la board connecte et allume ton bloc. L’effet givré du bouton du lecteur indique que tu pilotes : chaque bloc choisi s’allume au mur. Balaye le bouton vers la gauche pour commencer ; touche-le pour arrêter de piloter et parcourir les blocs sans te déconnecter.
+« Allumer sur la board » connecte et allume ton bloc. Lis le bouton givré du lecteur : « Tu pilotes la board » signifie que chaque bloc choisi s’allume. Balaye-le à gauche pour commencer ; touche « Tu pilotes la board » pour arrêter et parcourir les blocs sans te déconnecter.
 
 iPad et iPhone Duo : plus de place pour la board
 

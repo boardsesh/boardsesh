@@ -1,5 +1,5 @@
 New in 2.7:
-- Put on board connects and lights your climb. Its frost shows you're driving: each pick lights up. Swipe it left to start; tap to stop, staying connected.
+- Read the frosted player button: Put on board connects/lights. You are driving the wall: each pick lights up; tap this label to stop, staying connected. Swipe left to start.
 - Now in Italian. Rest countdown and finish tone in the session notification.
 - Workouts in blocks. Swipes stay on your list; play next or last.
 - Sort/filter playlists, Liked and Projects.

@@ -14,7 +14,7 @@ settings and the size budget live in [docs/help-clips.md](../../../../docs/help-
 ```sh
 export JAVA_HOME=$HOME/.cache/boardsesh/jdk-21
 export PATH="$JAVA_HOME/bin:$HOME/.maestro/bin:$PATH"
-vp run mobile:ios-shots -- --backend local --device "Boardsesh Release Help 20261031" --app-path <cached dev-client .app>
+BOARDSESH_METRO_PORT=8191 vp run mobile:ios-shots -- --backend local --device "Boardsesh Release Help 20261031" --app-path <cached dev-client .app>
 ```
 
 That holds a simulator and Metro open for the whole session. Use a dedicated
@@ -29,7 +29,7 @@ environment. Its tail captures the driving player (10), holds the wall button
 for real Board controls (09), then stops driving before the preview (12).
 The filenames are unchanged; the old board-history deep link is not used for 09.
 Simulated-board footage shows the app's actual controls, not a physical BLE test.
-The release wall-control captures use source `d5f10c24dc` on 2026-10-31.
+The release wall-control captures use source `3c4fd3702d` on 2026-10-31.
 
 The original recordings in this set used a throwaway iPhone 16 Pro Max (iOS 26.5) named
 "Boardsesh Help Clips": dark theme, Aura board drawing, status bar pinned to
@@ -94,9 +94,12 @@ iOS Alert, so its Cancel button is matched by text.
 - **`wall-swipe-to-drive` starts stopped.** Do not use `screenshotDrive=1` when
   opening the player: that parameter starts driving automatically for stills.
   The clip needs the chevrons first, then a left swipe on the wall button,
-  Let go to light every climb, the frosted You are driving the wall state, a
-  board swipe, and a tap to stop. Disconnect board at the end confirms the link
-  is retained. Never tap it again during this take.
+  Let go to light every climb, the You are driving the wall label, a board
+  swipe, and a tap on You are driving the wall to stop. Disconnect board at the
+  end confirms the link is retained. It is still frosted: physical-board
+  buttons are frosted at rest too, so frost is not the driving cue. The ordinary
+  physical-board swipe shows the release label without a frost wipe. Never tap
+  Disconnect board during this take.
 - **`://climbs?screenshotOpenPreview=1` opens a drawer that cannot swipe** (no
   suggestion source, so no swipe track), which is why this clip taps a row.
   `screenshotOpenFirst=1` lands the same chrome but is one-shot per active

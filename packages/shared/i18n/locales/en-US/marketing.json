@@ -584,7 +584,7 @@
       "crowd": {
         "title": "Browsing without moving the wall",
         "p1": "With someone else in your session, swipes browse without changing the wall unless you are driving. Tap Put on board to put up one climb, or tap On the wall at the top to return to the climb on the wall.",
-        "p2": "If the frosted player button says You are driving the wall, tap it to stop driving and keep the connection. Solo, turn off Light the board when I tap a climb and Light the board as I swipe under Settings, then Board, to keep ordinary browsing off the wall.",
+        "p2": "If the player button says You are driving the wall, tap it to stop driving and keep the connection. Solo, turn off Light the board when I tap a climb and Light the board as I swipe under Settings, then Board, to keep ordinary browsing off the wall.",
         "previewLink": "Preview a climb from any list",
         "drivingLink": "How to start and stop driving the wall"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Tap Put on board to light your climb. The player’s frosted button shows when every climb you pick will light up."
+        "subtitle": "Read the frosted wall button: Put on board lights this climb. You are driving the wall means every climb you pick lights up."
       },
       "connect": {
         "title": "Connect",
@@ -778,11 +778,11 @@
       },
       "driving": {
         "title": "Know when you’re driving the wall",
-        "p1": "When the Play drawer’s wall button has frosted colours and says You are driving the wall, every climb you pick lights the wall, including in a crew. Connecting alone does not always mean driving. Climbing solo, tapping Put on board starts driving; in a crew, a tap puts up one climb.",
-        "p2": "To start driving when the button shows ‹‹, swipe the wall button left. The frost follows your finger. Let go when it says Let go to light every climb. This connects if needed, lights the climb on screen and lights the climbs you choose after it. Swiping across the board itself moves between climbs.",
-        "p3": "Tap You are driving the wall to stop driving and browse while staying connected. The button then says Disconnect board; tapping that disconnects. You can also start driving with Light every climb in ⋯, then Board controls, or the button’s screen-reader actions.",
+        "p1": "The frosted wall button handles physical board controls. Read its label: Put on board connects if needed and lights the climb on screen; You are driving the wall means every climb you pick lights up, including in a crew. Solo, tapping Put on board starts driving; in a crew, a tap puts up one climb.",
+        "p2": "To start driving when the button shows ‹‹, swipe the wall button left. Let go when it says Let go to light every climb. This connects if needed, lights the climb on screen and lights the climbs you choose after it. Swiping across the board itself moves between climbs.",
+        "p3": "Tap You are driving the wall to stop driving and browse while staying connected. The label changes to Disconnect board; tapping that disconnects. You can also start driving with Light every climb in ⋯, then Board controls, or the button’s screen-reader actions.",
         "clipAlt": "Swiping the wall button left to start driving, then tapping it to stop",
-        "clipCaption": "Swipe the button left, release to light every climb, then tap the frosted button to stop driving and keep the connection."
+        "clipCaption": "Swipe the button left and release to light every climb. Tap You are driving the wall to stop driving and keep the connection."
       }
     },
     "climbActions": {

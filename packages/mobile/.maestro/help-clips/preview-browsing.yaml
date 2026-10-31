@@ -22,7 +22,8 @@ name: help clip - browse climbs in the play drawer
 # then turn off Light the board when I tap a climb and Light the board as I swipe
 # in Settings > Board. Driving overrides those settings, so both checks matter.
 # Keep the fake board connected: Disconnect board is the stopped state, not a
-# button this flow presses. Do not use screenshotDrive=1 for the preview take.
+# button this flow presses. It remains frosted after stopping; check the label
+# instead of treating frost as driving. Do not use screenshotDrive=1 for this take.
 #
 # Coordinates, not selectors: nothing in the drawer is exposed to Maestro on
 # this RN Fabric build.

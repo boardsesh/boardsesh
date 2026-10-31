@@ -4,14 +4,18 @@ name: help clip - swipe the wall button to drive
 # Clip: wall-swipe-to-drive -> packages/web/public/videos/help/wall-swipe-to-drive.mp4
 #
 # Records the real player: swipe its wall button left to start driving, swipe
-# the board to another climb while driving, then tap the frosted wall button
+# the board to another climb while driving, then tap You are driving the wall
 # to stop driving without disconnecting. Review Let go to light every climb,
 # You are driving the wall, and the final Disconnect board label in the take.
+# Put on board and Disconnect board are frosted too: the label identifies
+# driving, not the frost. Expect the stopped button to remain frosted.
 #
 # Before recording, open a tracked climb with screenshotOpenFirst=1 and leave
 # screenshotDrive unset. Start with Put on board and chevrons, with no link, or
 # Disconnect board and chevrons after stopping an earlier drive. Do not tap
-# Put on board first: solo taps can start driving before this gesture. A slower drag keeps the wipe and release label readable.
+# Put on board first: solo taps can start driving before this gesture. A slower
+# drag keeps the release label readable. Physical-board buttons are already
+# fully frosted, so the gesture shows no frost wipe; do not wait for one.
 #
 # Use mobile:ios-shots --backend local. Its existing store-capture environment
 # supplies EXPO_PUBLIC_SCREENSHOT_DRIVING=1 and
@@ -20,7 +24,7 @@ name: help clip - swipe the wall button to drive
 # not physical BLE delivery. The automatic frost peek stays suppressed.
 #
 # Measured on Boardsesh Release Help 20261031, iPhone 16 Pro Max, dark,
-# 1320 x 2868, source d5f10c24dc, captured 2026-10-31:
+# 1320 x 2868, source 3c4fd3702d, captured 2026-10-31:
 #   86%,90% -> 15%,90%  swipe the wall button left past its commit point
 #   85%,50% -> 18%,50%  swipe the board to the next climb
 #   50%,90%             tap the driving button to stop, retaining the link
