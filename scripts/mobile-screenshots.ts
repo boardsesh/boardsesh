@@ -843,7 +843,8 @@ export function buildScreenshotEnv(
     delete env.EXPO_PUBLIC_SCREENSHOT_DRIVING;
   }
   if (options.flow === 'app-store-campaign' && !options.cpp && options.iosCampaignPrimaryCapture) {
-    const { board } = options.iosCampaignPrimaryCapture;
+    const primary = options.iosCampaignPrimaryCapture;
+    const { board } = primary;
     // A regular seven-board capture must not enable CPP's six-slot board mapping.
     delete env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
     delete env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
@@ -859,7 +860,9 @@ export function buildScreenshotEnv(
           setIds: board.setIds.split(',').map(Number),
           angle: board.angle,
         },
-        route: '/climbs?screenshotBoardIndex=0',
+        route: iosCampaignPrimaryDriveEnabled(primary)
+          ? `/climbs?screenshotBoardIndex=0&screenshotOpenFirst=1&screenshotDrive=1&screenshotClimbId=${encodeURIComponent(primary.climb.uuid)}`
+          : '/climbs?screenshotBoardIndex=0',
       },
       ...(options.iosCampaignPhoneBoards
         ? compileIosCampaignPhoneNavigation(readIosCampaignPhoneSource(), options.iosCampaignPhoneBoards).commands
@@ -3421,7 +3424,7 @@ export function assertIosCampaignSources(capturedNames: readonly string[]): void
   }
 }
 
-export type IosCampaignBoard = CppRecordedBoard & { layoutName?: string | null };
+export type IosCampaignBoard = CppRecordedBoard & { layoutName?: string | null; hasLeds?: boolean };
 
 export interface IosCampaignPhoneBoard {
   selector: string;
@@ -3702,6 +3705,11 @@ export function assertIosCampaignCaptureReady(
   }
 }
 
+/** No-lights walls keep their existing capture semantics and never wait for a BLE drive. */
+export function iosCampaignPrimaryDriveEnabled(primary: IosCampaignPrimaryCapture): boolean {
+  return primary.board.boardType !== 'spray' && primary.board.hasLeds !== false;
+}
+
 /** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
@@ -3779,6 +3787,9 @@ export function buildIosCampaignMaestroEnv(
     ...(primary
       ? {
           SCREENSHOT_PRIMARY_BOARD_URL: `http://localhost:${SCREENSHOT_READY_PORT}/cpp`,
+          SCREENSHOT_PRIMARY_DRIVING: iosCampaignPrimaryDriveEnabled(primary) ? '1' : '0',
+          SCREENSHOT_PRIMARY_DRIVING_ID: `^store-driving-${cppReadinessSelector(primary.board.uuid)}-${cppReadinessSelector(primary.climb.uuid)}$`,
+          SCREENSHOT_PRIMARY_CURRENT_DRIVING_ID: `^store-current-driving-${cppReadinessSelector(primary.board.uuid)}-${cppReadinessSelector(primary.climb.uuid)}$`,
           SCREENSHOT_PRIMARY_CLIMB_ROW: cppClimbRowReadinessSelector(primary.climb.name, locale),
           SCREENSHOT_PRIMARY_CLIMB_TITLE: cppReadinessSelector(primary.climb.name),
           SCREENSHOT_PRIMARY_WALL_PAINTED_ID: `^${cppReadinessSelector(primary.paintedId)}$`,
