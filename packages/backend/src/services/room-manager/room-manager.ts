@@ -354,6 +354,7 @@ class RoomManager {
     stateHashOrdered: string;
     historyCount: number;
     currentChangedAt: string | null;
+    currentChangedBy?: string | null;
     isLeader: boolean;
     sessionName: string | null;
     participantId: string;
@@ -647,8 +648,17 @@ class RoomManager {
     currentClimbQueueItem: ClimbQueueItem | null,
     expectedVersion: number | undefined,
     historyCount: number,
+    currentChangedBy?: string | null,
   ): Promise<QueueWriteResult & { previousStateHash: string | null; previousStateHashOrdered: string | null }> {
-    return updateQueueStateFn(this.deps(), sessionId, queue, currentClimbQueueItem, expectedVersion, historyCount);
+    return updateQueueStateFn(
+      this.deps(),
+      sessionId,
+      queue,
+      currentClimbQueueItem,
+      expectedVersion,
+      historyCount,
+      currentChangedBy,
+    );
   }
 
   async updateQueueStateImmediate(

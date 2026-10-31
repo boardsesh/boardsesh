@@ -22,6 +22,7 @@ export function wireQueueState(
     currentClimbQueueItem,
     historyCount: write.historyCount,
     currentChangedAt: write.currentChangedAt,
+    currentChangedBy: write.currentChangedBy ?? null,
   };
 }
 
@@ -64,6 +65,7 @@ export function publishTrailingCurrentClimb(
       item: currentClimbQueueItem,
       clientId,
       correlationId: null,
+      currentChangedBy: write.currentChangedBy ?? null,
     },
     { buffer: false },
   );

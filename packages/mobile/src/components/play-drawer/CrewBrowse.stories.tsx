@@ -1,4 +1,6 @@
 import { StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionUser } from '@boardsesh/shared-schema';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
 import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
@@ -8,6 +10,14 @@ import { spacing } from '../../theme/tokens';
 import { PlayDrawerCommitBar, PutOnWallButton } from './PlayDrawerCommitBar';
 import { WallStateCallout } from './WallStateCallout';
 import { WallStatePill, type WallStatePillState } from './WallStatePill';
+import {
+  QueueDataContext,
+  QueueLiveStatsContext,
+  QueueSessionControlContext,
+  useQueueData,
+  useQueueLiveStats,
+  useQueueSessionControls,
+} from '../../providers/queue/queue-contexts';
 
 // Browsing in a crew session (#4281): the chip in the drawer header (the wall
 // driver's face, with a back glyph while you browse), the Put on the wall button
@@ -27,6 +37,57 @@ const CREW: SessionUser[] = [
 const IN_A_CREW: ScenarioOverrides = {
   queue: { isSharedSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
 };
+
+const MOVER_CLIMB: ClimbQueueItem = {
+  uuid: 'story-current',
+  addedByUser: { id: 'story-alex-user', username: 'Alex' },
+  climb: {
+    uuid: 'story-moonlight',
+    name: 'Moonlight Sonata',
+    setter_username: 'Setter',
+    frames: '',
+    angle: 40,
+    ascensionist_count: 1,
+    difficulty: '6A',
+    quality_average: '3',
+    stars: 3,
+    difficulty_error: '0',
+    benchmark_difficulty: null,
+  },
+};
+
+/** Alex queued the climb; Sam put it up. The question must name Sam. */
+function MoverAttributionQuestion() {
+  const queue = useQueueData();
+  const live = useQueueLiveStats();
+  const controls = useQueueSessionControls();
+  const queueValue = useMemo(
+    () => ({ ...queue, currentClimbQueueItem: MOVER_CLIMB, currentChangedBy: 'story-sam' }),
+    [queue],
+  );
+  const liveValue = useMemo(() => ({ ...live, sessionUsers: CREW }), [live]);
+  const controlsValue = useMemo(() => ({ ...controls, participantId: 'story-me' }), [controls]);
+  return (
+    <QueueDataContext.Provider value={queueValue}>
+      <QueueLiveStatsContext.Provider value={liveValue}>
+        <QueueSessionControlContext.Provider value={controlsValue}>
+          <StoryVariant label="Alex queued it; Sam put it up">
+            <StorySurface>
+              <View style={styles.confirmRoom}>
+                <PlayDrawerCommitBar
+                  wallClimbName="Moonlight Sonata"
+                  wallClimbUuid="story-moonlight"
+                  onKeepTheirs={noop}
+                  onConfirm={noop}
+                />
+              </View>
+            </StorySurface>
+          </StoryVariant>
+        </QueueSessionControlContext.Provider>
+      </QueueLiveStatsContext.Provider>
+    </QueueDataContext.Provider>
+  );
+}
 
 // What a crew looks like today with `shared-session-browse` off: the session has
 // two people, but the gate never arms, so every tap takes the wall. It is still a
@@ -65,6 +126,10 @@ const stories: StoryModule = {
           ))}
         </View>
       ),
+    },
+    moverAttribution: {
+      name: 'Busy-wall question names the mover, not the queue author',
+      render: () => <MoverAttributionQuestion />,
     },
     commitBar: {
       name: 'Put on the wall, and the busy-wall question',

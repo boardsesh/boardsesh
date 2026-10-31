@@ -206,6 +206,7 @@ export const controllerMutations = {
         frames: framesString,
         clientId: clientIdForEvent, // ESP32 compares this with its MAC
         correlationId: null,
+        currentChangedBy: null,
       });
 
       return {
@@ -306,6 +307,7 @@ export const controllerMutations = {
       item: currentItem,
       clientId: matchClientId,
       correlationId: null,
+      currentChangedBy: write.currentChangedBy ?? null,
     });
 
     logger.info(`[Controller] Matched climb: ${match.name} (${match.uuid})`);
@@ -558,6 +560,7 @@ export const controllerMutations = {
       item: outcome.item,
       clientId: null, // Don't skip - ESP32 needs the new climb data
       correlationId: null,
+      currentChangedBy: outcome.update.currentChangedBy ?? null,
     });
 
     return projectedItem;

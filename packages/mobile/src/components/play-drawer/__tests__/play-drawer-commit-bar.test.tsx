@@ -32,8 +32,12 @@ const announceForAccessibility = vi.hoisted(() => vi.fn());
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 // The crew's current climb records who picked it; the viewer is "me".
 type HeadItem = { climb: { uuid: string }; addedByUser?: { id: string; username: string } };
-const queueData = vi.hoisted(() => ({ currentClimbQueueItem: null as HeadItem | null }));
-const viewer = vi.hoisted(() => ({ userId: 'me' as string | null }));
+const queueData = vi.hoisted(() => ({
+  currentClimbQueueItem: null as HeadItem | null,
+  currentChangedBy: null as string | null,
+}));
+const roster = vi.hoisted(() => ({ sessionUsers: [] as Array<{ id: string; username: string }> }));
+const viewer = vi.hoisted(() => ({ participantId: 'me' as string | null }));
 
 type ViewMockProps = {
   children?: ReactNode;
@@ -99,9 +103,10 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueData: () => ({ currentClimbQueueItem: queueData.currentClimbQueueItem }),
+  useQueueData: () => queueData,
+  useQueueSessionControls: () => viewer,
+  useQueueLiveStats: () => roster,
 }));
-vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => viewer.userId }));
 vi.mock('../../Text', () => ({
   Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
     createElement('span', { 'data-color': color }, children),
@@ -147,11 +152,12 @@ const questionProps = {
 };
 
 /** The crew's current climb: the lit one, put up by `username` unless overridden. */
-const head = (username: string, overrides: Partial<HeadItem> = {}): HeadItem => ({
-  climb: { uuid: WALL_CLIMB },
-  addedByUser: { id: `user-${username}`, username },
-  ...overrides,
-});
+const head = (username: string, overrides: Partial<HeadItem> = {}): HeadItem => {
+  const item = { climb: { uuid: WALL_CLIMB }, addedByUser: { id: `user-${username}`, username }, ...overrides };
+  queueData.currentChangedBy = item.addedByUser?.id ?? null;
+  roster.sessionUsers = item.addedByUser ? [item.addedByUser] : [];
+  return item;
+};
 
 const buttonLabels = (container: HTMLElement) =>
   [...container.querySelectorAll('button')].map((node) => node.getAttribute('data-label') ?? '');
@@ -162,7 +168,9 @@ const styleOf = (node: Element | null) =>
 beforeEach(() => {
   announceForAccessibility.mockClear();
   queueData.currentClimbQueueItem = null;
-  viewer.userId = 'me';
+  queueData.currentChangedBy = null;
+  roster.sessionUsers = [];
+  viewer.participantId = 'me';
 });
 
 describe('PutOnWallButton', () => {
@@ -230,6 +238,22 @@ describe('PlayDrawerCommitBar — the busy-wall question', () => {
     ]);
   });
 
+  it('names Sam who moved Alex’s queued climb, never Alex who queued it', () => {
+    queueData.currentClimbQueueItem = head('Alex');
+    queueData.currentChangedBy = 'participant-sam';
+    roster.sessionUsers.push({ id: 'participant-sam', username: 'Sam' });
+    const { container } = render(createElement(PlayDrawerCommitBar, questionProps));
+    expect(container.textContent).toContain('bodyNamed:Sam:Their Project');
+    expect(container.textContent).not.toContain('bodyNamed:Alex');
+  });
+
+  it('keeps queue authorship unnamed when no mover is recorded', () => {
+    queueData.currentClimbQueueItem = head('Alex');
+    queueData.currentChangedBy = null;
+    const { container } = render(createElement(PlayDrawerCommitBar, questionProps));
+    expect(container.textContent).not.toContain('bodyNamed');
+  });
+
   // Each of these would name the wrong person, or the climber themself, so the
   // question falls back to the unnamed wording.
   it.each([
@@ -253,12 +277,12 @@ describe('PlayDrawerCommitBar — the busy-wall question', () => {
   // could be the picker, so it is never read as "somebody else".
   it('stays unnamed while the viewer is not known yet', () => {
     queueData.currentClimbQueueItem = head('Sam');
-    viewer.userId = null;
+    viewer.participantId = null;
     const { container } = render(createElement(PlayDrawerCommitBar, questionProps));
 
     expect(container.textContent).not.toContain('bodyNamed');
     expect(buttonLabels(container)[0]).toBe('playView.wallState.commitOverride.cancel');
-    viewer.userId = 'me';
+    viewer.participantId = 'me';
   });
 
   it('stays unnamed when the lit climb is unknown, even with a picker on the current climb', () => {

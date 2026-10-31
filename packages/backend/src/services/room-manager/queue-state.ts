@@ -34,6 +34,7 @@ async function casWithDormancyFloor(
      * left it to a default would erase the line while nothing is current.
      */
     historyCount: number;
+    currentChangedBy?: string | null;
   },
 ): Promise<QueueStateCasResult> {
   const firstAttempt = await redisStore.casUpdateQueueState({
@@ -94,7 +95,13 @@ function storedLine(queue: ClimbQueueItem[], currentClimbQueueItem: ClimbQueueIt
 const MAX_POSTGRES_ONLY_LINES = 5000;
 const postgresOnlyLines = new Map<
   string,
-  { version: number; historyCount: number; currentUuid: string | null; currentChangedAt: string }
+  {
+    version: number;
+    historyCount: number;
+    currentUuid: string | null;
+    currentChangedAt: string;
+    currentChangedBy: string | null;
+  }
 >();
 
 function rememberPostgresOnlyLine(
@@ -102,19 +109,36 @@ function rememberPostgresOnlyLine(
   version: number,
   historyCount: number,
   currentClimbQueueItem: ClimbQueueItem | null,
-): string {
+  currentChangedBy: string | null = null,
+  previousCurrentUuid: string | null = null,
+): { currentChangedAt: string; currentChangedBy: string | null } {
   const currentUuid = currentClimbQueueItem?.uuid ?? null;
   const previous = postgresOnlyLines.get(sessionId);
+  const previousFresh = previous?.version === version - 1;
   const currentChangedAt =
-    previous && previous.currentUuid === currentUuid ? previous.currentChangedAt : new Date().toISOString();
+    previousFresh && previous.currentUuid === currentUuid ? previous.currentChangedAt : new Date().toISOString();
+  const storedActor =
+    currentUuid === null
+      ? null
+      : previousFresh && previous.currentUuid === currentUuid
+        ? previous.currentChangedBy
+        : previousCurrentUuid !== currentUuid
+          ? currentChangedBy
+          : null;
   // Delete first so the Map's insertion order is least recently written first.
   postgresOnlyLines.delete(sessionId);
-  postgresOnlyLines.set(sessionId, { version, historyCount, currentUuid, currentChangedAt });
+  postgresOnlyLines.set(sessionId, {
+    version,
+    historyCount,
+    currentUuid,
+    currentChangedAt,
+    currentChangedBy: storedActor,
+  });
   if (postgresOnlyLines.size > MAX_POSTGRES_ONLY_LINES) {
     const oldestSessionId = postgresOnlyLines.keys().next().value;
     if (oldestSessionId !== undefined) postgresOnlyLines.delete(oldestSessionId);
   }
-  return currentChangedAt;
+  return { currentChangedAt, currentChangedBy: storedActor };
 }
 
 /** Test seam: forget the Postgres-only lines. */
@@ -140,6 +164,7 @@ export async function updateQueueState(
   currentClimbQueueItem: ClimbQueueItem | null,
   expectedVersion: number | undefined,
   historyCount: number,
+  currentChangedBy?: string | null,
 ): Promise<QueueWriteResult & { previousStateHash: string | null; previousStateHashOrdered: string | null }> {
   const { redisStore, writeScheduler, distributedState } = deps;
   const line = storedLine(queue, currentClimbQueueItem, historyCount);
@@ -164,14 +189,21 @@ export async function updateQueueState(
       { queue, currentClimbQueueItem, version: newVersion, sequence: newSequence },
       writeScheduler,
     );
-    const currentChangedAt = rememberPostgresOnlyLine(sessionId, newVersion, line, currentClimbQueueItem);
+    const currentChange = rememberPostgresOnlyLine(
+      sessionId,
+      newVersion,
+      line,
+      currentClimbQueueItem,
+      currentChangedBy ?? null,
+      pgState.currentClimbQueueItem?.uuid ?? null,
+    );
     return {
       version: newVersion,
       sequence: newSequence,
       stateHash,
       stateHashOrdered,
       historyCount: line,
-      currentChangedAt,
+      ...currentChange,
       previousStateHash: normalizeHash(pgState.stateHash),
       previousStateHashOrdered: normalizeHash(pgState.stateHashOrdered),
     };
@@ -190,6 +222,7 @@ export async function updateQueueState(
     stateHash,
     stateHashOrdered,
     historyCount: line,
+    currentChangedBy,
   });
 
   if (result.status !== 'OK') {
@@ -216,6 +249,7 @@ export async function updateQueueState(
     stateHashOrdered,
     historyCount: line,
     currentChangedAt: new Date(result.currentChangedAt).toISOString(),
+    currentChangedBy: result.currentChangedBy,
     previousStateHash: normalizeHash(result.previousStateHash),
     previousStateHashOrdered: normalizeHash(result.previousStateHashOrdered),
   };
@@ -390,14 +424,21 @@ export async function updateQueueOnly(
       writeScheduler,
     );
     const line = storedLine(queue, pgState.currentClimbQueueItem, historyCount);
-    const currentChangedAt = rememberPostgresOnlyLine(sessionId, newVersion, line, pgState.currentClimbQueueItem);
+    const currentChange = rememberPostgresOnlyLine(
+      sessionId,
+      newVersion,
+      line,
+      pgState.currentClimbQueueItem,
+      null,
+      pgState.currentClimbQueueItem?.uuid ?? null,
+    );
     return {
       version: newVersion,
       sequence: newSequence,
       stateHash: computeQueueStateHash(queue, currentClimbUuid),
       stateHashOrdered: computeQueueStateHashOrdered(queue, currentClimbUuid),
       historyCount: line,
-      currentChangedAt,
+      ...currentChange,
     };
   }
 
@@ -450,6 +491,7 @@ export async function updateQueueOnly(
     stateHashOrdered,
     historyCount: line,
     currentChangedAt: new Date(result.currentChangedAt).toISOString(),
+    currentChangedBy: result.currentChangedBy,
   };
 }
 
@@ -482,6 +524,10 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
           ? redisSession.currentChangedAt
           : redisSession.lastActivity
         ).toISOString(),
+        currentChangedBy:
+          redisSession.currentClimbQueueItem && redisSession.currentChangedByVersion === redisSession.version
+            ? (redisSession.currentChangedBy ?? null)
+            : null,
         stateHash: redisSession.stateHash,
         // Both hashes are persisted since #3906. Sessions written before that
         // rollout have no stored v2 hash (empty string), so fall back to
@@ -505,6 +551,7 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
       sequence: 0,
       historyCount: 0,
       currentChangedAt: null,
+      currentChangedBy: null,
       stateHash: computeQueueStateHash([], null),
       stateHashOrdered: computeQueueStateHashOrdered([], null),
     };
@@ -533,6 +580,7 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
       historyCount: rememberedFresh ? remembered.historyCount : null,
     }),
     currentChangedAt: rememberedFresh ? remembered.currentChangedAt : row.updatedAt.toISOString(),
+    currentChangedBy: rememberedFresh && row.currentClimbQueueItem ? remembered.currentChangedBy : null,
     stateHash,
     stateHashOrdered,
   };

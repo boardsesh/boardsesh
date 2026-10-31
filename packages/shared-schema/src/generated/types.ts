@@ -2314,6 +2314,8 @@ export type CurrentClimbChanged = {
   clientId?: Maybe<Scalars['ID']['output']>;
   /** Correlation ID for request tracking */
   correlationId?: Maybe<Scalars['ID']['output']>;
+  /** Session participant who last changed the current queue item. Null when unknown. */
+  currentChangedBy?: Maybe<Scalars['ID']['output']>;
   /** Raw Aurora frames for an unknown BLE climb when no database match exists */
   frames?: Maybe<Scalars['String']['output']>;
   /** New current climb (null to clear) */
@@ -8772,6 +8774,8 @@ export type QueueState = {
   __typename?: 'QueueState';
   /** When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server. */
   currentChangedAt?: Maybe<Scalars['String']['output']>;
+  /** Session participant who last changed the current queue item. Null when unknown. */
+  currentChangedBy?: Maybe<Scalars['ID']['output']>;
   /** The climb currently being attempted */
   currentClimbQueueItem?: Maybe<ClimbQueueItem>;
   /** Entries before Up next. Equals the current index when a climb is current. Null from a pre-F3 server. */
@@ -14929,6 +14933,7 @@ export type CurrentClimbChangedResolvers<
 > = ResolversObject<{
   clientId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   correlationId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  currentChangedBy?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   item?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -18451,6 +18456,7 @@ export type QueueStateResolvers<
   ParentType extends ResolversParentTypes['QueueState'] = ResolversParentTypes['QueueState'],
 > = ResolversObject<{
   currentChangedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  currentChangedBy?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   currentClimbQueueItem?: Resolver<Maybe<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;
   historyCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   queue?: Resolver<Array<ResolversTypes['ClimbQueueItem']>, ParentType, ContextType>;

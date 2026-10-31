@@ -103,6 +103,8 @@ async function restoreFromPostgres(
       historyCountVersion: queueState.version,
       currentUuid: queueState.currentClimbQueueItem?.uuid ?? null,
       currentChangedAt: queueState.currentChangedAt ? new Date(queueState.currentChangedAt) : null,
+      currentChangedBy: null,
+      currentChangedByVersion: queueState.version,
       lastActivity: pgSession.lastActivity,
       discoverable: pgSession.discoverable,
       latitude: pgSession.latitude,

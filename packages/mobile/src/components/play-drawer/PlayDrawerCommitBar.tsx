@@ -27,8 +27,8 @@ import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { CommitButtonLabel } from './wall-state';
-import { useQueueData } from '../../providers/queue-provider';
-import { useViewerUserId } from '../../hooks/use-viewer-user-id';
+import { useQueueData, useQueueLiveStats, useQueueSessionControls } from '../../providers/queue-provider';
+import { resolveCurrentClimbMoverName } from '../../lib/current-climb-mover';
 
 /** Matches the row's own control height, so the bubble clears the buttons. */
 const BUBBLE_LIFT = glassSize.inline + spacing[1];
@@ -97,22 +97,14 @@ type PlayDrawerCommitBarProps = {
 /** The busy-wall question: someone else lit the wall while you were looking around. */
 function PlayDrawerCommitBarImpl({ wallClimbName, wallClimbUuid, onKeepTheirs, onConfirm }: PlayDrawerCommitBarProps) {
   const { t } = useTranslation('session');
-  // Who put it up: the crew's current climb records who picked it. Not the
-  // board-presence driver, which is whoever's phone holds Bluetooth (in a crew,
-  // often you). Read here, where it only costs anything while the question is
-  // up. Unknown, you, or a current climb that isn't the lit one: "Someone".
-  const { currentClimbQueueItem } = useQueueData();
-  const viewerUserId = useViewerUserId();
-  const picker = currentClimbQueueItem?.addedByUser ?? null;
+  // Queue authorship and the phone holding Bluetooth do not identify the mover.
+  // Read the roster only while this question is mounted.
+  const { currentClimbQueueItem, currentChangedBy } = useQueueData();
+  const { participantId } = useQueueSessionControls();
+  const { sessionUsers } = useQueueLiveStats();
   const wallDriverName =
-    picker !== null &&
-    // Unknown viewer (signed out, or the profile still loading) is never read as
-    // "somebody else": it could be you.
-    viewerUserId !== null &&
-    picker.id !== viewerUserId &&
-    wallClimbUuid !== null &&
-    currentClimbQueueItem?.climb.uuid === wallClimbUuid
-      ? picker.username
+    wallClimbUuid !== null && currentClimbQueueItem?.climb.uuid === wallClimbUuid
+      ? resolveCurrentClimbMoverName({ currentChangedBy, participantId, sessionUsers })
       : null;
   const { variant, brandColors, systemColors, m3SurfaceContainers, materialElevation } = useTheme();
   const reduceMotion = useReducedMotion();
