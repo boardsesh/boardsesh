@@ -535,8 +535,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   const rowGestures = useMemo(
-    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
-    [tapGesture, fullSwipe.gesture],
+    // Mount the lock on the row and make the full-swipe tracker wait for it too.
+    () => Gesture.Simultaneous(tapGesture, Gesture.Exclusive(swipeDirectionLock, fullSwipe.gesture)),
+    [tapGesture, swipeDirectionLock, fullSwipe.gesture],
   );
 
   // The ⋯ button's own tap. It blocks the row gestures so a tap on the button opens the

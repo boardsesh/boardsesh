@@ -396,8 +396,9 @@ export const LogbookRow = memo(function LogbookRow({
   );
 
   const rowGestures = useMemo(
-    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
-    [tapGesture, fullSwipe.gesture],
+    // Mount the lock on the row and make the full-swipe tracker wait for it too.
+    () => Gesture.Simultaneous(tapGesture, Gesture.Exclusive(swipeDirectionLock, fullSwipe.gesture)),
+    [tapGesture, swipeDirectionLock, fullSwipe.gesture],
   );
 
   // Read dragArmedRef.current rather than the armed state directly so these stay

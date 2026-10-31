@@ -112,6 +112,8 @@ type GestureCapture = {
 const rowGestures = vi.hoisted(() => ({
   captures: new Map<unknown, GestureCapture>(),
   exclusive: [] as GestureCapture[],
+  compositions: new Map<unknown, { kind: 'exclusive' | 'simultaneous'; gestures: unknown[] }>(),
+  mounted: [] as unknown[],
 }));
 
 vi.mock('react-native-gesture-handler', () => {
@@ -135,19 +137,29 @@ vi.mock('react-native-gesture-handler', () => {
     return proxy;
   };
   return {
-    GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    GestureDetector: ({ children, gesture }: { children?: ReactNode; gesture: unknown }) => {
+      rowGestures.mounted.push(gesture);
+      return createElement('div', null, children);
+    },
     Gesture: {
       Pan: () => makeBuilder('pan'),
       Manual: () => makeBuilder('manual'),
-      Simultaneous: (...gestures: unknown[]) => gestures[0],
+      Simultaneous: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+        return composition;
+      },
       Tap: () => makeBuilder('tap'),
       LongPress: () => makeBuilder('longPress'),
       Exclusive: (...gestures: unknown[]) => {
-        rowGestures.exclusive = gestures.flatMap((gesture) => {
+        const captures = gestures.flatMap((gesture) => {
           const capture = rowGestures.captures.get(gesture);
           return capture ? [capture] : [];
         });
-        return {};
+        if (captures.some((capture) => capture.kind === 'longPress')) rowGestures.exclusive = captures;
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+        return composition;
       },
     },
   };
@@ -223,6 +235,8 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     panels.enabled = true;
     panels.language = '';
     platform.OS = 'ios';
+    rowGestures.compositions.clear();
+    rowGestures.mounted = [];
   });
 
   it('keeps identical labelled panels through first drag, close and recycling', () => {
@@ -264,6 +278,24 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     expect(panels.props?.renderRightActions).not.toBe(right);
     expect(screen.getByRole('button', { name: 'mobile.climbActions.playNext:es' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'actions.playlist.popover.title:es' })).toBeTruthy();
+  });
+
+  it('mounts the swipe lock ahead of the full-swipe tracker in the row detector', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPlayNext={vi.fn()} onOpenPlaylist={vi.fn()} />);
+    const lock = panels.props?.requireExternalGestureToFail;
+    const fullSwipe = panels.props?.simultaneousWithExternalGesture;
+    expect(rowGestures.captures.get(lock)?.kind).toBe('manual');
+    expect(rowGestures.captures.get(fullSwipe)?.kind).toBe('pan');
+    const mountedRow = rowGestures.mounted.find(
+      (gesture) => rowGestures.compositions.get(gesture)?.kind === 'simultaneous',
+    );
+    const rowComposition = rowGestures.compositions.get(mountedRow);
+    expect(rowComposition?.gestures).toHaveLength(2);
+    const guardedSwipe = rowGestures.compositions.get(rowComposition?.gestures[1]);
+    expect(guardedSwipe?.kind).toBe('exclusive');
+    expect(guardedSwipe?.gestures).toHaveLength(2);
+    expect(guardedSwipe?.gestures[0]).toBe(lock);
+    expect(guardedSwipe?.gestures[1]).toBe(fullSwipe);
   });
 
   it('waits for a deliberate sideways drag so a vertical scroll never slides the row', () => {
