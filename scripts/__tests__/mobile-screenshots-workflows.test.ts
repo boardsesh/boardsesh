@@ -205,7 +205,14 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'cpp_record_run_id',
       'cpp_scenario',
     ]);
-    expect(dispatch.inputs?.devices?.options).toEqual(['common', 'phones', 'ipads', 'phone-pro', 'phone-pro-max']);
+    expect(dispatch.inputs?.devices?.options).toEqual([
+      'common',
+      'phones',
+      'ipads',
+      'phone-pro',
+      'phone-pro-max',
+      'duo',
+    ]);
     expect(dispatch.inputs?.gate.default).toBe('full');
     expect(dispatch.inputs?.publish_baseline.default).toBe(false);
     expect(dispatch.inputs?.cpp_target.default).toBe('none');
@@ -263,7 +270,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     { selection: 'common', locales: '' },
     { selection: 'phones', locales: '' },
     { selection: 'ipads', locales: '' },
-    ...['phone-pro', 'phone-pro-max'].flatMap((selection) => [
+    { selection: 'duo', locales: 'en-US' },
+    ...['phone-pro', 'phone-pro-max', 'duo'].flatMap((selection) => [
       { selection, locales: '' },
       { selection, locales: 'it' },
       { selection, locales: '', eventName: 'workflow_run' },
@@ -297,16 +305,17 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         const matrix = JSON.parse(
           lines.find((line) => line.startsWith('ios_matrix_full='))!.slice('ios_matrix_full='.length),
         ) as { locale: string[]; device: Array<{ slug: string }> };
-        expect(matrix.locale).toEqual(locales === 'it' ? ['it'] : ['en-US', 'es', 'fr', 'de', 'it']);
-        const isSinglePhone = selection === 'phone-pro' || selection === 'phone-pro-max';
-        expect(matrix.device).toHaveLength(selection === 'common' ? 5 : isSinglePhone ? 1 : 2);
-        if (isSinglePhone) {
-          expect(matrix.device).toEqual([
-            selection === 'phone-pro'
-              ? { name: 'iPhone 16 Pro', slug: 'iphone-16-pro' }
-              : { name: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' },
-          ]);
-          expect(matrix.locale.length * matrix.device.length).toBe(locales === 'it' ? 1 : 5);
+        expect(matrix.locale).toEqual(locales ? [locales] : ['en-US', 'es', 'fr', 'de', 'it']);
+        const singleDevices: Record<string, { name: string; slug: string }> = {
+          'phone-pro': { name: 'iPhone 16 Pro', slug: 'iphone-16-pro' },
+          'phone-pro-max': { name: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' },
+          duo: { name: 'iPhone Duo', slug: 'iphone-duo' },
+        };
+        const singleDevice = singleDevices[selection];
+        expect(matrix.device).toHaveLength(selection === 'common' ? 5 : singleDevice ? 1 : 2);
+        if (singleDevice) {
+          expect(matrix.device).toEqual([singleDevice]);
+          expect(matrix.locale.length * matrix.device.length).toBe(locales ? 1 : 5);
         } else if (selection !== 'common')
           expect(
             matrix.device.every((device) => device.slug.startsWith(selection === 'phones' ? 'iphone-' : 'ipad-')),
@@ -323,7 +332,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     { DEVICE_SELECTION: 'phones', UPLOAD_INPUT: 'true' },
     { DEVICE_SELECTION: 'ipads', PUBLISH_BASELINE: 'true' },
     { DEVICE_SELECTION: 'phones', CPP_TARGET: 'kilter' },
-    ...['phone-pro', 'phone-pro-max'].flatMap((DEVICE_SELECTION) => [
+    ...['phone-pro', 'phone-pro-max', 'duo'].flatMap((DEVICE_SELECTION) => [
       { DEVICE_SELECTION, UPLOAD_INPUT: 'true' },
       { DEVICE_SELECTION, PUBLISH_BASELINE: 'true' },
       { DEVICE_SELECTION, CPP_TARGET: 'kilter' },
@@ -587,7 +596,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     },
   );
 
-  it.each(['phones', 'ipads', 'phone-pro', 'phone-pro-max'])(
+  it.each(['phones', 'ipads', 'phone-pro', 'phone-pro-max', 'duo'])(
     'never treats a successful %s capture as a complete store tree',
     (devices) => {
       const finalize = workflow.jobs['ios-finalize'];
