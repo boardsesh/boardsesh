@@ -175,7 +175,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Donation links',
     policyControlled: true,
     description:
-      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. An external donation link is a store-policy violation outside two narrow windows, and ONLY ONE OF THEM IS ENFORCED IN THE APP: iOS additionally requires an App Store storefront of USA, read natively, so an over-broad rollout cannot reach a non-US iPhone. Android has no such client guard — Play exposes no storefront to the app — so the PostHog targeting IS the guard, and it must be exactly: platform = Android AND country = AU AND date >= 2026-09-30. Rolling this out to Android by percentage, or to any other country, ships a policy violation.',
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. The app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android, Expo web and screenshot mode always get the unlinked text whatever this flag says. Target it to platform = iOS so the flag also stays off on older Android bundles that still carried an Android branch.',
   },
   {
     key: 'climb-moderation-kill',

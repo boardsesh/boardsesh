@@ -29,11 +29,13 @@ import { useDonationLinksAllowed } from '../../lib/donation-links';
 const build = vi.hoisted(() => ({ dev: false }));
 vi.mock('../../lib/is-dev-build', () => ({ isDevBuild: () => build.dev }));
 
-// Android: the platform with no client-side region guard, so the override is
-// the only thing standing between a tester and a policy violation.
-const platformMock = vi.hoisted(() => ({ OS: 'android' as string }));
+// A US-storefront iPhone: the one install where the predicate can say yes, so
+// the flag (and therefore the override) is the last thing deciding it.
+const platformMock = vi.hoisted(() => ({ OS: 'ios' as string }));
 vi.mock('react-native', () => ({ Platform: platformMock }));
-vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
+vi.mock('expo-modules-core', () => ({
+  requireOptionalNativeModule: () => ({ getCountryCode: async () => 'USA' }),
+}));
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   const storage: Record<string, string> = {};
@@ -58,7 +60,7 @@ function renderFlagValue() {
 
 beforeEach(() => {
   build.dev = false;
-  platformMock.OS = 'android';
+  platformMock.OS = 'ios';
   resetFeatureFlagOverridesForTests();
 });
 
@@ -125,5 +127,18 @@ describe('policy-controlled flag overrides', () => {
     const result = renderPredicate();
 
     await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it('keeps the predicate false on Android even in a dev client with the override forced on', async () => {
+    build.dev = true;
+    platformMock.OS = 'android';
+    setFeatureFlagOverride('donation-links', true);
+    const flag = renderFlagValue();
+    const result = renderPredicate();
+
+    // The override does reach the flag bag in a dev client, so a false here is
+    // the platform guard answering, not an unresolved flag.
+    await waitFor(() => expect(flag.current).toBe(true));
+    expect(result.current).toBe(false);
   });
 });

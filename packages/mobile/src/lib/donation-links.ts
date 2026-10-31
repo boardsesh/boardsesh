@@ -2,27 +2,29 @@
  * Whether this install may show a tappable donation link.
  *
  * App-store rules make an external donation link a rejection risk almost
- * everywhere. The two exceptions we can act on are the iOS US storefront
- * (external purchase links allowed since May 2025) and, from 30 Sept 2026,
- * Android in Australia. Everywhere else the compliant surface is UNLINKED text
- * that merely names the website — the pattern StreetComplete ships and Google
- * sanctions.
+ * everywhere. The one exception we act on is the iOS US storefront (external
+ * purchase links allowed since May 2025). Android never gets a link: Google
+ * threatened AnkiDroid with removal over a donation link in Aug–Oct 2026, and
+ * Play exposes no storefront for the app to check a country against, so a
+ * flag-only gate there would make PostHog targeting the sole compliance
+ * boundary. Everywhere else the compliant surface is UNLINKED text that merely
+ * names the website — the pattern StreetComplete ships and Google sanctions.
  *
  * So this predicate fails closed in every direction: unknown region, unresolved
  * flag, missing native module and Expo Go all read as "not allowed", and the
  * screen renders plain text with no tap target. Being wrong in the other
  * direction costs a store rejection; being wrong this way costs a link.
  *
- * Two independent gates:
+ * Two independent gates, both required:
  *
- * - The `donation-links` PostHog flag, read as `=== true`. It carries the
- *   Android side of the targeting, because PostHog resolves country server-side
- *   from the request and the Play Store exposes no storefront API to the app.
- * - The iOS App Store storefront country, which only the device knows. The
- *   native module that reads it ships separately (it is a native change, so it
- *   rides the release train); until a binary containing it is installed,
- *   `requireOptionalNativeModule` returns null here and iOS stays on the
- *   unlinked fallback. That is the designed degradation, not a bug.
+ * - The `donation-links` PostHog flag, read as `=== true`. It is the kill
+ *   switch, nothing more: the code below enforces the platform and the region.
+ * - The iOS App Store storefront country, which only the device knows. Binaries
+ *   without the native module (#5522) get null from `requireOptionalNativeModule`
+ *   and stay on the unlinked fallback. That is the designed degradation.
+ *
+ * Screenshot mode always reads "not allowed", so App Store captures and the
+ * replayed screenshot fixtures never show a donation ask.
  *
  * The storefront country is read ONCE per app run, by design. Changing the
  * Apple Account region mid-session therefore keeps the cached answer until the
@@ -50,6 +52,17 @@ const US_STOREFRONT_COUNTRY = 'USA';
 
 /** The canonical donation surface — where the CTA goes when links are allowed. */
 export const SUPPORT_URL = 'https://www.boardsesh.com/support';
+
+/** Every in-app place a tappable support link can sit. */
+export type SupportLinkSurface = 'acknowledgements';
+
+/**
+ * The support page with the tapping surface in `src`, so a visit (and, once the
+ * page forwards it, a payment) can be traced back to the screen that sent it.
+ */
+export function supportUrlFor(surface: SupportLinkSurface): string {
+  return `${SUPPORT_URL}?src=app-${surface}`;
+}
 
 /**
  * The same address as the fallback copy says it out loud: bare, so a reader can
@@ -123,11 +136,9 @@ export function useDonationLinksAllowed(): boolean {
     };
   }, [flagEnabled]);
 
-  if (!flagEnabled) return false;
-  // Android's region targeting lives in PostHog; the flag alone is the answer.
-  if (Platform.OS === 'android') return true;
+  if (!flagEnabled || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   if (Platform.OS === 'ios') return storefrontCountry === US_STOREFRONT_COUNTRY;
-  // Expo web and anything else: no store to be compliant with, but no way to
-  // know the reader's region either. Stay on the unlinked copy.
+  // Android: never, whatever the flag says (see the header). Expo web and
+  // anything else: no way to know the reader's region. Stay on the unlinked copy.
   return false;
 }

@@ -131,7 +131,7 @@ What this means for targeting:
 
 - **Kill switches and percentage rollouts work for everyone**, consented or not, signed in or out.
 - **Conditions on what the request carries still work**: OS, app version and build, and the
-  proxy's edge-verified country (`donation-links` below depends on that).
+  proxy's edge-verified country.
 - **Conditions on stored person properties or cohorts cannot match a climber who is signed out,
   or who declined.** Signed out, every flag request carries the `flags-install:` / `flags-browser:`
   id, which never has a person, so person-property and cohort conditions miss every signed-out
@@ -441,42 +441,40 @@ Almost every flag here decides whether a feature is visible. This one decides
 whether the app breaks a store policy, so it is worth reading before touching it
 in the dashboard.
 
-An external donation link is a rejection risk in both stores. Two narrow windows
-allow it: the **iOS US storefront** (external purchase links, allowed since May
-2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
-compliant surface is unlinked text that merely names the website — the pattern
-StreetComplete ships and Google sanctions. The Acknowledgements screen renders
-exactly one of those two, and `useDonationLinksAllowed`
-(`packages/mobile/src/lib/donation-links.ts`) picks.
+An external donation link is a rejection risk in both stores. The app acts on
+one narrow window: the **iOS US storefront** (external purchase links, allowed
+since May 2025). Everywhere else the compliant surface is unlinked text that
+merely names the website — the pattern StreetComplete ships and Google
+sanctions. The Acknowledgements screen renders exactly one of those two, and
+`useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
 
-**The two platforms are not equally protected, and the asymmetry is the whole
-point of this section.**
+**The code enforces the platform and the region; the flag is only a kill
+switch.**
 
 - **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
   App Store storefront of `USA`, read from the device through
   `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
-  shows a French iPhone the unlinked text. The module is a native change, so on
-  every binary that predates it — and in Expo Go, and on Android — the probe
-  returns null, which reads as not-allowed. That is the designed degradation.
-- **Android has no client guard at all.** Play exposes no storefront to the app,
-  so there is nothing on-device to check a country against. Functional flag
-  requests preserve OS/version/build targeting when analytics is denied. The
-  first-party proxy supplies only an edge-verified current country, disables
-  upstream GeoIP inference, and replaces unknown/untrusted countries with `XX`.
-  See `docs/cloudflare.md` for the trusted ingress and header prerequisite.
-  **The PostHog
-  targeting IS the guard**, and it has to be exactly:
+  shows a French iPhone the unlinked text. On a binary without the module, in
+  Expo Go, and on Android the probe returns null, which reads as not-allowed.
+- **Android never shows the link**, whatever the flag says. Play exposes no
+  storefront to the app, so the only possible guard there was the PostHog
+  targeting, and Google threatened AnkiDroid with removal over a donation link
+  in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
+  withdrawn.
+- **Screenshot mode never shows it**, so App Store captures and the replayed
+  screenshot fixtures stay free of donation asks.
 
-  > platform = Android **and** country = AU **and** date >= 2026-09-30
+**Target the flag to `platform = iOS` anyway.** Android bundles from before this
+change still return `true` on Android when the flag is on, and PostHog values
+stick on the device: a phone that once resolved `true` keeps it until its next
+flag reload. So before enabling it:
 
-  A percentage rollout on Android, or any country condition wider than AU, ships
-  a policy violation directly — nothing downstream will catch it.
-
-  **And the answer is sticky.** PostHog values persist on the device, so an
-  Android phone that resolved `true` while in an allowed country keeps the link
-  until its next flag reload somewhere else. Narrowing the targeting does not
-  reach back and correct a device already holding a `true`; plan the rollout
-  knowing a wrong answer outlives the config that produced it.
+1. Check the OTA carrying the Android hard-off has reached at least 90% of
+   Android bundles (xprem `get_update_rollout` / `count_online_devices`).
+2. Create the flag with `OS = iOS` **and** a condition matching only your own
+   account. Confirm a Pixel dev client reads `false` and an iPhone reads `true`
+   — this also proves the OS property name.
+3. Remove the account condition, leaving `OS = iOS` with no percentage.
 
 **The tester override is disabled for it in production**, which is what
 `policyControlled: true` on a flag definition means. Ordinarily the on-device
