@@ -5486,6 +5486,43 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 
+  it('keeps a manually selected picker mounted until its dismissal settles', async () => {
+    let failConnection: (error: Error) => void = () => {};
+    mockBleManager.connectToDevice.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failConnection = reject;
+        }),
+    );
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => scanCallbacks[0](null, advert('CHOSEN', 'chosen-device')));
+    const picker = result.current.pickerState;
+    expect(picker).toMatchObject({ mode: 'list', closing: false });
+
+    await act(async () => {
+      picker?.handleSelect('chosen-device');
+      picker?.handleSelect('chosen-device');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ sessionId: picker?.sessionId, closing: true });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledExactlyOnceWith('chosen-device', { timeout: 12_000 });
+
+    // A connection failure must not interrupt the native dismissal either.
+    await act(async () => {
+      failConnection(new Error('Connection timed out — board may be powered off'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toMatchObject({ sessionId: picker?.sessionId, closing: true });
+    act(() => picker?.handleClosed());
+    expect(result.current.pickerState).toBeNull();
+  });
+
   it('closes the sheet by dismissal, not by unmount, when the saved board is found', async () => {
     // The found board's link fails, so the catch in connect() runs against a
     // sheet that is already closing: it must leave that dismissal alone.
@@ -5605,8 +5642,9 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     const ownSessionId = result.current.pickerState?.sessionId;
+    const closeOwnPicker = result.current.pickerState?.handleClosed;
     act(() => result.current.pickerState?.handleSelect('device-1'));
-    expect(result.current.pickerState).toBeNull();
+    expect(result.current.pickerState).toMatchObject({ sessionId: ownSessionId, closing: true });
 
     // A newer picker opens while that connect is still unwinding. Connects can't
     // overlap today (connectInFlightRef), so it is opened through the same picker
@@ -5620,6 +5658,8 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     });
     const newerSessionId = result.current.pickerState?.sessionId;
     expect(newerSessionId).not.toBe(ownSessionId);
+    act(() => closeOwnPicker?.());
+    expect(result.current.pickerState).toMatchObject({ sessionId: newerSessionId, closing: false });
 
     await act(async () => {
       failConnect(new Error('Connection timed out — board may be powered off'));

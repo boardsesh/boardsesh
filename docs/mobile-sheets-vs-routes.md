@@ -133,6 +133,12 @@ same sheet share the outcome. The promise resolves with `{ status: 'dismissed' }
 settle (or the platform ceiling), and `{ status: 'aborted' }` if the sheet unregisters during the
 handoff. Stop the follow-up action on `aborted`; the owning surface has gone away.
 
+The BLE device picker keeps its session mounted with `closing: true` after both
+manual and automatic selection. `DevicePickerSheet` waits for dismissal before
+calling `handleClosed` to remove that session. Clearing the session on a device
+tap instead tears down the native presentation host and can briefly blank the
+play drawer underneath. Late close callbacks are scoped to their picker session.
+
 The same patch also guards the **Android** re-snap path: `snapToIndex` on an already-open
 multi-detent sheet fires `expand()` / `partialExpand()` fire-and-forget on the native
 `ModalBottomSheetView`. A store binary whose native `@expo/ui` predates one of those

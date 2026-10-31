@@ -282,8 +282,8 @@ export type PickerState = {
   // app in the background (the Android notification bulb), and after another
   // sheet displaced a `searching` picker. Both come back when the list starts.
   presented: boolean;
-  // The saved board was auto-selected: the sheet dismisses itself, and only once
-  // that dismissal has settled does the host call `handleClosed`.
+  // A board was selected or the connect ended: the sheet dismisses itself, and
+  // only once that dismissal has settled does the host call `handleClosed`.
   closing: boolean;
   // Stops a saved-device search and/or reveals devices outside targetBoard.
   handleSearchAnyBoard?: () => void;
@@ -952,7 +952,11 @@ export function useBoardBluetooth({
         const handleSelect = (deviceId: string) => {
           if (settled) return;
           settled = true;
-          cleanup();
+          releaseRejectRef();
+          // Keep the native sheet mounted through its dismissal, as for an
+          // auto-selected board. Tearing it down here can blank the player
+          // underneath while UIKit removes the sheet's presentation host.
+          updateSession((current) => ({ ...current, closing: true }));
           resolve(deviceId);
         };
 
