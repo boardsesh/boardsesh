@@ -47,6 +47,7 @@ vi.mock('../../play-drawer/WallGlow', () => ({
       'data-glow-width': width,
       'data-glow-surface': JSON.stringify(layer.surface),
       'data-glow-readable-zone': layer.readableZone,
+      'data-glow-blobs': layer.blobs.length,
     }),
 }));
 
@@ -356,14 +357,31 @@ describe('BoardHeldCapsule', () => {
   });
 
   describe('with no current climb', () => {
-    it('says "You have the board" with a lit bulb in the amber glass tint', () => {
+    it.each(['dark', 'light'] as const)(
+      'says "You have the board" on plain frost in %s without inventing holds',
+      (scheme) => {
+        spies.colorScheme = scheme;
+        const { container } = render(<BoardHeldCapsule ledless={false} />);
+        expect(container.textContent).toContain('ble.barControl.youHaveBoard');
+        expect(container.querySelector('[data-icon="lightbulb.fill"]')?.getAttribute('data-icon-color')).toBe(WARNING);
+        expect(container.querySelector('[data-wall-glow]')?.getAttribute('data-glow-blobs')).toBe('0');
+        expect(container.querySelector('[data-glass-surface]')).toBeNull();
+        const surface = wallGlowSurfaces[scheme];
+        expect(container.querySelector('[data-text]')?.getAttribute('data-color')).toBe(surface.label);
+        expect(JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}')).toMatchObject({
+          backgroundColor: surface.base,
+          borderColor: surface.border,
+        });
+        expect(spies.glowCalls).toBe(0);
+      },
+    );
+
+    it('keeps the settled plain LED header on its old surface after the physical link drops', () => {
+      spies.localConnected = false;
+      spies.pressAction = 'noop';
       const { container } = render(<BoardHeldCapsule ledless={false} />);
-      expect(container.textContent).toContain('ble.barControl.youHaveBoard');
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')?.getAttribute('data-icon-color')).toBe(WARNING);
-      expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
-        'rgba(251, 191, 36, 0.14)',
-      );
-      expect(spies.glowCalls).toBe(0);
+      expect(container.querySelector('[data-wall-glow]')).toBeNull();
+      expect(container.querySelector('[data-glass-surface]')).not.toBeNull();
     });
 
     it('on a board with no lights, pins in the brand tone and never claims lit LEDs', () => {

@@ -468,15 +468,13 @@ fill, the "Lit on the wall" text and the purple button. Now one board control sa
 button in the second row; View options › Buttons › Board control can make it the first row's bulb instead. Either
 way it looks like this:
 
-- Tonal violet for what the climber can do: "Put on board", "Disconnect board". The label says what a press does
-  (#7113); the bulb and the face show the connection and whose board it is. The fill is 20% of
-  the brand fill, strong enough not to read as disabled and the most the violet label keeps 4.5:1 on.
-- **Lit while you drive the board: the climb's holds glow in it (look F1b).** Only while this climber is driving: the
-  climb on screen is lit on this phone's link and a swipe from here changes what the wall shows (#7017, Marco: "The
-  special coloured state for the button should only be shown when the current user is driving the board"). That is
-  solo with lighting on swipes, or a drive started by a swipe on the button (#7113), and the label says "You are
-  driving the wall". In a crew swipes browse, so the holder's "Disconnect board" keeps its filled bulb and face on
-  the plain tonal look, and a crewmate's board is tonal with an outline bulb. The glow, in the full-width and the workout button: every
+- **Physical LED controls use the climb's frosted bokeh.** The play drawer's full-width/workout board button
+  frosts when its action can connect, re-light, relay, move to, disconnect, or stop driving an LED board.
+  Holding the link without driving uses the same frost; the existing label, bulb, face, tap and swipe behaviour
+  still come from the board-control model. A confirmed drive keeps frost while its busy-wall question is up.
+  "Your climb · no lights", spray walls, Set active and virtual Take/Release wall controls keep their existing
+  colours. A target gym board's own LED metadata decides moves and relays; missing LED metadata remains LED-capable.
+  The glow, in the full-width and the workout button: every
   lit hold of the climb, turned a quarter clockwise so the
   climb reads start (left) to finish (right), as a soft blob of the colour the player draws its role (Aura or
   classic, with the climber's overrides). The blobs screen together on a near-black `#0E0D12` with an 8% white
@@ -485,15 +483,16 @@ way it looks like this:
   white at 20%: Marco wanted a simple border with the busy fill. Light scheme: a pale `#F6F3FB` the blobs multiply
   into at lower strength, a dark label, black hairline at 12%. Android below 10 can't screen-blend, so the blobs
   draw normally, fainter. A new climb or playback frame cross-fades in over 200 ms (at once with Reduce Motion).
-  With no holds the lit button falls back to the filled `live` amber with white text (dark text on the dark
-  scheme's pale amber). The climber's own face sits at the trailing edge either way.
+  With no holds the button keeps its existing fallback: filled `live` amber while driving, otherwise its
+  existing tonal surface. The climber's own face sits at the trailing edge either way.
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
   the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
   The header's “You're driving, your climb” capsule uses the same `WallGlow` background, hold-role
   colours and mirrored geometry for its current climb. Its two-line label uses the glow's readable
   foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
-  Missing hold data keeps the plain amber treatment; the wall-with-no-lights
-  and no-current-climb capsules keep their existing status surfaces.
+  Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
+  the frost base and grain without inventing hold colours; its words use the frost label colour and shadow.
+  The wall-with-no-lights capsule keeps its existing status surface.
   Climb-link previews reuse the dark preset behind the board/photo and details at 1200×630,
   with an OG-only preset: blur/radii scaled by `1200 / 225`, 45% blob opacity,
   5% frost and 3% grain. A 240px scrim transition protects text; supporting labels keep at least 4.5:1.
@@ -518,9 +517,9 @@ readers), or on You are driving the wall stops driving and keeps the link; a hol
 back chip, which names where back goes: "My pick" for the climber's own climb, "On the wall" for the wall's.
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
-  under an hour ago, the button reads "On the wall": an amber outline on the sheet, the label in the sheet's own
-  label colour, an outline bulb, no face and no frost, since the filled amber, the frost and the face all mean "you
-  have the board". A tap still connects and lights it again.
+  under an hour ago, the button reads "On the wall" with an outline bulb and no face. Its connect action uses
+  frost when hold geometry is available; without it the amber outline and sheet label remain. A tap still
+  connects and lights it again.
 
 - **A face means a live link.** The holder's face, on the button's trailing edge or the bulb's corner, comes only
   from the model, which needs this phone's link or a crewmate's authoritative one. Board presence alone never puts a

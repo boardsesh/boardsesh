@@ -10,13 +10,14 @@
 // it falls back to the bulb and "You have the board".
 //
 // A lit climb carries the wall button's hold-colour frost, with amber as the
-// fallback before measurement or when holds are unavailable. A board with no
-// lights keeps the brand tone and "You have the wall".
+// fallback before measurement or when holds are unavailable. With no climb,
+// a held LED board uses just the frost base and grain. A board with no lights
+// keeps the brand tone and "You have the wall".
 // A tap lets go, like the lightbulbs' short press: it disconnects, or releases a
 // wall with no lights. A long-press opens the Bluetooth controls sheet
 // (Re-light / Turn off / Disconnect) while this device holds the radio link.
 
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -37,7 +38,8 @@ import { Avatar } from '../Avatar';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
 import { useClimbByline } from './use-climb-byline';
 import { useClimbWallGlow } from './use-climb-wall-glow';
-import { useWallGlowLayer } from '../play-drawer/use-wall-glow';
+import { useWallGlowLayer, wallGlowBlendFor, type WallGlowLayer } from '../play-drawer/use-wall-glow';
+import { wallGlowSurfaces } from '../../theme/colors';
 import { WallGlow } from '../play-drawer/WallGlow';
 
 const CAPSULE_GLYPH_SIZE = 16;
@@ -51,7 +53,21 @@ type BoardHeldCapsuleProps = {
 
 function BoardHeldCapsuleImpl({ ledless }: BoardHeldCapsuleProps) {
   const { t } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
+  const scheme = colorScheme === 'dark' ? 'dark' : 'light';
+  // A held LED board with no climb still gets the frost base and grain. Empty
+  // blobs deliberately supply no invented hold colours and need no measurement.
+  const emptyGlow = useMemo<WallGlowLayer>(
+    () => ({
+      key: `held-header-empty-${scheme}`,
+      blobs: [],
+      fade: 0,
+      surface: wallGlowSurfaces[scheme],
+      ...wallGlowBlendFor(scheme),
+      readableZone: 'full',
+    }),
+    [scheme],
+  );
   const { open: openControls } = useBleControlSheet();
   const compact = useHeaderCapsuleCompact();
   // Your queue head, the climb the board shows while you hold it. Read here, not
@@ -80,6 +96,7 @@ function BoardHeldCapsuleImpl({ ledless }: BoardHeldCapsuleProps) {
     lightbulbPress();
   }, [pressAction, lightbulbPress]);
 
+  const plainGlow = !ledless && localConnected ? emptyGlow : null;
   const toneColor = ledless ? brandColors.primary : brandColors.warning;
   const statusLabel = t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.youHaveBoard');
 
@@ -124,6 +141,15 @@ function BoardHeldCapsuleImpl({ ledless }: BoardHeldCapsuleProps) {
       accessibilityLabel={statusLabel}
       accessibilityHint={accessibilityHint}
       compact={compact}
+      background={
+        plainGlow
+          ? {
+              content: <WallGlow layer={plainGlow} width={0} />,
+              color: plainGlow.surface.base,
+              borderColor: plainGlow.surface.border,
+            }
+          : undefined
+      }
       testID="board-held-capsule"
     >
       {compact ? null : (
@@ -140,11 +166,14 @@ function BoardHeldCapsuleImpl({ ledless }: BoardHeldCapsuleProps) {
       <LargeContentViewer title={statusLabel} onActivate={handleLongPress} style={styles.labelViewer}>
         <Text
           variant="caption1"
-          color={systemColors.label}
+          color={plainGlow?.surface.label ?? systemColors.label}
           numberOfLines={1}
           ellipsizeMode="tail"
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.label}
+          style={[
+            styles.label,
+            plainGlow && (plainGlow.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
+          ]}
         >
           {statusLabel}
         </Text>

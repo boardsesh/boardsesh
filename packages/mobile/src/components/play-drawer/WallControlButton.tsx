@@ -57,6 +57,7 @@ import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
 import { useWallControlText } from './wall-control-text';
 import { WallGlow } from './WallGlow';
+import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
 import { useWallGlowLayer, type WallGlowInput, type WallGlowLayer } from './use-wall-glow';
 import { useWallSwipe } from './use-wall-swipe';
@@ -152,9 +153,9 @@ type WallControlButtonProps = {
   /** A swipe let go short of the commit point. */
   onSwipeCancel?: () => void;
   /**
-   * The climb's holds, for the frost (F1b): the lit look while driving, and
-   * the frost a swipe wipes in. Without it, or with no holds, both are the
-   * flat amber.
+   * The climb's holds, for the frost (F1b): physical LED actions, and
+   * the frost a swipe wipes in. Missing holds keep the existing resting
+   * fallback and the swipe’s flat amber.
    */
   glow?: WallGlowInput | null;
   /** The stories' frozen swipe frame. */
@@ -201,17 +202,16 @@ function WallControlButtonComponent({
     width: size.w,
     preview: previewProgress,
   });
-  // The frost mounts once a drag gets going (or the peek plays), and goes at rest.
+  // The swipe overlay mounts only while dragging or peeking; the resting surface is separate.
   const wiping = !model.driving && (swipe.frostArmed || swipe.committed);
-  // The coloured lit look (the frost, or the amber fill) only while this
-  // climber is driving the board: the model's rule, not the view's (#7017).
-  // A swipe toward driving wipes the same frost in part way.
-  const glowShown = model.driving || wiping ? glow : null;
-  // Filled amber whenever this phone holds the board, in any state; the frost
-  // (the glow) stays for the lit states only (Marco's QA).
+  // The full button frosts wherever its action can change physical LEDs.
+  // The model still owns driving, labels, gestures and what a press does.
+  const frosted = wallControlUsesFrost(model);
+  const glowShown = frosted || wiping ? glow : null;
+  // The bulb and face still say whose physical link is held.
   const holdsBoard = model.holder === 'self';
   const glowLayer = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
-  const fullGlow = model.driving ? glowLayer : null;
+  const fullGlow = frosted ? glowLayer : null;
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
@@ -254,15 +254,13 @@ function WallControlButtonComponent({
     return <View style={styles.placeholder} testID="play-drawer-wall-control-empty" />;
   }
 
-  // In a crew the holder's lit climb (or held wall with no lights) keeps its
-  // label, filled bulb and face on the plain tonal look: their swipes browse,
-  // so they aren't driving it.
+  // Flat fallback and bulb semantics retain the existing driving rule.
   const lit = model.driving;
   // Amber with white text in light; the dark scheme's amber is pale, so dark text.
   const litForeground = colorScheme === 'dark' ? brandColors.onAccent : brandColors.onPrimary;
   // On the wall per presence, with no link (QA #147): an amber outline on the
-  // sheet, the label in the sheet's own label colour, so it reads as "up there"
-  // without the fill and the frost that mean "you have the board".
+  // sheet when no hold geometry is available. Its connect action can frost like
+  // other physical LED actions, without claiming a live link or adding a face.
   const onWallUnlinked = model.state === 'on_wall_unlinked';
   // The glow (F1b) brings its own surface: white over the dark pill, dark over the light one.
   const restForeground = fullGlow
@@ -391,7 +389,7 @@ function WallControlButtonComponent({
         // frost), where it would vanish: there it takes the label colour.
         bulb: (holdsBoard || onWallUnlinked) && !(lit && !fullGlow) ? brandColors.live : restForeground,
         shadow: fullGlow,
-        chevrons: (alpha) => withAlpha(brandColors.primary, alpha),
+        chevrons: (alpha) => withAlpha(fullGlow ? fullGlow.surface.label : brandColors.primary, alpha),
         resting: true,
       })}
       {wiping && size.w > 0 ? (

@@ -1904,9 +1904,26 @@ describe('PlayDrawer wall button taps', () => {
     expect(recorded.actionBar.at(-1)?.wallGlow).toBe(glow);
   });
 
-  it('hands no glow while the climb on screen is dark', () => {
+  it('hands a non-driving Re-light board action the real holds before parsing is gated', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     linkedTo(linkedBluetooth(), false);
+    crew.shared = true;
+    renderDrawer();
+    expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({
+      state: 'dark',
+      driving: false,
+      tapAction: 'relight',
+    });
+    expect(recorded.actionBar.at(-1)?.wallGlow).toMatchObject({
+      holds: [expect.objectContaining({ color: expect.stringMatching(/^#/) })],
+    });
+  });
+
+  it('keeps no-lights board actions free of hold-colour glow', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    linkedTo(linkedBluetooth(), true);
+    lightbulbState.ledless = true;
+    lightbulbState.pressAction = 'releaseWall';
     renderDrawer();
     expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
   });
@@ -2007,8 +2024,8 @@ describe('PlayDrawer wall button taps', () => {
       renderDrawer();
       const model = recorded.actionBar.at(-1)?.wallControl as { state: string; look: string; holder: unknown };
       expect(model).toMatchObject({ state: 'on_wall_unlinked', look: 'ready', holder: null });
-      // No frost: the glow means "you have the board".
-      expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
+      // Connect can change the physical LEDs; the empty face still means no live link.
+      expect(recorded.actionBar.at(-1)?.wallGlow).not.toBeNull();
 
       tap('onWallControl');
       await act(async () => {
@@ -2106,7 +2123,7 @@ describe('PlayDrawer wall button taps', () => {
       lightbulbState.pressAction = 'connect';
     };
 
-    it('wires nothing with the flag off: no swipe, no action, no frost, no sheet row', () => {
+    it('keeps connect frost with the flag off but wires no swipe, drive action or sheet row', () => {
       putOnBoardWithNoLink();
       renderDrawer();
       const bar = recorded.actionBar.at(-1);
@@ -2114,7 +2131,7 @@ describe('PlayDrawer wall button taps', () => {
       expect(bar?.onWallControlSwipe).toBeUndefined();
       expect(bar?.onWallControlSwipeCancel).toBeUndefined();
       expect(bar?.onWallControlDrive).toBeUndefined();
-      expect(bar?.wallGlow).toBeNull();
+      expect(bar?.wallGlow).not.toBeNull();
       expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
     });
 

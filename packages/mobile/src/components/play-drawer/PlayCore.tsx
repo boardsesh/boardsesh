@@ -179,6 +179,7 @@ import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
 import type { WallGlowInput } from './use-wall-glow';
 import { buildWallGlowInput } from './wall-glow-input';
+import { wallControlFrostHasLeds, wallControlUsesFrost } from './wall-control-frost';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
 import { useWallHolderIdentity } from './use-wall-holder-name';
@@ -2278,19 +2279,13 @@ export function PlayCore({
     registerPaneWallControl(owner, paneWallControl);
     return () => registerPaneWallControl(owner, null);
   }, [miniPlayerMirrors, paneWallControl]);
-  // The lit wall button's glow (#7000, F1b): the climb's lit holds in the
-  // colours the player draws their roles, on the playback frame for an animated
-  // climb. Parsed only while the climb on screen is lit on a board this phone or
-  // a crewmate holds; a new input only when the climb, the frame, the mirror or
-  // the colours change, so the glow does no work otherwise.
-  // Only while this climber drives the board (`wallControl.driving`, #7017).
-  // A wall with no lights has no lit holds to frost.
-  // And for the climb on screen wherever the swipe is offered (#7113): the
-  // frost a swipe wipes in, held full width while the drive arms. The button
-  // mounts it only once a drag gets going.
+  // Physical LED actions share the player's actual hold colours, even when
+  // swipes browse. A target gym board owns its LED contract; no-lights and spray
+  // controls retain their colours. The swipe overlay keeps its existing gate.
   const wallGlowShown =
     !isAnonymous &&
-    ((wallControl.driving && wallControl.state === 'lit') ||
+    wallControlFrostHasLeds({ boardType: boardName, hasLeds: !boardIsLedless }, climbGymBoard) &&
+    (wallControlUsesFrost(wallControl) ||
       (swipeToDriveEnabled && (wallControl.swipeAction === 'drive' || wallControl.drivePhase === 'arming')));
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
