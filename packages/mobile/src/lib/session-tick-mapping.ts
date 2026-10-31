@@ -43,6 +43,9 @@ export function sessionTickToClimb(tick: SessionDetailTick): ClimbListItemClimb 
     benchmark_difficulty: tick.isBenchmark ? (tick.difficultyName ?? null) : null,
     mirrored: tick.isMirror,
     is_no_match: tick.isNoMatch,
+    // Carries campus / any-feet / no-kickboard badges onto the row; when
+    // non-null ClimbAttributeIcons derives ⊘ from it (same rule as the server).
+    characteristics: tick.characteristics ?? null,
     ...(isUngraded
       ? { boardseshDifficulty: tick.boardseshDifficulty, boardseshConfidence: tick.boardseshConfidence }
       : {}),

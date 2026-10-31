@@ -432,6 +432,80 @@ describe('legacy GetSmartPlaylist replay compatibility', () => {
   });
 });
 
+describe('legacy tick characteristics replay compatibility', () => {
+  // A session's highlights and its grouped items are two tick levels in one
+  // document, so the field is added twice.
+  const legacyFor = (operationName: string) =>
+    `query ${operationName}($id: ID!) { feed(id: $id) { ticks { uuid isNoMatch comment } ` +
+    `groups { isNoMatch items { uuid isNoMatch comment } } } }`;
+  const currentFor = (operationName: string) =>
+    legacyFor(operationName).replaceAll('isNoMatch', 'isNoMatch characteristics');
+  const fixture = (operationName: string, feed: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName,
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacyFor(operationName),
+    variables: { id: 'session-1' },
+    response: { data: { feed } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+  const recordedFeed = {
+    ticks: [{ uuid: 't-1', isNoMatch: true, comment: '' }],
+    groups: [{ isNoMatch: false, items: [{ uuid: 't-2', isNoMatch: false, comment: 'nice' }] }],
+  };
+
+  it.each(['GetSessionDetail', 'GetSessionGroupedFeed', 'GetUserGroupedAscentsFeed'])(
+    '%s: replays every tick with null characteristics, without mutating the recording',
+    (operationName) => {
+      const recorded = fixture(operationName, recordedFeed);
+      const bytes = JSON.stringify(recorded);
+      expect(replayCompatibleFixtureResponse(currentFor(operationName), recorded)).toEqual({
+        response: {
+          data: {
+            feed: {
+              ticks: [{ uuid: 't-1', isNoMatch: true, characteristics: null, comment: '' }],
+              groups: [
+                {
+                  isNoMatch: false,
+                  characteristics: null,
+                  items: [{ uuid: 't-2', isNoMatch: false, characteristics: null, comment: 'nice' }],
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(JSON.stringify(recorded)).toBe(bytes);
+    },
+  );
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture('GetSessionDetail', recordedFeed);
+    const current = currentFor('GetSessionDetail');
+    expect(replayCompatibleFixtureResponse(current.replace('comment } }', 'comment frames } }'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacyFor('GetSessionDetail'), recorded)).toBeNull();
+    // The field on only one tick level is not the shipped document.
+    const partial = legacyFor('GetSessionDetail').replace('isNoMatch', 'isNoMatch characteristics');
+    expect(replayCompatibleFixtureResponse(partial, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries characteristics, and other operations', () => {
+    const withField = {
+      ...recordedFeed,
+      ticks: [{ uuid: 't-1', isNoMatch: true, characteristics: ['no_match'], comment: '' }],
+    };
+    expect(
+      replayCompatibleFixtureResponse(currentFor('GetSessionDetail'), fixture('GetSessionDetail', withField)),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(currentFor('GetActivityFeed'), fixture('GetActivityFeed', recordedFeed)),
+    ).toBeNull();
+  });
+});
+
 describe('canonicalJson', () => {
   it('sorts object keys at every depth', () => {
     expect(canonicalJson({ zebra: 1, alpha: { yak: 2, bison: 3 } })).toBe('{"alpha":{"bison":3,"yak":2},"zebra":1}');
