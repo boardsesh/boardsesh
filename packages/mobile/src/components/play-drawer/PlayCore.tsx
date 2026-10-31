@@ -62,7 +62,6 @@ import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
 import { ACTION_BAR_SECONDARY_ROW_HEIGHT, PlayDrawerActionBar } from './PlayDrawerActionBar';
-import { LastOnWallNote } from './LastOnWallNote';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
 import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar-layout';
@@ -97,7 +96,6 @@ import {
   computeFitToHeightFirstScreenHeight,
   computeFirstSectionScrollTarget,
   initialDrawerPreviewItem,
-  resolveWallStatusLinePlacement,
   shouldFitBoardToHeight,
   shouldShowPanePlaceholder,
 } from './play-drawer-layout';
@@ -1177,7 +1175,7 @@ export function PlayCore({
     !showBoardMismatch &&
     displayedClimbUuid === wallClearedClimbUuid &&
     currentClimbQueueItem?.climb.uuid === wallClearedClimbUuid;
-  // What the wall button and the hold note read: the held climb is dark
+  // What the wall button reads: the held climb is dark
   // wherever it is on screen, a pinned preview of it included, like the
   // cleared climb above.
   const heldClimbDisplayed =
@@ -1245,11 +1243,6 @@ export function PlayCore({
     displayedClimbUuid === wallClimbUuid &&
     currentClimbQueueItem?.climb.uuid !== wallClearedClimbUuid;
   const displayedLit = wallLit === 'lit' && !clearedWallPreviewOnScreen;
-  // "Last on the wall …" while the #4979 hold keeps the current climb dark.
-  const heldLastOnWallAt = heldClimbDisplayed && staleCurrentHold ? staleCurrentHold.lastCurrentChangeAt : null;
-  // A workout's rest or "Workout done" card owns the board; the hold note waits
-  // while it, the end-of-list card or the switch-board gate is up.
-  const [workoutCardShown, setWorkoutCardShown] = useState(false);
   // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
   // in a stage that paces the rest, that this climber can log from here. It
   // takes the second row (`workoutOutcome` below), and the bulb comes back to
@@ -2371,7 +2364,6 @@ export function PlayCore({
             isAuthenticated,
             isTickBarActive,
             commitButton,
-            heldLastOnWallAt !== null,
             workoutOutcome !== null,
             bluetooth !== null,
             boardSupportsMirroring(boardName, layoutId),
@@ -2638,12 +2630,6 @@ export function PlayCore({
       edge={controlsAbove ? 'bottom' : 'top'}
     />
   );
-  // "Last on the wall …" while the #4979 hold keeps the current climb dark.
-  // Hidden while a card owns the board.
-  const boardTakenOver = trackEndCardVisible || workoutCardShown;
-  const wallStatus =
-    heldLastOnWallAt !== null && !boardTakenOver ? <LastOnWallNote lastOnWallAt={heldLastOnWallAt} /> : null;
-  const wallStatusLinePlacement = resolveWallStatusLinePlacement(fitsBoardToHeight);
   const controlsRegion = (
     <View
       testID="play-drawer-controls-region"
@@ -2658,9 +2644,7 @@ export function PlayCore({
         importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
       >
         {controlsAbove ? actionBar : playbackControls}
-        {wallStatusLinePlacement === 'aboveActionBar' ? wallStatus : null}
         {controlsAbove ? playbackControls : actionBar}
-        {wallStatusLinePlacement === 'afterControls' ? wallStatus : null}
       </View>
 
       {showSwitchBoardCard ? (
@@ -3004,7 +2988,6 @@ export function PlayCore({
                             boardName={boardName}
                             suppressed={trackEndCardVisible || showBoardMismatch}
                             onSeeWorkout={handleSeeWorkout}
-                            onCardShownChange={setWorkoutCardShown}
                           />
                           {/* Over the board only: the header and the action bar
                             stay live, so Previous still walks back along the list. */}

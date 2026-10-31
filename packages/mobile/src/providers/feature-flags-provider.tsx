@@ -150,7 +150,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'stale-current-hold-kill',
     label: 'Disable the stale-climb hold',
     description:
-      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall with "Last on the wall …". With it on, connecting lights that climb as before and the line never shows. Unresolved reads as enabled.',
+      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
     key: 'moonboard-wide-angles',

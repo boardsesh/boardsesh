@@ -299,10 +299,6 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 
 // --- Children ----------------------------------------------------------------
 // Recorded rather than stubbed: these three carry the props under test.
-vi.mock('../LastOnWallNote', () => ({
-  LastOnWallNote: (props: { lastOnWallAt: number }) =>
-    createElement('div', { 'data-testid': 'last-on-wall', 'data-at': String(props.lastOnWallAt) }),
-}));
 // The tablet rule (#7000) reads the device's chrome; a phone here.
 vi.mock('../use-mini-player-mirrors', () => ({ useMiniPlayerMirrorsPlayer: () => false }));
 // The bar records the board control model flattened (#7000), so the assertions

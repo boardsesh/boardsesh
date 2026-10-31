@@ -462,10 +462,6 @@ const bluetoothContext = vi.hoisted(() => ({ value: null as Props | null }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => bluetoothContext.value,
 }));
-vi.mock('../LastOnWallNote', () => ({
-  LastOnWallNote: (props: { lastOnWallAt: number }) =>
-    createElement('div', { 'data-testid': 'last-on-wall', 'data-at': String(props.lastOnWallAt) }),
-}));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
@@ -1536,7 +1532,7 @@ describe('PlayDrawer stale-climb hold', () => {
     };
   }
 
-  it('reads the held current climb as dark, re-lights it on a tap, and says when it was last on the wall', () => {
+  it('reads the held current climb as dark, re-lights it on a tap, with no last-on-the-wall line', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });
     bluetoothContext.value = bluetooth;
@@ -1548,7 +1544,7 @@ describe('PlayDrawer stale-climb hold', () => {
     const actionBar = recorded.actionBar.at(-1);
     expect(actionBar?.commitButton).toBeNull();
     expect(actionBar?.wallControlState).toBe('dark');
-    expect(screen.getByTestId('last-on-wall').getAttribute('data-at')).toBe(String(LAST_ON_WALL_AT));
+    expect(screen.queryByTestId('play-drawer-last-on-wall')).toBeNull();
 
     const onWallControl = actionBar?.onWallControl;
     if (typeof onWallControl !== 'function') throw new Error('The wall button has no handler');
@@ -1558,29 +1554,6 @@ describe('PlayDrawer stale-climb hold', () => {
     expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(1);
     expect(bluetooth.reassertWall).toHaveBeenCalledTimes(1);
     expect(setCurrentClimb).not.toHaveBeenCalled();
-  });
-
-  it('drops both once the hold releases', () => {
-    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    bluetoothContext.value = connectedBluetooth({
-      queueItemUuid: 'queue-twelve',
-      lastCurrentChangeAt: LAST_ON_WALL_AT,
-    });
-    const screen = renderDrawer();
-    expect(screen.getByTestId('last-on-wall').getAttribute('data-at')).toBe(String(LAST_ON_WALL_AT));
-
-    bluetoothContext.value = connectedBluetooth(null);
-    screen.rerender(
-      createElement(PlayDrawer, {
-        presentation: 'pane' as const,
-        boardConfig: TWELVE_BY_TWELVE,
-        openTarget: null,
-        onOpenQueue: vi.fn(),
-      }),
-    );
-    flushOpeningFrame();
-    expect(screen.queryByTestId('last-on-wall')).toBeNull();
-    expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
   });
 
   // Decision A: only the automatic send on connect is held. A pick of the held
@@ -1607,17 +1580,17 @@ describe('PlayDrawer stale-climb hold', () => {
     expect(setCurrentClimb).not.toHaveBeenCalled();
   });
 
-  it('shows nothing for a hold that names another climb, or with no hold at all (the kill switch)', () => {
+  it('reads lit for a hold that names another climb, or with no hold at all (the kill switch)', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     bluetoothContext.value = connectedBluetooth({ queueItemUuid: 'queue-other', lastCurrentChangeAt: LAST_ON_WALL_AT });
     const otherClimb = renderDrawer();
-    expect(otherClimb.queryByTestId('last-on-wall')).toBeNull();
+    expect(recorded.actionBar.at(-1)?.wallControlState).not.toBe('dark');
     expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
     otherClimb.unmount();
 
     bluetoothContext.value = connectedBluetooth(null);
     const killed = renderDrawer();
-    expect(killed.queryByTestId('last-on-wall')).toBeNull();
+    expect(recorded.actionBar.at(-1)?.wallControlState).not.toBe('dark');
     expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
   });
 });
