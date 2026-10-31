@@ -669,6 +669,13 @@ async function preparePhone(
 }
 
 async function releasePhone(phone: Phone): Promise<void> {
+  if (phone.role === 'secondary') {
+    // Remove the second account while its simulator still accepts these commands.
+    // Best effort: prewarming may have failed before the simulator ever booted.
+    // Do not boot a simulator solely for cleanup, or clear the primary's app.
+    simctl(['uninstall', phone.device.udid, APP_ID]);
+    simctl(['keychain', phone.device.udid, 'reset']);
+  }
   clearStatusBar(phone.device.udid);
   simctl(['shutdown', phone.device.udid]);
   const metro = phone.metro;
@@ -2059,11 +2066,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             metroEnv(args, secondaryCredentials, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
             signal,
           );
-          const secondaryUdid = phone.device.udid;
-          onCleanup('second phone app', () => {
-            simctl(['uninstall', secondaryUdid, APP_ID]);
-            simctl(['keychain', secondaryUdid, 'reset']);
-          });
           return phone;
         }, releasePhone)
       : null;
