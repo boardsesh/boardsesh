@@ -61,6 +61,8 @@ import {
   type PullWriteSettledReport,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
+import { publishMutationDeliveryEvent } from './mutation-delivery-store';
+export { subscribeMutationDelivery } from './mutation-delivery-store';
 import { getErrorStatus, isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
 import {
   confirmBackendAvailability,
@@ -85,6 +87,8 @@ import {
 } from './download-keep-awake-store';
 import { createSprayWallDeletedSink, sprayWallPhotoSink } from './spray-photo-sink';
 import { holdIndexSyncOptions } from './hold-index-parser';
+import { acknowledgeClimbWrite } from './acknowledge-climb-write';
+import { resolveSprayWallCapability } from './opened-spray-wall-pins';
 
 // Exported so non-drain reporters can record the one dimension that decides
 // whether a failed local write actually lost data: a tick that falls through to
@@ -121,8 +125,6 @@ export async function hasUsableInternetConnection(): Promise<boolean> {
   return isUsableConnection();
 }
 
-const mutationDeliveryListeners = new Set<(event: MutationDeliveryEvent) => void>();
-
 function reportMutationStatusListenerFailure({ error, event }: MutationStatusListenerFailure): void {
   try {
     reportHandledError(error, {
@@ -134,19 +136,8 @@ function reportMutationStatusListenerFailure({ error, event }: MutationStatusLis
   }
 }
 
-export function subscribeMutationDelivery(listener: (event: MutationDeliveryEvent) => void): () => void {
-  mutationDeliveryListeners.add(listener);
-  return () => mutationDeliveryListeners.delete(listener);
-}
-
 function publishMutationDelivery(event: MutationDeliveryEvent): void {
-  for (const listener of mutationDeliveryListeners) {
-    try {
-      listener(event);
-    } catch (error) {
-      reportMutationStatusListenerFailure({ error, event });
-    }
-  }
+  publishMutationDeliveryEvent(event, reportMutationStatusListenerFailure);
 }
 
 // A queued write we will never deliver. Both channels are deliberate: Sentry
@@ -811,8 +802,13 @@ export function drainMutationQueue(
   // token in SecureStore, so every one compares the stamp against that token.
   options?: Partial<Omit<DrainOptions, 'getSignedInUserId'>>,
 ): Promise<void> {
+  const sourceGeneration = captureAuthCredentialGeneration();
   return drainMutationQueueCore(db, queryClient, graphqlFetch, {
     ...options,
+    beforeMutationAcknowledged: async (mutation, fetch) => {
+      await acknowledgeClimbWrite(db, mutation, fetch);
+      await options?.beforeMutationAcknowledged?.(mutation, fetch);
+    },
     isOnline: options?.isOnline ?? isOnline,
     // Whose account the server will file these sends under (#6824). The token
     // the HTTP client attaches, read the same way, so the check and the send
@@ -843,10 +839,11 @@ export function drainMutationQueue(
         })),
     onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
     onMutationStatus: (event) => {
+      if (!isAuthCredentialGenerationCurrent(sourceGeneration)) return;
       try {
         options?.onMutationStatus?.(event);
       } finally {
-        publishMutationDelivery(event);
+        if (isAuthCredentialGenerationCurrent(sourceGeneration)) publishMutationDelivery(event);
       }
     },
     // Composed, not defaulted (unlike the reporters above): telemetry for a
@@ -973,6 +970,7 @@ export function startSyncScheduler(
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
     getViewerUserId: readSignedInUserId,
+    getSprayWallUuid: resolveSprayWallCapability,
     // Pull only into a database stamped for that account (#6824).
     requireOwnedDatabase: true,
     isOnline,
@@ -1009,6 +1007,7 @@ export function triggerSync(
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
     getViewerUserId: readSignedInUserId,
+    getSprayWallUuid: resolveSprayWallCapability,
     // Pull only into a database stamped for that account (#6824).
     requireOwnedDatabase: true,
     isOnline,
@@ -1047,6 +1046,7 @@ export async function pullSync(
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
+    getSprayWallUuid: options?.getSprayWallUuid ?? resolveSprayWallCapability,
     viewerUserId: options?.viewerUserId ?? (await readSignedInUserId()),
     requireOwnedDatabase: true,
     isOnline: options?.isOnline ?? isOnline,

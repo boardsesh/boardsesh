@@ -104,7 +104,13 @@ function lane(action: string, overrides: NodeJS.ProcessEnv = {}) {
 set -eu
 printf '%s|%s|%s\\n' "$*" "$CREATIVE_PLACEMENT" "$(test -f "$ASC_KEY_PATH" && echo key-present)" >> "$TRACE"
 if [ "$5" = 'action:place' ] && [ "\${FAIL_PLACE:-}" = true ]; then echo 'Existing placement requires allow_replace:true'; exit 19; fi
-if [ "$5" = 'action:place' ] && [ "\${PROCESSING_ONCE:-}" = true ] && [ ! -f "$RUNNER_TEMP/retried" ]; then touch "$RUNNER_TEMP/retried"; echo 'Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION'; exit 17; fi
+if [ "$5" = 'action:place' ] && [ "\${PROCESSING_FAILURES:-0}" -gt 0 ]; then
+  attempts=0
+  if [ -f "$RUNNER_TEMP/processing-attempts" ]; then attempts="$(cat "$RUNNER_TEMP/processing-attempts")"; fi
+  attempts=$((attempts + 1))
+  printf '%s' "$attempts" > "$RUNNER_TEMP/processing-attempts"
+  if [ "$attempts" -le "$PROCESSING_FAILURES" ]; then echo 'Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION'; exit 17; fi
+fi
 printf '[]' > "$ASC_CREATIVES_OUTPUT"
 `,
     { mode: 0o755 },
@@ -180,12 +186,20 @@ describe('merged store video upload workflow', () => {
     expect(readdirSync(result.root)).toContain('creative-assets-place-report.json');
   });
   it('retries Apple processing only and fails guard errors without retrying', () => {
-    const processing = lane('upload-and-place', { PROCESSING_ONCE: 'true' });
+    const processing = lane('upload-and-place', { PROCESSING_FAILURES: '1' });
     expect(processing.status, processing.stderr).toBe(0);
     expect(processing.trace).toHaveLength(3);
     const guarded = lane('upload-and-place', { FAIL_PLACE: 'true' });
     expect(guarded.status).toBe(19);
     expect(guarded.trace).toHaveLength(2);
+  });
+  it('waits beyond the former 7.5-minute budget but stops after 30 minutes', () => {
+    const delayed = lane('upload-and-place', { PROCESSING_FAILURES: '17' });
+    expect(delayed.status, delayed.stderr).toBe(0);
+    expect(delayed.trace).toHaveLength(19);
+    const exhausted = lane('upload-and-place', { PROCESSING_FAILURES: '61' });
+    expect(exhausted.status).toBe(17);
+    expect(exhausted.trace).toHaveLength(62);
   });
   describe('ships only variants whose search entries changed in the push', () => {
     const repository = process.cwd();

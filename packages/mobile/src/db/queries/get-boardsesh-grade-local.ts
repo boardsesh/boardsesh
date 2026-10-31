@@ -55,6 +55,7 @@ const GRADE_COLUMNS =
 export const NOT_SOMEONE_ELSES_DRAFT_SQL = `NOT EXISTS (
        SELECT 1 FROM board_climbs draft
        WHERE draft.uuid = ? AND COALESCE(draft.is_draft, 0) = 1 AND COALESCE(draft.user_id = ?, 0) = 0
+         AND (draft.board_type <> 'spray' OR NOT EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = draft.layout_id))
      )`;
 
 /** The Boardsesh grade for one climb at one angle, or null when no row exists. */

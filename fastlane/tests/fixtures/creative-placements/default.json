@@ -1,0 +1,1590 @@
+{
+  "name": "default",
+  "capturedAt": "2026-10-31T07:11:47Z",
+  "endpoint": "/v1/appStoreVersionLocalizations/appStoreVersionLocalizations-1/placements?include=image%2Cvideo%2CappStoreVersionLocalization&fields%5BappAssetLibraryPlacements%5D=placementType%2CplacementGroup%2Cstate%2Cimage%2Cvideo%2CappStoreVersionLocalization&fields%5BappAssetLibraryImages%5D=fileName&fields%5BappAssetLibraryVideos%5D=fileName&fields%5BappStoreVersionLocalizations%5D=locale&limit=200",
+  "response": {
+    "data": [
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-1",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-1"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-1"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-2",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-2"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-2"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-3",
+        "attributes": {
+          "placementGroup": "DEFAULT_PROFILE",
+          "placementType": "APP_STORE_SEARCH_RESULTS_ASSET",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": null
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": {
+              "type": "appAssetLibraryVideos",
+              "id": "appAssetLibraryVideos-1"
+            }
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-3"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-4",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-3"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-4"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-5",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-4"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-5"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-6",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-5"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-6"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-7",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-6"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-7"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-8",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-7"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-8"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-9",
+        "attributes": {
+          "placementGroup": "IPAD_11_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-8"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-9"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-10",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-9"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-10"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-11",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-10"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-11"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-12",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-11"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-12"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-13",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-12"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-13"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-14",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-13"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-14"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-15",
+        "attributes": {
+          "placementGroup": "IPAD_13_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-14"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-15"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-16",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-15"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-16"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-17",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-16"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-17"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-18",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-17"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-18"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-19",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-18"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-19"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-20",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-19"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-20"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-21",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-20"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-21"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-22",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-21"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-22"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-23",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_LARGE_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-22"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-23"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-24",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-23"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-24"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-25",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-24"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-25"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-26",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-25"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-26"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-27",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-26"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-27"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-28",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-27"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-28"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-29",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-28"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-29"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-30",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-29"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-30"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-31",
+        "attributes": {
+          "placementGroup": "IPHONE_DYNAMIC_ISLAND_MEDIUM_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-30"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-31"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-32",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-31"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-32"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-33",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-32"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-33"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-34",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-33"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-34"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-35",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-34"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-35"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-36",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-35"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-36"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-37",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-36"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-37"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-38",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-37"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-38"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-39",
+        "attributes": {
+          "placementGroup": "IPHONE_DUO_PROFILE",
+          "placementType": "APP_SCREENSHOT",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-38"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-39"
+        }
+      },
+      {
+        "type": "appAssetLibraryPlacements",
+        "id": "appAssetLibraryPlacements-40",
+        "attributes": {
+          "placementGroup": "DEFAULT_PROFILE",
+          "placementType": "PRODUCT_PAGE_HEADER_ASSET",
+          "state": "ACTIVE"
+        },
+        "relationships": {
+          "image": {
+            "data": {
+              "type": "appAssetLibraryImages",
+              "id": "appAssetLibraryImages-39"
+            }
+          },
+          "appStoreVersionLocalization": {
+            "data": {
+              "type": "appStoreVersionLocalizations",
+              "id": "appStoreVersionLocalizations-1"
+            }
+          },
+          "video": {
+            "data": null
+          }
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryPlacements/appAssetLibraryPlacements-40"
+        }
+      }
+    ],
+    "included": [
+      {
+        "type": "appAssetLibraryVideos",
+        "id": "appAssetLibraryVideos-1",
+        "attributes": {
+          "fileName": "default-en-US-search-full-phone.mp4"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryVideos/appAssetLibraryVideos-1"
+        }
+      },
+      {
+        "type": "appStoreVersionLocalizations",
+        "id": "appStoreVersionLocalizations-1",
+        "attributes": {
+          "locale": "en-US"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/appStoreVersionLocalizations-1"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-39",
+        "attributes": {
+          "fileName": "default-header-en-US-be3c598b36c6.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-39"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-38",
+        "attributes": {
+          "fileName": "07-iphone-duo-workout-generator.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-38"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-37",
+        "attributes": {
+          "fileName": "06-iphone-duo-session-detail.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-37"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-36",
+        "attributes": {
+          "fileName": "05-iphone-duo-profile.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-36"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-35",
+        "attributes": {
+          "fileName": "04-iphone-duo-playlist-detail.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-35"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-34",
+        "attributes": {
+          "fileName": "03-iphone-duo-home.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-34"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-33",
+        "attributes": {
+          "fileName": "02-iphone-duo-climbs.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-33"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-32",
+        "attributes": {
+          "fileName": "01-iphone-duo-board-view-2.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-32"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-31",
+        "attributes": {
+          "fileName": "00-iphone-duo-board-view.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-31"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-30",
+        "attributes": {
+          "fileName": "06-iphone-16-pro-session-plan.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-30"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-29",
+        "attributes": {
+          "fileName": "05-iphone-16-pro-one-logbook.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-29"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-28",
+        "attributes": {
+          "fileName": "08-iphone-16-pro-next-project.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-28"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-27",
+        "attributes": {
+          "fileName": "04-iphone-16-pro-on-the-wall.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-27"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-26",
+        "attributes": {
+          "fileName": "03-iphone-16-pro-your-crew.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-26"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-25",
+        "attributes": {
+          "fileName": "02-iphone-16-pro-more-boards.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-25"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-24",
+        "attributes": {
+          "fileName": "01-iphone-16-pro-spray-wall.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-24"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-23",
+        "attributes": {
+          "fileName": "00-iphone-16-pro-your-boards.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-23"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-22",
+        "attributes": {
+          "fileName": "08-iphone-16-pro-max-next-project.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-22"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-21",
+        "attributes": {
+          "fileName": "03-iphone-16-pro-max-your-crew.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-21"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-20",
+        "attributes": {
+          "fileName": "06-iphone-16-pro-max-session-plan.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-20"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-19",
+        "attributes": {
+          "fileName": "05-iphone-16-pro-max-one-logbook.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-19"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-18",
+        "attributes": {
+          "fileName": "04-iphone-16-pro-max-on-the-wall.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-18"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-17",
+        "attributes": {
+          "fileName": "02-iphone-16-pro-max-more-boards.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-17"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-16",
+        "attributes": {
+          "fileName": "01-iphone-16-pro-max-spray-wall.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-16"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-15",
+        "attributes": {
+          "fileName": "00-iphone-16-pro-max-your-boards.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-15"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-14",
+        "attributes": {
+          "fileName": "02-ipad-pro-13-inch-m5-home.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-14"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-13",
+        "attributes": {
+          "fileName": "05-ipad-pro-13-inch-m5-profile.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-13"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-12",
+        "attributes": {
+          "fileName": "04-ipad-pro-13-inch-m5-workout-generator.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-12"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-11",
+        "attributes": {
+          "fileName": "03-ipad-pro-13-inch-m5-discover.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-11"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-10",
+        "attributes": {
+          "fileName": "01-ipad-pro-13-inch-m5-wall-status.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-10"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-9",
+        "attributes": {
+          "fileName": "00-ipad-pro-13-inch-m5-wall-kiosk.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-9"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-8",
+        "attributes": {
+          "fileName": "05-ipad-pro-11-inch-m5-profile.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-8"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-7",
+        "attributes": {
+          "fileName": "04-ipad-pro-11-inch-m5-workout-generator.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-7"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-6",
+        "attributes": {
+          "fileName": "03-ipad-pro-11-inch-m5-discover.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-6"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-5",
+        "attributes": {
+          "fileName": "02-ipad-pro-11-inch-m5-home.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-5"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-4",
+        "attributes": {
+          "fileName": "01-ipad-pro-11-inch-m5-wall-status.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-4"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-3",
+        "attributes": {
+          "fileName": "00-ipad-pro-11-inch-m5-wall-kiosk.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-3"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-2",
+        "attributes": {
+          "fileName": "07-iphone-16-pro-live-activity.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-2"
+        }
+      },
+      {
+        "type": "appAssetLibraryImages",
+        "id": "appAssetLibraryImages-1",
+        "attributes": {
+          "fileName": "07-iphone-16-pro-max-live-activity.png"
+        },
+        "links": {
+          "self": "https://api.appstoreconnect.apple.com/v1/appAssetLibraryImages/appAssetLibraryImages-1"
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.appstoreconnect.apple.com/v1/appStoreVersionLocalizations/appStoreVersionLocalizations-1/placements?fields%5BappStoreVersionLocalizations%5D=locale&fields%5BappAssetLibraryImages%5D=fileName&fields%5BappAssetLibraryPlacements%5D=image%2CplacementType%2CplacementGroup%2Cstate%2Cvideo%2CappStoreVersionLocalization&fields%5BappAssetLibraryVideos%5D=fileName&include=image%2Cvideo%2CappStoreVersionLocalization&limit=200"
+    },
+    "meta": {
+      "paging": {
+        "total": 40,
+        "limit": 200
+      }
+    }
+  }
+}

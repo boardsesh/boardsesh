@@ -34,6 +34,9 @@ function fixture() {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), bytes);
   }
+  // Start from the real manifest's shape but none of its shipped assets, so the
+  // fixture's one MoonBoard asset is the only file a case reads or uploads.
+  for (const variant of Object.values(manifest.variants)) variant.assets = [];
   manifest.variants.moonboard.assets = [
     {
       locale: 'en-US',

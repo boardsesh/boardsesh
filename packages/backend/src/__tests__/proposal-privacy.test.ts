@@ -94,10 +94,12 @@ describe('proposal privacy projection', () => {
       const queryText = predicates.map(sqlText).join('\n');
       // The proposer and resolver identities keep their account privacy…
       expect(queryText).toContain('is_private');
-      // …while the climb is read by the listed rule alone (published and listed,
-      // or the viewer's own): a published climb is public whoever set it, so no
-      // item audience is consulted for it, and an unlisted one stays with its owner.
-      expect(queryText).toContain('( IS NOT TRUE AND  IS TRUE) OR COALESCE(');
+      // Climb content is published/listed, a shared spray draft on an accessible
+      // wall, or the viewer's own. Identity privacy remains independent.
+      expect(queryText).toContain('( IS NOT TRUE AND  IS TRUE)');
+      expect(queryText).toContain("COALESCE( = 'spray', false) AND  IS TRUE");
+      expect(queryText).toContain('OR COALESCE( = , false)');
+      expect(queryText).toContain('FROM spray_walls sw');
       expect(queryText).not.toContain('content_privacy');
     },
   );

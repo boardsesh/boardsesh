@@ -606,7 +606,8 @@
       "clearAll": "Borrar todo",
       "nameToken": "«{{name}}»",
       "drafts": "Mis borradores",
-      "popularityUnrepeated": "Sin repetir"
+      "popularityUnrepeated": "Sin repetir",
+      "wallDrafts": "Borradores"
     },
     "search": {
       "recentFilters": "Recientes",
@@ -828,7 +829,8 @@
         "campusLabel": "Campus (sin pies)",
         "campusDescription": "Solo manos, sin apoyar los pies",
         "anyFeetLabel": "Pies libres",
-        "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas"
+        "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas",
+        "wallDraftDescription": "Quienes tengan acceso a este Spraywall pueden escalar tus borradores guardados."
       },
       "drafts": {
         "holds_one": "{{count}} presa",
@@ -856,7 +858,8 @@
         "done": "Guardado",
         "draftToast": "Borrador guardado",
         "publishedToast": "Vía publicada",
-        "needsHold": "Añade una presa para guardar"
+        "needsHold": "Añade una presa para guardar",
+        "beforeLogging": "Guarda este bloque antes de registrarlo."
       },
       "autosave": {
         "onDevice": "Borrador guardado en este teléfono",
@@ -866,7 +869,8 @@
         "unsyncedEdits": "Los últimos cambios están solo en este teléfono",
         "notStored": "Inicia sesión para guardar este borrador",
         "saveFailed": "No se pudo guardar en tu cuenta. Toca Guardar para reintentar.",
-        "keptToast": "Borrador guardado en este teléfono. Vuelve a abrir el editor para terminarla."
+        "keptToast": "Borrador guardado en este teléfono. Vuelve a abrir el editor para terminarla.",
+        "waitingToSync": "Guardado en este dispositivo · Pendiente de sincronizar"
       },
       "newClimb": {
         "confirm": {

@@ -1,4 +1,5 @@
 import { getCredentialGeneration } from '../privacy/privacy-cache';
+import { getSprayWall } from '../spray/spray-wall-registry';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -58,6 +59,7 @@ import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
+  GET_SPRAY_CLIMB,
   GET_SETTER_STATS,
   type SearchClimbsQueryVariables,
   type SearchClimbsQueryResponse,
@@ -205,9 +207,10 @@ async function readViewerId(): Promise<string | null> {
  * read to the server, or to the offline fallback. An unstamped database holds no
  * user rows to leak, so it serves. Deletes nothing.
  */
-async function isLocalDataOwnerCurrent(db: SQLiteDatabase): Promise<boolean> {
+async function isLocalDataOwnerCurrent(db: SQLiteDatabase, requireOwned = false): Promise<boolean> {
   try {
-    return (await assertLocalUserDataOwner(db, await readViewerId())) !== 'mismatch';
+    const ownership = await assertLocalUserDataOwner(db, await readViewerId());
+    return requireOwned ? ownership === 'ok' : ownership !== 'mismatch';
   } catch {
     return false;
   }
@@ -307,25 +310,26 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   networkVariables: withLostHoldRule,
 });
 
-registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
-  document: GET_CLIMB,
-  surface: 'climb_detail',
-  boardNameOf: (variables) => variables.boardName,
-  // Detail has no filters — local whenever the exact scope is downloaded.
-  canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
-  resolveLocal: async (db, variables) => ({
-    climb: await getClimbLocal(db, {
-      boardName: variables.boardName,
-      layoutId: variables.layoutId,
-      angle: variables.angle,
-      climbUuid: variables.climbUuid,
-      viewerId: await readViewerId(),
+for (const document of [GET_CLIMB, GET_SPRAY_CLIMB])
+  registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
+    document,
+    surface: 'climb_detail',
+    boardNameOf: (variables) => variables.boardName,
+    // Detail has no filters — local whenever the exact scope is downloaded.
+    canServeLocal: (db, variables) => isBoardDownloadedLocally(db, scopeOf(variables)),
+    resolveLocal: async (db, variables) => ({
+      climb: await getClimbLocal(db, {
+        boardName: variables.boardName,
+        layoutId: variables.layoutId,
+        angle: variables.angle,
+        climbUuid: variables.climbUuid,
+        viewerId: await readViewerId(),
+      }),
     }),
-  }),
-  offlineFallback: () => ({ climb: null }),
-  isLocalMiss: (response) => response.climb === null,
-  enrichNetworkResponse: fillDetailRevisionNumbers,
-});
+    offlineFallback: () => ({ climb: null }),
+    isLocalMiss: (response) => response.climb === null,
+    enrichNetworkResponse: fillDetailRevisionNumbers,
+  });
 
 // Setter stats: who set on this board configuration (#5407). No filter-support
 // gate like search has — every predicate SetterStatsInput carries is expressible
@@ -531,6 +535,16 @@ export async function offlineAwareRequest<TResponse>(
   variables?: Variables,
   options?: { signal?: AbortSignal },
 ): Promise<TResponse> {
+  const suppliedVariables = variables as Record<string, unknown> | undefined;
+  if (document === GET_CLIMB && suppliedVariables?.boardName === 'spray') {
+    const layoutId = typeof suppliedVariables.layoutId === 'number' ? suppliedVariables.layoutId : null;
+    document = GET_SPRAY_CLIMB;
+    variables = {
+      ...variables,
+      sprayWallUuid:
+        suppliedVariables.sprayWallUuid ?? (layoutId === null ? undefined : getSprayWall(layoutId)?.wallUuid),
+    };
+  }
   const operation = OFFLINE_OPERATIONS.get(document);
   const signal = options?.signal;
   const credentialGeneration = getCredentialGeneration();
@@ -569,7 +583,7 @@ export async function offlineAwareRequest<TResponse>(
       if (
         localDb &&
         variables !== undefined &&
-        (await isLocalDataOwnerCurrent(localDb)) &&
+        (await isLocalDataOwnerCurrent(localDb, operation.boardNameOf(variables as never) === 'spray')) &&
         (await operation.canServeLocal(localDb, variables as never))
       ) {
         assertNotCancelled();
@@ -642,7 +656,7 @@ export async function offlineAwareRequest<TResponse>(
       const db = localDb ?? getDatabaseHandle();
       if (
         db &&
-        (await isLocalDataOwnerCurrent(db)) &&
+        (await isLocalDataOwnerCurrent(db, operation.boardNameOf(variables as never) === 'spray')) &&
         (localServiceable || (await operation.canServeLocal(db, variables as never)))
       ) {
         const rescued = (await operation.resolveLocal(db, variables as never)) as TResponse | null;

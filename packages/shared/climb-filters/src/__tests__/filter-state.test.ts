@@ -206,6 +206,16 @@ describe('toClimbSearchInput', () => {
     const result = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'drafts' }, board, pagination);
     expect(result.onlyDrafts).toBe(true);
     expect(result.projectsOnly).toBeUndefined();
+    expect(result.draftScope).toBeUndefined();
+  });
+
+  it('shares spray drafts without changing the ordinary collection', () => {
+    const sprayBoard = { ...board, boardName: 'spray' };
+    const draftSearch = toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'drafts' }, sprayBoard, pagination);
+    expect(draftSearch).toMatchObject({ onlyDrafts: true, draftScope: 'WALL' });
+    const publishedSearch = toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, sprayBoard, pagination);
+    expect(publishedSearch.onlyDrafts).toBeUndefined();
+    expect(publishedSearch.draftScope).toBeUndefined();
   });
 
   it('maps status=projects to projectsOnly', () => {

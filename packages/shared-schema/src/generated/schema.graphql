@@ -321,6 +321,11 @@ Arbitrary JSON data
 """
 scalar JSON
 
+enum DraftScope {
+  OWN
+  WALL
+}
+
 """
 A climbing problem/route on an interactive training board.
 Contains all information needed to display and light up the climb on the board.
@@ -621,6 +626,8 @@ input ClimbSearchInput {
   useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
+  "OWN lists personal drafts; WALL lists all drafts on an accessible spray wall."
+  draftScope: DraftScope
   "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
   onlyFavorited: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
@@ -6028,6 +6035,8 @@ type NewClimbCreatedEvent {
 }
 
 input SaveClimbInput {
+  "Optional stable client-generated climb UUID for idempotent offline replay."
+  uuid: ID
   "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
   privacy: PrivacyPublicationInput
     @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
@@ -6100,6 +6109,8 @@ input SaveMoonBoardClimbInput {
 }
 
 type SaveClimbResult {
+  "True when the UUID already existed and no fields were changed."
+  replayed: Boolean
   uuid: ID!
   synced: Boolean!
   "ISO timestamp of when the row was created"
@@ -6116,6 +6127,8 @@ updated by its setter within 24 hours of its first publish, on every board,
 spray walls included. The edit is made in place; no revision is recorded.
 """
 input UpdateClimbInput {
+  "Stable UUID for one edit; retries acknowledge the original committed edit."
+  clientMutationId: ID
   "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
   privacy: PrivacyPublicationInput
     @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
@@ -8029,7 +8042,15 @@ type Query {
   """
   Get a single climb by its UUID.
   """
-  climb(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: ID!): Climb
+  climb(
+    boardName: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+    climbUuid: ID!
+    sprayWallUuid: String
+  ): Climb
 
   """
   Setter usernames with climb counts for the given board, optionally filtered by username substring.
@@ -8760,7 +8781,7 @@ type Query {
   The spray wall occupying a catalogue layout id, for a client holding only a
   board config. Same visibility rules as `sprayWall`.
   """
-  sprayWallByLayout(layoutId: Int!): SprayWall
+  sprayWallByLayout(layoutId: Int!, sprayWallUuid: String): SprayWall
 
   """
   Everything needed to render a wall at one version: the photo, the homography
@@ -9057,6 +9078,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -9071,6 +9093,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -9085,6 +9108,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
     audience: SyncAudience = ALL
@@ -9110,6 +9134,7 @@ type Query {
     boardType: String!
     layoutId: Int
     sizeId: Int
+    sprayWallUuid: String
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!

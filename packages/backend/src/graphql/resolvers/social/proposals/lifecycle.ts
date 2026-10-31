@@ -132,7 +132,11 @@ export async function loadTargetClimb(
       and(
         eq(dbSchema.boardClimbs.uuid, climbUuid),
         climbDraftVisibilityCondition(
-          { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+          {
+            boardType: dbSchema.boardClimbs.boardType,
+            isDraft: dbSchema.boardClimbs.isDraft,
+            userId: dbSchema.boardClimbs.userId,
+          },
           viewerUserId,
         ),
         sprayClimbVisibilityCondition(

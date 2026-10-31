@@ -59,7 +59,7 @@ export type FeatureFlagDefinition = {
    * — the layer that actually knows the region — is overruled. Marking the flag
    * here makes the override apply in `__DEV__` builds only (QA still exercises
    * the path in a dev client) and be ignored in production, where PostHog stays
-   * authoritative. See `donation-links` and docs/feature-flags.md.
+   * authoritative. See `donation-links-v2` and docs/feature-flags.md.
    */
   policyControlled?: boolean;
 };
@@ -171,11 +171,17 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
-    key: 'donation-links',
+    key: 'donation-links-v2',
     label: 'Donation links',
     policyControlled: true,
     description:
-      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. An external donation link is a store-policy violation outside two narrow windows, and ONLY ONE OF THEM IS ENFORCED IN THE APP: iOS additionally requires an App Store storefront of USA, read natively, so an over-broad rollout cannot reach a non-US iPhone. Android has no such client guard — Play exposes no storefront to the app — so the PostHog targeting IS the guard, and it must be exactly: platform = Android AND country = AU AND date >= 2026-09-30. Rolling this out to Android by percentage, or to any other country, ships a policy violation.',
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On a phone the app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android and screenshot mode always get the unlinked text whatever this flag says. The Expo browser app ignores this flag and has its own, donation-links-web-kill. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
+  },
+  {
+    key: 'donation-links-web-kill',
+    label: 'Donation links kill switch (browser app)',
+    description:
+      'Emergency kill switch for support asks in the Expo browser app at /app, which no store rule covers and so ignores donation-links-v2. On hides the Support Boardsesh row in Account and turns the Acknowledgements link back into unlinked text, without a deploy. Native builds never read it. Unresolved reads as enabled.',
   },
   {
     key: 'climb-moderation-kill',
@@ -384,7 +390,7 @@ export function FeatureFlagsProvider({
   const value = useMemo<FeatureFlags>(() => {
     // Policy-controlled flags lose their override outside a dev build, so this
     // has to happen BEFORE the empty check: on a store binary a lone
-    // donation-links override leaves nothing to merge at all.
+    // donation-links-v2 override leaves nothing to merge at all.
     const honouredOverrides = applyOverridePolicy(overrides);
     const hasOverrides = Object.keys(honouredOverrides).length > 0;
     if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS && !hasOverrides) {

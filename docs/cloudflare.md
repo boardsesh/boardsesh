@@ -190,6 +190,17 @@ Capture and replay bytes are unchanged. The static edge ranges in
 until this list is updated. This preserves coarse region targeting, rather than
 making IP geolocation an exact location guarantee.
 
+### Web server country (`/support`)
+
+The www `/support` page picks its default currency (USD in the US, AUD
+elsewhere) from the same header. A Next.js server component cannot see its
+socket peer, so it trusts `CF-IPCountry` only when the last `X-Forwarded-For`
+hop, the one our ingress appends, is a Cloudflare address. The ranges and the
+check live in `@boardsesh/consent/edge-country`, which the backend's
+`flag-country.ts` imports too, so one list serves both. A direct-origin request
+reads as no country. The contract is in
+[production deploy](./production-deploy.md#the-support-link-contract).
+
 ### Consent province header
 
 Quebec consent prompting uses a trusted coarse province code. The declared

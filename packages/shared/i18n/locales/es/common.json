@@ -1166,6 +1166,16 @@
       "yes": "Sí",
       "no": "No",
       "unknown": "Desconocido"
+    },
+    "supportAsks": {
+      "accountRow": "Apoya Boardsesh",
+      "cardTitle": "Ayuda a construir Boardsesh",
+      "cardBody": "Boardsesh es gratis para quien escala. El apoyo mensual paga el tiempo que lleva construirlo.",
+      "giveMonthly": "Aportar cada mes",
+      "giveOnce": "Aportar una vez",
+      "hideCard": "Ocultar esta tarjeta",
+      "settingTitle": "Mostrar peticiones de apoyo",
+      "settingFooter": "Una fila «Apoya Boardsesh» en Cuenta y una tarjeta en Inicio la primera semana de cada mes."
     }
   },
   "lightControl": {

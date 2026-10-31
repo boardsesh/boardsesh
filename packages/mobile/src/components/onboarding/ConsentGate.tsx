@@ -240,7 +240,7 @@ export function ConsentGate(): null {
   useEffect(() => {
     if (!settled || segments[0] === 'privacy-consent') return;
     const destination = consumeConsentDestination();
-    if (destination) router.navigate(destination as Href);
-  }, [settled, segments, router]);
+    if (destination && isAuthenticated) router.navigate(destination as Href);
+  }, [settled, segments, router, isAuthenticated]);
   return null;
 }

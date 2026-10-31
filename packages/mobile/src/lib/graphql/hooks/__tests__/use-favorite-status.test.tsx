@@ -51,6 +51,8 @@ vi.mock('../use-social', () => ({
 }));
 vi.mock('../use-session-detail', () => ({ useSessionDetail: vi.fn(), useSessionPreview: vi.fn() }));
 vi.mock('../use-delete-account', () => ({ useDeleteAccountInfo: vi.fn(), useDeleteAccount: vi.fn() }));
+// Draft deletion owns native auth/storage dependencies and is covered separately.
+vi.mock('../use-delete-draft-climb', () => ({ useDeleteDraftClimb: vi.fn() }));
 vi.mock('../use-integrations', () => ({
   useIntegrationStatuses: vi.fn(),
   useDisconnectIntegration: vi.fn(),

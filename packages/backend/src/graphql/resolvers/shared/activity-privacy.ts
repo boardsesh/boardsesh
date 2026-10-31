@@ -36,7 +36,10 @@ function readableClimbCondition(
   viewerId: string | null | undefined,
 ): SQL {
   return and(
-    climbDraftVisibilityCondition({ isDraft: climb.isDraft, userId: climb.userId }, viewerId),
+    climbDraftVisibilityCondition(
+      { boardType: climb.boardType, isDraft: climb.isDraft, userId: climb.userId },
+      viewerId,
+    ),
     sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
   )!;
 }
@@ -53,7 +56,10 @@ function listedClimbCondition(
   viewerId: string | null | undefined,
 ): SQL {
   return and(
-    ownedOrPublicClimbCondition({ isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId }, viewerId),
+    ownedOrPublicClimbCondition(
+      { boardType: climb.boardType, isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
+      viewerId,
+    ),
     sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),
   )!;
 }

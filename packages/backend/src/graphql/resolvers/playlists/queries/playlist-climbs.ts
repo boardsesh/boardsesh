@@ -83,7 +83,10 @@ function buildSpecificBoardClimbJoinConditions(
     // The draft rule: a playlist anyone can open must not substitute its own
     // visibility for a draft's, which is its owner's alone. A published climb
     // shows whoever set it, unlisted included.
-    climbDraftVisibilityCondition({ userId: tables.climbs.userId, isDraft: tables.climbs.isDraft }, viewerUserId),
+    climbDraftVisibilityCondition(
+      { boardType: tables.climbs.boardType, userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
+      viewerUserId,
+    ),
     eq(tables.climbs.boardType, boardName),
     // A PUBLIC playlist would otherwise substitute its own visibility for the wall's:
     // add a private spray wall's climb to one and anybody who can open the playlist
@@ -146,7 +149,11 @@ function allBoardsWhereConditions(playlistId: bigint, viewerUserId: string | nul
   return [
     eq(dbSchema.playlistClimbs.playlistId, playlistId),
     climbDraftVisibilityCondition(
-      { userId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft },
+      {
+        boardType: dbSchema.boardClimbs.boardType,
+        userId: dbSchema.boardClimbs.userId,
+        isDraft: dbSchema.boardClimbs.isDraft,
+      },
       viewerUserId,
     ),
     sprayClimbVisibilityCondition(

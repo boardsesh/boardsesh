@@ -180,15 +180,22 @@ vi.mock('react-native-gesture-handler', () => {
     Gesture: {
       Pan: () => makeBuilder('pan'),
       Manual: () => makeBuilder('manual'),
-      Simultaneous: (...gestures: unknown[]) => gestures[0],
+      Simultaneous: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+        return composition;
+      },
       Tap: () => makeBuilder('tap'),
       LongPress: () => makeBuilder('longPress'),
       Exclusive: (...gestures: unknown[]) => {
-        rowGestures.exclusive = gestures.flatMap((gesture) => {
+        const captures = gestures.flatMap((gesture) => {
           const capture = rowGestures.captures.get(gesture);
           return capture ? [capture] : [];
         });
-        return {};
+        if (captures.some((capture) => capture.kind === 'longPress')) rowGestures.exclusive = captures;
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+        return composition;
       },
     },
   };

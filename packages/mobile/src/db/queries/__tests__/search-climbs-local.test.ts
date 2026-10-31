@@ -5,6 +5,8 @@ import { clearLocalUserId, ensureMutationQueueTable, stampLocalUserId } from '@b
 import type { OfflineDatabase, SqlExecutor, SqlRunResult, SqlValue } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
+import { getGradeLabel } from '../../../lib/grade-label';
+import { getClimbLocal } from '../get-climb-local';
 import {
   searchClimbsLocal,
   countClimbsLocal,
@@ -901,8 +903,8 @@ describe('searchClimbsLocal: spray climbs that lost a hold', () => {
     expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['lost', 'unknown', 'whole']);
   });
 
-  it('leaves the drafts list to the network', () => {
-    expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(false);
+  it('serves the spray drafts list offline', () => {
+    expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(true);
   });
 
   it('carries the count on the rows it lists, for the badge', async () => {
@@ -1905,5 +1907,129 @@ describe('searchClimbsLocal: liked climbs', () => {
 
     expect(uuids(await searchClimbsLocal(db, liked))).toEqual([]);
     expect(await countClimbsLocal(db, liked)).toBe(0);
+  });
+});
+
+describe('spray first-ascent grades before pagination', () => {
+  let db: TestSqliteDb;
+  const search = (overrides: Partial<ClimbSearchInput> = {}) =>
+    makeInput({
+      boardName: 'spray',
+      layoutId: 7,
+      sizeId: 5,
+      sortBy: 'difficulty',
+      ...overrides,
+    });
+  const addClimb = (uuid: string) => insertClimb(db, { uuid, boardType: 'spray', layoutId: 7, angle: 40 });
+  const addSend = (climbUuid: string, difficulty: number) =>
+    insertTick(db, {
+      uuid: `${climbUuid}-tick`,
+      climbUuid,
+      boardType: 'spray',
+      status: 'send',
+      difficulty,
+    });
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+  });
+
+  it('filters, counts, sorts and paginates new climbs by their first local ascent', async () => {
+    for (const [uuid, grade] of [
+      ['low', 16],
+      ['middle', 20],
+      ['high', 24],
+    ] as const) {
+      await addClimb(uuid);
+      await addSend(uuid, grade);
+    }
+    await insertTick(db, {
+      uuid: 'later',
+      climbUuid: 'middle',
+      boardType: 'spray',
+      status: 'flash',
+      difficulty: 30,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    const input = search({ minGrade: 16, maxGrade: 24, pageSize: 1 });
+    expect(await countClimbsLocal(db, input)).toBe(3);
+    for (const [page, uuid, grade] of [
+      [0, 'high', 24],
+      [1, 'middle', 20],
+      [2, 'low', 16],
+    ] as const) {
+      const result = await searchClimbsLocal(db, { ...input, page });
+      expect(uuids(result)).toEqual([uuid]);
+      expect(result.hasMore).toBe(page < 2);
+      expect(result.climbs[0].difficulty).toBe(getGradeLabel(grade, 'spray'));
+    }
+    expect(uuids(await searchClimbsLocal(db, search({ sortOrder: 'asc' })))).toEqual(['low', 'middle', 'high']);
+    expect(await countClimbsLocal(db, search({ minGrade: 30 }))).toBe(0);
+  });
+
+  it('preserves canonical stats and Boardsesh grade precedence in search, count and detail', async () => {
+    await addClimb('stats');
+    await addSend('stats', 30);
+    await insertStat(db, { climbUuid: 'stats', boardType: 'spray', displayDifficulty: 16 });
+    await insertGrade(db, { climbUuid: 'stats', boardType: 'spray', universalGrade: 24 });
+    await addClimb('estimate');
+    await addSend('estimate', 30);
+    await insertGrade(db, { climbUuid: 'estimate', boardType: 'spray', localGrade: 18, universalGrade: 22 });
+    expect(uuids(await searchClimbsLocal(db, search({ minGrade: 16, maxGrade: 16 })))).toEqual(['stats']);
+    expect(uuids(await searchClimbsLocal(db, search({ minGrade: 22, maxGrade: 22 })))).toEqual(['estimate']);
+    expect(await countClimbsLocal(db, search({ minGrade: 30 }))).toBe(0);
+    expect(await countClimbsLocal(db, search({ gradeSource: 'BOARDSESH', minGrade: 24, maxGrade: 24 }))).toBe(1);
+    expect(uuids(await searchClimbsLocal(db, search()))).toEqual(['estimate', 'stats']);
+    expect(uuids(await searchClimbsLocal(db, search({ gradeSource: 'BOARDSESH' })))).toEqual(['stats', 'estimate']);
+    const detail = await getClimbLocal(db, {
+      boardName: 'spray',
+      layoutId: 7,
+      angle: 40,
+      climbUuid: 'estimate',
+      viewerId: LOCAL_OWNER,
+    });
+    expect(detail?.boardseshDifficulty).toBe(22);
+    expect(detail?.difficulty).not.toBe(getGradeLabel(30, 'spray'));
+  });
+
+  it('ignores attempts, other accounts, anonymous ticks, other angles and other boards', async () => {
+    await addClimb('ungraded');
+    for (const tick of [
+      { uuid: 'attempt', status: 'attempt' },
+      { uuid: 'other-user', status: 'send', userId: 'someone-else' },
+      { uuid: 'anonymous', status: 'send', userId: null },
+      { uuid: 'other-angle', status: 'send', angle: 35 },
+      { uuid: 'other-board', status: 'send', boardType: 'kilter' },
+    ])
+      await insertTick(db, { climbUuid: 'ungraded', boardType: 'spray', difficulty: 20, ...tick });
+    expect(await countClimbsLocal(db, search({ minGrade: 20, maxGrade: 20 }))).toBe(0);
+    expect(uuids(await searchClimbsLocal(db, search({ minGrade: 20, maxGrade: 20 })))).toEqual([]);
+    await insertTick(db, {
+      uuid: 'first-flash',
+      climbUuid: 'ungraded',
+      boardType: 'spray',
+      status: 'flash',
+      difficulty: 20,
+    });
+    expect(await countClimbsLocal(db, search({ minGrade: 20, maxGrade: 20 }))).toBe(1);
+    await clearLocalUserId(db);
+    expect(await countClimbsLocal(db, search({ minGrade: 20, maxGrade: 20 }))).toBe(0);
+  });
+
+  it('uses the same fallback on the indexed ascent-ranking path', async () => {
+    for (const uuid of ['popular-a', 'popular-b', 'popular-c']) {
+      await addClimb(uuid);
+      await addSend(uuid, 20);
+      await insertStat(db, { climbUuid: uuid, boardType: 'spray', ascensionistCount: 10 });
+    }
+    const input = search({ sortBy: 'ascents', minGrade: 20, maxGrade: 20, pageSize: 1 });
+    expect(await countClimbsLocal(db, input)).toBe(3);
+    const result = await searchClimbsLocal(db, input);
+    expect(uuids(result)).toEqual(['popular-c']);
+    expect(result.hasMore).toBe(true);
+    expect(result.climbs[0].difficulty).toBe(getGradeLabel(20, 'spray'));
   });
 });

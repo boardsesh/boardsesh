@@ -29,11 +29,15 @@ import { useDonationLinksAllowed } from '../../lib/donation-links';
 const build = vi.hoisted(() => ({ dev: false }));
 vi.mock('../../lib/is-dev-build', () => ({ isDevBuild: () => build.dev }));
 
-// Android: the platform with no client-side region guard, so the override is
-// the only thing standing between a tester and a policy violation.
-const platformMock = vi.hoisted(() => ({ OS: 'android' as string }));
+// A US-storefront iPhone: the one install where the predicate can say yes, so
+// the flag (and therefore the override) is the last thing deciding it.
+const platformMock = vi.hoisted(() => ({ OS: 'ios' as string }));
 vi.mock('react-native', () => ({ Platform: platformMock }));
-vi.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
+// Not an admin: these cases are about the override policy, not the admin QA path.
+vi.mock('../../lib/graphql/hooks/use-is-admin', () => ({ useIsAdmin: () => ({ isAdmin: false, isLoading: false }) }));
+vi.mock('expo-modules-core', () => ({
+  requireOptionalNativeModule: () => ({ getCountryCode: async () => 'USA' }),
+}));
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   const storage: Record<string, string> = {};
@@ -53,33 +57,33 @@ function renderPredicate() {
 
 function renderFlagValue() {
   const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
-  return renderHook(() => useFeatureFlag('donation-links'), { wrapper }).result;
+  return renderHook(() => useFeatureFlag('donation-links-v2'), { wrapper }).result;
 }
 
 beforeEach(() => {
   build.dev = false;
-  platformMock.OS = 'android';
+  platformMock.OS = 'ios';
   resetFeatureFlagOverridesForTests();
 });
 
 describe('policy-controlled flag overrides', () => {
-  it('marks donation-links policy-controlled in the catalog', () => {
-    const definition = FEATURE_FLAG_DEFINITIONS.find((entry) => entry.key === 'donation-links');
+  it('marks donation-links-v2 policy-controlled in the catalog', () => {
+    const definition = FEATURE_FLAG_DEFINITIONS.find((entry) => entry.key === 'donation-links-v2');
 
     expect(definition).toBeDefined();
-    expect(POLICY_CONTROLLED_FLAG_KEYS.has('donation-links')).toBe(true);
+    expect(POLICY_CONTROLLED_FLAG_KEYS.has('donation-links-v2')).toBe(true);
   });
 
   it('ignores a policy-controlled override in a production build', () => {
-    setFeatureFlagOverride('donation-links', true);
+    setFeatureFlagOverride('donation-links-v2', true);
 
-    expect(applyOverridePolicy({ 'donation-links': true })).toEqual({});
+    expect(applyOverridePolicy({ 'donation-links-v2': true })).toEqual({});
   });
 
   it('honours a policy-controlled override in a dev build', () => {
     build.dev = true;
 
-    expect(applyOverridePolicy({ 'donation-links': true })).toEqual({ 'donation-links': true });
+    expect(applyOverridePolicy({ 'donation-links-v2': true })).toEqual({ 'donation-links-v2': true });
   });
 
   it('leaves ordinary overrides alone in a production build', () => {
@@ -91,11 +95,11 @@ describe('policy-controlled flag overrides', () => {
   });
 
   it('strips only the policy-controlled key, keeping the rest', () => {
-    expect(applyOverridePolicy({ 'donation-links': true, 'garmin-watch': true })).toEqual({ 'garmin-watch': true });
+    expect(applyOverridePolicy({ 'donation-links-v2': true, 'garmin-watch': true })).toEqual({ 'garmin-watch': true });
   });
 
   it('does not let a tester override reach the flag bag on a store build', async () => {
-    setFeatureFlagOverride('donation-links', true);
+    setFeatureFlagOverride('donation-links-v2', true);
     const result = renderFlagValue();
 
     await waitFor(() => expect(result.current).toBeUndefined());
@@ -103,14 +107,14 @@ describe('policy-controlled flag overrides', () => {
 
   it('lets the override through in a dev client, so QA can exercise the CTA', async () => {
     build.dev = true;
-    setFeatureFlagOverride('donation-links', true);
+    setFeatureFlagOverride('donation-links-v2', true);
     const result = renderFlagValue();
 
     await waitFor(() => expect(result.current).toBe(true));
   });
 
   it('keeps the predicate false on a store build even with the override forced on', async () => {
-    setFeatureFlagOverride('donation-links', true);
+    setFeatureFlagOverride('donation-links-v2', true);
     const result = renderPredicate();
 
     // Give the provider's override load and PostHog backstop a chance to settle;
@@ -121,9 +125,22 @@ describe('policy-controlled flag overrides', () => {
 
   it('turns the predicate on in a dev client with the override forced on', async () => {
     build.dev = true;
-    setFeatureFlagOverride('donation-links', true);
+    setFeatureFlagOverride('donation-links-v2', true);
     const result = renderPredicate();
 
     await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it('keeps the predicate false on Android even in a dev client with the override forced on', async () => {
+    build.dev = true;
+    platformMock.OS = 'android';
+    setFeatureFlagOverride('donation-links-v2', true);
+    const flag = renderFlagValue();
+    const result = renderPredicate();
+
+    // The override does reach the flag bag in a dev client, so a false here is
+    // the platform guard answering, not an unresolved flag.
+    await waitFor(() => expect(flag.current).toBe(true));
+    expect(result.current).toBe(false);
   });
 });

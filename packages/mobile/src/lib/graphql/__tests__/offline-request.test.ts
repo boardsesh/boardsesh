@@ -133,6 +133,7 @@ import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
+  GET_SPRAY_CLIMB,
   type SearchClimbsQueryResponse,
   type SearchClimbsCountQueryResponse,
   type GetClimbQueryResponse,
@@ -457,6 +458,8 @@ describe('offlineAwareRequest — spray searches over the network', () => {
   });
 
   it('leaves the local read to apply the rule itself', async () => {
+    ownerStamp.userId = 'me';
+    favoritesGate.readLocalUserId.mockResolvedValue('me');
     isBoardDownloadedLocally.mockResolvedValue(true);
     await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: sprayInput });
     expect(searchClimbsLocal).toHaveBeenCalledWith(fakeDb, sprayInput);
@@ -465,6 +468,12 @@ describe('offlineAwareRequest — spray searches over the network', () => {
 });
 
 describe('offlineAwareRequest — GET_CLIMB', () => {
+  it('uses the capability-aware document for legacy spray detail callers only', async () => {
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const variables = { ...climbVars, boardName: 'spray', sprayWallUuid: 'held-wall' };
+    await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, variables);
+    expect(request).toHaveBeenLastCalledWith(GET_SPRAY_CLIMB, variables);
+  });
   it('reads detail locally when downloaded, without consulting the filter-support gate', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(true);

@@ -523,6 +523,7 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 | `Wall Control Shown`             | `state` (`connect` / `put_on_wall`), `climbUuid` | `packages/mobile/src/components/play-drawer/use-wall-control-shown.ts`, via `analytics-wall-control.ts`. `connect` once per player open, `put_on_wall` once per climb per open, only while drawn. QA builds of PR #7017 also sent `variant`. |
 | `Wall Control Tapped`            | `state` (`connect` / `on_wall_unlinked` / `put_on_wall` / `lit` / `dark` / `crew` / `take_wall` / `release_wall` / `none`), `action` (`disconnect` / `connect` / `put_on_wall` / `relight` / `relay` / `take_wall` / `release_wall` / `noop`), `control` (`button` / `bulb` / `mini_bar`) | `use-wall-control.ts`, via `analytics-wall-control.ts`. One handler for every view of the player's board control: the wall button (full width, or in a workout's top row), the first row's bulb, and the MiniPlayer's bulb standing in for a tablet or open-Duo player's, with the bulb chosen (`mini_bar`). Pre-release QA builds sent `wall_control` for the button. `disconnect` is a tap on You have the board (`state: lit`); pre-release QA builds sent `open_sheet` there. |
 | `Quick Tick Opened`              | `source` (mobile `play_fab` / `climb_actions` / `queue_bar`), `placement?` (`regular` / `inline`) | `use-log-ascent-action.ts`, `use-climb-actions.ts`, `PlayCore.tsx`. `placement` comes only from the tab-bar platter's tick, whose `source` stays `queue_bar` (shared with the JS bars). |
+| `Support Link Tapped`            | `surface` (`acknowledgements` / `account` / `home-card`), `cadence` (`monthly` / `once`, Home card only) | `packages/mobile/src/lib/analytics-support-link.ts`, called from `app/acknowledgements.tsx`, the Account row in `app/user-drawer.tsx` and `src/components/home/HomeSupportCard.tsx`. Fires on the tap, before the in-app browser opens. Only US-storefront iPhones and the Expo browser app can see a link (`donation-links.ts`). |
 | `Bluetooth Unavailable`          | `reason` (`unauthorized` / `powered_off` / `unsupported` / `unknown`), `surface` (`connect` / `quickstart_scan`), `platform`, `boardName` (connect only) | `packages/mobile/src/lib/ble/bluetooth-unavailable.ts`, called from `bluetooth-unavailable-alert.ts` (connect) and `use-board-scan.ts` (quickstart). Fires with the alert or sheet state.                                                                    |
 | `Board Quickstart Scan Finished` | `outcome` (`completed` / `stopped` / `error`), `found_count`, `serialless_count`, `moonboard_count`                                                 | `packages/mobile/src/lib/ble/use-board-scan.ts`. Once per quickstart scan that started the radio.                                                                                                                                                             |
 
@@ -808,3 +809,23 @@ Two events from `packages/mobile/app/(tabs)/climbs/index.tsx`. Neither carries t
 `activeFilterCount` leaves the name out, like `Climb Search Performed`; `hasName` covers it. Expect
 the `hasQuery` share of `Climb Search Performed` to move from this build on: name search now starts
 inside Filters instead of a field on the page.
+## Support page clicks (www)
+
+One www-only event from `/support`, built by `supportCtaClicked` in
+`packages/shared/analytics/src/support-events.ts` and sent through
+`packages/web/app/support/support-analytics.ts`. It goes through www's `track()`, so it is
+consent-gated and sends nothing on a dev or preview host. It never carries a button label, a
+link or an amount: labels come from runtime env and name amounts.
+
+| Event | Properties | Emit sites | When |
+| --- | --- | --- | --- |
+| `Support CTA Clicked` | `cadence` (`monthly` / `once` / `sponsors`), `currency` (`aud` / `usd` / `none` for GitHub Sponsors), `src` (the page's sanitised `?src=`, `web-support` by default; `web-home-banner` from the December banner, `app-<surface>` from the app), `option` (1-based position in the monthly list, 1 for a single button), `placement` (`hero` / `options`) | `support-content.tsx`, `support-chooser.tsx` | Every click on a button that opens Stripe or GitHub Sponsors in a new tab |
+
+Reading it:
+
+- **Clicks by source**: `Support CTA Clicked` broken down by `src`. Match a gift to its source in
+  Stripe by the Payment's `client_reference_id`, which carries the same value.
+- **The homepage banner** (on `/` only, days 1 to 7 of each month UTC) has no event of its own. Its visits
+  are `$pageview` on `/support` with `src=web-home-banner` in `$current_url`, and its clicks are
+  `Support CTA Clicked` with that `src`.
+- **The hero's "Go monthly"** scrolls to the options on the same page and fires nothing.

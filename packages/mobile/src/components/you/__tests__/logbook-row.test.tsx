@@ -150,10 +150,24 @@ vi.mock('react-native-gesture-handler', () => {
     Gesture: {
       Tap: gestureChain,
       LongPress: gestureChain,
-      Pan: () => gestureChain(true),
-      Manual: gestureChain,
-      Simultaneous: (...gestures: unknown[]) => gestures[0],
-      Exclusive: (...g: unknown[]) => g[0],
+      Pan: () => {
+        rowGestures.pan = gestureChain(true);
+        return rowGestures.pan;
+      },
+      Manual: () => {
+        rowGestures.manual = gestureChain();
+        return rowGestures.manual;
+      },
+      Simultaneous: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+        return composition;
+      },
+      Exclusive: (...gestures: unknown[]) => {
+        const composition = {};
+        rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+        return composition;
+      },
     },
     GestureDetector: ({ children, gesture }: { children?: ReactNode; gesture: unknown }) => {
       rowGestures.mounted.push(gesture);

@@ -89,9 +89,13 @@ export async function getPrivacySettings(userId: string): Promise<PrivacySetting
     enabled: privacyControlsEnabled(),
   };
 }
-export async function isApprovedFollower(viewerId: ViewerId, subjectId: string): Promise<boolean> {
+export async function isApprovedFollower(
+  viewerId: ViewerId,
+  subjectId: string,
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<boolean> {
   if (!viewerId) return false;
-  const [follow] = await db
+  const [follow] = await executor
     .select({ id: schema.userFollows.id })
     .from(schema.userFollows)
     .where(and(eq(schema.userFollows.followerId, viewerId), eq(schema.userFollows.followingId, subjectId)))
@@ -302,9 +306,13 @@ export async function getResourcePrivacy(
     hasOverride: !!override,
   };
 }
-async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId) {
+async function resourceViewer(
+  resource: ResourcePrivacyState,
+  viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
+) {
   const [grant] = viewerId
-    ? await db
+    ? await executor
         .select()
         .from(schema.resourceGrants)
         .where(
@@ -318,7 +326,7 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
     : [];
   const [legacyParticipant] =
     viewerId && resource.kind === 'session' && !resource.hasOverride
-      ? await db
+      ? await executor
           .select({ userId: schema.boardSessionParticipants.userId })
           .from(schema.boardSessionParticipants)
           .where(
@@ -331,7 +339,7 @@ async function resourceViewer(resource: ResourcePrivacyState, viewerId: ViewerId
       : [];
   return {
     isOwner: !!viewerId && resource.ownerId === viewerId,
-    isApprovedFollower: !!resource.ownerId && (await isApprovedFollower(viewerId, resource.ownerId)),
+    isApprovedFollower: !!resource.ownerId && (await isApprovedFollower(viewerId, resource.ownerId, executor)),
     hasApprovedGrant: grant?.status === 'approved' || (!!legacyParticipant && grant?.status !== 'revoked'),
     hasRevokedGrant: grant?.status === 'revoked',
     inheritFollowers: resource.inheritFollowers,
@@ -355,10 +363,11 @@ export async function resourceAccess(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<{ withLink: boolean; withoutLink: boolean }> {
-  const resource = await getResourcePrivacy(kind, resourceId);
+  const resource = await getResourcePrivacy(kind, resourceId, executor);
   if (!resource) return { withLink: false, withoutLink: false };
-  const viewer = await resourceViewer(resource, viewerId);
+  const viewer = await resourceViewer(resource, viewerId, executor);
   return {
     withLink: canReadResource(resource.audience, viewer),
     withoutLink: canReadResource(resource.audience === 'unlisted' ? 'invite_only' : resource.audience, viewer),
@@ -369,16 +378,18 @@ export async function canAccessResource(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
-  return (await resourceAccess(kind, resourceId, viewerId)).withLink;
+  return (await resourceAccess(kind, resourceId, viewerId, executor)).withLink;
 }
 /** The `withoutLink` reading of {@link resourceAccess}: listings, logs, numeric ids, spray slugs. */
 export async function canAccessResourceWithoutLink(
   kind: PrivacyResourceKind,
   resourceId: string,
   viewerId: ViewerId,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
-  return (await resourceAccess(kind, resourceId, viewerId)).withoutLink;
+  return (await resourceAccess(kind, resourceId, viewerId, executor)).withoutLink;
 }
 /**
  * Access to a board through whatever key the caller holds. Only the board's own
