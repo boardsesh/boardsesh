@@ -268,6 +268,8 @@
     "lib/ios-profile-identity.ts",
     "lib/ios-simulator-lease.ts",
     "lib/ios-build-export.ts",
+    "lib/ios-simulator-architecture.d.mts",
+    "__tests__/ios-simulator-architecture.test.ts",
     "lib/metro-host.ts",
     "lib/metro-dev-server.ts",
     "lib/mobile-stories.ts",

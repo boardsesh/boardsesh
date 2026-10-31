@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   record:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     # Three locale children already measured 91 minutes; four plus setup can
     # exceed two hours. Diagnostic/single-take modes get 45 minutes; English gets 60.
     timeout-minutes: ${{ inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile' || inputs.mode == 'record-crew') && 45 || 180 }}
@@ -34,6 +34,16 @@ jobs:
       MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout workflow-owned simulator architecture guard
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .video-arch-tools
+          sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Reject recording sources without the reviewed host-native builder
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -42,7 +52,7 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Compute screenshot app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/lib/ios-simulator-architecture.mjs', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
       - name: Restore screenshot dev-client
         id: app-cache
         uses: actions/cache/restore@v4
@@ -52,6 +62,10 @@ jobs:
       - name: Build dev-client on cache miss
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+      - name: Validate actual simulator app slices before use
+        env:
+          VIDEO_APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Save screenshot dev-client
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

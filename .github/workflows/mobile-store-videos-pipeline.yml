@@ -97,7 +97,7 @@ jobs:
 
   app:
     needs: preflight
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 60
     outputs:
       cache-key: ${{ steps.appkey.outputs.key }}
@@ -106,15 +106,24 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
+      - name: Checkout workflow-owned simulator architecture guard
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .video-arch-tools
+          sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Reject recording sources without the reviewed host-native builder
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
       - name: Compute screenshot app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/lib/ios-simulator-architecture.mjs', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         id: app-cache
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
-          lookup-only: true
       - uses: voidzero-dev/setup-vp@v1
         if: steps.app-cache.outputs.cache-hit != 'true'
         with:
@@ -125,6 +134,10 @@ jobs:
       - name: Build dev-client on cache miss
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+      - name: Validate actual simulator app slices before use
+        env:
+          VIDEO_APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - uses: actions/cache/save@v4
         if: steps.app-cache.outputs.cache-hit != 'true'
         with:
@@ -140,7 +153,7 @@ jobs:
 
   record:
     needs: [preflight, app]
-    runs-on: macos-26
+    runs-on: macos-26-intel
     # Measured English MoonBoard recording: 38.45 min x 4 locales + setup exceeds 120 min.
     timeout-minutes: 180
     environment: Production
@@ -154,9 +167,21 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
+      - name: Checkout workflow-owned simulator architecture guard
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .video-arch-tools
+          sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: ./.github/actions/ios-store-video-tools
         with:
           app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Validate restored app slices before recorder installation
+        env:
+          VIDEO_APP_CACHE_KEY: ${{ needs.app.outputs.cache-key }}
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Record ordinary app takes in all four locales
         env:
           KIND: ${{ matrix.kind }}
@@ -191,7 +216,7 @@ jobs:
     # the shared recording account participates in only one live session.
     needs: [preflight, app, record]
     if: needs.preflight.outputs.crew != '[]'
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 240
     environment: Production
     concurrency:
@@ -202,9 +227,21 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
+      - name: Checkout workflow-owned simulator architecture guard
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .video-arch-tools
+          sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: ./.github/actions/ios-store-video-tools
         with:
           app-cache-key: ${{ needs.app.outputs.cache-key }}
+      - name: Validate restored app slices before recorder installation
+        env:
+          VIDEO_APP_CACHE_KEY: ${{ needs.app.outputs.cache-key }}
+        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Record the selected crew stories serially
         env:
           CREW_KINDS: ${{ needs.preflight.outputs.crew }}

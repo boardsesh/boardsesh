@@ -23,7 +23,7 @@ the moment the app changes.
 ### CI measurement (Phase 0)
 
 Dispatch **Mobile Store Videos (Measure)** to record MoonBoard in en-US, es, fr and de
-on one macOS 26 runner, then render on Ubuntu. It reuses the screenshot
+on one standard `macos-26-intel` runner, then render on Ubuntu. It reuses the screenshot
 dev-client cache and checksum-pinned Maestro. Set `SCREENSHOT_USER_EMAIL` and
 `SCREENSHOT_USER_PASSWORD` in the same scope as the screenshot workflow.
 MoonBoard needs neither a crew account nor physical Live Activity footage.
@@ -47,6 +47,35 @@ arguments are never collected.
 Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
 green dispatch. Those measurements decide Phase 5 optimizations; estimates
 are not recorded as measurements. This dispatch does not write to R2 or Apple.
+
+### Video simulator architecture and memory
+
+The ordinary video app producer, record matrix, crew job and measurement captures
+use `macos-26-intel`: GitHub documents 14 GB on this standard Intel runner, and
+standard runners are free for public repositories ([runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)).
+This keeps the SDK 26.5 phone capture contract separate from the SDK 27 Duo
+screenshot pipeline; no larger paid runner or account setting is required. More
+RAM is headroom, not evidence that memory caused an earlier failed tap.
+
+The simulator builder validates Node against `RUNNER_ARCH` and builds one native
+slice: ARM64 hosts retain `arm64`, Intel hosts use `x86_64`. The main executable
+and Debug companion must have exactly that real Mach-O slice before export,
+cache save and recorder installation, including cache hits. Cache keys include
+runner architecture and the architecture helper. An ARM cache cannot serve Intel.
+
+The workflow checks out its guard from its own immutable revision independently
+of the selected recording source. A historical source without the reviewed
+host-aware builder is rejected before building or saving a mislabeled cache.
+Select an exact reviewed release candidate carrying the coherent builder; the
+workflow never overlays or silently patches the app source. Source/native hashes
+and runtime gates still apply. SDK 27 screenshot jobs and frozen ARM diagnostic
+refs are unchanged.
+
+An actual Intel private crew capture remains required: privacy-off gate before
+Start, invite/secondary join, complete frames, session/device/process cleanup,
+and primary/secondary warmup plus pressure/RSS/compression/swap metrics. Preserve
+one-worker Metros and deferred secondary preparation. Measure throughput before
+assuming all selected kinds/locales fit the 240-minute serial crew budget.
 
 ### Open-train Search Results pipeline
 
@@ -526,7 +555,7 @@ CI memory diagnostics and a complete crew take remain the check that these
 reductions fit the runner; occupancy near 99% with one simulator is not proof
 that the second simulator caused the failure.
 
-To check the crew take on the standard 7 GiB CI runner, dispatch
+To check the crew take on the standard Intel 14 GiB CI runner, dispatch
 **Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
 It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
 source SHA, and skips rendering and publishing. It uses the existing repository
