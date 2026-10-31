@@ -57,7 +57,8 @@
       "loadError": "No se pudieron cargar los escaladores",
       "retry": "Inténtalo de nuevo",
       "instagramLink": "Instagram",
-      "instagramOpenError": "No se pudo abrir Instagram"
+      "instagramOpenError": "No se pudo abrir Instagram",
+      "supporterTag": "Mecenas"
     },
     "profile": {
       "title": "Perfil",

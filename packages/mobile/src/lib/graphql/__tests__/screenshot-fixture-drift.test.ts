@@ -60,6 +60,7 @@ import * as sharedPrivacy from '@boardsesh/graphql/operations/privacy';
 import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 import * as sharedAnalyticsConsent from '@boardsesh/graphql/operations/analytics-consent';
 import * as sharedAppleAdsAttribution from '@boardsesh/graphql/operations/apple-ads-attribution';
+import * as sharedSupport from '@boardsesh/graphql/operations/support';
 
 import {
   BATCHED_OPERATIONS,
@@ -183,6 +184,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/proposals': sharedProposals,
   '@boardsesh/graphql/operations/qa': sharedQa,
   '@boardsesh/graphql/operations/queue-session': sharedQueueSession,
+  '@boardsesh/graphql/operations/support': sharedSupport,
 };
 
 // Build the schema inside this test's own `graphql` instance. Importing a

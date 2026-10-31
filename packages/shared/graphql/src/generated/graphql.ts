@@ -16102,6 +16102,7 @@ export type GetPublicProfileQuery = {
     followerCount: number;
     followingCount: number;
     isFollowedByMe: boolean;
+    isSupporter?: boolean | null;
   } | null;
 };
 
@@ -26082,6 +26083,7 @@ export const GetPublicProfileDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isSupporter' } },
               ],
             },
           },

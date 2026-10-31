@@ -161,6 +161,13 @@ export const SESSION_REST_CADENCE_SELECTION =
  */
 const GET_SESSION_PERMANENCE_SELECTION = 'isPermanent';
 
+/**
+ * The selection a pinned GetPublicProfile recording predates: the nullable
+ * supporter tag (docs/supporters.md). Replayed as null, so a capture shows the
+ * profile with no tag, exactly as it rendered when recorded.
+ */
+const PUBLIC_PROFILE_SUPPORTER_SELECTION = 'isSupporter';
+
 /** Recordings from the same fixture set that a compatibility adapter may cite. */
 export type ReplayCompatibilityEvidence = {
   /**
@@ -200,6 +207,7 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   roster frame never is.
  * - GetSession: the non-null `isPermanent`, taken from what the set recorded
  *   (`replayGetSessionWithPermanence`), never defaulted.
+ * - GetPublicProfile: the profile's nullable `isSupporter`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -223,6 +231,7 @@ export function replayCompatibleFixtureResponse(
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
   if (operationName === 'SessionUpdates') return replaySessionUpdatesWithoutRestCadence(requestQuery, fixture);
+  if (operationName === 'GetPublicProfile') return replayPublicProfileWithoutSupporterTag(requestQuery, fixture);
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
@@ -358,6 +367,24 @@ function replayDiscoverPlaylistsWithoutGrades(
       },
     },
   };
+}
+
+function replayPublicProfileWithoutSupporterTag(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  // A whole token, exactly once: `matchesWithoutSelection` alone would also
+  // accept the name spliced into another field's.
+  if (normalizeDocument(requestQuery).split(` ${PUBLIC_PROFILE_SUPPORTER_SELECTION} `).length !== 2) return null;
+  if (!matchesWithoutSelection(requestQuery, PUBLIC_PROFILE_SUPPORTER_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const profile = data.publicProfile;
+  if (profile === null) return { response };
+  // A recording that already carries the tag is not one this shim was written for.
+  if (!isRecord(profile) || profile.isSupporter !== undefined) return null;
+  return { response: { ...response, data: { ...data, publicProfile: { ...profile, isSupporter: null } } } };
 }
 
 function replaySmartPlaylistWithoutUnfilteredCount(

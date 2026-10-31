@@ -142,6 +142,29 @@ resolver (`resolveProfileSupporterTag` in
 `publicSupporters(limit, offset)` lists the same set (opted in and current),
 newest `supported_at` first, at most 500 per page.
 
+Where it shows:
+
+- **Web profile** (`/profile/[user_id]`): `server-profile-data.ts` selects
+  `isSupporter` in its `WebProfile` query and `user-card.tsx` renders an outlined
+  "Supporter" chip next to the name. Only `true` renders it; `false`, `null` and a
+  missing field hide it.
+- **Mobile profile**: `GET_PUBLIC_PROFILE` selects `isSupporter` and
+  `PublicProfileHeaderBlock` renders a small neutral pill beside the name (the
+  `DraftChip` shape). Same rule: only `true`.
+- **Mobile Acknowledgements**: a paged `FlashList` of `publicSupporters`, 30 per
+  end-reach (`use-public-supporters.ts`), each opening that climber's profile.
+  A failed page says so in one line above a Retry button; the rows already
+  loaded stay.
+  Its copy names no payment processor or store, because the screen ships in
+  every storefront.
+- The labels are `profile:page.supporterTag` (web) and
+  `you:mobile.social.supporterTag` (mobile), the same word in each locale;
+  `packages/shared/i18n/src/__tests__/supporter-tag-copy.test.ts` pins that and
+  keeps perk words and processor names out of the copy.
+- Screenshot replay: the pinned `GetPublicProfile` recording predates the field,
+  so replay fills `isSupporter: null` (no tag) instead of needing a re-record
+  (`docs/mobile-screenshot-fixtures.md`).
+
 ## GraphQL
 
 Schema in `packages/shared-schema/src/schema/support.ts`.

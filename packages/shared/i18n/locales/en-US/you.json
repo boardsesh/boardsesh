@@ -57,7 +57,8 @@
       "loadError": "Couldn't load climbers",
       "retry": "Try again",
       "instagramLink": "Instagram",
-      "instagramOpenError": "Couldn't open Instagram"
+      "instagramOpenError": "Couldn't open Instagram",
+      "supporterTag": "Supporter"
     },
     "profile": {
       "title": "Profile",

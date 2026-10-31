@@ -372,6 +372,67 @@ describe('legacy DiscoverPlaylists replay compatibility', () => {
   });
 });
 
+describe('legacy GetPublicProfile replay compatibility', () => {
+  const legacy =
+    'query GetPublicProfile($userId: ID!) { publicProfile(userId: $userId) { id displayName followerCount isFollowedByMe } }';
+  const current = legacy.replace('isFollowedByMe }', 'isFollowedByMe isSupporter }');
+  const fixture = (publicProfile: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetPublicProfile',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { userId: 'u1' },
+    response: { data: { publicProfile } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('replays the recorded profile with no supporter tag, without mutating the recording', () => {
+    const recorded = fixture({ id: 'u1', displayName: 'Ada', followerCount: 2, isFollowedByMe: false });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          publicProfile: { id: 'u1', displayName: 'Ada', followerCount: 2, isFollowedByMe: false, isSupporter: null },
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('replays a recorded missing profile unchanged', () => {
+    const recorded = fixture(null);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({ response: recorded.response });
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture({ id: 'u1', displayName: 'Ada', followerCount: 2, isFollowedByMe: false });
+    expect(
+      replayCompatibleFixtureResponse(current.replace('id displayName', 'id displayName bio'), recorded),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('isSupporter', 'isSupporter isSupporter'), recorded),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(legacy.replace('displayName', 'displayNameisSupporter'), recorded),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries the tag', () => {
+    const recorded = fixture({
+      id: 'u1',
+      displayName: 'Ada',
+      followerCount: 2,
+      isFollowedByMe: false,
+      isSupporter: true,
+    });
+    expect(replayCompatibleFixtureResponse(current, recorded)).toBeNull();
+  });
+});
+
 describe('legacy GetSmartPlaylist replay compatibility', () => {
   const legacy =
     'query GetSmartPlaylist($input: GetSmartPlaylistInput!) { smartPlaylist(input: $input) { meta { type } climbs { uuid } totalCount hasMore } }';

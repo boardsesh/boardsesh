@@ -166,7 +166,7 @@ type Documents = {
   '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.GetSessionSummaryDocument;
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': typeof types.FollowUserDocument;
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n': typeof types.UnfollowUserDocument;
-  '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n': typeof types.GetPublicProfileDocument;
+  '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n      isSupporter\n    }\n  }\n': typeof types.GetPublicProfileDocument;
   '\n  query GetFollowers($input: FollowListInput!) {\n    followers(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetFollowersDocument;
   '\n  query GetFollowing($input: FollowListInput!) {\n    following(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetFollowingDocument;
   '\n  query IsFollowing($userId: ID!) {\n    isFollowing(userId: $userId)\n  }\n': typeof types.IsFollowingDocument;
@@ -508,7 +508,7 @@ const documents: Documents = {
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': types.FollowUserDocument,
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n':
     types.UnfollowUserDocument,
-  '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n':
+  '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n      isSupporter\n    }\n  }\n':
     types.GetPublicProfileDocument,
   '\n  query GetFollowers($input: FollowListInput!) {\n    followers(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetFollowersDocument,
@@ -1516,8 +1516,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n',
-): (typeof documents)['\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n'];
+  source: '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n      isSupporter\n    }\n  }\n',
+): (typeof documents)['\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n      isSupporter\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -43,6 +43,7 @@ export const GET_PUBLIC_PROFILE = gql`
       followerCount
       followingCount
       isFollowedByMe
+      isSupporter
     }
   }
 `;

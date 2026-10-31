@@ -57,7 +57,8 @@
       "loadError": "Impossible de charger les grimpeurs",
       "retry": "Réessaie",
       "instagramLink": "Instagram",
-      "instagramOpenError": "Impossible d'ouvrir Instagram"
+      "instagramOpenError": "Impossible d'ouvrir Instagram",
+      "supporterTag": "Soutien"
     },
     "profile": {
       "title": "Profil",

@@ -74,6 +74,9 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetPlaylistsForClimb',
   'GetPlaylistsForClimbs',
   'GetPopularBoardConfigs',
+  // Acknowledgements is opened only from its More tile; no Maestro capture
+  // flow visits that route or mounts its public-supporter list.
+  'GetPublicSupporters',
   // Home's Fresh beta shelf (#6289), off by default; captures shoot the default Home.
   'GetRecentBetaLinks',
   'GetSessionHealthExport',

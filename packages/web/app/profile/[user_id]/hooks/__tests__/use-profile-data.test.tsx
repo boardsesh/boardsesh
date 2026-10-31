@@ -216,6 +216,35 @@ describe('useProfileData', () => {
     expect(result.current.percentile).toMatchObject({ percentile: 90, totalActiveUsers: 10 });
   });
 
+  it.each([
+    ['true', true, true],
+    ['false', false, false],
+    ['null', null, false],
+    ['missing', undefined, false],
+  ])('maps a fetched isSupporter of %s to %s', async (_label, isSupporter, expected) => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'user-2',
+        name: 'Fetched User',
+        image: null,
+        profile: null,
+        credentials: [],
+        followerCount: 0,
+        followingCount: 0,
+        isFollowedByMe: false,
+        ...(isSupporter === undefined ? {} : { isSupporter }),
+      }),
+    } as Response);
+    mockRequest.mockResolvedValue({ userTicks: [], userProfileStats: null, userClimbPercentile: null });
+
+    const { result } = renderProfileDataHook(() => useProfileData('user-2'));
+
+    await waitFor(() => expect(result.current.profile).not.toBeNull());
+    expect(result.current.profile?.isSupporter).toBe(expected);
+  });
+
   it('recomputes hardest grades when filtering to a single board', async () => {
     const { result } = renderProfileDataHook(() =>
       useProfileData('user-1', {

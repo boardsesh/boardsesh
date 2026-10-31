@@ -31,7 +31,8 @@
     "lastThreeMonths": "Last 3 months",
     "activityChartLabel": "Activity over the last 3 months",
     "displayNameFallback": "Climber",
-    "betaVideos": "Their beta"
+    "betaVideos": "Their beta",
+    "supporterTag": "Supporter"
   },
   "nav": {
     "statistics": {
