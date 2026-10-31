@@ -1,6 +1,10 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { getScreenshotDriveRequest, subscribeScreenshotDriveRequest } from '../../lib/screenshot-driving';
+import {
+  claimScreenshotDriveAttempt,
+  getScreenshotDriveRequest,
+  subscribeScreenshotDriveRequest,
+} from '../../lib/screenshot-driving';
 import type { DriveStartOutcome } from './use-wall-control';
 import type { WallControlModel } from './wall-control';
 
@@ -33,7 +37,6 @@ export function ScreenshotDriveController({
     getScreenshotDriveRequest,
     getScreenshotDriveRequest,
   );
-  const attempted = useRef<number | null>(null);
   const matches =
     eligible &&
     sessionId === null &&
@@ -51,15 +54,14 @@ export function ScreenshotDriveController({
     !model.writing;
 
   useEffect(() => {
-    if (!matches || !request || attempted.current === request.sequence) return;
+    if (!matches || !request) return;
     // A retained Duo pane can already be driving this exact climb. Consume its
     // intent too, so stopping later cannot cause an automatic restart.
     if (ready) {
-      attempted.current = request.sequence;
+      claimScreenshotDriveAttempt(request.sequence);
       return;
     }
-    if (model.swipeAction !== 'drive') return;
-    attempted.current = request.sequence;
+    if (model.swipeAction !== 'drive' || !claimScreenshotDriveAttempt(request.sequence)) return;
     start();
   }, [matches, request, ready, model.swipeAction, start]);
 

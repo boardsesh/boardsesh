@@ -109,6 +109,28 @@ describe('explicit screenshot driving', () => {
     },
   );
 
+  it.each(['started', 'unavailable'] as const)('does not repeat a %s attempt after a player remount', (outcome) => {
+    const options = { ...props(), start: vi.fn(() => outcome) };
+    act(() => requestScreenshotDrive('board-a', 'climb-a'));
+    const first = render(<ScreenshotDriveController {...options} />);
+    expect(options.start).toHaveBeenCalledTimes(1);
+    first.unmount();
+    render(<ScreenshotDriveController {...options} />);
+    expect(options.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('claims one attempt across overlapping route and Duo pane controllers', () => {
+    const options = props();
+    act(() => requestScreenshotDrive('board-a', 'climb-a'));
+    render(
+      <>
+        <ScreenshotDriveController {...options} />
+        <ScreenshotDriveController {...options} />
+      </>,
+    );
+    expect(options.start).toHaveBeenCalledTimes(1);
+  });
+
   it('withholds readiness until a confirmed live drive lights the exact displayed climb', () => {
     const options = props();
     act(() => requestScreenshotDrive('board-a', 'climb-a'));

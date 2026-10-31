@@ -7,6 +7,7 @@ export type ScreenshotDriveRequest = {
 
 let request: ScreenshotDriveRequest | null = null;
 let sequence = 0;
+let attemptedSequence: number | null = null;
 const listeners = new Set<() => void>();
 
 export function requestScreenshotDrive(boardUuid: string, climbUuid: string): void {
@@ -18,6 +19,13 @@ export function requestScreenshotDrive(boardUuid: string, climbUuid: string): vo
     return;
   request = { sequence: ++sequence, boardUuid, climbUuid };
   for (const listener of listeners) listener();
+}
+
+/** A route and a retained pane share one attempt, even across native remounts. */
+export function claimScreenshotDriveAttempt(requestSequence: number): boolean {
+  if (request?.sequence !== requestSequence || attemptedSequence === requestSequence) return false;
+  attemptedSequence = requestSequence;
+  return true;
 }
 
 export function clearScreenshotDriveRequest(): void {
