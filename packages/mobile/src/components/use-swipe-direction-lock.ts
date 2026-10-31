@@ -9,9 +9,10 @@ import { SWIPE_DIRECTION_LOCK } from './swipe-action-model';
  * the touch from the list (the scroll stops dead) and slides the row open.
  *
  * This guard decides the touch's direction once. Sideways first: it fails and
- * the swipe runs as before. Vertical first: it stays undecided until the finger
- * lifts and then ends, which cancels the waiting swipe. It never activates, so
- * it never takes the touch from the list. */
+ * the swipe runs as before. A stationary release also fails, preserving taps.
+ * Vertical first: it stays undecided until the finger lifts and then ends,
+ * which cancels the waiting swipe. It never activates, so it never takes the
+ * touch from the list. */
 export function useSwipeDirectionLock() {
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
@@ -40,7 +41,8 @@ export function useSwipeDirectionLock() {
       },
       onTouchesUp: (event: GestureTouchEvent) => {
         'worklet';
-        GestureStateManager.deactivate(event.handlerTag);
+        if (scrolling.value) GestureStateManager.deactivate(event.handlerTag);
+        else GestureStateManager.fail(event.handlerTag);
       },
       onTouchesCancel: (event: GestureTouchEvent) => {
         'worklet';

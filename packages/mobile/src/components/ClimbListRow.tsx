@@ -530,7 +530,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
     },
   });
   const tapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
-  const rowGestures = useSimultaneousGestures(tapGesture, fullSwipe.gesture);
+  // Mount the lock on the row and make the full-swipe tracker wait for it too.
+  const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
+  const rowGestures = useSimultaneousGestures(tapGesture, guardedFullSwipe);
   // The menu tap blocks the row so only the menu opens when its button wins.
   const moreButtonGesture = useTapGesture({
     maxDuration: 400,

@@ -387,10 +387,9 @@ export const LogbookRow = memo(function LogbookRow({
     },
   });
   const exclusiveTapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
-  const rowGestures = useSimultaneousGestures(
-    onOpenActions ? exclusiveTapGesture : singleTapGesture,
-    fullSwipe.gesture,
-  );
+  // Mount the lock on the row and make the full-swipe tracker wait for it too.
+  const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
+  const rowGestures = useSimultaneousGestures(onOpenActions ? exclusiveTapGesture : singleTapGesture, guardedFullSwipe);
 
   // Read dragArmedRef.current rather than the armed state directly so these stay
   // dep-free: a changed render-callback reference makes ReanimatedSwipeable
