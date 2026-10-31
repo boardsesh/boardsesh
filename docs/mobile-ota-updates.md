@@ -235,7 +235,7 @@ install, since the device couldn't verify the manifest came from us.
    [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.21.6` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.21.7` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -249,7 +249,16 @@ install, since the device couldn't verify the manifest came from us.
 
 ## Expo SDK 58 native upgrade
 
-The release train uses Expo 58.0.19, React Native 0.88.0 and React 19.3.0.
+The release train uses Expo 58.0.21, React Native 0.88.1 and React 19.3.0.
+The October patch refresh follows Expo 58.0.21's bundled version map and keeps
+every Expo dependency exact-pinned. It also updates Screens to 4.30.1, Sentry to
+8.33.0 with CLI 3.8.2, and edge-to-edge to 1.8.2. React and ReactDOM remain on
+19.3.0, Gesture Handler on 3.3.0, Worklets on 0.13.0, DateTimePicker on 9.2.1,
+and safe-area-context on 5.10.1. Preserve the existing Expo exclusions and source
+builds. The RN scheduler, Screens, fingerprint, dev launcher, Updates, image, UI
+and modules-core patches are retained for the new versions. Both platforms need
+matching replacement native binaries before receiving bundles for these fingerprints.
+
 Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
 manifest required by iOS 27; generated native projects must be regenerated after
 this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
@@ -280,7 +289,7 @@ ambient React namespace. The compiler regression exercises both declaration
 variants against that mixed context before and after the import.
 
 `with-react-native-source-builds` forces React Native source builds on iOS so the
-scheduler lifetime fix in `patches/react-native@0.88.0.patch` actually compiles.
+scheduler lifetime fix in `patches/react-native@0.88.1.patch` actually compiles.
 React Native 0.88 removed the runtime flag used by our previous workaround for
 #5293 without retaining its delegate invalidation. The compile gate checks the
 source patch and rejects archives linked against prebuilt React. Expect a slower
@@ -456,7 +465,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.23.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.25.patch`.
 
 ### Invariant: an OTA can't claim a manifest flag the binary lacks
 
@@ -783,22 +792,25 @@ oversized store.
 Production and approved-release backport workflows publish and upload in this order: iOS OTA → iOS
 maps → Android OTA → Android maps. Before either platform publishes, a shared compatibility
 preflight checks the installed uploader and its dependencies; it needs neither a Sentry token nor
-an Expo export. The audited SDK versions are exactly `7.11.0` and `8.24.0`; other versions stop the
+an Expo export. The audited SDK versions are exactly `7.11.0`, `8.24.0`, `8.32.0`
+and `8.33.0`; other versions stop the
 workflow before publishing. The wrapper derives executable bundles from the requested
 platform in `dist/metadata.json` (the primary bundle plus declared DOM component JavaScript), then
 validates each bundle/map pair and map Debug ID. Public-folder JavaScript is not update executable
 metadata and is ignored. Only validated pairs are copied into an isolated working directory for
 the installed official Expo uploader, whose recursive scan cannot see other files in `dist`.
-SDK 8.24.0 delegates to `@sentry/expo-upload-sourcemaps`; both audited versions use the same exact
-bundle/map pairing and Debug ID contract. SDK 8.24's native build phases also resolve their own
+SDKs 8.24.0, 8.32.0 and 8.33.0 delegate to `@sentry/expo-upload-sourcemaps`; all audited versions use the same exact
+bundle/map pairing and Debug ID contract. These SDKs' native build phases also resolve their own
 CLI dependency. The native dependency check follows that resolution instead of requiring it to
-match the direct CLI used by the standalone dSYM uploader; both existing dependency pins stay
-unchanged. Sentry matches the running
+match the direct CLI used by the standalone dSYM uploader. The 8.33.0 SDK's Expo
+uploader entrypoint, delegated CLI and Xcode wrapper retain the 8.32.0 contract:
+adjacent bundle/map pairing, Debug ID conversion, Hermes Debug ID references and
+nonzero upload exit propagation. Sentry matches the running
 OTA bundle to its map by Debug ID. It deliberately receives no synthetic release or dist, so the
 SDK's native release/dist continue to describe the installed store binary.
 
 Expo 57 declares DOM component JavaScript under `www.bundle`, but independently content-hashes its
-map filename. Both audited uploaders require an exact adjacent `<bundle>.map`, so the wrapper rejects
+map filename. All audited uploaders require an exact adjacent `<bundle>.map`, so the wrapper rejects
 such an export with an actionable error instead of silently omitting executable code. Boardsesh does
 not currently use Expo DOM components; add an audited pairing/upload path before introducing one.
 
@@ -1687,7 +1699,7 @@ leaves the path untouched, over-triggering a build rather than hiding a native c
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
 for a genuine nested dependency. The exact-pinned patch
-`patches/@expo__fingerprint@0.21.6.patch` collapses
+`patches/@expo__fingerprint@0.21.7.patch` collapses
 `node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
 file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
 and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
@@ -1933,7 +1945,7 @@ publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish 
 
 #### The root fix: `commitTime` is the commit's date
 
-The rail above routes around the defect; `patches/expo-updates@58.0.18.patch` removes it (#5021).
+The rail above routes around the defect; `patches/expo-updates@58.0.19.patch` removes it (#5021).
 The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
 **HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
 — the semantics everyone already assumed. It cost one native build train, because `patches/**` is a
@@ -2096,7 +2108,7 @@ the latest Android build.
    sees a clean tree. It then verifies the resolved fingerprint's 12-char prefix equals the anchor's
    `<shortfp>`. A mismatch means the cherry-pick or tooling changed native inputs — it aborts,
    because an OTA would resolve a fingerprint no shipped binary has and silently never land. Anchors
-   without an audited `@sentry/react-native` uploader (`7.11.0` or `8.24.0`) or its required
+   without an audited `@sentry/react-native` uploader (`7.11.0`, `8.24.0`, `8.32.0` or `8.33.0`) or its required
    dependencies also abort in the shared compatibility preflight, before publishing. Do not change that
    dependency on the frozen anchor: ship a native update with a supported uploader, wait for its
    approved release anchor, and backport against that new anchor instead.

@@ -27,10 +27,9 @@
  *      bumped; this catches that so the bundle phase and the JS runtime never
  *      use mismatched CLI versions.
  *
- * Sentry 8.24 resolves its CLI from the SDK's own dependency graph instead.
- * Check that installed dependency for this audited version; its CLI need not
- * match the direct CLI used by our standalone dSYM uploader. Keep both existing
- * pins so this tooling fix does not change a shipped binary's fingerprint.
+ * Sentry 8.24, 8.32 and 8.33 resolve their CLI from the SDK's own dependency
+ * graph instead. Check that installed dependency for these audited versions;
+ * its CLI need not match the direct CLI used by our standalone dSYM uploader.
  *
  * Usage: vp run check:mobile-native-deps
  */
@@ -58,7 +57,11 @@ export interface NativeDepRule {
  * push-to-main archive. Today only @sentry/react-native does this.
  */
 export const RULES: readonly NativeDepRule[] = [
-  { trigger: '@sentry/react-native', tools: ['@sentry/cli'], triggerToolResolutionVersions: ['8.24.0'] },
+  {
+    trigger: '@sentry/react-native',
+    tools: ['@sentry/cli'],
+    triggerToolResolutionVersions: ['8.24.0', '8.32.0', '8.33.0'],
+  },
 ];
 
 /**

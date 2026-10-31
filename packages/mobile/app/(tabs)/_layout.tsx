@@ -356,7 +356,7 @@ export default function TabLayout() {
   return (
     // `minimizeBehavior="onScrollDown"` relies on UIKit finding the climbs
     // FlashList's nested scroll view, which it can't by default — that fallback
-    // lives in patches/react-native-screens@4.30.0.patch, alongside the
+    // lives in patches/react-native-screens@4.30.1.patch, alongside the
     // bottom-accessory relayout fix. `vp run check:mobile-patches` (CI) fails the
     // build if either hunk ever stops applying after a dep bump. Minimizing is an
     // iOS 26 UIKit feature (react-native-screens logs a warning for any other

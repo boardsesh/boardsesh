@@ -229,7 +229,7 @@ private func postAppContextDestroysOnce() {
 }
 `;
 
-  function checkSource(installedSource: string, version = '58.0.26') {
+  function checkSource(installedSource: string, version = '58.0.28') {
     return checkPatchesApplied(
       [coreRule],
       makeEnv({
@@ -765,7 +765,7 @@ describe('versionFromKey', () => {
 // ---------------------------------------------------------------------------
 
 const TABS_FILE = 'ios/tabs/host/RNSTabsHostComponentView.mm';
-const TABS_KEY = 'react-native-screens@4.30.0';
+const TABS_KEY = 'react-native-screens@4.30.1';
 const TABS_RULES: PatchRule[] = [
   {
     package: PKG,
@@ -910,7 +910,7 @@ const TABS_SELF_ARMING_SOURCE = TABS_FIXED_SOURCE.replace(
 const tabsEnv = (source: string) =>
   makeEnv({
     patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-    versions: { [PKG]: '4.30.0' },
+    versions: { [PKG]: '4.30.1' },
     files: { [`${PKG}::${TABS_FILE}`]: source },
   });
 
@@ -1094,7 +1094,7 @@ describe('the shipped react-native-screens tab-host rule', () => {
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.30.0' },
+        versions: { [PKG]: '4.30.1' },
         files: { [`${PKG}::ios/tabs/host/RNSTabsHostComponentView.mm`]: TABS_ATTACH_ONLY_SOURCE },
       }),
     );
@@ -1131,7 +1131,7 @@ ${body}
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.30.0' },
+        versions: { [PKG]: '4.30.1' },
         files: { [`${PKG}::${ACCESSORY_FILE}`]: source },
       }),
     );
