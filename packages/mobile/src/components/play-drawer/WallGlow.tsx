@@ -14,6 +14,7 @@ type WallGlowProps = {
 
 function WallGlowComponent({ layer, width }: WallGlowProps) {
   const { surface, fade } = layer;
+  const fullSurfaceFade = layer.readableZone === 'full';
   const fadeGradient =
     fade > 0
       ? `linear-gradient(to right, transparent 0%, ${baseWithAlpha(surface.base, fade)} 10%, ${baseWithAlpha(surface.base, fade)} 90%, transparent 100%)`
@@ -24,7 +25,12 @@ function WallGlowComponent({ layer, width }: WallGlowProps) {
       layer={layer}
       testID="wall-glow"
       beforeFrost={
-        fadeGradient ? (
+        fade > 0 && fullSurfaceFade ? (
+          <View
+            style={[styles.fullFade, { backgroundColor: baseWithAlpha(surface.base, fade) }]}
+            testID="wall-glow-label-fade"
+          />
+        ) : fadeGradient ? (
           <View
             style={[
               styles.fade,
@@ -46,6 +52,13 @@ function baseWithAlpha(hex: string, alpha: number): string {
 export const WallGlow = memo(WallGlowComponent);
 
 const styles = StyleSheet.create({
+  fullFade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
   fade: {
     position: 'absolute',
     top: 0,

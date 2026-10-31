@@ -37,6 +37,13 @@ import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
 import { trustedWallCapsuleClimb, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
+import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import {
+  dismissWallCapsule,
+  useWallCapsuleDismissed,
+  wallCapsuleOccurrenceKey,
+} from '../../lib/wall-capsule-dismissal-store';
+import { useWallCapsuleHistoryAge } from '../queue-control/use-wall-capsule-history-age';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
 import { FilterButton } from './FilterButton';
@@ -144,13 +151,43 @@ function ClimbTopChromeComponent({
   const currentClimbUuid = useActiveClimbUuid();
   const distinctWallClimb = useWallClimbIfDistinct(currentClimbUuid);
   const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
+  const { boardId } = useBoardPresenceControls();
+  const linked = inAppBoardConnection !== 'disconnected';
   // Hidden past an hour with no live link (#7095): the same trust rule as the player.
   const wallPresenceFresh = usePresenceFresh(distinctWallClimb?.sentAt ?? null);
   const liveWallClimb = trustedWallCapsuleClimb(distinctWallClimb, {
-    linked: inAppBoardConnection !== 'disconnected',
+    linked,
     presenceFresh: wallPresenceFresh,
   });
-  const wallClimb = useSettledHeaderValue(liveWallClimb);
+  const occurrenceKey =
+    boardId !== null && liveWallClimb !== null ? wallCapsuleOccurrenceKey(boardId, liveWallClimb) : null;
+  const { loaded: dismissalLoaded, dismissed } = useWallCapsuleDismissed(boardId, occurrenceKey);
+  const historyAge = useWallCapsuleHistoryAge(
+    liveWallClimb?.sentAt ?? null,
+    !linked && dismissalLoaded && !dismissed && liveWallClimb !== null,
+  );
+  // Keep the climb, its meaning and its dismissal scope together while a modal
+  // covers the list. None may change the native title during player dismissal.
+  const liveWallCapsule = useMemo(
+    () =>
+      liveWallClimb !== null && boardId !== null && occurrenceKey !== null && dismissalLoaded && !dismissed
+        ? {
+            climb: liveWallClimb,
+            boardId,
+            occurrenceKey,
+            presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
+          }
+        : null,
+    [liveWallClimb, boardId, occurrenceKey, dismissalLoaded, dismissed, linked, historyAge],
+  );
+  const wallCapsuleState = useSettledHeaderValue(liveWallCapsule);
+  const handleDismissWallCapsule = useCallback(
+    (dismissedOccurrence: string) => {
+      if (wallCapsuleState === null || dismissedOccurrence !== wallCapsuleState.occurrenceKey) return;
+      dismissWallCapsule(wallCapsuleState.boardId, dismissedOccurrence);
+    },
+    [wallCapsuleState],
+  );
   // "You have the board" takes the same slot while this climber holds the board
   // and the wall shows their own climb. Only where the iOS 26 accessory platter
   // mounts on iPhone: that platter collapses on scroll and drops its bulb, while
@@ -168,11 +205,21 @@ function ClimbTopChromeComponent({
   );
   const ledless = useSettledHeaderValue(liveLedless);
   const wallCapsule = useMemo(() => {
-    if (wallClimb) return <WallStatusCapsule climb={wallClimb} boardName={boardName} />;
+    if (wallCapsuleState) {
+      return (
+        <WallStatusCapsule
+          climb={wallCapsuleState.climb}
+          boardName={boardName}
+          presentation={wallCapsuleState.presentation}
+          occurrenceKey={wallCapsuleState.occurrenceKey}
+          onDismiss={handleDismissWallCapsule}
+        />
+      );
+    }
     if (boardHeld) return <BoardHeldCapsule ledless={ledless} />;
     return undefined;
-  }, [wallClimb, boardName, boardHeld, ledless]);
-  const hasWallCapsule = wallClimb !== null;
+  }, [wallCapsuleState, boardName, handleDismissWallCapsule, boardHeld, ledless]);
+  const hasWallCapsule = wallCapsuleState !== null;
   const loggedWallCapsuleRef = useRef(false);
   useEffect(() => {
     // Skip the "hidden" every Climbs mount would log; only transitions are a trail.

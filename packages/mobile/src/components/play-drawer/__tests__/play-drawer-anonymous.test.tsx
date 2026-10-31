@@ -205,6 +205,7 @@ vi.mock('../PlayDrawerSectionsSheet', () => ({ PlayDrawerSectionsSheet: () => nu
 
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
+  AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),

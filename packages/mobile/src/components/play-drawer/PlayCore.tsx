@@ -177,7 +177,7 @@ import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
 import { useHoldStateColors } from './use-hold-state-colors';
 import type { WallGlowInput } from './use-wall-glow';
-import type { GlowHold } from './wall-glow';
+import { buildWallGlowInput } from './wall-glow-input';
 
 const EMPTY_HOLD_PLACEMENTS: HoldPlacement[] = [];
 import { useWallHolderIdentity } from './use-wall-holder-name';
@@ -2304,20 +2304,16 @@ export function PlayCore({
   );
   const holdStateColours = useHoldStateColors(boardName as BoardName, layoutId);
   const wallGlowInput = useMemo<WallGlowInput | null>(() => {
-    if (!wallGlowShown || !boardRenderData || wallGlowParsed.length === 0) return null;
-    const seen = new Set<number>();
-    const holds: GlowHold[] = [];
-    for (const hold of wallGlowParsed) {
-      if (seen.has(hold.id)) continue;
-      seen.add(hold.id);
-      holds.push({ x: hold.cx, y: hold.cy, color: holdStateColours.get(hold.role) ?? hold.color });
-    }
-    return {
-      key: `${displayedClimbUuid ?? ''}|${wallGlowFrames}|${isMirrored ? 'm' : ''}|${[...holdStateColours.values()].join()}`,
-      holds,
+    if (!wallGlowShown || !boardRenderData) return null;
+    return buildWallGlowInput({
+      parsedHolds: wallGlowParsed,
+      roleColors: holdStateColours,
       boardWidth: boardRenderData.boardWidth,
       boardHeight: boardRenderData.boardHeight,
-    };
+      climbUuid: displayedClimbUuid ?? null,
+      frames: wallGlowFrames,
+      mirrored: isMirrored,
+    });
   }, [
     wallGlowShown,
     boardRenderData,

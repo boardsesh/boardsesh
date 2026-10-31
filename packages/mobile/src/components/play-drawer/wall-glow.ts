@@ -47,6 +47,7 @@ export function wallGlowBlobs({
 /** The label policy belongs to the button, independently of the background. */
 export const LABEL_FADE_STEPS = [0, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9] as const;
 export const MIN_LABEL_CONTRAST = 4.5;
+export type WallGlowReadableZone = 'center' | 'full';
 
 function contrast(first: string, second: string): number {
   const firstLum = relativeLuminance(first) ?? 0;
@@ -55,9 +56,21 @@ function contrast(first: string, second: string): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-/** The label's zone: the middle of the pill, where the label sits between the bulb and the face. */
-function labelZonePoints(pill: PillSize): { x: number; y: number }[] {
+/** The player's centred label, or the header's two lines spanning the whole pill. */
+function labelZonePoints(pill: PillSize, readableZone: WallGlowReadableZone): { x: number; y: number }[] {
   const points: { x: number; y: number }[] = [];
+  if (readableZone === 'full') {
+    // At most four points between checks, including the very edges and both
+    // vertical extremes. The header can put a long name or grade in any of them.
+    const columns = Math.max(1, Math.ceil(pill.w / 4));
+    const rows = Math.max(1, Math.ceil(pill.h / 4));
+    for (let column = 0; column <= columns; column += 1) {
+      for (let row = 0; row <= rows; row += 1) {
+        points.push({ x: (pill.w * column) / columns, y: (pill.h * row) / rows });
+      }
+    }
+    return points;
+  }
   for (let column = 0; column <= 8; column += 1) {
     for (const dy of [-6, 0, 6]) points.push({ x: pill.w * (0.2 + (0.6 * column) / 8), y: pill.h / 2 + dy });
   }
@@ -68,10 +81,25 @@ function labelZonePoints(pill: PillSize): { x: number; y: number }[] {
 export function wallGlowLabelContrast(
   blobs: readonly WallGlowBlob[],
   pill: PillSize,
-  options: { surface: WallGlowSurface; blend: WallGlowBlend; opacityScale?: number; fade?: number },
+  options: {
+    surface: WallGlowSurface;
+    blend: WallGlowBlend;
+    opacityScale?: number;
+    fade?: number;
+    readableZone?: WallGlowReadableZone;
+  },
 ): number {
+  const readableZone = options.readableZone ?? 'center';
+  const points = labelZonePoints(pill, readableZone);
+  if (readableZone === 'full') {
+    // Include exact peaks between grid samples, clamped to the visible pill for
+    // a blob centred outside it. A bright hold can sit behind either text line.
+    for (const blob of blobs) {
+      points.push({ x: Math.max(0, Math.min(pill.w, blob.x)), y: Math.max(0, Math.min(pill.h, blob.y)) });
+    }
+  }
   let worst = Infinity;
-  for (const point of labelZonePoints(pill)) {
+  for (const point of points) {
     worst = Math.min(worst, contrast(options.surface.label, wallGlowPixel(point, blobs, options)));
   }
   return worst;
@@ -85,7 +113,12 @@ export function wallGlowLabelContrast(
 export function wallGlowLabelFade(
   blobs: readonly WallGlowBlob[],
   pill: PillSize,
-  options: { surface: WallGlowSurface; blend: WallGlowBlend; opacityScale?: number },
+  options: {
+    surface: WallGlowSurface;
+    blend: WallGlowBlend;
+    opacityScale?: number;
+    readableZone?: WallGlowReadableZone;
+  },
 ): number {
   for (const fade of LABEL_FADE_STEPS) {
     if (wallGlowLabelContrast(blobs, pill, { ...options, fade }) >= MIN_LABEL_CONTRAST) return fade;

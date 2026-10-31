@@ -9,14 +9,15 @@
 // your face, then the climb's name over "V7 · 1.4k sends" (#6902). Without one
 // it falls back to the bulb and "You have the board".
 //
-// Lit LEDs read amber. A board with no lights reads in the brand tone with a pin
-// and "You have the wall": amber only ever means the LEDs are on.
+// A lit climb carries the wall button's hold-colour frost, with amber as the
+// fallback before measurement or when holds are unavailable. A board with no
+// lights keeps the brand tone and "You have the wall".
 // A tap lets go, like the lightbulbs' short press: it disconnects, or releases a
 // wall with no lights. A long-press opens the Bluetooth controls sheet
 // (Re-light / Turn off / Disconnect) while this device holds the radio link.
 
-import { memo, useCallback } from 'react';
-import { StyleSheet, type AccessibilityActionEvent } from 'react-native';
+import { memo, useCallback, useState } from 'react';
+import { StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
 import { useQueueData } from '../../providers/queue/queue-contexts';
@@ -35,6 +36,9 @@ import { Icon } from '../Icon';
 import { Avatar } from '../Avatar';
 import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
 import { useClimbByline } from './use-climb-byline';
+import { useClimbWallGlow } from './use-climb-wall-glow';
+import { useWallGlowLayer } from '../play-drawer/use-wall-glow';
+import { WallGlow } from '../play-drawer/WallGlow';
 
 const CAPSULE_GLYPH_SIZE = 16;
 // The same face size as the "On the wall" capsule. Fixed — does not scale with Dynamic Type.
@@ -180,6 +184,14 @@ export function HeldClimbCapsule({
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
   const { data: profile } = useProfile();
+  const { colorScheme } = useTheme();
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const glow = useClimbWallGlow(climb, boardConfig, !ledless);
+  const glowLayer = useWallGlowLayer(glow, size.width, size.height, colorScheme === 'dark' ? 'dark' : 'light', 'full');
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setSize((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
+  }, []);
 
   const grade = resolveGrade(climb, boardConfig?.boardName).label;
   const byline = useClimbByline(climb, boardConfig, grade);
@@ -199,6 +211,16 @@ export function HeldClimbCapsule({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       compact={compact}
+      onLayout={handleLayout}
+      background={
+        glowLayer
+          ? {
+              content: <WallGlow layer={glowLayer} width={size.width} />,
+              color: glowLayer.surface.base,
+              borderColor: glowLayer.surface.border,
+            }
+          : undefined
+      }
       testID="board-held-capsule"
     >
       <HeaderCapsuleClimbLabel
@@ -211,6 +233,8 @@ export function HeldClimbCapsule({
         }
         name={climb.name}
         byline={byline}
+        textColor={glowLayer?.surface.label}
+        textStyle={glowLayer ? (glowLayer.surface.frost ? styles.glowShadowDark : styles.glowShadowLight) : undefined}
         compact={compact}
         largeContentTitle={accessibilityLabel}
         // The viewer takes the hold at accessibility sizes; its lift is the long
@@ -233,5 +257,15 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
     fontWeight: '600',
+  },
+  glowShadowDark: {
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1.5,
+  },
+  glowShadowLight: {
+    textShadowColor: 'rgba(255, 255, 255, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1.5,
   },
 });

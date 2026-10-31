@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // QA #147: board presence's wall climb is trusted for an hour without a link.
-import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PRESENCE_FRESH_MS,
   isPresenceFresh,
@@ -11,10 +11,30 @@ import {
 } from '../presence-freshness';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>(), remove: vi.fn() }));
+vi.mock('react-native', () => ({
+  AppState: {
+    addEventListener: (_event: string, listener: (state: string) => void) => {
+      appState.listeners.add(listener);
+      return {
+        remove: () => {
+          appState.listeners.delete(listener);
+          appState.remove();
+        },
+      };
+    },
+  },
+}));
+
 const LIT_AT = Date.parse('2026-10-29T12:00:00.000Z');
 const minutes = (count: number) => LIT_AT + count * 60_000;
 
+beforeEach(() => {
+  appState.remove.mockClear();
+});
+
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
 });
 
@@ -22,6 +42,7 @@ describe('isPresenceFresh', () => {
   it('is fresh at 59 minutes and stale at 61', () => {
     const sentAt = new Date(LIT_AT).toISOString();
     expect(isPresenceFresh(sentAt, minutes(59))).toBe(true);
+    expect(isPresenceFresh(sentAt, minutes(60))).toBe(false);
     expect(isPresenceFresh(sentAt, minutes(61))).toBe(false);
     expect(PRESENCE_FRESH_MS).toBe(60 * 60_000);
   });
@@ -55,6 +76,40 @@ describe('usePresenceFresh (frozen clock)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(minutes(61));
     expect(renderHook(() => usePresenceFresh(new Date(LIT_AT).toISOString())).result.current).toBe(false);
+  });
+
+  it('refreshes an overdue expiry when foregrounded without waiting for its suspended timer', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(minutes(59));
+    const { result } = renderHook(() => usePresenceFresh(new Date(LIT_AT).toISOString()));
+    vi.setSystemTime(minutes(61));
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(result.current).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('re-arms one deadline on foreground and cleans up on unmount', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(minutes(58));
+    const { unmount } = renderHook(() => usePresenceFresh(new Date(LIT_AT).toISOString()));
+    vi.setSystemTime(minutes(59));
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(appState.listeners.size).toBe(0);
+    expect(appState.remove).toHaveBeenCalledOnce();
+  });
+
+  it.each([null, 'invalid'])('does not subscribe or schedule a timer for %s', (sentAt) => {
+    vi.useFakeTimers();
+    expect(renderHook(() => usePresenceFresh(sentAt)).result.current).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(appState.listeners.size).toBe(0);
   });
 });
 

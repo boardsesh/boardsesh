@@ -81,8 +81,8 @@ vi.mock('../../navigation/AnchoredPopover', () => ({
 }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type MouseEvent, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -122,6 +122,11 @@ const ctrl = vi.hoisted(() => ({
   isPad: false,
   widthClass: 'compact' as 'compact' | 'regular',
   wallClimb: null as { climbUuid: string; name: string; sentAt: string } | null,
+  boardId: 1 as number | null,
+  dismissed: false,
+  dismissalLoaded: true,
+  dismissWallCapsule: vi.fn(),
+  focused: true,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
   focusEffects: [] as Array<() => void | (() => void)>,
@@ -136,6 +141,7 @@ type ViewMockProps = {
   style?: unknown;
 };
 vi.mock('react-native', () => ({
+  AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) },
   Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
@@ -175,7 +181,7 @@ vi.mock('react-native-reanimated', () => ({
 const routerPush = vi.hoisted(() => vi.fn());
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: routerPush }),
-  useIsFocused: () => true,
+  useIsFocused: () => ctrl.focused,
   useFocusEffect: (effect: () => void | (() => void)) => {
     ctrl.focusEffects.push(effect);
   },
@@ -190,8 +196,12 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { board?: string }) =>
-      key === 'mobile.listOptions.history' ? `Board history, ${options?.board}` : key,
+    t: (key: string, options?: { board?: string; count?: number }) =>
+      key === 'mobile.listOptions.history'
+        ? `Board history, ${options?.board}`
+        : options?.count === undefined
+          ? key
+          : `${key}:${options.count}`,
   }),
 }));
 
@@ -278,7 +288,8 @@ vi.mock('react-native-paper', () => ({
   Badge: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-paper-badge': 'true' }, children),
 }));
 
-vi.mock('@boardsesh/board-config', () => ({
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   formatBoardDisplayName: (boardType: string) => `Display:${boardType}`,
 }));
 
@@ -322,7 +333,15 @@ vi.mock('../../../providers/ble-control-sheet-provider', () => ({
 // The shared lightbulb hook also reads board presence + session state. Inert
 // defaults here so the bulb follows local BLE (boardId null → session fallback,
 // which is false), keeping these tests focused on the chrome layout.
-vi.mock('../../../providers/board-presence-provider', () => ({ useBoardPresenceControls: () => ({ boardId: null }) }));
+vi.mock('../../../providers/board-presence-provider', () => ({
+  useBoardPresenceControls: () => ({ boardId: ctrl.boardId }),
+}));
+vi.mock('../../../lib/wall-capsule-dismissal-store', () => ({
+  wallCapsuleOccurrenceKey: (boardId: number, climb: { climbUuid: string; sentAt: string }) =>
+    JSON.stringify([boardId, climb.climbUuid, climb.sentAt]),
+  useWallCapsuleDismissed: () => ({ loaded: ctrl.dismissalLoaded, dismissed: ctrl.dismissed }),
+  dismissWallCapsule: ctrl.dismissWallCapsule,
+}));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ isSessionWallLit: false, sessionId: null }),
   useActiveClimbUuid: () => null,
@@ -479,8 +498,23 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 // marker so this test can assert the wallClimb → capsule wiring (glass
 // centerContent / Material under-app-bar row).
 vi.mock('../../queue-control/WallStatusCapsule', () => ({
-  WallStatusCapsule: ({ climb }: { climb: { climbUuid: string } }) =>
-    createElement('div', { 'data-wall-capsule': climb.climbUuid }),
+  WallStatusCapsule: ({
+    climb,
+    presentation,
+    occurrenceKey,
+    onDismiss,
+  }: {
+    climb: { climbUuid: string };
+    presentation: { kind: string; ageLabel?: string };
+    occurrenceKey: string;
+    onDismiss: (occurrenceKey: string) => void;
+  }) =>
+    createElement('button', {
+      'data-wall-capsule': climb.climbUuid,
+      'data-presentation': presentation.kind,
+      'data-age': presentation.ageLabel,
+      onClick: () => onDismiss(occurrenceKey),
+    }),
 }));
 // Same for "You have the board": board-held-capsule.test.tsx covers its body.
 vi.mock('../../queue-control/BoardHeldCapsule', () => ({
@@ -546,6 +580,11 @@ describe('ClimbTopChrome', () => {
     ctrl.isPad = false;
     ctrl.widthClass = 'compact';
     ctrl.wallClimb = null;
+    ctrl.boardId = 1;
+    ctrl.dismissed = false;
+    ctrl.dismissalLoaded = true;
+    ctrl.dismissWallCapsule.mockClear();
+    ctrl.focused = true;
     ctrl.focusEffects.length = 0;
     routerPush.mockClear();
     ctrl.setBoardAngle.mockClear();
@@ -558,6 +597,8 @@ describe('ClimbTopChrome', () => {
     haptics.light.mockClear();
     haptics.selection.mockClear();
   });
+
+  afterEach(() => vi.useRealTimers());
 
   // The blur behind the floating filter rows shows only while rows are under
   // them. The list says so through a store, which reaches the header untouched.
@@ -668,6 +709,76 @@ describe('ClimbTopChrome', () => {
     ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
+  });
+
+  it.each(['liquidGlass', 'material'] as const)('labels a recent disconnected climb as history on %s', (variant) => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-10-31T10:20:00Z');
+    ctrl.variant = variant;
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: '2026-10-31T10:00:00Z' };
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+    const capsule = container.querySelector('[data-wall-capsule]');
+    expect(capsule?.getAttribute('data-presentation')).toBe('history');
+    expect(capsule?.getAttribute('data-age')).toBe('mobile.boardPresence.litAgoMinutes:20');
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(capsule?.getAttribute('data-age')).toBe('mobile.boardPresence.litAgoMinutes:21');
+  });
+
+  it('expires a mounted history capsule at one hour without another presence event', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-10-31T10:59:00Z');
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: '2026-10-31T10:00:00Z' };
+    const { container } = render(<ClimbTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-wall-capsule]')).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(60_001);
+    });
+    expect(container.querySelector('[data-wall-capsule]')).toBeNull();
+  });
+
+  it('keeps the capsule hidden until dismissal hydration completes, and after dismissal', () => {
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
+    ctrl.dismissalLoaded = false;
+    const props = makeProps();
+    const { container, rerender } = render(<ClimbTopChrome {...props} />);
+    expect(container.querySelector('[data-wall-capsule]')).toBeNull();
+    ctrl.dismissalLoaded = true;
+    rerender(<ClimbTopChrome {...makeProps()} />);
+    fireEvent.click(container.querySelector('[data-wall-capsule]')!);
+    expect(ctrl.dismissWallCapsule).toHaveBeenCalledWith(1, JSON.stringify([1, 'wall-9', ctrl.wallClimb.sentAt]));
+    ctrl.dismissed = true;
+    rerender(<ClimbTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-wall-capsule]')).toBeNull();
+  });
+
+  it('settles history/live presentation with its climb while the player covers the header', () => {
+    vi.useFakeTimers();
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
+    const props = makeProps();
+    const { container, rerender } = render(<ClimbTopChrome {...props} />);
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-presentation')).toBe('history');
+    ctrl.focused = false;
+    rerender(<ClimbTopChrome {...makeProps()} />);
+    ctrl.wallClimb = { climbUuid: 'wall-10', name: 'New climb', sentAt: new Date().toISOString() };
+    ctrl.bluetooth = {
+      isConnected: true,
+      connect: vi.fn(),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      armUndoWallChangeToast: vi.fn(),
+    };
+    rerender(<ClimbTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-wall-capsule')).toBe('wall-9');
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-presentation')).toBe('history');
+    ctrl.focused = true;
+    rerender(<ClimbTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-wall-capsule')).toBe('wall-9');
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-wall-capsule')).toBe('wall-10');
+    expect(container.querySelector('[data-wall-capsule]')?.getAttribute('data-presentation')).toBe('live');
   });
 
   // #7095, QA #147: past an hour with no live link the capsule hides; a live

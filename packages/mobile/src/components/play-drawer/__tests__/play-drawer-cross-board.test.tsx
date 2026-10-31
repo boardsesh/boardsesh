@@ -147,6 +147,7 @@ vi.mock('../PlayDrawerSectionsSheet', () => ({
 
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
+  AppState: { currentState: 'active', addEventListener: () => ({ remove: vi.fn() }) },
   View: ({
     children,
     onLayout,

@@ -7,6 +7,8 @@ vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { LayoutChangeEvent } from 'react-native';
+import type { WallGlowInput, WallGlowLayer } from '../../play-drawer/use-wall-glow';
 
 const spies = vi.hoisted(() => ({
   openControls: vi.fn(),
@@ -15,12 +17,37 @@ const spies = vi.hoisted(() => ({
   lightbulbOptions: null as unknown,
   localConnected: true,
   pressAction: 'disconnect' as string,
-  currentClimb: null as null | { uuid: string; name: string; difficulty: string },
+  currentClimb: null as null | { uuid: string; name: string; difficulty: string; mirrored?: boolean },
   byline: 'V7 · 1.4k sends' as string | null,
   announce: vi.fn(),
   reduceMotion: false,
   nativeGlass: true,
   enterAnimation: vi.fn(() => ({})),
+  colorScheme: 'dark' as 'dark' | 'light',
+  glowInput: null as WallGlowInput | null,
+  glowEnabled: null as boolean | null,
+  glowCalls: 0,
+  glowMirrored: false,
+  layoutWidth: 210,
+  layoutHeight: 38,
+}));
+
+vi.mock('../use-climb-wall-glow', () => ({
+  useClimbWallGlow: (climb: { mirrored?: boolean }, _boardConfig: unknown, enabled: boolean) => {
+    spies.glowEnabled = enabled;
+    spies.glowCalls += 1;
+    spies.glowMirrored = climb.mirrored === true;
+    return enabled ? spies.glowInput : null;
+  },
+}));
+vi.mock('../../play-drawer/WallGlow', () => ({
+  WallGlow: ({ layer, width }: { layer: WallGlowLayer; width: number }) =>
+    createElement('div', {
+      'data-wall-glow': layer.key,
+      'data-glow-width': width,
+      'data-glow-surface': JSON.stringify(layer.surface),
+      'data-glow-readable-zone': layer.readableZone,
+    }),
 }));
 
 vi.mock('react-native', () => ({
@@ -32,11 +59,15 @@ vi.mock('react-native', () => ({
     style,
     accessibilityElementsHidden,
     importantForAccessibility,
+    pointerEvents,
+    onLayout,
   }: {
     children?: ReactNode;
     style?: unknown;
     accessibilityElementsHidden?: boolean;
     importantForAccessibility?: string;
+    pointerEvents?: string;
+    onLayout?: (event: LayoutChangeEvent) => void;
   }) =>
     createElement(
       'div',
@@ -44,6 +75,13 @@ vi.mock('react-native', () => ({
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-a11y-hidden': accessibilityElementsHidden,
         'data-important-for-a11y': importantForAccessibility,
+        'data-pointer-events': pointerEvents,
+        onDoubleClick: onLayout
+          ? () =>
+              onLayout({
+                nativeEvent: { layout: { width: spies.layoutWidth, height: spies.layoutHeight } },
+              } as LayoutChangeEvent)
+          : undefined,
       },
       children,
     ),
@@ -82,7 +120,29 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-native-reanimated', () => ({
   default: {
-    View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-animated': 'true' }, children),
+    View: ({
+      children,
+      style,
+      onLayout,
+    }: {
+      children?: ReactNode;
+      style?: unknown;
+      onLayout?: (event: LayoutChangeEvent) => void;
+    }) =>
+      createElement(
+        'div',
+        {
+          'data-animated': 'true',
+          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+          onDoubleClick: onLayout
+            ? () =>
+                onLayout({
+                  nativeEvent: { layout: { width: spies.layoutWidth, height: spies.layoutHeight } },
+                } as LayoutChangeEvent)
+            : undefined,
+        },
+        children,
+      ),
   },
   FadeIn: { duration: spies.enterAnimation },
   useReducedMotion: () => spies.reduceMotion,
@@ -102,6 +162,7 @@ const PRIMARY = '#6D28D9';
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    colorScheme: spies.colorScheme,
     systemColors: { label: '#111111', secondaryBackground: '#222222', background: '#000000' },
     brandColors: { warning: '#FBBF24', primary: '#6D28D9' },
   }),
@@ -144,18 +205,21 @@ vi.mock('../../Text', () => ({
     numberOfLines,
     ellipsizeMode,
     variant,
+    color,
   }: {
     children?: ReactNode;
     style?: unknown;
     numberOfLines?: number;
     ellipsizeMode?: string;
     variant?: string;
+    color?: unknown;
   }) =>
     createElement(
       'span',
       {
         'data-text': 'true',
         'data-variant': variant,
+        'data-color': String(color),
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         'data-lines': numberOfLines,
         'data-ellipsize': ellipsizeMode,
@@ -255,17 +319,40 @@ vi.mock('../../GlassSurface', () => ({
     ),
 }));
 
-import { BoardHeldCapsule } from '../BoardHeldCapsule';
+import { BoardHeldCapsule, HeldClimbCapsule } from '../BoardHeldCapsule';
+import { NativeHeaderActionContext } from '../../chrome/native-header-action-context';
+import { wallGlowSurfaces } from '../../../theme/colors';
+
+const TEST_GLOW: WallGlowInput = {
+  key: 'climb-1-holds',
+  holds: [
+    { x: 25, y: 10, color: '#FF00FF' },
+    { x: 75, y: 30, color: '#4DF5FD' },
+    { x: 40, y: 70, color: '#FFA500' },
+    { x: 60, y: 130, color: '#00DD00' },
+  ],
+  boardWidth: 100,
+  boardHeight: 150,
+};
+
 describe('BoardHeldCapsule', () => {
   beforeEach(() => {
     spies.openControls.mockClear();
     spies.lightbulbPress.mockClear();
     spies.lightbulbLongPress.mockClear();
+    spies.enterAnimation.mockClear();
     spies.nativeGlass = true;
     spies.localConnected = true;
     spies.pressAction = 'disconnect';
     spies.currentClimb = null;
     spies.byline = 'V7 · 1.4k sends';
+    spies.colorScheme = 'dark';
+    spies.glowInput = null;
+    spies.glowEnabled = null;
+    spies.glowCalls = 0;
+    spies.glowMirrored = false;
+    spies.layoutWidth = 210;
+    spies.layoutHeight = 38;
   });
 
   describe('with no current climb', () => {
@@ -276,6 +363,7 @@ describe('BoardHeldCapsule', () => {
       expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
         'rgba(251, 191, 36, 0.14)',
       );
+      expect(spies.glowCalls).toBe(0);
     });
 
     it('on a board with no lights, pins in the brand tone and never claims lit LEDs', () => {
@@ -331,6 +419,135 @@ describe('BoardHeldCapsule', () => {
         'ble.barControl.wallHeldWithClimb {"name":"Kish Mud Prison","grade":"V7"}',
       );
       expect(button.getAttribute('data-hint')).toBe('ble.barControl.wallHeldHint');
+    });
+
+    it.each(['dark', 'light'] as const)(
+      'uses the wall button’s actual glow layer and readable labels in %s',
+      (scheme) => {
+        spies.glowInput = TEST_GLOW;
+        spies.colorScheme = scheme;
+        const { container } = render(
+          <NativeHeaderActionContext.Provider value={true}>
+            <BoardHeldCapsule ledless={false} />
+          </NativeHeaderActionContext.Provider>,
+        );
+        const nativeTitle = container.firstElementChild as HTMLElement;
+        // Before the native title is measured, the existing amber remains.
+        expect(container.querySelector('[data-glass-surface]')).not.toBeNull();
+        expect(container.querySelector('[data-wall-glow]')).toBeNull();
+        fireEvent.doubleClick(nativeTitle);
+        expect(container.firstElementChild).toBe(nativeTitle);
+        expect(container.querySelector('[data-glass-surface]')).toBeNull();
+        expect(container.querySelector('[data-wall-glow]')?.getAttribute('data-glow-width')).toBe('210');
+        expect(container.querySelector('[data-wall-glow]')?.getAttribute('data-glow-readable-zone')).toBe('full');
+        expect(JSON.parse(nativeTitle.getAttribute('data-style') ?? '{}')).toMatchObject({
+          flexShrink: 1,
+          minWidth: 0,
+          maxWidth: '100%',
+          overflow: 'hidden',
+          height: 38,
+          borderRadius: 19,
+          backgroundColor: wallGlowSurfaces[scheme].base,
+          borderColor: wallGlowSurfaces[scheme].border,
+        });
+        for (const label of container.querySelectorAll('[data-text]')) {
+          expect(label.getAttribute('data-color')).toBe(wallGlowSurfaces[scheme].label);
+          expect(JSON.parse(label.getAttribute('data-style') ?? '{}')).toMatchObject({
+            textShadowColor: scheme === 'dark' ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 1.5,
+          });
+        }
+        const decoration = container.querySelector('[data-wall-glow]')?.parentElement;
+        expect(decoration?.getAttribute('data-a11y-hidden')).toBe('true');
+        expect(decoration?.getAttribute('data-pointer-events')).toBe('none');
+      },
+    );
+
+    it('does not rebuild on repeated same-size native layout reports', () => {
+      spies.glowInput = TEST_GLOW;
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      fireEvent.doubleClick(container.firstElementChild!);
+      fireEvent.doubleClick(container.firstElementChild!);
+      const settledCalls = spies.glowCalls;
+      fireEvent.doubleClick(container.firstElementChild!);
+      expect(spies.glowCalls).toBe(settledCalls);
+      spies.layoutWidth = 80;
+      fireEvent.doubleClick(container.firstElementChild!);
+      expect(container.querySelector('[data-wall-glow]')?.getAttribute('data-glow-width')).toBe('80');
+    });
+
+    it('keeps the LED-less climb in its existing brand surface without starting glow reads', () => {
+      spies.glowInput = TEST_GLOW;
+      const { container } = render(<BoardHeldCapsule ledless />);
+      fireEvent.doubleClick(container.firstElementChild!);
+      expect(spies.glowEnabled).toBe(false);
+      expect(container.querySelector('[data-wall-glow]')).toBeNull();
+      expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
+        'rgba(109, 40, 217, 0.14)',
+      );
+    });
+
+    it('retains amber when holds or board geometry are unavailable after layout', () => {
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      fireEvent.doubleClick(container.firstElementChild!);
+      expect(container.querySelector('[data-wall-glow]')).toBeNull();
+      expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-tint')).toBe(
+        'rgba(251, 191, 36, 0.14)',
+      );
+    });
+
+    it('reuses the native title when the current climb or mirror orientation changes', () => {
+      spies.glowInput = TEST_GLOW;
+      const capsule = (uuid: string, name: string, mirrored: boolean) => (
+        <NativeHeaderActionContext.Provider value={true}>
+          <HeldClimbCapsule
+            climb={{
+              uuid,
+              name,
+              mirrored,
+              difficulty: 'V7',
+              frames: '',
+              setter_username: 'setter',
+              angle: 40,
+              ascensionist_count: 0,
+              quality_average: '',
+              stars: 0,
+              difficulty_error: '',
+              benchmark_difficulty: null,
+            }}
+            ledless={false}
+            toneColor={WARNING}
+            compact={false}
+            onPress={spies.lightbulbPress}
+            onLongPress={spies.lightbulbLongPress}
+            accessibilityActions={undefined}
+            onAccessibilityAction={() => {}}
+            accessibilityHint=""
+          />
+        </NativeHeaderActionContext.Provider>
+      );
+      const { container, rerender } = render(capsule('climb-1', 'Kish Mud Prison', false));
+      const nativeTitle = container.firstElementChild;
+      fireEvent.doubleClick(nativeTitle!);
+      spies.glowInput = { ...TEST_GLOW, key: 'climb-2-mirrored' };
+      rerender(capsule('climb-2', 'Next climb', true));
+      expect(container.firstElementChild).toBe(nativeTitle);
+      expect(container.querySelector('[data-wall-glow]')?.getAttribute('data-wall-glow')).toBe('climb-2-mirrored');
+      expect(spies.glowMirrored).toBe(true);
+      expect(spies.enterAnimation).not.toHaveBeenCalled();
+    });
+
+    it('preserves tap, long-press and Large Content Viewer actions on the patterned surface', () => {
+      spies.glowInput = TEST_GLOW;
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      fireEvent.doubleClick(container.firstElementChild!);
+      fireEvent.click(container.querySelector('[data-pressable]')!);
+      expect(spies.lightbulbPress).toHaveBeenCalledOnce();
+      fireEvent.contextMenu(container.querySelector('[data-pressable]')!);
+      fireEvent.doubleClick(container.querySelector('[data-label-viewer]')!);
+      expect(spies.lightbulbLongPress).toHaveBeenCalledTimes(2);
+      expect(spies.lightbulbPress).toHaveBeenCalledOnce();
     });
   });
 

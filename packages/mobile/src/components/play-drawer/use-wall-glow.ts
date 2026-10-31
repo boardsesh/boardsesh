@@ -9,6 +9,7 @@ import {
   type WallGlowBlend,
   type WallGlowBlob,
   type WallGlowSurface,
+  type WallGlowReadableZone,
 } from './wall-glow';
 
 /**
@@ -31,6 +32,7 @@ export type WallGlowLayer = {
   surface: WallGlowSurface;
   blend: WallGlowBlend;
   opacityScale: number;
+  readableZone?: WallGlowReadableZone;
 };
 
 /**
@@ -55,6 +57,7 @@ export function useWallGlowLayer(
   width: number,
   height: number,
   scheme: 'light' | 'dark',
+  readableZone: WallGlowReadableZone = 'center',
 ): WallGlowLayer | null {
   return useMemo(() => {
     if (!input || width <= 0 || height <= 0) return null;
@@ -71,10 +74,11 @@ export function useWallGlowLayer(
     return {
       key: input.key,
       blobs: blobs.map((blob) => ({ ...blob, gradient: blobGradient(blob, opacityScale) })),
-      fade: wallGlowLabelFade(blobs, pill, { surface, blend, opacityScale }),
+      fade: wallGlowLabelFade(blobs, pill, { surface, blend, opacityScale, readableZone }),
       surface,
       blend,
       opacityScale,
+      readableZone,
     };
-  }, [input, width, height, scheme]);
+  }, [input, width, height, scheme, readableZone]);
 }

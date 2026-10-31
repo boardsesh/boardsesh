@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { nowMs } from '../clock';
 
@@ -49,14 +50,22 @@ export function trustedWallCapsuleClimb(
  * no polling.
  */
 export function usePresenceFresh(sentAt: string | null): boolean {
-  // Bumped when the hour runs out, so this re-renders and reads the clock again.
-  const [, setExpiries] = useState(0);
+  // Suspension can defer a timer, so foregrounding reads the clock and re-arms
+  // the remaining deadline as well as refreshing the rendered trust decision.
+  const [clockRevision, setClockRevision] = useState(0);
   const fresh = isPresenceFresh(sentAt, nowMs());
+  useEffect(() => {
+    if (sentAt === null || !Number.isFinite(Date.parse(sentAt))) return undefined;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setClockRevision((revision) => revision + 1);
+    });
+    return () => subscription.remove();
+  }, [sentAt]);
   useEffect(() => {
     if (!fresh || sentAt === null) return undefined;
     const expiresIn = Date.parse(sentAt) + PRESENCE_FRESH_MS - nowMs();
-    const timer = setTimeout(() => setExpiries((count) => count + 1), Math.max(0, expiresIn) + 1);
+    const timer = setTimeout(() => setClockRevision((revision) => revision + 1), Math.max(0, expiresIn) + 1);
     return () => clearTimeout(timer);
-  }, [sentAt, fresh]);
+  }, [sentAt, fresh, clockRevision]);
   return fresh;
 }

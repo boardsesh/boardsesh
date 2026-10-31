@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { WallCapsuleDismissOptions } from '../use-wall-capsule-dismiss';
 
 const spies = vi.hoisted(() => ({
   openWallPreview: vi.fn(),
@@ -20,6 +21,29 @@ const spies = vi.hoisted(() => ({
   // The sends half of the byline; null leaves the grade alone, as for an unsent climb.
   sends: null as string | null,
   bylineArgs: null as unknown,
+  panConsumed: false,
+}));
+
+vi.mock('../use-wall-capsule-dismiss', () => ({
+  useWallCapsuleDismiss: (options: WallCapsuleDismissOptions) => ({
+    gesture: {},
+    animatedStyle: {},
+    onLayout: () => {},
+    consumePanned: () => spies.panConsumed,
+    dismiss: () => options.onDismiss?.(options.occurrenceKey),
+  }),
+}));
+vi.mock('react-native-gesture-handler', () => ({
+  GestureHandlerRootView: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement(
+      'div',
+      {
+        'data-gesture-root': true,
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
+  GestureDetector: ({ children }: { children?: ReactNode }) => children,
 }));
 
 vi.mock('react-native', () => ({
@@ -78,7 +102,15 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-native-reanimated', () => ({
   default: {
-    View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-animated': 'true' }, children),
+    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+      createElement(
+        'div',
+        {
+          'data-animated': 'true',
+          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        },
+        children,
+      ),
   },
   FadeIn: { duration: spies.enterAnimation },
   useReducedMotion: () => spies.reduceMotion,
@@ -242,6 +274,8 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
+    accessibilityActions,
+    onAccessibilityAction,
     style,
   }: {
     children?: ReactNode;
@@ -250,6 +284,8 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityHint?: string;
+    accessibilityActions?: readonly { name: string; label?: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     style?: unknown;
   }) =>
     createElement(
@@ -261,6 +297,8 @@ vi.mock('../../PressableSurface', () => ({
         'data-role': accessibilityRole,
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-actions': JSON.stringify(accessibilityActions),
+        onKeyDown: () => onAccessibilityAction?.({ nativeEvent: { actionName: 'dismiss' } }),
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onPress,
       },
@@ -305,6 +343,7 @@ describe('WallStatusCapsule', () => {
     spies.colorScheme = 'dark';
     spies.nativeGlass = true;
     spies.sends = null;
+    spies.panConsumed = false;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -613,6 +652,89 @@ describe('WallStatusCapsule', () => {
     }
   });
 
+  it('labels disconnected history in its byline and spoken label without fetching hidden stats', () => {
+    spies.sends = '1.4k sends';
+    const { container, getByText } = render(
+      <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+    );
+    expect(getByText('mobile.boardPresence.stripHistoryByline:20m,V5 6C')).toBeTruthy();
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toBe(
+      'mobile.boardPresence.stripHistoryA11yLabelWithSender:Wax On,V5 6C,20m,Casey',
+    );
+    expect(spies.bylineArgs).toMatchObject({ statsEnabled: false });
+    expect(container.textContent).not.toContain('1.4k sends');
+  });
+
+  it('shows historical recency when an older reporter has no grade', () => {
+    const { getByText } = render(
+      <WallStatusCapsule climb={makeClimb({ grade: null })} presentation={{ kind: 'history', ageLabel: 'now' }} />,
+    );
+    expect(getByText('mobile.boardPresence.stripHistoryOverline:now')).toBeTruthy();
+  });
+
+  it('does not announce history or its changing age as a new live climb', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+      );
+      vi.advanceTimersByTime(600);
+      rerender(<WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '21m' }} />);
+      vi.advanceTimersByTime(600);
+      expect(spies.announce).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['liquidGlass', 'material'] as const)('offers a named dismiss action on %s', (variant) => {
+    spies.variant = variant;
+    const onDismiss = vi.fn();
+    const { container } = render(
+      <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
+    );
+    const pressable = container.querySelector('[data-pressable]');
+    expect(JSON.parse(pressable?.getAttribute('data-actions') ?? 'null')).toEqual([
+      { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+    ]);
+    expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripDismissHint');
+    fireEvent.keyDown(pressable!);
+    expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+    expect(spies.openWallPreview).not.toHaveBeenCalled();
+  });
+
+  it('drops the tap that follows an activated swipe', () => {
+    spies.panConsumed = true;
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
+    fireEvent.click(container.querySelector('[data-pressable]')!);
+    expect(spies.openWallPreview).not.toHaveBeenCalled();
+    spies.panConsumed = false;
+    fireEvent.click(container.querySelector('[data-pressable]')!);
+    expect(spies.openWallPreview).toHaveBeenCalledOnce();
+  });
+
+  it('keeps dismissible native title wrappers intrinsic and stable across lighting events', () => {
+    const onDismiss = vi.fn();
+    const wrap = (climb: BoardPresenceClimb, occurrenceKey: string) => (
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={climb} occurrenceKey={occurrenceKey} onDismiss={onDismiss} />
+      </NativeHeaderActionContext.Provider>
+    );
+    const { container, rerender } = render(wrap(makeClimb(), 'board:1:wall-1'));
+    const root = container.firstElementChild;
+    const animated = container.querySelector('[data-animated]');
+    for (const wrapper of [root, animated]) {
+      const style = JSON.parse(wrapper?.getAttribute('data-style') ?? '{}');
+      expect(style).toMatchObject({ flexShrink: 1, minWidth: 0, maxWidth: '100%' });
+      expect(style.flex).toBeUndefined();
+      expect(style.width).toBeUndefined();
+    }
+    rerender(wrap(makeClimb({ climbUuid: 'wall-2', name: 'Next climb', seq: 2 }), 'board:2:wall-2'));
+    expect(container.firstElementChild).toBe(root);
+    expect(container.querySelector('[data-animated]')).toBe(animated);
+    expect(spies.enterAnimation).not.toHaveBeenCalled();
+  });
+
   it('renders the Liquid Glass Pressable pill (not the Material band) on iOS', () => {
     const { container, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
@@ -641,6 +763,18 @@ describe('WallStatusCapsule', () => {
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
       // The person glyph belongs to the anonymous fallback, not a known sender.
       expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
+    });
+
+    it('uses a historical overline while keeping the climb grade and sender', () => {
+      const { container, getByText } = render(
+        <WallStatusCapsule climb={makeClimb()} presentation={{ kind: 'history', ageLabel: '20m' }} />,
+      );
+      expect(getByText('mobile.boardPresence.stripHistoryOverline:20m')).toBeTruthy();
+      expect(getByText('V5 6C')).toBeTruthy();
+      expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-name')).toBe('Casey');
+      expect(container.querySelector('[data-pressable]')?.getAttribute('data-label')).toContain(
+        'stripHistoryA11yLabel',
+      );
     });
 
     it('falls back to the bare overline + a neutral person glyph for an anonymous sender', () => {
