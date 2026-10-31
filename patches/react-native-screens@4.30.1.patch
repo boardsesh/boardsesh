@@ -216,10 +216,11 @@ index b806d38..172f2e8 100644
  @implementation RNSTabsBottomAccessoryWrapperView
  
  - (CGSize)sizeThatFits:(CGSize)size
-@@ -14,6 +20,14 @@
+@@ -14,7 +20,15 @@
    // device). By returning the proposed size, we make sure that the accessory always
    // takes full available width.
    // See https://github.com/software-mansion/react-native-screens/issues/4728.
+-  return size;
 +  //
 +  // Boardsesh: cap the width at 689 pt. UIKit centres a smaller answer on the
 +  // content column. The cap still derives from the proposed size on every query,
@@ -228,12 +229,12 @@ index b806d38..172f2e8 100644
 +  // a portrait phone screen is narrower than 689 pt, so the cap only shows on
 +  // iPad and across the open iPhone Duo's inner display. The height always stays
 +  // the proposed one: answering a smaller height shrinks the platter to 48 pt.
--  return size;
 +  return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);
  }
  
+ @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 69bd2fc..66cd93c 100644
+index 84181aa..8de8226 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
 @@ -54,6 +54,10 @@ namespace react = facebook::react;
@@ -261,7 +262,7 @@ index 69bd2fc..66cd93c 100644
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -445,15 +456,167 @@ namespace react = facebook::react;
+@@ -449,15 +460,167 @@ namespace react = facebook::react;
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  - (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
  {

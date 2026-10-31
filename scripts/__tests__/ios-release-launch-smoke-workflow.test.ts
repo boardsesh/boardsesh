@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -67,8 +67,9 @@ describe('iOS Release launch workflow', () => {
     const simulator = requiredStep('Resolve simulator destination');
     const smoke = requiredStep('Launch the Release app and watch for crashes');
     expect(steps.indexOf(simulator)).toBeLessThan(steps.indexOf(smoke));
-    expect(simulator.run).toContain("print(device['udid'])");
-    expect(simulator.run).toContain('echo "udid=$SIMULATOR_UDID" >> "$GITHUB_OUTPUT"');
+    expect(simulator.run).toContain("simctl('create', name, device_type, runtime)");
+    expect(simulator.run).toContain('output.write(f"udid={simulator_udid}\\n")');
+    expect(simulator.run).toContain('capture_output=True, text=True, timeout=30');
     for (const name of ['Build for testing', 'Run Swift unit tests']) {
       expect(requiredStep(name).run).toContain(
         "-destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}'",
@@ -102,6 +103,191 @@ describe('iOS Release launch workflow', () => {
     expect(steps.indexOf(checkerTests)).toBeLessThan(
       steps.indexOf(requiredStep('Build the Release app (compiles startup + Pods + patched native modules)')),
     );
+  });
+});
+
+const newSimulatorUdid = '67EF58B2-C7AA-44DB-9ABF-908729CC3F05';
+const templateSimulatorUdid = 'D0D80A96-1387-4502-BEFD-3CB0955AD02A';
+const selectedRuntime = 'com.apple.CoreSimulator.SimRuntime.iOS-27-1';
+const selectedDeviceType = 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo';
+
+function simulatorInventory() {
+  return {
+    devices: {
+      'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [
+        {
+          name: 'iPhone 17',
+          udid: '7F507CBA-0024-45B7-A914-E930C319DAD8',
+          isAvailable: true,
+          deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17',
+        },
+      ],
+      [selectedRuntime]: [
+        { name: 'iPad', udid: '225E0758-7000-4DB5-BDB8-9A5DB2ED81B3', isAvailable: true },
+        {
+          name: 'iPhone Duo',
+          udid: templateSimulatorUdid,
+          isAvailable: true,
+          deviceTypeIdentifier: selectedDeviceType,
+        },
+        {
+          name: 'iPhone 17',
+          udid: 'EE64549B-A61D-4A36-B40F-EA63ECCCE04E',
+          isAvailable: true,
+          deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17',
+        },
+      ],
+    },
+    runtimes: [
+      { identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', isAvailable: true },
+      { identifier: selectedRuntime, isAvailable: true },
+    ],
+    devicetypes: [
+      { identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17' },
+      { identifier: selectedDeviceType },
+    ],
+  };
+}
+
+function runSimulatorSelector(
+  options: {
+    inventory?: ReturnType<typeof simulatorInventory>;
+    createdUdid?: string;
+    createStatus?: number;
+    listStatus?: number;
+  } = {},
+) {
+  const directory = mkdtempSync(join(tmpdir(), 'ios-release-simulator-'));
+  temporaryDirectories.push(directory);
+  const xcrunPath = join(directory, 'xcrun');
+  const callsPath = join(directory, 'calls.jsonl');
+  const outputPath = join(directory, 'output');
+  writeFileSync(
+    xcrunPath,
+    `#!/usr/bin/env python3
+import json, os, sys
+arguments = sys.argv[1:]
+with open(os.environ['CI_SIM_CALLS'], 'a') as calls:
+    calls.write(json.dumps(arguments) + '\\n')
+if arguments == ['simctl', 'list', '--json']:
+    print(os.environ['CI_SIM_INVENTORY'])
+    sys.exit(int(os.environ['CI_SIM_LIST_STATUS']))
+if len(arguments) == 5 and arguments[:2] == ['simctl', 'create']:
+    print(os.environ['CI_SIM_CREATED_UDID'])
+    print('fixture creation diagnostic', file=sys.stderr)
+    sys.exit(int(os.environ['CI_SIM_CREATE_STATUS']))
+print('Unexpected simulator command', file=sys.stderr)
+sys.exit(1)
+`,
+  );
+  chmodSync(xcrunPath, 0o755);
+  const script = requiredStep('Resolve simulator destination').run!;
+  const result = spawnSync('bash', ['-c', script], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      PATH: `${directory}:${process.env.PATH}`,
+      GITHUB_OUTPUT: outputPath,
+      GITHUB_RUN_ID: '7171',
+      GITHUB_RUN_ATTEMPT: '3',
+      CI_SIM_CALLS: callsPath,
+      CI_SIM_INVENTORY: JSON.stringify(options.inventory ?? simulatorInventory()),
+      CI_SIM_CREATED_UDID: options.createdUdid ?? newSimulatorUdid,
+      CI_SIM_CREATE_STATUS: String(options.createStatus ?? 0),
+      CI_SIM_LIST_STATUS: String(options.listStatus ?? 0),
+    },
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  expect(result.error).toBeUndefined();
+  const calls = existsSync(callsPath)
+    ? readFileSync(callsPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string[])
+    : [];
+  return { result, calls, output: existsSync(outputPath) ? readFileSync(outputPath, 'utf8') : '' };
+}
+
+describe('CI-owned simulator allocation', () => {
+  it('creates a fresh device with the first available iPhone model on the newest runtime', () => {
+    const { result, calls, output } = runSimulatorSelector();
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    expect(calls).toEqual([
+      ['simctl', 'list', '--json'],
+      [
+        'simctl',
+        'create',
+        expect.stringMatching(/^Boardsesh CI 7171-3-[a-f0-9]{8}$/),
+        selectedDeviceType,
+        selectedRuntime,
+      ],
+    ]);
+    expect(output).toBe(`udid=${newSimulatorUdid}\n`);
+    expect(output).not.toContain(templateSimulatorUdid);
+    expect(result.stdout).toContain(`iPhone Duo on ${selectedRuntime}`);
+    expect(
+      calls.every((arguments_) => !arguments_.some((argument) => ['erase', 'delete', 'reset'].includes(argument))),
+    ).toBe(true);
+  });
+
+  it('fails before allocating when listing simulators fails', () => {
+    const { result, calls, output } = runSimulatorSelector({ listStatus: 9 });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Simulator list --json failed (9)');
+    expect(calls).toHaveLength(1);
+    expect(output).toBe('');
+  });
+
+  it('fails clearly on creation failure without publishing a simulator destination', () => {
+    const { result, calls, output } = runSimulatorSelector({ createStatus: 7 });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('failed (7): fixture creation diagnostic');
+    expect(calls).toHaveLength(2);
+    expect(output).toBe('');
+  });
+
+  it.each(['runtime', 'device type'] as const)(
+    'rejects missing compatible %s metadata without switching model',
+    (missing) => {
+      const inventory = simulatorInventory();
+      if (missing === 'runtime') inventory.runtimes = [];
+      else inventory.devicetypes = inventory.devicetypes.filter(({ identifier }) => identifier !== selectedDeviceType);
+      const { result, calls, output } = runSimulatorSelector({ inventory });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Selected iPhone iPhone Duo has no compatible runtime/device metadata');
+      expect(calls).toHaveLength(1);
+      expect(output).toBe('');
+    },
+  );
+
+  it('rejects an inventory without an available iPhone', () => {
+    const inventory = simulatorInventory();
+    for (const devices of Object.values(inventory.devices)) {
+      for (const device of devices) device.isAvailable = false;
+    }
+    const { result, calls, output } = runSimulatorSelector({ inventory });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no available iPhone');
+    expect(calls).toHaveLength(1);
+    expect(output).toBe('');
+  });
+
+  it.each(['not-a-uuid', '', `${newSimulatorUdid}\nextra output`])(
+    'rejects malformed created UUID %j',
+    (createdUdid) => {
+      const { result, output } = runSimulatorSelector({ createdUdid });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Simulator create returned a malformed UUID');
+      expect(output).toBe('');
+    },
+  );
+
+  it('rejects an existing UUID even when creation returns it with different casing', () => {
+    const { result, output } = runSimulatorSelector({ createdUdid: templateSimulatorUdid.toLowerCase() });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Simulator create returned an existing UUID');
+    expect(output).toBe('');
   });
 });
 
@@ -155,6 +341,7 @@ esac
 
 describe('native gate exercises iOS launch tooling changes', () => {
   it.each([
+    '.github/workflows/ios-rn-ci.yml',
     'scripts/ios-release-launch-smoke.ts',
     'scripts/__tests__/ios-release-launch-smoke.test.ts',
     'scripts/__tests__/ios-release-launch-smoke-workflow.test.ts',
