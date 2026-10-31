@@ -1096,6 +1096,10 @@ and app restarts until another lighting event, including a re-light of the same
 climb. VoiceOver and TalkBack offer the same Dismiss action. Climb, status and
 dismissal scope settle together while the player covers the native header.
 
+The native story gallery shows the live and recent-history treatments side by side:
+[Liquid Glass](images/wall-capsule-glass-dark.png) and
+[Material](images/wall-capsule-material-light.png).
+
 Queue removal uses the queue's scoped live-merge Undo. Logbook deletion keeps its
 confirmation, then hides the entry and offers eight seconds to Undo before sending
 DELETE_TICK. The root LogbookDeleteProvider owns that deadline across route changes.
