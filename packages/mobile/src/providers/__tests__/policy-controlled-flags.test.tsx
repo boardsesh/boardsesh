@@ -33,6 +33,8 @@ vi.mock('../../lib/is-dev-build', () => ({ isDevBuild: () => build.dev }));
 // the flag (and therefore the override) is the last thing deciding it.
 const platformMock = vi.hoisted(() => ({ OS: 'ios' as string }));
 vi.mock('react-native', () => ({ Platform: platformMock }));
+// Not an admin: these cases are about the override policy, not the admin QA path.
+vi.mock('../../lib/graphql/hooks/use-is-admin', () => ({ useIsAdmin: () => ({ isAdmin: false, isLoading: false }) }));
 vi.mock('expo-modules-core', () => ({
   requireOptionalNativeModule: () => ({ getCountryCode: async () => 'USA' }),
 }));

@@ -18,6 +18,10 @@ vi.mock('react-native', () => ({ Platform: platformMock }));
 vi.mock('../../providers/feature-flags-provider', () => ({
   useFeatureFlag: (key: string) => flagsMock[key],
 }));
+const adminMock = { isAdmin: false };
+vi.mock('../graphql/hooks/use-is-admin', () => ({
+  useIsAdmin: () => ({ isAdmin: adminMock.isAdmin, isLoading: false }),
+}));
 
 async function loadDonationLinks() {
   vi.resetModules();
@@ -39,6 +43,50 @@ beforeEach(() => {
   storefrontMock = null;
   platformMock.OS = 'ios';
   for (const key of Object.keys(flagsMock)) delete flagsMock[key];
+  adminMock.isAdmin = false;
+});
+
+describe('useDonationLinksAllowed for an admin (QA)', () => {
+  it('shows the link on iOS outside the US storefront', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('AUS') };
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('shows the link on Android', async () => {
+    platformMock.OS = 'android';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(true);
+  });
+
+  it('still obeys the kill switch', async () => {
+    platformMock.OS = 'android';
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('still hides it in screenshot mode', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    adminMock.isAdmin = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('keeps a non-admin AU iPhone on the unlinked text', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links-v2'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('AUS') };
+
+    expect(await renderAllowed()).toBe(false);
+  });
 });
 
 describe('useDonationLinksAllowed', () => {
