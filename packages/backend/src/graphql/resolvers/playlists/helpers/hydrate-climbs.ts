@@ -255,7 +255,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
         // playlist, a liked list, a logbook), and any of them can name someone
         // else's draft. A published climb hydrates whoever set it.
         climbDraftVisibilityCondition(
-          { userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
+          { boardType: tables.climbs.boardType, userId: tables.climbs.userId, isDraft: tables.climbs.isDraft },
           options?.viewerUserId,
         ),
         // The smart-playlist logbook types hydrate straight from a user's ticks, so

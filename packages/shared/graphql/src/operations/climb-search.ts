@@ -134,6 +134,31 @@ export const GET_CLIMB = gql`
   }
 `;
 
+/** Keep catalogue fixture hashes stable; only spray detail reads carry a wall capability. */
+export const GET_SPRAY_CLIMB = gql`
+  query GetSprayClimb(
+    $boardName: String!
+    $layoutId: Int!
+    $sizeId: Int!
+    $setIds: String!
+    $angle: Int!
+    $climbUuid: ID!
+    $sprayWallUuid: String
+  ) {
+    climb(
+      boardName: $boardName
+      layoutId: $layoutId
+      sizeId: $sizeId
+      setIds: $setIds
+      angle: $angle
+      climbUuid: $climbUuid
+      sprayWallUuid: $sprayWallUuid
+    ) {
+      ${CLIMB_DETAIL_FIELDS}
+    }
+  }
+`;
+
 // Type for the search input
 export type ClimbSearchInputVariables = {
   input: {
@@ -166,6 +191,7 @@ export type ClimbSearchInputVariables = {
     minUserRating?: number;
     onlyRatedByMe?: boolean;
     onlyDrafts?: boolean;
+    draftScope?: 'OWN' | 'WALL';
     onlyFavorited?: boolean;
     projectsOnly?: boolean;
     boulders?: boolean;

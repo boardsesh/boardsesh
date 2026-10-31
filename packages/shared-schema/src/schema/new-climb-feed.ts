@@ -72,6 +72,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   input SaveClimbInput {
+    "Optional stable client-generated climb UUID for idempotent offline replay."
+    uuid: ID
     "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
     privacy: PrivacyPublicationInput
       @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")
@@ -144,6 +146,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   }
 
   type SaveClimbResult {
+    "True when the UUID already existed and no fields were changed."
+    replayed: Boolean
     uuid: ID!
     synced: Boolean!
     "ISO timestamp of when the row was created"
@@ -160,6 +164,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
   spray walls included. The edit is made in place; no revision is recorded.
   """
   input UpdateClimbInput {
+    "Stable UUID for one edit; retries acknowledge the original committed edit."
+    clientMutationId: ID
     "Ignored. A published climb is public to everyone, so a climb has no audience. Kept so installed app builds that still send it are not rejected."
     privacy: PrivacyPublicationInput
       @deprecated(reason: "Climbs have no audience: a published climb is public to everyone. Ignored.")

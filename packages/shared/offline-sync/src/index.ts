@@ -27,6 +27,9 @@ export type { SyncCursorInput, SyncCursor, SyncResult, SyncDeletionRecord, SyncD
 // --- Mutation outbox (offline writes) ------------------------------------------
 export {
   enqueue,
+  climbMutationEntityKey,
+  getLatestClimbMutationKey,
+  hasPendingClimbWritesForScope,
   peekPending,
   getPendingCount,
   hasPendingTickForClimb,

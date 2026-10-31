@@ -23,6 +23,7 @@ export async function validateEntityExists(
           userId: dbSchema.boardClimbs.userId,
           isDraft: dbSchema.boardClimbs.isDraft,
           isListed: dbSchema.boardClimbs.isListed,
+          boardType: dbSchema.boardClimbs.boardType,
         })
         .from(dbSchema.boardClimbs)
         .where(
@@ -44,7 +45,8 @@ export async function validateEntityExists(
       if (!climb) {
         throw new Error('Climb not found');
       }
-      if ((climb.isDraft === true || climb.isListed === false) && climb.userId !== viewerUserId) {
+      const sharedSprayDraft = climb.boardType === 'spray' && climb.isDraft === true;
+      if (!sharedSprayDraft && (climb.isDraft === true || climb.isListed === false) && climb.userId !== viewerUserId) {
         throw new Error('Climb not found');
       }
       break;

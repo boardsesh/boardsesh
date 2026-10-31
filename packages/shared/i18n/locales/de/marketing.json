@@ -161,10 +161,15 @@
       "eyebrow": "Kostenlos, und das bleibt so",
       "title": "Boardsesh läuft, weil Kletterer*innen beisteuern",
       "p1": "Keine Werbung, keine gesperrten Screens, keine zweite Klasse. Ganz Boardsesh bleibt für alle offen, ob du sponserst oder nicht, Selbsthosting inklusive.",
-      "p2": "Hosting, Datenbank und die Rechnungen dahinter zahlen die Leute, die es benutzen.",
+      "p2": "Die Zeit, die es braucht, Boardsesh zu bauen, zahlen die Leute, die es benutzen.",
       "chipIn": "Beisteuern",
       "source": "Code ansehen",
       "otherWays": "Kein Geld übrig?"
+    },
+    "supportBanner": {
+      "text": "Boardsesh bleibt kostenlos, weil Kletterer*innen beisteuern. Unterstütz Boardsesh monatlich und bezahl die Zeit, die es braucht, es zu bauen.",
+      "cta": "Monatlich unterstützen",
+      "close": "Schließen"
     }
   },
   "about": {
@@ -214,13 +219,17 @@
   "support": {
     "hero": {
       "title": "Halt Boardsesh am Laufen",
-      "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
+      "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt",
+      "ctaMonthly": "Monatlich unterstützen"
     },
     "promise": "Keine gesperrten Screens, keine zweite Klasse, keine Werbung. Beisteuern zahlt die Rechnung, sonst nichts.",
+    "promiseMonthly": "Keine gesperrten Screens, keine zweite Klasse, keine Werbung. Beisteuern bezahlt die Stunden, die in Boardsesh fließen, sonst nichts.",
     "why": {
       "title": "Warum es diese Seite gibt",
       "p1": "Boardsesh ist kostenlos und Open Source, und das bleibt auch so. Der Betrieb kostet trotzdem echtes Geld: Hosting, Datenbank und Infrastruktur summieren sich, je mehr Leute dazukommen.",
-      "p2": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Server am Netz."
+      "p2": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Server am Netz.",
+      "p1Monthly": "Boardsesh ist kostenlos und Open Source, und das bleibt auch so. Es zu bauen kostet jede Woche Stunden, und monatliche Unterstützung bezahlt diese Zeit.",
+      "p2Monthly": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Arbeit am Laufen."
     },
     "rails": {
       "title": "So kannst du beisteuern"
@@ -234,6 +243,18 @@
       "title": "Einmalige Spende",
       "body": "Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
       "cta": "Einmal spenden"
+    },
+    "chooser": {
+      "cadenceLabel": "Wie oft",
+      "monthly": "Monatlich",
+      "once": "Einmal",
+      "currencyLabel": "Währung",
+      "aud": "AUD",
+      "usd": "USD",
+      "perMonth": "{{amount}}/Monat",
+      "monthlyBody": "Monatliche Unterstützung bezahlt die Zeit, die es braucht, Boardsesh zu bauen. Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
+      "publicName": "Wenn du beim Bezahlen einen Namen angibst, kann er öffentlich erscheinen, wenn wir uns bei Unterstützer*innen bedanken. Lass das Feld leer, um anonym zu geben.",
+      "manage": "Du unterstützt schon monatlich? In Stripe ändern oder beenden →"
     },
     "otherWays": {
       "title": "Andere Wege zu helfen",
@@ -262,11 +283,17 @@
     "honesty": {
       "title": "Das Kleingedruckte",
       "p1": "Spenden sind nicht steuerlich absetzbar. Boardsesh ist kein Verein, nur Kletterer*innen, die die Serverrechnung zahlen.",
-      "p2": "Dein Geld geht in Hosting, Datenbank und Infrastruktur. Es kauft nichts extra in der App: Boardsesh bleibt komplett offen für alle, ob du spendest oder nicht."
+      "p1Monthly": "Spenden sind nicht steuerlich absetzbar. Boardsesh ist kein Verein, nur Kletterer*innen, die die Zeit bezahlen, die es braucht, es zu bauen.",
+      "p2": "Dein Geld geht in Hosting, Datenbank und Infrastruktur. Es kauft nichts extra in der App: Boardsesh bleibt komplett offen für alle, ob du spendest oder nicht.",
+      "p2Monthly": "Dein Geld bezahlt die Zeit, die es braucht, Boardsesh zu bauen. Es kauft nichts extra in der App: Boardsesh bleibt komplett offen für alle, ob du unterstützt oder nicht."
     },
     "thanks": {
       "title": "Danke",
       "body": "An alle, die Boardsesh schon unterstützen, Fehler melden, Code schicken oder einen Screen übersetzen: danke. Ihr haltet das Ding in Bewegung."
+    },
+    "thanksState": {
+      "title": "Danke",
+      "body": "Deine Unterstützung ist angekommen. Sie fließt direkt in Boardsesh."
     },
     "aboutLink": "Mehr über das Projekt →",
     "docsLink": "Sieh in der Doku, wie es gebaut ist →",
@@ -1013,7 +1040,7 @@
   },
   "privacy": {
     "title": "Datenschutzerklärung",
-    "lastUpdated": "Zuletzt aktualisiert: 17. Oktober 2026",
+    "lastUpdated": "Zuletzt aktualisiert: 29. Oktober 2026",
     "intro1": "Boardsesh ist eine quelloffene App, die Kletter-Trainingsboards (Kilter, Tension, MoonBoard) über Bluetooth steuert. Diese Erklärung sagt dir, welche Daten wir erheben, wozu, und was wir damit machen.",
     "intro2ProductAnalytics": "Kurz gesagt: Wir erheben nur, was die App zum Laufen braucht. Wir verkaufen deine Daten nicht, wir schalten keine Werbung, und wir geben nichts an Werbetreibende oder Datenhändler weiter.",
     "collect": {
@@ -1064,17 +1091,21 @@
       "expoLink": "die Dokumentation von Expo Observe",
       "hostingBody": "Railway hostet Anwendung und Datenbank. Cloudflare liefert Inhalte aus, hostet die Browser-App und speichert Medien. Diese Anbieter verarbeiten die Anfragen, die für Boardsesh erforderlich sind. Siehe ",
       "sentryBody": "Wir nutzen Sentry zur Fehlerüberwachung auf Grundlage berechtigter Interessen, damit Boardsesh funktioniert. Die standardmäßige Erfassung personenbezogener Informationen ist ausgeschaltet; Fehlerberichte werden begrenzt und sensible Felder entfernt. Der Dienst bleibt aktiv, wenn du Analysen ablehnst. Siehe ",
-      "expoBody": "Wir nutzen Expo Observe für Leistungsmessungen, Geräte- und App-Versionsinformationen sowie Fehlerdiagnosen auf unserem eigenen Server, auf Grundlage berechtigter Interessen, damit Boardsesh funktioniert. Diagnosen bleiben aktiviert, wenn du Analysen ablehnst. Installations- und Sitzungskennungen des SDK dienen der Prüfung von Updates; wir weisen Observe keine Boardsesh-Kontoidentität zu. Siehe "
+      "expoBody": "Wir nutzen Expo Observe für Leistungsmessungen, Geräte- und App-Versionsinformationen sowie Fehlerdiagnosen auf unserem eigenen Server, auf Grundlage berechtigter Interessen, damit Boardsesh funktioniert. Diagnosen bleiben aktiviert, wenn du Analysen ablehnst. Installations- und Sitzungskennungen des SDK dienen der Prüfung von Updates; wir weisen Observe keine Boardsesh-Kontoidentität zu. Siehe ",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Wenn du über unsere Unterstützungsseite gibst, wickelt Stripe die Zahlung ab. Stripe erhält deine Karten- oder Wallet-Daten, deine E-Mail-Adresse, dein Rechnungsland und jeden Namen und jede Adresse, die du beim Bezahlen angibst. Boardsesh sieht nie deine vollständige Kartennummer. Wir sehen deine E-Mail, den angegebenen Namen, den Betrag, dein Rechnungsland (plus Postleitzahl oder Adresse, wenn der Bezahlvorgang danach fragt), die Kartenmarke, ihre letzten 4 Ziffern und das Ablaufdatum sowie ein kurzes Kürzel der Seite, von der du kamst. Wir nutzen das, um die von dir gewünschte Zahlung auszuführen, Belege zu schicken und Fragen zu beantworten, und bewahren es auf, weil das Steuerrecht Zahlungsbelege verlangt. Rechtsgrundlage sind die Ausführung der von dir gewünschten Zahlung und unsere gesetzliche Aufbewahrungspflicht. Einen angegebenen Namen nennen wir eventuell, wenn wir uns bei Unterstützer*innen bedanken; lass das Feld leer, um anonym zu bleiben. Siehe ",
+      "stripeLink": "Datenschutzerklärung von Stripe"
     },
     "sharing": {
       "title": "Datenweitergabe",
-      "body1ProductAnalytics": "Wir verkaufen deine Daten nicht, schalten keine Werbung und teilen keine Informationen mit Werbetreibenden oder Datenhändlern. Die oben genannten Anbieter verarbeiten Daten für Hosting, Speicherung, Dienstzuverlässigkeit und optionale Analysen. Die Synchronisierung mit Aurora Climbing läuft, wenn du sie aktivierst.",
+      "body1ProductAnalytics": "Wir verkaufen deine Daten nicht, schalten keine Werbung und teilen keine Informationen mit Werbetreibenden oder Datenhändlern. Die oben genannten Anbieter verarbeiten Daten für Hosting, Speicherung, Zahlungen, Dienstzuverlässigkeit und optionale Analysen. Die Synchronisierung mit Aurora Climbing läuft, wenn du sie aktivierst.",
       "body2": "Andere Boardsesh-Nutzer*innen sehen deinen Benutzernamen, dein Profil und deine eingetragenen Boulder, wenn du bei sozialen Funktionen wie dem Party-Modus mitmachst. Das ist in der App sichtbar und gehört dazu.",
       "body3SprayPhotos": "Wir geben Spraywall-Fotos und die Griffe, die du markierst, an niemanden zum Trainieren weiter. Das einzige Modell, das damit trainiert wird, ist unsere eigene Grifferkennung. Andere sehen das Foto einer Spraywall so, wie ihre Sichtbarkeit es erlaubt, und Mitglieder einer Halle sehen die Spraywalls dieser Halle, auch die privaten. Das Foto einer öffentlichen Spraywall steht im offenen Web."
     },
     "retention": {
       "title": "Speicherdauer",
-      "body": "Wir behalten deine Kontodaten und deine Kletterhistorie, solange dein Konto aktiv ist. Wenn du Boardsesh nicht mehr nutzt, bleiben deine Daten, bis du dein Konto löschst."
+      "body": "Wir behalten deine Kontodaten und deine Kletterhistorie, solange dein Konto aktiv ist. Wenn du Boardsesh nicht mehr nutzt, bleiben deine Daten, bis du dein Konto löschst.",
+      "donations": "Spendenbelege bleiben bei Stripe und in unserer Buchhaltung, solange das Steuerrecht es verlangt. Sie hängen nicht an deinem Boardsesh-Konto, deshalb entfernt eine Kontolöschung sie nicht. Fragen zu einem Spendenbeleg? Schreib uns."
     },
     "deletion": {
       "title": "Konto löschen",

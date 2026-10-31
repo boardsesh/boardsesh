@@ -17,6 +17,16 @@
       "assets": [
         {
           "locale": "en-US",
+          "placement": "header",
+          "file": ".boardsesh/app-store-creatives/default/en-US/header.png",
+          "sha256": "be3c598b36c6173219b6fffe6722c3fee1b36d681ae243ff9fab55a6238c71f6",
+          "specId": "1eb43b80-e0b7-4d96-bd32-47a42a8c5fed",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/en-US/creative-assets.json",
+          "provenanceSha256": "b202db7653179d5470355c8973396f023a969e4873faaa7a43802bbef9a9e40a"
+        },
+        {
+          "locale": "en-US",
           "placement": "search-results",
           "file": ".boardsesh/app-store-creatives/default/en-US/search-results.mp4",
           "sha256": "da407fbf689960fe9caf6053a366a34137f8ba372a0c5dee14a504f151afd53d",
@@ -26,6 +36,16 @@
           "provenanceSha256": "257453167aa70de0bb39eea24b4a5216a07440a36788cad81fe6322d838dbd0e",
           "poster": ".boardsesh/app-store-creatives/default/en-US/search-results-poster.jpg",
           "posterSha256": "86b9bb2c4083a6deeafe4872201ea17662e2a745784654cc3f2ab2d185f31478"
+        },
+        {
+          "locale": "es",
+          "placement": "header",
+          "file": ".boardsesh/app-store-creatives/default/es/header.png",
+          "sha256": "ce3c47112ce1e5af5e6b69d36d04f3b28670a6f159ef9c1ed87a2841a3362db9",
+          "specId": "1eb43b80-e0b7-4d96-bd32-47a42a8c5fed",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/es/creative-assets.json",
+          "provenanceSha256": "08dd65567dda73215ddc30c56cbb62904da9b54a6f055d4411dc0b6b8c1b26a8"
         },
         {
           "locale": "es",
@@ -41,6 +61,16 @@
         },
         {
           "locale": "fr",
+          "placement": "header",
+          "file": ".boardsesh/app-store-creatives/default/fr/header.png",
+          "sha256": "274b2506f71562d072e6ce45b3a71e8fcbfd4c1fdef36e6c6bbe5fbd666317ba",
+          "specId": "1eb43b80-e0b7-4d96-bd32-47a42a8c5fed",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/fr/creative-assets.json",
+          "provenanceSha256": "d673af599ac612e86e7ec43ab0efbeb1fd8c8ed37233272724194a09f1e026f9"
+        },
+        {
+          "locale": "fr",
           "placement": "search-results",
           "file": ".boardsesh/app-store-creatives/default/fr/search-results.mp4",
           "sha256": "7dac52f4b46af57ed02c30a06d7b4aa90b7067222881e66a6e38b1362db43c69",
@@ -50,6 +80,16 @@
           "provenanceSha256": "dc8dc4dac205b176b6b4a7bb2a4f44df01ccccd076ef0b3084c0e9feecef7fcb",
           "poster": ".boardsesh/app-store-creatives/default/fr/search-results-poster.jpg",
           "posterSha256": "ae1c811ac15e8955c8aaeafd6503685b67677f4ec4442868f52d638d4ea15d0c"
+        },
+        {
+          "locale": "de",
+          "placement": "header",
+          "file": ".boardsesh/app-store-creatives/default/de/header.png",
+          "sha256": "aacd4fe46afbaf9254eeba6e694f05baf98c6c6d194d8f2792238da7a0193348",
+          "specId": "1eb43b80-e0b7-4d96-bd32-47a42a8c5fed",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/de/creative-assets.json",
+          "provenanceSha256": "4f7ff6b33d6f94cf22b69a5de97310ca42c1eca4f7d080b10fff0fdbae1ac274"
         },
         {
           "locale": "de",

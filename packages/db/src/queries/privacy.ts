@@ -543,49 +543,44 @@ export function publicClimbCondition(climb: { isDraft: SQLWrapper; isListed: SQL
 /**
  * A viewer-aware list: every published, listed climb
  * ({@link publicClimbCondition}) plus the viewer's own drafts and
- * unlisted climbs. The owner is the Boardsesh `user_id` on the row, so an
- * ownerless draft or unlisted climb goes to no one, and an anonymous viewer
- * gets the public set alone.
+ * unlisted climbs. Spray-wall drafts also qualify when the caller provides
+ * boardType; callers MUST apply the current spray-wall access predicate too.
+ * Catalogue drafts remain owner-only, including ownerless imports.
  */
 export function ownedOrPublicClimbCondition(
-  climb: { isDraft: SQLWrapper; isListed: SQLWrapper; userId: SQLWrapper },
+  climb: { isDraft: SQLWrapper; isListed: SQLWrapper; userId: SQLWrapper; boardType?: SQLWrapper },
   viewerId: ViewerId,
 ): SQL {
-  return sql`(${publicClimbCondition(climb)} OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
+  const sharedSprayDraft = climb.boardType
+    ? sql`(COALESCE(${climb.boardType} = 'spray', false) AND ${climb.isDraft} IS TRUE)`
+    : sql`false`;
+  return sql`(${publicClimbCondition(climb)} OR ${sharedSprayDraft} OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
 }
 
 /**
- * The draft rule, which is the whole climb rule for a read by reference (a
- * climb uuid in hand): a published climb is returned to everyone, and a draft
- * to its owner and nobody else, whatever the owner's account or item audience
- * says. The owner is the Boardsesh `user_id` on the climb, so a draft that has
- * none (one imported from a Kilter or Tension account) is returned to no one.
- * The board sync applies it to `board_climbs` and to the climb behind every
- * stats and grades row; the public snapshot exports have no viewer and keep
- * `is_draft IS NOT TRUE`.
+ * Read-by-reference draft policy. Published climbs and spray-wall drafts qualify;
+ * catalogue drafts qualify only for their Boardsesh owner. Omitting boardType
+ * retains the conservative owner-only behavior for existing callers.
  *
- * Unlisted is not tested on purpose: an unlisted climb stays out of lists,
- * search, sync and export, but a direct link still resolves it, with its ticks
- * and comments. A list filters on {@link publicClimbCondition} or
- * {@link ownedOrPublicClimbCondition} instead.
- *
- * Both comparisons are NULL-safe. `is_draft` is nullable and NULL is not a
- * draft; `user_id = viewer` is NULL for an ownerless row or an anonymous
- * viewer, and the COALESCE keeps that a plain false so the condition can sit
- * under a NOT.
+ * Callers MUST separately enforce current spray-wall access, including any held
+ * capability. A board type is not authorization to read a wall. Public snapshot
+ * and discovery exports continue to use the publication-only predicate.
+ * Comparisons are two-valued so NOT is safe even after a nullable outer join.
  */
 export function climbDraftVisibilityCondition(
-  climb: { isDraft: SQLWrapper; userId: SQLWrapper },
+  climb: { isDraft: SQLWrapper; userId: SQLWrapper; boardType?: SQLWrapper },
   viewerId: ViewerId,
 ): SQL {
-  return sql`(${climb.isDraft} IS NOT TRUE OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
+  // Wall authorization is deliberately separate: a board type never grants wall access.
+  const sharedSprayDraft = climb.boardType ? sql`COALESCE(${climb.boardType} = 'spray', false)` : sql`false`;
+  return sql`(${climb.isDraft} IS NOT TRUE OR ${sharedSprayDraft} OR COALESCE(${climb.userId} = ${viewerId ?? null}, false))`;
 }
 
 /**
  * {@link climbDraftVisibilityCondition} for a row keyed by a climb reference
  * (stats, grades, history, neighbours): readable when the climb it belongs to
- * is published, or is the viewer's own draft. A reference to no climb at all is
- * not readable.
+ * is published, is a spray-wall draft, or is the viewer's own catalogue draft.
+ * The caller still enforces current wall access. A missing reference is unreadable.
  */
 export function climbReferenceReadableCondition(
   reference: { boardType: SQLWrapper; climbUuid: SQLWrapper },
@@ -593,7 +588,7 @@ export function climbReferenceReadableCondition(
 ): SQL {
   return sql`EXISTS (SELECT 1 FROM board_climbs privacy_reference_climb
     WHERE privacy_reference_climb.board_type = ${reference.boardType} AND privacy_reference_climb.uuid = ${reference.climbUuid}
-    AND ${climbDraftVisibilityCondition({ userId: sql`privacy_reference_climb.user_id`, isDraft: sql`privacy_reference_climb.is_draft` }, viewerId)})`;
+    AND ${climbDraftVisibilityCondition({ userId: sql`privacy_reference_climb.user_id`, isDraft: sql`privacy_reference_climb.is_draft`, boardType: sql`privacy_reference_climb.board_type` }, viewerId)})`;
 }
 
 type FirstAscentStats = {

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Image from 'next/image';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -18,7 +18,12 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
 import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
+import { SUPPORT_BANNER_SUPPORTER_KEY } from '@/app/components/home/support-banner-window';
+import { setPreference } from '@/app/lib/user-preferences-db';
+import type { SupportPageOptions } from './support-links';
+import SupportChooser, { SUPPORT_CHOOSER_ID } from './support-chooser';
+import { trackSupportCta } from './support-analytics';
 import styles from './support.module.css';
 
 const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
@@ -27,14 +32,39 @@ const LOCALE_CATALOGS_URL = 'https://github.com/boardsesh/boardsesh/tree/main/pa
 const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
 const DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
 const DONATION_CTA_SX = brandCtaSx();
+// With monthly first, GitHub Sponsors is the third option, so it steps down to
+// the outlined pill and the monthly buttons keep the only fills on the card stack.
+const SPONSORS_SECONDARY_SX = brandCtaOutlinedSx({ size: 'medium' });
 
 type SupportContentProps = {
-  /** Stripe Payment Link. Unset in most environments — the rail hides itself. */
-  stripeDonateUrl: string | undefined;
+  /** Every link the env configured, already tagged with `src`. */
+  options: SupportPageOptions;
+  /** The sanitised `?src=`, for the click events. */
+  src: string;
+  /** `?thanks=1`: Stripe sends a giver back here after checkout. */
+  thanks: boolean;
 };
 
-export default function SupportContent({ stripeDonateUrl }: SupportContentProps) {
+/**
+ * Two layouts, picked by the env:
+ *
+ *  - Monthly first (any `SUPPORT_MONTHLY_LINKS_*` set): the chooser, with GitHub
+ *    Sponsors as the third option under it.
+ *  - Otherwise the page as it was: GitHub Sponsors up top, and a one-off Stripe
+ *    card when a one-off link exists.
+ */
+export default function SupportContent({ options, src, thanks }: SupportContentProps) {
   const { t } = useTranslation('marketing');
+  const { monthlyFirst } = options;
+  const onceCurrency = options.once[options.defaultCurrency] ? options.defaultCurrency : options.currencies[0];
+  const stripeDonateUrl = onceCurrency ? options.once[onceCurrency] : undefined;
+  // Someone Stripe just sent back here has given: the homepage's monthly
+  // banner must not ask them again.
+  useEffect(() => {
+    if (thanks) void setPreference(SUPPORT_BANNER_SUPPORTER_KEY, true);
+  }, [thanks]);
+  const trackSponsors = (placement: 'hero' | 'options') =>
+    trackSupportCta({ cadence: 'sponsors', currency: 'none', src, option: 1, placement });
   return (
     <PageShell
       title={t('support.hero.title')}
@@ -45,39 +75,65 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
       eyebrow={<Image src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')} width={52} height={52} alt="" />}
       headerActions={
         <Box className={styles.heroActions}>
-          <Button
-            variant="contained"
-            color="primaryFill"
-            size="large"
-            href={GITHUB_SPONSORS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            startIcon={<GitHub />}
-            sx={DONATION_CTA_SX}
-          >
-            {t('support.sponsors.cta')}
-          </Button>
+          {monthlyFirst ? (
+            <Button
+              variant="contained"
+              color="primaryFill"
+              size="large"
+              href={`#${SUPPORT_CHOOSER_ID}`}
+              startIcon={<FavoriteBorderOutlined />}
+              sx={DONATION_CTA_SX}
+            >
+              {t('support.hero.ctaMonthly')}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              color="primaryFill"
+              size="large"
+              href={GITHUB_SPONSORS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              startIcon={<GitHub />}
+              sx={DONATION_CTA_SX}
+              onClick={() => trackSponsors('hero')}
+            >
+              {t('support.sponsors.cta')}
+            </Button>
+          )}
         </Box>
       }
     >
+      {thanks ? (
+        <PageCard variant="elevated" className={styles.thanksCard} data-testid="support-thanks" role="status">
+          <Typography variant="h4" component="h2">
+            {t('support.thanksState.title')}
+          </Typography>
+          <Typography variant="body1" component="p" color="text.secondary">
+            {t('support.thanksState.body')}
+          </Typography>
+        </PageCard>
+      ) : null}
+
       {/* The promise belongs next to the ask, not buried in the small print. */}
       <Box className={styles.promise}>
         <Typography variant="h5" component="p">
-          {t('support.promise')}
+          {monthlyFirst ? t('support.promiseMonthly') : t('support.promise')}
         </Typography>
       </Box>
 
       <Box className={styles.contributionGrid}>
         <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
-          <Prose>{t('support.why.p1')}</Prose>
-          <Prose>{t('support.why.p2')}</Prose>
+          <Prose>{monthlyFirst ? t('support.why.p1Monthly') : t('support.why.p1')}</Prose>
+          <Prose>{monthlyFirst ? t('support.why.p2Monthly') : t('support.why.p2')}</Prose>
         </PageSection>
 
         <PageSection title={t('support.rails.title')} className={styles.contributionOptions}>
           {/* The rails are the only cards on the page — that is what makes them
             findable. Everything else is prose on the page ground. */}
           <Box className={styles.rails}>
-            <PageCard variant="elevated" className={styles.rail}>
+            {monthlyFirst ? <SupportChooser options={options} src={src} /> : null}
+            <PageCard variant="elevated" className={styles.rail} data-testid="support-sponsors-rail">
               <Typography variant="h4" component="h3" className={styles.railTitle}>
                 <GitHub fontSize="small" />
                 {t('support.sponsors.title')}
@@ -87,19 +143,20 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               </Typography>
               <Box className={styles.railCta}>
                 <Button
-                  variant="contained"
-                  color="primaryFill"
+                  variant={monthlyFirst ? 'outlined' : 'contained'}
+                  color={monthlyFirst ? 'primary' : 'primaryFill'}
                   href={GITHUB_SPONSORS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  sx={DONATION_CTA_SX}
+                  sx={monthlyFirst ? SPONSORS_SECONDARY_SX : DONATION_CTA_SX}
+                  onClick={() => trackSponsors('options')}
                 >
                   {t('support.sponsors.cta')}
                 </Button>
               </Box>
             </PageCard>
 
-            {stripeDonateUrl ? (
+            {!monthlyFirst && stripeDonateUrl && onceCurrency ? (
               <PageCard variant="elevated" className={styles.rail} data-testid="support-one-time-rail">
                 <Typography variant="h4" component="h3" className={styles.railTitle}>
                   <CreditCardOutlined fontSize="small" />
@@ -115,6 +172,9 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
                     target="_blank"
                     rel="noopener noreferrer"
                     sx={{ borderRadius: 'var(--border-radius-full)', textTransform: 'none', minHeight: 44 }}
+                    onClick={() =>
+                      trackSupportCta({ cadence: 'once', currency: onceCurrency, src, option: 1, placement: 'options' })
+                    }
                   >
                     {t('support.oneTime.cta')}
                   </Button>
@@ -131,8 +191,8 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         icon={<InfoOutlined />}
         tone="neutral"
       >
-        <Prose>{t('support.honesty.p1')}</Prose>
-        <Prose>{t('support.honesty.p2')}</Prose>
+        <Prose>{monthlyFirst ? t('support.honesty.p1Monthly') : t('support.honesty.p1')}</Prose>
+        <Prose>{monthlyFirst ? t('support.honesty.p2Monthly') : t('support.honesty.p2')}</Prose>
         <Prose>
           <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
             {t('support.docsLink')}

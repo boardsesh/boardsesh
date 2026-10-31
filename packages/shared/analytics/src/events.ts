@@ -513,6 +513,13 @@ export const SHARED_EVENTS = {
   // workout's top row) }. Behind the `wall-swipe-to-drive` flag. Whether the
   // drive then went live is Drive Mode Ended's `reason` (`connect_failed`).
   WallControlSwiped: 'Wall Control Swiped',
+  // Mobile-only: a climber tapped a link to boardsesh.com/support. Only US
+  // iPhones and the Expo browser app can see one (see
+  // packages/mobile/src/lib/donation-links.ts), so this counts the in-app half
+  // of the donation funnel. Props: { surface, cadence? }.
+  // `surface`: 'acknowledgements' | 'account' | 'home-card'.
+  // `cadence`: 'monthly' | 'once', sent only by the Home card, which offers both.
+  SupportLinkTapped: 'Support Link Tapped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started

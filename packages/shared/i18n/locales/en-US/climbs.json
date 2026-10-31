@@ -606,7 +606,8 @@
       "clearAll": "Clear all",
       "nameToken": "“{{name}}”",
       "drafts": "My drafts",
-      "popularityUnrepeated": "Unrepeated"
+      "popularityUnrepeated": "Unrepeated",
+      "wallDrafts": "Drafts"
     },
     "search": {
       "recentFilters": "Recent",
@@ -828,7 +829,8 @@
         "campusLabel": "Campus (no feet)",
         "campusDescription": "Hands only — no feet allowed",
         "anyFeetLabel": "Any feet",
-        "anyFeetDescription": "Feet can use any hold, not just the marked ones"
+        "anyFeetDescription": "Feet can use any hold, not just the marked ones",
+        "wallDraftDescription": "Everyone with access to this Spraywall can climb your saved drafts."
       },
       "drafts": {
         "holds_one": "{{count}} hold",
@@ -856,7 +858,8 @@
         "done": "Saved",
         "draftToast": "Draft saved",
         "publishedToast": "Climb published",
-        "needsHold": "Paint a hold to save"
+        "needsHold": "Paint a hold to save",
+        "beforeLogging": "Save this climb before logging it."
       },
       "autosave": {
         "onDevice": "Draft saved on this phone",
@@ -866,7 +869,8 @@
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
         "saveFailed": "Couldn't save to your account. Tap Save to retry.",
-        "keptToast": "Draft kept on this phone. Reopen the creator to finish it."
+        "keptToast": "Draft kept on this phone. Reopen the creator to finish it.",
+        "waitingToSync": "Saved on this device · Waiting to sync"
       },
       "newClimb": {
         "confirm": {

@@ -66,8 +66,8 @@ describe('buildFeatureFlagRows', () => {
   it('does not render a policy-controlled override as a forced choice on a store build', () => {
     // The provider drops this override outside a dev build, so a row that showed
     // 'on' here would be a toggle that lies about what the app is doing.
-    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links': true }, {});
-    const row = rows.find((candidate) => candidate.key === 'donation-links');
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links-v2': true }, {});
+    const row = rows.find((candidate) => candidate.key === 'donation-links-v2');
 
     expect(row?.choice).toBe('default');
     expect(row?.effectiveLabel).toBe(
@@ -77,8 +77,8 @@ describe('buildFeatureFlagRows', () => {
 
   it('renders a policy-controlled override normally in a dev client', () => {
     build.dev = true;
-    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links': true }, {});
-    const row = rows.find((candidate) => candidate.key === 'donation-links');
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links-v2': true }, {});
+    const row = rows.find((candidate) => candidate.key === 'donation-links-v2');
 
     expect(row?.choice).toBe('on');
     expect(row?.effectiveLabel).toBe('Live default: not set · Effective: on');

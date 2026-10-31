@@ -49,6 +49,10 @@ vi.mock('../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ us
 vi.mock('../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../providers/launch-ready-context', () => ({ useLaunchWritesReady: () => state.launchReady }));
 vi.mock('../../lib/graphql/hooks', () => ({ fetchAllMyBoards: vi.fn() }));
+vi.mock('../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+vi.mock('../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
+vi.mock('../../lib/spray/spray-wall-registry', () => ({ getSprayWall: () => null }));
+vi.mock('../../offline/opened-spray-wall-pins', () => ({ recordOpenedSprayWall: () => false }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../offline/use-board-downloads', () => ({ useBoardDownloads: () => ({ enableBoardsOffline }) }));
 vi.mock('../../offline/remove-offline-board', () => ({ removeOfflineBoard }));

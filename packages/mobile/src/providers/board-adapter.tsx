@@ -27,6 +27,7 @@ import { getWsClient } from '../lib/graphql/ws-client';
 import { subscribeClimbStatsStream } from '../lib/climb-stats/subscribe-climb-stats-stream';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
 import { mirrorWrittenClimb } from '../offline/mirror-written-climb';
+import { saveClimbLocal, updateClimbLocal } from '../offline/write-climb-local';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { getSetting } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
@@ -123,6 +124,46 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       executeHttp: (query, variables) => offlineAwareRequest(query, variables),
       executeWs: ({ query, variables }) => execute(getWsClient, { query, variables }),
       afterClimbWrite: mirrorWrittenClimb,
+      saveClimbOffline: !offlineEnabled
+        ? undefined
+        : async (input, { queryClient }) => {
+            const db = getDatabaseHandle();
+            if (!db) return null;
+            const saved = await saveClimbLocal(db, input);
+            if (saved) {
+              const graphqlFetch: GraphQLFetch = (query, variables) =>
+                getOfflineSyncHttpClient().request(query, variables);
+              triggerSync(
+                db,
+                queryClient,
+                graphqlFetch,
+                () => getSetting('syncEnabledBoards'),
+                () => drainMutationQueue(db, queryClient, graphqlFetch),
+                { snapshotSource },
+              );
+            }
+            return saved;
+          },
+      updateClimbOffline: !offlineEnabled
+        ? undefined
+        : async (input, { queryClient }) => {
+            const db = getDatabaseHandle();
+            if (!db) return null;
+            const saved = await updateClimbLocal(db, input);
+            if (saved) {
+              const graphqlFetch: GraphQLFetch = (query, variables) =>
+                getOfflineSyncHttpClient().request(query, variables);
+              triggerSync(
+                db,
+                queryClient,
+                graphqlFetch,
+                () => getSetting('syncEnabledBoards'),
+                () => drainMutationQueue(db, queryClient, graphqlFetch),
+                { snapshotSource },
+              );
+            }
+            return saved;
+          },
       resolveActiveSessionId: () => sessionIdRef.current,
       captureAuthEpoch: captureAuthCredentialGeneration,
       isAuthEpochCurrent: isAuthCredentialGenerationCurrent,

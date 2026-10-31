@@ -5,6 +5,8 @@ import type { BoardName, SaveClimbInput } from '@boardsesh/shared-schema';
 // mutation actually maps. snake_case is preserved so form payloads can be
 // forwarded unchanged from existing create-climb forms on both platforms.
 export type SaveClimbOptions = {
+  /** Stable identity supplied by offline-capable clients. */
+  uuid?: string;
   layout_id: number;
   /**
    * The board size the climb was painted on. Optional because the Aurora forms
@@ -50,8 +52,10 @@ export type SaveClimbOptions = {
 
 export type SaveClimbResponse = {
   uuid: string;
+  isDraft?: boolean;
   createdAt?: string | null;
   publishedAt?: string | null;
+  delivery?: 'queued' | 'acknowledged';
 };
 
 export type UpdateClimbResponse = {
@@ -59,6 +63,7 @@ export type UpdateClimbResponse = {
   createdAt?: string | null;
   publishedAt?: string | null;
   isDraft: boolean;
+  delivery?: 'queued' | 'acknowledged';
 };
 
 /**
@@ -71,6 +76,7 @@ export type UpdateClimbResponse = {
  */
 export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions): SaveClimbInput {
   return {
+    ...(options.uuid ? { uuid: options.uuid } : {}),
     boardType: boardName,
     layoutId: options.layout_id,
     sizeId: options.size_id,

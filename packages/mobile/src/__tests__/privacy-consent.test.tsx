@@ -81,6 +81,8 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
 });
 
 it.each([false, true])('replays blocked navigation after synchronous consent settles (canDismiss=%s)', (canDismiss) => {
+  navigation.replace.mockClear();
+  navigation.dismiss.mockClear();
   launch.released = true;
   updateConsentState({ record: null, loaded: true, settled: false, killed: false });
   navigation.canDismiss.mockReturnValue(canDismiss);
@@ -98,9 +100,17 @@ it.each([false, true])('replays blocked navigation after synchronous consent set
     });
     return new Promise<void>(() => {});
   });
-  const leave = canDismiss ? navigation.dismiss : navigation.replace;
-  leave.mockImplementation(() => guard({ repeat }));
+  navigation.replace.mockImplementation(() => guard({ repeat }));
   fireEvent.click(screen.getByRole('button', { name: 'deny' }));
+  if (canDismiss) {
+    // ConsentGate owns dismissal after observing the settled choice.
+    expect(navigation.dismiss).not.toHaveBeenCalled();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(repeat).not.toHaveBeenCalled();
+    guard({ repeat });
+  } else {
+    expect(navigation.replace).toHaveBeenCalledWith('/');
+  }
   expect(repeat).toHaveBeenCalledOnce();
   expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
   view.unmount();

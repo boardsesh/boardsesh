@@ -22,6 +22,7 @@ export async function mirrorSavedClimb(
   climbUuid: string,
   result: { viewerId: string; climb: unknown; stats: unknown[] },
   canWrite: () => boolean,
+  acknowledgedMutationKey?: string,
 ): Promise<boolean> {
   const climb = documentRow(result.climb);
   const stats = result.stats.map(documentRow);
@@ -66,6 +67,8 @@ export async function mirrorSavedClimb(
             config.localColumns,
             config.transientColumns ?? [],
             true,
+            undefined,
+            acknowledgedMutationKey,
           );
           // A credential transition during a native bridge await must roll back
           // the earlier table too, rather than grafting a prior account's wall.

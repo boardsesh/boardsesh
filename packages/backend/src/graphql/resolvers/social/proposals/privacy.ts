@@ -29,7 +29,7 @@ export function proposalClimbVisibilityCondition(
         eq(climb.uuid, reference.climbUuid),
         eq(climb.boardType, reference.boardType),
         ownedOrPublicClimbCondition(
-          { isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
+          { boardType: climb.boardType, isDraft: climb.isDraft, isListed: climb.isListed, userId: climb.userId },
           viewerId,
         ),
         sprayClimbVisibilityCondition({ boardType: climb.boardType, layoutId: climb.layoutId }, viewerId),

@@ -195,6 +195,25 @@ describe('drainMutationQueue', () => {
     });
   });
 
+  it.each(['acknowledged', 'dead_letter'] as const)('includes a climb entity key on %s delivery', async (status) => {
+    const mutation = makeMutation({
+      table_name: 'board_climbs',
+      idempotency_key: 'climb:update:operation',
+      entity_key: 'climb:spray:climb-uuid',
+    });
+    mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+    if (status === 'dead_letter') mockProcessMutation.mockRejectedValueOnce(new Error('Invalid climb'));
+    const onMutationStatus = vi.fn();
+    await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, { ...ONLINE, onMutationStatus });
+    expect(onMutationStatus).toHaveBeenCalledWith({
+      tableName: 'board_climbs',
+      operation: 'create',
+      idempotencyKey: 'climb:update:operation',
+      entityKey: 'climb:spray:climb-uuid',
+      status,
+    });
+  });
+
   it('reports a throwing mutation-status callback and continues delivering the batch', async () => {
     const mutationA = makeMutation({ id: 1, idempotency_key: 'tick-a' });
     const mutationB = makeMutation({ id: 2, idempotency_key: 'tick-b' });

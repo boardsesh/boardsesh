@@ -4344,7 +4344,27 @@ somebody else's wall climb — has no registry entry yet, so `CreateClimbScreen`
 holds a spinner on `useSprayWall`'s load state instead of settling on "can't set
 climbs here" and never looking again.
 
+## Shared climb drafts
+
+Every saved climb draft on a spray wall is available to everyone who can access that wall, including existing drafts. The wall's current permission and link-capability checks remain authoritative. The Drafts collection browses the wall's drafts; the creator's Open drafts section stays personal so picking a row always opens an editable climb. Editing, publishing and deletion remain setter-only. Ordinary climb deletion applies the same retention and concurrent-delete guard to drafts with logged ticks as it does to published climbs. Account erasure retains its existing separate draft-erasure behavior.
+
+`ClimbSearchInput.draftScope` is `OWN` by default and accepts `WALL` only for spray walls. Normal published-climb lists, global new-climb announcements, snapshots and sitemaps continue to exclude drafts. An unfinished editor autosave is not shared until the climber saves it.
+
 ## Offline: a wall on the device
+
+Opening a spray wall on native starts downloading its photo, holds, published climbs and shared drafts. The account-scoped first-open record respects a later explicit disable or Storage removal; rendering a wall thumbnail never starts a download. Download completion is required before a cold offline opening can draw the wall. Unlisted downloads retain the verified wall UUID alongside its exact scope independently of the recent-board card limit, and send it through every wall sync query and retirement check.
+
+Spray climb Save and Update commit the local climb and a replay operation atomically. A stable client-generated UUID identifies the climb on device, in the queue, in ticks and eventually on the server. Multiple saved climbs survive an app restart; the single working editor autosave remains separate. The existing draft switch controls whether reconnect saves a draft or publishes a climb. A queued save says that it is saved on this device and waiting to sync.
+
+The mutation outbox orders each climb's operations and holds dependent ticks until the preceding climb write is acknowledged. Pending and rejected authored rows cannot be overwritten by an older pull. Canonical primary-backed documents reconcile the acknowledged write, while failed climbs and their dependent ticks remain recoverable through the creator and Sync issues. First-ascent grades are stored with the offline tick; wall and hold editing and deletion remain online.
+
+Favorite and playlist additions also wait for the queued climb write, including a rejected write that needs repair. Deleting a draft or published climb checks this device's pending climb writes and ticks first, then removes the downloaded copy after the server accepts the deletion.
+
+An offline first ascent supplies an ungraded spray climb's local grade before search filtering, counting, sorting and pagination. The fallback uses this account's first graded send at the browsed angle; canonical stats and grade estimates take precedence when available.
+
+`climb_mutation_receipts` reserves client-created climb UUIDs beyond the sync feed's 90-day tombstone retention. Update receipts use `UpdateClimbInput.clientMutationId` to acknowledge an already committed edit without overwriting later changes or rejecting its retry after the 24-hour edit window. Replays still check current ownership and wall access. Editing a rejected operation creates a fresh update identity; retrying it unchanged keeps the original identity. Receipts contain identifiers and acknowledgment metadata, never climb content; account erasure clears their user attribution.
+
+A network create retry returns `SaveClimbResult.replayed` when that UUID already exists. The shared save hook then applies the currently submitted form through the update path before reporting success, so changes made after a lost response are not silently discarded. Deploy the compatible backend and migrations 0285–0287 before this mobile update.
 
 A wall lives in a garage or a basement, which is exactly where there is no
 signal, so SW-15 (#5448) mirrors it. The mechanics live in
@@ -4771,9 +4791,7 @@ After a successful spray climb save or edit, mobile awaits an exact-UUID canonic
 mirror before invalidating the downloaded climb list. `syncClimbDocuments`
 requires the exact board type and layout, and the existing wall visibility rule (including an explicitly supplied unlisted wall
 UUID). Climb and stats documents come from one repeatable-read primary snapshot,
-including the real server `updated_at` and `sync_seq` values. Authors can mirror
-their own drafts; other readable spray rows must be published, so a mirror
-never exposes anybody else's draft. In the app only a climb's setter can edit it
+including the real server `updated_at` and `sync_seq` values. Any authenticated wall reader can mirror its shared drafts; the exact wall capability and current access policy still apply. In the app only a climb's setter can edit it
 (`canEditClimb`); a wall owner cannot edit another setter's climb. The response's authenticated `viewerId` gates the local account
 stamp, while the climb keeps its original `user_id` attribution.
 

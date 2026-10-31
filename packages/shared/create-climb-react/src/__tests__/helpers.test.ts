@@ -85,6 +85,23 @@ describe('a spray climb has the same 24-hour window', () => {
   it('still refuses to update a spray row from another board', () => {
     expect(computeCanUpdate(sprayRow(within), 'kilter', NOW)).toBe(false);
   });
+
+  it('keeps an offline publish repairable until its real server publication is acknowledged', () => {
+    const queued = { ...sprayRow(expired), delivery: 'queued' as const };
+    expect(computeCanUpdate(queued, 'spray', NOW)).toBe(true);
+    expect(computeEditLocked(queued, NOW)).toBe(false);
+    expect(computeCanUpdate(queued, 'kilter', NOW)).toBe(false);
+
+    const acknowledged = { ...queued, delivery: 'acknowledged' as const };
+    expect(computeCanUpdate(acknowledged, 'spray', NOW)).toBe(false);
+    expect(computeEditLocked(acknowledged, NOW)).toBe(true);
+  });
+
+  it('does not change the published edit window on catalogue boards', () => {
+    const queued = { ...sprayRow(expired), boardType: 'kilter', delivery: 'queued' as const };
+    expect(computeCanUpdate(queued, 'kilter', NOW)).toBe(false);
+    expect(computeEditLocked(queued, NOW)).toBe(true);
+  });
 });
 
 // The window's edge, on both sides, on every board. `now - publishedAt` equal to
@@ -171,6 +188,15 @@ describe('canEditClimb', () => {
     const climb = { uuid: 'c', userId: SETTER, published_at: expired };
     expect(canEditClimb({ climb, boardType: 'kilter', currentUserId: SETTER, now: NOW })).toBe(false);
     expect(canEditClimb({ climb, boardType: 'spray', currentUserId: SETTER, now: NOW })).toBe(false);
+  });
+
+  it('lets only the setter reopen a pending spray publish after an offline restart', () => {
+    const climb = { ...old, localWritePending: true };
+    expect(canEditClimb({ climb, boardType: 'spray', currentUserId: SETTER, now: NOW })).toBe(true);
+    expect(canEditClimb({ climb, boardType: 'spray', currentUserId: OTHER, now: NOW })).toBe(false);
+    expect(canEditClimb({ climb, boardType: 'spray', currentUserId: null, now: NOW })).toBe(false);
+    expect(canEditClimb({ climb, boardType: 'kilter', currentUserId: SETTER, now: NOW })).toBe(false);
+    expect(canEditClimb({ climb: old, boardType: 'spray', currentUserId: SETTER, now: NOW })).toBe(false);
   });
 });
 

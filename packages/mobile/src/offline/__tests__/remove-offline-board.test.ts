@@ -37,6 +37,7 @@ const beginScopePurge = vi.fn((_namespace: string) => releasePurge);
 const beginGlobalPurge = vi.fn();
 const isSyncInFlight = vi.fn(() => false);
 const vacuumDatabase = vi.fn(async () => true);
+const hasPendingClimbWrites = vi.fn(async () => false);
 
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/offline-sync')>();
@@ -47,6 +48,7 @@ vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
     beginGlobalPurge: () => beginGlobalPurge(),
     isSyncInFlight: () => isSyncInFlight(),
     vacuumDatabase: () => vacuumDatabase(),
+    hasPendingClimbWritesForScope: () => hasPendingClimbWrites(),
   };
 });
 
@@ -91,9 +93,20 @@ beforeEach(() => {
   beginScopePurge.mockImplementation(() => releasePurge);
   isSyncInFlight.mockImplementation(() => false);
   vacuumDatabase.mockImplementation(async () => true);
+  hasPendingClimbWrites.mockResolvedValue(false);
 });
 
 describe('removeOfflineBoard', () => {
+  it('preserves a spray download before changing anything while saved climbs await sync', async () => {
+    setSetting('syncEnabledBoards', ['spray:42:42']);
+    hasPendingClimbWrites.mockResolvedValueOnce(true);
+    await expect(
+      removeOfflineBoard({ db, queryClient, scope: { boardType: 'spray', layoutId: 42, sizeId: 42 } }),
+    ).rejects.toThrow('Sync your saved climbs');
+    expect(getSetting('syncEnabledBoards')).toEqual(['spray:42:42']);
+    expect(beginScopePurge).not.toHaveBeenCalled();
+    expect(removeBoardScopeData).not.toHaveBeenCalled();
+  });
   it('withdraws only the removed spray wall before deleting its rows', async () => {
     const scope: OfflineBoardScope = { boardType: 'spray', layoutId: 42, sizeId: 42 };
     removeBoardScopeData.mockImplementationOnce(async () => {

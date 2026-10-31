@@ -42,8 +42,7 @@ function PrivacyConsentScreen() {
         if (analytics === 'granted') track('Consent Decided', { analytics: 'granted' });
       })
       .catch(reportHandledError);
-    if (router.canDismiss()) router.dismiss();
-    else router.replace('/');
+    if (!router.canDismiss()) router.replace('/');
   };
   return (
     <ScrollView style={[styles.scroll, { backgroundColor: colors.background }]} contentContainerStyle={styles.backing}>

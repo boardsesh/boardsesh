@@ -42,7 +42,10 @@ selected.each do |variant|
       recorded_output = placement == "header" ? report.fetch("assets").find { |asset| asset["placement"] == placement } : report["video"]
       abort "Export bytes do not match provenance" unless recorded_output && recorded_output["file"] == File.basename(path) && recorded_output["sha256"] == sha
       sources = report.fetch("sources")
-      abort "Header needs native source hashes" if placement == "header" && (!sources.is_a?(Hash) || sources.length != 3 || sources.values.any? { |source| !source.fetch("sha256").match?(/\A[a-f0-9]{64}\z/) })
+      # A CPP Header is a three-phone trio; the default page fans seven walls. The export's own
+      # sourceOrder names every capture it composed, so the hashes must cover exactly those.
+      header_order = placement == "header" ? report.dig("header", "sourceOrder") : nil
+      abort "Header needs native source hashes" if placement == "header" && (!sources.is_a?(Hash) || !header_order.is_a?(Array) || ![3, 7].include?(header_order.length) || sources.keys.sort != header_order.sort || sources.values.any? { |source| !source.fetch("sha256").match?(/\A[a-f0-9]{64}\z/) })
       abort "Video needs native source hashes" if placement != "header" && (!sources.is_a?(Array) || sources.empty? || sources.any? { |source| !source.fetch("framesSha256").match?(/\A[a-f0-9]{64}\z/) || !source.fetch("marksSha256").match?(/\A[a-f0-9]{64}\z/) })
       placement_type = placement == "header" ? "PRODUCT_PAGE_HEADER_ASSET" : "APP_STORE_SEARCH_RESULTS_ASSET"
       width, height = placement == "header" ? [3840, 1646] : [1920, 1280]

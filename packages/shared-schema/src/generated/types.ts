@@ -1604,6 +1604,8 @@ export type ClimbSearchInput = {
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
   /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle. */
   crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
+  /** OWN lists personal drafts; WALL lists all drafts on an accessible spray wall. */
+  draftScope?: InputMaybe<DraftScope>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
   /** Which grade minGrade and maxGrade are compared against. Omitted means UPSTREAM, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels. */
@@ -2511,6 +2513,8 @@ export type DismissGymClusterInput = {
   /** All member gym UUIDs of the cluster (order-independent; used to compute the signature). */
   gymUuids: Array<Scalars['ID']['input']>;
 };
+
+export type DraftScope = 'OWN' | 'WALL';
 
 /**
  * DEPRECATED. Sessions are always-live; there is no wall driver. This type and its
@@ -7912,6 +7916,7 @@ export type QueryClimbArgs = {
   layoutId: Scalars['Int']['input'];
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8417,6 +8422,7 @@ export type QuerySprayWallArtArgs = {
 /** Root query type for all read operations. */
 export type QuerySprayWallByLayoutArgs = {
   layoutId: Scalars['Int']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8474,6 +8480,7 @@ export type QuerySyncClimbGradesArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8485,6 +8492,7 @@ export type QuerySyncClimbStatsArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8496,6 +8504,7 @@ export type QuerySyncClimbsArgs = {
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   snapshotClimbWatermark?: InputMaybe<SyncCursorInput>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8541,6 +8550,7 @@ export type QuerySyncSprayWallsArgs = {
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9148,6 +9158,8 @@ export type SaveClimbInput = {
   sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
   /** The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync. */
   userGrade?: InputMaybe<Scalars['String']['input']>;
+  /** Optional stable client-generated climb UUID for idempotent offline replay. */
+  uuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type SaveClimbResult = {
@@ -9156,6 +9168,8 @@ export type SaveClimbResult = {
   createdAt?: Maybe<Scalars['String']['output']>;
   /** ISO timestamp of when the row was first published (null while still a draft) */
   publishedAt?: Maybe<Scalars['String']['output']>;
+  /** True when the UUID already existed and no fields were changed. */
+  replayed?: Maybe<Scalars['Boolean']['output']>;
   synced: Scalars['Boolean']['output'];
   uuid: Scalars['ID']['output'];
 };
@@ -11855,6 +11869,8 @@ export type UpdateClimbInput = {
   boardType: Scalars['String']['input'];
   /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, any_feet, MoonBoard method) is left untouched. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
+  /** Stable UUID for one edit; retries acknowledge the original committed edit. */
+  clientMutationId?: InputMaybe<Scalars['ID']['input']>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
   framesCount?: InputMaybe<Scalars['Int']['input']>;
@@ -12730,6 +12746,7 @@ export type ResolversTypes = ResolversObject<{
   DiscoverablePlaylist: ResolverTypeWrapper<DiscoverablePlaylist>;
   DiscoverableSession: ResolverTypeWrapper<DiscoverableSession>;
   DismissGymClusterInput: DismissGymClusterInput;
+  DraftScope: DraftScope;
   DriverChanged: ResolverTypeWrapper<DriverChanged>;
   DuplicateClusterTier: DuplicateClusterTier;
   DuplicateGymCluster: ResolverTypeWrapper<DuplicateGymCluster>;
@@ -18559,6 +18576,7 @@ export type SaveClimbResultResolvers<
 > = ResolversObject<{
   createdAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   publishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  replayed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   synced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;

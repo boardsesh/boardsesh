@@ -313,8 +313,12 @@ type GymMembershipResolver = (gymId: number, userId: string) => Promise<boolean>
  * shares one gym — `gymSprayWalls` lists a single gym's walls — can substitute a
  * resolver that asks once for the whole page instead of once per wall.
  */
-async function viewerIsGymMember(gymId: number, userId: string): Promise<boolean> {
-  const [membership] = await db
+async function viewerIsGymMember(
+  gymId: number,
+  userId: string,
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<boolean> {
+  const [membership] = await executor
     .select({ id: dbSchema.gymMembers.id })
     .from(dbSchema.gymMembers)
     .where(and(eq(dbSchema.gymMembers.gymId, gymId), eq(dbSchema.gymMembers.userId, userId)))
@@ -380,11 +384,12 @@ export async function viewerCanSeeSprayWallByLayout(
   wall: SprayWallVisibility,
   board: UserBoardRow,
   userId: string | null | undefined,
-  isGymMember: GymMembershipResolver = viewerIsGymMember,
+  isGymMember?: GymMembershipResolver,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
   if (wall.hiddenAt != null) return board.ownerId === userId;
   if (userId && userId !== board.ownerId) {
-    const [revoked] = await db
+    const [revoked] = await executor
       .select({ userId: dbSchema.resourceGrants.userId })
       .from(dbSchema.resourceGrants)
       .where(
@@ -398,10 +403,14 @@ export async function viewerCanSeeSprayWallByLayout(
       .limit(1);
     if (revoked) return false;
   }
-  const privacy = await getResourcePrivacy('board', board.uuid);
-  if (privacy?.hasOverride) return canAccessResourceWithoutLink('board', board.uuid, userId);
-  if (board.isPublic) return canAccessResourceWithoutLink('board', board.uuid, userId);
-  return viewerIsWallPrincipal(board, userId, isGymMember);
+  const privacy = await getResourcePrivacy('board', board.uuid, executor);
+  if (privacy?.hasOverride) return canAccessResourceWithoutLink('board', board.uuid, userId, executor);
+  if (board.isPublic) return canAccessResourceWithoutLink('board', board.uuid, userId, executor);
+  return viewerIsWallPrincipal(
+    board,
+    userId,
+    isGymMember ?? ((gymId, viewerId) => viewerIsGymMember(gymId, viewerId, executor)),
+  );
 }
 
 /**
@@ -430,8 +439,9 @@ export async function viewerCanWriteSprayClimbs(
   board: UserBoardRow,
   userId: string | null | undefined,
   presentedWallUuid: string | null | undefined,
+  executor: Pick<typeof db, 'select'> = db,
 ): Promise<boolean> {
-  if (await viewerCanSeeSprayWallByLayout(wall, board, userId)) return true;
+  if (await viewerCanSeeSprayWallByLayout(wall, board, userId, undefined, executor)) return true;
   // A hidden wall hands out no capability: the share link an owner sent before an
   // admin acted stops working, or hiding a wall would not take it off the
   // internet. The owner is already back at the line above.
@@ -1764,14 +1774,22 @@ export const sprayWallQueries = {
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
-  sprayWallByLayout: async (_: unknown, { layoutId }: { layoutId: unknown }, ctx: ConnectionContext) => {
+  sprayWallByLayout: async (
+    _: unknown,
+    { layoutId, sprayWallUuid }: { layoutId: unknown; sprayWallUuid?: unknown },
+    ctx: ConnectionContext,
+  ) => {
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallByLayout');
     if (typeof layoutId !== 'number' || !Number.isInteger(layoutId) || layoutId <= 0) {
       throw new Error('Invalid layoutId');
     }
 
-    // NOT `viewerCanSeeSprayWall`: a layout id is a small integer from a
-    // sequence, so an unlisted wall must not resolve here. See that function.
+    if (sprayWallUuid != null) {
+      const validatedUuid = validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
+      const linkedWall = await loadVisibleWall(validatedUuid, ctx.userId);
+      if (!linkedWall || linkedWall.wall.layoutId !== layoutId) return null;
+      return toGraphQLWall(linkedWall, ctx.userId, await computeCanEdit(ctx, linkedWall.board));
+    }
     const loaded = await loadWall('layoutId', layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));

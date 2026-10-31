@@ -34,6 +34,7 @@ import {
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
+import { getSprayWall } from '../../spray/spray-wall-registry';
 import {
   myBoardsQueryKey,
   GYM_BOARDS_QUERY_KEY,
@@ -60,11 +61,6 @@ import {
   restoreClimbToLikedList,
 } from '@boardsesh/playlists-react';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
-import {
-  DELETE_DRAFT_CLIMB_MUTATION,
-  type DeleteDraftClimbMutationVariables,
-  type DeleteDraftClimbMutationResponse,
-} from '@boardsesh/graphql/operations/new-climb-feed';
 import {
   SEARCH_GYMS,
   GET_GYM,
@@ -127,6 +123,7 @@ import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
+  GET_SPRAY_CLIMB,
   type SearchClimbsQueryResponse,
   type SearchClimbsCountQueryResponse,
   type GetClimbQueryResponse,
@@ -1074,9 +1071,17 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 }
 
 export function useClimb(variables: GetClimbQueryVariables | null) {
+  const scopedVariables =
+    variables?.boardName === 'spray'
+      ? { ...variables, sprayWallUuid: variables.sprayWallUuid ?? getSprayWall(variables.layoutId)?.wallUuid }
+      : variables;
   return useQuery({
-    queryKey: [...CLIMB_QUERY_KEY, variables],
-    queryFn: () => offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, variables!),
+    queryKey: [...CLIMB_QUERY_KEY, scopedVariables],
+    queryFn: () =>
+      offlineAwareRequest<GetClimbQueryResponse>(
+        scopedVariables?.boardName === 'spray' ? GET_SPRAY_CLIMB : GET_CLIMB,
+        scopedVariables!,
+      ),
     select: (data) => data.climb,
     enabled: !!variables,
   });
@@ -1088,23 +1093,7 @@ export function useClimb(variables: GetClimbQueryVariables | null) {
  * deleted draft disappears from the drafts list (and any climb list) without a
  * manual reload.
  */
-export function useDeleteDraftClimb() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (variables: DeleteDraftClimbMutationVariables) => {
-      const response = await getHttpClient().request<DeleteDraftClimbMutationResponse>(
-        DELETE_DRAFT_CLIMB_MUTATION,
-        variables,
-      );
-      return response.deleteDraftClimb;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
-    },
-  });
-}
+export { useDeleteDraftClimb } from './use-delete-draft-climb';
 
 // ============================================
 // Session Queries

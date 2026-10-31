@@ -1,6 +1,7 @@
 import type { SqlExecutor, SqlValue } from '../database';
 import { buildMultiRowInsertSql, multiRowChunkSize } from './pull-write';
 import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
+import { climbMutationEntityKey } from '../mutation-queue/queue';
 
 /** Coerce canonical JSON using the same representations as the ordinary pull. */
 export function toSqliteValue(value: unknown): SqlValue {
@@ -20,8 +21,24 @@ export async function writePullDocuments(
   transientColumns: readonly string[],
   preserveNewerRows: boolean,
   onSchemaDrift?: SchemaDriftReporter,
+  acknowledgedMutationKey?: string,
 ): Promise<void> {
   if (documents.length === 0) return;
+  let writableDocuments = documents;
+  if (tableName === 'board_climbs') {
+    // Pulls and mirrors share this transaction-level guard. Ignore only the
+    // operation being acknowledged: a later queued edit still owns its fields.
+    const pendingClimbs = await transaction.getAllAsync<{ entity_key: string }>(
+      `SELECT DISTINCT entity_key FROM pending_mutations WHERE table_name = 'board_climbs'
+       AND entity_key IS NOT NULL AND (? IS NULL OR idempotency_key <> ?)`,
+      [acknowledgedMutationKey ?? null, acknowledgedMutationKey ?? null],
+    );
+    const protectedClimbs = new Set(pendingClimbs.map((mutation) => mutation.entity_key));
+    writableDocuments = documents.filter(
+      (document) => !protectedClimbs.has(climbMutationEntityKey(String(document.board_type), String(document.uuid))),
+    );
+    if (writableDocuments.length === 0) return;
+  }
   // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
   // clients update, so a newly-added server column must not brick every older
   // client's sync loop. SQL safety is unaffected — the statement's column list
@@ -47,7 +64,7 @@ export async function writePullDocuments(
   // single-row INSERT OR REPLACE did (INSERT OR REPLACE still does a whole-row
   // replace, so this matches today's semantics, not just today's SQL shape).
   const columns = allowedColumns.filter((column) =>
-    documents.some((document) => Object.prototype.hasOwnProperty.call(document, column)),
+    writableDocuments.some((document) => Object.prototype.hasOwnProperty.call(document, column)),
   );
   if (columns.length === 0) {
     throw new Error(`Sync document for ${tableName} did not contain any allowed columns`);
@@ -67,8 +84,8 @@ export async function writePullDocuments(
     return sql;
   };
 
-  for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
-    const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
+  for (let chunkStart = 0; chunkStart < writableDocuments.length; chunkStart += chunkSize) {
+    const chunk = writableDocuments.slice(chunkStart, chunkStart + chunkSize);
     const values: SqlValue[] = [];
     for (const document of chunk) {
       for (const column of columns) {

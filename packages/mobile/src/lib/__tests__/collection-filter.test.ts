@@ -103,7 +103,7 @@ describe('visibleCollectionValues', () => {
   it('keeps an active Benchmarks on a spray wall so it can be undone', () => {
     expect(
       visibleCollectionValues({ canFilterPersonalCollections: false, isSprayWall: true, current: 'benchmarks' }),
-    ).toEqual(['any', 'benchmarks']);
+    ).toEqual(['any', 'benchmarks', 'drafts']);
   });
   it('drops My drafts and Liked when signed out', () => {
     expect(

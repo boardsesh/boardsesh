@@ -5,10 +5,12 @@
 // wrong at all.
 
 import type { QueryClient } from '@tanstack/react-query';
+import { forgetSprayWallCapability, rememberSprayWallDownloadCapability } from './opened-spray-wall-pins';
 import {
   beginScopePurge,
   beginGlobalPurge,
   isSyncInFlight,
+  hasPendingClimbWritesForScope,
   purgeNamespaceKey,
   removeBoardScopeData,
   offlineBoardKey,
@@ -20,7 +22,14 @@ import {
   type OfflineDatabase,
   type ScopeTeardownResult,
 } from '@boardsesh/offline-sync';
-import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../settings';
+import {
+  getSetting,
+  setSetting,
+  setOfflineBoardEnabled,
+  forgetOfflineBoardScope,
+  rememberOfflineBoards,
+} from '../settings';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { reportScopeDownloadAbandoned } from './offline-sync-adapter';
 import { reportHandledError } from '../lib/error-reporting';
 import { deleteStoredSprayPhoto } from '../lib/spray/spray-photo-store';
@@ -88,8 +97,19 @@ export async function removeOfflineBoard(params: {
   scope: OfflineBoardScope;
 }): Promise<ScopeTeardownResult> {
   const { db, queryClient, scope } = params;
+  const generation = getCredentialGeneration();
+  if (scope.boardType === 'spray' && (await hasPendingClimbWritesForScope(db, scope))) {
+    throw new Error('Sync your saved climbs before removing this wall');
+  }
+  const wasEnabled = getSetting('syncEnabledBoards').includes(offlineBoardKey(scope));
+  const capabilityLedger = getSetting('offlineOpenedSprayWallsV1');
+  const rememberedBoards = getSetting('offlineBoardsV1').filter(
+    (board) =>
+      board.boardType === scope.boardType && board.layoutId === scope.layoutId && board.sizeId === scope.sizeId,
+  );
 
   setOfflineBoardEnabled(scope, false);
+  forgetSprayWallCapability(scope);
   // The offline picker's snapshots for this scope go with the data. Left behind,
   // they'd offer a board whose climbs have just been deleted.
   forgetOfflineBoardScope(scope);
@@ -117,6 +137,25 @@ export async function removeOfflineBoard(params: {
       // outlive every row that names it, in a directory no sweeper walks.
       removeSprayPhoto: deleteStoredSprayPhoto,
     });
+  } catch (error) {
+    if (
+      scope.boardType === 'spray' &&
+      generation === getCredentialGeneration() &&
+      (await hasPendingClimbWritesForScope(db, scope))
+    ) {
+      if (wasEnabled) setOfflineBoardEnabled(scope, true);
+      rememberOfflineBoards(rememberedBoards);
+      await rememberSprayWallDownloadCapability(rememberedBoards);
+      const currentLedger = getSetting('offlineOpenedSprayWallsV1');
+      const oldCapability = capabilityLedger?.walls[offlineBoardKey(scope)];
+      if (oldCapability && currentLedger?.userId === capabilityLedger?.userId) {
+        setSetting('offlineOpenedSprayWallsV1', {
+          ...currentLedger,
+          walls: { ...currentLedger.walls, [offlineBoardKey(scope)]: oldCapability },
+        });
+      }
+    }
+    throw error;
   } finally {
     // Unconditional: a latch left set would block this layout's downloads for the
     // rest of the app session.

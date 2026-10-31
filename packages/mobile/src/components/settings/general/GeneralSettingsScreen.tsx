@@ -10,6 +10,7 @@ import { useTheme } from '../../../providers/theme-provider';
 import { useLocalePreference } from '../../../providers/i18n-provider';
 import { useToast } from '../../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
+import { useDonationLinksAllowed } from '../../../lib/donation-links';
 import { track } from '../../../lib/analytics';
 import { useConnectivity } from '../../../lib/connectivity/use-connectivity';
 import { isOfflineModeSupported } from '../../../lib/connectivity/connectivity-store';
@@ -61,6 +62,10 @@ export function GeneralSettingsScreen() {
   const schemaReady = useOfflineSchemaReady();
   const outboxSummary = useOutboxSummary(schemaReady ? db : null);
   const pendingCount = outboxSummary?.pendingCount ?? 0;
+  // "Show support asks": offered only where the app can ask at all, so the
+  // switch never names something this install will never show.
+  const donationLinksAllowed = useDonationLinksAllowed();
+  const [supportAsksShown] = useSetting('supportAsksShown');
 
   const onAutoOfflineBoardsToggle = useMemo(
     () =>
@@ -154,6 +159,15 @@ export function GeneralSettingsScreen() {
           },
           onReplayWalkthrough: handleReplayWalkthrough,
           onReplayBoardLook: handleReplayBoardLook,
+          supportAsks: donationLinksAllowed
+            ? {
+                shown: supportAsksShown,
+                onShownChange: (shown) => {
+                  hapticSelection();
+                  setSetting('supportAsksShown', shown);
+                },
+              }
+            : null,
         }),
         'general',
       ),
@@ -173,6 +187,8 @@ export function GeneralSettingsScreen() {
       showStorage,
       handleReplayWalkthrough,
       handleReplayBoardLook,
+      donationLinksAllowed,
+      supportAsksShown,
     ],
   );
 

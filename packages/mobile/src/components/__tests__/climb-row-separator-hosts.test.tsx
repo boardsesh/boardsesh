@@ -75,6 +75,7 @@ vi.mock('react-native-gesture-handler', () => {
     useExclusiveGestures: makeGesture,
     useSimultaneousGestures: makeGesture,
     Gesture: {
+      Manual: makeGesture,
       Pan: makeGesture,
       Tap: makeGesture,
       LongPress: makeGesture,

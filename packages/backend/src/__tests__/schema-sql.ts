@@ -4,6 +4,14 @@
  */
 
 import { readFileSync } from 'node:fs';
+const sharedSprayDraftsSchema = readFileSync(
+  new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
+  'utf8',
+);
+const climbMutationReceiptsSchema = readFileSync(
+  new URL('../../../db/drizzle/0287_climb_mutation_receipts.sql', import.meta.url),
+  'utf8',
+);
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
@@ -107,6 +115,7 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 export const schemaSQL = `
+  DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
@@ -2205,4 +2214,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
   ${sessionWorkoutsSchema}
+  ${sharedSprayDraftsSchema}
+  ${climbMutationReceiptsSchema}
 `;

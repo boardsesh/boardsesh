@@ -98,6 +98,13 @@ export default async function PrivacyPolicyPage() {
           </Link>
           {t('privacy.thirdParty.auroraBodyEnd')}
         </Prose>
+        <Prose>
+          <strong>{t('privacy.thirdParty.stripeLabel')}</strong> {t('privacy.thirdParty.stripeBody')}
+          <Link href="https://stripe.com/privacy" target="_blank" rel="noopener">
+            {t('privacy.thirdParty.stripeLink')}
+          </Link>
+          .
+        </Prose>
       </PageSection>
 
       <PageSection title={t('privacy.choices.title')}>
@@ -113,6 +120,7 @@ export default async function PrivacyPolicyPage() {
 
       <PageSection title={t('privacy.retention.title')}>
         <Prose>{t('privacy.retention.body')}</Prose>
+        <Prose>{t('privacy.retention.donations')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.deletion.title')}>

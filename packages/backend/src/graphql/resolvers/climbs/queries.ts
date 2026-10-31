@@ -43,6 +43,7 @@ import {
   ClimbSearchInputSchema,
   ClimbStatsForClimbsUuidsSchema,
   ExternalUUIDSchema,
+  UUIDSchema,
   SetterStatsInputSchema,
   SimilarClimbsInputSchema,
 } from '../../../validation/schemas';
@@ -281,7 +282,11 @@ export const climbQueries = {
             // A draft target is readable by its owner alone: its neighbours and
             // hold counts describe the draft. A published one is public.
             climbDraftVisibilityCondition(
-              { userId: dbSchema.boardClimbs.userId, isDraft: dbSchema.boardClimbs.isDraft },
+              {
+                boardType: dbSchema.boardClimbs.boardType,
+                userId: dbSchema.boardClimbs.userId,
+                isDraft: dbSchema.boardClimbs.isDraft,
+              },
               ctx.userId,
             ),
           ),
@@ -418,7 +423,8 @@ export const climbQueries = {
 
     // Drafts and liked climbs require authentication — return empty results if
     // not signed in. A signed-out "liked" list is empty, never the full catalogue.
-    if ((parsedInput.onlyDrafts || parsedInput.onlyFavorited) && !ctx.isAuthenticated) {
+    const wallDrafts = parsedInput.boardName === 'spray' && parsedInput.draftScope === 'WALL';
+    if (((parsedInput.onlyDrafts && !wallDrafts) || parsedInput.onlyFavorited) && !ctx.isAuthenticated) {
       return {
         params,
         searchParams,
@@ -565,6 +571,7 @@ export const climbQueries = {
       setIds,
       angle,
       climbUuid,
+      sprayWallUuid,
     }: {
       boardName: string;
       layoutId: number;
@@ -572,6 +579,7 @@ export const climbQueries = {
       setIds: string;
       angle: number;
       climbUuid: string;
+      sprayWallUuid?: string | null;
     },
     ctx: ConnectionContext,
   ) => {
@@ -588,6 +596,7 @@ export const climbQueries = {
     // Aurora boards support negative tilt (e.g. -5°); mobile sends the live board angle here.
     if (angle < -90 || angle > 90) throw new Error('Invalid angle: must be between -90 and 90');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
+    if (sprayWallUuid != null) validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
 
     if (DEBUG) logger.info('[climb] Fetching:', { boardName, layoutId, sizeId, setIds, angle, climbUuid });
 
@@ -595,7 +604,10 @@ export const climbQueries = {
     // the path a SHARED LINK takes, and a link that escaped once would otherwise
     // keep serving a private wall's climb forever. The wall's visibility decides,
     // not the possession of the uuid.
-    if (isSprayBoardType(boardName) && !(await sprayLayoutIsReadable(boardName, layoutId, ctx?.userId))) {
+    if (
+      isSprayBoardType(boardName) &&
+      !(await sprayLayoutIsReadableWithCapability(boardName, layoutId, ctx?.userId, sprayWallUuid))
+    ) {
       return null;
     }
 
@@ -612,7 +624,7 @@ export const climbQueries = {
     // one. `!climb.userId` first, so an anonymous viewer never "equals" a
     // missing owner. Anything published is returned to everyone, whatever its
     // setter's account privacy; an unlisted climb resolves by its link.
-    if (climb?.is_draft && (!climb.userId || climb.userId !== viewerUserId)) return null;
+    if (boardName !== 'spray' && climb?.is_draft && (!climb.userId || climb.userId !== viewerUserId)) return null;
     return climb;
   },
 

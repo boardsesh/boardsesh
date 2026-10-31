@@ -131,7 +131,7 @@ What this means for targeting:
 
 - **Kill switches and percentage rollouts work for everyone**, consented or not, signed in or out.
 - **Conditions on what the request carries still work**: OS, app version and build, and the
-  proxy's edge-verified country (`donation-links` below depends on that).
+  proxy's edge-verified country.
 - **Conditions on stored person properties or cohorts cannot match a climber who is signed out,
   or who declined.** Signed out, every flag request carries the `flags-install:` / `flags-browser:`
   id, which never has a person, so person-property and cohort conditions miss every signed-out
@@ -441,48 +441,66 @@ multivariate flag (the screen wrote one while the select was gone), or a
 variant the flag no longer declares, is cleared when the screen opens
 (`findStaleFeatureFlagOverrideKeys`).
 
-### `donation-links` — the one flag whose targeting is a compliance boundary
+### `donation-links-v2` — the one flag that guards a store policy
 
 Almost every flag here decides whether a feature is visible. This one decides
 whether the app breaks a store policy, so it is worth reading before touching it
 in the dashboard.
 
-An external donation link is a rejection risk in both stores. Two narrow windows
-allow it: the **iOS US storefront** (external purchase links, allowed since May
-2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
-compliant surface is unlinked text that merely names the website — the pattern
-StreetComplete ships and Google sanctions. The Acknowledgements screen renders
-exactly one of those two, and `useDonationLinksAllowed`
-(`packages/mobile/src/lib/donation-links.ts`) picks.
+An external donation link is a rejection risk in both stores. The app acts on
+one narrow window: the **iOS US storefront** (external purchase links, allowed
+since May 2025). Everywhere else the compliant surface is unlinked text that
+merely names the website — the pattern StreetComplete ships and Google
+sanctions. The Acknowledgements screen renders exactly one of those two, and
+`useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
+The same answer gates the Support Boardsesh row in Account and the monthly
+card on Home (days 1 to 7 of each month) (`packages/mobile/src/lib/support-asks.ts`), which also need the
+climber's own "Show support asks" switch in Settings › General to be on. The
+Home card is US iPhones (and admins' phones, for QA) only: it never shows in the Expo browser app, where the
+Account row and the Acknowledgements link are the only asks.
 
-**The two platforms are not equally protected, and the asymmetry is the whole
-point of this section.**
+**On a phone, the code enforces the platform and the region; the flag is only
+the native kill switch.**
 
 - **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
   App Store storefront of `USA`, read from the device through
   `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
-  shows a French iPhone the unlinked text. The module is a native change, so on
-  every binary that predates it — and in Expo Go, and on Android — the probe
-  returns null, which reads as not-allowed. That is the designed degradation.
-- **Android has no client guard at all.** Play exposes no storefront to the app,
-  so there is nothing on-device to check a country against. Functional flag
-  requests preserve OS/version/build targeting when analytics is denied. The
-  first-party proxy supplies only an edge-verified current country, disables
-  upstream GeoIP inference, and replaces unknown/untrusted countries with `XX`.
-  See `docs/cloudflare.md` for the trusted ingress and header prerequisite.
-  **The PostHog
-  targeting IS the guard**, and it has to be exactly:
+  shows a French iPhone the unlinked text. On a binary without the module, in
+  Expo Go, and on Android the probe returns null, which reads as not-allowed.
+- **Android never shows the link**, whatever the flag says. Play exposes no
+  storefront to the app, so the only possible guard there was the PostHog
+  targeting, and Google threatened AnkiDroid with removal over a donation link
+  in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
+  withdrawn.
+- **The Expo browser app shows it unless `donation-links-web-kill` is on**,
+  whatever `donation-links-v2` says. At `/app` the app is a web page, not a store
+  binary, so no store rule applies — the same reason boardsesh.com links
+  /support from every page. Turning `donation-links-v2` off is a store-policy
+  call and should not take the link off the web, so the browser app has
+  its own kill switch, an ordinary `-kill` flag: absent or unresolved leaves the
+  Account row and the link on, and turning it on in PostHog takes both off
+  `/app` without a deploy. Native builds never read it.
+- **Screenshot mode never shows it**, on any platform, so App Store captures and
+  the replayed screenshot fixtures stay free of donation asks.
+- **Admin accounts see it on any phone, for QA.** With the flag on, an admin
+  (`useIsAdmin`) gets the link on iOS in any storefront and on Android, so the
+  maintainer can check it from Australia. App Review never signs in as an admin.
+  It is still covered by the kill switch and by screenshot mode.
 
-  > platform = Android **and** country = AU **and** date >= 2026-09-30
+**Why the key ends in `-v2`.** Every Android bundle from #5523 (17 Sep 2026)
+until #7057 (31 Oct 2026) returns `true` on Android whenever the old
+`donation-links` key is on. Targeting cannot fence them off: the app sends no
+`$os` with its flag requests, so an `OS = iOS` condition is matched against the
+person's last-seen OS, and a climber who also has an iPhone would get `true` on
+their Android phone. Older store binaries never receive a main OTA either. So
+the app reads `donation-links-v2`, which only bundles with the Android hard-off
+know about, and the old key stays absent from PostHog for good (absent reads as
+off). `donation-links.test.ts` pins that the old key does nothing.
 
-  A percentage rollout on Android, or any country condition wider than AU, ships
-  a policy violation directly — nothing downstream will catch it.
-
-  **And the answer is sticky.** PostHog values persist on the device, so an
-  Android phone that resolved `true` while in an allowed country keeps the link
-  until its next flag reload somewhere else. Narrowing the targeting does not
-  reach back and correct a device already holding a `true`; plan the rollout
-  knowing a wrong answer outlives the config that produced it.
+**How it is set (since 31 Oct 2026):** active, 100% of everyone, no conditions.
+The code limits the link to iPhones on the US storefront; the flag only turns it
+off. To stop the link everywhere, disable the flag. Never add a percentage, and
+never create `donation-links`.
 
 **The tester override is disabled for it in production**, which is what
 `policyControlled: true` on a flag definition means. Ordinarily the on-device
@@ -498,8 +516,8 @@ build"). Mark any future flag the same way if flipping it wrong is a policy
 violation rather than an early look at a feature.
 
 Everything else about the flag is ordinary: a POSITIVE rollout flag read as
-`=== true`, so unresolved, absent and off all land on the unlinked text, which
-is the safe answer in every region. It deliberately does not wait on
+`=== true`, so unresolved, absent and off all land on the unlinked text on
+native, which is the safe answer in every region. It deliberately does not wait on
 `useFeatureFlagsResolved` — the first-frame render is already the compliant one.
 
 ### The board-render flags (issue #2202) — both retired
