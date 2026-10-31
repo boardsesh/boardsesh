@@ -32,10 +32,16 @@ The `store-videos-moonboard` artifact contains four MP4s, posters and
 `search-results.manifest.json` files. Every encode passes
 `creativeVideoProblems` before upload. Frames are an Actions handoff artifact
 with one-day retention; no frames go to R2. Metrics include per-step minutes,
-sampled process-tree RSS, total runner memory usage, and simulator boot-state
+sampled process-tree RSS, total runner non-free memory, and simulator boot-state
 transitions. The recorder tears down its simulator in every locale child;
 use the transitions and recorder logs to verify that behavior in CI. Memory
-samples are every five seconds, so brief peaks may be higher.
+samples are every five seconds, so brief peaks may be higher. Non-free RAM
+includes reclaimable file cache and alone does not establish memory pressure.
+On macOS, `memoryDiagnostics` adds VM counters (anonymous, file-backed, wired
+and compressed memory), swap usage, query-only pressure free percentage and the
+five largest resident executable names. These snapshots run every 30 seconds
+and at exit; each sensor has a one-second limit and unavailable readings are
+`null`. Process arguments are never collected.
 
 Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
 green dispatch. Those measurements decide Phase 5 optimizations; estimates
@@ -498,12 +504,22 @@ so this needs a live backend.
    prevents further cold launches. The secondary simulator and Metro shut down
    between takes and retries so the next primary Start runs alone again.
 
-On iOS, `session-private.yaml` waits for the localized visibility switch and taps its
-accessibility label, including SwiftUI's subtitle, rather than a screen point.
+On iOS, `session-private.yaml` waits for the localized visibility switch, including
+SwiftUI's subtitle, then taps `90%,50%` within that matched element's bounds to
+reach the trailing thumb. This is an element-relative tap: pinned Maestro 2.6.1
+maps YAML `text` plus `point` to `TapOnElementCommand.relativePoint` in
+[`YamlFluentCommand.tapCommand`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/yaml/YamlFluentCommand.kt#L775),
+and [`Orchestra.tapOnElement`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/Orchestra.kt#L1207)
+computes it from the matched bounds. The default tap uses the element center.
 The recorder still requires the app's visibility-off event before Start. A
 missing event reports an unconfirmed tap; it does not claim what the screen's
-switch shows. CI memory measurements and a complete crew take remain the check
-that these reductions fit the runner.
+switch shows. The private-flow debug screenshots and target metadata stay until
+that event is confirmed. A missing event keeps them and adds an immediate screen
+capture plus a separate hierarchy query, limited to 60 seconds, with timestamps
+for that later observation. Successful gates discard the temporary debug output.
+CI memory diagnostics and a complete crew take remain the check that these
+reductions fit the runner; occupancy near 99% with one simulator is not proof
+that the second simulator caused the failure.
 
 To check the crew take on the standard 7 GiB CI runner, dispatch
 **Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
