@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "marketingVersion": "2.7.0",
   "storage": {
     "bucket": "boardsesh-store-creatives",
     "baseUrl": "https://store-creatives.boardsesh.com"
@@ -13,7 +14,56 @@
   "variants": {
     "default": {
       "cpp": null,
-      "assets": []
+      "assets": [
+        {
+          "locale": "en-US",
+          "placement": "search-results",
+          "file": ".boardsesh/app-store-creatives/default/en-US/search-results.mp4",
+          "sha256": "da407fbf689960fe9caf6053a366a34137f8ba372a0c5dee14a504f151afd53d",
+          "specId": "a28b6440-2fe2-58f0-9da3-354cb54cab57",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/en-US/search-results.manifest.json",
+          "provenanceSha256": "257453167aa70de0bb39eea24b4a5216a07440a36788cad81fe6322d838dbd0e",
+          "poster": ".boardsesh/app-store-creatives/default/en-US/search-results-poster.jpg",
+          "posterSha256": "86b9bb2c4083a6deeafe4872201ea17662e2a745784654cc3f2ab2d185f31478"
+        },
+        {
+          "locale": "es",
+          "placement": "search-results",
+          "file": ".boardsesh/app-store-creatives/default/es/search-results.mp4",
+          "sha256": "7a08888b005e03b4cbabcf5575494c81fffbbe9be1df0ec4fa5c297453c48f40",
+          "specId": "a28b6440-2fe2-58f0-9da3-354cb54cab57",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/es/search-results.manifest.json",
+          "provenanceSha256": "5356ce5f85776508aaa396436ca0f5310d05857dc7defba0de8792af8ed7f319",
+          "poster": ".boardsesh/app-store-creatives/default/es/search-results-poster.jpg",
+          "posterSha256": "5d39c38c2ff162661138bb41a1561a7fffe8ed760a1bfb5b73a93be55b739a77"
+        },
+        {
+          "locale": "fr",
+          "placement": "search-results",
+          "file": ".boardsesh/app-store-creatives/default/fr/search-results.mp4",
+          "sha256": "7dac52f4b46af57ed02c30a06d7b4aa90b7067222881e66a6e38b1362db43c69",
+          "specId": "a28b6440-2fe2-58f0-9da3-354cb54cab57",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/fr/search-results.manifest.json",
+          "provenanceSha256": "dc8dc4dac205b176b6b4a7bb2a4f44df01ccccd076ef0b3084c0e9feecef7fcb",
+          "poster": ".boardsesh/app-store-creatives/default/fr/search-results-poster.jpg",
+          "posterSha256": "ae1c811ac15e8955c8aaeafd6503685b67677f4ec4442868f52d638d4ea15d0c"
+        },
+        {
+          "locale": "de",
+          "placement": "search-results",
+          "file": ".boardsesh/app-store-creatives/default/de/search-results.mp4",
+          "sha256": "072a407e342ecb84eaadf9b4a2c59fd04a204c01a78da0121c001eae89bcf8c8",
+          "specId": "a28b6440-2fe2-58f0-9da3-354cb54cab57",
+          "placementGroup": "DEFAULT_PROFILE",
+          "provenance": ".boardsesh/app-store-creatives/default/de/search-results.manifest.json",
+          "provenanceSha256": "86bd575f317afdc0bbc11b96f4ee7039e4e8cf1d99b4a1bc9edcd92bec891670",
+          "poster": ".boardsesh/app-store-creatives/default/de/search-results-poster.jpg",
+          "posterSha256": "faca3fff587efd8b550f2662738ec2a6a1b23757bf761755e4f6ac936387d961"
+        }
+      ]
     },
     "kilter": {
       "cpp": "kilter",
