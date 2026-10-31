@@ -1,0 +1,19 @@
+appId: ${APP_ID}
+name: Start a real Record session
+---
+- openLink: ${RECORD_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-start
+    timeout: 30000
+- tapOn:
+    id: session-start
+- extendedWaitUntil:
+    notVisible:
+      id: session-start
+    timeout: 30000
+- openLink: ${RECORD_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-presence-[0-9a-fA-F-]{36}-1
+    timeout: 30000

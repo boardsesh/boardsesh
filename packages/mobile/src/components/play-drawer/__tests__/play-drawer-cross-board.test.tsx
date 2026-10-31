@@ -1904,7 +1904,7 @@ describe('PlayDrawer wall button taps', () => {
     expect(recorded.actionBar.at(-1)?.wallGlow).toBe(glow);
   });
 
-  it('hands a non-driving Re-light board action the real holds before parsing is gated', () => {
+  it('keeps a non-driving Re-light board action free of bokeh', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     linkedTo(linkedBluetooth(), false);
     crew.shared = true;
@@ -1914,9 +1914,7 @@ describe('PlayDrawer wall button taps', () => {
       driving: false,
       tapAction: 'relight',
     });
-    expect(recorded.actionBar.at(-1)?.wallGlow).toMatchObject({
-      holds: [expect.objectContaining({ color: expect.stringMatching(/^#/) })],
-    });
+    expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
   });
 
   it('keeps no-lights board actions free of hold-colour glow', () => {
@@ -2022,10 +2020,15 @@ describe('PlayDrawer wall button taps', () => {
     it('says the climb is on the wall under an hour, and the tap connects and lights it again through the hold', async () => {
       const bluetooth = unlinkedOnTheWall(minutesAgo(10));
       renderDrawer();
-      const model = recorded.actionBar.at(-1)?.wallControl as { state: string; look: string; holder: unknown };
-      expect(model).toMatchObject({ state: 'on_wall_unlinked', look: 'ready', holder: null });
-      // Connect can change the physical LEDs; the empty face still means no live link.
-      expect(recorded.actionBar.at(-1)?.wallGlow).not.toBeNull();
+      const model = recorded.actionBar.at(-1)?.wallControl as {
+        state: string;
+        look: string;
+        holder: unknown;
+        driving: boolean;
+      };
+      expect(model).toMatchObject({ state: 'on_wall_unlinked', look: 'ready', holder: null, driving: false });
+      // The unlinked wall stays plain until this phone is driving it.
+      expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
 
       tap('onWallControl');
       await act(async () => {
@@ -2114,7 +2117,7 @@ describe('PlayDrawer wall button taps', () => {
     expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
   });
 
-  // #7113 PR 3: the swipe, its screen-reader action, the frost it wipes in and
+  // #7113 PR 3: the swipe, its screen-reader action, prepared hold geometry and
   // the board sheet's row, all behind `wall-swipe-to-drive`.
   describe('swipe to drive', () => {
     const putOnBoardWithNoLink = () => {
@@ -2123,19 +2126,19 @@ describe('PlayDrawer wall button taps', () => {
       lightbulbState.pressAction = 'connect';
     };
 
-    it('keeps connect frost with the flag off but wires no swipe, drive action or sheet row', () => {
+    it('keeps non-driving Connect plain with the flag off and wires no swipe, drive action or sheet row', () => {
       putOnBoardWithNoLink();
       renderDrawer();
       const bar = recorded.actionBar.at(-1);
-      expect(bar?.wallControl).toMatchObject({ swipeAction: 'drive' });
+      expect(bar?.wallControl).toMatchObject({ swipeAction: 'drive', driving: false });
       expect(bar?.onWallControlSwipe).toBeUndefined();
       expect(bar?.onWallControlSwipeCancel).toBeUndefined();
       expect(bar?.onWallControlDrive).toBeUndefined();
-      expect(bar?.wallGlow).not.toBeNull();
+      expect(bar?.wallGlow).toBeNull();
       expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
     });
 
-    it('hands the swipe, the action and the climb’s frost where the swipe is offered', () => {
+    it('hands the swipe, the action and prepared holds where the swipe is offered', () => {
       swipeToDrive.on = true;
       putOnBoardWithNoLink();
       renderDrawer();
@@ -2143,7 +2146,7 @@ describe('PlayDrawer wall button taps', () => {
       expect(bar?.onWallControlSwipe).toEqual(expect.any(Function));
       expect(bar?.onWallControlSwipeCancel).toEqual(expect.any(Function));
       expect(bar?.onWallControlDrive).toEqual(expect.any(Function));
-      // Built for the climb on screen, though nothing is lit: the swipe wipes it in.
+      // Geometry is prepared for driving; the button keeps its preview progress flat.
       const glow = bar?.wallGlow as { holds: unknown[] } | null;
       expect(glow?.holds).toHaveLength(1);
     });

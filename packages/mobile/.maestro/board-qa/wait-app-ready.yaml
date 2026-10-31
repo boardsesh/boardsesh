@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Wait for the normal app navigation after a native launch
+---
+- extendedWaitUntil:
+    visible:
+      id: (home-screen|climbs-screen)
+    timeout: 30000
+- assertVisible: Home
+- assertVisible: Climbs

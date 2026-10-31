@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Request the displayed climb's real Bluetooth connection
+---
+- assertNotVisible:
+    id: busy-wall-question
+- tapOn:
+    id: play-drawer-wall-control
+# The host now waits for the exact board picker or a remembered connection.
+# Physical takeover has no extra consent dialog. Never select the first row.

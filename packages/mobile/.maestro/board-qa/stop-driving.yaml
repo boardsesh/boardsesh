@@ -1,0 +1,11 @@
+appId: ${APP_ID}
+name: Stop driving while keeping the Bluetooth link
+---
+- assertVisible:
+    id: wall-control-.*-self-driving
+- tapOn:
+    id: play-drawer-wall-control
+- extendedWaitUntil:
+    visible:
+      id: wall-control-.*-self-idle
+    timeout: 10000

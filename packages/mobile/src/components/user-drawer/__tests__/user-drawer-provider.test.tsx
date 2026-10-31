@@ -235,7 +235,7 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
 // `runningQaPrNumberToOffer` itself is NOT mocked — the join between the running
 // branch and the persisted verdict marker is the thing under test here. Only its
 // two device reads are.
-vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
+vi.mock('expo-updates', () => ({ updateId: 'bundle-a', runtimeVersion: 'test-runtime' }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null),
 }));

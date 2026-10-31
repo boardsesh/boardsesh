@@ -1,0 +1,41 @@
+appId: ${APP_ID}
+name: Observe the confirmed climb move from this wall's current slot into history
+---
+- assertVisible:
+    id: board-panel-${BOARD_UUID}
+# Establish absence at the unchanged top position, before scrolling can hide it.
+- extendedWaitUntil:
+    notVisible:
+      id: board-current-${CLIMB_UUID}-${WRITER_ID}
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible:
+        id: board-history-${CLIMB_UUID}-${HISTORY_SEQ}
+    commands:
+      - swipe:
+          start: 50%, 75%
+          end: 50%, 40%
+          duration: 400
+- runFlow:
+    when:
+      notVisible:
+        id: board-history-${CLIMB_UUID}-${HISTORY_SEQ}
+    commands:
+      - swipe:
+          start: 50%, 75%
+          end: 50%, 40%
+          duration: 400
+- runFlow:
+    when:
+      notVisible:
+        id: board-history-${CLIMB_UUID}-${HISTORY_SEQ}
+    commands:
+      - swipe:
+          start: 50%, 75%
+          end: 50%, 40%
+          duration: 400
+- extendedWaitUntil:
+    visible:
+      id: board-history-${CLIMB_UUID}-${HISTORY_SEQ}
+    timeout: 30000

@@ -219,6 +219,18 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'qa:boards': {
+        command: 'tsx scripts/board-qa.ts',
+        cache: false,
+      },
+      'qa:boards:ios-driver': {
+        command: 'tsx scripts/board-qa-ios-driver.ts',
+        cache: false,
+      },
+      'qa:boards:simulator-peer': {
+        command: 'tsx scripts/board-qa-simulator-peer.ts',
+        cache: false,
+      },
       // --- Database ---
       'db:up': {
         command: 'bash scripts/dev-db-up.sh',

@@ -26,6 +26,7 @@ import { Host } from '@expo/ui';
 import { Button as SwiftUIButton, HStack, Image, ProgressView, Text } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel as accessibilityLabelModifier,
+  accessibilityIdentifier,
   buttonBorderShape,
   buttonStyle,
   controlSize,
@@ -149,6 +150,7 @@ export function Button({
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
+    ...(testID ? [accessibilityIdentifier(testID)] : []),
     // Content reaches the full AX range; fixed chrome opts into its own cap.
     dynamicTypeSize({ max: dynamicTypeSizeCap(resolveButtonMaxFontScale(maxFontSizeMultiplier)) }),
   ];

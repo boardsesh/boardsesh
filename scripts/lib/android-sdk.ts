@@ -28,7 +28,18 @@ export const JDK21_HOME = join(CACHE_ROOT, 'jdk-21');
 // Tools 23 understand the API 37.0 package in Google's repository v3 schema.
 const CMDLINE_TOOLS_VERSION = '16111833';
 const CMDLINE_TOOLS_MAJOR_VERSION = 23;
-const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip`;
+/** Pin the same SDK tools on both supported build hosts; never reuse a Linux zip on macOS. */
+export function cmdlineToolsDownload(platform: NodeJS.Platform = process.platform): {
+  url: string;
+  archiveName: string;
+} {
+  const host = platform === 'darwin' ? 'mac' : platform === 'linux' ? 'linux' : null;
+  if (!host) throw new Error('Android SDK bootstrap supports macOS and Linux hosts');
+  return {
+    url: `https://dl.google.com/android/repository/commandlinetools-${host}-${CMDLINE_TOOLS_VERSION}_latest.zip`,
+    archiveName: `cmdline-tools-${host === 'linux' ? '' : `${host}-`}${CMDLINE_TOOLS_VERSION}.zip`,
+  };
+}
 
 // Latest Temurin 21 GA for linux/x64. Redirects to the actual tarball.
 const ADOPTIUM_JDK21_URL = 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse';
@@ -190,9 +201,10 @@ function ensureCmdlineTools(home: string): void {
   }
   console.log(`${LOG} Installing Android command-line tools (${CMDLINE_TOOLS_VERSION})...`);
   mkdirSync(home, { recursive: true });
-  const zip = join(CACHE_ROOT, `cmdline-tools-${CMDLINE_TOOLS_VERSION}.zip`);
+  const downloadSource = cmdlineToolsDownload();
+  const zip = join(CACHE_ROOT, downloadSource.archiveName);
   if (!existsSync(zip)) {
-    const download = runCapture('curl', ['-fLs', '-o', zip, CMDLINE_TOOLS_URL]);
+    const download = runCapture('curl', ['-fLs', '-o', zip, downloadSource.url]);
     if (download.status !== 0)
       throw new Error(`Failed to download cmdline-tools: ${download.stderr || download.status}`);
   }

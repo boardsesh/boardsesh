@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Commit the displayed preview through the real wall button
+---
+- assertNotVisible:
+    id: busy-wall-question
+- assertVisible:
+    id: wall-control-(put_on_wall|crew|move_to_board|connect|on_wall_unlinked|dark)-.*
+- tapOn:
+    id: play-drawer-wall-control

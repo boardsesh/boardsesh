@@ -593,6 +593,7 @@ export function PreSessionView({
 
       <SessionStartFab
         testID="pre-session-footer"
+        actionTestID="session-start"
         bottomOffset={footerBottom}
         onHeightChange={setFooterHeight}
         label={isStartPending ? t('mobile.session.preStarting') : t('mobile.session.preStart')}

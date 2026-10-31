@@ -1,14 +1,14 @@
 /// <reference types="node" />
 
 /**
- * Resolve a ready Android dev-client APK for the local emulator screenshot flow.
+ * Resolve a ready Android dev-client APK for local emulators or physical phones.
  *
  * Order of preference:
  *   1. --app-path <apk>           (bring your own)
  *   2. cached/downloaded universal CI dev-client APK from the latest
  *      rn-android-dev-* release (no Java/Gradle needed), guarded so an arm64-only
- *      APK never gets installed on the x86_64 emulator
- *   3. local Gradle build (BOARDSESH_APP_VARIANT=dev, x86_64), cached by a hash of
+ *      APK never gets installed on an incompatible target
+ *   3. local Gradle build (BOARDSESH_APP_VARIANT=dev, selected ABI), cached by a hash of
  *      the native inputs — the offline / native-deps-changed fallback
  *
  * The APK has no bundled JS: it boots expo-dev-client and loads JS from Metro, so
@@ -19,6 +19,7 @@
  *   vp run mobile:android-apk -- --build-local    # force a local Gradle build
  *   vp run mobile:android-apk -- --apk-tag rn-android-dev-42
  *   vp run mobile:android-apk -- --require-fresh  # build locally rather than use a stale release
+ *   vp run mobile:android-apk -- --require-fresh --abi arm64-v8a # physical phone
  *
  * On GitHub Actions --require-fresh is the default: a downloaded release APK is
  * only used when its native tree provably matches HEAD's — either the release
@@ -43,10 +44,39 @@ const ANDROID_CACHE = join(homedir(), '.cache', 'boardsesh', 'android');
 const DOWNLOAD_DIR = join(ANDROID_CACHE, 'downloaded');
 const LOCAL_BUILD_DIR = join(ANDROID_CACHE, 'local-build');
 const APK_ASSET = 'boardsesh-dev-android.apk';
-// The emulator is x86_64 (the KVM fast path); the APK must carry that ABI.
-const REQUIRED_ABI = 'x86_64';
+export type AndroidApkAbi = 'x86_64' | 'arm64-v8a';
+// Keep the existing emulator/CI default; physical phones opt into arm64-v8a.
+const DEFAULT_ABI: AndroidApkAbi = 'x86_64';
+
+export function androidApkAbi(candidate: unknown = DEFAULT_ABI): AndroidApkAbi {
+  if (candidate !== 'x86_64' && candidate !== 'arm64-v8a') throw new Error('--abi must be x86_64 or arm64-v8a');
+  return candidate;
+}
+
+export function parseApkAbi(args: readonly string[]): AndroidApkAbi {
+  const index = args.indexOf('--abi');
+  if (index < 0) return DEFAULT_ABI;
+  if (args[index + 1] === undefined) throw new Error('--abi requires x86_64 or arm64-v8a');
+  return androidApkAbi(args[index + 1]);
+}
+
+export function localApkCacheKey(nativeHash: string, abi: AndroidApkAbi): string {
+  return `${nativeHash}-${abi}`;
+}
+
+export function androidGradleArguments(abi: AndroidApkAbi): string[] {
+  return [
+    'assembleDebug',
+    `-PreactNativeArchitectures=${abi}`,
+    `-PboardseshAbiFilters=${abi}`,
+    '--build-cache',
+    '--no-daemon',
+    '--console=plain',
+  ];
+}
 
 export interface EnsureApkOptions {
+  abi?: AndroidApkAbi;
   buildLocal?: boolean;
   apkTag?: string;
   appPath?: string;
@@ -130,10 +160,15 @@ export function resolveLatestDevTag(): string | null {
 }
 
 /** True if the APK ships native libs for `abi` (lib/<abi>/...). */
-function apkHasAbi(apkPath: string, abi: string): boolean {
-  const listing = runCapture('unzip', ['-l', apkPath]);
+export function apkListingHasAbi(listing: string, abi: AndroidApkAbi): boolean {
+  const nativeLibrary = new RegExp(`^lib/${abi}/[^/]+\\.so$`);
+  return listing.split(/\r?\n/).some((filename) => nativeLibrary.test(filename.trim()));
+}
+
+function apkHasAbi(apkPath: string, abi: AndroidApkAbi): boolean {
+  const listing = runCapture('unzip', ['-Z1', apkPath]);
   if (listing.status !== 0) return false;
-  return listing.stdout.includes(`lib/${abi}/`);
+  return apkListingHasAbi(listing.stdout, abi);
 }
 
 function downloadDevApk(tag: string): string {
@@ -185,11 +220,11 @@ function nativeInputHash(): string {
   return hash.digest('hex').slice(0, 16);
 }
 
-function buildDevApkLocally(): string {
-  const hash = nativeInputHash();
+function buildDevApkLocally(abi: AndroidApkAbi): string {
+  const hash = localApkCacheKey(nativeInputHash(), abi);
   const outDir = join(LOCAL_BUILD_DIR, hash);
   const cachedApk = join(outDir, 'app-debug.apk');
-  if (existsSync(cachedApk)) {
+  if (existsSync(cachedApk) && apkHasAbi(cachedApk, abi)) {
     console.log(`${LOG} Using cached local build (${hash}): ${cachedApk}`);
     return cachedApk;
   }
@@ -225,17 +260,8 @@ function buildDevApkLocally(): string {
 
   const androidDir = join(mobileDir, 'android');
   const gradlew = join(androidDir, 'gradlew');
-  const gradleArgs = [
-    'assembleDebug',
-    `-PreactNativeArchitectures=${REQUIRED_ABI}`,
-    `-PboardseshAbiFilters=${REQUIRED_ABI}`,
-    // Reuse task outputs from ~/.gradle/caches across runs (CI restores it via
-    // actions/cache; see mobile-screenshots-android.yml).
-    '--build-cache',
-    '--no-daemon',
-    '--console=plain',
-  ];
-  console.log(`${LOG} gradlew assembleDebug (${REQUIRED_ABI}); first build is slow (NDK + Hermes)...`);
+  const gradleArgs = androidGradleArguments(abi);
+  console.log(`${LOG} gradlew assembleDebug (${abi}); first build is slow (NDK + Hermes)...`);
   let status = runInherit(gradlew, gradleArgs, { env: buildEnv, cwd: androidDir });
   if (status !== 0) {
     // A cold New-Architecture codegen race can fail the first build; retry once.
@@ -246,6 +272,7 @@ function buildDevApkLocally(): string {
 
   const built = join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
   if (!existsSync(built)) throw new Error(`gradle reported success but ${built} is missing`);
+  if (!apkHasAbi(built, abi)) throw new Error(`Gradle APK has no ${abi} native libraries; refusing to cache it`);
   mkdirSync(outDir, { recursive: true });
   copyFileSync(built, cachedApk);
   console.log(`${LOG} Cached local build: ${cachedApk}`);
@@ -364,30 +391,30 @@ function downloadedApkIsUsable(tag: string, options: EnsureApkOptions, requireFr
 
 /** Resolve a ready APK per the preference order above, with where it came from. */
 export function resolveAndroidApk(options: EnsureApkOptions = {}): ResolvedAndroidApk {
+  const abi = androidApkAbi(options.abi);
   if (options.appPath) {
     if (!existsSync(options.appPath)) throw new Error(`--app-path not found: ${options.appPath}`);
+    if (!apkHasAbi(options.appPath, abi)) throw new Error(`--app-path APK has no ${abi} native libraries`);
     return { apkPath: options.appPath, source: 'app-path' };
   }
-  if (options.buildLocal) return { apkPath: buildDevApkLocally(), source: 'local-build' };
+  if (options.buildLocal) return { apkPath: buildDevApkLocally(abi), source: 'local-build' };
 
   const requireFresh = options.requireFresh ?? process.env.GITHUB_ACTIONS === 'true';
   try {
     const tag = options.apkTag ?? resolveLatestDevTag();
     if (!tag) throw new Error('no rn-android-dev-* release found');
     const apk = downloadDevApk(tag);
-    if (apkHasAbi(apk, REQUIRED_ABI)) {
+    if (apkHasAbi(apk, abi)) {
       if (downloadedApkIsUsable(tag, options, requireFresh)) return { apkPath: apk, source: `release:${tag}` };
     } else {
-      console.warn(
-        `${LOG} ${tag} APK has no ${REQUIRED_ABI} ABI (the CI dev-client build is not universal yet). Building locally instead.`,
-      );
+      console.warn(`${LOG} ${tag} APK has no ${abi} native libraries. Building locally instead.`);
     }
   } catch (error) {
     console.warn(
       `${LOG} download path unavailable (${error instanceof Error ? error.message : String(error)}); building locally instead.`,
     );
   }
-  return { apkPath: buildDevApkLocally(), source: 'local-build' };
+  return { apkPath: buildDevApkLocally(abi), source: 'local-build' };
 }
 
 /** Resolve a ready APK path per the preference order above. */
@@ -409,7 +436,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const appPath = pathIndex >= 0 ? resolve(args[pathIndex + 1]) : undefined;
   const requireFresh = args.includes('--require-fresh') ? true : undefined;
   try {
-    const resolved = resolveAndroidApk({ buildLocal, apkTag, appPath, requireFresh });
+    const resolved = resolveAndroidApk({ buildLocal, apkTag, appPath, requireFresh, abi: parseApkAbi(args) });
     const apk = resolve(resolved.apkPath);
     console.log(`${LOG} APK ready: ${apk}`);
     // The screenshot workflow installs the APK this resolved, so hand it back as

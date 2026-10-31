@@ -1,8 +1,36 @@
 /// <reference types="node" />
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Only pure exports: importing the module must not (and does not) spawn gh/git.
-import { DEV_APK_FRESHNESS_PATHS, devApkFreshness, formatApkOutputs, type GitRunner } from '../mobile-android-apk';
+import {
+  DEV_APK_FRESHNESS_PATHS,
+  devApkFreshness,
+  formatApkOutputs,
+  androidApkAbi,
+  androidGradleArguments,
+  apkListingHasAbi,
+  localApkCacheKey,
+  parseApkAbi,
+  resolveAndroidApk,
+  type GitRunner,
+} from '../mobile-android-apk';
+import { runCapture } from '../lib/exec';
+
+vi.mock('../lib/exec', () => ({
+  commandExists: vi.fn(() => false),
+  runCapture: vi.fn(() => ({ status: 0, stdout: '', stderr: '' })),
+  runInherit: vi.fn(() => {
+    throw new Error('ABI archive tests must not build or install');
+  }),
+}));
+const temporaryRoots: string[] = [];
+afterEach(() => {
+  vi.clearAllMocks();
+  temporaryRoots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
+});
 
 const HEAD = 'a'.repeat(40);
 const TAG_COMMIT = 'b'.repeat(40);
@@ -200,5 +228,51 @@ describe('formatApkOutputs', () => {
     expect(formatApkOutputs({ apkPath: '/cache/app-debug.apk', source: 'local-build' })).toBe(
       'apk_path=/cache/app-debug.apk\napk_source=local-build\n',
     );
+  });
+});
+
+describe('physical and emulator APK architecture', () => {
+  it('keeps the x86_64 default and requires an explicit supported physical ABI', () => {
+    expect(parseApkAbi([])).toBe('x86_64');
+    expect(androidApkAbi()).toBe('x86_64');
+    expect(parseApkAbi(['--require-fresh', '--abi', 'arm64-v8a'])).toBe('arm64-v8a');
+    expect(() => parseApkAbi(['--abi'])).toThrow('requires');
+    expect(() => parseApkAbi(['--abi', 'armeabi-v7a'])).toThrow('must be');
+  });
+
+  it.each(['x86_64', 'arm64-v8a'] as const)(
+    'selects %s for both React Native compilation and packaged libraries',
+    (abi) => {
+      const argumentsList = androidGradleArguments(abi);
+      expect(argumentsList).toContain(`-PreactNativeArchitectures=${abi}`);
+      expect(argumentsList).toContain(`-PboardseshAbiFilters=${abi}`);
+      expect(argumentsList[0]).toBe('assembleDebug');
+    },
+  );
+
+  it('keeps local APK cache keys separate for the same native sources', () => {
+    expect(localApkCacheKey('same-native-hash', 'arm64-v8a')).not.toBe(localApkCacheKey('same-native-hash', 'x86_64'));
+    expect(localApkCacheKey('same-native-hash', 'arm64-v8a')).toContain('arm64-v8a');
+  });
+
+  it('requires a real native library entry rather than an asset path or empty ABI directory', () => {
+    expect(apkListingHasAbi('lib/arm64-v8a/libreactnative.so\nlib/x86_64/libreactnative.so\n', 'arm64-v8a')).toBe(true);
+    expect(
+      apkListingHasAbi('assets/lib/arm64-v8a/libfake.so\nlib/arm64-v8a/\nlib/x86_64/libreactnative.so\n', 'arm64-v8a'),
+    ).toBe(false);
+  });
+
+  it('checks an explicit APK against the requested ABI before returning it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'boardsesh-apk-abi-test-'));
+    temporaryRoots.push(root);
+    const filename = join(root, 'explicit.apk');
+    writeFileSync(filename, 'archive fixture handled by unzip stub');
+    vi.mocked(runCapture).mockReturnValue({ status: 0, stdout: 'lib/arm64-v8a/libreactnative.so\n', stderr: '' });
+    expect(resolveAndroidApk({ appPath: filename, abi: 'arm64-v8a' })).toEqual({
+      apkPath: filename,
+      source: 'app-path',
+    });
+    expect(runCapture).toHaveBeenCalledWith('unzip', ['-Z1', filename]);
+    expect(() => resolveAndroidApk({ appPath: filename })).toThrow('no x86_64');
   });
 });

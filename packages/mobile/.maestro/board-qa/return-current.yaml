@@ -1,0 +1,16 @@
+appId: ${APP_ID}
+name: Reopen the exact committed climb from the real mini-player
+---
+- tapOn:
+    id: play-drawer-close
+- extendedWaitUntil:
+    visible:
+      id: mini-player-current-${CURRENT_CLIMB_UUID}
+    timeout: 10000
+- tapOn:
+    id: mini-player-current-${CURRENT_CLIMB_UUID}
+- extendedWaitUntil:
+    visible:
+      id: play-drawer-header-accessibility
+      text: ${CURRENT_CLIMB_LABEL_PATTERN}
+    timeout: 15000

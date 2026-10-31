@@ -28,9 +28,9 @@
 //
 // Swipe left to drive (#7113): where the model offers it (`swipeAction`) and
 // the host hands `onSwipe` (the `wall-swipe-to-drive` flag), ‹‹ chevrons sit
-// before the face, the frost peeks in once (`useWallSwipePeek`), and dragging
-// left wipes the frost in from the trailing edge (`useWallSwipe`,
-// `WallSwipeWipe`). A full swipe starts driving the wall.
+// before the face, flat amber progress peeks in once (`useWallSwipePeek`), and
+// dragging left wipes it in from the trailing edge (`useWallSwipe`,
+// `WallSwipeWipe`). The frost appears only once the model confirms driving.
 
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
@@ -88,9 +88,9 @@ const CHEVRON_ALPHAS = [0.7, 0.4] as const;
 
 /** A frozen frame of the swipe, for the stories: no gesture, no live peek. */
 export type WallSwipePreview = {
-  /** The frost wiped in this far, 0 to 1 of the width. */
+  /** The flat swipe progress, 0 to 1 of the width. */
   progress?: number;
-  /** The peek's frame: the frost showing 28 pt in from the trailing edge. */
+  /** The peek's frame: flat progress showing 28 pt in from the trailing edge. */
   peek?: boolean;
 };
 
@@ -153,9 +153,8 @@ type WallControlButtonProps = {
   /** A swipe let go short of the commit point. */
   onSwipeCancel?: () => void;
   /**
-   * The climb's holds, for the frost (F1b): physical LED actions, and
-   * the frost a swipe wipes in. Missing holds keep the existing resting
-   * fallback and the swipe’s flat amber.
+   * The climb's holds, for the frost (F1b) only while the model is driving.
+   * Without it, or with no holds, driving uses the flat amber too.
    */
   glow?: WallGlowInput | null;
   /** The stories' frozen swipe frame. */
@@ -202,13 +201,12 @@ function WallControlButtonComponent({
     width: size.w,
     preview: previewProgress,
   });
-  // The swipe overlay mounts only while dragging or peeking; the resting surface is separate.
+  // Flat progress mounts during a drag, peek or committed swipe awaiting drive.
   const wiping = !model.driving && (swipe.frostArmed || swipe.committed);
-  // The full button frosts wherever its action can change physical LEDs.
-  // The model still owns driving, labels, gestures and what a press does.
+  // The canonical rule also excludes virtual walls and Set active.
   const frosted = wallControlUsesFrost(model);
-  const glowShown = frosted || wiping ? glow : null;
-  // The bulb and face still say whose physical link is held.
+  const glowShown = frosted ? glow : null;
+  // The filled bulb tracks this phone's ownership separately from driving frost.
   const holdsBoard = model.holder === 'self';
   const glowLayer = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const fullGlow = frosted ? glowLayer : null;
@@ -278,10 +276,8 @@ function WallControlButtonComponent({
         ? 'transparent'
         : withAlpha(brandColors.primaryFill, WALL_CONTROL_TONAL_ALPHA);
   const face = model.holderFace;
-  // The wipe carries its own copy of the row, in the frost's label colour (or
-  // the lit one on the flat amber), clipped with it: the words and chevrons the
-  // frost covers read on the frost, the rest on the tonal pill.
-  const wipeForeground = glowLayer ? glowLayer.surface.label : litForeground;
+  // The swipe's flat amber progress carries its own readable copy of the row.
+  const wipeForeground = litForeground;
 
   /** The bulb, the label, the chevrons and the face slot, in one set of colours. */
   const row = (rowColors: {
@@ -307,6 +303,11 @@ function WallControlButtonComponent({
         )}
       </View>
       <LargeContentViewer
+        testID={
+          rowColors.resting
+            ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
+            : undefined
+        }
         title={label}
         onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
@@ -397,14 +398,14 @@ function WallControlButtonComponent({
           progress={swipe.progress}
           opacity={swipe.opacity}
           width={size.w}
-          layer={glowLayer}
+          layer={null}
           fill={brandColors.live}
           rowStyle={[styles.wipeRow, compact && styles.compact]}
         >
           {row({
             foreground: wipeForeground,
-            bulb: glowLayer && (holdsBoard || onWallUnlinked) ? brandColors.live : wipeForeground,
-            shadow: glowLayer,
+            bulb: wipeForeground,
+            shadow: null,
             chevrons: () => wipeForeground,
             resting: false,
           })}

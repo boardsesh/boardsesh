@@ -135,7 +135,12 @@ export function EndSessionSheet({
       <View testID="end-session-content" style={styles.content}>
         <Icon name={isEndMode ? 'end.session' : 'leave.session'} size={40} color={systemColors.secondaryLabel} />
 
-        <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
+        <Text
+          testID={`session-exit-sheet-${effectiveMode}`}
+          variant="body"
+          color={systemColors.secondaryLabel}
+          style={styles.subtitle}
+        >
           {isEndMode ? t('mobile.queue.endSessionConfirm') : t('mobile.queue.leaveSessionConfirm')}
         </Text>
 

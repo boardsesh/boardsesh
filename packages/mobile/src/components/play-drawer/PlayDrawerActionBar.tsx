@@ -384,6 +384,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               <ActionButton
                 size="lg"
                 iconName="skip.previous"
+                testID="play-drawer-previous"
                 onPress={onPrevClick}
                 disabled={!canSwipePrevious}
                 accessibilityLabel={t('playView.actionBar.previousAria')}
@@ -407,6 +408,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               <ActionButton
                 size="lg"
                 iconName="skip.next"
+                testID="play-drawer-next"
                 onPress={onNextClick}
                 disabled={!canSwipeNext}
                 accessibilityLabel={t('playView.actionBar.nextAria')}
@@ -437,6 +439,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               <ActionButton
                 size="lg"
                 iconName="skip.previous"
+                testID="play-drawer-previous"
                 onPress={onPrevClick}
                 disabled={!canSwipePrevious}
                 accessibilityLabel={t('playView.actionBar.previousAria')}
@@ -462,6 +465,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               <ActionButton
                 size="lg"
                 iconName="skip.next"
+                testID="play-drawer-next"
                 onPress={onNextClick}
                 disabled={!canSwipeNext}
                 accessibilityLabel={t('playView.actionBar.nextAria')}

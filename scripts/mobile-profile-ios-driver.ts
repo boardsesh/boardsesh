@@ -9,7 +9,14 @@ export const IOS_UI_RUNNER_ID = 'com.boardsesh.perfprofile.runner';
 export const IOS_UI_SOURCE_COMMIT = 'ee71b5903bbaba4f33c150e5e7c5b059f15f6f14';
 
 /** Stage reviewed source only. Root owns native compilation, signing, installation and launch. */
-export function stageIosUiDriver(sourceDirectory: string, stageDirectory: string, device: string, teamId: string) {
+export function stageIosUiDriver(
+  sourceDirectory: string,
+  stageDirectory: string,
+  device: string,
+  teamId: string,
+  runnerId = IOS_UI_RUNNER_ID,
+) {
+  if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(runnerId)) throw new Error('Invalid owned UI-driver bundle ID');
   if (existsSync(stageDirectory)) throw new Error('Use a fresh owned UI-driver staging directory');
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: sourceDirectory,
@@ -30,10 +37,7 @@ export function stageIosUiDriver(sourceDirectory: string, stageDirectory: string
   mkdirSync(stageDirectory, { recursive: true });
   cpSync(source, staged, { recursive: true });
   const project = join(staged, 'WebDriverAgent.xcodeproj/project.pbxproj');
-  writeFileSync(
-    project,
-    readFileSync(project, 'utf8').replaceAll('com.facebook.WebDriverAgentRunner', IOS_UI_RUNNER_ID),
-  );
+  writeFileSync(project, readFileSync(project, 'utf8').replaceAll('com.facebook.WebDriverAgentRunner', runnerId));
   const statusPath = join(staged, 'WebDriverAgentLib/Commands/FBSessionCommands.m');
   const statusSource = readFileSync(statusPath, 'utf8');
   const insertion = '@"productBundleIdentifier" : productBundleIdentifier,';
@@ -64,7 +68,7 @@ export function stageIosUiDriver(sourceDirectory: string, stageDirectory: string
     sourceCommit,
     source: 'https://github.com/devicelab-dev/maestro-runner',
     wdaVersion: '16.12.8',
-    runnerBundleId: `${IOS_UI_RUNNER_ID}.xctrunner`,
+    runnerBundleId: `${runnerId}.xctrunner`,
     nativeBuildExecuted: false,
     buildExecutable: 'xcodebuild',
     buildArguments,

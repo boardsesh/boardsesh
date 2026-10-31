@@ -210,6 +210,7 @@ export const DeviceCard = memo(function DeviceCard({
 
   return (
     <PressableSurface
+      testID={`ble-device-${resolvedEntry?.kind === 'saved' ? resolvedEntry.board.uuid : (serialNumber ?? device.deviceId)}`}
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={presentation.title}

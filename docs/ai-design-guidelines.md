@@ -468,10 +468,11 @@ fill, the "Lit on the wall" text and the purple button. Now one board control sa
 button in the second row; View options › Buttons › Board control can make it the first row's bulb instead. Either
 way it looks like this:
 
-- **Physical LED controls use the climb's frosted bokeh.** The play drawer's full-width/workout board button
-  frosts when its action can connect, re-light, relay, move to, disconnect, or stop driving an LED board.
-  Holding the link without driving uses the same frost; the existing label, bulb, face, tap and swipe behaviour
-  still come from the board-control model. A confirmed drive keeps frost while its busy-wall question is up.
+- **Physical driving uses the climb's frosted bokeh.** The play drawer's full-width/workout board button
+  frosts only while its model confirms driving: navigation changes what the wall shows. Connect, re-light,
+  relay, move, a held link without driving, and a swipe awaiting confirmation stay plain. The existing label,
+  bulb, face, tap and swipe behaviour still come from the board-control model. A confirmed drive keeps frost
+  while its busy-wall question is up.
   "Your climb · no lights", spray walls, Set active and virtual Take/Release wall controls keep their existing
   colours. A target gym board's own LED metadata decides moves and relays; missing LED metadata remains LED-capable.
   The glow, in the full-width and the workout button: every
@@ -501,18 +502,18 @@ way it looks like this:
   Public spray-wall previews use photo-mapped hold colours. The native preset stays at its original strength.
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
-- **Swipe to drive: read the release label (#7113, #7175).** The physical button already carries its full frost
-  at rest, so dragging it left keeps that surface. Past 55% of its width the label becomes "Let go to light
-  every climb"; a committed release changes it to "You are driving the wall". Stopping changes the label to
-  "Disconnect board" and keeps the frost. `WallSwipeWipe` is drawn only without a full glow: that fallback
-  wipes in from the trailing edge under the finger, with a soft 12 pt edge and a second readable copy of the
-  label. With no hold geometry the wipe is flat `live` amber.
-- **The swipe's hint.** ‹‹ chevrons, 10 pt glyphs 2 pt apart, sit 4 pt before the face slot. They inherit the
-  readable frost foreground on a fully frosted button; the fallback uses brand violet at 70% and 40%.
-  Only the fallback visibly peeks in 28 pt from the trailing edge over 250 ms, holds 150 ms and springs back
-  (damping 20, stiffness 300), about 700 ms in all. Under Reduce Motion that strip fades in place
-  (200 + 300 + 200 ms). A fully frosted button suppresses the wipe overlay. Shimmer and a draggable knob
-  remain excluded.
+- **Swipe to drive: flat progress until driving is confirmed (#7113).** Dragging the button left wipes flat
+  `live` amber in from the trailing edge, under the finger; the pill itself stays still. Its base colour fades in
+  over 12 pt before the edge. The row is drawn twice: words and chevrons covered by amber use the amber's label
+  colour; the rest stay violet on the tonal pill. Past 55% of the width the label becomes "Let go to light every
+  climb". The frosted bokeh appears only while `model.driving` is true, when navigation changes the wall.
+  A peek, drag, or committed swipe awaiting confirmation never shows bokeh. Stopping or browsing removes it
+  immediately, including in the compact workout button, even if swipe progress has not settled.
+- **The swipe's hint.** ‹‹ chevrons, 10 pt glyphs 2 pt apart, 4 pt before the face slot, in the brand violet at 70%
+  (the leading one) and 40%: the mocks' 25% vanished on the dark tonal pill. The one-time peek wipes flat amber in
+  28 pt from the trailing edge over 250 ms, holds 150 ms and springs back (damping 20, stiffness 300), about 700 ms
+  in all; under Reduce Motion the same strip fades in and out where it stands (200 + 300 + 200 ms). Shimmer was
+  rejected (Liquid Glass already has a specular), and so was a draggable knob (it clashes with the face).
   Shots: `docs/images/7113/`.
 
 A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen
@@ -521,8 +522,8 @@ back chip, which names where back goes: "My pick" for the climber's own climb, "
 
 - **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
   under an hour ago, the button reads "Put on board", with "On the wall" as its screen-reader status,
-  an outline bulb and no face. Its connect action uses frost when hold geometry is available;
-  without it the amber outline and sheet label remain. A tap still connects and lights it again.
+  an outline bulb and no face. It keeps the amber outline and sheet label without driving frost.
+  A tap still connects and lights it again.
 
 - **A face means a live link.** The holder's face, on the button's trailing edge or the bulb's corner, comes only
   from the model, which needs this phone's link or a crewmate's authoritative one. Board presence alone never puts a
