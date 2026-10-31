@@ -167,6 +167,7 @@ describe('session query — membership gate compat matrix', () => {
       currentClimbQueueItem: null,
       historyCount: null,
       currentChangedAt: null,
+      currentChangedBy: null,
     });
     expect(result!.users).toEqual(sampleUsers);
     expect(result!.lastConnectedBoardSerial).toBe('SERIAL-123');

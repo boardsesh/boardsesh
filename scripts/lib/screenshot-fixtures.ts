@@ -1321,6 +1321,12 @@ export type ReplayDefaultResponse = {
  * that does not answer the current document.
  */
 export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResponse>> = {
+  QueueCapabilitiesProbe: {
+    response: {
+      data: { queueState: { fields: [] }, currentClimbChanged: { fields: [] } },
+    },
+    reason: 'recorded queue sessions retain legacy documents without additive server capabilities',
+  },
   PrivacySettings: {
     response: {
       data: {

@@ -661,7 +661,7 @@ export function useSessionRealtime({
         },
         {
           next: (data) => {
-            if (!isCurrent()) return;
+            if (!isCurrent() || sessionIdRef.current !== sessionId) return;
             if (!data?.queueUpdates) return;
             const event = data.queueUpdates;
             // PlaybackStateChanged is a first-class wire variant but carries no
