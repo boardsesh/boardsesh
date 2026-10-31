@@ -17,8 +17,12 @@
  *
  * Two independent gates, both required:
  *
- * - The `donation-links` PostHog flag, read as `=== true`. It is the kill
+ * - The `donation-links-v2` PostHog flag, read as `=== true`. It is the kill
  *   switch, nothing more: the code below enforces the platform and the region.
+ *   The `-v2` is load-bearing. Android bundles from before #7057 read the old
+ *   `donation-links` key and show the link whenever it is on, so that key must
+ *   never exist in PostHog, and this one is read only by bundles that carry the
+ *   Android hard-off below.
  * - The iOS App Store storefront country, which only the device knows. Binaries
  *   without the native module (#5522) get null from `requireOptionalNativeModule`
  *   and stay on the unlinked fallback. That is the designed degradation.
@@ -118,7 +122,7 @@ function readStorefrontCountry(): Promise<string | null> {
  * first frame. The link simply appears a beat later where it is allowed.
  */
 export function useDonationLinksAllowed(): boolean {
-  const flagEnabled = useFeatureFlag('donation-links') === true;
+  const flagEnabled = useFeatureFlag('donation-links-v2') === true;
   // Seeded from the module-level answer, which is null until the first read
   // lands. So the very first mount of the app starts on the fallback and every
   // later one starts on the truth — and "not read yet" and "not the US" are the

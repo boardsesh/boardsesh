@@ -435,7 +435,7 @@ value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
 
-### `donation-links` — the one flag whose targeting is a compliance boundary
+### `donation-links-v2` — the one flag that guards a store policy
 
 Almost every flag here decides whether a feature is visible. This one decides
 whether the app breaks a store policy, so it is worth reading before touching it
@@ -464,17 +464,20 @@ switch.**
 - **Screenshot mode never shows it**, so App Store captures and the replayed
   screenshot fixtures stay free of donation asks.
 
-**Target the flag to `platform = iOS` anyway.** Android bundles from before this
-change still return `true` on Android when the flag is on, and PostHog values
-stick on the device: a phone that once resolved `true` keeps it until its next
-flag reload. So before enabling it:
+**Why the key ends in `-v2`.** Every Android bundle from #5523 (17 Sep 2026)
+until #7057 (31 Oct 2026) returns `true` on Android whenever the old
+`donation-links` key is on. Targeting cannot fence them off: the app sends no
+`$os` with its flag requests, so an `OS = iOS` condition is matched against the
+person's last-seen OS, and a climber who also has an iPhone would get `true` on
+their Android phone. Older store binaries never receive a main OTA either. So
+the app reads `donation-links-v2`, which only bundles with the Android hard-off
+know about, and the old key stays absent from PostHog for good (absent reads as
+off). `donation-links.test.ts` pins that the old key does nothing.
 
-1. Check the OTA carrying the Android hard-off has reached at least 90% of
-   Android bundles (xprem `get_update_rollout` / `count_online_devices`).
-2. Create the flag with `OS = iOS` **and** a condition matching only your own
-   account. Confirm a Pixel dev client reads `false` and an iPhone reads `true`
-   — this also proves the OS property name.
-3. Remove the account condition, leaving `OS = iOS` with no percentage.
+**How it is set (since 31 Oct 2026):** active, 100% of everyone, no conditions.
+The code limits the link to iPhones on the US storefront; the flag only turns it
+off. To stop the link everywhere, disable the flag. Never add a percentage, and
+never create `donation-links`.
 
 **The tester override is disabled for it in production**, which is what
 `policyControlled: true` on a flag definition means. Ordinarily the on-device

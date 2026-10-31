@@ -55,16 +55,26 @@ describe('useDonationLinksAllowed', () => {
     expect(await renderAllowed()).toBe(false);
   });
 
+  // The key is suffixed because Android bundles from before #7057 show the link
+  // whenever the old `donation-links` key is on. That key must never come back.
+  it('ignores the retired donation-links key, even in the US storefront', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
   it('never shows links on Android, even with the flag on', async () => {
     platformMock.OS = 'android';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
 
     expect(await renderAllowed()).toBe(false);
   });
 
   it('hides links in screenshot mode, even in the US storefront with the flag on', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
@@ -81,7 +91,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('hides links on iOS when the storefront module is missing (every binary shipped today)', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = null;
 
     expect(await renderAllowed()).toBe(false);
@@ -89,7 +99,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('shows links on iOS once the storefront resolves to the US', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
@@ -102,7 +112,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('hides links on iOS in a non-US storefront', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     const getCountryCode = vi.fn().mockResolvedValue('AUS');
     storefrontMock = { getCountryCode };
 
@@ -115,7 +125,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('treats a rejected storefront read as unknown', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockRejectedValue(new Error('StoreKit unavailable')) };
 
     expect(await renderAllowed()).toBe(false);
@@ -123,7 +133,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('survives a native proxy that throws synchronously instead of rejecting', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     // A renamed or absent method on the native proxy throws a TypeError before
     // any promise exists. That must degrade to the fallback, not take the screen
     // down on its way out of the effect.
@@ -138,7 +148,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('requires the alpha-3 code, so an alpha-2 "US" is not allowed', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     // StoreKit reports alpha-3. If the native side ever hands back alpha-2, the
     // drift fails SAFE — links stay hidden — and this test is what says so out
     // loud, since nothing else would notice the app quietly stopped matching.
@@ -149,7 +159,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('reads the storefront once across renders', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     const getCountryCode = vi.fn().mockResolvedValue('USA');
     storefrontMock = { getCountryCode };
 
@@ -164,7 +174,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('does not flash back to the fallback when the screen is reopened', async () => {
     platformMock.OS = 'ios';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
@@ -180,7 +190,7 @@ describe('useDonationLinksAllowed', () => {
 
   it('hides links on Expo web, where there is no storefront to read', async () => {
     platformMock.OS = 'web';
-    flagsMock['donation-links'] = true;
+    flagsMock['donation-links-v2'] = true;
 
     expect(await renderAllowed()).toBe(false);
   });
