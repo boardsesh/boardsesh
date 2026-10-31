@@ -25,7 +25,7 @@ vp run qa:boards -- all
 
 Driver source is `https://github.com/devicelab-dev/maestro-runner` at commit `ee71b5903bbaba4f33c150e5e7c5b059f15f6f14`. Use a fresh staging directory; source/receipt mismatches are rejected. The returned helper installs only its own runner, preserving the Boardsesh app and its storage.
 
-For a physical Android build, use `vp run mobile:android-apk -- --require-fresh --abi arm64-v8a`. The existing emulator default remains `x86_64`; APK validation and local caches keep the two ABIs separate. Install updates in place with the matching development signature, never by uninstalling or clearing the Play app.
+For a physical Android build, use `vp run mobile:android-apk -- --require-fresh --abi arm64-v8a`. On macOS, configure `JAVA_HOME` to an installed JDK 21 first; the automatic JDK download targets Linux. The existing emulator default remains `x86_64`; APK validation and local caches keep the two ABIs separate. Install updates in place with the matching development signature, never by uninstalling or clearing the Play app. If Android rejects the separate debuggable development app because its local version code is lower, `adb -s ANDROID_SERIAL install -r -d PATH_TO_DEV_APK` permits that development update while retaining its data.
 
 `doctor` checks physical devices, tooling, account access, pinned static climbs, WDA attachment and read-only fixture status. It does not take a BLE connection, acquire the firmware QA lease, or create a session. A missing prerequisite exits with code 2.
 

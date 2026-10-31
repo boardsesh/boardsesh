@@ -36,7 +36,7 @@ export class Suite {
   private async open(role: Role, board: Board, climb: CatalogClimb): Promise<void> {
     const escapedName = climb.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     await this.phones[role].flow('open-climb', {
-      CLIMB_URL: this.url(role, `/b/${board.slug}/${board.angle}/play/${climb.uuid}?wall=${board.uuid}`),
+      CLIMB_URL: this.url(role, `/b/${board.slug}/${board.angle}/play/${climb.uuid}`),
       CLIMB_LABEL_PATTERN: `.*${escapedName}.*`,
     });
   }
