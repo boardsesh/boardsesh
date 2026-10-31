@@ -472,7 +472,7 @@ export function cppNavigationCommands(
       route:
         coverage.boardHeroModes?.[board.id] === 'wall-editor'
           ? `/climbs/create?screenshotCppScene=${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}`
-          : `/climbs?screenshotOpenFirst=1&screenshotBoardIndex=${index}&screenshotCppScene=${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}${coverage.heroClimbs?.[board.id] ? `&screenshotClimbId=${encodeURIComponent(coverage.heroClimbs[board.id].climbId)}` : ''}`,
+          : `/climbs?screenshotOpenFirst=1&screenshotBoardIndex=${index}&screenshotCppScene=${index < 3 ? 'hero' : 'other'}-${(index % 3) + 1}${coverage.heroClimbs?.[board.id] ? `&screenshotClimbId=${encodeURIComponent(coverage.heroClimbs[board.id].climbId)}` : ''}${board.boardType !== 'spray' ? '&screenshotDrive=1' : ''}`,
     };
   }
   const primary = page.primaryBoard;

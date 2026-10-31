@@ -18,6 +18,8 @@ import {
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
+  runIosScreenshotMaestro,
+  queueButtonReadinessSelector,
   buildScreenshotSessionEnv,
   collectScreenshots,
   deviceSlug,
@@ -227,6 +229,17 @@ describe('parseArgs', () => {
 });
 
 describe('buildScreenshotEnv', () => {
+  it.each(['app-store', 'app-store-campaign'] as const)('opts %s board heroes into fake-Bluetooth driving', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBe('1');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE).toBe('1');
+  });
+
+  it.each(['help', 'smoke', 'onboarding'] as const)('does not inherit screenshot driving for %s', (flow) => {
+    const env = buildScreenshotEnv(makeOptions({ flow }), baseEnv({ EXPO_PUBLIC_SCREENSHOT_DRIVING: '1' }));
+    expect(env.EXPO_PUBLIC_SCREENSHOT_DRIVING).toBeUndefined();
+  });
+
   it('always enables screenshot mode and bakes the theme', () => {
     const env = buildScreenshotEnv(makeOptions({ theme: 'dark' }), baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_MODE).toBe('1');
@@ -411,7 +424,7 @@ describe('iOS campaign capture', () => {
       const env = buildIosCampaignMaestroEnv(locale, capture);
       expect(env).toContain('SCREENSHOT_SHARED_SESSION_ID=crew');
       expect(env.some((entry) => entry.startsWith('SCREENSHOT_JOIN_LABEL=') && entry.length > 22)).toBe(true);
-      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('.*'))).toBe(true);
+      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('[0-9]+'))).toBe(true);
       expect(env.join(' ')).not.toContain('{{count}}');
       expect(
         env.some(
@@ -454,26 +467,60 @@ describe('iOS campaign capture', () => {
     },
   );
 
-  it('opens the populated crew queue by its native badge despite the Up next accessibility label', () => {
-    const catalog = JSON.parse(readFileSync('packages/shared/i18n/locales/it/session.json', 'utf8')) as {
-      playView: { actionBar: { queueCountAria: string; queueUpNextAria_other: string } };
+  it.each(allAppLocales)('matches the real %s queue button in both count and Up next modes', (locale) => {
+    const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+      playView: { actionBar: Parameters<typeof queueButtonReadinessSelector>[0] };
     };
     const labels = catalog.playView.actionBar;
-    const actualLabel = labels.queueUpNextAria_other.replace('{{count}}', '5');
-    expect(actualLabel).toBe('Coda, 5 blocchi in arrivo');
-    expect(new RegExp(`^${labels.queueCountAria.replace('{{count}}', '.*')}$`).test(actualLabel)).toBe(false);
+    const selector = queueButtonReadinessSelector(labels);
+    const nativeButton = new RegExp(selector);
+    for (const count of [0, 1, 2, 123]) {
+      const countLabel = labels.queueCountAria.replace('{{count}}', String(count));
+      const upNextTemplate =
+        count === 0
+          ? labels.queueUpNextAria_zero
+          : count === 1
+            ? labels.queueUpNextAria_one
+            : labels.queueUpNextAria_other;
+      const upNextLabel = upNextTemplate.replace('{{count}}', String(count));
+      expect(nativeButton.test(countLabel)).toBe(true);
+      expect(nativeButton.test(upNextLabel)).toBe(true);
+      expect(nativeButton.test(`prefix ${countLabel}`)).toBe(false);
+      expect(nativeButton.test(`${upNextLabel} suffix`)).toBe(false);
+    }
+    expect(nativeButton.test(labels.queueCountAria.replace('{{count}}', 'not a number'))).toBe(false);
+    expect(buildIosCampaignMaestroEnv(locale)).toContain(`SCREENSHOT_QUEUE_LABEL=${selector}`);
+  });
 
+  it('treats catalog punctuation literally when matching a numeric queue count', () => {
+    const literal = 'Queue (literal)+[x]. {{count}} climbs?';
+    const nativeButton = new RegExp(
+      queueButtonReadinessSelector({
+        queueCountAria: literal,
+        queueUpNextAria_zero: 'Queue: zero',
+        queueUpNextAria_one: literal,
+        queueUpNextAria_other: literal,
+      }),
+    );
+    expect(nativeButton.test('Queue (literal)+[x]. 5 climbs?')).toBe(true);
+    expect(nativeButton.test('Queue literalxxxx 5 climbs')).toBe(false);
+    expect(nativeButton.test('Queue (literal)+[x]. .* climbs?')).toBe(false);
+  });
+
+  it('opens the crew queue through its real button and keeps title and content gates', () => {
     const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
     const steps = parseAllDocuments(campaign)[1].toJS() as {
       tapOn?: { id: string } | string;
       extendedWaitUntil?: { visible: string };
       takeScreenshot?: string;
     }[];
-    const queueTap = steps.findIndex(
-      (step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$',
+    const queueReady = steps.findIndex((step) => step.extendedWaitUntil?.visible === '${SCREENSHOT_QUEUE_LABEL}');
+    const queueTap = steps.findIndex((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}');
+    expect(queueReady).toBeGreaterThan(0);
+    expect(queueReady).toBeLessThan(queueTap);
+    expect(steps.some((step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$')).toBe(
+      false,
     );
-    expect(queueTap).toBeGreaterThan(0);
-    expect(steps.some((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}')).toBe(false);
     const titleGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*${SCREENSHOT_QUEUE_TITLE}.*');
     const contentGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*Wax On.*');
     const capture = steps.findIndex((step) => step.takeScreenshot === '15-crew-queue');
@@ -561,9 +608,12 @@ describe('iOS store capture content readiness', () => {
   ])('blocks %s %s until physical backgrounds and the holds have displayed', (flow, screenshot) => {
     const prerequisites = prerequisitesFor(flow, screenshot);
     expect(canCapture(prerequisites, ['play-drawer-board-overlay'])).toBe(false);
-    expect(canCapture(prerequisites, ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'])).toBe(
-      true,
-    );
+    const paintedIds = ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'];
+    if (screenshot !== '14-spray-board-view') {
+      expect(canCapture(prerequisites, paintedIds)).toBe(false);
+      paintedIds.push('store-driving-board-uuid-climb-uuid');
+    }
+    expect(canCapture(prerequisites, paintedIds)).toBe(true);
   });
 
   it.each([
@@ -1957,5 +2007,59 @@ describe('appendNotesToStepSummary', () => {
     appendNotesToStepSummary([], summaryPath);
     appendNotesToStepSummary(['a note'], undefined);
     expect(readdirSync(summaryDir)).toEqual([]);
+  });
+});
+
+describe('bounded iOS Maestro invocation', () => {
+  it.each([false, true])('checks the simulator lease and preserves every raw argument (CPP %s)', (cpp) => {
+    const maestroArgs = [
+      '--device',
+      'owned-simulator',
+      'test',
+      '/capture/a flow.yaml',
+      '-e',
+      'SCREENSHOT_USER_PASSWORD=fixture has spaces',
+    ];
+    const env = baseEnv({ NODE_ENV: 'test' });
+    const operations: string[] = [];
+    const guard = vi.fn(() => {
+      operations.push('lease');
+    });
+    const run = vi.fn(() => {
+      operations.push('run');
+      return 7;
+    });
+    const context = { deviceId: 'owned-simulator', cpp, captureDir: '/capture', env };
+    expect(runIosScreenshotMaestro(maestroArgs, context, { guard, run })).toBe(7);
+    expect(operations).toEqual(['lease', 'run']);
+    expect(guard).toHaveBeenCalledWith('maestro', ['--device', 'owned-simulator'], expect.any(String));
+    expect(run).toHaveBeenCalledWith(
+      'tsx',
+      [
+        expect.stringMatching(/scripts\/mobile-screenshot-maestro\.ts$/),
+        '--capture-timeout-ms',
+        String((cpp ? 30 : 45) * 60 * 1000),
+        ...maestroArgs,
+      ],
+      env,
+      '/capture',
+    );
+  });
+
+  it('does not start the wrapper when the simulator lease is rejected', () => {
+    const run = vi.fn();
+    expect(() =>
+      runIosScreenshotMaestro(
+        ['--device', 'foreign-simulator'],
+        { deviceId: 'foreign-simulator', cpp: false, captureDir: '/capture' },
+        {
+          guard: () => {
+            throw new Error('lease rejected');
+          },
+          run,
+        },
+      ),
+    ).toThrow('lease rejected');
+    expect(run).not.toHaveBeenCalled();
   });
 });

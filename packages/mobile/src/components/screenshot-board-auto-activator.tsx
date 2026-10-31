@@ -34,6 +34,7 @@ const CPP_CAPTURE_PARAM_KEYS = new Set([
   'screenshotCppScene',
   'screenshotBoardIndex',
   'screenshotOpenFirst',
+  'screenshotDrive',
   'screenshotClimbId',
   'screenshotMinGrade',
   'screenshotMaxGrade',

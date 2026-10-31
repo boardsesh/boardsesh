@@ -5,6 +5,19 @@ import { pathToFileURL } from 'node:url';
 import { CriticalChildProcessGroup, criticalChildProcessSpawnOptions } from './lib/dev-child-process-lifecycle';
 
 export const CPP_MAESTRO_TIMEOUT_MS = 30 * 60 * 1000;
+export const IOS_MAESTRO_TIMEOUT_MS = 45 * 60 * 1000;
+const MAX_MAESTRO_TIMEOUT_MS = 60 * 60 * 1000;
+
+/** Only the wrapper's leading option is consumed; Maestro receives the rest verbatim. */
+export function parseScreenshotMaestroArguments(args: string[]): { timeoutMs: number; maestroArgs: string[] } {
+  if (args[0] !== '--capture-timeout-ms') return { timeoutMs: CPP_MAESTRO_TIMEOUT_MS, maestroArgs: args };
+  const timeout = args[1] ?? '';
+  const timeoutMs = Number(timeout);
+  if (!/^[1-9]\d*$/.test(timeout) || !Number.isSafeInteger(timeoutMs) || timeoutMs > MAX_MAESTRO_TIMEOUT_MS) {
+    throw new Error('Maestro capture timeout must be an integer from 1 to 3600000 milliseconds');
+  }
+  return { timeoutMs, maestroArgs: args.slice(2) };
+}
 
 interface MaestroProcessOptions {
   command?: string;
@@ -82,7 +95,11 @@ export async function runScreenshotMaestro(args: string[], options: MaestroProce
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void runScreenshotMaestro(process.argv.slice(2))
+  void Promise.resolve()
+    .then(() => {
+      const { timeoutMs, maestroArgs } = parseScreenshotMaestroArguments(process.argv.slice(2));
+      return runScreenshotMaestro(maestroArgs, { timeoutMs });
+    })
     .then((status) => process.exit(status))
     .catch(() => {
       console.error('[mobile:screenshots] Maestro supervisor failed.');

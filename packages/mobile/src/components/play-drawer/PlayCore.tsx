@@ -42,6 +42,7 @@ import { buildOpeningLayoutKey } from './opening-layout-cache';
 import { usePlayNavigationModel } from './use-play-navigation-model';
 import { usePlayLayoutMeasurements, usePlayOpeningLayout } from './use-play-opening-layout';
 import { DeferredBoard } from './DeferredBoard';
+import { ScreenshotDriveController } from './ScreenshotDriveController';
 import { screenshotPaintedClimbTestId, screenshotLocalMirrorTestId } from '../../lib/screenshot-climb-selection';
 import { PlayCoreSheetHosts } from './PlayCoreSheetHosts';
 import { usePlayFavorite } from './use-play-favorite';
@@ -2641,6 +2642,21 @@ export function PlayCore({
       >
         {controlsAbove ? actionBar : playbackControls}
         {controlsAbove ? playbackControls : actionBar}
+        {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+        process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' &&
+        process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1' ? (
+          <ScreenshotDriveController
+            boardUuid={activeBoardForNavigation?.uuid ?? null}
+            climbUuid={displayedClimbUuid ?? null}
+            eligible={wallControlDrawn && !boardIsLedless && boardName !== 'spray' && !climbBoardMismatch}
+            sessionId={sessionId}
+            connected={bluetoothConnected}
+            displayedLit={displayedLit}
+            mirrored={isMirrored}
+            model={wallControl}
+            start={() => startDriving('action')}
+          />
+        ) : null}
       </View>
 
       {showSwitchBoardCard ? (

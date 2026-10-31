@@ -195,6 +195,18 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   `packages/mobile/src/lib/showcase-anchor.ts`; the contract it must match is
   `scripts/lib/showcase-video/contract.ts`.
 
+Store board heroes opt into `EXPO_PUBLIC_SCREENSHOT_DRIVING=1` as well as fake
+Bluetooth. Their routes carry `screenshotDrive=1`; after the exact real climb
+opens, the player runs the normal drive action once. Capture waits for a
+`store-driving-<board UUID>-<climb UUID>` marker backed by a live drive, a local
+connection, and the displayed climb being lit. A connection failure blocks the
+capture instead of substituting the label. The open Duo uses this same intent
+without taps. Tension keeps its normal solo Mirror action and mirrored paint gate.
+
+Only board-hero routes request driving. Wall-status, accessory, crew, editor,
+help, smoke and video flows do not. Spray and walls without LEDs keep their
+normal no-lights controls; they cannot truthfully show the LED driving state.
+
 Every gate inlines the raw `process.env` comparison, so both fold away in normal builds.
 
 `run` resets the simulator keychain by default (the shared `group.com.boardsesh.app` keychain
@@ -333,3 +345,16 @@ but with `xcrun simctl io <udid> recordVideo --codec h264 --force
 5–12 seconds, portrait, silent, named exactly as the clip table names it. The recording
 contract, the conversion command and the size budget are in
 [docs/help-clips.md](help-clips.md).
+
+### Bounded store capture processes
+
+Every iOS capture invokes Maestro through the existing subprocess supervisor,
+including each Duo inner-display pass. Default captures have a 45-minute ceiling;
+CPP captures retain their 30-minute ceiling. A JVM main-thread crash or a reached
+deadline stops that owned process group so the orchestrator can preserve its
+partial frames and logs. The wrapper accepts only a leading
+`--capture-timeout-ms` integer from 1 to 3,600,000; all Maestro arguments pass
+through unchanged. Android capture is unchanged.
+
+CI retains capture debug artifacts for cancelled default captures as well as
+failures, including the bounded device-log collection and Maestro evidence.
