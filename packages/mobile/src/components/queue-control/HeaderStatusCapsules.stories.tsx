@@ -110,7 +110,9 @@ function EmptyHeldCapsule({ ledless }: { ledless: boolean }) {
     <BluetoothContext.Provider value={storyBluetooth}>
       <QueueDataContext.Provider value={emptyQueue}>
         <TitleSlot>
-          <BoardHeldCapsule ledless={ledless} />
+          <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <BoardHeldCapsule ledless={ledless} />
+          </View>
         </TitleSlot>
       </QueueDataContext.Provider>
     </BluetoothContext.Provider>
