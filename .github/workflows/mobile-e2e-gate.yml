@@ -30,10 +30,10 @@ name: Mobile E2E Gate
 # 40-minute test must never sit on a publish lock. The contract test pins both
 # (scripts/__tests__/mobile-e2e-gate-workflow.test.ts).
 #
-# The jobs check out the commit UNDER TEST, and `uses: ./.github/actions/…`
-# resolves inside that checkout. So the smoke flows, the orchestrator and the
-# composite actions all come from the tested commit: the gate can only judge a
-# commit that already contains it.
+# The jobs check out the commit UNDER TEST. Smoke flows and the orchestrator
+# come from that application checkout. The iOS cache/capture action and its
+# identity tools come from this immutable workflow's separate tooling checkout,
+# so historical application commits can use the reviewed cache policy.
 on:
   workflow_call:
     inputs:
