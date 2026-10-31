@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Four-locale measurement, filter diagnostic, progress take, English sequence, or crew capture
+        description: Measurement, capture, or finite session-input observation
         type: choice
-        options: [measure, diagnose-profile-filter, record-profile, record-english, record-crew]
+        options: [measure, diagnose-profile-filter, record-profile, record-english, record-crew, observe-session-input]
         default: measure
 
 permissions:
@@ -16,15 +16,15 @@ permissions:
 
 concurrency:
   # Crew uses the normal pipeline's account lock, including across feature refs.
-  group: ${{ inputs.mode == 'record-crew' && 'store-videos-crew' || format('store-videos-measure-{0}', github.ref) }}
-  cancel-in-progress: ${{ inputs.mode != 'record-crew' }}
+  group: ${{ (inputs.mode == 'record-crew' || inputs.mode == 'observe-session-input') && 'store-videos-crew' || format('store-videos-measure-{0}', github.ref) }}
+  cancel-in-progress: ${{ inputs.mode != 'record-crew' && inputs.mode != 'observe-session-input' }}
 
 jobs:
   record:
     runs-on: macos-26
     # Three locale children already measured 91 minutes; four plus setup can
     # exceed two hours. Diagnostic/single-take modes get 45 minutes; English gets 60.
-    timeout-minutes: ${{ inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile' || inputs.mode == 'record-crew') && 45 || 180 }}
+    timeout-minutes: ${{ inputs.mode == 'observe-session-input' && 30 || inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile' || inputs.mode == 'record-crew') && 45 || 180 }}
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -49,11 +49,20 @@ jobs:
         with:
           path: packages/mobile/.app-cache
           key: ${{ steps.appkey.outputs.key }}
+      - name: Require the exact cached app for finite observation
+        if: inputs.mode == 'observe-session-input'
+        env:
+          CACHE_HIT: ${{ steps.app-cache.outputs.cache-hit }}
+          CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: |
+          set -euo pipefail
+          test "$CACHE_HIT" = true || { echo 'Observation requires cache hit; no build permitted.'; exit 1; }
+          test "$CACHE_KEY" = macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a
       - name: Build dev-client on cache miss
-        if: steps.app-cache.outputs.cache-hit != 'true'
+        if: inputs.mode != 'observe-session-input' && steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
       - name: Save screenshot dev-client
-        if: steps.app-cache.outputs.cache-hit != 'true'
+        if: inputs.mode != 'observe-session-input' && steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: packages/mobile/.app-cache
@@ -65,6 +74,7 @@ jobs:
       - name: Install pinned Maestro and ffmpeg
         env:
           MAESTRO_VERSION: 2.6.1
+          OBSERVATION_MODE: ${{ inputs.mode }}
           MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
         run: |
           set -euo pipefail
@@ -72,7 +82,27 @@ jobs:
           echo "${MAESTRO_SHA256}  $RUNNER_TEMP/maestro.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/maestro.zip" -d "$HOME/.maestro-dist"
           echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
-          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          if [ "$OBSERVATION_MODE" != observe-session-input ]; then
+            brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          fi
+      - name: Observe one session visibility input without starting a session
+        if: inputs.mode == 'observe-session-input'
+        env:
+          SESSION_INPUT_OBSERVATION: '1'
+          OBSERVATION_CACHE_HIT: ${{ steps.app-cache.outputs.cache-hit }}
+          OBSERVATION_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: vp exec tsx scripts/observe-session-input.ts
+      - name: Retain only redacted finite-observation evidence
+        if: always() && inputs.mode == 'observe-session-input'
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-input-observation-redacted
+          path: .boardsesh/session-input-observation/public/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
       - name: Record MoonBoard in four locales
         if: inputs.mode == 'measure'
         env:
@@ -128,7 +158,7 @@ jobs:
           retention-days: 1
           compression-level: 0
       - name: Hand off frames for one day
-        if: inputs.mode != 'diagnose-profile-filter' && inputs.mode != 'record-crew'
+        if: inputs.mode != 'diagnose-profile-filter' && inputs.mode != 'record-crew' && inputs.mode != 'observe-session-input'
         uses: actions/upload-artifact@v4
         with:
           name: store-video-frames-moonboard
@@ -138,7 +168,7 @@ jobs:
           retention-days: 1
           compression-level: 0
       - name: Retain measurement and debug logs
-        if: always()
+        if: always() && inputs.mode != 'observe-session-input'
         uses: actions/upload-artifact@v4
         with:
           name: store-video-record-metrics
@@ -193,7 +223,7 @@ jobs:
           retention-days: 7
 
   timings:
-    if: always()
+    if: always() && inputs.mode != 'observe-session-input'
     needs: [record, render]
     runs-on: ubuntu-latest
     steps:

@@ -4,6 +4,7 @@
 // without mounting a native @expo/ui tree.
 
 import { hapticSelection } from '../lib/haptics';
+import { traceNativeInput } from '../lib/native-input-diagnostic';
 
 /**
  * Build the toggle handler used by both platform SwitchRow implementations.
@@ -23,8 +24,16 @@ export function makeToggleHandler(
   haptic: () => void = hapticSelection,
 ): (next: boolean) => void {
   return (next: boolean) => {
-    if (disabled) return;
+    traceNativeInput('make-toggle-entry', { next, capturedDisabled: disabled });
+    if (disabled) {
+      traceNativeInput('make-toggle-disabled-return');
+      return;
+    }
+    traceNativeInput('before-haptic');
     haptic();
+    traceNativeInput('after-haptic');
+    traceNativeInput('before-parent-callback', { next });
     onValueChange(next);
+    traceNativeInput('after-parent-callback');
   };
 }

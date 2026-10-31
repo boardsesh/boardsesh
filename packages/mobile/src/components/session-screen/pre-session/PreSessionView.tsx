@@ -14,6 +14,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
+import { nativeInputInstanceId, nativeInputInteraction, traceNativeInput } from '../../../lib/native-input-diagnostic';
 import { prepareWorkoutRun } from '../../../lib/workout-run-store';
 import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
 import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
@@ -173,6 +174,22 @@ export function PreSessionView({
   // "Show this session live". Public by default and not remembered between
   // sessions: every Start opens on, and turning it off is a per-session choice.
   const [isPublic, setIsPublic] = useState(true);
+  const diagnosticMount = useRef<string | undefined>(undefined);
+  if (!diagnosticMount.current) diagnosticMount.current = nativeInputInstanceId('pre-session');
+  const diagnosticComponentId = diagnosticMount.current;
+  const diagnosticQueued = useRef<ReturnType<typeof nativeInputInteraction>>(undefined);
+  useEffect(() => {
+    traceNativeInput('pre-session-mounted', { componentId: diagnosticComponentId });
+    return () => traceNativeInput('pre-session-unmounted', { componentId: diagnosticComponentId });
+  }, [diagnosticComponentId]);
+  useEffect(() => {
+    traceNativeInput('pre-session-state-committed', {
+      ...diagnosticQueued.current,
+      componentId: diagnosticComponentId,
+      isPublic,
+      isStartPending,
+    });
+  }, [diagnosticComponentId, isPublic, isStartPending]);
   const { data: privacySettings } = usePrivacySettings();
   const [sessionAudience, setSessionAudience] = useState<(typeof SESSION_AUDIENCES)[number] | null>(null);
   const effectiveSessionAudience =
@@ -185,11 +202,23 @@ export function PreSessionView({
   const handleVisibilityChange = useCallback(
     (next: boolean) => {
       // Start has already read the choice; a flip now would change nothing.
-      if (isStartPending) return;
+      traceNativeInput('parent-handler-entry', {
+        componentId: diagnosticComponentId,
+        next,
+        capturedIsStartPending: isStartPending,
+      });
+      if (isStartPending) {
+        traceNativeInput('parent-start-pending-return', { componentId: diagnosticComponentId });
+        return;
+      }
+      diagnosticQueued.current = nativeInputInteraction();
+      traceNativeInput('state-queue-request', { componentId: diagnosticComponentId, next });
       setIsPublic(next);
+      traceNativeInput('state-queued', { componentId: diagnosticComponentId, next });
       track(SHARED_EVENTS.SessionVisibilityChanged, { isPublic: next, phase: 'pre_session' });
+      traceNativeInput('visibility-analytics-called', { componentId: diagnosticComponentId, next });
     },
-    [isStartPending],
+    [diagnosticComponentId, isStartPending],
   );
   const [activePreviewUuid, setActivePreviewUuid] = useState<string | null>(null);
   // Measured height of the Start capsule's container, so the list reserves exactly

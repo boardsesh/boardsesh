@@ -44,7 +44,14 @@ describe('store video workflow handoff', () => {
     expect(measure.on).not.toHaveProperty('workflow_run');
     expect(measure.on.workflow_dispatch.inputs).toMatchObject({
       mode: {
-        options: ['measure', 'diagnose-profile-filter', 'record-profile', 'record-english', 'record-crew'],
+        options: [
+          'measure',
+          'diagnose-profile-filter',
+          'record-profile',
+          'record-english',
+          'record-crew',
+          'observe-session-input',
+        ],
         default: 'measure',
       },
     });
@@ -107,7 +114,7 @@ describe('store video workflow handoff', () => {
     );
     expect(evaluate(ordinaryFrames?.if)).toBe(false);
     const debugLogs = measure.jobs.record.steps?.find((step) => step.with?.name === 'store-video-record-metrics');
-    expect(debugLogs?.if).toBe('always()');
+    expect(debugLogs?.if).toBe("always() && inputs.mode != 'observe-session-input'");
     expect(debugLogs?.with?.path).toContain('metrics/');
     expect(evaluate(measure.jobs.render.if)).toBe(false);
     expect(JSON.stringify(measure)).not.toMatch(/STORE_CREATIVES_R2|APP_STORE_CONNECT|store-videos-publish/);

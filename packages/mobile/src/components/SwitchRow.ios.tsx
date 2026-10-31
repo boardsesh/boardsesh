@@ -21,6 +21,8 @@ import {
   accessibilityLabel,
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { nativeInputInstanceId, registerNativeInputHandler, traceNativeInput } from '../lib/native-input-diagnostic';
 import { useTheme } from '../providers/theme-provider';
 import { brandControlTint } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
@@ -35,7 +37,18 @@ const ROW_MIN_HEIGHT_WITH_SUBTITLE = 64;
 
 export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
   const { brandColors, colorScheme } = useTheme();
+  const diagnosticMount = useRef<string | undefined>(undefined);
+  if (!diagnosticMount.current) diagnosticMount.current = nativeInputInstanceId('switch-row');
+  const componentId = diagnosticMount.current;
   const handleToggle = makeToggleHandler(onValueChange, disabled);
+  registerNativeInputHandler(handleToggle, componentId);
+  useEffect(() => {
+    traceNativeInput('switch-row-mounted', { componentId, label });
+    return () => traceNativeInput('switch-row-unmounted', { componentId, label });
+  }, [componentId, label]);
+  useEffect(() => {
+    traceNativeInput('switch-row-props-committed', { componentId, label, value, disabled });
+  }, [componentId, label, value, disabled]);
   // On-track colour: the brand control tint (HIG Color: one accent for every
   // control). Not the brand FILL — that one fails 3:1 on a dark grouped card.
   const onTrack = brandControlTint(brandColors);
