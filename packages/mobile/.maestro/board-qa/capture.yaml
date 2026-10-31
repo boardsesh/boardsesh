@@ -1,0 +1,4 @@
+appId: ${APP_ID}
+name: Capture this phase's real phone screen
+---
+- takeScreenshot: ${CAPTURE_NAME}

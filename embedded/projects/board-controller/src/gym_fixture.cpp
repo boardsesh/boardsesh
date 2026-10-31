@@ -1,6 +1,7 @@
 #ifdef ENABLE_GYM_FIXTURE
 #include <Arduino.h>
 #include <esp_bt.h>
+#include <esp_random.h>
 
 // NimBLE-Arduino allocates the S3 controller for one advertiser. Reserve three
 // connectable sets plus three established connections in this executable only.
@@ -25,6 +26,7 @@ extern "C" esp_err_t __wrap_esp_bt_controller_init(esp_bt_controller_config_t* c
 #include <esp_web_server.h>
 #include <wifi_utils.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <board_hold_data.h>
@@ -64,6 +66,7 @@ bool rejectionHandled = false;
 size_t selectedBoard = 0;
 unsigned long lastRenderedAt = 0;
 unsigned long restartAt = 0;
+String qaBootId;
 
 String digestString(const String& input) {
     uint8_t digest[32];
@@ -168,6 +171,115 @@ void printStatus() {
     document["preview_jpeg_decode_result"] = Display.getLastJpegDecodeResult();
     document["preview_jpeg_block_count"] = Display.getLastJpegBlockCount();
     serializeJson(document, Serial);
+    Serial.println();
+}
+
+bool validQaRequestId(const String& requestId) {
+    if (requestId.length() == 0 || requestId.length() > 80)
+        return false;
+    for (const char character : requestId) {
+        if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.'))
+            return false;
+    }
+    return true;
+}
+
+// USB is the QA control plane; no network endpoint can acquire this temporary
+// radio policy, drop links, or read packet evidence. No command writes NVS.
+void serialQa(const String& encoded) {
+    JsonDocument request;
+    JsonDocument response;
+    String error;
+    bool success = false;
+    if (deserializeJson(request, encoded)) {
+        error = "Invalid QA JSON";
+    } else {
+        const String requestId = request["requestId"] | "";
+        const String action = request["action"] | "";
+        const String runId = request["runId"] | "";
+        if (!validQaRequestId(requestId)) {
+            error = "Invalid QA request ID";
+        } else {
+            response["requestId"] = requestId;
+            if (action == "start")
+                success = fixtureBle.startQa(runId, error);
+            else if (action == "end")
+                success = fixtureBle.endQa(runId, error);
+            else if (action == "drop")
+                success = fixtureBle.dropQa(runId, request["boardUuid"] | "", error);
+            else if (action == "status") {
+                gym_fixture::QaSnapshot heartbeat;
+                success = fixtureBle.snapshotQa(runId, heartbeat, error);
+            } else
+                error = "Unknown QA action";
+        }
+    }
+    response["schemaVersion"] = 1;
+    response["ok"] = success;
+    if (!success)
+        response["error"] = error;
+    response["bootId"] = qaBootId;
+    response["firmware"] = FIRMWARE_BUILD_ENV;
+    response["firmwareBuild"] = __DATE__ " " __TIME__;
+    gym_fixture::QaSnapshot snapshot;
+    String snapshotError;
+    if (fixtureBle.snapshotQa("", snapshot, snapshotError)) {
+        response["ready"] = snapshot.ready;
+        response["runId"] = snapshot.runId;
+        response["policy"] = snapshot.runId.isEmpty() ? "concurrent" : "last-connection-wins";
+        response["leaseRemainingMs"] = snapshot.leaseRemainingMs;
+        JsonArray boards = response["boards"].to<JsonArray>();
+        for (gym_fixture::QaBoardSnapshot& board : snapshot.boards) {
+            JsonObject target = boards.add<JsonObject>();
+            target["uuid"] = board.uuid;
+            target["connections"] = board.handles.size();
+            JsonArray handles = target["handles"].to<JsonArray>();
+            for (const uint16_t handle : board.handles)
+                handles.add(handle);
+            target["writes"] = board.writes;
+            target["updates"] = board.updates;
+            target["rejected"] = board.rejected;
+            target["sequence"] = board.latest.sequence;
+            target["connectionHandle"] = board.latest.connectionHandle;
+            target["connectionGeneration"] = board.latest.connectionGeneration;
+            target["angle"] = board.latest.angle;
+            std::sort(board.latest.commands.begin(), board.latest.commands.end(),
+                      [](const LedCommand& left, const LedCommand& right) {
+                          if (left.position != right.position)
+                              return left.position < right.position;
+                          if (left.r != right.r)
+                              return left.r < right.r;
+                          if (left.g != right.g)
+                              return left.g < right.g;
+                          return left.b < right.b;
+                      });
+            JsonArray commands = target["commands"].to<JsonArray>();
+            for (const LedCommand& command : board.latest.commands) {
+                JsonObject decoded = commands.add<JsonObject>();
+                decoded["position"] = command.position;
+                decoded["r"] = command.r;
+                decoded["g"] = command.g;
+                decoded["b"] = command.b;
+            }
+        }
+    } else {
+        response["ready"] = false;
+        response["runId"] = "";
+        response["policy"] = "concurrent";
+        response["leaseRemainingMs"] = 0;
+        response["boards"].to<JsonArray>();
+    }
+    if (response.overflowed()) {
+        const String requestId = response["requestId"] | "";
+        response.clear();
+        response["schemaVersion"] = 1;
+        response["requestId"] = requestId;
+        response["ok"] = false;
+        response["error"] = "Insufficient memory for a complete QA snapshot";
+    }
+    Serial.print("BOARDSESH_QA ");
+    serializeJson(response, Serial);
     Serial.println();
 }
 
@@ -372,6 +484,8 @@ void serviceSerial() {
                     rejectionHandled = false;
                 } else if (command.startsWith("fixture-config "))
                     serialConfigure(command.substring(15));
+                else if (command.startsWith("fixture-qa "))
+                    serialQa(command.substring(11));
             }
             command = "";
             overflow = false;
@@ -385,6 +499,10 @@ void serviceSerial() {
 
 void setup() {
     Serial.begin(115200);
+    char bootId[17];
+    snprintf(bootId, sizeof(bootId), "%08lx%08lx", static_cast<unsigned long>(esp_random()),
+             static_cast<unsigned long>(esp_random()));
+    qaBootId = bootId;
     Config.begin();
     Logger.enableSerial(false);
     // One-time migration; clearing a fixture key never resurrects an old key.

@@ -5,6 +5,7 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming
 import { Stack, router, useNavigation, type NativeStackNavigationProp } from 'expo-router';
 import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Updates from 'expo-updates';
 import { useTranslation } from 'react-i18next';
 import { useProfile } from '../src/lib/graphql/hooks';
 import { useAuth } from '../src/providers/auth-provider';
@@ -263,6 +264,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
 
   const menuContent = (
     <ScrollView
+      testID={`app-runtime-${__DEV__ ? 'metro' : 'release'}-${Updates.runtimeVersion ?? 'none'}-${Updates.updateId ?? 'embedded'}`}
       contentContainerStyle={[
         styles.drawerContent,
         isAccount && { paddingTop: spacing[4], paddingBottom: insets.bottom + spacing[4] },
@@ -276,6 +278,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
               chevron. */}
       {profile?.id ? (
         <PressableSurface
+          testID={`account-user-${profile.id}`}
           style={styles.profileHeader}
           onPress={() => (isAccount ? router.push('/account/settings/edit') : close(() => navigateToEditProfile()))}
           accessibilityRole="button"

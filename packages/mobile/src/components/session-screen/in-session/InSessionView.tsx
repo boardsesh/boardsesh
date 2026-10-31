@@ -758,7 +758,7 @@ export function InSessionView({
   );
 
   const body = (
-    <View style={styles.container}>
+    <View testID={`session-active-${sessionId}`} style={styles.container}>
       {scrollView}
 
       {showChrome ? (

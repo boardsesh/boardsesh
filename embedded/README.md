@@ -156,6 +156,41 @@ browse a preview. `fixture-config <JSON>` supports private USB setup using
 `fixture_gym_ref`, `fixture_endpoint`, `fixture_api_key`, and optional `wifi_ssid`
 and `wifi_password`; it saves settings and restarts without echoing secrets.
 
+The local two-phone runner uses a separate, memory-only USB QA protocol:
+
+```text
+fixture-qa {"action":"status","requestId":"inspect"}
+fixture-qa {"action":"start","requestId":"start-1","runId":"local-run-1"}
+fixture-qa {"action":"status","requestId":"poll-1","runId":"local-run-1"}
+fixture-qa {"action":"drop","requestId":"drop-1","runId":"local-run-1","boardUuid":"<fixture-board-uuid>"}
+fixture-qa {"action":"end","requestId":"end-1","runId":"local-run-1"}
+```
+
+Each reply is one `BOARDSESH_QA `-prefixed JSON line with `schemaVersion: 1`,
+the request ID, `ok`, an optional `error`, a per-boot ID, firmware build identity,
+the owning run ID, the active `policy`, and `leaseRemainingMs`. `boards` contains
+UUIDs, active writer handles, counters, latest completed sequence and writer
+generation, angle, and decoded `{position,r,g,b}` commands sorted by position
+then RGB. The decoded payload remains available after the display consumes it;
+an incomplete packet never replaces it. No keys, WiFi settings or phone addresses
+are included. Request IDs contain 1–80 letters, digits, dots, hyphens or underscores;
+run IDs use the same bounds without dots.
+
+Starting requires an active fixture with zero existing Bluetooth connections.
+During QA, a newer central evicts older centrals only for that simulated board;
+old handles lose write permission before disconnection. `drop` targets one board
+and is owner-only. A matching status request renews the 30-second lease. Status
+without a run ID is read-only and does not renew a lease; another run cannot
+renew, end or drop it. Ending, lease expiry, reset or firmware reconfiguration
+restores the normal concurrent connection policy without changing persisted
+configuration or cached gym data. End/expiry do not disconnect the current links.
+The radio still has three total connection slots; this two-phone mode does not
+establish stock-controller takeover behavior or a fourth-connection guarantee.
+
+Keep DTR asserted and RTS released before opening USB to avoid resetting the
+device. Keep one serial owner; screenshot capture must share that owner's port
+or wait until the QA run releases it.
+
 `waveshare-amoled-gym-proof` is an explicit hardware feasibility build with three
 synthetic identities and connection-specific echo probes. It does not fetch or
 represent production gym data. Complete its discovery, simultaneous connection

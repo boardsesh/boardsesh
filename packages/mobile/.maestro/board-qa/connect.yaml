@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Request the displayed climb's real Bluetooth connection
+---
+- assertNotVisible:
+    id: busy-wall-question
+- tapOn:
+    id: play-drawer-wall-control
+# The host now waits for an actual picker, an expected takeover confirmation,
+# or a remembered-device connection. Never choose the first discovered row.

@@ -1,0 +1,12 @@
+appId: ${APP_ID}
+name: Inspect the actual session roster
+---
+- openLink: ${RECORD_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-active-${SESSION_ID}
+    timeout: 30000
+- assertVisible:
+    id: session-roster-${EXPECTED_ROSTER_COUNT}
+- assertVisible:
+    id: session-user-${USER_ID}-CONNECTED

@@ -12,6 +12,7 @@ type AvatarProps = {
   size?: number;
   /** Overrides the derived label (defaults to `name`). */
   accessibilityLabel?: string;
+  testID?: string;
 };
 
 /**
@@ -28,7 +29,7 @@ export function sizedAvatarUri(uri: string, displaySize: number): string {
   return `${uri}${separator}size=${bucket}`;
 }
 
-export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibilityLabelProp }: AvatarProps) {
+export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibilityLabelProp, testID }: AvatarProps) {
   const borderRadius = size / 2;
 
   const accessibilityLabel = accessibilityLabelProp ?? name ?? undefined;
@@ -47,6 +48,7 @@ export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibility
       // ≤280px source, so any resize is trivial. Avatars were never part of
       // the expo-image main-thread hang this PR fixes.
       <Image
+        testID={testID}
         source={{ uri: sizedAvatarUri(uri, size) }}
         accessibilityLabel={accessibilityLabel}
         onError={() => setFailedUri(uri)}
@@ -60,6 +62,7 @@ export function Avatar({ uri, name, size = 40, accessibilityLabel: accessibility
 
   return (
     <View
+      testID={testID}
       accessibilityLabel={accessibilityLabel}
       style={[styles.fallback, { width: size, height: size, borderRadius }]}
     >

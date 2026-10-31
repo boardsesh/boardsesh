@@ -24,6 +24,22 @@ struct CompletedUpdate {
     uint64_t sequence = 0;
     std::vector<LedCommand> commands;
     int angle = 0;
+    uint16_t connectionHandle = BLE_HS_CONN_HANDLE_NONE;
+    uint64_t connectionGeneration = 0;
+};
+
+struct QaBoardSnapshot {
+    String uuid;
+    std::vector<uint16_t> handles;
+    unsigned writes = 0, updates = 0, rejected = 0;
+    CompletedUpdate latest;
+};
+
+struct QaSnapshot {
+    String runId;
+    bool ready = false;
+    unsigned long leaseRemainingMs = 0;
+    std::vector<QaBoardSnapshot> boards;
 };
 
 // One NUS service backs independent radio identities. Only the local address
@@ -138,6 +154,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             _writes.fill(0);
             _completed.fill(0);
             _rejected.fill(0);
+            _updates = {};
         }
         _enabled = true;
         _needsConfiguration = true;
@@ -155,6 +172,11 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     void stop() {
         _enabled = false;
         _accepting.store(false);
+        if (_mutex) {
+            Lock lock(_mutex);
+            _qaRunId = "";
+            _qaHeartbeatAt = 0;
+        }
         if (!_server)
             return;
         // stop() in NimBLE 2.5.2 clears a copy of its activity flags. Stop each
@@ -177,6 +199,10 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     }
 
     void loop() {
+        if (_mutex) {
+            Lock lock(_mutex);
+            expireQaLocked();
+        }
         if (!_enabled || millis() - _lastEnsureAt < 250)
             return;
         _lastEnsureAt = millis();
@@ -213,12 +239,110 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         }
         if (selected == MAX_BOARDS)
             return false;
-        update = std::move(_updates[selected]);
+        // Keep the last complete decoded payload for USB QA evidence after the
+        // display drains it. Never expose incomplete parser contents as a send.
+        update = _updates[selected];
         _pending[selected] = false;
         return true;
     }
 
     unsigned connectionCount() const { return _connectionCount.load(); }
+
+    bool startQa(const String& runId, String& error) {
+        if (!_mutex || !validRunId(runId))
+            return fail(error, "Invalid QA run ID or inactive fixture");
+        Lock lock(_mutex);
+        expireQaLocked();
+        if (!_enabled || !_accepting.load())
+            return fail(error, "Fixture is not ready");
+        if (_qaRunId.length() != 0)
+            return fail(error, "A QA run already owns the fixture");
+        if (_connectionCount.load() != 0 || (_server && _server->getConnectedCount() != 0))
+            return fail(error, "Disconnect existing Bluetooth clients before starting QA");
+        _qaRunId = runId;
+        _qaHeartbeatAt = millis();
+        error = "";
+        return true;
+    }
+
+    bool endQa(const String& runId, String& error) {
+        if (!_mutex)
+            return fail(error, "Fixture is not ready");
+        Lock lock(_mutex);
+        expireQaLocked();
+        if (!ownsQaLocked(runId))
+            return fail(error, "QA run does not own the fixture");
+        _qaRunId = "";
+        _qaHeartbeatAt = 0;
+        error = "";
+        return true;
+    }
+
+    bool snapshotQa(const String& runId, QaSnapshot& snapshot, String& error) {
+        if (!_mutex)
+            return fail(error, "Fixture is not ready");
+        Lock lock(_mutex);
+        expireQaLocked();
+        if (runId.length() != 0 && !ownsQaLocked(runId))
+            return fail(error, "QA run does not own the fixture");
+        if (runId.length() != 0)
+            _qaHeartbeatAt = millis();
+        snapshot.runId = _qaRunId;
+        snapshot.ready = _enabled && _accepting.load() && ble_hs_synced();
+        snapshot.leaseRemainingMs = _qaRunId.length() == 0 ? 0 : QA_LEASE_MS - (millis() - _qaHeartbeatAt);
+        snapshot.boards.clear();
+        snapshot.boards.reserve(_boardCount);
+        for (size_t index = 0; index < _boardCount; ++index) {
+            QaBoardSnapshot board;
+            board.uuid = _boards[index].uuid;
+            board.writes = _writes[index];
+            board.updates = _completed[index];
+            board.rejected = _rejected[index];
+            board.latest = _updates[index];
+            board.latest.angle = _boards[index].angle;
+            for (const Connection& connection : _connections) {
+                if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index)
+                    board.handles.push_back(connection.handle);
+            }
+            snapshot.boards.push_back(std::move(board));
+        }
+        error = "";
+        return true;
+    }
+
+    bool dropQa(const String& runId, const String& boardUuid, String& error) {
+        if (!_mutex)
+            return fail(error, "Fixture is not ready");
+        std::array<uint16_t, MAX_BOARDS> handles{};
+        size_t handleCount = 0;
+        bool found = false;
+        {
+            Lock lock(_mutex);
+            expireQaLocked();
+            if (!ownsQaLocked(runId))
+                return fail(error, "QA run does not own the fixture");
+            for (size_t index = 0; index < _boardCount; ++index) {
+                if (_boards[index].uuid != boardUuid)
+                    continue;
+                found = true;
+                for (Connection& connection : _connections) {
+                    if (connection.handle == BLE_HS_CONN_HANDLE_NONE || connection.boardIndex != index)
+                        continue;
+                    handles[handleCount++] = connection.handle;
+                    releaseConnectionLocked(connection);
+                }
+                // A parsed payload not yet delivered to the display must not
+                // repaint after the targeted transport generation was dropped.
+                _pending[index] = false;
+            }
+        }
+        if (!found)
+            return fail(error, "Unknown QA board UUID");
+        for (size_t index = 0; index < handleCount; ++index)
+            _server->disconnect(handles[index]);
+        error = "";
+        return true;
+    }
 
     bool isAdvertising(size_t boardIndex) const {
         return _enabled && boardIndex < _boardCount && ble_hs_synced() && ble_gap_ext_adv_active(boardIndex) != 0;
@@ -263,6 +387,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     static constexpr size_t MAX_COMMANDS = 1024;
     static constexpr size_t MAX_MOON_BYTES = 2048;
     static constexpr unsigned long PARTIAL_TIMEOUT_MS = 2000;
+    static constexpr unsigned long QA_LEASE_MS = 30000;
     static constexpr const char* NUS_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
     static constexpr const char* RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
     static constexpr const char* TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
@@ -283,6 +408,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     struct Connection {
         uint16_t handle = BLE_HS_CONN_HANDLE_NONE;
         size_t boardIndex = MAX_BOARDS;
+        uint64_t generation = 0;
         AuroraProtocol aurora;
         MoonBoardProtocol moon;
         std::vector<uint8_t> frame;
@@ -316,14 +442,46 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     std::atomic<bool> _accepting{false};
     size_t _boardCount = 0;
     uint64_t _sequence = 0;
+    uint64_t _connectionSequence = 0;
     bool _enabled = false;
     bool _gattReady = false;
     bool _needsConfiguration = false;
     unsigned long _lastEnsureAt = 0;
+    String _qaRunId;
+    unsigned long _qaHeartbeatAt = 0;
 
     static bool fail(String& error, const char* message) {
         error = message;
         return false;
+    }
+
+    static bool validRunId(const String& runId) {
+        if (runId.length() == 0 || runId.length() > 80)
+            return false;
+        for (const char character : runId) {
+            if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                  (character >= '0' && character <= '9') || character == '-' || character == '_'))
+                return false;
+        }
+        return true;
+    }
+
+    bool ownsQaLocked(const String& runId) const {
+        return runId.length() != 0 && _qaRunId.length() != 0 && _qaRunId == runId;
+    }
+
+    void expireQaLocked() {
+        if (_qaRunId.length() != 0 && millis() - _qaHeartbeatAt >= QA_LEASE_MS) {
+            _qaRunId = "";
+            _qaHeartbeatAt = 0;
+        }
+    }
+
+    void releaseConnectionLocked(Connection& connection) {
+        connection.handle = BLE_HS_CONN_HANDLE_NONE;
+        connection.boardIndex = MAX_BOARDS;
+        connection.clearParser();
+        _connectionCount.fetch_sub(1);
     }
 
     void resetConnectionsLocked() {
@@ -333,6 +491,8 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             connection.clearParser();
         }
         _connectionCount.store(0);
+        _qaRunId = "";
+        _qaHeartbeatAt = 0;
     }
 
     bool configureAll() {
@@ -360,19 +520,32 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
         ble_gap_conn_desc descriptor{};
         bool accepted = false;
+        std::array<uint16_t, MAX_BOARDS> superseded{};
+        size_t supersededCount = 0;
         if (_accepting.load() && ble_gap_conn_find(info.getConnHandle(), &descriptor) == 0) {
             const NimBLEAddress localAddress(descriptor.our_ota_addr);
             Lock lock(_mutex);
+            expireQaLocked();
             if (_accepting.load()) {
                 for (size_t index = 0; index < _boardCount && !accepted; ++index) {
                     if (localAddress != _boards[index].address)
                         continue;
+                    if (_qaRunId.length() != 0) {
+                        for (Connection& connection : _connections) {
+                            if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index) {
+                                superseded[supersededCount++] = connection.handle;
+                                releaseConnectionLocked(connection);
+                            }
+                        }
+                        _pending[index] = false;
+                    }
                     for (Connection& connection : _connections) {
                         if (connection.handle != BLE_HS_CONN_HANDLE_NONE)
                             continue;
                         connection.clearParser();
                         connection.handle = info.getConnHandle();
                         connection.boardIndex = index;
+                        connection.generation = ++_connectionSequence;
                         _connectionCount.fetch_add(1);
                         accepted = true;
                         break;
@@ -380,6 +553,10 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
                 }
             }
         }
+        // NimBLE may synchronously invoke onDisconnect. Never call it while
+        // holding our state lock; old handles have already lost write access.
+        for (size_t index = 0; index < supersededCount; ++index)
+            server->disconnect(superseded[index]);
         if (!accepted)
             server->disconnect(info.getConnHandle());
     }
@@ -388,10 +565,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         Lock lock(_mutex);
         for (Connection& connection : _connections) {
             if (connection.handle == info.getConnHandle()) {
-                connection.handle = BLE_HS_CONN_HANDLE_NONE;
-                connection.boardIndex = MAX_BOARDS;
-                connection.clearParser();
-                _connectionCount.fetch_sub(1);
+                releaseConnectionLocked(connection);
                 break;
             }
         }
@@ -439,6 +613,8 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         update.sequence = ++_sequence;
         update.commands = commands;
         update.angle = _boards[connection.boardIndex].angle;
+        update.connectionHandle = connection.handle;
+        update.connectionGeneration = connection.generation;
         _pending[connection.boardIndex] = true;
         ++_completed[connection.boardIndex];
     }

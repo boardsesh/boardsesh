@@ -14,6 +14,9 @@
     "types": ["node"]
   },
   "include": [
+    "board-qa.ts",
+    "board-qa-ios-driver.ts",
+    "board-qa/**/*.ts",
     "testflight-build.ts",
     "testflight-notes.ts",
     "lib/testflight-*.ts",

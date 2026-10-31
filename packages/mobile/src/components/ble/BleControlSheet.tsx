@@ -147,6 +147,7 @@ function BleControlSheet({
         {showLightingSwitches || showLightAdjacentHolds ? <Separator /> : null}
         {onDrive ? (
           <ListRow
+            testID="ble-control-drive"
             title={tSession('playView.wallControl.lightEveryClimb')}
             leading={<Icon name="chevron.left.2" size={22} color={brandColors.primary} />}
             onPress={handleDrive}
@@ -156,18 +157,21 @@ function BleControlSheet({
         {linked ? (
           <>
             <ListRow
+              testID="ble-control-relight"
               title={tSettings('ble.relightBoard')}
               leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}
               onPress={handleReassert}
               showSeparator
             />
             <ListRow
+              testID="ble-control-clear"
               title={tCommon('lightControl.turnOffAll')}
               leading={<Icon name="lightbulb.slash" size={22} color={systemColors.secondaryLabel} />}
               onPress={handleClearLights}
               showSeparator
             />
             <ListRow
+              testID="ble-control-disconnect"
               title={tCommon('lightControl.disconnect')}
               leading={<Icon name="bluetooth.off" size={22} color={systemColors.error} />}
               onPress={handleDisconnect}

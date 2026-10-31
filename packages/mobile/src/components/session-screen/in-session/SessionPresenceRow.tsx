@@ -43,6 +43,7 @@ export function SessionPresenceRow({ users }: SessionPresenceRowProps) {
         userId: user.userId,
         displayName: user.username,
         avatarUrl: user.avatarUrl,
+        testID: `session-user-${user.userId ?? user.id}-${user.connectionState}`,
       })),
     [ordered],
   );
@@ -52,7 +53,7 @@ export function SessionPresenceRow({ users }: SessionPresenceRowProps) {
   const allReconnecting = dedupedUsers.every((user) => user.connectionState !== 'CONNECTED');
 
   return (
-    <View style={styles.container}>
+    <View testID={`session-roster-${dedupedUsers.length}`} style={styles.container}>
       <View style={[styles.avatars, allReconnecting ? { opacity: opacity.subtle } : null]}>
         <AvatarGroup participants={participants} size={32} max={4} />
       </View>

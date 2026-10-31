@@ -1,0 +1,5 @@
+appId: ${APP_ID}
+name: Select the real player's next climb
+---
+- tapOn:
+    id: play-drawer-next

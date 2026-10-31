@@ -717,7 +717,7 @@ function NowOnTheWallPanelComponent(
     const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
     return (
-      <View>
+      <View testID={activeBoard ? `board-panel-${activeBoard.uuid}` : undefined}>
         {/* First in the header, above the hero: the disclosure opens directly
             under the title that opened it. */}
         {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
@@ -1084,7 +1084,13 @@ function NowOnTheWallHeroContent({
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} size={thumbnailSize} />
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
-          <Text variant="headline" color={labelColor} numberOfLines={1} style={styles.heroName}>
+          <Text
+            testID={`board-current-${climb.climbUuid}-${climb.sentByUserId ?? 'anonymous'}`}
+            variant="headline"
+            color={labelColor}
+            numberOfLines={1}
+            style={styles.heroName}
+          >
             {climb.name ?? ''}
           </Text>
           {formattedGrade ? (
@@ -1290,7 +1296,13 @@ function HistoryRowContent({
     <>
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} />
       <View style={styles.historyBody}>
-        <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
+        <Text
+          testID={`board-history-${climb.climbUuid}-${climb.seq}`}
+          variant="subheadline"
+          color={labelColor}
+          numberOfLines={1}
+          style={styles.historyName}
+        >
           {climb.name ?? ''}
         </Text>
         {sourceLine ? (

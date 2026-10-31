@@ -92,6 +92,7 @@ export function RecordTopChrome({
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const exitAction = onEndSession ? (
     <PressableSurface
+      testID={`session-exit-${exitVariant}`}
       onPress={onEndSession}
       feedback="opacity"
       rippleColor={exitTint as string}
@@ -140,6 +141,7 @@ export function RecordTopChrome({
         {onShare ? (
           <Appbar.Action
             icon={iconMap['person.badge.plus'].android}
+            testID="session-invite"
             color={systemColors.label as string}
             onPress={onShare}
             accessibilityLabel={t('mobile.session.invite')}
@@ -154,7 +156,7 @@ export function RecordTopChrome({
     <GlassActionToolbar actionCount={onShare ? 2 : 1}>
       <UserAvatarToolbarAction variant="glass" />
       {onShare ? (
-        <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
+        <GlassToolbarAction testID="session-invite" onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
           <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={topBar.glyphSize} color={systemColors.label} />
         </GlassToolbarAction>
       ) : null}
@@ -190,6 +192,7 @@ export function RecordTopChrome({
             items.push({
               type: 'button',
               label: exitActionLabel,
+              identifier: `session-exit-${exitVariant}`,
               variant: 'plain',
               labelStyle: { fontWeight: '600' },
               ...(isLeaveExit ? {} : { tintColor: brandColors.error }),
