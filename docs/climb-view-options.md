@@ -144,10 +144,9 @@ board, Sam has the board").
   shrinks to 80% before it truncates. While a climb is written to the LEDs it shows the bulb's spinner, and in
   auto-disconnect's last ten seconds the bulb's amber ring.
 
-While the #4979 hold keeps the current climb dark, its standalone note **Last on the wall yesterday**
-(`LastOnWallNote`, from `formatLastOnWall`) shows in the controls, a pinned preview of the held climb included. It
-sits after the controls; when the board fits to the viewport's height (the landscape iPad player, the iPhone Duo
-pane) it sits above the action bar instead (`resolveWallStatusLinePlacement`).
+While the #4979 hold keeps the current climb dark, the wall button reads Put on the wall and nothing else
+changes in the controls. The "Last on the wall …" note that used to sit under it (#7000) was removed: climbers
+didn't find the date useful.
 
 The header has one wall chip left, the back chip during a preview: a back glyph, words that say where back goes
 (QA #147, Marco: "My pick" for the climber's own current climb, "On the wall" for the wall's), and the face of whoever

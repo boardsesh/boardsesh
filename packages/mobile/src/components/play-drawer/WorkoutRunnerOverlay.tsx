@@ -55,12 +55,6 @@ type WorkoutRunnerOverlayProps = {
   suppressed: boolean;
   /** "See your workout": the Record tab, once the player is out of the way. */
   onSeeWorkout: () => void;
-  /**
-   * Whether a card owns the board right now, so the player can hide what a
-   * card replaces (the wall status line, #7000). Reported after each change,
-   * and `false` on unmount.
-   */
-  onCardShownChange?: (shown: boolean) => void;
 };
 
 export const WorkoutRunnerOverlay = memo(function WorkoutRunnerOverlay({
@@ -84,7 +78,6 @@ function WorkoutRunnerOverlayContent({
   boardName,
   suppressed,
   onSeeWorkout,
-  onCardShownChange,
 }: WorkoutRunnerOverlayContentProps) {
   const { readout, currentItem, nextItem } = useWorkoutRunner(sessionId, run);
   const { role, pacerDisplayName } = useSessionTimerDriver();
@@ -134,11 +127,6 @@ function WorkoutRunnerOverlayContent({
   const visible = readout !== null && onTheWall && !suppressed;
   const showDoneCard = visible && doneCardOpen && phase === 'done';
   const showRestCard = visible && !showDoneCard && restCard !== null && restCard.key !== hiddenRestKey;
-  const cardShown = showDoneCard || showRestCard;
-  useEffect(() => {
-    onCardShownChange?.(cardShown);
-  }, [onCardShownChange, cardShown]);
-  useEffect(() => () => onCardShownChange?.(false), [onCardShownChange]);
   if (readout === null || !visible) return null;
 
   if (showDoneCard) {
