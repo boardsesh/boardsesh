@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { BOARD_QA_RUNNER_ID, prepareBoardQaIosLaunch, stageBoardQaIosDriver } from '../board-qa-ios-driver';
 import { IOS_UI_RUNNER_ID, IOS_UI_SOURCE_COMMIT, stageIosUiDriver } from '../mobile-profile-ios-driver';
+import { IosDriver } from './drivers';
+import { Evidence } from './evidence';
 
 const git = vi.hoisted(() => ({ dirty: false, calls: [] as string[] }));
 vi.mock('node:child_process', async () => {
@@ -71,7 +73,215 @@ beforeEach(() => {
   git.calls.length = 0;
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   temporaryDirectories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true }));
+});
+
+async function diagnosticDriver(reply: (url: URL, options?: RequestInit) => Promise<Response>) {
+  const directory = mkdtempSync(join(tmpdir(), 'boardsesh-wda-request-test-'));
+  temporaryDirectories.push(directory);
+  const evidence = new Evidence(directory);
+  const calls: Array<{ method: string; path: string; body: unknown }> = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL, options?: RequestInit) => {
+      const url = new URL(input);
+      const method = options?.method ?? 'GET';
+      const body = typeof options?.body === 'string' ? (JSON.parse(options.body) as unknown) : undefined;
+      calls.push({ method, path: url.pathname, body });
+      if (method === 'GET' && url.pathname === '/status')
+        return Response.json({
+          value: {
+            ready: true,
+            ios: {},
+            build: {
+              profileRunnerBundleId: `${BOARD_QA_RUNNER_ID}.xctrunner`,
+              profileRunnerPid: 42,
+              profileRunnerSourceCommit: IOS_UI_SOURCE_COMMIT,
+            },
+          },
+        });
+      if (method === 'POST' && url.pathname === '/session')
+        return Response.json({ value: { sessionId: 'owned-session' } });
+      return reply(url, options);
+    }),
+  );
+  const driver = new IosDriver(
+    {
+      id: DEVICE,
+      appId: 'com.boardsesh.app',
+      scheme: 'com.boardsesh.app',
+      email: 'qa@example.com',
+      wdaUrl: 'http://127.0.0.1:8211',
+      runnerBundleId: `${BOARD_QA_RUNNER_ID}.xctrunner`,
+    },
+    evidence,
+    async (_executable, argumentsList) => {
+      writeFileSync(
+        argumentsList[argumentsList.indexOf('--json-output') + 1],
+        JSON.stringify({
+          result: {
+            runningProcesses: [
+              {
+                processIdentifier: 42,
+                executable: '/private/owned/WebDriverAgentRunner-Runner.app/WebDriverAgentRunner-Runner',
+              },
+            ],
+          },
+        }),
+      );
+      return '';
+    },
+  );
+  await driver.attach();
+  const flow = join(directory, 'request-contract.yaml');
+  const events = () => readFileSync(join(directory, 'events.jsonl'), 'utf8');
+  return { driver, evidence, calls, flow, events };
+}
+
+describe('physical iPhone request diagnostics', () => {
+  it('uses the pinned W3C capability shape and records safe method/path/step timing without inputs', async () => {
+    const harness = await diagnosticDriver(async () => Response.json({ value: null }));
+    expect(harness.calls.find((call) => call.path === '/session')?.body).toEqual({
+      capabilities: {
+        alwaysMatch: {
+          bundleId: 'com.boardsesh.app',
+          forceAppLaunch: false,
+          shouldTerminateApp: false,
+          shouldWaitForQuiescence: false,
+          waitForIdleTimeout: 0,
+        },
+      },
+    });
+    writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- inputText: private-password\n');
+    await harness.driver.flow(harness.flow);
+    expect(harness.events()).toContain('"path":"/session/:session/wda/keys"');
+    expect(harness.events()).toContain('"flow":"request-contract.yaml","step":"1","action":"inputText"');
+    expect(harness.events()).toContain('"status":200');
+    expect(harness.events()).not.toContain('private-password');
+    expect(harness.events()).not.toContain('owned-session');
+  });
+
+  it.each([
+    [
+      'HTTP rejection',
+      () => Promise.resolve(Response.json({ value: { message: 'private-response' } }, { status: 503 })),
+      'http',
+      'HttpError',
+      503,
+      undefined,
+    ],
+    [
+      'stale WebDriver query',
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              value: {
+                error: 'stale element reference',
+                message: 'private-response',
+                traceback: 'private-trace',
+              },
+            },
+            { status: 500 },
+          ),
+        ),
+      'webdriver',
+      'WebDriverError',
+      500,
+      'stale element reference',
+    ],
+    [
+      'invalid response',
+      () => Promise.resolve(new Response('private-response', { status: 200 })),
+      'invalid-response',
+      'SyntaxError',
+      200,
+      undefined,
+    ],
+    [
+      'transport rejection',
+      () => Promise.reject(new TypeError('private-response')),
+      'transport',
+      'TypeError',
+      null,
+      undefined,
+    ],
+  ] as const)(
+    'classifies %s and excludes server bodies, traces and inputs',
+    async (_label, reply, kind, errorName, status, webdriverError) => {
+      vi.useFakeTimers();
+      const harness = await diagnosticDriver(async () => {
+        vi.setSystemTime(Date.now() + 9250);
+        return reply();
+      });
+      writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- inputText: private-password\n');
+      await expect(harness.driver.flow(harness.flow)).rejects.toMatchObject({
+        kind: 'infrastructure',
+        failureKind: kind,
+      });
+      const entries = harness
+        .events()
+        .trim()
+        .split('\n')
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              kind: string;
+              payload: Record<string, unknown>;
+            },
+        );
+      expect(entries.at(-1)).toEqual({
+        at: expect.any(String),
+        kind: 'ios-request',
+        payload: {
+          flow: 'request-contract.yaml',
+          step: '1',
+          action: 'inputText',
+          method: 'POST',
+          path: '/session/:session/wda/keys',
+          status,
+          elapsedMs: 9250,
+          timeoutMs: 15000,
+          outcome: kind,
+          errorName,
+          ...(webdriverError ? { webdriverError } : {}),
+        },
+      });
+      expect(harness.events()).not.toMatch(/private-password|private-response|private-trace/);
+    },
+  );
+
+  it('distinguishes the actual fetch deadline from a native WebDriver/HTTP failure', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Private timeout detail', 'TimeoutError')), timeoutMs);
+      return controller.signal;
+    });
+    const harness = await diagnosticDriver(
+      async (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+        }),
+    );
+    writeFileSync(harness.flow, 'appId: ${APP_ID}\n---\n- assertVisible:\n    id: actual-control\n');
+    let finished = false;
+    const completed = harness.driver.flow(harness.flow).catch((error: unknown) => {
+      finished = true;
+      return error;
+    });
+    await vi.advanceTimersByTimeAsync(14999);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await completed).toMatchObject({ kind: 'infrastructure', failureKind: 'timeout' });
+    expect(harness.events()).toContain(
+      '"status":null,"elapsedMs":15000,"timeoutMs":15000,"outcome":"timeout","errorName":"TimeoutError"',
+    );
+    expect(harness.events()).not.toContain('Private timeout detail');
+  });
 });
 
 describe('owned iPhone UI-driver staging', () => {

@@ -55,6 +55,8 @@ The runner leases phones and the USB port locally. If it reports a stale lock, i
 
 On failure, inspect `report.json`, `events.jsonl`, the phone hierarchy/screenshots and `recovery.json`. A retained session is identified explicitly: end it normally on its creator phone. Session ending and BLE disconnect do not delete saved history. If a phone is locked or its driver dies, recover that prerequisite before continuing; do not reset app data or the fixture to hide the failure.
 
+For USB diagnosis, set `BOARDSESH_QA_USB_TRACE` to a fresh local JSONL path. Capture is off by default, creates an owner-only file, refuses existing files and symlinks, and records exact bytes before parsing. The 16 MiB limit or an I/O failure marks the capture incomplete without changing parser results. These raw traces stay private; do not attach them to issues or commit them.
+
 The known suspended-iOS cross-device wake gap is tracked in #2174 and documented in `docs/live-activity-push-testing.md`. Keep that limitation separate from supported Android background delivery and iOS foreground recovery. Fixture results do not prove serial-less controller support, stock MoonBoard clear behavior, or actual wall LED placement. General release QA, workouts and tick logging remain separate work.
 
 ## Pinned catalog fixtures

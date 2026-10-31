@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
-import { join, resolve, dirname, relative, isAbsolute, sep } from 'node:path';
+import { basename, join, resolve, dirname, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { parseAllDocuments, stringify } from 'yaml';
@@ -425,8 +425,31 @@ export class AndroidDriver implements Driver {
     /* No persistent Android UI session. */
   }
 }
+type WdaFailureKind = 'http' | 'webdriver' | 'timeout' | 'transport' | 'invalid-response';
+const WDA_ERROR_CODES = new Set([
+  'stale element reference',
+  'no such element',
+  'invalid session id',
+  'unknown command',
+  'unknown error',
+  'timeout',
+  'invalid argument',
+  'element not interactable',
+  'session not created',
+]);
+class WdaRequestFailure extends QaFailure {
+  constructor(
+    message: string,
+    readonly failureKind: WdaFailureKind,
+    readonly webdriverError?: string,
+  ) {
+    super(message, 'infrastructure');
+  }
+}
+
 export class IosDriver implements Driver {
   private session = '';
+  private requestContext?: { flow: string; step: string; action: string };
   constructor(
     readonly phone: Phone,
     private evidence: Evidence,
@@ -441,25 +464,76 @@ export class IosDriver implements Driver {
     body?: unknown,
     timeoutMs = 15_000,
   ): Promise<Record<string, unknown>> {
+    const startedAt = Date.now();
+    const safePath = path
+      .split('?')[0]
+      .replace(/^\/session\/[^/]+/, '/session/:session')
+      .replace(/\/element\/[^/]+/, '/element/:element');
+    const signal = AbortSignal.timeout(timeoutMs);
+    let status: number | null = null;
+    let failureKind: WdaFailureKind = 'transport';
+    let webdriverError: string | undefined;
     try {
       const response = await fetch(new URL(path, this.phone.wdaUrl), {
         method,
         headers: { 'content-type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
+      status = response.status;
+      failureKind = response.ok ? 'invalid-response' : 'http';
       const payload = record(await response.json());
       if (
-        !response.ok ||
-        (payload.value &&
-          typeof payload.value === 'object' &&
-          !Array.isArray(payload.value) &&
-          'error' in record(payload.value))
-      )
-        throw new Error('Rejected');
+        payload.value &&
+        typeof payload.value === 'object' &&
+        !Array.isArray(payload.value) &&
+        'error' in record(payload.value)
+      ) {
+        const code = record(payload.value).error;
+        webdriverError = typeof code === 'string' && WDA_ERROR_CODES.has(code) ? code : 'unknown error';
+        failureKind = 'webdriver';
+        throw new Error('WebDriver request rejected');
+      }
+      if (!response.ok) throw new Error('HTTP request rejected');
+      this.evidence.event('ios-request', {
+        ...this.requestContext,
+        method,
+        path: safePath,
+        status,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs,
+        outcome: 'success',
+      });
       return payload;
-    } catch {
-      throw new QaFailure(`Physical iPhone driver unavailable: ${method} ${path.split('?')[0]}`, 'infrastructure');
+    } catch (cause) {
+      const nativeName = cause instanceof Error ? cause.name : '';
+      if (signal.aborted || nativeName === 'TimeoutError') failureKind = 'timeout';
+      const errorName =
+        failureKind === 'webdriver'
+          ? 'WebDriverError'
+          : failureKind === 'http'
+            ? 'HttpError'
+            : ['Error', 'TypeError', 'SyntaxError', 'AbortError', 'TimeoutError'].includes(nativeName)
+              ? nativeName
+              : 'Error';
+      const elapsedMs = Date.now() - startedAt;
+      this.evidence.event('ios-request', {
+        ...this.requestContext,
+        method,
+        path: safePath,
+        status,
+        elapsedMs,
+        timeoutMs,
+        outcome: failureKind,
+        errorName,
+        ...(webdriverError ? { webdriverError } : {}),
+      });
+      const reason = webdriverError ?? failureKind;
+      throw new WdaRequestFailure(
+        `Physical iPhone driver unavailable: ${method} ${safePath} (${status === null ? 'no HTTP response' : `HTTP ${status}`}, ${reason}, ${elapsedMs}ms)`,
+        failureKind,
+        webdriverError,
+      );
     }
   }
   async attach(): Promise<void> {
@@ -539,15 +613,21 @@ export class IosDriver implements Driver {
     const filename = flowFilename(name);
     const commands = readFlow(filename, { APP_ID: this.phone.appId, APP_SCHEME: this.phone.scheme, ...variables });
     assertIosFlow(commands);
-    await this.execute(commands);
+    try {
+      await this.execute(commands, basename(filename));
+    } finally {
+      this.requestContext = undefined;
+    }
   }
-  private async execute(commands: Record<string, unknown>[]): Promise<void> {
-    for (const step of commands) {
+  private async execute(commands: Record<string, unknown>[], flow: string, prefix = ''): Promise<void> {
+    for (const [index, step] of commands.entries()) {
       requireRunning();
       const entries = Object.entries(step);
       if (entries.length !== 1) throw new Error('One action per flow step');
       const [action, argument] = entries[0];
-      this.evidence.event('ios-action', { action }); // Never record input arguments.
+      const stepNumber = `${prefix}${index + 1}`;
+      this.requestContext = { flow, step: stepNumber, action };
+      this.evidence.event('ios-action', this.requestContext); // Never record input arguments.
       if (action === 'openLink') {
         await this.request(this.path('/url'), 'POST', {
           url: typeof argument === 'string' ? argument : string(record(argument).link),
@@ -627,7 +707,7 @@ export class IosDriver implements Driver {
           if (Boolean((await this.elements(when.visible ?? when.notVisible)).length) !== Boolean(when.visible))
             continue;
         }
-        if (Array.isArray(include.commands)) await this.execute(include.commands.map(record));
+        if (Array.isArray(include.commands)) await this.execute(include.commands.map(record), flow, `${stepNumber}.`);
         else throw new Error('Empty included flow');
       } else if (action === 'takeScreenshot') {
         await this.screenshot(string(argument));
