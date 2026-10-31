@@ -229,6 +229,42 @@ vi.mock('../../Button', () => ({
     createElement('button', { 'data-button': title, disabled: !!disabled, onClick: onPress }),
 }));
 
+vi.mock('../../ModalSheet', () => ({
+  ModalSheet: ({ visible, header, children }: { visible?: boolean; header?: ReactNode; children?: ReactNode }) =>
+    visible ? createElement('section', { 'data-import-sheet': true }, header, children) : null,
+}));
+
+type TopBarAction = { label?: string; kind?: string; onPress: () => void; disabled?: boolean; loading?: boolean };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, leading, trailing }: { title: string; leading?: TopBarAction; trailing?: TopBarAction }) =>
+    createElement(
+      'header',
+      {},
+      title,
+      ...[leading, trailing].map((action, index) =>
+        action
+          ? createElement('button', {
+              key: index,
+              'data-button': action.label ?? `actions.${action.kind}`,
+              onClick: action.onPress,
+              disabled: action.disabled || action.loading,
+            })
+          : null,
+      ),
+    ),
+}));
+
+// Configuration behavior is covered with the actual parser in its own suite.
+vi.mock('../MoonBoardCsvConfiguration', () => ({
+  MoonBoardCsvConfiguration: ({ csv, onClose }: { csv: string; onClose: () => void }) =>
+    createElement(
+      'section',
+      { 'data-csv-configuration': true },
+      csv,
+      createElement('button', { 'data-button': 'configuration.cancel', onClick: onClose }),
+    ),
+}));
+
 import { BoardAccountsSection } from '../BoardAccountsSection';
 import { LinkBoardAccountModal } from '../LinkBoardAccountModal';
 
@@ -487,7 +523,7 @@ describe('BoardAccountsSection — MoonBoard card', () => {
     });
   });
 
-  it('says the file is not a MoonBoard logbook when no MoonBoard header is found', async () => {
+  it('offers column configuration when the detected logbook cannot be parsed', async () => {
     mocks.parseMoonBoardCsv.mockImplementation(() => {
       throw new Error('missing_moonboard_log_header');
     });
@@ -499,6 +535,38 @@ describe('BoardAccountsSection — MoonBoard card', () => {
       expect(mocks.showToast).toHaveBeenCalledWith('aurora.moonboard.csvImport.notMoonExport', 'error');
     });
     expect(button(container, 'aurora.import.dialog.confirm')).toBeNull();
+    expect(container.querySelector('[data-csv-configuration]')).not.toBeNull();
+  });
+
+  it('opens configuration directly for an unfamiliar table without attempting an import', async () => {
+    mocks.fileText.mockResolvedValue('Route title,Difficulty\nExample climb,6B+');
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+
+    await waitFor(() => expect(container.querySelector('[data-csv-configuration]')).not.toBeNull());
+    expect(mocks.parseMoonBoardCsv).not.toHaveBeenCalled();
+    expect(mocks.streamMoonBoardImport).not.toHaveBeenCalled();
+    expect(mocks.showToast).not.toHaveBeenCalled();
+
+    fireEvent.click(button(container, 'configuration.cancel')!);
+    expect(container.querySelector('[data-import-sheet]')).toBeNull();
+  });
+
+  it('shows the same logbook preview when its filename is changed to problemld', async () => {
+    mocks.pickDocument.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://problemld', name: 'problemld', size: 128 }],
+    });
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+
+    await waitFor(() => expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull());
+    expect(mocks.parseMoonBoardCsv).toHaveBeenCalledWith(
+      'ProblemId,Grade,Tries,Attempts,Rating,Date\n123,6B+,Send,1,3,2026-01-01',
+    );
+    expect(mocks.streamMoonBoardImport).not.toHaveBeenCalled();
   });
 
   it('keeps the row-level parse message for a MoonBoard CSV with a bad row', async () => {

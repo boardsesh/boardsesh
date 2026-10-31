@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { classifyMoonBoardLogRow, decodeMoonBoardExportBytes, parseMoonBoardExportCsv } from '../moonboard-import';
+import {
+  classifyMoonBoardLogRow,
+  decodeMoonBoardExportBytes,
+  inspectMoonBoardExportCsv,
+  parseMoonBoardCollectionCsv,
+  parseMoonBoardExportCsv,
+} from '../moonboard-import';
 
 const SAMPLE_CSV = `FirstName,Cathal,,,,
 LastName,Tone,,,,
@@ -154,5 +160,234 @@ describe('decodeMoonBoardExportBytes', () => {
     ]);
 
     expect(decodeMoonBoardExportBytes(bytes)).toBe('DON’T Björk 40°');
+  });
+});
+
+describe('inspectMoonBoardExportCsv', () => {
+  it('locates a legacy logbook after profile metadata', () => {
+    expect(inspectMoonBoardExportCsv(SAMPLE_CSV)).toMatchObject({
+      kind: 'logbook',
+      headerRowIndex: 7,
+      headers: ['ProblemId', 'Grade', 'Tries', 'Attempts', 'Rating', 'Date'],
+      columns: { problemId: 0, grade: 1, tries: 2, attempts: 3, rating: 4, date: 5 },
+      rowCount: 5,
+    });
+  });
+
+  it('recognizes standalone profile data without treating metadata as a table', () => {
+    const csv = ['Firstname,Example', 'Username,example-setter', 'Email,example@example.test', 'AgreeTerms,TRUE'].join(
+      '\n',
+    );
+
+    expect(inspectMoonBoardExportCsv(csv).kind).toBe('profile');
+    expect(() => parseMoonBoardExportCsv(csv)).toThrow('missing_moonboard_log_header');
+  });
+
+  it.each([
+    'Name,Grade,User Grade,Benchmark,User Rating,Active,Inserted\nExample,6C,6C,FALSE,4,TRUE,13/01/22 16:50',
+    'Name,Grade,Active,Inserted,Updated,Deleted\nExample,7A,TRUE,10/05/23 16:08,14/03/24 10:34,',
+  ])('recognizes named problem metadata as a collection, without inventing log fields', (csv) => {
+    const inspection = inspectMoonBoardExportCsv(csv);
+
+    expect(inspection.kind).toBe('collection');
+    expect(inspection.columns).toMatchObject({ name: 0, grade: 1 });
+    expect(inspection.columns.date).toBeUndefined();
+    expect(inspection.columns.tries).toBeUndefined();
+    expect(() => parseMoonBoardExportCsv(csv)).toThrow('missing_moonboard_log_header');
+  });
+
+  it('inspects unfamiliar headers after metadata and limits sample rows to five', () => {
+    const csv = [
+      'Firstname,Example',
+      'Username,example-setter',
+      '',
+      'Route title,Difficulty,Outcome,Climbed on',
+      ...Array.from({ length: 8 }, (_, index) => `Problem ${index + 1},6A,Flashed,01/01/24`),
+    ].join('\n');
+
+    expect(inspectMoonBoardExportCsv(csv)).toEqual({
+      kind: 'unknown',
+      headerRowIndex: 3,
+      headers: ['Route title', 'Difficulty', 'Outcome', 'Climbed on'],
+      columns: {},
+      sampleRows: Array.from({ length: 5 }, (_, index) => [`Problem ${index + 1}`, '6A', 'Flashed', '01/01/24']),
+      rowCount: 8,
+    });
+  });
+
+  it('allows an explicit header row instead of interpreting a cover table', () => {
+    const csv = ['Report,October', 'Route title,Difficulty', 'Example,7A'].join('\n');
+
+    expect(inspectMoonBoardExportCsv(csv).headerRowIndex).toBe(0);
+    expect(inspectMoonBoardExportCsv(csv, 1)).toMatchObject({
+      headerRowIndex: 1,
+      headers: ['Route title', 'Difficulty'],
+      sampleRows: [['Example', '7A']],
+      rowCount: 1,
+    });
+  });
+
+  it.each([-1, 1.5, 10, Number.NaN])('rejects an invalid selected header index %s', (headerRowIndex) => {
+    expect(() => inspectMoonBoardExportCsv('Name,Grade\nExample,7A', headerRowIndex)).toThrow('invalid_header_row');
+  });
+
+  it('handles empty files without offering an importable type', () => {
+    expect(inspectMoonBoardExportCsv('')).toEqual({
+      kind: 'unknown',
+      headerRowIndex: 0,
+      headers: [''],
+      sampleRows: [],
+      columns: {},
+      rowCount: 0,
+    });
+  });
+});
+
+describe('MoonBoard column mapping', () => {
+  const mappedCsv = [
+    'Report,October',
+    'Route title,Difficulty,Outcome,Climbed on,Spare',
+    'Example,6a,Flashed,01/01/24,8',
+  ].join('\n');
+  const options = { headerRowIndex: 1, columns: { name: 0, grade: 1, tries: 2, date: 3 } };
+
+  it('maps unfamiliar logbook headers and retains source record numbers', () => {
+    const result = parseMoonBoardExportCsv(mappedCsv, options);
+
+    expect(result.data.logs).toEqual([
+      { lineNumber: 3, name: 'Example', grade: '6A', tries: 'Flashed', date: '01/01/24', attempts: 0, rating: null },
+    ]);
+    expect(result.preview).toMatchObject({ rows: 1, sends: 1, flashes: 1 });
+  });
+
+  it('uses the automatic header when only mappings are supplied', () => {
+    const csv = 'Route title,Difficulty,Outcome,Climbed on\nExample,6A,Flashed,01/01/24';
+
+    expect(parseMoonBoardExportCsv(csv, { columns: options.columns }).data.logs[0].name).toBe('Example');
+  });
+
+  it('lets a selected recognizable header retain automatic column aliases', () => {
+    const csv = 'Report,October\nName,Grade,Tries,Date\nExample,6A,Flashed,01/01/24';
+
+    expect(parseMoonBoardExportCsv(csv, { headerRowIndex: 1 }).data.logs[0].lineNumber).toBe(3);
+  });
+
+  it.each([-1, 1.5, 5, Number.NaN])('rejects an invalid mapped column index %s', (name) => {
+    expect(() => parseMoonBoardExportCsv(mappedCsv, { ...options, columns: { ...options.columns, name } })).toThrow(
+      'invalid_name_column',
+    );
+  });
+
+  it('rejects assigning the same source column twice', () => {
+    expect(() => parseMoonBoardExportCsv(mappedCsv, { ...options, columns: { ...options.columns, date: 2 } })).toThrow(
+      'duplicate_date_column',
+    );
+  });
+
+  it('identifies a missing required mapping instead of restoring it automatically', () => {
+    expect(() =>
+      parseMoonBoardExportCsv('Name,Grade,Tries,Date\nExample,6A,Flashed,01/01/24', {
+        columns: { name: 0, tries: 2, date: 3 },
+      }),
+    ).toThrow('missing_grade_column');
+    expect(() => parseMoonBoardExportCsv(mappedCsv, { ...options, columns: { grade: 1, tries: 2, date: 3 } })).toThrow(
+      'missing_problem_column',
+    );
+  });
+
+  it('keeps row validation and existing outcome labels when fields are manually mapped', () => {
+    expect(() => parseMoonBoardExportCsv(mappedCsv.replace('Flashed', 'Sent'), options)).toThrow(
+      'unsupported_tries_line_3',
+    );
+    expect(() => parseMoonBoardExportCsv(mappedCsv.replace('Example,6a', 'Example,'), options)).toThrow(
+      'missing_grade_line_3',
+    );
+  });
+});
+
+describe('parseMoonBoardCollectionCsv', () => {
+  it('reads the problem-metadata shape without manufacturing dates, outcomes, or holds', () => {
+    const csv = [
+      'Name,Grade,User Grade,Benchmark,User Rating,Active,Inserted',
+      'Example,6c,6C,FALSE,4,TRUE,13/01/22 16:50',
+    ].join('\n');
+
+    expect(parseMoonBoardCollectionCsv(csv)).toEqual({
+      rows: [{ lineNumber: 2, name: 'Example', grade: '6C' }],
+      excluded: 0,
+    });
+  });
+
+  it('preserves record order and duplicates for catalogue resolution', () => {
+    const csv = 'Name,Grade\nSecond,7A\nFirst,6C\nSecond,7A';
+
+    expect(parseMoonBoardCollectionCsv(csv).rows).toEqual([
+      { lineNumber: 2, name: 'Second', grade: '7A' },
+      { lineNumber: 3, name: 'First', grade: '6C' },
+      { lineNumber: 4, name: 'Second', grade: '7A' },
+    ]);
+  });
+
+  it('excludes inactive and deleted records while retaining source row numbers', () => {
+    const csv = [
+      'Name,Grade,Active,Inserted,Updated,Deleted',
+      'Inactive,6C,FALSE,13/01/22 16:50,,',
+      'Deleted,7A,TRUE,,,14/03/24 10:34',
+      '',
+      'Kept,7B,TRUE,,,',
+    ].join('\n');
+
+    expect(parseMoonBoardCollectionCsv(csv)).toEqual({
+      rows: [{ lineNumber: 5, name: 'Kept', grade: '7B' }],
+      excluded: 2,
+    });
+    expect(parseMoonBoardCollectionCsv(csv, undefined, true)).toEqual({
+      rows: [
+        { lineNumber: 2, name: 'Inactive', grade: '6C' },
+        { lineNumber: 5, name: 'Kept', grade: '7B' },
+      ],
+      excluded: 1,
+    });
+  });
+
+  it('does not interpret false or null deletion markers as deleted records', () => {
+    const csv = [
+      'Name,Grade,Deleted',
+      'False flag,6A,FALSE',
+      'Zero flag,6B,0',
+      'Null marker,6C,null',
+      'Unset,7A,-',
+    ].join('\n');
+
+    expect(parseMoonBoardCollectionCsv(csv).rows).toHaveLength(4);
+  });
+
+  it('handles BOMs, quoted commas, escaped quotes, and multiline names', () => {
+    const csv = '\uFEFFName,Grade,Setter\r\n"A, ""quoted""\nproblem",6C,Example Setter\r\n';
+
+    expect(parseMoonBoardCollectionCsv(csv).rows).toEqual([
+      { lineNumber: 2, name: 'A, "quoted"\nproblem', grade: '6C', setter: 'Example Setter' },
+    ]);
+  });
+
+  it('reads Windows-1252 problem names through the shared decoder', () => {
+    const bytes = Uint8Array.from([...new TextEncoder().encode('Name,Grade\nCaf'), 0xe9, 0x2c, 0x36, 0x43]);
+
+    expect(parseMoonBoardCollectionCsv(decodeMoonBoardExportBytes(bytes)).rows[0].name).toBe('Café');
+  });
+
+  it('maps unfamiliar collection columns and optional setter information', () => {
+    const csv = 'Report,October\nDifficulty,Route title,Author\n7a,Example,Some Setter';
+
+    expect(parseMoonBoardCollectionCsv(csv, { headerRowIndex: 1, columns: { grade: 0, name: 1, setter: 2 } })).toEqual({
+      rows: [{ lineNumber: 3, name: 'Example', grade: '7A', setter: 'Some Setter' }],
+      excluded: 0,
+    });
+  });
+
+  it('blocks collection imports without both required columns or row values', () => {
+    expect(() => parseMoonBoardCollectionCsv('Name,Inserted\nExample,01/01/24')).toThrow('missing_grade_column');
+    expect(() => parseMoonBoardCollectionCsv('Name,Grade\n,6C')).toThrow('missing_name_line_2');
+    expect(() => parseMoonBoardCollectionCsv('Name,Grade\nExample,')).toThrow('missing_grade_line_2');
   });
 });

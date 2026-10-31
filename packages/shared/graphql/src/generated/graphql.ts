@@ -4203,6 +4203,65 @@ export type MoonBoardClimbDuplicateMatch = {
   exists: Scalars['Boolean']['output'];
 };
 
+export type MoonBoardCollectionDestination = {
+  __typename?: 'MoonBoardCollectionDestination';
+  id: Scalars['ID']['output'];
+  layoutId?: Maybe<Scalars['Int']['output']>;
+  name: Scalars['String']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type MoonBoardCollectionImportInput = {
+  angle: Scalars['Int']['input'];
+  layoutId: Scalars['Int']['input'];
+  /** Existing destination's database ID, paired with playlistUuid. Omit to create a private playlist. */
+  playlistId?: InputMaybe<Scalars['ID']['input']>;
+  playlistName: Scalars['String']['input'];
+  playlistUuid: Scalars['ID']['input'];
+  rows: Array<MoonBoardCollectionRowInput>;
+};
+
+export type MoonBoardCollectionImportResult = {
+  __typename?: 'MoonBoardCollectionImportResult';
+  imported: Scalars['Int']['output'];
+  playlistId: Scalars['ID']['output'];
+  playlistUuid: Scalars['ID']['output'];
+  preview: MoonBoardCollectionPreview;
+  skipped: Scalars['Int']['output'];
+};
+
+export type MoonBoardCollectionMatch = {
+  __typename?: 'MoonBoardCollectionMatch';
+  climbUuid?: Maybe<Scalars['String']['output']>;
+  grade: Scalars['String']['output'];
+  lineNumber: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  /** matched, missing, ambiguous, or duplicate */
+  status: Scalars['String']['output'];
+};
+
+export type MoonBoardCollectionPreview = {
+  __typename?: 'MoonBoardCollectionPreview';
+  ambiguous: Scalars['Int']['output'];
+  duplicates: Scalars['Int']['output'];
+  matched: Scalars['Int']['output'];
+  missing: Scalars['Int']['output'];
+  rows: Array<MoonBoardCollectionMatch>;
+};
+
+export type MoonBoardCollectionPreviewInput = {
+  angle: Scalars['Int']['input'];
+  layoutId: Scalars['Int']['input'];
+  rows: Array<MoonBoardCollectionRowInput>;
+};
+
+export type MoonBoardCollectionRowInput = {
+  grade: Scalars['String']['input'];
+  lineNumber: Scalars['Int']['input'];
+  name: Scalars['String']['input'];
+  setter?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type MoonBoardHoldsInput = {
   finish: Array<Scalars['String']['input']>;
   hand: Array<Scalars['String']['input']>;
@@ -4465,6 +4524,8 @@ export type Mutation = {
   grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
+  /** Save matched catalogue climbs to an owned private playlist. Rechecks matches at import time. */
+  importMoonBoardCollection: MoonBoardCollectionImportResult;
   inviteResourceMember: Scalars['Boolean']['output'];
   /**
    * Join an existing session or create it if it doesn't exist.
@@ -5295,6 +5356,11 @@ export type MutationGrantGymWriteAccessArgs = {
 /** Root mutation type for all write operations. */
 export type MutationGrantRoleArgs = {
   input: GrantRoleInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationImportMoonBoardCollectionArgs = {
+  input: MoonBoardCollectionImportInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7271,6 +7337,8 @@ export type Query = {
   isFollowing: Scalars['Boolean']['output'];
   /** Current release context. Available without signing in. */
   mobileReleaseStatus: ReleaseContext;
+  /** Owned MoonBoard playlists with an effective private audience, for this layout. */
+  moonBoardCollectionDestinations: Array<MoonBoardCollectionDestination>;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -7365,6 +7433,8 @@ export type Query = {
   playlistsForClimbs: Array<ClimbPlaylistMembership>;
   /** Get popular board configurations ranked by climb count. */
   popularBoardConfigs: PopularBoardConfigConnection;
+  /** Match exported MoonBoard problem names against the public catalogue without saving anything. */
+  previewMoonBoardCollectionImport: MoonBoardCollectionPreview;
   privacyRelationship: PrivacyRelationship;
   privacySettings: PrivacySettings;
   /**
@@ -8147,6 +8217,11 @@ export type QueryMobileReleaseStatusArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryMoonBoardCollectionDestinationsArgs = {
+  layoutId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryMyBoardSerialConfigsArgs = {
   serialNumbers: Array<Scalars['String']['input']>;
 };
@@ -8238,6 +8313,11 @@ export type QueryPlaylistsForClimbsArgs = {
 /** Root query type for all read operations. */
 export type QueryPopularBoardConfigsArgs = {
   input?: InputMaybe<PopularBoardConfigsInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryPreviewMoonBoardCollectionImportArgs = {
+  input: MoonBoardCollectionPreviewInput;
 };
 
 /** Root query type for all read operations. */
