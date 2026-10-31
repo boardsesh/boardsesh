@@ -117,6 +117,21 @@ type Job = { 'runs-on'?: string; steps: Step[] };
 const workflow = (name: string) =>
   parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8')) as { jobs: Record<string, Job> };
 describe('Intel video producer and recorder handoff', () => {
+  it('hashes the shared architecture helper in every main-branch simulator app producer', () => {
+    for (const name of [
+      'mobile-store-videos-pipeline',
+      'mobile-store-videos-measure',
+      'mobile-screenshots-ios',
+      'mobile-e2e-gate',
+    ]) {
+      const producers = Object.values(workflow(name).jobs)
+        .flatMap((job) => job.steps ?? [])
+        .filter((step) => step.run?.includes('screenshot-sim-app-v1'));
+      expect(producers).toHaveLength(1);
+      expect(producers[0].run).toContain("'scripts/lib/ios-simulator-architecture.mjs'");
+    }
+    expect(workflow('mobile-screenshots-ios').jobs['ios-build']['runs-on']).toBe('macos-26');
+  });
   it('moves the producer and every native video consumer together, retaining ordinary mode timeouts and Linux jobs', () => {
     const jobs = workflow('mobile-store-videos-pipeline').jobs;
     for (const name of ['app', 'record', 'crew']) expect(jobs[name]['runs-on']).toBe('macos-26-intel');
