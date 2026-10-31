@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import {
@@ -200,8 +202,55 @@ describe('private-session iOS switch targeting', () => {
       source.indexOf('async function diagnoseSessionVisibility('),
       source.indexOf('async function recordTake('),
     );
-    expect(diagnostics).toContain('deviceScreenshot(primary, screenshotPath)');
+    expect(diagnostics).toContain('deviceScreenshot(primary, screenshotPath, 15_000)');
     expect(diagnostics).toContain('await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000)');
+  });
+
+  it('preserves the privacy failure when its diagnostic screenshot throws', async () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const diagnostics = source.slice(
+      source.indexOf('async function diagnoseSessionVisibility('),
+      source.indexOf('async function recordTake('),
+    );
+    const screenshot = vi.fn(() => {
+      throw new Error('simulator unavailable');
+    });
+    const warn = vi.fn();
+    const diagnose: (phone: unknown, label: string, status: number) => Promise<void> = runInNewContext(
+      `(${stripTypeScriptTypes(diagnostics)})`,
+      {
+        deviceScreenshot: screenshot,
+        resolve: (...fragments: string[]) => fragments.join('/'),
+        LOG_DIR: '/capture',
+        LOG: '[capture]',
+        console: { warn },
+      },
+    );
+    const phone = { platform: 'ios', device: { udid: 'primary' } };
+    await expect(diagnose(phone, 'crew-private', 0)).resolves.toBeUndefined();
+    expect(screenshot).toHaveBeenCalledExactlyOnceWith(phone, '/capture/crew-private-visibility.png', 15_000);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('passes the screenshot deadline to the native process with a forced timeout kill', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const nativeCommand = source.slice(source.indexOf('function simctl('), source.indexOf('function readPlistString('));
+    const spawnSync = vi.fn().mockReturnValue({ status: null, stdout: '', stderr: '' });
+    const simctl: (args: string[], env: NodeJS.ProcessEnv, timeoutMs: number) => { status: number } = runInNewContext(
+      `(${stripTypeScriptTypes(nativeCommand)})`,
+      { spawnSync, guardSimulatorCommand: vi.fn(), ROOT_DIR: '/repo', process: { env: {} } },
+    );
+    expect(simctl(['io', 'primary', 'screenshot', '/capture/screen.png'], {}, 15_000).status).toBe(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      'xcrun',
+      ['simctl', 'io', 'primary', 'screenshot', '/capture/screen.png'],
+      expect.objectContaining({ timeout: 15_000, killSignal: 'SIGKILL' }),
+    );
+    const screenshot = source.slice(
+      source.indexOf('function deviceScreenshot('),
+      source.indexOf('function adbBinary('),
+    );
+    expect(screenshot).toContain("simctl(['io', phone.device.udid, 'screenshot', file], process.env, timeoutMs)");
   });
 });
 

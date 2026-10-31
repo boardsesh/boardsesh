@@ -254,9 +254,16 @@ function commandExists(command: string, env: NodeJS.ProcessEnv = toolEnv()): boo
 function simctl(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs?: number,
 ): { status: number; stdout: string; stderr: string } {
   guardSimulatorCommand('xcrun', ['simctl', ...args], ROOT_DIR);
-  const result = spawnSync('xcrun', ['simctl', ...args], { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 });
+  const result = spawnSync('xcrun', ['simctl', ...args], {
+    encoding: 'utf8',
+    env,
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  });
   return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
@@ -729,15 +736,17 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
 }
 
 /** A still of what the phone shows, for a failure message. */
-function deviceScreenshot(phone: Phone, file: string): void {
+function deviceScreenshot(phone: Phone, file: string, timeoutMs?: number): void {
   mkdirSync(dirname(file), { recursive: true });
   if (phone.platform === 'ios') {
-    simctl(['io', phone.device.udid, 'screenshot', file]);
+    simctl(['io', phone.device.udid, 'screenshot', file], process.env, timeoutMs);
     return;
   }
   const capture = spawnSync(adbBinary(), ['-s', phone.device.udid, 'exec-out', 'screencap', '-p'], {
     env: androidEnv(),
     maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
   if (capture.status === 0) writeFileSync(file, capture.stdout);
 }
@@ -1427,8 +1436,8 @@ async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): P
 async function diagnoseSessionVisibility(primary: Phone, label: string, flowStatus: number): Promise<void> {
   // Keep an immediate screen before the separate, bounded CLI hierarchy query.
   const screenshotPath = resolve(LOG_DIR, `${label}-visibility.png`);
-  deviceScreenshot(primary, screenshotPath);
   try {
+    deviceScreenshot(primary, screenshotPath, 15_000);
     const hierarchy = await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000);
     writeFileSync(
       resolve(LOG_DIR, `${label}-visibility.json`),
@@ -1437,7 +1446,7 @@ async function diagnoseSessionVisibility(primary: Phone, label: string, flowStat
   } catch (error) {
     // Diagnostics cannot turn a missing privacy event into permission to Start.
     console.warn(
-      `${LOG} ${label}: visibility hierarchy failed: ${error instanceof Error ? error.message : String(error)}`,
+      `${LOG} ${label}: visibility diagnostics failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
