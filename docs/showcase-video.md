@@ -499,12 +499,20 @@ so this needs a live backend.
    prevents further cold launches. The secondary simulator and Metro shut down
    between takes and retries so the next primary Start runs alone again.
 
-`session-private.yaml` waits for the localized visibility switch and taps its
+On iOS, `session-private.yaml` waits for the localized visibility switch and taps its
 accessibility label, including SwiftUI's subtitle, rather than a screen point.
 The recorder still requires the app's visibility-off event before Start. A
 missing event reports an unconfirmed tap; it does not claim what the screen's
 switch shows. CI memory measurements and a complete crew take remain the check
 that these reductions fit the runner.
+
+To check the crew take on the standard 7 GiB CI runner, dispatch
+**Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
+It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
+source SHA, and skips rendering and publishing. It uses the existing repository
+recording-account secrets and shares the normal crew account lock. For release
+train validation, use a candidate ref containing the exact `release/next` source
+plus the recorder fix; a run from `main` builds a different native app.
 
 Why a signal server: two Maestro processes each take 4-7 s to attach, so a
 timed wait cannot line them up. The flows `GET` the recorder's local server
