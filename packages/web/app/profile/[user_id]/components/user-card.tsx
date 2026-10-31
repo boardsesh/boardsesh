@@ -6,6 +6,7 @@ import MuiCard from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import { PersonOutlined, Instagram } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import FollowButton from '@/app/components/ui/follow-button';
@@ -35,10 +36,15 @@ export default function UserCard({ userId, profile, isOwnProfile, onProfileUpdat
             {!avatarUrl && <PersonOutlined />}
           </MuiAvatar>
           <div className={styles.profileDetails}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
               <Typography variant="h6" component="h4" className={styles.displayName}>
                 {displayName}
               </Typography>
+              {/* A thank-you label only: the backend sends true only for a current
+                  supporter who chose public credit (docs/supporters.md). */}
+              {profile.isSupporter === true && (
+                <Chip size="small" variant="outlined" color="primary" label={t('page.supporterTag')} />
+              )}
               {!isOwnProfile && (
                 <FollowButton
                   entityId={userId}

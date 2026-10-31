@@ -18,6 +18,7 @@ type ProfileResponse = {
     isFollowedByMe: boolean;
     isPrivate: boolean;
     canViewActivity: boolean;
+    isSupporter: boolean | null;
   } | null;
 };
 
@@ -28,7 +29,7 @@ export async function getProfileData(userId: string, viewerUserId?: string): Pro
     query WebProfile($userId: ID!) {
       publicProfile(userId: $userId) {
         id displayName avatarUrl instagramUrl followerCount followingCount
-        isFollowedByMe isPrivate canViewActivity
+        isFollowedByMe isPrivate canViewActivity isSupporter
       }
     }`,
     { userId },
@@ -57,5 +58,6 @@ export async function getProfileData(userId: string, viewerUserId?: string): Pro
     isFollowedByMe: profile.isFollowedByMe,
     isPrivate: profile.isPrivate,
     canViewActivity: profile.canViewActivity,
+    isSupporter: profile.isSupporter === true,
   };
 }

@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +9,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Avatar } from '../Avatar';
 import { Button } from '../Button';
+import { climbChipStyles } from '../DraftChip';
 import {
   usePrivacySettings,
   usePrivacyRelationship,
@@ -58,9 +59,14 @@ export function PublicProfileHeaderBlock({ profile, instagramUrl, currentUserId 
       <View style={styles.identityRow}>
         <Avatar uri={profile.avatarUrl} name={profile.displayName} size={AVATAR_SIZE} />
         <View style={styles.identityText}>
-          <Text variant="title2" numberOfLines={2} style={styles.name}>
-            {displayName}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text variant="title2" numberOfLines={2} style={styles.name}>
+              {displayName}
+            </Text>
+            {/* A thank-you label only: the backend sends true only for a current
+                supporter who chose public credit (docs/supporters.md). */}
+            {profile.isSupporter === true ? <SupporterPill /> : null}
+          </View>
           {profile.canViewActivity !== false ? (
             <View style={styles.countsRow}>
               <PressableSurface
@@ -103,6 +109,25 @@ export function PublicProfileHeaderBlock({ profile, instagramUrl, currentUserId 
     </View>
   );
 }
+
+/** Same shape and neutral colours as DraftChip, so it never competes with the name. */
+const SupporterPill = memo(function SupporterPill() {
+  const { t } = useTranslation('you');
+  const { systemColors } = useTheme();
+  const label = t('mobile.social.supporterTag');
+  return (
+    <View
+      style={[climbChipStyles.chip, { backgroundColor: systemColors.fill }]}
+      accessibilityRole="text"
+      accessibilityLabel={label}
+      testID="public-profile-supporter-tag"
+    >
+      <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+        {label}
+      </Text>
+    </View>
+  );
+});
 
 function FollowButton({
   targetUserId,
@@ -224,7 +249,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing[1],
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
   name: {
+    flexShrink: 1,
     fontWeight: '700',
   },
   countsRow: {

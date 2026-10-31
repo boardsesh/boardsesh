@@ -31,7 +31,8 @@
     "lastThreeMonths": "Últimos 3 meses",
     "activityChartLabel": "Actividad de los últimos 3 meses",
     "displayNameFallback": "Escalador",
-    "betaVideos": "Su beta"
+    "betaVideos": "Su beta",
+    "supporterTag": "Mecenas"
   },
   "nav": {
     "statistics": {

@@ -146,6 +146,19 @@ describe('UserCard', () => {
     expect(link.getAttribute('target')).toBe('_blank');
   });
 
+  it('shows the Supporter tag when isSupporter is true', () => {
+    render(<UserCard {...createDefaultProps({ profile: createDefaultProfile({ isSupporter: true }) })} />);
+    expect(screen.getByText('Supporter')).toBeTruthy();
+  });
+
+  it.each([
+    ['false', false],
+    ['missing', undefined],
+  ])('hides the Supporter tag when isSupporter is %s', (_label, isSupporter) => {
+    render(<UserCard {...createDefaultProps({ profile: createDefaultProfile({ isSupporter }) })} />);
+    expect(screen.queryByText('Supporter')).toBeNull();
+  });
+
   it('does not render Instagram link when not available', () => {
     render(<UserCard {...createDefaultProps()} />);
     expect(screen.queryByRole('link')).toBeNull();

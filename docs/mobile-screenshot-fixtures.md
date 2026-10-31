@@ -197,6 +197,12 @@ permanent. A null session, a non-boolean value, no `JoinSession` evidence,
 evidence that disagrees, and every other document change still miss and fail
 the drift check.
 
+`GetPublicProfile` accepts the exact addition of the nullable `isSupporter`
+(docs/supporters.md). The recorded profile replays with `isSupporter: null`, so a
+capture shows it with no supporter tag, as it was recorded. A recording that
+already holds the field, and every other document change, still miss and fail
+the drift check.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

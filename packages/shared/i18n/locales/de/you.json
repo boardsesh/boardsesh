@@ -57,7 +57,8 @@
       "loadError": "Kletterer*innen konnten nicht geladen werden",
       "retry": "Erneut versuchen",
       "instagramLink": "Instagram",
-      "instagramOpenError": "Instagram konnte nicht geöffnet werden"
+      "instagramOpenError": "Instagram konnte nicht geöffnet werden",
+      "supporterTag": "Unterstützer*in"
     },
     "profile": {
       "title": "Profil",

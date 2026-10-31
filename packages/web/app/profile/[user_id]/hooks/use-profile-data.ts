@@ -117,6 +117,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         isFollowedByMe: body.isFollowedByMe ?? false,
         isPrivate: body.isPrivate,
         canViewActivity: body.canViewActivity,
+        isSupporter: body.isSupporter === true,
       } satisfies UserProfile;
     },
     enabled: !initialData?.initialNotFound,

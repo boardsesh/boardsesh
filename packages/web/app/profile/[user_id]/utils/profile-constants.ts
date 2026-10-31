@@ -40,6 +40,8 @@ export type UserProfile = {
   followerCount: number;
   followingCount: number;
   isFollowedByMe: boolean;
+  /** Currently a supporter and chose public credit (docs/supporters.md). */
+  isSupporter?: boolean;
 };
 
 // Colors for each layout — soft, muted palette that feels cohesive.
