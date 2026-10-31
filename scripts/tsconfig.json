@@ -77,6 +77,7 @@
     "__tests__/session-input-observation.test.ts",
     "__tests__/session-input-app-export.test.ts",
     "__tests__/session-input-channel.test.ts",
+    "__tests__/session-input-launch-diagnostics.test.ts",
     "__tests__/store-video-measure.test.ts",
     "__tests__/screenshot-live-activity.test.ts",
     "record-ios-campaign-privacy.ts",

@@ -1,0 +1,124 @@
+{
+  "cases": [
+    {
+      "name": "original-arm",
+      "runId": 41186804466,
+      "sourceSha": "6e8c46f203385c6587dcf2669e29df1c9d611cf8",
+      "provenance": "Retained completed-run AX target subtree and actual simulator PNG dimensions; generic labels only, account/navigation data removed.",
+      "pixelWidth": 1320,
+      "pixelHeight": 2868,
+      "hierarchy": {
+        "attributes": {
+          "accessibilityText": "Boardsesh",
+          "bounds": "[0,0][440,956]",
+          "enabled": "true",
+          "checked": "false",
+          "value": ""
+        },
+        "children": [
+          {
+            "attributes": {
+              "accessibilityText": "Show this session live, Your crew and climbers on this board can see it and join.",
+              "bounds": "[32,456][407,518]",
+              "enabled": "true",
+              "checked": "true",
+              "value": "1"
+            },
+            "children": [
+              {
+                "attributes": {
+                  "accessibilityText": "Show this session live",
+                  "bounds": "[32,456][198,476]",
+                  "enabled": "true",
+                  "checked": "false",
+                  "value": ""
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "accessibilityText": "Your crew and climbers on this board can see it and join.",
+                  "bounds": "[32,480][319,518]",
+                  "enabled": "true",
+                  "checked": "false",
+                  "value": ""
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "accessibilityText": "",
+                  "bounds": "[346,473][409,501]",
+                  "enabled": "true",
+                  "checked": "true",
+                  "value": "1"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "clipped-intel",
+      "runId": 41227619662,
+      "sourceSha": "5deed966eaef8a30b064f499b19131dc33d603d1",
+      "provenance": "Retained completed-run AX target subtree and actual simulator PNG dimensions; generic labels only, account/navigation data removed.",
+      "pixelWidth": 1320,
+      "pixelHeight": 2868,
+      "hierarchy": {
+        "attributes": {
+          "accessibilityText": "Boardsesh",
+          "bounds": "[0,0][440,956]",
+          "enabled": "true",
+          "checked": "false",
+          "value": ""
+        },
+        "children": [
+          {
+            "attributes": {
+              "accessibilityText": "Show this session live, Your crew and climbers on this board can see it and join.",
+              "bounds": "[32,444][486,487]",
+              "enabled": "true",
+              "checked": "true",
+              "value": "1"
+            },
+            "children": [
+              {
+                "attributes": {
+                  "accessibilityText": "Show this session live",
+                  "bounds": "[32,444][198,465]",
+                  "enabled": "true",
+                  "checked": "false",
+                  "value": ""
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "accessibilityText": "Your crew and climbers on this board can see it and join.",
+                  "bounds": "[32,469][417,487]",
+                  "enabled": "true",
+                  "checked": "false",
+                  "value": ""
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "accessibilityText": "",
+                  "bounds": "[425,452][488,480]",
+                  "enabled": "true",
+                  "checked": "true",
+                  "value": "1"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

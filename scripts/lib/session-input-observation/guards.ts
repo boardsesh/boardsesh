@@ -1,3 +1,4 @@
+import { SESSION_INPUT_NATIVE_HASHES } from './cached-app';
 export const VISIBILITY_TITLE = 'Show this session live';
 export const VISIBILITY_ON = `${VISIBILITY_TITLE}, Your crew and climbers on this board can see it and join.`;
 export const VISIBILITY_OFF = `${VISIBILITY_TITLE}, Only people with your invite link can join.`;
@@ -17,6 +18,57 @@ export const OBSERVATION_STAGES = [
   'pre-session-state-committed',
 ] as const;
 export type Bounds = { left: number; top: number; right: number; bottom: number };
+const PINNED_VIEWPORT = { left: 0, top: 0, right: 440, bottom: 956 } as const;
+export function assertOriginalCachedIdentity(
+  hashes: Record<string, string>,
+  metadata: Record<string, unknown>,
+  host: string,
+) {
+  if (
+    host !== 'arm64' ||
+    Object.entries(SESSION_INPUT_NATIVE_HASHES).some(([name, expected]) => hashes[name] !== expected) ||
+    hashes['Info.plist'] !== '119d9d2701ae20b054ce3e08c4e851b653a857413cf8070e5a454cc68d6fdc60' ||
+    metadata.CFBundleIdentifier !== 'com.boardsesh.app' ||
+    metadata.DTSDKName !== 'iphonesimulator26.5' ||
+    metadata.DTXcodeBuild !== '17F113'
+  )
+    throw new Error('original_native_identity_unverified');
+}
+export function assertObservationViewport(input: {
+  pixelWidth: number | undefined;
+  pixelHeight: number | undefined;
+  screenBounds: Bounds;
+  foregroundBundle: string;
+  ownedUdid: string | null;
+}) {
+  if (
+    input.pixelWidth !== 1320 ||
+    input.pixelHeight !== 2868 ||
+    input.foregroundBundle !== 'com.boardsesh.app' ||
+    !input.ownedUdid ||
+    !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(input.ownedUdid) ||
+    Object.entries(PINNED_VIEWPORT).some(([key, expected]) => input.screenBounds[key as keyof Bounds] !== expected)
+  )
+    throw new Error('portrait_viewport_unverified');
+  return {
+    deviceType: 'iPhone-16-Pro-Max',
+    orientation: 'portrait',
+    width: 440,
+    height: 956,
+    scale: 3,
+    pixelWidth: 1320,
+    pixelHeight: 2868,
+  } as const;
+}
+function contained(screen: Bounds, target: Bounds): boolean {
+  return (
+    target.left >= screen.left &&
+    target.top >= screen.top &&
+    target.right <= screen.right &&
+    target.bottom <= screen.bottom
+  );
+}
+
 export type HierarchyNode = { attributes: Record<string, unknown>; children: HierarchyNode[] };
 export function objectRecord(input: unknown): Record<string, unknown> | null {
   return input !== null && typeof input === 'object' && !Array.isArray(input)
@@ -47,10 +99,15 @@ function nodes(root: HierarchyNode): HierarchyNode[] {
 }
 export function inspectVisibility(input: unknown, requireOn: boolean) {
   const root = hierarchyNode(input);
-  const screenBounds = nodes(root)
-    .map((node) => bounds(node.attributes.bounds))
-    .filter((rectangle): rectangle is Bounds => rectangle !== null && rectangle.left === 0 && rectangle.top === 0)
-    .sort((first, second) => second.right * second.bottom - first.right * first.bottom)[0];
+  // Bind to the pinned foreground application's frame, never an arbitrary larger AX descendant.
+  const applications = nodes(root).filter((node) => node.attributes.accessibilityText === 'Boardsesh');
+  if (applications.length !== 1) throw new Error('app_viewport_unverified');
+  const screenBounds = bounds(applications[0].attributes.bounds);
+  if (
+    !screenBounds ||
+    Object.entries(PINNED_VIEWPORT).some(([key, expected]) => screenBounds[key as keyof Bounds] !== expected)
+  )
+    throw new Error('app_viewport_unverified');
   const matching = nodes(root).filter(
     (node) => node.attributes.accessibilityText === (requireOn ? VISIBILITY_ON : VISIBILITY_OFF),
   );
@@ -72,13 +129,16 @@ export function inspectVisibility(input: unknown, requireOn: boolean) {
     );
   if (thumbs.length !== 1) throw new Error('visibility_thumb_not_unique');
   const thumbBounds = bounds(thumbs[0].attributes.bounds)!;
+  if (!contained(screenBounds, parentBounds) || !contained(screenBounds, thumbBounds))
+    throw new Error('visibility_target_clipped');
   const observed = { x: 369, y: 487 };
   const relative = {
     x: Math.floor(parentBounds.left + (parentBounds.right - parentBounds.left) * 0.9),
     y: Math.floor(parentBounds.top + (parentBounds.bottom - parentBounds.top) * 0.5),
   };
   const point = inside(thumbBounds, observed) ? observed : relative;
-  if (!inside(thumbBounds, point) || !inside(parentBounds, point)) throw new Error('tap_point_outside_observed_thumb');
+  if (!inside(screenBounds, point) || !inside(thumbBounds, point) || !inside(parentBounds, point))
+    throw new Error('tap_point_outside_observed_thumb');
   return {
     screenBounds,
     point,

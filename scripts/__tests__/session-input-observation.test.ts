@@ -35,7 +35,7 @@ function observedHierarchy() {
   parent.children.forEach((child) => {
     child.attributes.enabled = 'true';
   });
-  return { attributes: { bounds: '[0,0][440,956]' }, children: [parent] };
+  return { attributes: { accessibilityText: 'Boardsesh', bounds: '[0,0][440,956]' }, children: [parent] };
 }
 function completedTrace() {
   return OBSERVATION_STAGES.map((stage) => ({

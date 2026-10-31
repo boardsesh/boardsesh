@@ -49,3 +49,34 @@ After the fixed ten-second observation window, another drained same-runtime ackn
 ## Reviewer corrections before dispatch
 
 The initial correction at 1a1b07dccd was held for three observer blockers. Mount cleanup now stops only that mount's heartbeat, preserving the module transport and queued unmount events. Before-contact HTTP handling requests a new contact challenge after pressure sampling and native snapshots; it requires the fully delivered current source prefix, empty current queue, zero drops/errors and the same frozen runtime/parent/semantic-row identity before releasing the tap once. An old baseline acknowledgement cannot release contact. Fully delivered later heartbeats remain valid. Pressure queries run as bounded asynchronous subprocesses, retaining their one/two-second sensor deadlines. The sensor HTTP handler awaits completion while the independent trace service continues receiving packets. No diagnostic timeout was extended and no application callback/haptic became asynchronous.
+
+
+## Passive launch boundary receipts
+
+The next diagnostic preserves the original6841 argv, spawn/process-group/kill behavior,
+30-second launch command,240-second Home readiness,15-second cleanup and23-minute
+experiment deadline. It adds no active HTTP, manifest, process or runtime probes.
+Command receipts retain nullable raw exit/signal, a strict spawn-error enum,
+configured versus actually fired deadline/escalation flags, first global abort,
+known Metro child state and only an exact successful launch stdout PID. Unknown
+native errors stay unavailable; stderr, environment and raw command output remain private.
+The first failing operation/receipt freezes before failure sensors and cleanup;
+cleanup receipts append and cannot replace the first verdict. One settlement wins
+across child error/exit/close events.
+
+The immutable original SDK26.5 cache main/debug/plist hashes must match before
+boot or launch. This lane neither copies nor re-signs that app. A launcher-remapped
+or signed local copy cannot be compared as if its executable bytes were original.
+The cache key, no-build/no-save, pinned replay and synthetic-account constraints
+are unchanged. Source and native bytes still differ from the later Intel proof;
+replay backend/account and reduced topology remain explicit confounds.
+
+Before contact, the fresh AX foreground must be Boardsesh with the pinned440×956
+application frame, and the existing fresh screenshot must be1320×2868 pixels
+(scale3, iPhone16ProMax portrait). Arbitrary larger zero-origin descendants do
+not define the viewport. Both full parent and thumb bounds, plus the selected
+point, must lie inside it. A clipped or ambiguous control stops with zero contacts;
+coordinates are never shifted to hide overflow. The actual original ARM and
+clipped Intel fixtures are sanitized excerpts of completed-run evidence. Intel
+clipping does not explain the original fully visible ARM failure. No product
+layout fix or successful crew proof is implied.

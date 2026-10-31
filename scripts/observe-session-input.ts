@@ -4,14 +4,28 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CriticalChildProcessGroup, criticalChildProcessSpawnOptions } from './lib/dev-child-process-lifecycle';
 import { observationMemorySnapshot } from './lib/session-input-observation/sensors';
+import {
+  commandOutcome,
+  commandReceipt,
+  deadlineFlags,
+  firstAbortRecorder,
+  firstFailureRecorder,
+  observedErrno,
+  waitForCommandSettlement,
+  type AbortSource,
+  type CommandReceipt,
+} from './lib/session-input-observation/commands';
 import { startInputObservationChannel } from './lib/session-input-observation/channel';
 import {
+  assertOriginalCachedIdentity,
+  assertObservationViewport,
   classifyAttempt,
   inspectVisibility,
   mayAttemptFreshLaunch,
@@ -30,6 +44,27 @@ const CACHE_KEY = 'macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a1470
 const APP = join(ROOT, 'packages/mobile/.app-cache/Boardsesh.app');
 const CONTROLLER = new AbortController();
 const children = new Set<ChildProcess>();
+const aborts = firstAbortRecorder();
+const failures = firstFailureRecorder();
+const receipts: CommandReceipt[] = [];
+let ownedMetro: ChildProcess | null = null;
+function abortObservation(source: AbortSource, child?: Parameters<typeof aborts.record>[1]) {
+  aborts.record(source, child);
+  CONTROLLER.abort();
+}
+function retainReceipt(receipt: CommandReceipt) {
+  receipts.push(receipt);
+  try {
+    writePublic('command-receipts.json', receipts);
+  } catch {
+    publicReport.commandReceiptWriteFailed = true;
+  }
+}
+function passiveMetro() {
+  return ownedMetro
+    ? { pid: ownedMetro.pid ?? null, exitCode: ownedMetro.exitCode, signal: ownedMetro.signalCode }
+    : null;
+}
 const publicReport: Record<string, unknown> = {
   kind: 'observation-only-not-capture-proof',
   baseSha: BASE,
@@ -48,7 +83,8 @@ let channel: Awaited<ReturnType<typeof startInputObservationChannel>> | undefine
 let activeAttempt = 0;
 const snapshots: Record<string, unknown>[] = [];
 class ObservationFailure extends Error {}
-function fail(code: string): never {
+function fail(code: string, receipt?: CommandReceipt): never {
+  if (receipt) failures.freeze(code, receipt);
   throw new ObservationFailure(code);
 }
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -71,7 +107,8 @@ async function command(
   if (CONTROLLER.signal.aborted) fail('observation_deadline');
   guardSimulatorCommand(basename(executable) === 'maestro' ? 'maestro' : executable, args, ROOT);
   const startedAt = new Date().toISOString();
-  const started = Date.now();
+  const started = performance.now();
+  const flags = deadlineFlags();
   const child = spawn(executable, args, {
     cwd: ROOT,
     env: environment,
@@ -100,6 +137,7 @@ async function command(
       }
     }
     abortKill ??= setTimeout(() => {
+      flags.stopEscalationFired = true;
       if (child.pid) {
         try {
           process.kill(-child.pid, 'SIGKILL');
@@ -109,8 +147,12 @@ async function command(
       }
     }, 2000);
   };
-  const timer = setTimeout(stop, timeoutMs);
+  const timer = setTimeout(() => {
+    flags.timeoutFired = true;
+    stop();
+  }, timeoutMs);
   const hardTimer = setTimeout(() => {
+    flags.hardTimeoutFired = true;
     if (child.pid) {
       try {
         process.kill(-child.pid, 'SIGKILL');
@@ -121,18 +163,28 @@ async function command(
   }, timeoutMs + 2000);
   CONTROLLER.signal.addEventListener('abort', stop, { once: true });
   try {
-    const status = await new Promise<number>((resolveStatus) => {
-      child.once('error', () => resolveStatus(-1));
-      child.once('exit', (code) => resolveStatus(code ?? -1));
-    });
-    return {
-      status,
+    const outcome = await waitForCommandSettlement(child);
+    const completedAt = new Date().toISOString();
+    const elapsedSeconds = (performance.now() - started) / 1000;
+    const receipt = commandReceipt({
+      label,
+      executable,
+      operation: args[0] === 'simctl' ? args[1] : null,
+      ownedUdid,
+      startedAt,
+      completedAt,
+      elapsedSeconds,
+      timeoutMs,
+      outcome,
+      flags,
+      abort: aborts.current(),
+      controllerAborted: CONTROLLER.signal.aborted,
       stdout,
       stderr,
-      startedAt,
-      completedAt: new Date().toISOString(),
-      elapsedSeconds: (Date.now() - started) / 1000,
-    };
+      metro: passiveMetro(),
+    });
+    retainReceipt(receipt);
+    return { status: outcome.status, stdout, stderr, startedAt, completedAt, elapsedSeconds, receipt };
   } finally {
     clearTimeout(timer);
     clearTimeout(hardTimer);
@@ -149,7 +201,7 @@ async function checked(
   environment?: NodeJS.ProcessEnv,
 ) {
   const result = await command(label, executable, args, timeoutMs, environment);
-  if (result.status !== 0) fail(`${label}_command_failed`);
+  if (result.status !== 0) fail(`${label}_command_failed`, result.receipt);
   return result;
 }
 function privateFiles(directory: string): string[] {
@@ -219,17 +271,34 @@ async function captureHierarchy(label: string, requireOn: boolean) {
   } catch {
     fail('hierarchy_invalid_json');
   }
-  const visibility = inspectVisibility(hierarchy, requireOn);
+  let visibility: ReturnType<typeof inspectVisibility>;
+  try {
+    visibility = inspectVisibility(hierarchy, requireOn);
+  } catch {
+    fail('visibility_geometry_unverified');
+  }
   if (!visibility.screenBounds || visibility.screenBounds.right < 300 || visibility.screenBounds.bottom < 600)
     fail('screen_bounds_unverified');
   return { ...visibility, foregroundBundle: evidence.foregroundBundle, observedAt: result.completedAt };
 }
 async function redactedScreenshot(label: string, visibility: Awaited<ReturnType<typeof captureHierarchy>>) {
   const raw = join(PRIVATE, `${label}.png`);
-  await checked(label, 'xcrun', ['simctl', 'io', ownedUdid!, 'screenshot', raw], 15_000);
+  const capture = await checked(label, 'xcrun', ['simctl', 'io', ownedUdid!, 'screenshot', raw], 15_000);
   const image = sharp(raw);
   const metadata = await image.metadata();
-  if (!metadata.width || !metadata.height || !visibility.screenBounds) fail('screenshot_dimensions_missing');
+  if (!metadata.width || !metadata.height) fail('screenshot_dimensions_missing');
+  let viewport: ReturnType<typeof assertObservationViewport>;
+  try {
+    viewport = assertObservationViewport({
+      pixelWidth: metadata.width,
+      pixelHeight: metadata.height,
+      screenBounds: visibility.screenBounds,
+      foregroundBundle: visibility.foregroundBundle,
+      ownedUdid,
+    });
+  } catch {
+    fail('portrait_viewport_unverified');
+  }
   const screen = visibility.screenBounds;
   const left = Math.max(0, visibility.parentBounds.left - 16),
     top = Math.max(0, visibility.parentBounds.top - 8);
@@ -246,7 +315,15 @@ async function redactedScreenshot(label: string, visibility: Awaited<ReturnType<
     .composite([{ input: cropped, left: rectangle.left, top: rectangle.top }])
     .png()
     .toFile(join(PUBLIC, `${label}.png`));
-  return rectangle;
+  return {
+    rectangle,
+    viewport: {
+      ...viewport,
+      ownedUdid,
+      foregroundObservedAt: visibility.observedAt,
+      pngCapturedAt: capture.completedAt,
+    },
+  };
 }
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number, failure = 'readiness_timeout') {
   const end = Date.now() + timeoutMs;
@@ -267,12 +344,13 @@ async function main(): Promise<number> {
     !existsSync(APP)
   )
     fail('exact_native_cache_required_no_build');
-  const deadline = setTimeout(() => CONTROLLER.abort(), 23 * 60_000);
-  const interrupted = () => CONTROLLER.abort();
-  process.once('SIGINT', interrupted);
-  process.once('SIGTERM', interrupted);
+  const deadline = setTimeout(() => abortObservation('observation_deadline'), 23 * 60_000);
+  const interruptedInt = () => abortObservation('SIGINT');
+  const interruptedTerm = () => abortObservation('SIGTERM');
+  process.once('SIGINT', interruptedInt);
+  process.once('SIGTERM', interruptedTerm);
   const servers = new CriticalChildProcessGroup({
-    onUnexpectedTermination: () => CONTROLLER.abort(),
+    onUnexpectedTermination: (termination) => abortObservation('critical_server_exit', termination),
     gracePeriodMs: 2000,
   });
   try {
@@ -305,6 +383,11 @@ async function main(): Promise<number> {
     const sdk = (await checked('app-metadata', 'plutil', ['-convert', 'json', '-o', '-', join(APP, 'Info.plist')]))
       .stdout;
     const metadata = objectRecord(JSON.parse(sdk)) ?? {};
+    try {
+      assertOriginalCachedIdentity(hashes, metadata, process.arch);
+    } catch {
+      fail('original_native_identity_unverified');
+    }
     const runtime = (await checked('runtime', 'xcrun', ['simctl', 'list', 'runtimes', '--json'])).stdout;
     const version = await checked('maestro-version', 'maestro', ['--version'], 30_000, maestroEnvironment());
     if (version.stdout.trim().split('\n').at(-1)?.trim() !== '2.6.1') fail('maestro_version_mismatch');
@@ -393,6 +476,7 @@ async function main(): Promise<number> {
       ['run', 'dev:mobile', '--', '--port', metroUrl.port, '--host', 'localhost', '--max-workers', '1'],
       { cwd: ROOT, env: environment, ...criticalChildProcessSpawnOptions, stdio: ['ignore', 'pipe', 'pipe'] },
     );
+    ownedMetro = metro;
     servers.register('owned-observation-metro', metro);
     for (const stream of [metro.stdout, metro.stderr])
       stream.on('data', (chunk: Buffer) => appendFileSync(join(PRIVATE, 'metro-launch.log'), chunk));
@@ -479,7 +563,11 @@ async function main(): Promise<number> {
       writePublic(`trace-baseline-${activeAttempt}.json`, traceBaseline);
       const before = await captureHierarchy(`before-${activeAttempt}`, true);
       const mask = await redactedScreenshot(`before-${activeAttempt}`, before);
-      writePublic(`before-${activeAttempt}.json`, { ...before, screenshotMask: mask });
+      writePublic(`before-${activeAttempt}.json`, {
+        ...before,
+        screenshotMask: mask.rectangle,
+        viewport: mask.viewport,
+      });
       const tapFlow = join(PRIVATE, `tap-${activeAttempt}.yaml`);
       writeFileSync(tapFlow, singleTapFlow(before.point));
       publicReport.phase = `contact-${activeAttempt}`;
@@ -574,6 +662,13 @@ async function main(): Promise<number> {
     );
     return 0;
   } catch (error) {
+    const failure = failures.freeze(error instanceof ObservationFailure ? error.message : 'unexpected_error_redacted');
+    publicReport.firstFailure = failure;
+    try {
+      writePublic('first-failure.json', failure);
+    } catch {
+      publicReport.commandReceiptWriteFailed = true;
+    }
     try {
       await memorySnapshot('failure');
     } catch {
@@ -584,8 +679,8 @@ async function main(): Promise<number> {
     return 1;
   } finally {
     clearTimeout(deadline);
-    process.off('SIGINT', interrupted);
-    process.off('SIGTERM', interrupted);
+    process.off('SIGINT', interruptedInt);
+    process.off('SIGTERM', interruptedTerm);
     // Cleanup uses its own deadlines even when the observation deadline fired.
     const cleanup: Record<string, unknown> = {};
     if (ownedUdid)
@@ -593,15 +688,56 @@ async function main(): Promise<number> {
         ['terminate', ['simctl', 'terminate', ownedUdid, 'com.boardsesh.app']],
         ['shutdown', ['simctl', 'shutdown', ownedUdid]],
       ] as const) {
+        const startedAt = new Date().toISOString();
+        const started = performance.now();
         try {
           guardSimulatorCommand('xcrun', args, ROOT);
-          cleanup[name] = spawnSync('xcrun', [...args], {
+          const result = spawnSync('xcrun', [...args], {
             timeout: 15_000,
             killSignal: 'SIGKILL',
             stdio: 'ignore',
-          }).status;
-        } catch {
+          });
+          cleanup[name] = result.status;
+          const receipt = commandReceipt({
+            label: `cleanup-${name}`,
+            executable: 'xcrun',
+            operation: args[1],
+            ownedUdid,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            elapsedSeconds: (performance.now() - started) / 1000,
+            timeoutMs: 15_000,
+            outcome: commandOutcome(result.status, result.signal, 'sync', result.error),
+            flags: { ...deadlineFlags(), timeoutFired: observedErrno(result.error) === 'ETIMEDOUT' },
+            abort: aborts.current(),
+            controllerAborted: CONTROLLER.signal.aborted,
+            stdout: '',
+            stderr: '',
+            metro: passiveMetro(),
+          });
+          retainReceipt(receipt);
+          if (result.status !== 0) failures.freeze(`cleanup-${name}_command_failed`, receipt);
+        } catch (error) {
           cleanup[name] = 'failed_or_refused';
+          const receipt = commandReceipt({
+            label: `cleanup-${name}`,
+            executable: 'xcrun',
+            operation: args[1],
+            ownedUdid,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            elapsedSeconds: (performance.now() - started) / 1000,
+            timeoutMs: 15_000,
+            outcome: commandOutcome(null, null, 'caught', error),
+            flags: deadlineFlags(),
+            abort: aborts.current(),
+            controllerAborted: CONTROLLER.signal.aborted,
+            stdout: '',
+            stderr: '',
+            metro: passiveMetro(),
+          });
+          retainReceipt(receipt);
+          failures.freeze(`cleanup-${name}_command_failed`, receipt);
         }
       }
     for (const child of children)
@@ -635,6 +771,9 @@ async function main(): Promise<number> {
     } catch {
       cleanup.traceChannel = 'failed';
     }
+    publicReport.firstAbort = aborts.current();
+    publicReport.firstFailure = failures.current();
+    publicReport.passiveMetroChild = passiveMetro();
     publicReport.cleanup = cleanup;
     publicReport.cleanupFailed = Object.values(cleanup).some((result) => result !== 0);
     publicReport.replay = replay?.stats();
