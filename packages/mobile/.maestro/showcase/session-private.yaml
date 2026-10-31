@@ -17,8 +17,9 @@ name: showcase setup - live session hidden
 # session running, so the pre-session view is up (with the now-playing bar, which
 # puts Start at 84%,82%).
 #
-# Match the localized SwiftUI switch label (title plus subtitle), then tap its
-# trailing switch thumb. A center tap lands on the label, which may not toggle.
+# Match the localized SwiftUI switch's combined title plus subtitle, then tap
+# its trailing thumb. The subtitle is required: Maestro picks the deepest match,
+# so accepting a bare title targets the child text rather than the Toggle.
 # Maestro 2.6.1 treats text + point as an element-relative point (not a screen
 # coordinate): YamlFluentCommand.tapCommand -> TapOnElementCommand.relativePoint.
 

@@ -73,9 +73,9 @@ export function createDeferredCrewPhone<Participant>(
   };
 }
 
-/** SwiftUI exposes the title and subtitle as one switch accessibility label. */
+/** Require the SwiftUI Toggle's combined label, excluding its bare-title child. */
 export function showcaseSessionVisibilityPattern(title: string): string {
-  return `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:, [^\\r\\n]+)?$`;
+  return `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, [^\\r\\n]+$`;
 }
 
 /** Keep HTTP readiness callbacks running while waiting for this launch's home. */
