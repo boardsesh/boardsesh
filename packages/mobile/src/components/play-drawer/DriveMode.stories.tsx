@@ -93,6 +93,21 @@ const HINTS: readonly Variant[] = [
   { label: 'A on Disconnect board (you hold it, not driving)', model: DISCONNECT, preview: {} },
 ];
 
+// Physical LED controls frost even while swipes still browse. The no-lights
+// control supplies no glow, matching PlayCore's board LED eligibility gate.
+const FROST_ACTIONS: readonly Variant[] = [
+  { label: 'Connect board, not driving', model: CONNECT, swipe: false },
+  { label: 'Disconnect board, you hold it without driving', model: DISCONNECT, swipe: false },
+  { label: 'Re-light board, connected but dark', model: storyModel('dark', 'self'), swipe: false },
+  { label: 'Send to Sam, relayed LED control', model: storyModel('crew', 'crew'), swipe: false },
+  {
+    label: 'Your climb · no lights keeps its colours',
+    model: { ...DISCONNECT, state: 'release_wall', tapAction: 'release_wall', labelKey: 'releaseWall', driving: false },
+    glow: NO_HOLDS,
+    swipe: false,
+  },
+];
+
 const DRAG: readonly Variant[] = [
   { label: 'Dragged 30%: the frost wipes in', model: PUT_ON_WALL, preview: { progress: 0.3 } },
   { label: 'Dragged 70%: let go lights every climb', model: PUT_ON_WALL, preview: { progress: 0.7 } },
@@ -170,6 +185,10 @@ function TryIt() {
 const stories: StoryModule = {
   title: 'Play drawer / Swipe to drive',
   stories: {
+    frostActions: {
+      name: 'Physical LED actions, plus the unchanged no-lights control',
+      render: () => <VariantStack variants={FROST_ACTIONS} />,
+    },
     hints: {
       name: 'Swipe hints: chevrons (A) and the frost peek (B)',
       render: () => <VariantStack variants={HINTS} />,

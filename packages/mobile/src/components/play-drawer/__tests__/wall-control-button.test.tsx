@@ -504,7 +504,7 @@ describe('WallControlButton', () => {
     ).not.toContain('borderColor');
   });
 
-  // F1b: the climb's holds glow in the lit button; every other state stays flat.
+  // The two wall surfaces frost physical LED actions without changing their models.
   describe('the lit glow', () => {
     afterEach(() => {
       themeCtrl.scheme = 'light';
@@ -531,7 +531,10 @@ describe('WallControlButton', () => {
 
     // #7017: the coloured look only while this climber drives the board.
     it("stays plain on a crewmate's lit board: tonal, the outline bulb, their face", () => {
-      const crew = renderButton(modelFor('crew', { holder: 'crew', navigationCommits: false }), { glow: GLOW });
+      const crew = renderButton(
+        { ...modelFor('crew', { holder: 'crew', navigationCommits: false }), tapAction: 'noop' },
+        { glow: GLOW },
+      );
       measure();
       expect(crew.queryByTestId('wall-glow')).toBeNull();
       const style = crew.getByRole('button').getAttribute('data-style') ?? '';
@@ -540,13 +543,12 @@ describe('WallControlButton', () => {
       expect(crew.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Sam');
     });
 
-    it('keeps the crew holder’s Disconnect board, filled bulb and face on the plain look, no frost', () => {
+    it('frosts the non-driving holder without changing Disconnect board, bulb or face', () => {
       const holder = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }), { glow: GLOW });
       measure();
-      expect(holder.queryByTestId('wall-glow')).toBeNull();
+      expect(holder.queryByTestId('wall-glow')).not.toBeNull();
       const style = holder.getByRole('button').getAttribute('data-style') ?? '';
-      expect(style).toContain('"backgroundColor":"#6D28D9"');
-      expect(style).not.toContain('#B45309');
+      expect(style).toContain('"backgroundColor":"#F6F3FB"');
       expect(holder.getAllByText('playView.wallControl.disconnectBoard').length).toBeGreaterThan(0);
       expect(holder.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
       expect(holder.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Me');
@@ -568,11 +570,32 @@ describe('WallControlButton', () => {
       expect(compact.queryByTestId('wall-glow')).not.toBeNull();
     });
 
-    it.each(['connect', 'put_on_wall', 'dark'] as const)('stays flat on %s, even if handed holds', (state) => {
-      const view = renderButton(modelFor(state, { holder: state === 'connect' ? null : 'self' }), { glow: GLOW });
-      measure();
-      expect(view.queryByTestId('wall-glow')).toBeNull();
-    });
+    it.each(['connect', 'put_on_wall', 'dark', 'crew'] as const)(
+      'frosts the physical %s action without claiming driving',
+      (state) => {
+        const view = renderButton(
+          modelFor(state, {
+            holder: state === 'connect' ? null : state === 'crew' ? 'crew' : 'self',
+            navigationCommits: false,
+          }),
+          { glow: GLOW },
+        );
+        measure();
+        expect(view.queryByTestId('wall-glow')).not.toBeNull();
+        expect(view.queryByText('playView.wallControl.youAreDriving')).toBeNull();
+      },
+    );
+
+    it.each(['take_wall', 'release_wall'] as const)(
+      'never adds frost to %s, including a moving virtual wall',
+      (state) => {
+        const view = renderButton(modelFor(state, { holder: state === 'release_wall' ? 'self' : null }), {
+          glow: GLOW,
+        });
+        measure();
+        expect(view.queryByTestId('wall-glow')).toBeNull();
+      },
+    );
 
     it('falls back to the flat amber with no holds, or before the pill has a size', () => {
       const empty = renderButton(modelFor('lit', { holder: 'self' }), { glow: { ...GLOW, holds: [] } });
@@ -667,8 +690,29 @@ describe('WallControlButton', () => {
       const solo = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
-      expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('true');
+      expect(solo.queryByTestId('wall-swipe-wipe')).toBeNull();
+      expect(solo.queryByTestId('wall-glow')).not.toBeNull();
     });
+
+    it.each(['peek', 'drag', 'committed'] as const)(
+      'keeps one full frost without a decorative wipe while %s, with the drive callback wired',
+      (phase) => {
+        swipeCtrl.frostArmed = phase !== 'committed';
+        swipeCtrl.releaseArmed = phase === 'drag';
+        swipeCtrl.committed = phase === 'committed';
+        const startDrive = vi.fn(() => 'started' as const);
+        const view = renderButton(putOnWall(), { onSwipe: startDrive, glow: GLOW });
+        measure();
+        expect(view.queryAllByTestId('wall-glow')).toHaveLength(1);
+        expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
+        expect(swipeCtrl.options.at(-1)?.enabled).toBe(true);
+        expect(swipeCtrl.options.at(-1)?.onSwipe).toBe(startDrive);
+        expect(startDrive).not.toHaveBeenCalled();
+        expect(swipeCtrl.options.at(-1)?.onSwipe?.()).toBe('started');
+        expect(startDrive).toHaveBeenCalledOnce();
+        if (phase === 'drag') expect(view.queryByText('playView.wallControl.releaseToDrive')).not.toBeNull();
+      },
+    );
 
     it('wipes the flat amber in for a climb with no holds', () => {
       swipeCtrl.frostArmed = true;
@@ -677,11 +721,11 @@ describe('WallControlButton', () => {
       expect(view.getByTestId('wall-swipe-wipe').dataset).toMatchObject({ frost: 'false', fill: '#B45309' });
     });
 
-    it('mounts no wipe before a drag gets going', () => {
+    it('keeps its LED-action frost but mounts no wipe before a drag gets going', () => {
       const view = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
-      expect(view.queryByTestId('wall-glow')).toBeNull();
+      expect(view.queryByTestId('wall-glow')).not.toBeNull();
     });
 
     it('drops the tap and the hold a pan ended in', () => {
