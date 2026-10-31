@@ -61,10 +61,8 @@ module BoardseshCreatives
       raise Error, "Unexpected asset library identity" unless library.fetch("type") == "appAssetLibraries"
       library_id = library.fetch("id")
       remote_assets = %w[images videos].flat_map { |kind| @client.list("/v1/appAssetLibraries/#{library_id}/#{kind}?filter[category]=CREATIVE_ASSETS&limit=200") }
-      remote_placements = action == "upload" ? [] : remote_assets.flat_map do |remote|
-        @client.list("/v1/#{remote.fetch('type')}/#{remote.fetch('id')}/placements?limit=200")
-      end.uniq { |placement| placement.fetch("id") }
       destinations = {}
+      destination_placements = {}
       # Resolve all bindings/conflicts before the first reserve or placement write.
       plans = entries.map do |entry|
         matches = remote_assets.select { |asset| asset.dig("attributes", "fileName") == entry.fetch("fileName") }
@@ -86,6 +84,7 @@ module BoardseshCreatives
         end
         destination_key = [entry.fetch("variant"), entry.fetch("storeLocale")]
         destination = destinations[destination_key] ||= destination(entry.fetch("variant"), entry.fetch("storeLocale"), allow_live)
+        remote_placements = destination_placements[[destination.fetch("type"), destination.fetch("id")]] ||= placements_for(destination)
         placements = remote_placements.select do |placement|
           placement.dig("attributes", "placementType") == entry.fetch("placementType") &&
             placement.dig("attributes", "placementGroup") == entry.fetch("placementGroup") &&
@@ -95,7 +94,11 @@ module BoardseshCreatives
         existing = placements.first
         raise Error, "Existing creative placement failed; inspect ASC stateDetails before retrying" if existing && existing.dig("attributes", "state") == "FAILED"
         relation = entry.fetch("type") == "appAssetLibraryImages" ? "image" : "video"
-        same = existing && asset && existing.dig("relationships", relation, "data", "id") == asset.fetch("id")
+        if existing
+          asset_links = %w[image video].filter_map { |name| existing.dig("relationships", name, "data") }
+          raise Error, "Existing placement has missing or ambiguous asset linkage; inspect ASC before retrying" unless asset_links.length == 1 && asset_links.first["id"].is_a?(String) && %w[appAssetLibraryImages appAssetLibraryVideos].include?(asset_links.first["type"])
+        end
+        same = existing && asset && existing.dig("relationships", relation, "data") == { "type" => asset.fetch("type"), "id" => asset.fetch("id") }
         if action == "place"
           if existing && !same
             previous_link = existing.dig("relationships", "image", "data") || existing.dig("relationships", "video", "data")
@@ -130,6 +133,27 @@ module BoardseshCreatives
 
     def link(type, id)
       { "data" => { "type" => type, "id" => id } }
+    end
+
+    # Reverse asset->placements listings can omit assignments already on a surface.
+    # Read the destination instead, including foreign assets before any write.
+    def placements_for(destination)
+      relationship = destination.fetch("relationship")
+      fields = ["placementType", "placementGroup", "state", "image", "video", relationship].join(",")
+      query = URI.encode_www_form({
+        "include" => ["image", "video", relationship].join(","),
+        "fields[appAssetLibraryPlacements]" => fields,
+        "fields[appAssetLibraryImages]" => "fileName",
+        "fields[appAssetLibraryVideos]" => "fileName",
+        "fields[#{destination.fetch('type')}]" => "locale",
+        "limit" => 200
+      })
+      @client.list("/v1/#{destination.fetch('type')}/#{destination.fetch('id')}/placements?#{query}").each do |placement|
+        linked_destination = placement.dig("relationships", relationship, "data")
+        unless placement["type"] == "appAssetLibraryPlacements" && linked_destination == { "type" => destination.fetch("type"), "id" => destination.fetch("id") }
+          raise Error, "Unexpected creative placement destination; inspect ASC before any writes"
+        end
+      end
     end
 
     def local_assets(variant, placement_types)

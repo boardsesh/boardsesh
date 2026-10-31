@@ -42,7 +42,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -180,13 +180,14 @@ jobs:
           run_lane upload
           # Asset processing is asynchronous. Retry only its explicit pre-write guard.
           # All other errors retain their original status and need operator review.
-          for attempt in $(seq 1 16); do
+          # Give processing up to 30 minutes; never retry placement conflicts or other errors.
+          for attempt in $(seq 1 61); do
             set +e
             run_lane place 2>&1 | tee "$RUNNER_TEMP/creative-place-attempt.log"
             lane_status=${PIPESTATUS[0]}
             set -e
             if [ "$lane_status" -eq 0 ]; then exit 0; fi
-            if [ "$attempt" -eq 16 ] || ! grep -q 'Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION' "$RUNNER_TEMP/creative-place-attempt.log"; then
+            if [ "$attempt" -eq 61 ] || ! grep -q 'Apple processing/review preparation must reach PREPARE_FOR_SUBMISSION' "$RUNNER_TEMP/creative-place-attempt.log"; then
               exit "$lane_status"
             fi
             sleep 30

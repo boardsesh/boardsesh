@@ -247,7 +247,7 @@ skipped. When nothing changed (a header-only edit, say) the run says so and
 stops before any R2 or ASC step. For the changed variants only, the path
 promotes their immutable candidate objects to `approved/`, then downloads and
 verifies every SHA256 before exposing ASC credentials to the upload lane. It
-uploads those search videos, waits up to 7.5 minutes for Apple's processing
+uploads those search videos, retries Apple's processing guard for up to 30 minutes
 precondition, and places them on the editable version. If that merge run fails,
 re-run it: a later manifest push compares against the failed merge, so it sees
 those variants as unchanged and will not retry them. A missing manifest at the
@@ -278,7 +278,9 @@ guards retry automatically; other lane errors stop immediately for review.
 Planning or placing on live versions requires `allow_live:true`; standalone
 uploads do not. When no editable iOS version exists, the lane selects the latest
 published version by Apple's `createdDate`, refusing missing dates or ties.
-An identical placement is reused.
+An identical placement is reused. Planning and placement read each destination
+localization's placements, including assets outside this manifest, rather than
+relying on each library asset's reverse placement listing.
 Changing an owned placement requires explicit approval for its deletion and
 recreation (`allow_replace:true`); foreign placements are refused. This guard
 preserves the repository's no-deletion-without-approval rule.
