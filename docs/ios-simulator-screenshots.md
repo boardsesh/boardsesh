@@ -281,6 +281,16 @@ capture continue to use that requested source; reviewed cache tooling is never
 overlaid onto application files. The tooling copy has its own paths in the shared
 native-hash recipe.
 
+Retained CPP recording imports recognize two explicit producer layouts: the
+legacy root checkout/action, and the independent-tooling layout above. The latter
+requires a single root application checkout, immutable tooling checkout and the
+actual identity check in order before its one capture action. Conditional or
+conflicting checkouts, foreign repositories and changed identity bindings stop
+before archive reads. This equivalence of workflow and producer SHA applies only
+to the retained path's verified direct `workflow_dispatch` run; it is not assumed
+for reusable workflows or `workflow_run`. Existing native-source, fixture and
+artifact checks still apply to both layouts.
+
 Every new product is checked before it is saved. Screenshot and video consumers
 check restored product metadata, ARM64 slices and Debug Metro identity before
 installation. The check uses the producer's identity from the key, rather than
