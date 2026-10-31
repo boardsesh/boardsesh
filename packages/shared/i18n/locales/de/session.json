@@ -520,6 +520,7 @@
       "stripA11yHint": "Öffnet den Boulder an der Wand",
       "stripOverline": "An der Wand",
       "stripOverlineWithSender": "An der Wand · {{sender}}",
+      "stripDismiss": "Boulder an der Wand ausblenden",
       "stripAnnounce": "Jetzt an der Wand: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Jetzt an der Wand: {{name}}, {{grade}}, beleuchtet von {{sender}}",
       "switchBoard": "Board wechseln",

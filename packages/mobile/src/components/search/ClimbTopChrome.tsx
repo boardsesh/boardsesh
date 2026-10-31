@@ -32,6 +32,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
+import { useUndismissedWallClimb } from '../../lib/board-presence/wall-strip-dismissal';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
@@ -156,11 +157,16 @@ function ClimbTopChromeComponent({
   // header out of large-title mode, which must not happen under the player's
   // dismiss animation (#6619).
   const currentClimbUuid = useActiveClimbUuid();
-  const liveWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  const distinctWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  // Closed by the climber: hidden until a different lighting reaches the wall.
+  const { wallClimb: liveWallClimb, dismiss: dismissWallClimb } = useUndismissedWallClimb(distinctWallClimb);
   const wallClimb = useSettledHeaderValue(liveWallClimb);
   const wallCapsule = useMemo(
-    () => (wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined),
-    [wallClimb, boardName],
+    () =>
+      wallClimb ? (
+        <WallStatusCapsule climb={wallClimb} boardName={boardName} onDismiss={dismissWallClimb} />
+      ) : undefined,
+    [wallClimb, boardName, dismissWallClimb],
   );
   const hasWallCapsule = wallClimb !== null;
   const loggedWallCapsuleRef = useRef(false);

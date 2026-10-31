@@ -14,6 +14,9 @@
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider. No floating pill,
 //     no border, no lightbulb (the bottom queue bar already owns that glyph).
+// Both skins carry a trailing close button when given `onDismiss` (the pill drops
+// it in compact mode, with the avatar). It hides this lighting only: see
+// wall-strip-dismissal.ts.
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates, the grade stays.
@@ -62,6 +65,12 @@ const ANON_GLYPH = 12;
 // 56dp two-line body (overline + climb line) — already past the 48dp touch floor.
 const BAND_RAIL_WIDTH = 4;
 const BAND_MIN_HEIGHT = 56;
+// The band's close button: a 48dp touch target (the M3 floor) at the trailing edge.
+const BAND_CLOSE_SIZE = 48;
+const BAND_CLOSE_GLYPH = 20;
+// The pill's close glyph sits inside the 32pt pill; hit slop takes its target to 44pt.
+const CAPSULE_CLOSE_GLYPH = 12;
+const CAPSULE_CLOSE_HIT_SLOP = { top: 6, bottom: 6, left: 6, right: 10 };
 // Debounce assistive-tech announcements so a fast party session (rapid wall
 // changes) doesn't spam the speech queue.
 const ANNOUNCE_DEBOUNCE_MS = 600;
@@ -71,12 +80,14 @@ type WallStatusCapsuleProps = {
   climb: BoardPresenceClimb;
   /** The board in scope, so the grade reads on its scale. The wall payload names no board. */
   boardName?: string | null;
+  /** Close the strip for this lighting. No close button without it. */
+  onDismiss?: () => void;
 };
 
 // memo'd so a ClimbTopChrome re-render (filter/board/search change) doesn't rebuild
 // the capsule's hooks while the wall climb is unchanged — the `climb` prop is the
 // stable BoardPresenceClimb from useWallClimbIfDistinct (changes only on a wall event).
-function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
+function WallStatusCapsuleImpl({ climb, boardName, onDismiss }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
   const { variant, colorScheme, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -176,7 +187,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
           accessibilityRole="button"
           accessibilityLabel={a11yLabel}
           accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
-          style={styles.bandPressable}
+          style={[styles.bandPressable, onDismiss && styles.bandPressableWithClose]}
         >
           {/* The "lit" accent: a tertiary rail down the leading edge. */}
           <View pointerEvents="none" style={[styles.bandRail, { backgroundColor: m3.tertiary }]} />
@@ -228,6 +239,19 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
             </View>
           </View>
         </PressableSurface>
+        {onDismiss ? (
+          <PressableSurface
+            onPress={onDismiss}
+            feedback="none"
+            rippleColor={m3.onSurfaceVariant}
+            rippleBorderless
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.boardPresence.stripDismiss')}
+            style={styles.bandClose}
+          >
+            <Icon name="close" size={BAND_CLOSE_GLYPH} color={m3.onSurfaceVariant} />
+          </PressableSurface>
+        ) : null}
       </Animated.View>
     );
   }
@@ -293,6 +317,23 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
           >
             {formattedGrade}
           </Text>
+        ) : null}
+        {onDismiss && !compact ? (
+          <PressableSurface
+            onPress={onDismiss}
+            feedback="opacity"
+            hitSlop={CAPSULE_CLOSE_HIT_SLOP}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.boardPresence.stripDismiss')}
+            style={styles.capsuleClose}
+          >
+            <Icon
+              maxFontSizeMultiplier={1}
+              name="close"
+              size={CAPSULE_CLOSE_GLYPH}
+              color={systemColors.secondaryLabel}
+            />
+          </PressableSurface>
         ) : null}
       </PressableSurface>
     </>
@@ -387,6 +428,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     fontWeight: '600',
   },
+  capsuleClose: {
+    flexShrink: 0,
+  },
   grade: {
     flexShrink: 0,
     fontVariant: ['tabular-nums'],
@@ -395,13 +439,26 @@ const styles = StyleSheet.create({
   // --- Material 3 status band (Android) ---
   bandOuter: {
     width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   bandPressable: {
+    flex: 1,
     minHeight: BAND_MIN_HEIGHT,
     justifyContent: 'center',
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[4],
+  },
+  bandPressableWithClose: {
+    paddingEnd: 0,
+  },
+  bandClose: {
+    width: BAND_CLOSE_SIZE,
+    height: BAND_CLOSE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginEnd: spacing[1],
   },
   bandRail: {
     position: 'absolute',

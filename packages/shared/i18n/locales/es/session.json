@@ -520,6 +520,7 @@
       "stripA11yHint": "Abre el bloque del muro",
       "stripOverline": "En el muro",
       "stripOverlineWithSender": "En el muro · {{sender}}",
+      "stripDismiss": "Ocultar el bloque del muro",
       "stripAnnounce": "Ahora en el muro: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Ahora en el muro: {{name}}, {{grade}}, encendido por {{sender}}",
       "switchBoard": "Cambiar de muro",

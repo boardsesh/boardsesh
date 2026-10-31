@@ -579,9 +579,35 @@ describe('WallStatusCapsule', () => {
     expect(queryByText('mobile.boardPresence.stripOverline')).toBeNull();
   });
 
+  it('shows no close button without onDismiss', () => {
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    expect(container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
+  });
+
+  it('closes the pill through its own labelled button', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
+    const close = container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]');
+    expect(close?.getAttribute('data-role')).toBe('button');
+    expect(close?.querySelector('[data-icon="close"]')).not.toBeNull();
+    fireEvent.click(close as Element);
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
   describe('Material variant (Android)', () => {
     beforeEach(() => {
       spies.variant = 'material';
+    });
+
+    it('puts the close button beside the band, outside the preview button', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
+      const close = container.querySelector('[data-label="mobile.boardPresence.stripDismiss"]');
+      expect(close).not.toBeNull();
+      expect(close?.closest('[data-hint="mobile.boardPresence.stripA11yHint"]')).toBeNull();
+      fireEvent.click(close as Element);
+      expect(onDismiss).toHaveBeenCalledOnce();
+      expect(spies.openWallPreview).not.toHaveBeenCalled();
     });
 
     it('renders a Material status band via PressableSurface (native ripple), not the glass Pressable', () => {
