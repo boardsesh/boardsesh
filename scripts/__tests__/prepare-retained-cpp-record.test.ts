@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { getOperationAST, parse } from 'graphql';
 import sharp from 'sharp';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import {
   GET_MY_BOARDS,
   SEARCH_CLIMBS,
@@ -381,6 +382,180 @@ function sourceManifest(
   source.sourceFiles.set('app-stores/apple/custom-product-pages.json', bytes);
   return bytes;
 }
+
+function producerCaptureTopology(
+  source: ReturnType<typeof metadata>,
+  mutate: (steps: Record<string, unknown>[]) => void,
+): void {
+  source.client.workflow = () => {
+    const workflow = parseYaml(readFileSync('.github/workflows/mobile-screenshots-ios.yml', 'utf8')) as {
+      jobs: { 'cpp-capture': { steps: Record<string, unknown>[] } };
+    };
+    mutate(workflow.jobs['cpp-capture'].steps);
+    return JSON.stringify(workflow);
+  };
+}
+const modernCaptureAction = './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard';
+const legacyCaptureAction = './.github/actions/ios-screenshot-shard';
+const identityStepName = 'Verify application and cache tooling identities';
+function topologyStep(steps: Record<string, unknown>[], role: 'root' | 'tooling' | 'identity' | 'capture') {
+  const step = steps.find((candidate) => {
+    if (role === 'identity') return candidate.name === identityStepName;
+    if (role === 'capture') return candidate.uses === modernCaptureAction;
+    if (candidate.uses !== 'actions/checkout@v4') return false;
+    const inputs = candidate.with as Record<string, unknown>;
+    return role === 'root' ? inputs.path === undefined : inputs.path === '.boardsesh/cache-tooling';
+  });
+  if (!step) throw new Error(`Missing ${role} fixture step`);
+  return step;
+}
+
+describe('retained producer capture topology', () => {
+  it('accepts the reviewed modern immutable-tooling shape', () => {
+    const source = metadata();
+    expect(verifyRetainedCppProducer(source.options, source.client).producerSha).toBe(producerSha);
+  });
+  it('preserves the historical root checkout and local action shape', () => {
+    const source = metadata();
+    producerCaptureTopology(source, (steps) => {
+      const capture = topologyStep(steps, 'capture');
+      const tooling = topologyStep(steps, 'tooling');
+      const identity = topologyStep(steps, 'identity');
+      capture.uses = legacyCaptureAction;
+      steps.splice(steps.indexOf(identity), 1);
+      steps.splice(steps.indexOf(tooling), 1);
+    });
+    expect(verifyRetainedCppProducer(source.options, source.client).producerSha).toBe(producerSha);
+  });
+  it('allows only the verified same repository when explicitly named', () => {
+    const source = metadata();
+    producerCaptureTopology(source, (steps) => {
+      for (const role of ['root', 'tooling'] as const)
+        (topologyStep(steps, role).with as Record<string, unknown>).repository = 'boardsesh/boardsesh';
+    });
+    expect(verifyRetainedCppProducer(source.options, source.client).producerSha).toBe(producerSha);
+  });
+  it.each([
+    'missing-tooling',
+    'wrong-tooling-ref',
+    'wrong-tooling-path',
+    'foreign-tooling-repository',
+    'foreign-root-repository',
+    'conditional-root',
+    'conditional-tooling',
+    'conditional-identity',
+    'ignored-identity',
+    'conditional-capture',
+    'wrong-root-path',
+    'wrong-root-ref',
+    'identity-after-capture',
+    'tooling-before-root',
+    'identity-before-tooling',
+    'duplicate-root',
+    'duplicate-tooling',
+    'duplicate-capture',
+    'conflicting-capture',
+    'wrong-application-binding',
+    'wrong-tooling-binding',
+    'fake-identity-command',
+    'missing-identity',
+    'duplicate-identity',
+  ])('rejects %s before any archive read or output', async (kind) => {
+    const source = metadata();
+    producerCaptureTopology(source, (steps) => {
+      const root = topologyStep(steps, 'root');
+      const tooling = topologyStep(steps, 'tooling');
+      const identity = topologyStep(steps, 'identity');
+      const capture = topologyStep(steps, 'capture');
+      const rootInputs = root.with as Record<string, unknown>;
+      const toolingInputs = tooling.with as Record<string, unknown>;
+      const identityEnvironment = identity.env as Record<string, unknown>;
+      switch (kind) {
+        case 'missing-tooling':
+          steps.splice(steps.indexOf(tooling), 1);
+          break;
+        case 'wrong-tooling-ref':
+          toolingInputs.ref = 'refs/heads/main';
+          break;
+        case 'wrong-tooling-path':
+          toolingInputs.path = '.boardsesh/other-tooling';
+          break;
+        case 'foreign-tooling-repository':
+          toolingInputs.repository = 'another/repository';
+          break;
+        case 'foreign-root-repository':
+          rootInputs.repository = 'another/repository';
+          break;
+        case 'conditional-root':
+          root.if = false;
+          break;
+        case 'conditional-tooling':
+          tooling.if = 'always()';
+          break;
+        case 'conditional-identity':
+          identity.if = false;
+          break;
+        case 'ignored-identity':
+          identity['continue-on-error'] = true;
+          break;
+        case 'conditional-capture':
+          capture.if = false;
+          break;
+        case 'wrong-root-path':
+          rootInputs.path = 'another-source';
+          break;
+        case 'wrong-root-ref':
+          rootInputs.ref = 'refs/heads/main';
+          break;
+        case 'identity-after-capture':
+          steps.splice(steps.indexOf(identity), 1);
+          steps.push(identity);
+          break;
+        case 'tooling-before-root':
+          steps.splice(steps.indexOf(tooling), 1);
+          steps.unshift(tooling);
+          break;
+        case 'identity-before-tooling':
+          steps.splice(steps.indexOf(identity), 1);
+          steps.splice(steps.indexOf(tooling), 0, identity);
+          break;
+        case 'duplicate-root':
+          steps.push(structuredClone(root));
+          break;
+        case 'duplicate-tooling':
+          steps.push(structuredClone(tooling));
+          break;
+        case 'duplicate-capture':
+          steps.push(structuredClone(capture));
+          break;
+        case 'conflicting-capture':
+          steps.push({ ...capture, uses: legacyCaptureAction });
+          break;
+        case 'wrong-application-binding':
+          identityEnvironment.APP_SOURCE_SHA = '${{ github.sha }}';
+          break;
+        case 'wrong-tooling-binding':
+          identityEnvironment.CACHE_TOOLING_SHA = '${{ github.sha }}';
+          break;
+        case 'fake-identity-command':
+          identity.run = 'true';
+          break;
+        case 'missing-identity':
+          steps.splice(steps.indexOf(identity), 1);
+          break;
+        case 'duplicate-identity':
+          steps.push(structuredClone(identity));
+          break;
+      }
+    });
+    await expect(downloadRetainedCppRecord(source.options, source.client)).rejects.toThrow(
+      'failed source or artifact verification',
+    );
+    expect(source.calls.some((path) => path.endsWith('/zip'))).toBe(false);
+    expect(existsSync(source.options.out)).toBe(false);
+    expect(existsSync(source.options.receipt)).toBe(false);
+  });
+});
 
 describe('retained record failed-job retries', () => {
   it('binds carried successes and bootstrap to originals, selecting the fourth native retry and excluding only its failed partial', () => {
