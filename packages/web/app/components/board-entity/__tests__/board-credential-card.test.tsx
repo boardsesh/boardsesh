@@ -13,6 +13,7 @@ import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR,
 } from '@boardsesh/shared-schema/sync-error-codes';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { BoardCredentialCard } from '../board-credential-card';
@@ -86,6 +87,13 @@ describe('BoardCredentialCard', () => {
 
     expect(screen.queryByText(tFromCatalog('settings', 'aurora.card.reconnect'))).toBeNull();
     expect(screen.getByText(tFromCatalog('settings', 'aurora.status.connected'))).toBeTruthy();
+  });
+
+  it('says the sends are on another Boardsesh account instead of printing the raw code (#6687)', () => {
+    renderCard(credentialWith({ syncError: FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR }));
+
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.foreignAccountLogbook'))).toBeTruthy();
+    expect(screen.queryByText(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR)).toBeNull();
   });
 
   it('localises the duplicate-circuits sync error instead of printing the raw code', () => {

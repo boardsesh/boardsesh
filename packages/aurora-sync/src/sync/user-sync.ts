@@ -1,6 +1,6 @@
 import { userSync } from '../api/user-sync-api';
 import { type SyncOptions, type UserSyncData, type AuroraBoardName, USER_TABLES } from '../api/types';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, exists, inArray, isNotNull, ne, notLike, sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
 import {
@@ -25,7 +25,8 @@ import {
 } from '@boardsesh/db/queries';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../db/table-select';
-import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
+import { boardseshTicks, playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
+import { userBoardMappings } from '@boardsesh/db/schema/auth';
 import { formatDbError } from './db-error';
 import { applyAuroraAscents, applyAuroraBids } from './apply-user-logbook';
 import { auroraCircuitAdvisoryLockStatement, normalizeAuroraCircuitItems } from './circuit-arbitration';
@@ -113,6 +114,81 @@ export async function getCircuitPlaylistOwnershipConflictState(
   }
 
   return hasForeignOwner ? 'foreign' : 'none';
+}
+
+/**
+ * Whether another Boardsesh account already holds the sends from THIS Aurora
+ * account, so this account's logbook stays empty however often it syncs
+ * (#6687).
+ *
+ * The same-board-login shape the circuits check answers for playlists, asked
+ * for ticks. It has to be a STATE query for a stronger reason than circuits:
+ * the user-sync cursor (`board_user_syncs`) is keyed on the Aurora user id, not
+ * on the Boardsesh user, so a second Boardsesh account starts from the first
+ * one's watermark and Aurora never sends it that history at all. The skip in
+ * applyLogbookChunk only sees rows edited upstream since then, so counting
+ * skips would almost never fire, and would clear itself on the next empty
+ * delta when it did.
+ *
+ * True when a different Boardsesh user is mapped to the same (board, Aurora
+ * user id) AND owns Aurora-synced ticks on that board. `json-import-%` ids are
+ * per-user hashes from the JSON export import, never a real Aurora uuid, so
+ * they say nothing about this account. The mapping survives an expired link
+ * (the shape the link guard lets a second account claim) and goes on unlink or
+ * account deletion, so the state clears itself once the conflict is resolved.
+ * A first account that unlinked leaves no mapping behind; that case is not
+ * visible from here (#6692).
+ *
+ * Known false positive: the other account relinked this board to a different
+ * Aurora login. Its old ticks keep their real aurora_ids, so it still
+ * qualifies, though none of them came from this login. Ticks don't record the
+ * Aurora user id, so there is no cheap exact check; it needs a relink to a
+ * different login on the same board AND an expired link, so it is rare.
+ *
+ * Index-served: `board_user_mapping_idx (board_type, board_user_id)`, then
+ * `boardsesh_ticks_user_board_idx (user_id, board_type)` per candidate.
+ */
+export function logbookOwnershipConflictQuery(
+  db: OwnerQueryDb,
+  boardName: AuroraBoardName,
+  auroraUserId: number,
+  nextAuthUserId: string,
+) {
+  return db
+    .select({ userId: userBoardMappings.userId })
+    .from(userBoardMappings)
+    .where(
+      and(
+        eq(userBoardMappings.boardType, boardName),
+        eq(userBoardMappings.boardUserId, auroraUserId),
+        ne(userBoardMappings.userId, nextAuthUserId),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(boardseshTicks)
+            .where(
+              and(
+                eq(boardseshTicks.userId, userBoardMappings.userId),
+                eq(boardseshTicks.boardType, boardName),
+                isNotNull(boardseshTicks.auroraId),
+                notLike(boardseshTicks.auroraId, 'json-import-%'),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+}
+
+/** @see logbookOwnershipConflictQuery */
+export async function getLogbookOwnershipConflictState(
+  db: OwnerQueryDb,
+  boardName: AuroraBoardName,
+  auroraUserId: number,
+  nextAuthUserId: string,
+): Promise<boolean> {
+  const rows = await logbookOwnershipConflictQuery(db, boardName, auroraUserId, nextAuthUserId);
+  return rows.length > 0;
 }
 
 async function processBatches<T>(

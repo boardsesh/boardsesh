@@ -166,6 +166,19 @@ export type SyncKilterUserDataArgs = {
 export type SyncKilterUserDataResult = {
   /** @see ApplyCircuitsResult.skippedForeignCircuits */
   skippedForeignCircuits: number;
+  /**
+   * Distinct Kilter logs refused because another Boardsesh user already owns
+   * them: the same Kilter account is linked to two Boardsesh accounts and the
+   * other one holds the sends (#6687). Counted only from flushes that
+   * committed. PowerSync redelivers the whole logbook every cycle, so a
+   * per-cycle count is the current state, not a one-off.
+   */
+  skippedForeignLogs: number;
+};
+
+export type ApplyLogsResult = {
+  /** log_uuids skipped because a different Boardsesh user owns their tick. */
+  foreignLogIds: string[];
 };
 
 /**
@@ -312,15 +325,25 @@ export async function syncKilterUserData({
   // circuit_uuid (the two buckets interleave).
   const acceptedCircuitUuids = new Set<string>();
 
+  // Logs another Boardsesh user owns, across every flush in this sync. A Set,
+  // not a sum: a mid-stream threshold flush and the final flush can both carry
+  // an op for the same log_uuid. Filled only after a flush commits, the same
+  // rule claimedRatingKeys follows: a rolled-back flush refused nothing.
+  const foreignLogIds = new Set<string>();
+  const recordForeignLogs = (result: ApplyLogsResult): void => {
+    for (const logId of result.foreignLogIds) foreignLogIds.add(logId);
+  };
+
   async function flushLogs(): Promise<void> {
     if (buffer.logs.length === 0) return;
     const batch = buffer.logs.splice(0, buffer.logs.length);
     if (!deferredStats) {
-      await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log));
+      recordForeignLogs(await runBatch((tx) => applyLogs(tx, userId, batch, aliasCache, log)));
       return;
     }
+    let applied: ApplyLogsResult;
     try {
-      await runBatch((tx) => {
+      applied = await runBatch((tx) => {
         deferredStats.begin();
         return applyLogs(tx, userId, batch, aliasCache, log, deferredStats.collect);
       });
@@ -329,6 +352,7 @@ export async function syncKilterUserData({
       deferredStats.rollback();
       throw error;
     }
+    recordForeignLogs(applied);
     deferredStats.commit();
     // The flush's logs are in; now their stats, in batches of their own.
     await deferredStats.flush(runBatch);
@@ -510,7 +534,7 @@ export async function syncKilterUserData({
   }
   await primeAliasCache(db, aliasCache, circuitClimbUuids);
 
-  let circuitsResult: SyncKilterUserDataResult = { skippedForeignCircuits: 0 };
+  let circuitsResult: ApplyCircuitsResult = { skippedForeignCircuits: 0 };
   await runPhase('circuits', async () => {
     circuitsResult = await runBatch((tx) =>
       applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log),
@@ -529,7 +553,7 @@ export async function syncKilterUserData({
     );
   }
 
-  return circuitsResult;
+  return { skippedForeignCircuits: circuitsResult.skippedForeignCircuits, skippedForeignLogs: foreignLogIds.size };
 }
 
 function extractLogClimbUuid(op: PowerSyncOp): string | undefined {
@@ -697,6 +721,10 @@ function kilterPayloadDiffers(incoming: LogTickFields, stored: ExistingKilterTic
  * at thousands of pending logs.
  *
  * Per-row REMOVE ops fall through to a single bulk DELETE.
+ *
+ * Returns the log_uuids it refused because another Boardsesh user already owns
+ * them (the duplicate-account link, #6687), so the runner can tell this user
+ * why their logbook is empty instead of reporting a clean sync.
  */
 export async function applyLogs(
   tx: DrizzleDb,
@@ -707,8 +735,8 @@ export async function applyLogs(
   // A background job passes a collector here and recomputes after the flush
   // commits, in its own bounded batches (DeferredClimbStatsRecompute).
   recompute: ClimbStatsRecompute = recomputeClimbStatsBulk,
-): Promise<void> {
-  if (ops.length === 0) return;
+): Promise<ApplyLogsResult> {
+  if (ops.length === 0) return { foreignLogIds: [] };
 
   // Global logbook lock order is user advisory lock before any tick row read
   // or write. updateTick/deleteTick and Aurora's ascents/bids use this exact
@@ -782,7 +810,7 @@ export async function applyLogs(
 
   if (puts.length === 0) {
     await recompute(tx, [...touchedKeys.values()]);
-    return;
+    return { foreignLogIds: [] };
   }
 
   // PowerSync's oplog can carry MORE THAN ONE op for the same row
@@ -832,7 +860,7 @@ export async function applyLogs(
   // === 0 returned above, and normalised mirrors dedupedPuts 1:1), so this is
   // belt-and-suspenders that keeps the invariant local and robust to a future
   // refactor that could thin `normalised` between here and the early return.
-  if (incomingKilterIds.length === 0) return;
+  if (incomingKilterIds.length === 0) return { foreignLogIds: [] };
   // Select the compared columns + sync-tracking timestamps so the categorise
   // step can apply the edit-clobber guard (skip a locally-edited row) and skip
   // no-op re-syncs (payload unchanged) — see §work-item 7.
@@ -1181,6 +1209,7 @@ export async function applyLogs(
   // possibly in an earlier sync. Copy it onto the rows this flush wrote.
   await applyRatingGradesToTicks(tx, userId, [...touchedKeys.values()]);
   await recompute(tx, [...touchedKeys.values()]);
+  return { foreignLogIds: [...foreignKilterIds] };
 }
 
 /**

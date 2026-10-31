@@ -14,7 +14,7 @@ import {
 import { invalidateOwnDataAfterImport } from '../../lib/integrations/board-import-completion';
 import { pendingSyncRefetchInterval } from '../../lib/integrations/use-board-account-credentials';
 import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
-import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
+import { boardAccountSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
   parseAuroraExportJson,
@@ -1074,25 +1074,23 @@ function BoardAccountCard({
   // sync that would only answer "not switched on".
   const canSyncNow = credential?.syncAvailable === true && SYNCABLE_SYNC_STATUSES.has(credential.syncStatus);
   // The sync daemons write a machine-readable code here for conditions the
-  // client is expected to explain in the viewer's language (#3526). Everything
-  // else in `sync_error` is still free text from an older path — those keep the
-  // generic error pill rather than being swallowed.
-  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(
-    credential?.syncError ?? null,
-    credential?.syncErrorReason,
-  );
-  const circuitPlaylistWarningCopy =
-    circuitPlaylistWarning === 'foreign'
-      ? t('aurora.status.foreignAccountCircuits')
-      : circuitPlaylistWarning === 'ambiguous'
-        ? t('aurora.status.ambiguousAccountCircuits')
-        : circuitPlaylistWarning === 'legacy'
-          ? t('aurora.status.duplicateAccountCircuits')
-          : null;
-  // A warning, not a failure: the credential is active and syncing, only the
-  // playlist mirror is paused. Red text here would tell a healthy account it is
-  // broken, with nothing to act on.
-  const hasSyncFailure = Boolean(credential?.syncError) && !circuitPlaylistWarning;
+  // client is expected to explain in the viewer's language (#3526, #6687).
+  // Everything else in `sync_error` is still free text from an older path —
+  // those keep the generic error pill rather than being swallowed.
+  const syncWarning = boardAccountSyncWarningKind(credential?.syncError ?? null, credential?.syncErrorReason);
+  const syncWarningCopy =
+    syncWarning === 'logbook'
+      ? t('aurora.status.foreignAccountLogbook')
+      : syncWarning === 'foreign'
+        ? t('aurora.status.foreignAccountCircuits')
+        : syncWarning === 'ambiguous'
+          ? t('aurora.status.ambiguousAccountCircuits')
+          : syncWarning === 'legacy'
+            ? t('aurora.status.duplicateAccountCircuits')
+            : null;
+  // A warning, not a failure: the credential is active and syncing. Red text
+  // here would tell a healthy account it is broken.
+  const hasSyncFailure = Boolean(credential?.syncError) && !syncWarning;
   const connectedLabel = credential?.auroraUsername
     ? t('aurora.mobile.connectedAs', { name: credential.auroraUsername })
     : t('aurora.mobile.connected');
@@ -1144,11 +1142,11 @@ function BoardAccountCard({
               {t('aurora.status.error')}
             </Text>
           ) : null}
-          {!isExpired && circuitPlaylistWarningCopy ? (
+          {!isExpired && syncWarningCopy ? (
             <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryGroupedBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.warningText}>
-                {circuitPlaylistWarningCopy}
+                {syncWarningCopy}
               </Text>
             </View>
           ) : null}
