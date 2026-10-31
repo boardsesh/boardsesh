@@ -92,7 +92,7 @@ export function memoryDiagnosticSampleDue(nowMs: number, previousMs: number | nu
 }
 
 function sampleDarwinMemory(processes: string, seconds: number, nonFreeMiB: number) {
-  const options = { encoding: 'utf8' as const, timeout: 1000 };
+  const options = { encoding: 'utf8' as const, timeout: 1000, killSignal: 'SIGKILL' as const };
   const vmStat = spawnSync('vm_stat', [], options);
   const swapUsage = spawnSync('sysctl', ['vm.swapusage'], options);
   // -Q is query-only: never run memory_pressure's allocation/stress modes.
@@ -127,7 +127,11 @@ export async function measure(argv: string[]): Promise<number> {
   process.once('SIGINT', forwardInterrupt);
   process.once('SIGTERM', forwardTerminate);
   const sample = (final = false) => {
-    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,rss=,comm='], { encoding: 'utf8' });
+    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,rss=,comm='], {
+      encoding: 'utf8',
+      timeout: 2000,
+      killSignal: 'SIGKILL',
+    });
     if (result.status === 0 && child.pid) peakTreeKiB = Math.max(peakTreeKiB, treeRssKiB(result.stdout, child.pid));
     const nonFreeBytes = totalmem() - freemem();
     peakUsedBytes = Math.max(peakUsedBytes, nonFreeBytes);
@@ -143,7 +147,11 @@ export async function measure(argv: string[]): Promise<number> {
           ),
         );
       }
-      const sims = spawnSync('xcrun', ['simctl', 'list', 'devices', 'booted', '--json'], { encoding: 'utf8' });
+      const sims = spawnSync('xcrun', ['simctl', 'list', 'devices', 'booted', '--json'], {
+        encoding: 'utf8',
+        timeout: 2000,
+        killSignal: 'SIGKILL',
+      });
       if (sims.status === 0) {
         const listing = JSON.parse(sims.stdout) as { devices: Record<string, { name: string; udid: string }[]> };
         const booted = Object.values(listing.devices)
