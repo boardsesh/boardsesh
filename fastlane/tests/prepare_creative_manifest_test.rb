@@ -47,6 +47,46 @@ class PrepareCreativeManifestTest < Minitest::Test
     end
   end
 
+  def test_header_finalization_accepts_the_seven_wall_default_fan_and_refuses_a_mismatched_source_list
+    Dir.mktmpdir("prepare-creatives") do |root|
+      FileUtils.mkdir_p(File.join(root, "fastlane"))
+      FileUtils.cp(File.expand_path("../prepare_creative_manifest.rb", __dir__), File.join(root, "fastlane", "prepare_creative_manifest.rb"))
+      manifest_path = File.join(root, "app-stores", "apple", "creative-assets.json")
+      FileUtils.mkdir_p(File.dirname(manifest_path))
+      manifest = { "locales" => { "en-US" => ["en-US"] }, "variants" => { "default" => { "assets" => [] } } }
+      File.write(manifest_path, JSON.generate(manifest))
+      export = File.join(root, ".boardsesh", "app-store-creatives", "default", "en-US")
+      FileUtils.mkdir_p(export)
+      File.write(File.join(export, "header.png"), "header")
+      File.write(File.join(export, "search-results.mp4"), "video")
+      File.write(File.join(export, "search-results.manifest.json"), JSON.generate({ "variant" => "default", "locale" => "en-US", "video" => { "file" => "search-results.mp4", "sha256" => Digest::SHA256.hexdigest("video") }, "sources" => [{ "framesSha256" => "a" * 64, "marksSha256" => "b" * 64 }] }))
+      order = %w[13-grasshopper 12-decoy 10-moonboard 01-tension 00-kilter 14-spray 11-woods].map { |name| "#{name}.png" }
+      write_header_report = lambda do |names|
+        report = { "variant" => "default", "locale" => "en-US", "header" => { "sourceOrder" => order }, "sources" => names.to_h { |name| [name, { "sha256" => "c" * 64 }] }, "assets" => [{ "placement" => "header", "file" => "header.png", "sha256" => Digest::SHA256.hexdigest("header") }] }
+        File.write(File.join(export, "creative-assets.json"), JSON.generate(report))
+      end
+      refdata_path = File.join(root, "refdata.json")
+      File.write(refdata_path, JSON.generate([{ "attributes" => {
+        "imageSpecs" => [{ "specId" => "header", "compatiblePlacementTypes" => ["PRODUCT_PAGE_HEADER_ASSET"], "aspectRatio" => "21:9", "dimensions" => { "minWidth" => 3840, "maxWidth" => 3840, "minHeight" => 1646, "maxHeight" => 1646 } }],
+        "videoSpecs" => [{ "specId" => "search", "compatiblePlacementTypes" => ["APP_STORE_SEARCH_RESULTS_ASSET"], "aspectRatio" => "3:2", "dimensions" => { "minWidth" => 1920, "maxWidth" => 1920, "minHeight" => 1280, "maxHeight" => 1280 } }],
+        "placementTypes" => [
+          { "placementTypeId" => "PRODUCT_PAGE_HEADER_ASSET", "specMappings" => [{ "placementGroupId" => "header", "specs" => ["header"] }] },
+          { "placementTypeId" => "APP_STORE_SEARCH_RESULTS_ASSET", "specMappings" => [{ "placementGroupId" => "search", "specs" => ["search"] }] },
+        ],
+      } }]))
+      script = File.join(root, "fastlane", "prepare_creative_manifest.rb")
+      write_header_report.call(order.first(6))
+      _stdout, stderr, status = Open3.capture3(RbConfig.ruby, script, "--refdata", refdata_path, "--placement", "all", "--variant", "default")
+      refute status.success?
+      assert_includes stderr, "Header needs native source hashes"
+      write_header_report.call(order)
+      stdout, stderr, status = Open3.capture3(RbConfig.ruby, script, "--refdata", refdata_path, "--placement", "all", "--variant", "default")
+      assert status.success?, "#{stdout}\n#{stderr}"
+      header = JSON.parse(File.read(manifest_path)).dig("variants", "default", "assets").find { |asset| asset["placement"] == "header" }
+      assert_equal ".boardsesh/app-store-creatives/default/en-US/header.png", header.fetch("file")
+    end
+  end
+
   def test_search_finalization_preserves_header_entries_without_header_files
     Dir.mktmpdir("prepare-creatives") do |root|
       FileUtils.mkdir_p(File.join(root, "fastlane"))
