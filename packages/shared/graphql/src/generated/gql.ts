@@ -187,7 +187,6 @@ type Documents = {
   '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RequestSprayDetectionDocument;
   '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RetrySprayDetectionDocument;
   '\n  query SprayWallImportProgress($wallUuids: [ID!]!) {\n    sprayWallImportProgress(wallUuids: $wallUuids) {\n      wallUuid\n      versionId\n      detectionId\n      stage\n      queuePosition\n      retryAt\n      resetOfWallUuid\n    }\n  }\n': typeof types.SprayWallImportProgressDocument;
-  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n    }\n  }\n': typeof types.GetPublicSupportersDocument;
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n': typeof types.GetTicksDocument;
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n': typeof types.GetUserTicksDocument;
   '\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n': typeof types.GetUserTickCountsByBoardDocument;
@@ -550,8 +549,6 @@ const documents: Documents = {
     types.RetrySprayDetectionDocument,
   '\n  query SprayWallImportProgress($wallUuids: [ID!]!) {\n    sprayWallImportProgress(wallUuids: $wallUuids) {\n      wallUuid\n      versionId\n      detectionId\n      stage\n      queuePosition\n      retryAt\n      resetOfWallUuid\n    }\n  }\n':
     types.SprayWallImportProgressDocument,
-  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n    }\n  }\n':
-    types.GetPublicSupportersDocument,
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n':
     types.GetTicksDocument,
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n':
@@ -1641,12 +1638,6 @@ export function graphql(
 export function graphql(
   source: '\n  query SprayWallImportProgress($wallUuids: [ID!]!) {\n    sprayWallImportProgress(wallUuids: $wallUuids) {\n      wallUuid\n      versionId\n      detectionId\n      stage\n      queuePosition\n      retryAt\n      resetOfWallUuid\n    }\n  }\n',
 ): (typeof documents)['\n  query SprayWallImportProgress($wallUuids: [ID!]!) {\n    sprayWallImportProgress(wallUuids: $wallUuids) {\n      wallUuid\n      versionId\n      detectionId\n      stage\n      queuePosition\n      retryAt\n      resetOfWallUuid\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n    }\n  }\n',
-): (typeof documents)['\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

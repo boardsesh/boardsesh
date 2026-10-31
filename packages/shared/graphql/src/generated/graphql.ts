@@ -16638,21 +16638,6 @@ export type SprayWallImportProgressQuery = {
   }>;
 };
 
-export type GetPublicSupportersQueryVariables = Exact<{
-  limit: Scalars['Int']['input'];
-  offset: Scalars['Int']['input'];
-}>;
-
-export type GetPublicSupportersQuery = {
-  __typename?: 'Query';
-  publicSupporters: Array<{
-    __typename?: 'PublicSupporter';
-    userId: string;
-    displayName: string;
-    avatarUrl?: string | null;
-  }>;
-};
-
 export type GetTicksQueryVariables = Exact<{
   input: GetTicksInput;
 }>;
@@ -27321,57 +27306,6 @@ export const SprayWallImportProgressDocument = {
     },
   ],
 } as unknown as DocumentNode<SprayWallImportProgressQuery, SprayWallImportProgressQueryVariables>;
-export const GetPublicSupportersDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'GetPublicSupporters' },
-      variableDefinitions: [
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
-        },
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
-        },
-      ],
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'publicSupporters' },
-            arguments: [
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'limit' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
-              },
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'offset' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
-              },
-            ],
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<GetPublicSupportersQuery, GetPublicSupportersQueryVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [
