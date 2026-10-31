@@ -1,6 +1,6 @@
 {
-  "id": "051f2625-8487-405f-82f0-192866abf2f7",
-  "prevId": "eb175a0e-bc81-4d12-82a9-2ee393044e76",
+  "id": "5f0e2c95-7f44-4e80-9af7-dd298866a87b",
+  "prevId": "83b16883-87fc-42b0-8f36-20ffe9e97087",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14123,6 +14123,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "sync_deletions_climb_identity_idx": {
+          "name": "sync_deletions_climb_identity_idx",
+          "columns": [
+            {
+              "expression": "record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"sync_deletions\".\"table_name\" = 'board_climbs'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -16202,6 +16218,79 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.climb_mutation_receipts": {
+      "name": "climb_mutation_receipts",
+      "schema": "",
+      "columns": {
+        "operation_key": {
+          "name": "operation_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "climb_uuid": {
+          "name": "climb_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "board_type": {
+          "name": "board_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "climb_mutation_receipts_user_idx": {
+          "name": "climb_mutation_receipts_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "climb_mutation_receipts_user_id_users_id_fk": {
+          "name": "climb_mutation_receipts_user_id_users_id_fk",
+          "tableFrom": "climb_mutation_receipts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
