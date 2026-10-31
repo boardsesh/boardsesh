@@ -38,12 +38,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
-          path: .video-arch-tools
+          path: .boardsesh/video-arch-tools
           sparse-checkout: scripts/lib/ios-simulator-architecture.mjs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Reject recording sources without the reviewed host-native builder
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs source .
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -65,7 +65,7 @@ jobs:
       - name: Validate actual simulator app slices before use
         env:
           VIDEO_APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
-        run: node .video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
+        run: node .boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app packages/mobile/.app-cache/Boardsesh.app "$VIDEO_APP_CACHE_KEY"
       - name: Save screenshot dev-client
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

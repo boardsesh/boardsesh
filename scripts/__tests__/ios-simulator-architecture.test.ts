@@ -143,7 +143,7 @@ describe('Intel video producer and recorder handoff', () => {
     const pipeline = workflow('mobile-store-videos-pipeline').jobs;
     const measurement = workflow('mobile-store-videos-measure').jobs.record;
     for (const job of [pipeline.app, measurement]) {
-      const tools = job.steps.find((step) => step.with?.path === '.video-arch-tools');
+      const tools = job.steps.find((step) => step.with?.path === '.boardsesh/video-arch-tools');
       expect(tools?.with).toMatchObject({
         ref: '${{ github.workflow_sha }}',
         'persist-credentials': false,
@@ -176,7 +176,9 @@ describe('Intel video producer and recorder handoff', () => {
       expect(validate).toBeGreaterThan(restore);
       expect(validate).toBeLessThan(capture);
       expect(job.steps[validate].if).toBeUndefined();
-      expect(job.steps[validate].run).toContain('.video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app');
+      expect(job.steps[validate].run).toContain(
+        '.boardsesh/video-arch-tools/scripts/lib/ios-simulator-architecture.mjs app',
+      );
       expect(job.steps[validate].env?.VIDEO_APP_CACHE_KEY).toBe('${{ needs.app.outputs.cache-key }}');
     }
   });

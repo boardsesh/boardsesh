@@ -64,8 +64,8 @@ cache save and recorder installation, including cache hits. Cache keys include
 runner architecture. All four main-branch app producers hash the shared architecture
 helper, including ARM screenshot/E2E builds. An ARM cache cannot serve Intel.
 
-The workflow checks out its guard from its own immutable revision independently
-of the selected recording source. A historical source without the reviewed
+The workflow checks out its guard under ignored `.boardsesh/video-arch-tools`
+from its own immutable revision independently of the selected recording source. A historical source without the reviewed
 host-aware builder is rejected before building or saving a mislabeled cache.
 Select an exact reviewed release candidate carrying the coherent builder; the
 workflow never overlays or silently patches the app source. Source/native hashes
