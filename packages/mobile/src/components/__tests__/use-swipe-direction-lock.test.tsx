@@ -44,6 +44,30 @@ describe('swipe direction lock', () => {
     expect(manager.fail).toHaveBeenCalledExactlyOnceWith(TAG);
   });
 
+  it.each([
+    { name: 'stationary tap', releaseX: 100, releaseY: 100 },
+    { name: 'small horizontal drift', releaseX: 106, releaseY: 102 },
+    { name: 'small vertical drift', releaseX: 102, releaseY: 106 },
+  ])('fails an undecided $name so a waiting tap can close the row', ({ releaseX, releaseY }) => {
+    const manager = startTouch();
+    native.config.onTouchesMove(touch(releaseX, releaseY));
+    native.config.onTouchesUp(touch(releaseX, releaseY));
+    expect(manager.fail).toHaveBeenCalledExactlyOnceWith(TAG);
+    expect(manager.deactivate).not.toHaveBeenCalled();
+  });
+
+  it('forgets a previous vertical decision when a new stationary touch starts', () => {
+    const manager = startTouch();
+    native.config.onTouchesMove(touch(103, 112));
+    native.config.onTouchesUp(touch(103, 112));
+    expect(manager.deactivate).toHaveBeenCalledExactlyOnceWith(TAG);
+    manager.deactivate.mockClear();
+    native.config.onTouchesDown(touch(200, 200));
+    native.config.onTouchesUp(touch(200, 200));
+    expect(manager.fail).toHaveBeenCalledExactlyOnceWith(TAG);
+    expect(manager.deactivate).not.toHaveBeenCalled();
+  });
+
   it('holds the swipe off for the whole touch once the finger moves vertically first', () => {
     const manager = startTouch();
     native.config.onTouchesMove(touch(103, 112));
