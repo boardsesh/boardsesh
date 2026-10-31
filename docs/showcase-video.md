@@ -61,7 +61,8 @@ The simulator builder validates Node against `RUNNER_ARCH` and builds one native
 slice: ARM64 hosts retain `arm64`, Intel hosts use `x86_64`. The main executable
 and Debug companion must have exactly that real Mach-O slice before export,
 cache save and recorder installation, including cache hits. Cache keys include
-runner architecture and the architecture helper. An ARM cache cannot serve Intel.
+runner architecture. All four main-branch app producers hash the shared architecture
+helper, including ARM screenshot/E2E builds. An ARM cache cannot serve Intel.
 
 The workflow checks out its guard from its own immutable revision independently
 of the selected recording source. A historical source without the reviewed
