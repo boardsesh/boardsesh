@@ -49,6 +49,35 @@ export function showcaseIosLaunchArgs(udid: string, appId: string, metroPort: nu
   return ['launch', udid, appId, '--initialUrl', `http://localhost:${metroPort}`];
 }
 
+/** Two account bundles must not each retain a separate transform-worker pool. */
+export function showcaseMetroArgs(port: number): string[] {
+  return ['exec', 'expo', 'start', '--port', String(port), '--max-workers', '1'];
+}
+
+/** The second phone is needed only after the primary has copied a session invite. */
+export function createDeferredCrewPhone<Participant>(
+  prepare: () => Promise<Participant>,
+  release: (participant: Participant) => Promise<void>,
+): { get: () => Promise<Participant>; reset: () => Promise<void> } {
+  let participant: Participant | null = null;
+  return {
+    async get() {
+      if (participant === null) participant = await prepare();
+      return participant;
+    },
+    async reset() {
+      const previous = participant;
+      participant = null;
+      if (previous !== null) await release(previous);
+    },
+  };
+}
+
+/** Require the SwiftUI Toggle's combined label, excluding its bare-title child. */
+export function showcaseSessionVisibilityPattern(title: string): string {
+  return `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, [^\\r\\n]+$`;
+}
+
 /** Keep HTTP readiness callbacks running while waiting for this launch's home. */
 export async function waitForShowcaseHome(
   options: Readonly<{

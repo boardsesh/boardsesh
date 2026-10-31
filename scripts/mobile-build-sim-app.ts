@@ -27,7 +27,14 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { exportBuiltApp } from './lib/ios-build-export';
+import { exportBuiltApp, assertSuccessfulBuild } from './lib/ios-build-export';
+import {
+  simulatorArchitecture,
+  assertAppSimulatorArchitecture,
+  crewCrossBuildArchitecture,
+  readCanonicalCrewToolchain,
+  type SimulatorArchitecture,
+} from './lib/ios-simulator-architecture.mjs';
 import {
   acquireBuildLock,
   createMobileIosCachePaths,
@@ -63,6 +70,7 @@ export interface BuildSimAppOptions {
   appOut: string;
   clean: boolean;
   configuration: string;
+  crewCrossBuildReceipt?: string;
 }
 
 export function parseArgs(argv: readonly string[]): BuildSimAppOptions {
@@ -83,6 +91,10 @@ export function parseArgs(argv: readonly string[]): BuildSimAppOptions {
         break;
       case '--configuration':
         options.configuration = expectValue(flag, value);
+        index++;
+        break;
+      case '--crew-cross-build-receipt':
+        options.crewCrossBuildReceipt = resolve(expectValue(flag, value));
         index++;
         break;
       case '--clean':
@@ -211,7 +223,7 @@ function podInstall(): void {
   }
 }
 
-function xcodebuild(configuration: string): number {
+function xcodebuild(configuration: string, architecture: SimulatorArchitecture, crewCrossBuild = false): number {
   return run(
     'xcodebuild',
     [
@@ -237,11 +249,9 @@ function xcodebuild(configuration: string): number {
       // sim doesn't enforce extra keychain groups, so that's harmless.
       'CODE_SIGN_IDENTITY=-',
       `CODE_SIGN_ENTITLEMENTS=${SIM_ENTITLEMENTS}`,
-      // arm64 only: macos-26 runners and Boardsesh dev machines are all Apple
-      // Silicon, so building the x86_64 sim slice just doubles the time (and can
-      // fail on a pod that lacks x86_64-sim support) for an arch nothing installs.
-      // The actions/cache key pins runner.arch, so a future arch change busts it.
-      'ARCHS=arm64',
+      // Build one host-native simulator slice. Cache keys separate ARM64/X64.
+      `ARCHS=${architecture}`,
+      ...(crewCrossBuild ? ['ONLY_ACTIVE_ARCH=NO'] : []),
     ],
     IOS_DIR,
   );
@@ -267,6 +277,24 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   if (process.env.BOARDSESH_PROFILE_BUILD !== '1') process.env.BOARDSESH_SCREENSHOT_BUILD = '1';
 
   try {
+    const architecture = simulatorArchitecture();
+    if (
+      options.crewCrossBuildReceipt &&
+      (options.configuration !== 'Debug' || process.env.BOARDSESH_PROFILE_BUILD === '1')
+    )
+      throw new Error('Crew cross-build only supports the explicit diagnostic Debug lane.');
+    const sourceSha = options.crewCrossBuildReceipt
+      ? (spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 2000 }).stdout?.trim() ??
+        '')
+      : '';
+    const targetArchitecture = options.crewCrossBuildReceipt
+      ? crewCrossBuildArchitecture(
+          architecture,
+          JSON.parse(readFileSync(options.crewCrossBuildReceipt, 'utf8')) as unknown,
+          sourceSha,
+          readCanonicalCrewToolchain(),
+        )
+      : architecture;
     const paths = createMobileIosCachePaths(process.env, MOBILE_DIR);
     const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
     try {
@@ -292,18 +320,26 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
       ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
       podInstall();
 
-      let status = xcodebuild(options.configuration);
+      let status = xcodebuild(options.configuration, targetArchitecture, Boolean(options.crewCrossBuildReceipt));
       const appPath = builtAppPath(options.configuration);
-      if (status !== 0) {
+      if (status !== 0 && !options.crewCrossBuildReceipt) {
         // RN New Architecture codegen ("Generate Specs") can race the compile on a
         // cold/clean build ("Build input file cannot be found: …/ReactCodegen/
         // *-generated.mm"). The specs land during that first attempt, so a second
         // build finds them — the well-known "build twice on a clean checkout"
         // quirk that bites every fresh CI runner. Retry once.
         console.log(`${LOG} First build failed; retrying once for the cold-build codegen race...`);
-        status = xcodebuild(options.configuration);
+        status = xcodebuild(options.configuration, targetArchitecture, Boolean(options.crewCrossBuildReceipt));
       }
 
+      assertSuccessfulBuild(status, appPath);
+      assertAppSimulatorArchitecture(appPath, targetArchitecture, options.configuration === 'Debug');
+      if (options.crewCrossBuildReceipt) {
+        // Archive the original product: ordinary cpSync export may rewrite relative
+        // framework symlinks into producer-only absolute paths.
+        console.log(`${LOG} Cross-build product retained untouched -> ${appPath}`);
+        return 0;
+      }
       const destination = exportBuiltApp(status, appPath, options.appOut);
       console.log(`${LOG} Built ${options.configuration} simulator app -> ${destination}`);
       return 0;

@@ -23,7 +23,7 @@ the moment the app changes.
 ### CI measurement (Phase 0)
 
 Dispatch **Mobile Store Videos (Measure)** to record MoonBoard in en-US, es, fr and de
-on one macOS 26 runner, then render on Ubuntu. It reuses the screenshot
+on one standard `macos-26-intel` runner, then render on Ubuntu. It reuses the screenshot
 dev-client cache and checksum-pinned Maestro. Set `SCREENSHOT_USER_EMAIL` and
 `SCREENSHOT_USER_PASSWORD` in the same scope as the screenshot workflow.
 MoonBoard needs neither a crew account nor physical Live Activity footage.
@@ -32,14 +32,89 @@ The `store-videos-moonboard` artifact contains four MP4s, posters and
 `search-results.manifest.json` files. Every encode passes
 `creativeVideoProblems` before upload. Frames are an Actions handoff artifact
 with one-day retention; no frames go to R2. Metrics include per-step minutes,
-sampled process-tree RSS, total runner memory usage, and simulator boot-state
+sampled process-tree RSS, total runner non-free memory, and simulator boot-state
 transitions. The recorder tears down its simulator in every locale child;
 use the transitions and recorder logs to verify that behavior in CI. Memory
-samples are every five seconds, so brief peaks may be higher.
+samples are every five seconds, so brief peaks may be higher. Non-free RAM
+includes reclaimable file cache and alone does not establish memory pressure.
+On macOS, `memoryDiagnostics` adds VM counters (anonymous, file-backed, wired
+and compressed memory), swap usage, query-only pressure free percentage and the
+five largest resident executable names. These snapshots run every 30 seconds
+and at exit; each sensor has a one-second limit and unavailable readings are
+`null`. RSS and simulator-state commands have two-second limits. Process
+arguments are never collected.
 
 Copy the timing artifact's table and measured RAM into the Phase 0 PR after a
 green dispatch. Those measurements decide Phase 5 optimizations; estimates
 are not recorded as measurements. This dispatch does not write to R2 or Apple.
+
+### Video simulator architecture and memory
+
+The ordinary video app producer, record matrix, crew job and non-crew measurement
+modes retain the original ARM `macos-26` runner. Intel is isolated to the explicit
+artifact-only `record-crew` measurement experiment; it is not a production rollout.
+The 14 GiB Intel experiment built and launched an x86_64 app, but did not confirm
+privacy-off or produce crew frames. Its sampled pressure-free percentage was
+63–86% with no swap. More capacity has not been shown to fix the input failure;
+near-full non-free memory alone does not establish memory pressure.
+
+The simulator builder validates Node against `RUNNER_ARCH` and builds one native
+slice: ARM64 hosts retain `arm64`, Intel hosts use `x86_64`. The main executable
+and Debug companion must have exactly that real Mach-O slice before export,
+cache save and recorder installation, including cache hits. Cache keys include
+runner architecture. All four main-branch app producers hash the shared architecture
+helper, including ARM screenshot/E2E builds. An ARM cache cannot serve Intel.
+
+The workflow checks out its guard under ignored `.boardsesh/video-arch-tools`
+from its own immutable revision independently of the selected recording source. A historical source without the reviewed
+host-aware builder is rejected before building or saving a mislabeled cache.
+Select an exact reviewed release candidate carrying the coherent builder; the
+workflow never overlays or silently patches the app source. Source/native hashes
+and runtime gates still apply. SDK 27 screenshot jobs and frozen ARM diagnostic
+refs are unchanged.
+
+The first cold Intel build failed in the Swift 6.3.3 compiler while lowering
+upstream ExpoModulesCore code; it never produced a validated app or started a
+session. The single `record-crew` measurement lane now provides an artifact-only
+cross-build experiment. Its producer uses the existing ARM `xcode-27` host with
+canonical Xcode 27.1 / build `27A9275` and SDK 27.1 / build `24A94232`, verifies
+actual x86_64 SDK interfaces/link stubs first, and records the observed complete
+Swift compiler identity. It does not guess a Swift patch version.
+
+That explicit cross lane builds x86_64 once with `ONLY_ACTIVE_ARCH=NO`, retaining
+the untouched original build product. It does not use or save v1/v2 app caches,
+run Metro, boot a simulator, or receive test-account credentials. A one-day tar
+and manifest bind exact app/tooling source, run/attempt, builder ARM64, target
+x86_64, compiler/SDK, native hashes, file modes and relative symlinks. The Intel
+consumer checks the same-run producer digests, simulator platforms and deployment
+floors before installation. Main/Debug must be single-slice x86_64; vendor FAT
+libraries may retain other slices when their x86_64 simulator slice supports
+runtime 26.5. Absolute or escaping app links are refused. Newer SDK compilation
+with a compatible deployment target is a changed build condition; actual launch
+on 26.5 remains a required proof.
+
+`BOARDSESH_CREW_EXPECT_IOS_RUNTIME=26.5` is scoped to that experiment. Each actual
+selected primary/secondary UDID must belong to exactly one available 26.5 runtime
+before boot, installation or launch. The secondary check runs at its existing
+deferred preparation point. Other modes and the production pipeline retain their
+ordinary host-native build/cache behavior. No Swift ownership or JSI patch is
+part of this experiment. Handoffs bind run attempt as well as run ID: rerunning
+only a failed consumer intentionally cannot reuse a prior-attempt app; any further
+dispatch requires a new reviewed decision.
+
+The artifact-only run `41227619662` passed cross-build, slice and same-run artifact
+validation, then failed a later Home relaunch and the built-in retry's visibility-off
+gate. Start was never tapped; no secondary or frames were produced. The retained
+Intel row overflowed its viewport, while the original ARM failure's thumb was fully
+visible. These are different observed boundaries; neither proves a memory cause.
+The normal SDK 58 Intel cold-build path also has a demonstrated Swift compiler
+crash, so ordinary jobs must retain ARM while investigation continues.
+
+An actual private crew capture remains required: privacy-off gate before
+Start, invite/secondary join, complete frames, session/device/process cleanup,
+and primary/secondary warmup plus pressure/RSS/compression/swap metrics. Preserve
+one-worker Metros and deferred secondary preparation. Measure throughput before
+assuming all selected kinds/locales fit the 240-minute serial crew budget.
 
 ### Open-train Search Results pipeline
 
@@ -207,9 +282,9 @@ and validation. The cached native app is reusable; its JS is regenerated with
 `EXPO_PUBLIC_SCREENSHOT_LOCALE` for each capture. There is no English footage
 fallback. It:
 
-1. creates (once) and boots two dedicated simulators, "Boardsesh Showcase" and,
-   for the crew take, "Boardsesh Showcase 2" (iPhone 16 Pro Max, status bar at
-   9:41, app in UTC), resets their keychains and installs the dev-client;
+1. creates and boots the primary dedicated simulator, "Boardsesh Showcase"
+   (iPhone 16 Pro Max, status bar at 9:41, app in UTC), resets its keychain
+   and installs the dev-client;
 2. starts Metro with the screenshot-mode env (`EXPO_PUBLIC_SCREENSHOT_MODE=1`,
    `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1`, the walls in `EXPO_PUBLIC_SCREENSHOT_BOARDS`,
    the account) and waits for the app to reach home. Each phone reports home
@@ -217,7 +292,9 @@ fallback. It:
    of analytics consent. A fresh counter increase after each native launch (or a fresh
    legacy Metro home marker) confirms readiness; earlier pings and the other phone
    cannot unblock it. Android reverses this ephemeral port onto the host. The second
-   phone gets its own Metro and a copy of the `.app` whose launcher URL points at it;
+   phone gets its own Metro and a copy of the `.app` whose launcher URL points at it.
+   Each Metro uses one worker, avoiding two transform-worker pools. Its bundle
+   warms before the simulator boots;
 3. per take: relaunches the app (so the one-shot deep-link params fire again),
    opens the take's deep links, starts `simctl io recordVideo`, runs the take's
    Maestro flow while collecting `[showcase-anchor]` lines from Metro's output,
@@ -478,8 +555,10 @@ so this needs a live backend.
 1. Primary: switches "Show this session live" off (the recorder refuses to go
    on unless the app logged that), starts the session, opens the invite sheet
    and taps Copy link (`session-private.yaml`, `crew-start.yaml`).
-2. The recorder reads the link with `xcrun simctl pbpaste`, and sends the second
-   phone to `com.boardsesh.app://join/<id>`, where `crew-join.yaml` taps Join.
+2. The recorder reads the link with `xcrun simctl pbpaste`, then prepares the
+   second phone's Metro and simulator. Privacy and Start therefore run with
+   only the primary phone loaded. It sends the second phone to
+   `com.boardsesh.app://join/<id>`, where `crew-join.yaml` taps Join.
 3. The second phone starts `crew-secondary.yaml`, which polls the recorder's
    signal server. Recording starts on the primary's QR.
 4. `crew.yaml` closes the sheet, opens the queue, raises the `crew-add` signal;
@@ -491,7 +570,43 @@ so this needs a live backend.
 5. `session-end.yaml` closes any overlay and ends the session with the live
    primary app, preserving the creator’s queue context. It also runs on a failure
    or Ctrl-C. A setup failure cleans up before the next take; unconfirmed cleanup
-   prevents further cold launches.
+   prevents further cold launches. The secondary simulator and Metro shut down
+   between takes and retries so the next primary Start runs alone again.
+
+On iOS, `session-private.yaml` waits for the localized visibility switch, including
+SwiftUI's subtitle, then taps `90%,50%` within that matched element's bounds to
+reach the trailing thumb. The subtitle is mandatory: Maestro selects the deepest
+matching node, and a pattern that also accepts the bare title selects its text
+child. The committed native hierarchy fixture records that title tap outside
+the thumb and the combined-label target inside it. This is an element-relative tap: pinned Maestro 2.6.1
+maps YAML `text` plus `point` to `TapOnElementCommand.relativePoint` in
+[`YamlFluentCommand.tapCommand`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/yaml/YamlFluentCommand.kt),
+and [`Orchestra.tapOnElement`](https://github.com/mobile-dev-inc/maestro/blob/cli-2.6.1/maestro-orchestra/src/main/java/maestro/orchestra/Orchestra.kt)
+computes it from the matched bounds. The default tap uses the element center.
+The recorder still requires the app's visibility-off event before Start. A
+missing event reports an unconfirmed tap; it does not claim what the screen's
+switch shows. The private-flow debug screenshots and target metadata stay until
+that event is confirmed. A missing event keeps them and adds an immediate screen
+capture (limited to 15 seconds) plus a separate hierarchy query, limited to 60 seconds, with timestamps
+for that later observation. Diagnostic errors preserve the original privacy
+failure. Successful gates discard the temporary debug output.
+CI memory diagnostics and a complete crew take remain the check that these
+reductions fit the runner; occupancy near 99% with one simulator is not proof
+that the second simulator caused the failure.
+
+For an explicitly reviewed artifact-only Intel diagnostic, dispatch
+**Mobile Store Videos (Measure)** with `mode=record-crew` on the candidate ref.
+It records only `default` / `en-US` / `crew`, retains the frames, metrics and exact
+source SHA, and skips rendering and publishing. The cross-build experiment has
+a separate 60-minute producer and a 60-minute consumer: the existing 45-minute
+capture allowance plus 15 minutes for dependency, artifact and recording-tool
+setup. No cold build runs in the consumer, and inner input waits are unchanged. Producer build and Intel recording remain separate
+`crew-cross-build.json` / `crew-check.json` measurements. Native, launch, Maestro,
+take and private-session cleanup deadlines are unchanged; other modes and the
+production all-locale job budgets are unchanged. It uses the existing repository
+recording-account secrets and shares the normal crew account lock. For release
+train validation, use a candidate ref containing the exact `release/next` source
+plus the recorder fix; a run from `main` builds a different native app.
 
 Why a signal server: two Maestro processes each take 4-7 s to attach, so a
 timed wait cannot line them up. The flows `GET` the recorder's local server

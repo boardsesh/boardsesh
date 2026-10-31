@@ -27,6 +27,7 @@
  * lives in scripts/lib/showcase-video/record.ts. macOS only.
  */
 
+import { assertSelectedCrewRuntime } from './lib/ios-crew-cross-artifact.mjs';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -92,6 +93,9 @@ import {
   REFERENCE_CHANNEL_TOLERANCE,
   SHOWCASE_DEFAULT_BOARDS,
   SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
+  createDeferredCrewPhone,
+  showcaseMetroArgs,
+  showcaseSessionVisibilityPattern,
   showcaseDevice,
   showcaseCalendarPattern,
   showcaseBoardHistoryPattern,
@@ -251,9 +255,16 @@ function commandExists(command: string, env: NodeJS.ProcessEnv = toolEnv()): boo
 function simctl(
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  timeoutMs?: number,
 ): { status: number; stdout: string; stderr: string } {
   guardSimulatorCommand('xcrun', ['simctl', ...args], ROOT_DIR);
-  const result = spawnSync('xcrun', ['simctl', ...args], { encoding: 'utf8', env, maxBuffer: 16 * 1024 * 1024 });
+  const result = spawnSync('xcrun', ['simctl', ...args], {
+    encoding: 'utf8',
+    env,
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  });
   return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
@@ -347,6 +358,7 @@ async function runMaestro(
     signalUrl: string;
     timeoutMs?: number;
     retainDebug?: boolean;
+    onDebugDirectory?: (directory: string) => void;
     env?: Readonly<Record<string, string>>;
     child?: (process: ChildProcess) => void;
   }>,
@@ -356,6 +368,7 @@ async function runMaestro(
   const runName = `${String(maestroRunCounter).padStart(3, '0')}-${options.label}`;
   const debugDir = resolve(LOG_DIR, 'maestro', runName);
   mkdirSync(debugDir, { recursive: true });
+  options.onDebugDirectory?.(debugDir);
   const variables = { SHOWCASE_SIGNAL_URL: options.signalUrl, ...options.env };
   const args = [
     '--device',
@@ -530,7 +543,8 @@ function startMetro(port: number, env: NodeJS.ProcessEnv, logPath: string): Chil
   mkdirSync(dirname(logPath), { recursive: true });
   // `| tee` keeps Metro's stdout a line-buffered pipe; a plain `>` block-buffers
   // and the anchor lines would arrive in bursts (see lib/metro-dev-server.ts).
-  const child = spawnGroup('sh', ['-c', `vp exec expo start --port ${port} 2>&1 | tee ${shellQuote(logPath)}`], {
+  const command = ['vp', ...showcaseMetroArgs(port)].map(shellQuote).join(' ');
+  const child = spawnGroup('sh', ['-c', `${command} 2>&1 | tee ${shellQuote(logPath)}`], {
     cwd: MOBILE_DIR,
     env: { ...env, CI: '1' },
   });
@@ -619,44 +633,81 @@ async function preparePhone(
 ): Promise<Phone> {
   const spec = showcaseDevice(role, process.env.SHOWCASE_SIMULATOR_NAME_SUFFIX);
   const device = findOrCreateIosDevice({ name: spec.name, typeId: spec.typeId, orientation: 'PORTRAIT' });
+  const expectedRuntime = process.env.BOARDSESH_CREW_EXPECT_IOS_RUNTIME;
+  if (expectedRuntime) {
+    const devices = simctl(['list', 'devices', '--json'], process.env, 10_000);
+    const runtimes = simctl(['list', 'runtimes', '--json'], process.env, 10_000);
+    if (devices.status !== 0 || runtimes.status !== 0)
+      throw new Error('Cannot verify selected crew simulator runtime.');
+    assertSelectedCrewRuntime(
+      device.udid,
+      JSON.parse(devices.stdout) as unknown,
+      JSON.parse(runtimes.stdout) as unknown,
+      expectedRuntime,
+    );
+    console.log(`${LOG} ${role}: verified iOS${expectedRuntime} for ${device.udid}`);
+  }
   console.log(`${LOG} ${role}: ${device.name} (${device.udid})`);
-  bootDevice(device);
-  applyCleanStatusBar(device.udid);
-  // Dark system appearance: the lock-screen take films the home screen behind
-  // the Dynamic Island, and the dark wallpaper keeps it from reading as a white flash.
-  simctl(['ui', device.udid, 'appearance', 'dark']);
-  onCleanup(`${role} simulator`, () => {
-    clearStatusBar(device.udid);
-    simctl(['shutdown', device.udid]);
-  });
-  // The shared keychain group survives an uninstall; a stale token would sign in
-  // against the wrong backend.
-  simctl(['keychain', device.udid, 'reset']);
-  simctl(['uninstall', device.udid, APP_ID]);
-  const install = simctl(['install', device.udid, appPath]);
-  if (install.status !== 0) throw new Error(`simctl install on ${device.name} failed: ${install.stderr.trim()}`);
-
   const metroLog = resolve(LOG_DIR, `metro-${role}.log`);
   console.log(`${LOG} ${role}: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);
   const phone: Phone = { platform: 'ios', role, spec, device, appPath, metroPort, metroLog, metro: null, signal };
-  phone.metro = startMetro(
-    metroPort,
-    { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl(role) },
-    metroLog,
-  );
-  if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
-    throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
+  onCleanup(`${role} simulator`, () => releasePhone(phone));
+  try {
+    phone.metro = startMetro(
+      metroPort,
+      { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl(role) },
+      metroLog,
+    );
+    if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
+      throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
+    }
+    // Keep the simulator shut down during the bundle's peak transform memory.
+    await prewarmBundle(metroPort);
+    bootDevice(device);
+    applyCleanStatusBar(device.udid);
+    // The lock-screen take films the home screen behind the Dynamic Island.
+    simctl(['ui', device.udid, 'appearance', 'dark']);
+    // The shared keychain group survives an uninstall; stale tokens must not
+    // sign in against the wrong backend.
+    simctl(['keychain', device.udid, 'reset']);
+    simctl(['uninstall', device.udid, APP_ID]);
+    const install = simctl(['install', device.udid, appPath]);
+    if (install.status !== 0) throw new Error(`simctl install on ${device.name} failed: ${install.stderr.trim()}`);
+    await relaunch(phone);
+    const primed = await runMaestro({
+      udid: device.udid,
+      flowFile: writeSchemePrimeFlow(),
+      label: `${role}-prime-dialog`,
+      signalUrl: signal.url,
+    });
+    if (primed !== 0)
+      console.warn(`${LOG} ${role}: scheme-dialog prime exited ${primed}; later links still tap "Open".`);
+    return phone;
+  } catch (error) {
+    // A failed deferred preparation must release its Metro and simulator before
+    // a retry starts the primary again.
+    await releasePhone(phone);
+    throw error;
   }
-  await prewarmBundle(metroPort);
-  await relaunch(phone);
-  const primed = await runMaestro({
-    udid: device.udid,
-    flowFile: writeSchemePrimeFlow(),
-    label: `${role}-prime-dialog`,
-    signalUrl: signal.url,
-  });
-  if (primed !== 0) console.warn(`${LOG} ${role}: scheme-dialog prime exited ${primed}; later links still tap "Open".`);
-  return phone;
+}
+
+async function releasePhone(phone: Phone): Promise<void> {
+  if (phone.role === 'secondary') {
+    // Remove the second account while its simulator still accepts these commands.
+    // Best effort: prewarming may have failed before the simulator ever booted.
+    // Do not boot a simulator solely for cleanup, or clear the primary's app.
+    simctl(['uninstall', phone.device.udid, APP_ID]);
+    simctl(['keychain', phone.device.udid, 'reset']);
+  }
+  clearStatusBar(phone.device.udid);
+  simctl(['shutdown', phone.device.udid]);
+  const metro = phone.metro;
+  phone.metro = null;
+  if (metro && metro.exitCode === null) {
+    const exited = once(metro, 'exit');
+    stopGroup(metro);
+    await Promise.race([exited, sleep(10_000)]);
+  }
 }
 
 /** Cold-start the app (fresh JS state, so one-shot deep-link params fire again) and wait for home. */
@@ -700,15 +751,17 @@ async function relaunch(phone: Phone): Promise<LogWindow> {
 }
 
 /** A still of what the phone shows, for a failure message. */
-function deviceScreenshot(phone: Phone, file: string): void {
+function deviceScreenshot(phone: Phone, file: string, timeoutMs?: number): void {
   mkdirSync(dirname(file), { recursive: true });
   if (phone.platform === 'ios') {
-    simctl(['io', phone.device.udid, 'screenshot', file]);
+    simctl(['io', phone.device.udid, 'screenshot', file], process.env, timeoutMs);
     return;
   }
   const capture = spawnSync(adbBinary(), ['-s', phone.device.udid, 'exec-out', 'screencap', '-p'], {
     env: androidEnv(),
     maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
   if (capture.status === 0) writeFileSync(file, capture.stdout);
 }
@@ -1201,7 +1254,7 @@ type RunContext = {
   /** Where this platform's footage, anchors and marks go. */
   dirs: ShowcaseWorkDirs;
   primary: Phone;
-  secondary: Phone | null;
+  secondary: ReturnType<typeof createDeferredCrewPhone<Phone>> | null;
   signal: SignalServer;
   /** Whether a take left a live session running on the account that the teardown must end. */
   session: { open: boolean; cleanupRegistered: boolean };
@@ -1245,6 +1298,13 @@ function showcaseCloseLabel(locale: ShowcaseRecordArgs['locales'][number]): stri
   return catalog.ariaLabels.close;
 }
 
+function showcaseSessionVisibilityLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as { mobile: { sessionVisibility: { title: string } } };
+  return showcaseSessionVisibilityPattern(catalog.mobile.sessionVisibility.title);
+}
+
 function showcaseProgressLabels(locale: ShowcaseRecordArgs['locales'][number]): {
   allBoards: string;
   calendar: string;
@@ -1278,13 +1338,19 @@ function showcasePeerQueueRowLabel(locale: ShowcaseRecordArgs['locales'][number]
   );
 }
 
-async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
+async function runFlow(
+  context: RunContext,
+  flow: string,
+  label: string,
+  options: { retainDebug?: boolean; onDebugDirectory?: (directory: string) => void } = {},
+): Promise<number> {
   const progressLabels = showcaseProgressLabels(context.args.locales[0]);
   return runMaestro({
     udid: context.primary.device.udid,
     flowFile: showcaseFlowPathFor(flow, context.primary.platform),
     label,
     signalUrl: context.signal.url,
+    ...options,
     env: {
       SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
       SHOWCASE_BOARD_HISTORY_LABEL: showcaseBoardHistoryLabel(context.args.locales[0]),
@@ -1300,12 +1366,56 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
         existsSync(context.primary.metroLog) ? readFileSync(context.primary.metroLog, 'utf8') : '',
       ),
       SHOWCASE_CLOSE_LABEL: showcaseCloseLabel(context.args.locales[0]),
+      SHOWCASE_SESSION_VISIBILITY_LABEL: showcaseSessionVisibilityLabel(context.args.locales[0]),
       SHOWCASE_LOG_BOARD_LABEL: formatBoardDisplayName(context.args.kind),
       SHOWCASE_ALL_BOARDS_LABEL: progressLabels.allBoards,
       SHOWCASE_CALENDAR_LABEL: progressLabels.calendar,
       ...(flow === 'moonboard-filter.yaml' ? showcaseFilterLabels(context.args.locales[0]) : {}),
     },
   });
+}
+
+async function capturePhoneHierarchy(primary: Phone, label: string, timeoutMs = 5 * 60 * 1000) {
+  const hierarchyPath = resolve(LOG_DIR, `${label}-hierarchy.txt`);
+  const hierarchyErrors = resolve(LOG_DIR, `${label}-hierarchy.stderr.log`);
+  const hierarchyOutput = createWriteStream(hierarchyPath);
+  const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
+  const hierarchyStartedAt = new Date().toISOString();
+  let hierarchyChild: ChildProcess | undefined;
+  let hierarchyStatus = 1;
+  try {
+    guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
+    hierarchyStatus = await runScreenshotMaestro(
+      ['--device', primary.device.udid, 'hierarchy', '--no-reinstall-driver'],
+      {
+        env: toolEnv(),
+        cwd: LOG_DIR,
+        timeoutMs,
+        onStdout: (chunk) => {
+          hierarchyOutput.write(chunk);
+        },
+        onStderr: (chunk) => {
+          hierarchyErrorOutput.write(chunk);
+        },
+        onSpawn: (child) => {
+          hierarchyChild = child;
+          liveChildren.add(child);
+        },
+      },
+    );
+  } finally {
+    if (hierarchyChild) liveChildren.delete(hierarchyChild);
+    await Promise.all([
+      new Promise<void>((resolveClosed) => hierarchyOutput.end(resolveClosed)),
+      new Promise<void>((resolveClosed) => hierarchyErrorOutput.end(resolveClosed)),
+    ]);
+  }
+  return {
+    hierarchyStatus,
+    hierarchyStartedAt,
+    completedAt: new Date().toISOString(),
+    hierarchyPath: relative(ROOT_DIR, hierarchyPath),
+  };
 }
 
 /** One observed tap, with no recording, source invalidation, or take provenance. */
@@ -1329,53 +1439,31 @@ async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): P
     env: { SHOWCASE_ALL_BOARDS_LABEL: showcaseProgressLabels(context.args.locales[0]).allBoards },
   });
   // No UI interaction occurs between the tap/visibility check and this dump.
-  // The flow's screenshot captures the immediate state; CLI startup means the
-  // separate hierarchy is a later observation, with its own timestamp.
-  const hierarchyPath = resolve(LOG_DIR, 'profile-filter-hierarchy.txt');
-  const hierarchyErrors = resolve(LOG_DIR, 'profile-filter-hierarchy.stderr.log');
-  const hierarchyOutput = createWriteStream(hierarchyPath);
-  const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
-  const hierarchyStartedAt = new Date().toISOString();
-  let hierarchyChild: ChildProcess | undefined;
-  let hierarchyStatus = 1;
-  try {
-    guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
-    hierarchyStatus = await runScreenshotMaestro(
-      ['--device', primary.device.udid, 'hierarchy', '--no-reinstall-driver'],
-      {
-        env: toolEnv(),
-        cwd: LOG_DIR,
-        timeoutMs: 5 * 60 * 1000,
-        onStdout: (chunk) => {
-          hierarchyOutput.write(chunk);
-        },
-        onStderr: (chunk) => {
-          hierarchyErrorOutput.write(chunk);
-        },
-        onSpawn: (child) => {
-          hierarchyChild = child;
-          liveChildren.add(child);
-        },
-      },
-    );
-  } finally {
-    if (hierarchyChild) liveChildren.delete(hierarchyChild);
-    await Promise.all([
-      new Promise<void>((resolveClosed) => hierarchyOutput.end(resolveClosed)),
-      new Promise<void>((resolveClosed) => hierarchyErrorOutput.end(resolveClosed)),
-    ]);
-  }
+  // CLI startup means the hierarchy is a later observation than the screenshot.
+  const hierarchy = await capturePhoneHierarchy(primary, 'profile-filter');
   deviceScreenshot(primary, resolve(LOG_DIR, 'profile-filter-after-hierarchy.png'));
-  const report = {
-    flowStatus,
-    hierarchyStatus,
-    hierarchyStartedAt,
-    completedAt: new Date().toISOString(),
-    hierarchyPath: relative(ROOT_DIR, hierarchyPath),
-  };
+  const report = { flowStatus, ...hierarchy };
   writeFileSync(resolve(LOG_DIR, 'profile-filter-diagnostic.json'), JSON.stringify(report, null, 2));
   console.log(`${LOG} profile filter diagnostic: ${JSON.stringify(report)}`);
-  return flowStatus !== 0 ? flowStatus : hierarchyStatus;
+  return flowStatus !== 0 ? flowStatus : hierarchy.hierarchyStatus;
+}
+
+async function diagnoseSessionVisibility(primary: Phone, label: string, flowStatus: number): Promise<void> {
+  // Keep an immediate screen before the separate, bounded CLI hierarchy query.
+  const screenshotPath = resolve(LOG_DIR, `${label}-visibility.png`);
+  try {
+    deviceScreenshot(primary, screenshotPath, 15_000);
+    const hierarchy = await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000);
+    writeFileSync(
+      resolve(LOG_DIR, `${label}-visibility.json`),
+      JSON.stringify({ flowStatus, screenshotPath: relative(ROOT_DIR, screenshotPath), ...hierarchy }, null, 2),
+    );
+  } catch (error) {
+    // Diagnostics cannot turn a missing privacy event into permission to Start.
+    console.warn(
+      `${LOG} ${label}: visibility diagnostics failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
@@ -1425,15 +1513,36 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     return failed(take, [`[${take.id}] could not open its deep links (Maestro exit ${primeStatus})`]);
 
   if (take.privateSession) {
-    await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`);
-    await sleep(1000);
-    window.pull();
-    if (!sessionVisibilityIsOff(window.text)) {
+    let privateDebugDirectory: string | null = null;
+    const privateStatus = await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`, {
+      // A completed Maestro tap is not the app's privacy postcondition. Keep its
+      // screenshots and target/hierarchy metadata until that event is confirmed.
+      retainDebug: true,
+      onDebugDirectory: (directory) => {
+        privateDebugDirectory = directory;
+      },
+    });
+    const diagnosticLabel = `${take.id}-private-${maestroRunCounter}`;
+    if (privateStatus !== 0) {
+      await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus);
       return failed(take, [
-        `[${take.id}] "Show this session live" was not switched off, so no session was started. ` +
-          `Check the switch's point in ${SESSION_PRIVATE_FLOW}, and that no session is running on the account.`,
+        `[${take.id}] the session visibility control could not be tapped (Maestro exit ${privateStatus}).`,
       ]);
     }
+    const visibilityDeadline = Date.now() + 10_000;
+    do {
+      window.pull();
+      if (sessionVisibilityIsOff(window.text)) break;
+      await sleep(250);
+    } while (Date.now() < visibilityDeadline);
+    if (!sessionVisibilityIsOff(window.text)) {
+      await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus);
+      return failed(take, [
+        `[${take.id}] no pre-session visibility-off event arrived after tapping "Show this session live". ` +
+          `The recorder has not tapped Start. Check the control and app responsiveness in ${SESSION_PRIVATE_FLOW}.`,
+      ]);
+    }
+    if (privateDebugDirectory) rmSync(privateDebugDirectory, { recursive: true, force: true });
   }
 
   let secondaryRun: Promise<number> | null = null;
@@ -1443,7 +1552,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     if (typeof prepared === 'string') return failed(take, [prepared]);
     secondaryRun = runMaestro({
       udid: prepared.udid,
-      flowFile: showcaseFlowPathFor(take.secondary.flow, context.secondary?.platform ?? 'ios'),
+      flowFile: showcaseFlowPathFor(take.secondary.flow, 'ios'),
       label: `${take.id}-secondary`,
       signalUrl: signal.url,
       child: (child) => {
@@ -1453,6 +1562,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     const readyBy = Date.now() + 60_000;
     while (!signal.marks.has('secondary-ready') && Date.now() < readyBy) await sleep(250);
     if (!signal.marks.has('secondary-ready')) {
+      (secondaryChild as ChildProcess | null)?.kill('SIGINT');
       return failed(take, [`[${take.id}] the second phone's flow never started (no secondary-ready mark within 60s)`]);
     }
   } else {
@@ -1598,8 +1708,8 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
  * Climbs. Returns the secondary's UDID, or the problem.
  */
 async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ udid: string } | string> {
-  const { primary, secondary, signal } = context;
-  if (!secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not set up`;
+  const { primary, signal } = context;
+  if (!context.secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not configured`;
   const [startFlow] = take.setupFlows;
   const window = new LogWindow(primary.metroLog);
   let sessionId: string | null = null;
@@ -1627,6 +1737,9 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
   }
   console.log(`${LOG} [${take.id}] hidden session ${sessionId} started; sending the second phone in.`);
 
+  // The primary's privacy and Start taps run before the second simulator and
+  // account bundle consume memory. A retry releases this phone first too.
+  const secondary = await context.secondary.get();
   const secondaryWindow = await relaunch(secondary);
   const joinStatus = await runMaestro({
     udid: secondary.device.udid,
@@ -2000,27 +2113,26 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             signal,
           );
 
-    let secondary: Phone | null = null;
-    if (credentials.secondary) {
-      const port = SECONDARY_METRO_PORTS.find((candidate) => !portInUse(candidate));
-      if (!port) throw new Error(`No free Metro port for the second phone among ${SECONDARY_METRO_PORTS.join(', ')}`);
-      // Its own TMPDIR keeps the second account's bundle (credentials inlined)
-      // out of the shared Metro cache; teardown deletes it, and the app with it.
-      mkdirSync(SECONDARY_METRO_TMP, { recursive: true });
-      onCleanup('second phone bundle cache', () => rmSync(SECONDARY_METRO_TMP, { recursive: true, force: true }));
-      secondary = await preparePhone(
-        'secondary',
-        patchedRecorderApp(appPath, port, 'secondary'),
-        port,
-        metroEnv(args, credentials.secondary, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
-        signal,
-      );
-      const secondaryUdid = secondary.device.udid;
-      onCleanup('second phone app', () => {
-        simctl(['uninstall', secondaryUdid, APP_ID]);
-        simctl(['keychain', secondaryUdid, 'reset']);
-      });
-    }
+    const secondaryCredentials = credentials.secondary;
+    const secondary = secondaryCredentials
+      ? createDeferredCrewPhone(async () => {
+          const port = SECONDARY_METRO_PORTS.find((candidate) => !portInUse(candidate));
+          if (!port)
+            throw new Error(`No free Metro port for the second phone among ${SECONDARY_METRO_PORTS.join(', ')}`);
+          // Its own TMPDIR keeps the second account's bundle (credentials inlined)
+          // out of the shared Metro cache; teardown deletes it, and the app with it.
+          mkdirSync(SECONDARY_METRO_TMP, { recursive: true });
+          onCleanup('second phone bundle cache', () => rmSync(SECONDARY_METRO_TMP, { recursive: true, force: true }));
+          const phone = await preparePhone(
+            'secondary',
+            patchedRecorderApp(appPath, port, 'secondary'),
+            port,
+            metroEnv(args, secondaryCredentials, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
+            signal,
+          );
+          return phone;
+        }, releasePhone)
+      : null;
 
     const context: RunContext = {
       args,
@@ -2043,6 +2155,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     }
     const mode = recordRunMode(args);
     if (mode === 'hold') {
+      await secondary?.get();
       console.log(
         `${LOG} Holding ${primary.device.name} (${primary.device.udid}) with Metro on ${primary.metroPort}; ` +
           'calibrate flows, then Ctrl-C to tear down.',
@@ -2073,6 +2186,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         async () => {
           try {
             await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-cleanup`));
+            await context.secondary?.reset();
             return null;
           } catch (error) {
             return error instanceof Error ? error.message : String(error);

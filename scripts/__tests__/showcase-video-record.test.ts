@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import {
@@ -29,6 +31,9 @@ import {
   checkTake,
   countHomeReady,
   showcaseIosLaunchArgs,
+  showcaseMetroArgs,
+  createDeferredCrewPhone,
+  showcaseSessionVisibilityPattern,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -73,6 +78,220 @@ import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 
 const anchorLine = (name: string, x: number): string =>
   ` LOG  [showcase-anchor] {"name":"${name}","x":${x},"y":118,"width":132,"height":32}`;
+
+describe('crew capture memory lifecycle', () => {
+  it('limits each account Metro to one worker', () => {
+    expect(showcaseMetroArgs(8082)).toEqual(['exec', 'expo', 'start', '--port', '8082', '--max-workers', '1']);
+  });
+
+  it('keeps the second phone unloaded until requested and releases it before a retry', async () => {
+    const firstPhone = { udid: 'first-secondary' };
+    const nextPhone = { udid: 'retry-secondary' };
+    const prepare = vi.fn().mockResolvedValueOnce(firstPhone).mockResolvedValueOnce(nextPhone);
+    const release = vi.fn().mockResolvedValue(undefined);
+    const lifecycle = createDeferredCrewPhone(prepare, release);
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(await lifecycle.get()).toBe(firstPhone);
+    expect(await lifecycle.get()).toBe(firstPhone);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    await lifecycle.reset();
+    expect(release).toHaveBeenCalledExactlyOnceWith(firstPhone);
+    expect(await lifecycle.get()).toBe(nextPhone);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    await lifecycle.reset();
+    expect(release).toHaveBeenLastCalledWith(nextPhone);
+    await lifecycle.reset();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed phone preparation without keeping a rejected result', async () => {
+    const phone = { udid: 'secondary' };
+    const prepare = vi.fn().mockRejectedValueOnce(new Error('bundle failed')).mockResolvedValueOnce(phone);
+    const release = vi.fn().mockResolvedValue(undefined);
+    const lifecycle = createDeferredCrewPhone(prepare, release);
+
+    await expect(lifecycle.get()).rejects.toThrow('bundle failed');
+    await lifecycle.reset();
+    expect(release).not.toHaveBeenCalled();
+    expect(await lifecycle.get()).toBe(phone);
+  });
+
+  it('requests the second phone only after confirming a copied invite', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const crewSetup = source.slice(
+      source.indexOf('async function prepareCrew('),
+      source.indexOf('async function signIn('),
+    );
+    const copiedInvite = crewSetup.indexOf('sessionId = parseSessionIdFromInviteUrl(invite)');
+    const confirmedInvite = crewSetup.indexOf('if (!context.session.open || !sessionId)');
+    const secondPhone = crewSetup.indexOf('await context.secondary.get()');
+    expect(copiedInvite).toBeGreaterThan(-1);
+    expect(confirmedInvite).toBeGreaterThan(copiedInvite);
+    expect(secondPhone).toBeGreaterThan(confirmedInvite);
+  });
+
+  it('clears only the secondary account before shutting its simulator down', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const release = source.slice(
+      source.indexOf('async function releasePhone('),
+      source.indexOf('async function relaunch('),
+    );
+    const secondaryCleanup = release.match(/if \(phone\.role === 'secondary'\) \{([\s\S]*?)\n  \}/)?.[1];
+    expect(secondaryCleanup).toBeDefined();
+    expect(secondaryCleanup).toContain("simctl(['uninstall', phone.device.udid, APP_ID])");
+    expect(secondaryCleanup).toContain("simctl(['keychain', phone.device.udid, 'reset'])");
+    const shutdown = release.indexOf("simctl(['shutdown', phone.device.udid])");
+    expect(shutdown).toBeGreaterThan(release.indexOf("simctl(['uninstall', phone.device.udid, APP_ID])"));
+    expect(shutdown).toBeGreaterThan(release.indexOf("simctl(['keychain', phone.device.udid, 'reset'])"));
+    expect(release.slice(release.indexOf(secondaryCleanup ?? '') + (secondaryCleanup?.length ?? 0))).not.toMatch(
+      /uninstall|keychain/,
+    );
+    expect(source).not.toContain("onCleanup('second phone app'");
+  });
+});
+
+describe('private-session iOS switch targeting', () => {
+  it.each(SHOWCASE_LOCALES)('matches the %s native label without depending on its screen position', (locale) => {
+    const catalog = JSON.parse(
+      readFileSync(new URL(`../../packages/shared/i18n/locales/${locale}/session.json`, import.meta.url), 'utf8'),
+    ) as { mobile: { sessionVisibility: { title: string; descriptionOn: string; descriptionOff: string } } };
+    const visibility = catalog.mobile.sessionVisibility;
+    const pattern = new RegExp(showcaseSessionVisibilityPattern(visibility.title));
+    expect(pattern.test(visibility.title)).toBe(false);
+    expect(pattern.test(`${visibility.title}, ${visibility.descriptionOn}`)).toBe(true);
+    expect(pattern.test(`${visibility.title}, ${visibility.descriptionOff}`)).toBe(true);
+    expect(pattern.test(`${visibility.title} unrelated`)).toBe(false);
+  });
+
+  it('escapes native label punctuation', () => {
+    const pattern = new RegExp(showcaseSessionVisibilityPattern('Live (crew) [now]?'));
+    expect(pattern.test('Live (crew) [now]?, By invitation')).toBe(true);
+    expect(pattern.test('Live crew now')).toBe(false);
+  });
+
+  it('targets the real Toggle instead of its deepest matching title child', () => {
+    type NativeHierarchyNode = {
+      attributes: { accessibilityText: string; bounds: string; checked: string };
+      children: NativeHierarchyNode[];
+    };
+    const fixture = JSON.parse(
+      readFileSync(new URL('./fixtures/showcase-session-visibility/ios-maestro-2.6.1.json', import.meta.url), 'utf8'),
+    ) as { hierarchy: NativeHierarchyNode; observedTap: { point: [number, number] } };
+    // Maestro 2.6.1 Filters.deepestMatchingElement returns matching children
+    // before their matching parent. Preserve that behavior from the live tree.
+    const deepestMatches = (node: NativeHierarchyNode, pattern: RegExp): NativeHierarchyNode[] => {
+      const children = node.children.flatMap((child) => deepestMatches(child, pattern));
+      return children.length ? children : pattern.test(node.attributes.accessibilityText) ? [node] : [];
+    };
+    const bounds = (node: NativeHierarchyNode): number[] => node.attributes.bounds.match(/\d+/g)?.map(Number) ?? [];
+    const tapPoint = (node: NativeHierarchyNode): [number, number] => {
+      const [left, top, right, bottom] = bounds(node);
+      return [Math.floor(left + (right - left) * 0.9), Math.floor(top + (bottom - top) * 0.5)];
+    };
+    const insideThumb = ([horizontal, vertical]: [number, number]): boolean => {
+      const [left, top, right, bottom] = bounds(fixture.hierarchy.children[2]);
+      return horizontal >= left && horizontal <= right && vertical >= top && vertical <= bottom;
+    };
+    const selected = deepestMatches(
+      fixture.hierarchy,
+      new RegExp(showcaseSessionVisibilityPattern('Show this session live')),
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toBe(fixture.hierarchy);
+    expect(selected[0].attributes.checked).toBe('true');
+    expect(tapPoint(selected[0])).toEqual([369, 487]);
+    expect(insideThumb(tapPoint(selected[0]))).toBe(true);
+
+    const oldSelected = deepestMatches(fixture.hierarchy, /^Show this session live(?:, [^\r\n]+)?$/);
+    expect(oldSelected[0]).toBe(fixture.hierarchy.children[0]);
+    expect(tapPoint(oldSelected[0])).toEqual(fixture.observedTap.point);
+    expect(insideThumb(tapPoint(oldSelected[0]))).toBe(false);
+  });
+
+  it('taps the trailing thumb relative to the matched iOS switch', () => {
+    const steps = parseAllDocuments(
+      readFileSync(showcaseFlowPath('session-private.yaml'), 'utf8'),
+    )[1].toJS() as unknown[];
+    expect(steps).toEqual([
+      { extendedWaitUntil: { visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', timeout: 15000 } },
+      { tapOn: { text: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', point: '90%,50%' } },
+      'waitForAnimationToEnd',
+    ]);
+  });
+
+  it('keeps tap evidence until the privacy postcondition, before any session Start', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const privacy = source.slice(source.indexOf('  if (take.privateSession) {'), source.indexOf('  let secondaryRun:'));
+    const flow = privacy.indexOf('const privateStatus = await runFlow(');
+    const retain = privacy.indexOf('retainDebug: true');
+    const eventGuard = privacy.indexOf('if (!sessionVisibilityIsOff(window.text))');
+    const eventFailure = privacy.slice(eventGuard);
+    const discard = privacy.indexOf('rmSync(privateDebugDirectory');
+    expect(flow).toBeGreaterThan(-1);
+    expect(retain).toBeGreaterThan(flow);
+    expect(eventGuard).toBeGreaterThan(retain);
+    expect(eventFailure).toContain('await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus)');
+    expect(eventFailure.indexOf('return failed(')).toBeGreaterThan(
+      eventFailure.indexOf('await diagnoseSessionVisibility('),
+    );
+    expect(discard).toBeGreaterThan(eventGuard);
+    expect(privacy).not.toContain('await prepareCrew(');
+    const diagnostics = source.slice(
+      source.indexOf('async function diagnoseSessionVisibility('),
+      source.indexOf('async function recordTake('),
+    );
+    expect(diagnostics).toContain('deviceScreenshot(primary, screenshotPath, 15_000)');
+    expect(diagnostics).toContain('await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000)');
+  });
+
+  it('preserves the privacy failure when its diagnostic screenshot throws', async () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const diagnostics = source.slice(
+      source.indexOf('async function diagnoseSessionVisibility('),
+      source.indexOf('async function recordTake('),
+    );
+    const screenshot = vi.fn(() => {
+      throw new Error('simulator unavailable');
+    });
+    const warn = vi.fn();
+    const diagnose: (phone: unknown, label: string, status: number) => Promise<void> = runInNewContext(
+      `(${stripTypeScriptTypes(diagnostics)})`,
+      {
+        deviceScreenshot: screenshot,
+        resolve: (...fragments: string[]) => fragments.join('/'),
+        LOG_DIR: '/capture',
+        LOG: '[capture]',
+        console: { warn },
+      },
+    );
+    const phone = { platform: 'ios', device: { udid: 'primary' } };
+    await expect(diagnose(phone, 'crew-private', 0)).resolves.toBeUndefined();
+    expect(screenshot).toHaveBeenCalledExactlyOnceWith(phone, '/capture/crew-private-visibility.png', 15_000);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('passes the screenshot deadline to the native process with a forced timeout kill', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const nativeCommand = source.slice(source.indexOf('function simctl('), source.indexOf('function readPlistString('));
+    const spawnSync = vi.fn().mockReturnValue({ status: null, stdout: '', stderr: '' });
+    const simctl: (args: string[], env: NodeJS.ProcessEnv, timeoutMs: number) => { status: number } = runInNewContext(
+      `(${stripTypeScriptTypes(nativeCommand)})`,
+      { spawnSync, guardSimulatorCommand: vi.fn(), ROOT_DIR: '/repo', process: { env: {} } },
+    );
+    expect(simctl(['io', 'primary', 'screenshot', '/capture/screen.png'], {}, 15_000).status).toBe(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      'xcrun',
+      ['simctl', 'io', 'primary', 'screenshot', '/capture/screen.png'],
+      expect.objectContaining({ timeout: 15_000, killSignal: 'SIGKILL' }),
+    );
+    const screenshot = source.slice(
+      source.indexOf('function deviceScreenshot('),
+      source.indexOf('function adbBinary('),
+    );
+    expect(screenshot).toContain("simctl(['io', phone.device.udid, 'screenshot', file], process.env, timeoutMs)");
+  });
+});
 
 describe('iOS recorder startup', () => {
   it.each([8081, 8090, 8082])('selects one native startup URL on the phone port %i', (port) => {

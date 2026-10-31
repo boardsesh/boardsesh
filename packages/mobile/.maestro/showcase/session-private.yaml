@@ -17,9 +17,16 @@ name: showcase setup - live session hidden
 # session running, so the pre-session view is up (with the now-playing bar, which
 # puts Start at 84%,82%).
 #
-# Coordinates (iPhone 16 Pro Max portrait):
-#   85%,52%  the "Show this session live" switch
+# Match the localized SwiftUI switch's combined title plus subtitle, then tap
+# its trailing thumb. The subtitle is required: Maestro picks the deepest match,
+# so accepting a bare title targets the child text rather than the Toggle.
+# Maestro 2.6.1 treats text + point as an element-relative point (not a screen
+# coordinate): YamlFluentCommand.tapCommand -> TapOnElementCommand.relativePoint.
 
+- extendedWaitUntil:
+    visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+    timeout: 15000
 - tapOn:
-    point: '85%,52%'
+    text: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+    point: '90%,50%'
 - waitForAnimationToEnd
