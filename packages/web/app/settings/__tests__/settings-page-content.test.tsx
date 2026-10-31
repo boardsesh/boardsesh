@@ -10,7 +10,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
+import { createTestQueryClient } from '@/app/test-utils/test-providers';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 // Hand-written rather than rebuilt from `APP_URL`: an expectation assembled the
@@ -30,8 +32,13 @@ vi.mock('react-i18next', () => ({
 vi.mock('server-only', () => ({}));
 
 const mockShowMessage = vi.fn();
+const mocks = vi.hoisted(() => ({ graphqlRequest: vi.fn() }));
 vi.mock('@/app/components/providers/snackbar-provider', () => ({
   useSnackbar: () => ({ showMessage: mockShowMessage }),
+}));
+
+vi.mock('@/app/lib/graphql/client', () => ({
+  createGraphQLHttpClient: () => ({ request: mocks.graphqlRequest }),
 }));
 
 const mockPush = vi.fn();
@@ -64,14 +71,22 @@ import SettingsPageContent from '../settings-page-content';
 beforeEach(() => {
   vi.clearAllMocks();
   window.history.replaceState({}, '', '/settings');
+  mocks.graphqlRequest.mockResolvedValue({
+    profile: { email: 'climber@example.com', hasPassword: false, linkedProviders: ['google'] },
+  });
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ email: 'climber@example.com', hasPassword: false, linkedProviders: ['google'] }),
+    json: async () => ({ token: 'settings-test-token', authenticated: true }),
   }) as unknown as typeof fetch;
 });
 
 async function renderSettings() {
-  const utils = render(<SettingsPageContent />);
+  const queryClient = createTestQueryClient();
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <SettingsPageContent />
+    </QueryClientProvider>,
+  );
   await waitFor(() => {
     expect(utils.container.querySelector('[data-testid="set-password-section"]')).toBeTruthy();
   });
@@ -164,7 +179,7 @@ describe('SettingsPageContent', () => {
   });
 
   it('surfaces a profile fetch failure instead of spinning forever', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
+    mocks.graphqlRequest.mockRejectedValue(new Error('profile unavailable'));
 
     await renderSettings();
 

@@ -35,6 +35,7 @@ auth and two other flows: `/api/auth/session`, `/api/auth/providers-config`,
 | `/api/internal/favorites`                                                 | Only web session-app UI slated for teardown (`climb-actions/*`)                             | deleted with that UI (see `deleted-private-surfaces.test.ts`) |
 | `/api/internal/join/[sessionId]`                                          | `app/join/[sessionId]/page.tsx`, `join-redirect.tsx`                                        | **KEEP** — session share links                                |
 | `/api/internal/controllers`                                               | `account/controllers-section.tsx`                                                           | **KEEP** — kept by W-21 (#4440)                               |
+| ~~`/api/internal/profile{,/[userId]}`~~                                   | `/settings` and `/profile/[user_id]` use `Query.profile` / `Query.publicProfile`            | deleted in #1884                                              |
 | `/api/internal/ws-auth`                                                   | `use-ws-auth-token.ts` → ~85 web files incl. kiosk presence; mobile `auth-store.web.ts:343` | **KEEP** — `/app` + kiosk auth bridge                         |
 
 Loose ends to clean when the routes go (not runtime callers, but they'd go stale):

@@ -13,10 +13,12 @@ import {
   type GetUserProfileStatsQueryResponse,
   GET_USER_CLIMB_PERCENTILE,
   type GetUserClimbPercentileQueryResponse,
+  GET_WEB_PUBLIC_PROFILE,
 } from '@boardsesh/graphql/operations';
+import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import {
   type UserProfile,
   type LogbookEntry,
@@ -48,12 +50,22 @@ type InitialData = {
 
 type BoardTicks = Record<string, LogbookEntry[]>;
 
-// 404 from the profile endpoint is meaningful: the user wants the "not found"
-// page. Tag it so the query consumer can branch on it without parsing strings.
+type GetPublicProfileResponse = {
+  publicProfile: PublicUserProfile | null;
+};
+
+// A null `publicProfile` is meaningful: the user wants the "not found" page.
+// Tag it so the query consumer can branch on it without parsing strings.
 class ProfileNotFoundError extends Error {
   readonly code = 'PROFILE_NOT_FOUND';
   constructor() {
     super('Profile not found');
+  }
+}
+
+class ProfileAuthUnavailableError extends Error {
+  constructor() {
+    super('Profile query requires a settled viewer session');
   }
 }
 
@@ -70,8 +82,8 @@ const PROFILE_STALE_TIME_MS = 30 * 1000;
 const PROFILE_GC_TIME_MS = PERSIST_MAX_AGE_MS;
 
 export function useProfileData(userId: string, initialData?: InitialData) {
-  const { data: session } = useSession();
-  const { token } = useWsAuthToken();
+  const { data: session, status: sessionStatus } = useSession();
+  const { token: authToken } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { gradeFormat } = useGradeFormat();
   const queryClient = useQueryClient();
@@ -98,32 +110,57 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const isOwnProfile = session?.user?.id ? session.user.id === userId : (initialData?.initialIsOwnProfile ?? false);
 
   const profileInitial = initialData?.initialProfile;
+  const profileQueryKey = ['userProfile', userId] as const;
   const profileQuery = useQuery<UserProfile>({
-    queryKey: ['userProfile', userId],
+    queryKey: profileQueryKey,
     queryFn: async ({ signal }) => {
-      const response = await fetch(`/api/internal/profile/${userId}`, { signal });
-      if (response.status === 404) throw new ProfileNotFoundError();
-      if (!response.ok) throw new Error('Failed to fetch profile');
-      const body = await response.json();
+      // `enabled` prevents normal automatic fetches, but explicit refetches
+      // can still invoke a disabled query. Preserve SSR/cache data and refuse
+      // to send a signed-in request anonymously if ws-auth exhausted retries.
+      if (sessionStatus === 'loading' || (sessionStatus === 'authenticated' && !authToken)) {
+        const cachedProfile = queryClient.getQueryData<UserProfile>(profileQueryKey) ?? profileInitial;
+        if (cachedProfile) return cachedProfile;
+        throw new ProfileAuthUnavailableError();
+      }
+
+      // Authenticated on purpose: `isFollowedByMe` is resolved from the bearer
+      // authToken. Firing this anonymously would come back false and stomp the
+      // SSR-seeded "Following" state on every refetch.
+      const client = createGraphQLHttpClient(authToken);
+      const response = await client.request<GetPublicProfileResponse>({
+        document: GET_WEB_PUBLIC_PROFILE,
+        variables: { userId },
+        signal,
+      });
+      const publicProfile = response.publicProfile;
+      if (!publicProfile) throw new ProfileNotFoundError();
       return {
-        id: body.id,
-        email: body.email,
-        name: body.name,
-        image: body.image,
-        profile: body.profile,
-        credentials: body.credentials,
-        followerCount: body.followerCount ?? 0,
-        followingCount: body.followingCount ?? 0,
-        isFollowedByMe: body.isFollowedByMe ?? false,
-        isPrivate: body.isPrivate,
-        canViewActivity: body.canViewActivity,
+        id: publicProfile.id,
+        isPrivate: publicProfile.isPrivate,
+        canViewActivity: publicProfile.canViewActivity,
+        // publicProfile never exposes an email. On your own profile it comes
+        // from the NextAuth session instead — the only place it's rendered.
+        email: session?.user?.id === userId ? (session?.user?.email ?? undefined) : undefined,
+        displayName: publicProfile.displayName ?? null,
+        avatarUrl: publicProfile.avatarUrl ?? null,
+        instagramUrl: publicProfile.instagramUrl ?? null,
+        followerCount: publicProfile.followerCount ?? 0,
+        followingCount: publicProfile.followingCount ?? 0,
+        isFollowedByMe: publicProfile.isFollowedByMe ?? false,
       } satisfies UserProfile;
     },
-    enabled: !initialData?.initialNotFound,
+    // A confirmed anonymous visitor can read public profile data. A signed-in
+    // viewer needs the token because Following is personalized; session loading
+    // also waits so its eventual authenticated state cannot race anonymously.
+    enabled:
+      !initialData?.initialNotFound &&
+      sessionStatus !== 'loading' &&
+      (sessionStatus === 'unauthenticated' || Boolean(authToken)),
     staleTime: PROFILE_STALE_TIME_MS,
     gcTime: PROFILE_GC_TIME_MS,
     refetchOnMount: profileInitial ? true : 'always',
-    retry: (failureCount, error) => !(error instanceof ProfileNotFoundError) && failureCount < 3,
+    retry: (failureCount, error) =>
+      !(error instanceof ProfileNotFoundError || error instanceof ProfileAuthUnavailableError) && failureCount < 3,
     initialData: profileInitial,
     initialDataUpdatedAt: profileInitial ? Date.now() : undefined,
     meta: { persist: isOwnProfile },
@@ -146,6 +183,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   useEffect(() => {
     if (!profileError) return;
     if (profileError instanceof ProfileNotFoundError) return;
+    if (profileError instanceof ProfileAuthUnavailableError) return;
     if (isAbortError(profileError)) return;
     console.error('Failed to fetch profile:', profileError);
     showMessage('Failed to load profile data', 'error');
@@ -157,9 +195,9 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const ticksInitial = initialData?.initialAllBoardsTicks;
   const ticksQuery = useQuery<BoardTicks>({
     queryKey: ['userTicks', userId],
-    enabled: !session?.user?.id || !!token,
+    enabled: !session?.user?.id || !!authToken,
     queryFn: async ({ signal }) => {
-      const client = createGraphQLHttpClient(token);
+      const client = createGraphQLHttpClient(authToken);
       const collected: BoardTicks = {};
       await Promise.all(
         BOARD_TYPES.map(async (boardType) => {
@@ -195,9 +233,9 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const profileStatsInitial = initialData?.initialProfileStats;
   const profileStatsQuery = useQuery<GetUserProfileStatsQueryResponse['userProfileStats']>({
     queryKey: ['userProfileStats', userId],
-    enabled: !session?.user?.id || !!token,
+    enabled: !session?.user?.id || !!authToken,
     queryFn: async ({ signal }) => {
-      const client = createGraphQLHttpClient(token);
+      const client = createGraphQLHttpClient(authToken);
       const variables: GetUserProfileStatsQueryVariables = { userId };
       const response = await client.request<GetUserProfileStatsQueryResponse>({
         document: GET_USER_PROFILE_STATS,
@@ -222,9 +260,9 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const percentileInitial = initialData?.initialPercentile;
   const percentileQuery = useQuery<GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null>({
     queryKey: ['userClimbPercentile', userId],
-    enabled: !session?.user?.id || !!token,
+    enabled: !session?.user?.id || !!authToken,
     queryFn: async ({ signal }) => {
-      const client = createGraphQLHttpClient(token);
+      const client = createGraphQLHttpClient(authToken);
       const response = await client.request<GetUserClimbPercentileQueryResponse>({
         document: GET_USER_CLIMB_PERCENTILE,
         variables: { userId },

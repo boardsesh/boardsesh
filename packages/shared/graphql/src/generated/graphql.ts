@@ -12020,6 +12020,8 @@ export type UpdateProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+  /** New Instagram profile URL */
+  instagramUrl?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateResourcePrivacyInput = {
@@ -12371,12 +12373,18 @@ export type UserProfile = {
   email: Scalars['String']['output'];
   /** Total number of climbs favourited by this user, across all boards */
   favoriteCount: Scalars['Int']['output'];
+  /** Whether the account has an email + password credential set */
+  hasPassword: Scalars['Boolean']['output'];
   /** Unique user identifier */
   id: Scalars['ID']['output'];
+  /** Link to the user's Instagram profile, when they set one */
+  instagramUrl?: Maybe<Scalars['String']['output']>;
   /** Whether this user holds any admin community role (global or board-scoped), unlocking the admin-only tooling */
   isAdmin: Scalars['Boolean']['output'];
   /** Whether this user can reach tester-only developer tooling (has the tester or admin community role) */
   isTester: Scalars['Boolean']['output'];
+  /** OAuth providers linked to this account (e.g. 'google', 'apple') */
+  linkedProviders: Array<Scalars['String']['output']>;
 };
 
 /** Paginated user search results. */
@@ -12488,6 +12496,46 @@ export type ZoneBoxInput = {
  * anyHold matches climbs that use at least one hold inside the box.
  */
 export type ZoneMatchMode = 'allHolds' | 'anyHold';
+
+export type GetMyProfileQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetMyProfileQuery = {
+  __typename?: 'Query';
+  profile?: {
+    __typename?: 'UserProfile';
+    id: string;
+    email: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    instagramUrl?: string | null;
+    hasPassword: boolean;
+    linkedProviders: Array<string>;
+    isTester: boolean;
+    createdAt: string;
+    favoriteCount: number;
+  } | null;
+};
+
+export type UpdateMyProfileMutationVariables = Exact<{
+  input: UpdateProfileInput;
+}>;
+
+export type UpdateMyProfileMutation = {
+  __typename?: 'Mutation';
+  updateProfile: {
+    __typename?: 'UserProfile';
+    id: string;
+    email: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    instagramUrl?: string | null;
+    hasPassword: boolean;
+    linkedProviders: Array<string>;
+    isTester: boolean;
+    createdAt: string;
+    favoriteCount: number;
+  };
+};
 
 export type GetDeleteAccountInfoQueryVariables = Exact<{ [key: string]: never }>;
 
@@ -16025,6 +16073,26 @@ export type GetPublicProfileQuery = {
   } | null;
 };
 
+export type GetWebPublicProfileQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type GetWebPublicProfileQuery = {
+  __typename?: 'Query';
+  publicProfile?: {
+    __typename?: 'PublicUserProfile';
+    id: string;
+    isPrivate: boolean;
+    canViewActivity: boolean;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    instagramUrl?: string | null;
+    followerCount: number;
+    followingCount: number;
+    isFollowedByMe: boolean;
+  } | null;
+};
+
 export type GetFollowersQueryVariables = Exact<{
   input: FollowListInput;
 }>;
@@ -17524,6 +17592,91 @@ export const UserDataExportStatusFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<UserDataExportStatusFieldsFragment, unknown>;
+export const GetMyProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyProfile' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'profile' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'email' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'instagramUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasPassword' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'linkedProviders' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isTester' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'favoriteCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyProfileQuery, GetMyProfileQueryVariables>;
+export const UpdateMyProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateMyProfile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateProfileInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'email' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'instagramUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasPassword' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'linkedProviders' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isTester' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'favoriteCount' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateMyProfileMutation, UpdateMyProfileMutationVariables>;
 export const GetDeleteAccountInfoDocument = {
   kind: 'Document',
   definitions: [
@@ -26010,6 +26163,53 @@ export const GetPublicProfileDocument = {
     },
   ],
 } as unknown as DocumentNode<GetPublicProfileQuery, GetPublicProfileQueryVariables>;
+export const GetWebPublicProfileDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetWebPublicProfile' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canViewActivity' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'instagramUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetWebPublicProfileQuery, GetWebPublicProfileQueryVariables>;
 export const GetFollowersDocument = {
   kind: 'Document',
   definitions: [
