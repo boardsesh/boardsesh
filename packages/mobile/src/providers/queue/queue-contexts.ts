@@ -133,6 +133,12 @@ type QueueContextValue = {
     historyCount?: number | null;
     playlistSuggestionSource: PlaylistSuggestionSource | null;
   };
+  /** Read the latest privacy-projected roster without subscribing to presence or stats. */
+  getSessionRosterSnapshot: () => {
+    sessionId: string | null;
+    participantId: string | null;
+    sessionUsers: ReadonlyArray<SessionUser>;
+  };
   /**
    * Add a batch to Up next, in batch order, leaving the current climb where it is.
    *
@@ -347,6 +353,21 @@ type QueueLiveStatsContextValue = {
 };
 
 export const QueueLiveStatsContext = createContext<QueueLiveStatsContextValue | null>(null);
+
+export type CurrentClimbMover = {
+  participantId: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+/** Only the current mover's displayed identity; unrelated roster/stat pushes keep its identity. */
+export const QueueCurrentClimbMoverContext = createContext<CurrentClimbMover | null | undefined>(undefined);
+
+export function useCurrentClimbMover(): CurrentClimbMover | null {
+  const mover = useContext(QueueCurrentClimbMoverContext);
+  if (mover === undefined) throw new Error('useCurrentClimbMover must be used within QueueProvider');
+  return mover;
+}
 
 /**
  * "Is anyone else in this session with me" — a single boolean whose identity

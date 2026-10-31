@@ -954,6 +954,7 @@
       "lightEveryClimb": "Jeden Boulder beleuchten",
       "releaseToDrive": "Loslassen, um jeden Boulder zu beleuchten",
       "crewPutUp": "Deine Crew hat {{climb}} beleuchtet",
+      "crewPutUpNamed": "{{person}} hat {{climb}} beleuchtet",
       "holderHasBoard": "{{name}} hat das Board",
       "crewHasBoard": "Deine Crew hat das Board",
       "boardOptions": "Board-Optionen",

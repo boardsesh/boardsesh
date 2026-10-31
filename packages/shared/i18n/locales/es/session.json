@@ -954,6 +954,7 @@
       "lightEveryClimb": "Encender cada bloque",
       "releaseToDrive": "Suelta para encender cada bloque",
       "crewPutUp": "Tu grupo ha encendido {{climb}}",
+      "crewPutUpNamed": "{{person}} ha encendido {{climb}}",
       "holderHasBoard": "{{name}} tiene el plafón",
       "crewHasBoard": "Tu grupo tiene el plafón",
       "boardOptions": "Opciones del plafón",

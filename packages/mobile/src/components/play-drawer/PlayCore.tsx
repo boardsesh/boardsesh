@@ -129,6 +129,7 @@ import {
   useQueueData,
   useQueueActions,
   useQueueSessionId,
+  useCurrentClimbMover,
   useIsSharedSession,
   useIsCrewSession,
 } from '../../providers/queue-provider';
@@ -434,6 +435,7 @@ export function PlayCore({
   }));
 
   const { queue, currentClimbQueueItem, historyCount } = useQueueData();
+  const currentClimbMover = useCurrentClimbMover();
   const {
     setCurrentClimb,
     nextClimb,
@@ -1846,13 +1848,12 @@ export function PlayCore({
         ? { name: scenarioBusyWall.holderName, avatarUrl: null }
         : busyWallUp
           ? resolveBusyWallHolder({
-              picker: currentClimbQueueItem?.addedByUser ?? null,
-              viewerUserId,
+              mover: currentClimbMover,
               wallClimbUuid,
               currentClimbUuid: currentClimbQueueItem?.climb.uuid ?? null,
             })
           : null,
-    [scenarioBusyWall, busyWallUp, currentClimbQueueItem, viewerUserId, wallClimbUuid],
+    [scenarioBusyWall, busyWallUp, currentClimbQueueItem, currentClimbMover, wallClimbUuid],
   );
   const busyWall = useBusyWallQuestion({
     armed: busyWallUp,

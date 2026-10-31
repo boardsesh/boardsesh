@@ -16,6 +16,12 @@
 
 export type RelayEventType = 'CurrentClimbChanged' | 'FullSync';
 
+export type CrewMove = {
+  queueItemUuid: string;
+  /** Server-bound participant, independent of who queued this climb. */
+  currentChangedBy: string | null;
+};
+
 export type RelayReceipt = {
   /** Queue-item uuid the event made current: the auto-sender's write target. */
   queueItemUuid: string;
@@ -44,10 +50,10 @@ let pendingReceipt: RelayReceipt | null = null;
  * says "Sam put up …" when it follows. Told the same events, by the same
  * rules, as the receipt: never this phone's own moves or echoes.
  */
-const crewMoveListeners = new Set<(queueItemUuid: string) => void>();
+const crewMoveListeners = new Set<(move: CrewMove) => void>();
 
 /** Hear each crewmate's move of the wall, by the queue item it made current. */
-export function subscribeCrewMoves(listener: (queueItemUuid: string) => void): () => void {
+export function subscribeCrewMoves(listener: (move: CrewMove) => void): () => void {
   crewMoveListeners.add(listener);
   return () => {
     crewMoveListeners.delete(listener);
@@ -126,7 +132,8 @@ export function noteRelayReceipt({
     receivedAt,
     ...(currentChangedBy === undefined ? {} : { currentChangedBy }),
   };
-  for (const listener of crewMoveListeners) listener(incomingQueueItemUuid);
+  const move: CrewMove = { queueItemUuid: incomingQueueItemUuid, currentChangedBy: currentChangedBy ?? null };
+  for (const listener of crewMoveListeners) listener(move);
 }
 
 /**

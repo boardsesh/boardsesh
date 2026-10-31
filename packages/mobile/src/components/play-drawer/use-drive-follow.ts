@@ -1,20 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { subscribeToWallConfirm } from '@boardsesh/play-view';
 import { useActiveClimbUuid, useQueueActions } from '../../providers/queue-provider';
 import { announceQueued } from '../../lib/announce-queued';
 import { hapticLight, hapticSuccess } from '../../lib/haptics';
-import { subscribeCrewMoves } from '../../lib/relay-receipt';
+import { subscribeCrewMoves, type CrewMove } from '../../lib/relay-receipt';
+import { resolveCurrentClimbMoverName } from '../../lib/current-climb-mover';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 import { clearCrewPutUp, formatCrewPutUp, resolveCrewPutUp, showCrewPutUp } from './crew-put-up-store';
 import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } from './drive-mode-store';
 
 /**
  * A crewmate puts a climb up while this phone drives the wall (#7113). This
  * phone's auto-sender lights it like any current climb, the player follows
- * (it shows the current climb), and the drive goes on. This says so: "Your
- * crew put up Crimp Ladder" for 4 s where "Only you see this" sits, a light
- * buzz, and one screen-reader announcement. It names nobody: the queue item
- * says who added the climb, not who put it up.
+ * (it shows the current climb), and the drive goes on. This says so for 4 s
+ * where "Only you see this" sits, a light buzz, and one screen-reader
+ * announcement. Only the event's server-stamped mover can name the person.
  *
  * Only a crewmate's move counts (`subscribeCrewMoves`: never this phone's own
  * or its echo), heard while live, and said once the queue has made it current.
@@ -22,44 +23,94 @@ import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } f
  * driver's own swipe overtook is never said later.
  *
  * It reads the current climb through `useActiveClimbUuid` (a change of climb)
- * and the queue snapshot, so the app-root watcher doesn't re-render on every
- * queue change.
+ * and stable snapshot readers. A receipt also wakes it when another slot of
+ * the same climb becomes current; roster and stats changes never wake it.
  */
-export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
+export function useDriveCrewPutUp(drivePhase: DriveModePhase | null, driveStartedAt: number | null): void {
   const { t } = useTranslation('session');
   const activeClimbUuid = useActiveClimbUuid();
-  const { getQueueSnapshot } = useQueueActions();
-  // The crewmate's move, by the queue item it makes current, until it lands.
-  const pendingRef = useRef<string | null>(null);
+  const { getQueueSnapshot, getSessionRosterSnapshot } = useQueueActions();
+  const [receiptRevision, noteReceipt] = useReducer((revision: number) => revision + 1, 0);
+  const pendingRef = useRef<
+    (CrewMove & { sessionId: string | null; driveStartedAt: number; credentialGeneration: number }) | null
+  >(null);
 
   useEffect(
     () =>
-      subscribeCrewMoves((queueItemUuid) => {
-        if (getDriveMode()?.phase === 'live') pendingRef.current = queueItemUuid;
+      subscribeCrewMoves((move) => {
+        const drive = getDriveMode();
+        if (drive?.phase !== 'live') return;
+        pendingRef.current = {
+          ...move,
+          sessionId: getSessionRosterSnapshot().sessionId,
+          driveStartedAt: drive.startedAt,
+          credentialGeneration: getCredentialGeneration(),
+        };
+        // The queue dispatch follows this listener in the same React batch.
+        // The effect reads the provider's updated stateRef after that commit.
+        noteReceipt();
+      }),
+    [getSessionRosterSnapshot],
+  );
+
+  useEffect(() => {
+    // A drive can become live in the very batch that receives a crew move.
+    // Keep that move when it already belongs to the new generation.
+    const pending = pendingRef.current;
+    if (
+      drivePhase !== 'live' ||
+      pending?.driveStartedAt !== driveStartedAt ||
+      pending?.sessionId !== getDriveMode()?.sessionId
+    )
+      pendingRef.current = null;
+    clearCrewPutUp();
+  }, [drivePhase, driveStartedAt]);
+
+  useEffect(
+    () =>
+      subscribeToCredentialChanges(() => {
+        pendingRef.current = null;
+        clearCrewPutUp();
       }),
     [],
   );
 
-  const live = drivePhase === 'live';
-  useEffect(() => {
-    if (live) return;
-    pendingRef.current = null;
-    clearCrewPutUp();
-  }, [live]);
+  useEffect(
+    () => () => {
+      pendingRef.current = null;
+      clearCrewPutUp();
+    },
+    [],
+  );
 
   useEffect(() => {
     const pending = pendingRef.current;
     if (pending === null) return;
     // Settled either way: it landed, or another change of climb overtook it.
     pendingRef.current = null;
-    const current = getQueueSnapshot().currentClimbQueueItem;
-    if (current?.uuid !== pending || getDriveMode()?.phase !== 'live') return;
-    const notice = resolveCrewPutUp(current);
+    const queue = getQueueSnapshot();
+    const roster = getSessionRosterSnapshot();
+    const current = queue.currentClimbQueueItem;
+    const drive = getDriveMode();
+    if (
+      current?.uuid !== pending.queueItemUuid ||
+      drive?.phase !== 'live' ||
+      drive.startedAt !== pending.driveStartedAt ||
+      drive.sessionId !== pending.sessionId ||
+      roster.sessionId !== pending.sessionId ||
+      queue.sessionId !== pending.sessionId ||
+      pending.credentialGeneration !== getCredentialGeneration()
+    )
+      return;
+    const notice = resolveCrewPutUp(
+      current,
+      resolveCurrentClimbMoverName({ ...roster, currentChangedBy: pending.currentChangedBy }),
+    );
     if (!notice) return;
     showCrewPutUp(notice);
     hapticLight();
     announceQueued(formatCrewPutUp(notice, t));
-  }, [activeClimbUuid, getQueueSnapshot, t]);
+  }, [activeClimbUuid, getQueueSnapshot, getSessionRosterSnapshot, receiptRevision, t]);
 }
 
 /**

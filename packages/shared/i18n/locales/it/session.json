@@ -954,6 +954,7 @@
       "lightEveryClimb": "Illumina ogni blocco",
       "releaseToDrive": "Rilascia per illuminare ogni blocco",
       "crewPutUp": "La tua crew ha illuminato {{climb}}",
+      "crewPutUpNamed": "{{person}} ha illuminato {{climb}}",
       "holderHasBoard": "{{name}} ha il pannello",
       "crewHasBoard": "La tua crew ha il pannello",
       "boardOptions": "Opzioni del pannello",

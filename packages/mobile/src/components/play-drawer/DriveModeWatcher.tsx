@@ -45,7 +45,7 @@ export function DriveModeWatcher(): null {
   const { boardId } = useBoardPresenceControls();
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
-  useDriveCrewPutUp(drive?.phase ?? null);
+  useDriveCrewPutUp(drive?.phase ?? null, drive?.startedAt ?? null);
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
