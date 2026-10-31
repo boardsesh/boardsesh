@@ -207,9 +207,9 @@ and validation. The cached native app is reusable; its JS is regenerated with
 `EXPO_PUBLIC_SCREENSHOT_LOCALE` for each capture. There is no English footage
 fallback. It:
 
-1. creates (once) and boots two dedicated simulators, "Boardsesh Showcase" and,
-   for the crew take, "Boardsesh Showcase 2" (iPhone 16 Pro Max, status bar at
-   9:41, app in UTC), resets their keychains and installs the dev-client;
+1. creates and boots the primary dedicated simulator, "Boardsesh Showcase"
+   (iPhone 16 Pro Max, status bar at 9:41, app in UTC), resets its keychain
+   and installs the dev-client;
 2. starts Metro with the screenshot-mode env (`EXPO_PUBLIC_SCREENSHOT_MODE=1`,
    `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1`, the walls in `EXPO_PUBLIC_SCREENSHOT_BOARDS`,
    the account) and waits for the app to reach home. Each phone reports home
@@ -217,7 +217,9 @@ fallback. It:
    of analytics consent. A fresh counter increase after each native launch (or a fresh
    legacy Metro home marker) confirms readiness; earlier pings and the other phone
    cannot unblock it. Android reverses this ephemeral port onto the host. The second
-   phone gets its own Metro and a copy of the `.app` whose launcher URL points at it;
+   phone gets its own Metro and a copy of the `.app` whose launcher URL points at it.
+   Each Metro uses one worker, avoiding two transform-worker pools. Its bundle
+   warms before the simulator boots;
 3. per take: relaunches the app (so the one-shot deep-link params fire again),
    opens the take's deep links, starts `simctl io recordVideo`, runs the take's
    Maestro flow while collecting `[showcase-anchor]` lines from Metro's output,
@@ -479,8 +481,10 @@ so this needs a live backend.
 1. Primary: switches "Show this session live" off (the recorder refuses to go
    on unless the app logged that), starts the session, opens the invite sheet
    and taps Copy link (`session-private.yaml`, `crew-start.yaml`).
-2. The recorder reads the link with `xcrun simctl pbpaste`, and sends the second
-   phone to `com.boardsesh.app://join/<id>`, where `crew-join.yaml` taps Join.
+2. The recorder reads the link with `xcrun simctl pbpaste`, then prepares the
+   second phone's Metro and simulator. Privacy and Start therefore run with
+   only the primary phone loaded. It sends the second phone to
+   `com.boardsesh.app://join/<id>`, where `crew-join.yaml` taps Join.
 3. The second phone starts `crew-secondary.yaml`, which polls the recorder's
    signal server. Recording starts on the primary's QR.
 4. `crew.yaml` closes the sheet, opens the queue, raises the `crew-add` signal;
@@ -492,7 +496,15 @@ so this needs a live backend.
 5. `session-end.yaml` closes any overlay and ends the session with the live
    primary app, preserving the creator’s queue context. It also runs on a failure
    or Ctrl-C. A setup failure cleans up before the next take; unconfirmed cleanup
-   prevents further cold launches.
+   prevents further cold launches. The secondary simulator and Metro shut down
+   between takes and retries so the next primary Start runs alone again.
+
+`session-private.yaml` waits for the localized visibility switch and taps its
+accessibility label, including SwiftUI's subtitle, rather than a screen point.
+The recorder still requires the app's visibility-off event before Start. A
+missing event reports an unconfirmed tap; it does not claim what the screen's
+switch shows. CI memory measurements and a complete crew take remain the check
+that these reductions fit the runner.
 
 Why a signal server: two Maestro processes each take 4-7 s to attach, so a
 timed wait cannot line them up. The flows `GET` the recorder's local server

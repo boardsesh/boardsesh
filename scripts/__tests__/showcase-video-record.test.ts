@@ -29,6 +29,9 @@ import {
   checkTake,
   countHomeReady,
   showcaseIosLaunchArgs,
+  showcaseMetroArgs,
+  createDeferredCrewPhone,
+  showcaseSessionVisibilityPattern,
   waitForShowcaseHome,
   collapseCaptureNotificationShade,
   crewQueueFallbackPoint,
@@ -74,6 +77,88 @@ import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 
 const anchorLine = (name: string, x: number): string =>
   ` LOG  [showcase-anchor] {"name":"${name}","x":${x},"y":118,"width":132,"height":32}`;
+
+describe('crew capture memory lifecycle', () => {
+  it('limits each account Metro to one worker', () => {
+    expect(showcaseMetroArgs(8082)).toEqual(['exec', 'expo', 'start', '--port', '8082', '--max-workers', '1']);
+  });
+
+  it('keeps the second phone unloaded until requested and releases it before a retry', async () => {
+    const firstPhone = { udid: 'first-secondary' };
+    const nextPhone = { udid: 'retry-secondary' };
+    const prepare = vi.fn().mockResolvedValueOnce(firstPhone).mockResolvedValueOnce(nextPhone);
+    const release = vi.fn().mockResolvedValue(undefined);
+    const lifecycle = createDeferredCrewPhone(prepare, release);
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(await lifecycle.get()).toBe(firstPhone);
+    expect(await lifecycle.get()).toBe(firstPhone);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    await lifecycle.reset();
+    expect(release).toHaveBeenCalledExactlyOnceWith(firstPhone);
+    expect(await lifecycle.get()).toBe(nextPhone);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    await lifecycle.reset();
+    expect(release).toHaveBeenLastCalledWith(nextPhone);
+    await lifecycle.reset();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed phone preparation without keeping a rejected result', async () => {
+    const phone = { udid: 'secondary' };
+    const prepare = vi.fn().mockRejectedValueOnce(new Error('bundle failed')).mockResolvedValueOnce(phone);
+    const release = vi.fn().mockResolvedValue(undefined);
+    const lifecycle = createDeferredCrewPhone(prepare, release);
+
+    await expect(lifecycle.get()).rejects.toThrow('bundle failed');
+    await lifecycle.reset();
+    expect(release).not.toHaveBeenCalled();
+    expect(await lifecycle.get()).toBe(phone);
+  });
+
+  it('requests the second phone only after confirming a copied invite', () => {
+    const source = readFileSync('scripts/showcase-video-record.ts', 'utf8');
+    const crewSetup = source.slice(
+      source.indexOf('async function prepareCrew('),
+      source.indexOf('async function signIn('),
+    );
+    const copiedInvite = crewSetup.indexOf('sessionId = parseSessionIdFromInviteUrl(invite)');
+    const confirmedInvite = crewSetup.indexOf('if (!context.session.open || !sessionId)');
+    const secondPhone = crewSetup.indexOf('await context.secondary.get()');
+    expect(copiedInvite).toBeGreaterThan(-1);
+    expect(confirmedInvite).toBeGreaterThan(copiedInvite);
+    expect(secondPhone).toBeGreaterThan(confirmedInvite);
+  });
+});
+
+describe('private-session native switch targeting', () => {
+  it.each(SHOWCASE_LOCALES)('matches the %s native label without depending on its screen position', (locale) => {
+    const catalog = JSON.parse(
+      readFileSync(new URL(`../../packages/shared/i18n/locales/${locale}/session.json`, import.meta.url), 'utf8'),
+    ) as { mobile: { sessionVisibility: { title: string; descriptionOn: string; descriptionOff: string } } };
+    const visibility = catalog.mobile.sessionVisibility;
+    const pattern = new RegExp(showcaseSessionVisibilityPattern(visibility.title));
+    expect(pattern.test(visibility.title)).toBe(true);
+    expect(pattern.test(`${visibility.title}, ${visibility.descriptionOn}`)).toBe(true);
+    expect(pattern.test(`${visibility.title}, ${visibility.descriptionOff}`)).toBe(true);
+    expect(pattern.test(`${visibility.title} unrelated`)).toBe(false);
+  });
+
+  it('escapes native label punctuation', () => {
+    const pattern = new RegExp(showcaseSessionVisibilityPattern('Live (crew) [now]?'));
+    expect(pattern.test('Live (crew) [now]?, By invitation')).toBe(true);
+    expect(pattern.test('Live crew now')).toBe(false);
+  });
+
+  it.each(['session-private.yaml', 'android/session-private.yaml'])('waits for and taps the label in %s', (flow) => {
+    const steps = parseAllDocuments(readFileSync(showcaseFlowPath(flow), 'utf8'))[1].toJS() as unknown[];
+    expect(steps).toEqual([
+      { extendedWaitUntil: { visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', timeout: 15000 } },
+      { tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}' },
+      'waitForAnimationToEnd',
+    ]);
+  });
+});
 
 describe('iOS recorder startup', () => {
   it.each([8081, 8090, 8082])('selects one native startup URL on the phone port %i', (port) => {
