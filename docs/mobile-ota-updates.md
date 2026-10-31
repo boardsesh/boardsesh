@@ -267,6 +267,13 @@ noncopyable success value and keep the runtime-teardown patch alongside this fix
 The installed-source guard rejects the crashing pattern. Upstream reference:
 [`AsyncFunctionDefinition.swift`](https://github.com/expo/expo/blob/sdk-58/packages/expo-modules-core/ios/Core/Functions/AsyncFunctionDefinition.swift).
 
+The iOS PR workflow creates a simulator owned by that CI run and attempt, using
+the selected available model and compatible runtime. It passes the new UUID to
+both the Release launch smoke and Swift tests. It preserves existing simulators
+instead of reusing the runner image's saved device state: that state reported
+`Data Migration Failed` even when `bootstatus` returned exit code zero. A passing
+launch, original-PID survival window and crash check are still required.
+
 Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
 manifest required by iOS 27; generated native projects must be regenerated after
 this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
