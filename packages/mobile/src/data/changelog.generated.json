@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-31T09:34:17.223Z",
+  "generatedAt": "2026-10-31T15:20:33.457Z",
   "entries": [
+    {
+      "prNumber": 7179,
+      "category": "fixed",
+      "title": "Busy-wall questions name whoever put the climb up, even when someone else queued it.",
+      "mergedAt": "2026-10-31T15:16:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7179"
+    },
     {
       "prNumber": 7172,
       "category": "fixed",
