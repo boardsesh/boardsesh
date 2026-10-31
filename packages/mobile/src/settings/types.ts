@@ -2,6 +2,7 @@ import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { SectionLayoutRecord } from '../lib/section-layout';
 import type { PlayerButtonsPosition } from '../lib/player-buttons';
+import type { SupportCardRecord } from '../lib/support-asks';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
@@ -279,6 +280,19 @@ export type AppSettings = {
    * `lib/playlists/playlist-sort-memory.ts`; never `useSetting` this key.
    */
   playlistSortsV1: { entries: StoredListSort[] } | null;
+  /**
+   * "Show support asks" in Settings › General. Off hides the Support Boardsesh
+   * row in Account and the monthly card on Home. Only offered where those can
+   * show at all (`useDonationLinksAllowed`). Per device; survives sign-out.
+   */
+  supportAsksShown: boolean;
+  /**
+   * The calendar month (`YYYY-MM`) the Home support card was last closed or
+   * tapped in; it stays hidden for the rest of that month. `null` until the
+   * first close. Read with `getSetting` on Home's mount and written only by
+   * `useSupportCard` (`lib/support-asks.ts`); never `useSetting` this key.
+   */
+  supportCardV1: SupportCardRecord | null;
 };
 
 export type SettingsKey = keyof AppSettings;

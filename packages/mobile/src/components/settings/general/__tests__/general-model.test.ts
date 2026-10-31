@@ -38,6 +38,7 @@ function makeInput(overrides: Partial<GeneralModelInput> = {}): GeneralModelInpu
     offline: makeOffline(),
     onReplayWalkthrough: vi.fn(),
     onReplayBoardLook: vi.fn(),
+    supportAsks: null,
     ...overrides,
   };
 }
@@ -64,6 +65,36 @@ function findRow(input: GeneralModelInput, key: string): MoreRow {
 }
 
 describe('buildGeneralModel', () => {
+  it('offers no Show support asks switch where the app never asks', () => {
+    const keys = buildGeneralModel(makeInput()).sections.map((section) => section.key);
+    expect(keys).not.toContain('supportAsks');
+  });
+
+  it('puts Show support asks after Offline, explained in its footer, where the app can ask', () => {
+    const onShownChange = vi.fn();
+    const model = buildGeneralModel(makeInput({ supportAsks: { shown: true, onShownChange } }));
+
+    expect(model.sections.map((section) => section.key)).toEqual([
+      'appearance',
+      'language',
+      'languageContribute',
+      'offline',
+      'storage',
+      'supportAsks',
+      'replay',
+      'replayBoardLook',
+    ]);
+    const section = model.sections.find((candidate) => candidate.key === 'supportAsks');
+    expect(section?.footer).toBe('mobile.supportAsks.settingFooter');
+
+    const row = findRow(makeInput({ supportAsks: { shown: true, onShownChange } }), 'supportAsksShown');
+    if (row.kind !== 'toggle') throw new Error('expected a toggle');
+    expect(row.label).toBe('mobile.supportAsks.settingTitle');
+    expect(row.value).toBe(true);
+    row.onValueChange(false);
+    expect(onShownChange).toHaveBeenCalledWith(false);
+  });
+
   it('runs appearance, language, help translate, offline, then the walkthroughs', () => {
     expect(buildGeneralModel(makeInput()).sections.map((section) => section.key)).toEqual([
       'appearance',

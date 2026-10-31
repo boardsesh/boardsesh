@@ -175,7 +175,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Donation links',
     policyControlled: true,
     description:
-      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. The app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android, Expo web and screenshot mode always get the unlinked text whatever this flag says. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On a phone the app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android and screenshot mode always get the unlinked text whatever this flag says. The Expo browser app ignores this flag and has its own, donation-links-web-kill. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
+  },
+  {
+    key: 'donation-links-web-kill',
+    label: 'Donation links kill switch (browser app)',
+    description:
+      'Emergency kill switch for support asks in the Expo browser app at /app, which no store rule covers and so ignores donation-links-v2. On hides the Support Boardsesh row in Account and turns the Acknowledgements link back into unlinked text, without a deploy. Native builds never read it. Unresolved reads as enabled.',
   },
   {
     key: 'climb-moderation-kill',

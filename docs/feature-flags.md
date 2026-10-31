@@ -447,9 +447,14 @@ since May 2025). Everywhere else the compliant surface is unlinked text that
 merely names the website — the pattern StreetComplete ships and Google
 sanctions. The Acknowledgements screen renders exactly one of those two, and
 `useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
+The same answer gates the Support Boardsesh row in Account and the monthly
+card on Home (days 1 to 7 of each month) (`packages/mobile/src/lib/support-asks.ts`), which also need the
+climber's own "Show support asks" switch in Settings › General to be on. The
+Home card is US iPhones (and admins' phones, for QA) only: it never shows in the Expo browser app, where the
+Account row and the Acknowledgements link are the only asks.
 
-**The code enforces the platform and the region; the flag is only a kill
-switch.**
+**On a phone, the code enforces the platform and the region; the flag is only
+the native kill switch.**
 
 - **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
   App Store storefront of `USA`, read from the device through
@@ -461,8 +466,16 @@ switch.**
   targeting, and Google threatened AnkiDroid with removal over a donation link
   in Aug–Oct 2026. The earlier plan to open AU Android after 30 Sept 2026 is
   withdrawn.
-- **Screenshot mode never shows it**, so App Store captures and the replayed
-  screenshot fixtures stay free of donation asks.
+- **The Expo browser app shows it unless `donation-links-web-kill` is on**,
+  whatever `donation-links-v2` says. At `/app` the app is a web page, not a store
+  binary, so no store rule applies — the same reason boardsesh.com links
+  /support from every page. Turning `donation-links-v2` off is a store-policy
+  call and should not take the link off the web, so the browser app has
+  its own kill switch, an ordinary `-kill` flag: absent or unresolved leaves the
+  Account row and the link on, and turning it on in PostHog takes both off
+  `/app` without a deploy. Native builds never read it.
+- **Screenshot mode never shows it**, on any platform, so App Store captures and
+  the replayed screenshot fixtures stay free of donation asks.
 - **Admin accounts see it on any phone, for QA.** With the flag on, an admin
   (`useIsAdmin`) gets the link on iOS in any storefront and on Android, so the
   maintainer can check it from Australia. App Review never signs in as an admin.
@@ -497,8 +510,8 @@ build"). Mark any future flag the same way if flipping it wrong is a policy
 violation rather than an early look at a feature.
 
 Everything else about the flag is ordinary: a POSITIVE rollout flag read as
-`=== true`, so unresolved, absent and off all land on the unlinked text, which
-is the safe answer in every region. It deliberately does not wait on
+`=== true`, so unresolved, absent and off all land on the unlinked text on
+native, which is the safe answer in every region. It deliberately does not wait on
 `useFeatureFlagsResolved` — the first-frame render is already the compliant one.
 
 ### The board-render flags (issue #2202) — both retired

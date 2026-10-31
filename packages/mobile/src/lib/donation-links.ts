@@ -15,9 +15,9 @@
  * screen renders plain text with no tap target. Being wrong in the other
  * direction costs a store rejection; being wrong this way costs a link.
  *
- * Two independent gates, both required:
+ * On a phone, two independent gates, both required:
  *
- * - The `donation-links-v2` PostHog flag, read as `=== true`. It is the kill
+ * - The `donation-links-v2` PostHog flag, read as `=== true`. It is the native kill
  *   switch, nothing more: the code below enforces the platform and the region.
  *   The `-v2` is load-bearing. Android bundles from before #7057 read the old
  *   `donation-links` key and show the link whenever it is on, so that key must
@@ -36,6 +36,15 @@
  *
  * Screenshot mode always reads "not allowed", so App Store captures and the
  * replayed screenshot fixtures never show a donation ask.
+ *
+ * The Expo browser app (`Platform.OS === 'web'`, served at /app) reads
+ * "allowed" whatever `donation-links-v2` says. It is a web page, not a store
+ * binary, so no store policy applies to it — the same reason boardsesh.com links
+ * /support from every page. Turning `donation-links-v2` off is a store-policy
+ * decision and should not take the link off the web, so the browser app has its
+ * own kill switch, `donation-links-web-kill`: a `-kill` flag, so absent or
+ * unresolved leaves the link on, and turning it on takes the link off /app
+ * without a deploy. Screenshot mode still wins there.
  *
  * The storefront country is read ONCE per app run, by design. Changing the
  * Apple Account region mid-session therefore keeps the cached answer until the
@@ -66,14 +75,22 @@ const US_STOREFRONT_COUNTRY = 'USA';
 export const SUPPORT_URL = 'https://www.boardsesh.com/support';
 
 /** Every in-app place a tappable support link can sit. */
-export type SupportLinkSurface = 'acknowledgements';
+export type SupportLinkSurface = 'acknowledgements' | 'account' | 'home-card';
+
+/**
+ * Which way of giving the climber picked, where a surface offers both (the Home
+ * card). The support page reads it to start on that option; it never changes
+ * what the page lets them do.
+ */
+export type SupportCadence = 'monthly' | 'once';
 
 /**
  * The support page with the tapping surface in `src`, so a visit (and, once the
  * page forwards it, a payment) can be traced back to the screen that sent it.
  */
-export function supportUrlFor(surface: SupportLinkSurface): string {
-  return `${SUPPORT_URL}?src=app-${surface}`;
+export function supportUrlFor(surface: SupportLinkSurface, cadence?: SupportCadence): string {
+  const url = `${SUPPORT_URL}?src=app-${surface}`;
+  return cadence ? `${url}&cadence=${cadence}` : url;
 }
 
 /**
@@ -131,6 +148,7 @@ function readStorefrontCountry(): Promise<string | null> {
  */
 export function useDonationLinksAllowed(): boolean {
   const flagEnabled = useFeatureFlag('donation-links-v2') === true;
+  const webKilled = useFeatureFlag('donation-links-web-kill') === true;
   // Only asked once the flag is on, so a killed flag costs no request.
   const { isAdmin } = useIsAdmin({ enabled: flagEnabled });
   // Seeded from the module-level answer, which is null until the first read
@@ -150,11 +168,15 @@ export function useDonationLinksAllowed(): boolean {
     };
   }, [flagEnabled]);
 
-  if (!flagEnabled || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  // The Expo browser app: no store, so no store rule, and its own kill switch
+  // (see the header).
+  if (Platform.OS === 'web') return !webKilled;
+  if (!flagEnabled) return false;
   // QA: the maintainer's admin account, on a phone, whatever the region.
   if (isAdmin && (Platform.OS === 'ios' || Platform.OS === 'android')) return true;
   if (Platform.OS === 'ios') return storefrontCountry === US_STOREFRONT_COUNTRY;
-  // Android: never, whatever the flag says (see the header). Expo web and
-  // anything else: no way to know the reader's region. Stay on the unlinked copy.
+  // Android: never, whatever the flag says (see the header). Anything else: no
+  // way to know the reader's region. Stay on the unlinked copy.
   return false;
 }

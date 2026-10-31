@@ -51,6 +51,7 @@ import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigat
 import { borderRadius, spacing } from '../../../src/theme/tokens';
 import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
 import { HomeSections } from '../../../src/components/home/HomeSections';
+import { HomeSupportCard } from '../../../src/components/home/HomeSupportCard';
 import { HomeCustomizeButton } from '../../../src/components/home/HomeCustomizeButton';
 import { HomeCustomizeSheet } from '../../../src/components/home/HomeCustomizeSheet';
 import { HomeEmptyState } from '../../../src/components/home/HomeEmptyState';
@@ -486,6 +487,8 @@ export default function HomeTab() {
             />
           </View>
         ) : null}
+        {/* Days 1 to 7 of each month, where store rules allow; usually nothing. */}
+        <HomeSupportCard />
         {/* Browser app on a phone only; renders nothing on native. */}
         <AppStorePrompt surface="home" />
         <HomeSections

@@ -854,6 +854,16 @@
       "yes": "Oui",
       "no": "Non",
       "unknown": "Inconnu"
+    },
+    "supportAsks": {
+      "accountRow": "Soutenir Boardsesh",
+      "cardTitle": "Aider à construire Boardsesh",
+      "cardBody": "Boardsesh est gratuit pour tous les grimpeurs et grimpeuses. Un soutien mensuel paie le temps passé à le construire.",
+      "giveMonthly": "Donner chaque mois",
+      "giveOnce": "Donner une fois",
+      "hideCard": "Masquer cette carte",
+      "settingTitle": "Afficher les demandes de soutien",
+      "settingFooter": "Une ligne « Soutenir Boardsesh » dans Compte, et une carte sur Accueil la première semaine de chaque mois."
     }
   },
   "lightControl": {

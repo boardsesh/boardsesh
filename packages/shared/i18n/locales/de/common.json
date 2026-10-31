@@ -854,6 +854,16 @@
       "yes": "Ja",
       "no": "Nein",
       "unknown": "Unbekannt"
+    },
+    "supportAsks": {
+      "accountRow": "Boardsesh unterstützen",
+      "cardTitle": "Hilf mit, Boardsesh zu bauen",
+      "cardBody": "Boardsesh ist für alle Kletterer*innen kostenlos. Monatliche Unterstützung bezahlt die Zeit, die in Boardsesh steckt.",
+      "giveMonthly": "Monatlich geben",
+      "giveOnce": "Einmal geben",
+      "hideCard": "Diese Karte ausblenden",
+      "settingTitle": "Aufrufe zur Unterstützung zeigen",
+      "settingFooter": "Eine Zeile „Boardsesh unterstützen“ unter Konto und in der ersten Woche jedes Monats eine Karte auf Start."
     }
   },
   "lightControl": {

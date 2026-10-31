@@ -101,6 +101,7 @@ vi.mock('../../../../src/components/Button', () => ({
     createElement('button', { onClick: onPress, 'data-testid': testID }, title),
 }));
 vi.mock('../../../../src/components/AppStorePrompt', () => ({ AppStorePrompt: () => null }));
+vi.mock('../../../../src/components/home/HomeSupportCard', () => ({ HomeSupportCard: () => null }));
 vi.mock('../../../../src/components/you/SessionFeedCard', () => ({ SessionFeedCard: () => null }));
 vi.mock('../../../../src/components/feed/NewClimbFeedCard', () => ({ NewClimbFeedCard: () => null }));
 vi.mock('../../../../src/components/you/CommentSheet', () => ({ CommentSheet: () => null }));

@@ -854,6 +854,16 @@
       "yes": "Yes",
       "no": "No",
       "unknown": "Unknown"
+    },
+    "supportAsks": {
+      "accountRow": "Support Boardsesh",
+      "cardTitle": "Help build Boardsesh",
+      "cardBody": "Boardsesh is free for every climber. Monthly support pays for the time it takes to build it.",
+      "giveMonthly": "Give monthly",
+      "giveOnce": "Give once",
+      "hideCard": "Hide this card",
+      "settingTitle": "Show support asks",
+      "settingFooter": "A Support Boardsesh row in Account, and a card on Home in the first week of each month."
     }
   },
   "lightControl": {
