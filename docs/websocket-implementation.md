@@ -1082,10 +1082,27 @@ continue to apply in shared sessions.
 | `QueueItemAdded`      | Item added to queue     | `sequence`, `stateHash`, `item`, `position`                  |
 | `QueueItemRemoved`    | Item removed from queue | `sequence`, `stateHash`, `uuid`                              |
 | `QueueReordered`      | Item moved in queue     | `sequence`, `stateHash`, `uuid`, `oldIndex`, `newIndex`      |
-| `CurrentClimbChanged` | Active climb changed    | `sequence`, `stateHash`, `item`, `clientId`, `correlationId` |
+| `CurrentClimbChanged` | Active climb changed    | `sequence`, `stateHash`, `item`, `clientId`, `correlationId`, `currentChangedBy` |
 | `ClimbMirrored`       | Mirror state toggled    | `sequence`, `stateHash`, `uuid`, `mirrored`                  |
 
 Every delta event carries the post-event `stateHash`. Clients must store that hash after accepting the matching `sequence`; the periodic hash watchdog compares the local queue hash against this last accepted server hash. Updating the hash only on `FullSync` is incorrect and can create a resync loop after ordinary delta traffic.
+
+**Who changed the current climb (#7135).** `CurrentClimbChanged.currentChangedBy` and
+`FullSync.state.currentChangedBy` name the server-bound `SessionUser.id` of the participant
+whose write changed the current queue-item UUID. `clientId` remains a connection identifier;
+`addedByUser` still identifies who queued the item. Neither is a substitute for the mover.
+Queue-only changes, mirrors and same-item reassertions preserve valid attribution. A move
+from an unknown controller, a cleared current climb, or restored state without trustworthy
+metadata reads as null. Attribution is best-effort session metadata, with no historical backfill.
+
+Redis stores the mover in the queue CAS alongside `currentChangedAt`. A separate
+`currentChangedByVersion` must match the stored version before a write or read trusts the
+actor, so an older replica cannot leave stale attribution behind during a rolling deploy.
+Mobile probes both schema fields per connection, independently of now-slot mode, and only
+then selects them in subscriptions and HTTP snapshots. A field-validation failure retries
+the read without attribution, preserving now-slot support. Clients resolve names through
+the privacy-projected session roster and keep generic copy when identity is unavailable.
+Opening/reconnect snapshots do not announce a new crew move.
 
 ### Sequence Assignment (atomic compare-and-swap)
 

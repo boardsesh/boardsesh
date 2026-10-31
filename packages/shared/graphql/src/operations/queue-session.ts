@@ -451,6 +451,85 @@ export const QUEUE_STATE_FIELDS_PROBE = `
   }
 `;
 
+/** Independent capabilities: attribution also works when Now slot mode is off. */
+export const QUEUE_CAPABILITIES_PROBE = `
+  query QueueCapabilitiesProbe {
+    queueState: __type(name: "QueueState") { fields { name } }
+    currentClimbChanged: __type(name: "CurrentClimbChanged") { fields { name } }
+  }
+`;
+
+export type QueueReadCapabilities = {
+  nowSlot: boolean;
+  attribution: boolean;
+};
+
+/**
+ * Mobile queue reads share one selection set. Callers enable each additive
+ * field only after probing that capability; legacy/native exports stay intact.
+ */
+export function buildQueueUpdatesSubscription({ nowSlot, attribution }: QueueReadCapabilities): string {
+  return `
+    subscription QueueUpdates${nowSlot ? 'NowSlot' : ''}${attribution ? 'Attributed' : ''}($sessionId: ID!) {
+      queueUpdates(sessionId: $sessionId) {
+        __typename
+        ... on FullSync {
+          sequence
+          state {
+            sequence
+            stateHash
+            stateHashOrdered
+            ${nowSlot ? 'historyCount currentChangedAt' : ''}
+            ${attribution ? 'currentChangedBy' : ''}
+            queue { ${QUEUE_ITEM_FIELDS} }
+            currentClimbQueueItem { ${QUEUE_ITEM_FIELDS} }
+          }
+        }
+        ... on QueueItemAdded {
+          sequence stateHash stateHashOrdered
+          addedItem: item { ${QUEUE_ITEM_FIELDS} }
+          position clientId
+        }
+        ... on QueueItemRemoved {
+          sequence stateHash stateHashOrdered uuid clientId
+        }
+        ... on QueueReordered {
+          sequence stateHash stateHashOrdered uuid oldIndex newIndex
+        }
+        ... on CurrentClimbChanged {
+          sequence stateHash stateHashOrdered
+          currentItem: item { ${QUEUE_ITEM_FIELDS} }
+          clientId correlationId
+          ${attribution ? 'currentChangedBy' : ''}
+        }
+        ... on ClimbMirrored {
+          sequence stateHash stateHashOrdered mirroredUuid: uuid mirrored
+        }
+        ... on PlaybackStateChanged {
+          sequence climbUuid frameIndex frameCount isPlaying speed paceMs anchorTimestamp clientId
+        }
+      }
+    }
+  `;
+}
+
+/** The HTTP resync may reach a different replica, so its caller also handles validation fallback. */
+export function buildSessionQueueStateQuery({ nowSlot, attribution }: QueueReadCapabilities): string {
+  return `
+    query GetSessionQueueState${nowSlot ? 'NowSlot' : ''}${attribution ? 'Attributed' : ''}($sessionId: ID!) {
+      session(sessionId: $sessionId) {
+        queueState {
+          sequence stateHash stateHashOrdered
+          ${nowSlot ? 'historyCount currentChangedAt' : ''}
+          ${attribution ? 'currentChangedBy' : ''}
+          queue { ${QUEUE_ITEM_FIELDS} }
+          currentClimbQueueItem { ${QUEUE_ITEM_FIELDS} }
+        }
+      }
+    }
+  `;
+}
+
 export const CREATE_SESSION = `
   mutation CreateSession($input: CreateSessionInput!) {
     createSession(input: $input) {

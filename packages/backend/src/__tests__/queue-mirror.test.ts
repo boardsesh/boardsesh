@@ -71,4 +71,28 @@ describe('confirmed session mirroring', () => {
     expect(mocks.write.mock.calls[1][1]).toHaveLength(2);
     expect(mocks.write.mock.calls[1][3]).toBe(5);
   });
+
+  it('preserves the mover when orphan normalization publishes a FullSync', async () => {
+    const orphan = snapshot();
+    orphan.queue = [];
+    orphan.currentChangedBy = 'sam-participant';
+    mocks.read.mockResolvedValue(orphan);
+    mocks.write.mockResolvedValue({
+      sequence: 5,
+      stateHash: 'after',
+      stateHashOrdered: 'after-v2',
+      currentChangedAt: '2026-10-31T10:00:00.000Z',
+      currentChangedBy: 'sam-participant',
+    });
+
+    await mirrorSessionClimb('session', true, 'slot-1');
+
+    expect(mocks.publish).toHaveBeenCalledWith(
+      'session',
+      expect.objectContaining({
+        __typename: 'FullSync',
+        state: expect.objectContaining({ currentChangedBy: 'sam-participant' }),
+      }),
+    );
+  });
 });

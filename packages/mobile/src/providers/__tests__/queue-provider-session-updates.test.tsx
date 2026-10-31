@@ -181,7 +181,13 @@ vi.mock('expo-crypto', () => ({
 
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
-  execute: graph.execute,
+  // Capability reads must not consume a deferred JOIN or its one-shot failure.
+  execute: (...args: Parameters<typeof import('@boardsesh/graphql-client').execute>) => {
+    if (args[1].query.includes('query QueueCapabilitiesProbe')) {
+      return Promise.resolve({ queueState: { fields: [] }, currentClimbChanged: { fields: [] } });
+    }
+    return graph.execute(...args);
+  },
 }));
 
 // The deps the provider hands the shared mutations hook, so a test can play the

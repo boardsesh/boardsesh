@@ -2,7 +2,7 @@ import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
-import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
+import { computeQueueStateHash, computeQueueStateHashOrdered, queueReducer } from '@boardsesh/queue';
 import type { ClimbQueueItem, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   applySessionRuntimeEvent,
@@ -15,6 +15,7 @@ import {
   type SubscriptionWireEnvelope,
 } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { buildQueueUpdatesSubscription } from '@boardsesh/graphql/operations/queue-session';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { PlaybackStateChangedEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
@@ -40,7 +41,7 @@ import { clearRelayReceipt, noteRelayReceipt } from '../../lib/relay-receipt';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
-import { clampSyncedQueue } from './now-slot-server';
+import { clampSyncedQueue, isAttributionValidationError } from './now-slot-server';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
 // ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
@@ -174,6 +175,7 @@ type UseSessionRealtimeParams = {
    * probe the join ran). Picks the subscription document and the re-seed clamp.
    */
   nowSlotModeRef: React.RefObject<boolean>;
+  attributionServerRef: React.RefObject<boolean>;
   activeBoardRef: React.RefObject<UserBoard | null | undefined>;
   setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<boolean>>;
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
@@ -224,6 +226,7 @@ export function useSessionRealtime({
   seedFailedSessionIdRef,
   reSeedQueueRef,
   nowSlotModeRef,
+  attributionServerRef,
   activeBoardRef,
   setActiveBoardRef,
   showToastRef,
@@ -649,7 +652,11 @@ export function useSessionRealtime({
         {
           // F3: the join above ran the server probe, so the mode is settled for
           // this connection. Now-slot mode selects the line in FullSync.state.
-          query: nowSlotModeRef.current ? QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT : QUEUE_UPDATES_SUBSCRIPTION,
+          query: attributionServerRef.current
+            ? buildQueueUpdatesSubscription({ nowSlot: nowSlotModeRef.current, attribution: true })
+            : nowSlotModeRef.current
+              ? QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT
+              : QUEUE_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
         },
         {
@@ -745,6 +752,10 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
+            const action = {
+              ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
+              serverSequence: gateEvent.sequence ?? undefined,
+            };
             // #7014: stamp a server event that moves the wall, so the BLE
             // auto-sender can time receipt → write. Read before the dispatch:
             // the comparison is against what was current until now. A FullSync
@@ -755,14 +766,24 @@ export function useSessionRealtime({
             // dropped as same-sequence stale), so those still count.
             if (
               event.__typename === 'CurrentClimbChanged' ||
-              (event.__typename === 'FullSync' && queueStreamLiveRef.current)
+              (event.__typename === 'FullSync' &&
+                queueStreamLiveRef.current &&
+                // A catch-up may protect a newer optimistic move. Only notify
+                // about a snapshot current the reducer will actually adopt.
+                queueReducer(stateRef.current, action).currentClimbQueueItem?.uuid ===
+                  event.state.currentClimbQueueItem?.uuid)
             ) {
               noteRelayReceipt({
                 eventType: event.__typename,
                 incomingQueueItemUuid:
-                  event.__typename === 'FullSync' ? event.state.currentClimbQueueItem?.uuid : event.item?.uuid,
+                  event.__typename === 'FullSync'
+                    ? event.state.currentClimbQueueItem?.uuid
+                    : (event.currentItem !== undefined ? event.currentItem : event.item)?.uuid,
                 localQueueItemUuid: stateRef.current.currentClimbQueueItem?.uuid,
                 correlationId: event.__typename === 'CurrentClimbChanged' ? event.correlationId : null,
+                currentChangedBy:
+                  event.__typename === 'FullSync' ? event.state.currentChangedBy : event.currentChangedBy,
+                participantId: participantIdRef.current,
                 // The reducer's own echo test (DELTA_UPDATE_CURRENT_CLIMB): a
                 // correlation id still pending here, or this connection's
                 // server-issued client id. Not the coordinator's id, which never
@@ -774,10 +795,7 @@ export function useSessionRealtime({
                     (!!event.clientId && event.clientId === sessionRuntimeStateRef.current?.clientId)),
               });
             }
-            dispatch({
-              ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
-              serverSequence: gateEvent.sequence ?? undefined,
-            });
+            dispatch(action);
             // A FullSync on a joined connection is applied: from here every
             // change in the session reaches this phone as an event.
             if (event.__typename === 'FullSync' && joinedOnBoundConnection) queueStreamLiveRef.current = true;
@@ -868,6 +886,15 @@ export function useSessionRealtime({
           },
           error: (subscriptionError) => {
             if (!isCurrent()) return;
+            if (
+              currentStartToken === subscriptionStartToken &&
+              attributionServerRef.current &&
+              isAttributionValidationError(subscriptionError)
+            ) {
+              attributionServerRef.current = false;
+              void startJoinedSubscriptions();
+              return;
+            }
             // The server denied our queue subscription because this connection
             // isn't a member of the session (NOT_SESSION_MEMBER). Post-#3695 an
             // authenticated member reconnecting is re-authorized instantly, so
