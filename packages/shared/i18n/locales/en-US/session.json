@@ -954,6 +954,7 @@
       "lightEveryClimb": "Light every climb",
       "releaseToDrive": "Let go to light every climb",
       "crewPutUp": "Your crew put up {{climb}}",
+      "crewPutUpNamed": "{{person}} put up {{climb}}",
       "holderHasBoard": "{{name}} has the board",
       "crewHasBoard": "Your crew has the board",
       "boardOptions": "Board options",

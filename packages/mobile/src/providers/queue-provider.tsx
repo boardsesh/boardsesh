@@ -125,6 +125,7 @@ import {
   QueueSessionIdContext,
   QueueSessionBoardPathContext,
   QueueLiveStatsContext,
+  QueueCurrentClimbMoverContext,
   QueueSharedSessionContext,
   QueueActiveClimbContext,
   QueueHasActiveClimbContext,
@@ -135,6 +136,7 @@ import {
   type QueueSessionControlContextValue,
   type QueueSessionIdContextValue,
   type QueueLiveStatsContextValue,
+  type CurrentClimbMover,
   type QueueSharedSessionContextValue,
   type QueueActiveClimbContextValue,
   type QueueHasActiveClimbContextValue,
@@ -168,6 +170,7 @@ export {
   useQueueSessionControls,
   useQueueSessionId,
   useQueueLiveStats,
+  useCurrentClimbMover,
   useIsSharedSession,
   useIsCrewSession,
   useActiveClimbUuid,
@@ -2274,6 +2277,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const getSessionRosterSnapshot = useCallback<QueueActionsContextValue['getSessionRosterSnapshot']>(
+    () => ({
+      sessionId: sessionIdRef.current,
+      participantId: sessionRuntimeStateRef.current.participantId || null,
+      sessionUsers: sessionRuntimeStateRef.current.users,
+    }),
+    [],
+  );
+
   // Add a batch next to whatever the climber already has going, instead of
   // replacing it. Leaving the current pointer alone is what keeps the BLE
   // auto-sender (it writes state.currentClimbQueueItem) from repainting the wall
@@ -3549,6 +3561,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearQueue,
       setQueue,
       getQueueSnapshot,
+      getSessionRosterSnapshot,
       findReplayFromHereItem,
       appendQueueItems,
       setCurrentClimb,
@@ -3582,6 +3595,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       clearQueue,
       setQueue,
       getQueueSnapshot,
+      getSessionRosterSnapshot,
       findReplayFromHereItem,
       appendQueueItems,
       setCurrentClimb,
@@ -3658,6 +3672,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const liveStatsValue = useMemo<QueueLiveStatsContextValue>(
     () => ({ liveStats, sessionUsers }),
     [liveStats, sessionUsers],
+  );
+
+  // This face belongs to the mover, never the queue author or the phone holding
+  // Bluetooth. Memoize scalar display fields so an unrelated roster/stat push
+  // does not wake the player merely because the roster array was rebuilt.
+  const currentChangedBy = state.currentClimbQueueItem ? (state.currentChangedBy ?? null) : null;
+  const mover =
+    currentChangedBy && participantId && currentChangedBy !== participantId
+      ? sessionUsers.find(({ id }) => id === currentChangedBy)
+      : null;
+  const moverName = mover?.username?.trim() || null;
+  const moverAvatarUrl = mover?.avatarUrl ?? null;
+  const currentClimbMoverValue = useMemo<CurrentClimbMover | null>(
+    () =>
+      currentChangedBy && moverName
+        ? { participantId: currentChangedBy, name: moverName, avatarUrl: moverAvatarUrl }
+        : null,
+    [currentChangedBy, moverName, moverAvatarUrl],
   );
 
   // "Is anyone else here" — the gate that turns swipes and list taps into
@@ -3768,19 +3800,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       <QueueSessionIdContext.Provider value={sessionIdValue}>
         <QueueSessionBoardPathContext.Provider value={sessionId ? sessionRuntimeState.boardPath : ''}>
           <QueueLiveStatsContext.Provider value={liveStatsValue}>
-            <QueueSharedSessionContext.Provider value={sharedSessionValue}>
-              <QueueActionsContext.Provider value={actionsValue}>
-                <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-                  <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                    <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                      <QueueDataContext.Provider value={queueDataValue}>
-                        <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                      </QueueDataContext.Provider>
-                    </QueueHasActiveClimbContext.Provider>
-                  </QueueActiveClimbContext.Provider>
-                </QueuePlaylistSuggestionContext.Provider>
-              </QueueActionsContext.Provider>
-            </QueueSharedSessionContext.Provider>
+            <QueueCurrentClimbMoverContext.Provider value={currentClimbMoverValue}>
+              <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+                <QueueActionsContext.Provider value={actionsValue}>
+                  <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                    <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                      <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                        <QueueDataContext.Provider value={queueDataValue}>
+                          <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                        </QueueDataContext.Provider>
+                      </QueueHasActiveClimbContext.Provider>
+                    </QueueActiveClimbContext.Provider>
+                  </QueuePlaylistSuggestionContext.Provider>
+                </QueueActionsContext.Provider>
+              </QueueSharedSessionContext.Provider>
+            </QueueCurrentClimbMoverContext.Provider>
           </QueueLiveStatsContext.Provider>
         </QueueSessionBoardPathContext.Provider>
       </QueueSessionIdContext.Provider>

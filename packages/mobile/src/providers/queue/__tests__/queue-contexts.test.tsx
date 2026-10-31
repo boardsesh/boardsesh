@@ -2,7 +2,12 @@
 import { renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { QueueSharedSessionContext, useIsCrewSession } from '../queue-contexts';
+import {
+  QueueSharedSessionContext,
+  QueueCurrentClimbMoverContext,
+  useCurrentClimbMover,
+  useIsCrewSession,
+} from '../queue-contexts';
 
 describe('useIsCrewSession', () => {
   it('reads the crew half of the shared-session context', () => {
@@ -18,5 +23,25 @@ describe('useIsCrewSession', () => {
 
   it('throws when called outside a provider', () => {
     expect(() => renderHook(() => useIsCrewSession())).toThrow(/useIsCrewSession must be used within QueueProvider/);
+  });
+});
+
+describe('useCurrentClimbMover', () => {
+  it('distinguishes an unknown mover from a missing QueueProvider', () => {
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueueCurrentClimbMoverContext.Provider, { value: null }, children);
+    const { result } = renderHook(() => useCurrentClimbMover(), { wrapper });
+    expect(result.current).toBeNull();
+    expect(() => renderHook(() => useCurrentClimbMover())).toThrow(
+      /useCurrentClimbMover must be used within QueueProvider/,
+    );
+  });
+
+  it('returns the narrow face supplied by the queue provider', () => {
+    const mover = { participantId: 'participant-sam', name: 'Sam', avatarUrl: null };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueueCurrentClimbMoverContext.Provider, { value: mover }, children);
+    const { result } = renderHook(() => useCurrentClimbMover(), { wrapper });
+    expect(result.current).toBe(mover);
   });
 });

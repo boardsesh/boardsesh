@@ -12,21 +12,29 @@ export const CREW_PUT_UP_NOTICE_MS = 4_000;
 
 export type CrewPutUpNotice = {
   climbName: string;
+  /** Privacy-projected mover name, or null when their identity cannot be resolved. */
+  personName: string | null;
   /** The queue item it made current: the line belongs to that climb. */
   queueItemUuid: string;
 };
 
 /**
- * The line for the climb a crewmate made current. It names nobody: the queue
- * item's `addedByUser` is who added the climb to the queue, not who put it up,
- * and nothing on the event says who moved the wall yet.
+ * The line for the climb a crewmate made current. The caller resolves the
+ * server-stamped mover through the session roster; queue authorship never names
+ * the person who put it up.
  */
-export function resolveCrewPutUp(item: ClimbQueueItem | null): CrewPutUpNotice | null {
+export function resolveCrewPutUp(
+  item: ClimbQueueItem | null,
+  personName: string | null = null,
+): CrewPutUpNotice | null {
   if (!item?.climb) return null;
-  return { climbName: item.climb.name, queueItemUuid: item.uuid };
+  return { climbName: item.climb.name, queueItemUuid: item.uuid, personName: personName?.trim() || null };
 }
 
 export function formatCrewPutUp(notice: CrewPutUpNotice, t: TFunction<'session'>): string {
+  if (notice.personName) {
+    return t('playView.wallControl.crewPutUpNamed', { person: notice.personName, climb: notice.climbName });
+  }
   return t('playView.wallControl.crewPutUp', { climb: notice.climbName });
 }
 

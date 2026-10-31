@@ -443,6 +443,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueState,
+  useCurrentClimbMover: () => null,
   useQueueActions: () => ({
     getQueueSnapshot: () => queueState,
     setCurrentClimb,

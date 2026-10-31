@@ -108,7 +108,7 @@ const session = vi.hoisted(() => ({
   nextItem: null as { uuid: string; climb: unknown } | null,
   // The committed queue head. Null in the preview-only cases (the drawer renders
   // the pinned preview); set where a case needs a live climb to fall back to.
-  currentItem: null as { uuid: string; climb: unknown } | null,
+  currentItem: null as { uuid: string; climb: unknown; addedByUser?: { id: string; username: string } } | null,
   // The real queue, read by `computeNavigationStateWithSuggestions` when
   // `useRealNavigation` is on. Empty by default: most cases here drive
   // navigation through the canned `nextItem` above instead.
@@ -138,6 +138,9 @@ const wall = vi.hoisted(() => ({
   sentAt: null as string | null,
   // The climb a crewmate's Turn off all lights left dark, per the feed (#7015).
   clearedClimbUuid: null as string | null,
+}));
+const currentMover = vi.hoisted(() => ({
+  current: null as { participantId: string; name: string; avatarUrl: string | null } | null,
 }));
 // The BLE link. Null (no transport) unless a case needs to watch what does and
 // doesn't reach the board.
@@ -449,6 +452,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => ({ queue: session.queue, currentClimbQueueItem: session.currentItem }),
+  useCurrentClimbMover: () => currentMover.current,
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
   useIsSharedSession: () => session.isShared,
@@ -647,6 +651,7 @@ function lastDisplayedClimbUuid(): string {
 }
 
 beforeEach(() => {
+  currentMover.current = null;
   openingFrames.clear();
   nextOpeningFrame = 0;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -1564,6 +1569,34 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(lastActionBarProps().busyWall).toMatchObject({ wallClimbName: 'Their Project', ready: false });
     // The whole point: the first tap did NOT take the wall.
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('names Sam who moved Alex’s queued climb through the real player join', () => {
+    const { view, target } = browseThenLoseTheWall();
+    session.currentItem = {
+      uuid: 'peer-slot',
+      climb: { ...CLIMB, uuid: 'wall-climb-b' },
+      addedByUser: { id: 'account-alex', username: 'Alex' },
+    };
+    currentMover.current = { participantId: 'participant-sam', name: 'Sam', avatarUrl: 'sam.png' };
+    view.rerender(drawerElement('member', target));
+    act(() => (lastActionBarProps().onCommit as () => void)());
+    expect(lastActionBarProps().busyWall).toMatchObject({
+      holderName: 'Sam',
+      holderFace: { name: 'Sam', avatarUrl: 'sam.png' },
+    });
+  });
+
+  it('keeps the busy-wall question generic when only queue authorship is known', () => {
+    const { view, target } = browseThenLoseTheWall();
+    session.currentItem = {
+      uuid: 'peer-slot',
+      climb: { ...CLIMB, uuid: 'wall-climb-b' },
+      addedByUser: { id: 'account-alex', username: 'Alex' },
+    };
+    view.rerender(drawerElement('member', target));
+    act(() => (lastActionBarProps().onCommit as () => void)());
+    expect(lastActionBarProps().busyWall).toMatchObject({ holderName: null });
   });
 
   // "Someone just lit X" needs a someone. A solo climber with `lightOnSwipe` off

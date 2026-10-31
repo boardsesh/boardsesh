@@ -2,7 +2,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import type { SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { createPlaylistSuggestionSource, getQueueBoardKey } from '@boardsesh/queue';
 
@@ -12,12 +12,23 @@ import { createPlaylistSuggestionSource, getQueueBoardKey } from '@boardsesh/que
 // unrelated reducer/session dispatch (so a hidden sheet's frozen snapshot and a
 // memoized consumer bail out), and changes on a real queue mutation.
 
-const ws = vi.hoisted(() => ({
-  client: {
-    on: vi.fn(() => vi.fn()),
-    subscribe: vi.fn(() => vi.fn()),
-  },
-}));
+const ws = vi.hoisted(() => {
+  type Sink = { next: (payload: { data?: Record<string, unknown> }) => void };
+  let sessionSink: Sink | null = null;
+  return {
+    getSessionSink: () => sessionSink,
+    reset: () => {
+      sessionSink = null;
+    },
+    client: {
+      on: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((request: { query: string }, sink: Sink) => {
+        if (request.query.includes('sessionUpdates')) sessionSink = sink;
+        return vi.fn();
+      }),
+    },
+  };
+});
 
 const graph = vi.hoisted(() => ({ execute: vi.fn() }));
 const http = vi.hoisted(() => ({ request: vi.fn() }));
@@ -168,7 +179,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
   useReachableBoardKeys: () => new Set<string>(),
 }));
 
-import { QueueProvider, useQueue, useQueueActions, useQueueData } from '../queue-provider';
+import { QueueProvider, useCurrentClimbMover, useQueue, useQueueActions, useQueueData } from '../queue-provider';
 
 type QueueData = ReturnType<typeof useQueueData>;
 
@@ -231,6 +242,7 @@ describe('QueueProvider narrow contexts — useQueueData', () => {
   beforeEach(() => {
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
+    ws.reset();
     capturedMutationDeps.current = null;
     activeBoard.getStoredActiveBoard.mockReset();
     activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
@@ -361,5 +373,158 @@ describe('QueueProvider narrow contexts — useQueueData', () => {
     });
     expect(readSnapshot().playlistSuggestionSource).toBeNull();
     expect(actionOnlyRender).toHaveBeenCalledTimes(beforeRenders);
+  });
+
+  it('keeps roster getters, actions, queue data and mover faces stable during unrelated roster and stats pushes', async () => {
+    const self: SessionUser = {
+      id: 'participant-self',
+      username: 'Self',
+      isLeader: false,
+      userId: 'account-self',
+      connectionState: 'CONNECTED',
+    };
+    const sam: SessionUser = {
+      id: 'participant-sam',
+      username: '  Sam  ',
+      isLeader: false,
+      userId: 'account-sam',
+      avatarUrl: 'sam.png',
+      connectionState: 'CONNECTED',
+    };
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    http.request.mockResolvedValue({ sessionStatus: 'active' });
+    graph.execute.mockImplementation(async (_client: unknown, operation: { query: string }) => {
+      if (operation.query.includes('QueueCapabilitiesProbe')) {
+        return { queueState: { fields: [] }, currentClimbChanged: { fields: [] } };
+      }
+      return {
+        joinSession: {
+          participantId: self.id,
+          clientId: 'connection-self',
+          isLeader: false,
+          users: [self, sam],
+          boardPath: '/kilter/1/10/1,2/40/list',
+        },
+      };
+    });
+    const commits: QueueData[] = [];
+    const handle = { current: null as Handle | null };
+    const actionOnlyRender = vi.fn();
+    const actions = { current: null as ReturnType<typeof useQueueActions> | null };
+    const moverCommits: Array<ReturnType<typeof useCurrentClimbMover>> = [];
+    const moverRender = vi.fn();
+    function ActionOnlyConsumer() {
+      actions.current = useQueueActions();
+      actionOnlyRender();
+      return null;
+    }
+    function MoverConsumer() {
+      const mover = useCurrentClimbMover();
+      moverRender();
+      useEffect(() => {
+        moverCommits.push(mover);
+      }, [mover]);
+      return null;
+    }
+    render(
+      createElement(
+        QueueProvider,
+        null,
+        createElement(Probe, { commits, handle }),
+        createElement(ActionOnlyConsumer),
+        createElement(MoverConsumer),
+      ),
+    );
+    await waitFor(() => expect(ws.getSessionSink()).not.toBeNull());
+    const rosterSnapshot = actions.current!.getSessionRosterSnapshot;
+    await waitFor(() => expect(rosterSnapshot().sessionUsers).toHaveLength(2));
+    expect(rosterSnapshot()).toMatchObject({ sessionId: 'session-1', participantId: self.id });
+    const current = makeQueueItem('current');
+    act(() =>
+      handle.current?.dispatch({
+        type: 'INITIAL_QUEUE_DATA',
+        payload: { queue: [current], currentClimbQueueItem: current, currentChangedBy: sam.id, sessionId: 'session-1' },
+      }),
+    );
+    expect(moverCommits.at(-1)).toEqual({ participantId: sam.id, name: 'Sam', avatarUrl: 'sam.png' });
+    const beforeMover = moverCommits.at(-1);
+    const beforeMoverRenders = moverRender.mock.calls.length;
+    const beforeData = commits.at(-1);
+    const beforeActions = actions.current;
+    const beforeActionRenders = actionOnlyRender.mock.calls.length;
+    const other: SessionUser = {
+      id: 'participant-other',
+      username: 'Other',
+      isLeader: false,
+      userId: 'account-other',
+      connectionState: 'CONNECTED',
+    };
+    act(() => {
+      ws.getSessionSink()?.next({ data: { sessionUpdates: { __typename: 'UserJoined', user: other } } });
+    });
+    expect(rosterSnapshot().sessionUsers).toHaveLength(3);
+    act(() => {
+      ws.getSessionSink()?.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionStatsUpdated',
+            sessionId: 'session-1',
+            totalSends: 7,
+          },
+        },
+      });
+      ws.getSessionSink()?.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionRosterSnapshot',
+            users: [{ ...self }, { ...sam }, { ...other }],
+            boardPath: '/kilter/1/10/1,2/40/list',
+          },
+        },
+      });
+    });
+    expect(actions.current).toBe(beforeActions);
+    expect(actions.current!.getSessionRosterSnapshot).toBe(rosterSnapshot);
+    expect(actionOnlyRender).toHaveBeenCalledTimes(beforeActionRenders);
+    expect(moverCommits.at(-1)).toBe(beforeMover);
+    expect(moverRender).toHaveBeenCalledTimes(beforeMoverRenders);
+    expect(commits.at(-1)).toBe(beforeData);
+    act(() => {
+      ws.getSessionSink()?.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: { ...sam, username: 'Renamed', avatarUrl: 'renamed.png' },
+          },
+        },
+      });
+    });
+    expect(moverCommits.at(-1)).toEqual({ participantId: sam.id, name: 'Renamed', avatarUrl: 'renamed.png' });
+    expect(moverCommits.at(-1)).not.toBe(beforeMover);
+    act(() => {
+      ws.getSessionSink()?.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: { ...sam, username: '   ' },
+          },
+        },
+      });
+    });
+    expect(moverCommits.at(-1)).toBeNull();
+    act(() =>
+      handle.current?.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: current, isServerEvent: true, currentChangedBy: self.id },
+      }),
+    );
+    expect(moverCommits.at(-1)).toBeNull();
+    act(() =>
+      handle.current?.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: current, isServerEvent: true, currentChangedBy: 'unknown' },
+      }),
+    );
+    expect(moverCommits.at(-1)).toBeNull();
   });
 });

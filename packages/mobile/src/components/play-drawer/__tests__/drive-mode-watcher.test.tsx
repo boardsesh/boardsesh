@@ -5,7 +5,11 @@ import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type QueueItemRead = { uuid: string; climb: { uuid: string; name: string } };
+type QueueItemRead = {
+  uuid: string;
+  climb: { uuid: string; name: string };
+  addedByUser?: { id: string; username: string };
+};
 type Reads = {
   currentClimbQueueItem: QueueItemRead | null;
   isConnected: boolean;
@@ -16,6 +20,8 @@ type Reads = {
   isAuthenticated: boolean;
   lightOnSwipe: boolean;
   isCrew?: boolean;
+  participantId?: string | null;
+  sessionUsers?: ReadonlyArray<{ id: string; username: string }>;
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
@@ -38,12 +44,21 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
 }));
 // The queue is read narrowly: the current climb's uuid as the trigger, the
 // snapshot for the item. A stable snapshot reader, like the provider's.
-const getQueueSnapshot = () => ({ queue: [], currentClimbQueueItem: reads.current.currentClimbQueueItem });
+const getQueueSnapshot = () => ({
+  sessionId: reads.current.sessionId,
+  queue: [],
+  currentClimbQueueItem: reads.current.currentClimbQueueItem,
+});
+const getSessionRosterSnapshot = () => ({
+  sessionId: reads.current.sessionId,
+  participantId: reads.current.participantId === undefined ? 'participant-self' : reads.current.participantId,
+  sessionUsers: reads.current.sessionUsers ?? [],
+});
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionControls: () => ({ sessionId: reads.current.sessionId }),
   useIsCrewSession: () => reads.current.isCrew ?? false,
   useActiveClimbUuid: () => reads.current.currentClimbQueueItem?.climb.uuid ?? null,
-  useQueueActions: () => ({ getQueueSnapshot }),
+  useQueueActions: () => ({ getQueueSnapshot, getSessionRosterSnapshot }),
 }));
 const effects = vi.hoisted(() => ({
   hapticLight: vi.fn(),
@@ -54,11 +69,10 @@ const effects = vi.hoisted(() => ({
 vi.mock('../../../lib/haptics', () => ({ hapticLight: effects.hapticLight, hapticSuccess: effects.hapticSuccess }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: effects.announceQueued }));
 vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: Record<string, string>) => (values ? `${key} ${JSON.stringify(values)}` : key),
-  }),
+const translation = vi.hoisted(() => ({
+  translate: (key: string, values?: Record<string, string>) => (values ? `${key} ${JSON.stringify(values)}` : key),
 }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translation.translate }) }));
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: reads.current.boardId }),
 }));
@@ -73,6 +87,7 @@ import { emitWallConfirm } from '@boardsesh/play-view';
 import { DriveModeWatcher } from '../DriveModeWatcher';
 import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
   enterDriveMode,
@@ -99,10 +114,17 @@ const DEFAULT_READS: Reads = {
 function mount() {
   const view = render(createElement(DriveModeWatcher));
   return {
-    change(next: Partial<Reads>) {
+    change(next: Partial<Reads>, beforeChange?: () => void) {
       act(() => {
+        beforeChange?.();
         reads.current = { ...reads.current, ...next };
         view.rerender(createElement(DriveModeWatcher));
+      });
+    },
+    unmount(beforeUnmount?: () => void) {
+      act(() => {
+        beforeUnmount?.();
+        view.unmount();
       });
     },
   };
@@ -229,24 +251,170 @@ function queueItem(uuid: string, name: string): QueueItemRead {
   return { uuid, climb: { uuid: `climb-${uuid}`, name } };
 }
 
-function crewMove(uuid: string) {
+function crewMove(
+  uuid: string,
+  currentChangedBy?: string | null,
+  eventType: 'CurrentClimbChanged' | 'FullSync' = 'CurrentClimbChanged',
+) {
   noteRelayReceipt({
-    eventType: 'CurrentClimbChanged',
+    eventType,
     incomingQueueItemUuid: uuid,
     localQueueItemUuid: reads.current.currentClimbQueueItem?.uuid,
+    currentChangedBy,
+    participantId: getSessionRosterSnapshot().participantId,
   });
 }
 
 // #7113: a crewmate puts a climb up while this phone drives the wall.
 describe('DriveModeWatcher: a crewmate puts a climb up', () => {
+  it.each(['CurrentClimbChanged', 'FullSync'] as const)(
+    'names the %s mover instead of the queue author, once, without replaying roster edits',
+    (eventType) => {
+      reads.current = {
+        ...reads.current,
+        currentClimbQueueItem: queueItem('q-1', 'Mine'),
+        sessionUsers: [{ id: 'participant-sam', username: '  Sam  ' }],
+      };
+      const watcher = mount();
+      driveLive();
+      const queuedByAlice = {
+        ...queueItem('q-2', 'Crimp Ladder'),
+        addedByUser: { id: 'account-alice', username: 'Alice' },
+      };
+      watcher.change({ currentClimbQueueItem: queuedByAlice }, () => crewMove('q-2', 'participant-sam', eventType));
+      expect(getCrewPutUp()).toEqual({ climbName: 'Crimp Ladder', queueItemUuid: 'q-2', personName: 'Sam' });
+      expect(effects.announceQueued).toHaveBeenCalledExactlyOnceWith(
+        'playView.wallControl.crewPutUpNamed {"person":"Sam","climb":"Crimp Ladder"}',
+      );
+      expect(effects.hapticLight).toHaveBeenCalledOnce();
+      watcher.change({ sessionUsers: [{ id: 'participant-sam', username: 'Renamed' }] });
+      expect(getCrewPutUp()?.personName).toBe('Sam');
+      expect(effects.announceQueued).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ['missing actor', null, 'Sam'],
+    ['missing participant', 'participant-unknown', 'Sam'],
+    ['blank projected name', 'participant-sam', '   '],
+  ] as const)('keeps the generic copy for a %s', (_label, actor, username) => {
+    reads.current = { ...reads.current, sessionUsers: [{ id: 'participant-sam', username }] };
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crew climb') }, () => crewMove('q-2', actor));
+    expect(getCrewPutUp()?.personName).toBeNull();
+    expect(effects.announceQueued).toHaveBeenCalledExactlyOnceWith(
+      'playView.wallControl.crewPutUp {"climb":"Crew climb"}',
+    );
+  });
+
+  it('suppresses a self-attributed move even when it has no known correlation or own-UUID history', () => {
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: queueItem('q-self', 'Mine') }, () =>
+      crewMove('q-self', 'participant-self'),
+    );
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('notices another queue slot of the same climb without a climb-UUID or translation change', () => {
+    const previous = queueItem('q-old', 'Repeat');
+    const repeated = { ...previous, uuid: 'q-repeat' };
+    reads.current = {
+      ...reads.current,
+      currentClimbQueueItem: previous,
+      sessionUsers: [{ id: 'participant-sam', username: 'Sam' }],
+    };
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: repeated }, () => crewMove(repeated.uuid, 'participant-sam'));
+    expect(getCrewPutUp()).toEqual({ climbName: 'Repeat', queueItemUuid: 'q-repeat', personName: 'Sam' });
+    expect(effects.announceQueued).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an accepted crew move batched with the drive becoming live', () => {
+    reads.current = { ...reads.current, sessionUsers: [{ id: 'participant-sam', username: 'Sam' }] };
+    const watcher = mount();
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
+    watcher.change({ currentClimbQueueItem: queueItem('q-batched', 'Batched') }, () => {
+      markDriveLive();
+      crewMove('q-batched', 'participant-sam');
+    });
+    expect(getCrewPutUp()?.personName).toBe('Sam');
+    expect(effects.announceQueued).toHaveBeenCalledOnce();
+  });
+
+  it('drops a pending move when its session changes before the queue commit', () => {
+    const watcher = mount();
+    driveLive();
+    watcher.change({ sessionId: 'session-other', currentClimbQueueItem: queueItem('q-other', 'Other session') }, () =>
+      crewMove('q-other', 'participant-sam'),
+    );
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('drops pending and displayed names across a live-to-live drive generation change', () => {
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: queueItem('q-first', 'First') }, () => crewMove('q-first'));
+    expect(getCrewPutUp()).not.toBeNull();
+    const startedAt = getDriveMode()!.startedAt;
+    watcher.change({ currentClimbQueueItem: queueItem('q-stale', 'Stale') }, () => {
+      crewMove('q-stale', 'participant-sam');
+      exitDriveMode('link_dropped');
+      enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: startedAt + 1 });
+      markDriveLive();
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears copied names and pending moves immediately on a credential boundary', () => {
+    reads.current = { ...reads.current, sessionUsers: [{ id: 'participant-sam', username: 'Sam' }] };
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: queueItem('q-first', 'First') }, () =>
+      crewMove('q-first', 'participant-sam'),
+    );
+    expect(getCrewPutUp()?.personName).toBe('Sam');
+    act(() => invalidateCredentialSnapshots());
+    expect(getCrewPutUp()).toBeNull();
+    watcher.change({ currentClimbQueueItem: queueItem('q-pending', 'Pending') }, () => {
+      crewMove('q-pending', 'participant-sam');
+      invalidateCredentialSnapshots();
+    });
+    expect(getCrewPutUp()).toBeNull();
+    watcher.change({ currentClimbQueueItem: queueItem('q-again', 'Later') });
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears displayed and pending names on unmount without replaying them after remount', () => {
+    reads.current = { ...reads.current, sessionUsers: [{ id: 'participant-sam', username: 'Sam' }] };
+    const watcher = mount();
+    driveLive();
+    watcher.change({ currentClimbQueueItem: queueItem('q-first', 'First') }, () =>
+      crewMove('q-first', 'participant-sam'),
+    );
+    expect(getCrewPutUp()?.personName).toBe('Sam');
+    watcher.unmount(() => crewMove('q-pending', 'participant-sam'));
+    expect(getCrewPutUp()).toBeNull();
+    const remounted = mount();
+    remounted.change({ currentClimbQueueItem: queueItem('q-pending', 'Pending') });
+    expect(getCrewPutUp()).toBeNull();
+    expect(effects.announceQueued).toHaveBeenCalledTimes(1);
+  });
+
   it('says so for 4 s, naming nobody, with a light buzz and one announcement, and keeps driving', () => {
     vi.useFakeTimers();
     reads.current = { ...reads.current, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     const watcher = mount();
     driveLive();
-    crewMove('q-2');
-    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
-    expect(getCrewPutUp()).toEqual({ climbName: 'Crimp Ladder', queueItemUuid: 'q-2' });
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') }, () => crewMove('q-2'));
+    expect(getCrewPutUp()).toEqual({ climbName: 'Crimp Ladder', queueItemUuid: 'q-2', personName: null });
     expect(effects.hapticLight).toHaveBeenCalledOnce();
     expect(effects.announceQueued).toHaveBeenCalledOnce();
     expect(effects.announceQueued).toHaveBeenCalledWith('playView.wallControl.crewPutUp {"climb":"Crimp Ladder"}');
@@ -265,9 +433,10 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
     const watcher = mount();
     driveLive();
     // One batch: the crewmate's move to X, then the driver's swipe to Z.
-    crewMove('q-x');
-    noteOwnMove('q-z');
-    watcher.change({ currentClimbQueueItem: queueItem('q-z', 'Swiped') });
+    watcher.change({ currentClimbQueueItem: queueItem('q-z', 'Swiped') }, () => {
+      crewMove('q-x');
+      noteOwnMove('q-z');
+    });
     expect(getCrewPutUp()).toBeNull();
     // Prev back to X: the driver's own step, not the crewmate's.
     noteOwnMove('q-x');
@@ -280,15 +449,13 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
     const watcher = mount();
     driveLive();
     noteOwnMove('q-own');
-    crewMove('q-own');
-    watcher.change({ currentClimbQueueItem: queueItem('q-own', 'Own') });
+    watcher.change({ currentClimbQueueItem: queueItem('q-own', 'Own') }, () => crewMove('q-own'));
     expect(getCrewPutUp()).toBeNull();
 
     act(() => {
       stopDrivingForLink();
     });
-    crewMove('q-4');
-    watcher.change({ currentClimbQueueItem: queueItem('q-4', 'Other') });
+    watcher.change({ currentClimbQueueItem: queueItem('q-4', 'Other') }, () => crewMove('q-4'));
     expect(getCrewPutUp()).toBeNull();
     expect(effects.hapticLight).not.toHaveBeenCalled();
   });
@@ -296,8 +463,7 @@ describe('DriveModeWatcher: a crewmate puts a climb up', () => {
   it('drops the line when the drive ends', () => {
     const watcher = mount();
     driveLive();
-    crewMove('q-5');
-    watcher.change({ currentClimbQueueItem: queueItem('q-5', 'Slab') });
+    watcher.change({ currentClimbQueueItem: queueItem('q-5', 'Slab') }, () => crewMove('q-5'));
     expect(getCrewPutUp()).not.toBeNull();
     watcher.change({ isConnected: false });
     expect(getCrewPutUp()).toBeNull();

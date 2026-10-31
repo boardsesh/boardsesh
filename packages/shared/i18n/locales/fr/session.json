@@ -954,6 +954,7 @@
       "lightEveryClimb": "Allumer chaque bloc",
       "releaseToDrive": "Relâche pour allumer chaque bloc",
       "crewPutUp": "Ton crew a allumé {{climb}}",
+      "crewPutUpNamed": "{{person}} a allumé {{climb}}",
       "holderHasBoard": "{{name}} a la board",
       "crewHasBoard": "Ton crew a la board",
       "boardOptions": "Options de la board",

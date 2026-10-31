@@ -1,6 +1,6 @@
 // The busy-wall question's rule (#7017): who it names and how the pair fits the row.
 import { describe, expect, it } from 'vitest';
-import type { QueueItemUser } from '@boardsesh/queue';
+import type { WallControlFace } from '../wall-control';
 import {
   BUSY_WALL_ROW_ORDER,
   BUSY_WALL_STACK_ORDER,
@@ -12,7 +12,7 @@ import { formatBusyWallCaption, formatBusyWallQuestion } from '../busy-wall-ques
 import type { TFunction } from 'i18next';
 
 const WALL_CLIMB = 'climb-on-the-wall';
-const SAM: QueueItemUser = { id: 'user-sam', username: 'Sam', avatarUrl: 'sam.png' };
+const SAM: WallControlFace = { name: 'Sam', avatarUrl: 'sam.png' };
 
 // Renders the interpolations (person, then the climb) so the words can be asserted.
 const t = ((key: string, params?: Record<string, string>) =>
@@ -21,24 +21,23 @@ const t = ((key: string, params?: Record<string, string>) =>
 describe('resolveBusyWallHolder', () => {
   const holder = (overrides: Partial<Parameters<typeof resolveBusyWallHolder>[0]> = {}) =>
     resolveBusyWallHolder({
-      picker: SAM,
-      viewerUserId: 'me',
+      mover: SAM,
       wallClimbUuid: WALL_CLIMB,
       currentClimbUuid: WALL_CLIMB,
       ...overrides,
     });
 
-  it('names whoever picked the crew’s current climb, face and all, when it is the lit one', () => {
+  it('names the resolved mover, face and all, when their current climb is the lit one', () => {
     expect(holder()).toEqual({ name: 'Sam', avatarUrl: 'sam.png' });
   });
 
   // Each of these would name the wrong person, or the climber themself.
   it.each([
-    ['the viewer put it up', { picker: { id: 'me', username: 'Me' } }],
     ['the crew’s current climb is not the lit one', { currentClimbUuid: 'climb-elsewhere' }],
-    ['nobody is recorded as having put it up', { picker: null }],
+    ['nobody is recorded as having put it up', { mover: null }],
+    ['the projected name is blank', { mover: { name: ' ', avatarUrl: null } }],
+    ['the projected name is unavailable', { mover: { name: null, avatarUrl: null } }],
     ['there is no current climb', { currentClimbUuid: null }],
-    ['the viewer is not known yet (signed out, profile loading)', { viewerUserId: null }],
     ['the lit climb is unknown', { wallClimbUuid: null }],
   ] as const)('names nobody when %s', (_case, overrides) => {
     expect(holder(overrides)).toBeNull();

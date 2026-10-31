@@ -199,7 +199,7 @@ describe('relay receipt (#7014)', () => {
       incomingQueueItemUuid: 'queue-sam',
       localQueueItemUuid: 'queue-a',
     });
-    expect(heard).toHaveBeenCalledWith('queue-sam');
+    expect(heard).toHaveBeenCalledWith({ queueItemUuid: 'queue-sam', currentChangedBy: null });
     unsubscribe();
     noteRelayReceipt({
       eventType: 'CurrentClimbChanged',
@@ -208,4 +208,44 @@ describe('relay receipt (#7014)', () => {
     });
     expect(heard).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['FullSync', 'CurrentClimbChanged'] as const)(
+    'delivers the %s participant without confusing recent own moves or proven echoes',
+    (eventType) => {
+      const heard = vi.fn();
+      const unsubscribe = subscribeCrewMoves(heard);
+      try {
+        noteOwnMove('queue-return');
+        noteRelayReceipt({
+          eventType,
+          incomingQueueItemUuid: 'queue-return',
+          localQueueItemUuid: 'queue-away',
+          currentChangedBy: 'participant-sam',
+          participantId: 'participant-self',
+        });
+        expect(heard).toHaveBeenCalledExactlyOnceWith({
+          queueItemUuid: 'queue-return',
+          currentChangedBy: 'participant-sam',
+        });
+        noteRelayReceipt({
+          eventType,
+          incomingQueueItemUuid: 'queue-own',
+          localQueueItemUuid: 'queue-away',
+          currentChangedBy: 'participant-self',
+          participantId: 'participant-self',
+        });
+        noteRelayReceipt({
+          eventType,
+          incomingQueueItemUuid: 'queue-own-echo',
+          localQueueItemUuid: 'queue-away',
+          ownEcho: true,
+          currentChangedBy: 'participant-sam',
+          participantId: 'participant-self',
+        });
+        expect(heard).toHaveBeenCalledTimes(1);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 });
