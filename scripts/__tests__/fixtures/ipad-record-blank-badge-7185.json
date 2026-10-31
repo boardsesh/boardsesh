@@ -1,0 +1,62 @@
+{
+  "workflowRun": 41219317863,
+  "captureJob": 124591211066,
+  "sourceSha": "4be3816d6becdbda2d62c1c75ece3add887ec70c",
+  "description": "Exact native AX attributes retained from both failed ES13 attempts. Only sidebar Record parent/child and the loaded footer are retained; account content and other UI nodes are omitted.",
+  "attempts": [
+    {
+      "maestroAttempt": "2026-10-31_164052",
+      "recordParent": {
+        "accessibilityText": "Sesión,  ",
+        "bounds": "[16,139][264,183]",
+        "enabled": "true",
+        "focused": "true",
+        "selected": "true",
+        "checked": "false"
+      },
+      "recordChild": {
+        "accessibilityText": "Sesión",
+        "bounds": "[70,151][122,171]",
+        "enabled": "true",
+        "focused": "false",
+        "selected": "false",
+        "checked": "false"
+      },
+      "loadedFooter": {
+        "resource-id": "pre-session-footer",
+        "bounds": "[280,888][1376,948]",
+        "enabled": "true",
+        "focused": "false",
+        "selected": "false",
+        "checked": "false"
+      }
+    },
+    {
+      "maestroAttempt": "2026-10-31_165128",
+      "recordParent": {
+        "accessibilityText": "Sesión,  ",
+        "bounds": "[16,139][264,183]",
+        "enabled": "true",
+        "focused": "true",
+        "selected": "true",
+        "checked": "false"
+      },
+      "recordChild": {
+        "accessibilityText": "Sesión",
+        "bounds": "[70,151][122,171]",
+        "enabled": "true",
+        "focused": "false",
+        "selected": "false",
+        "checked": "false"
+      },
+      "loadedFooter": {
+        "resource-id": "pre-session-footer",
+        "bounds": "[280,888][1376,948]",
+        "enabled": "true",
+        "focused": "false",
+        "selected": "false",
+        "checked": "false"
+      }
+    }
+  ]
+}
