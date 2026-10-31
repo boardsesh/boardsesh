@@ -732,6 +732,10 @@ set in production at all. `/support` reads them from a server component, so the
 unprefixed names resolve from the service environment on every request, and a
 change takes effect without a redeploy of the image.
 
+The backend service reads its own pair, `STRIPE_SECRET_KEY` and
+`STRIPE_WEBHOOK_SECRET`, to link payments to accounts. See
+[Supporters](./supporters.md#environment).
+
 #### The `/support` link contract
 
 Amounts and prices live in Stripe and in the labels typed into these vars.

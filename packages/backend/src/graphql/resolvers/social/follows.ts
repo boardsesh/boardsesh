@@ -7,6 +7,7 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { FollowInputSchema, FollowListInputSchema } from '../../../validation/schemas';
 import { batchEnrichUserProfiles } from './helpers';
 import { canViewUserActivity, getPrivacySettings } from '../../../services/privacy';
+import { resolveProfileSupporterTag } from '../support';
 
 export const socialFollowQueries = {
   /**
@@ -185,8 +186,12 @@ export const socialFollowQueries = {
       getPrivacySettings(userId),
     ]);
 
-    // Batch-fetch counts (single user, but uses same efficient pattern)
-    const enrichments = await batchEnrichUserProfiles([userId], ctx.isAuthenticated ? ctx.userId : undefined);
+    // Batch-fetch counts (single user, but uses same efficient pattern). Only
+    // this resolver fills isSupporter; every other PublicUserProfile leaves it null.
+    const [enrichments, isSupporter] = await Promise.all([
+      batchEnrichUserProfiles([userId], ctx.isAuthenticated ? ctx.userId : undefined),
+      resolveProfileSupporterTag(userId, canViewActivity),
+    ]);
     const enrichment = enrichments.get(userId);
 
     return {
@@ -199,6 +204,7 @@ export const socialFollowQueries = {
       isPrivate: privacy.isPrivate,
       canViewActivity,
       isFollowedByMe: enrichment?.isFollowedByMe ?? false,
+      isSupporter,
     };
   },
 };

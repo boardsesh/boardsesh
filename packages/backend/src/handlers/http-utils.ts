@@ -4,27 +4,38 @@ import { pipeline } from 'node:stream/promises';
 import { logger } from '../utils/logger';
 
 /**
- * Read a request body as a UTF-8 string, rejecting (and destroying the socket)
- * once it exceeds `maxBytes`. Shared by the JWT-authed session handlers so the
- * streaming read + body cap live in one place.
+ * Read a request body as raw bytes, rejecting (and destroying the socket) once
+ * it exceeds `maxBytes`. The Stripe webhook needs the untouched bytes: its
+ * signature covers them exactly, so a decode/re-encode round trip could break
+ * verification.
  */
-export function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<string> {
+export function readRawBody(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalLength = 0;
 
-    req.on('data', (chunk: Buffer) => {
-      totalLength += chunk.length;
+    req.on('data', (chunk: Buffer | string) => {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      totalLength += bytes.length;
       if (totalLength > maxBytes) {
         req.destroy();
         reject(new Error('Request body too large'));
         return;
       }
-      chunks.push(chunk);
+      chunks.push(bytes);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+
+/**
+ * Read a request body as a UTF-8 string with the same cap as `readRawBody`.
+ * Shared by the JWT-authed session handlers so the streaming read + body cap
+ * live in one place.
+ */
+export async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<string> {
+  return (await readRawBody(req, maxBytes)).toString('utf8');
 }
 
 /**

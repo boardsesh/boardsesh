@@ -4270,6 +4270,12 @@ export type Mutation = {
    */
   chooseBoardForSerial: ResolvedBoard;
   /**
+   * Find support paid with this account's verified email in Stripe and link it:
+   * one-off payments add time once per payment, and a live monthly
+   * subscription is linked when none is.
+   */
+  claimSupporterByEmail: MySupporterStatus;
+  /**
    * Clear a gym or board's human-curation freeze (global admin only). This does
    * not run a source sync, reverse ownership, or restore a soft-deleted row; it
    * only permits a later matching source refresh and writes an audit record.
@@ -4346,6 +4352,13 @@ export type Mutation = {
    * anchors were tapped. There are no user-entered wall dimensions. Owner only.
    */
   createSprayWallVersion: SprayWallVersion;
+  /**
+   * Start a support payment from a signed-in account. Returns an opaque claim id
+   * the client passes to the Stripe Payment Link as client_reference_id, so the
+   * payment links back to this account. cadence: monthly or one_time. currency:
+   * aud or usd. src: the page tag (lowercase letters, digits and dashes).
+   */
+  createSupportClaim: Scalars['String']['output'];
   declineFollowRequest: Scalars['Boolean']['output'];
   /**
    * Delete the current user's account.
@@ -4468,6 +4481,8 @@ export type Mutation = {
   grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
+  /** Admin only: record supporter status by hand (source github_sponsors or admin) until creditUntil. */
+  grantSupporter: MySupporterStatus;
   inviteResourceMember: Scalars['Boolean']['output'];
   /**
    * Join an existing session or create it if it doesn't exist.
@@ -4991,6 +5006,8 @@ export type Mutation = {
    * default, because a wall is somebody's home — could never be shown to anybody.
    */
   updateSprayWall: SprayWall;
+  /** Show or hide the signed-in climber on public supporter lists and their profile. */
+  updateSupporterVisibility: MySupporterStatus;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -5151,6 +5168,13 @@ export type MutationCreateSprayWallVersionArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateSupportClaimArgs = {
+  cadence: Scalars['String']['input'];
+  currency: Scalars['String']['input'];
+  src?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationDeclineFollowRequestArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -5298,6 +5322,13 @@ export type MutationGrantGymWriteAccessArgs = {
 /** Root mutation type for all write operations. */
 export type MutationGrantRoleArgs = {
   input: GrantRoleInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationGrantSupporterArgs = {
+  creditUntil: Scalars['String']['input'];
+  source: Scalars['String']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5883,6 +5914,11 @@ export type MutationUpdateSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdateSupporterVisibilityArgs = {
+  showPublicly: Scalars['Boolean']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateTickArgs = {
   input: UpdateTickInput;
   uuid: Scalars['ID']['input'];
@@ -5951,6 +5987,26 @@ export type MyGymsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * The signed-in climber's supporter record. The tag shows on their public
+ * profile only while isSupporter and showPublicly are both true.
+ */
+export type MySupporterStatus = {
+  __typename?: 'MySupporterStatus';
+  /** Whether the linked subscription ends at the close of its current period */
+  cancelAtPeriodEnd: Scalars['Boolean']['output'];
+  /** When one-off or granted time runs out (ISO 8601). Null when there is none. */
+  creditUntil?: Maybe<Scalars['String']['output']>;
+  /** Whether a live monthly subscription is linked to this account */
+  hasSubscription: Scalars['Boolean']['output'];
+  /** A live monthly subscription, or one-off or granted time that has not run out */
+  isSupporter: Scalars['Boolean']['output'];
+  /** Whether the climber chose to be named on public supporter lists and their profile */
+  showPublicly: Scalars['Boolean']['output'];
+  /** How the current status was recorded: stripe, github_sponsors or admin. Null before any support. */
+  source?: Maybe<Scalars['String']['output']>;
 };
 
 export type NewClimbCreatedEvent = {
@@ -6746,6 +6802,14 @@ export type ProviderSyncRequest = {
   status: Scalars['String']['output'];
 };
 
+/** A supporter who chose public credit and is currently a supporter. */
+export type PublicSupporter = {
+  __typename?: 'PublicSupporter';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -6765,6 +6829,12 @@ export type PublicUserProfile = {
   /** Whether the current user follows this user */
   isFollowedByMe: Scalars['Boolean']['output'];
   isPrivate: Scalars['Boolean']['output'];
+  /**
+   * True when this climber is currently a supporter and chose public credit.
+   * False when the viewer cannot see the profile's activity.
+   * Only resolved by publicProfile; null elsewhere.
+   */
+  isSupporter?: Maybe<Scalars['Boolean']['output']>;
 };
 
 export type PublishSprayWallVersionInput = {
@@ -7318,6 +7388,8 @@ export type Query = {
   mySmartPlaylistCounts: Array<SmartPlaylistCount>;
   /** Every wall the caller owns, newest first. Includes walls with no published version. */
   mySprayWalls: Array<SprayWall>;
+  /** The signed-in climber's supporter record. Null when signed out. */
+  mySupporterStatus?: Maybe<MySupporterStatus>;
   /**
    * Find discoverable sessions near a GPS location.
    * Default radius is 1000 meters.
@@ -7391,6 +7463,8 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /** Current supporters who chose public credit, newest first. limit defaults to 100, at most 500. */
+  publicSupporters: Array<PublicSupporter>;
   /**
    * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
@@ -8261,6 +8335,12 @@ export type QueryProposeSprayWallResetArgs = {
 /** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryPublicSupportersArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -12878,6 +12958,7 @@ export type ResolversTypes = ResolversObject<{
   MyBoardsInput: MyBoardsInput;
   MyGymClaim: ResolverTypeWrapper<MyGymClaim>;
   MyGymsInput: MyGymsInput;
+  MySupporterStatus: ResolverTypeWrapper<MySupporterStatus>;
   NewClimbCreatedEvent: ResolverTypeWrapper<NewClimbCreatedEvent>;
   NewClimbFeedInput: NewClimbFeedInput;
   NewClimbFeedItem: ResolverTypeWrapper<NewClimbFeedItem>;
@@ -12935,6 +13016,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ResolverTypeWrapper<ProviderSyncRequest>;
+  PublicSupporter: ResolverTypeWrapper<PublicSupporter>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -13429,6 +13511,7 @@ export type ResolversParentTypes = ResolversObject<{
   MyBoardsInput: MyBoardsInput;
   MyGymClaim: MyGymClaim;
   MyGymsInput: MyGymsInput;
+  MySupporterStatus: MySupporterStatus;
   NewClimbCreatedEvent: NewClimbCreatedEvent;
   NewClimbFeedInput: NewClimbFeedInput;
   NewClimbFeedItem: NewClimbFeedItem;
@@ -13476,6 +13559,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalVoteSummary: ProposalVoteSummary;
   ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   ProviderSyncRequest: ProviderSyncRequest;
+  PublicSupporter: PublicSupporter;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -15957,6 +16041,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationChooseBoardForSerialArgs, 'boardId' | 'serial'>
   >;
+  claimSupporterByEmail?: Resolver<ResolversTypes['MySupporterStatus'], ParentType, ContextType>;
   clearLocationSyncFreeze?: Resolver<
     ResolversTypes['ClearLocationSyncFreezeResult'],
     ParentType,
@@ -16029,6 +16114,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationCreateSprayWallVersionArgs, 'input'>
+  >;
+  createSupportClaim?: Resolver<
+    ResolversTypes['String'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateSupportClaimArgs, 'cadence' | 'currency'>
   >;
   declineFollowRequest?: Resolver<
     ResolversTypes['Boolean'],
@@ -16204,6 +16295,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationGrantRoleArgs, 'input'>
+  >;
+  grantSupporter?: Resolver<
+    ResolversTypes['MySupporterStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationGrantSupporterArgs, 'creditUntil' | 'source' | 'userId'>
   >;
   inviteResourceMember?: Resolver<
     ResolversTypes['Boolean'],
@@ -16833,6 +16930,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateSprayWallArgs, 'input'>
   >;
+  updateSupporterVisibility?: Resolver<
+    ResolversTypes['MySupporterStatus'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateSupporterVisibilityArgs, 'showPublicly'>
+  >;
   updateTick?: Resolver<
     ResolversTypes['Tick'],
     ParentType,
@@ -16873,6 +16976,19 @@ export type MyGymClaimResolvers<
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   method?: Resolver<ResolversTypes['GymClaimMethod'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type MySupporterStatusResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MySupporterStatus'] = ResolversParentTypes['MySupporterStatus'],
+> = ResolversObject<{
+  cancelAtPeriodEnd?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  creditUntil?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasSubscription?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isSupporter?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  showPublicly?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  source?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17316,6 +17432,16 @@ export type ProviderSyncRequestResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type PublicSupporterResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PublicSupporter'] = ResolversParentTypes['PublicSupporter'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type PublicUserProfileResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['PublicUserProfile'] = ResolversParentTypes['PublicUserProfile'],
@@ -17329,6 +17455,7 @@ export type PublicUserProfileResolvers<
   instagramUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isPrivate?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isSupporter?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17847,6 +17974,7 @@ export type QueryResolvers<
   mySessions?: Resolver<Array<ResolversTypes['DiscoverableSession']>, ParentType, ContextType>;
   mySmartPlaylistCounts?: Resolver<Array<ResolversTypes['SmartPlaylistCount']>, ParentType, ContextType>;
   mySprayWalls?: Resolver<Array<ResolversTypes['SprayWall']>, ParentType, ContextType>;
+  mySupporterStatus?: Resolver<Maybe<ResolversTypes['MySupporterStatus']>, ParentType, ContextType>;
   nearbySessions?: Resolver<
     Array<ResolversTypes['DiscoverableSession']>,
     ParentType,
@@ -17951,6 +18079,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryPublicProfileArgs, 'userId'>
+  >;
+  publicSupporters?: Resolver<
+    Array<ResolversTypes['PublicSupporter']>,
+    ParentType,
+    ContextType,
+    Partial<QueryPublicSupportersArgs>
   >;
   qaPreviews?: Resolver<
     Array<ResolversTypes['QaPreview']>,
@@ -20289,6 +20423,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   MyGymClaim?: MyGymClaimResolvers<ContextType>;
+  MySupporterStatus?: MySupporterStatusResolvers<ContextType>;
   NewClimbCreatedEvent?: NewClimbCreatedEventResolvers<ContextType>;
   NewClimbFeedItem?: NewClimbFeedItemResolvers<ContextType>;
   NewClimbFeedResult?: NewClimbFeedResultResolvers<ContextType>;
@@ -20322,6 +20457,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalReportReleaseContext?: ProposalReportReleaseContextResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   ProviderSyncRequest?: ProviderSyncRequestResolvers<ContextType>;
+  PublicSupporter?: PublicSupporterResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
   QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
