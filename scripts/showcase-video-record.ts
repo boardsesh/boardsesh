@@ -351,6 +351,7 @@ async function runMaestro(
     signalUrl: string;
     timeoutMs?: number;
     retainDebug?: boolean;
+    onDebugDirectory?: (directory: string) => void;
     env?: Readonly<Record<string, string>>;
     child?: (process: ChildProcess) => void;
   }>,
@@ -360,6 +361,7 @@ async function runMaestro(
   const runName = `${String(maestroRunCounter).padStart(3, '0')}-${options.label}`;
   const debugDir = resolve(LOG_DIR, 'maestro', runName);
   mkdirSync(debugDir, { recursive: true });
+  options.onDebugDirectory?.(debugDir);
   const variables = { SHOWCASE_SIGNAL_URL: options.signalUrl, ...options.env };
   const args = [
     '--device',
@@ -1313,13 +1315,19 @@ function showcasePeerQueueRowLabel(locale: ShowcaseRecordArgs['locales'][number]
   );
 }
 
-async function runFlow(context: RunContext, flow: string, label: string): Promise<number> {
+async function runFlow(
+  context: RunContext,
+  flow: string,
+  label: string,
+  options: { retainDebug?: boolean; onDebugDirectory?: (directory: string) => void } = {},
+): Promise<number> {
   const progressLabels = showcaseProgressLabels(context.args.locales[0]);
   return runMaestro({
     udid: context.primary.device.udid,
     flowFile: showcaseFlowPathFor(flow, context.primary.platform),
     label,
     signalUrl: context.signal.url,
+    ...options,
     env: {
       SHOWCASE_QUEUE_LABEL: showcaseQueueLabel(context.args.locales[0]),
       SHOWCASE_BOARD_HISTORY_LABEL: showcaseBoardHistoryLabel(context.args.locales[0]),
@@ -1344,6 +1352,49 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
   });
 }
 
+async function capturePhoneHierarchy(primary: Phone, label: string, timeoutMs = 5 * 60 * 1000) {
+  const hierarchyPath = resolve(LOG_DIR, `${label}-hierarchy.txt`);
+  const hierarchyErrors = resolve(LOG_DIR, `${label}-hierarchy.stderr.log`);
+  const hierarchyOutput = createWriteStream(hierarchyPath);
+  const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
+  const hierarchyStartedAt = new Date().toISOString();
+  let hierarchyChild: ChildProcess | undefined;
+  let hierarchyStatus = 1;
+  try {
+    guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
+    hierarchyStatus = await runScreenshotMaestro(
+      ['--device', primary.device.udid, 'hierarchy', '--no-reinstall-driver'],
+      {
+        env: toolEnv(),
+        cwd: LOG_DIR,
+        timeoutMs,
+        onStdout: (chunk) => {
+          hierarchyOutput.write(chunk);
+        },
+        onStderr: (chunk) => {
+          hierarchyErrorOutput.write(chunk);
+        },
+        onSpawn: (child) => {
+          hierarchyChild = child;
+          liveChildren.add(child);
+        },
+      },
+    );
+  } finally {
+    if (hierarchyChild) liveChildren.delete(hierarchyChild);
+    await Promise.all([
+      new Promise<void>((resolveClosed) => hierarchyOutput.end(resolveClosed)),
+      new Promise<void>((resolveClosed) => hierarchyErrorOutput.end(resolveClosed)),
+    ]);
+  }
+  return {
+    hierarchyStatus,
+    hierarchyStartedAt,
+    completedAt: new Date().toISOString(),
+    hierarchyPath: relative(ROOT_DIR, hierarchyPath),
+  };
+}
+
 /** One observed tap, with no recording, source invalidation, or take provenance. */
 async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): Promise<number> {
   const { primary, signal } = context;
@@ -1365,53 +1416,31 @@ async function diagnoseProfileFilter(context: RunContext, take: ShowcaseTake): P
     env: { SHOWCASE_ALL_BOARDS_LABEL: showcaseProgressLabels(context.args.locales[0]).allBoards },
   });
   // No UI interaction occurs between the tap/visibility check and this dump.
-  // The flow's screenshot captures the immediate state; CLI startup means the
-  // separate hierarchy is a later observation, with its own timestamp.
-  const hierarchyPath = resolve(LOG_DIR, 'profile-filter-hierarchy.txt');
-  const hierarchyErrors = resolve(LOG_DIR, 'profile-filter-hierarchy.stderr.log');
-  const hierarchyOutput = createWriteStream(hierarchyPath);
-  const hierarchyErrorOutput = createWriteStream(hierarchyErrors);
-  const hierarchyStartedAt = new Date().toISOString();
-  let hierarchyChild: ChildProcess | undefined;
-  let hierarchyStatus = 1;
-  try {
-    guardSimulatorCommand('maestro', ['--device', primary.device.udid], ROOT_DIR);
-    hierarchyStatus = await runScreenshotMaestro(
-      ['--device', primary.device.udid, 'hierarchy', '--no-reinstall-driver'],
-      {
-        env: toolEnv(),
-        cwd: LOG_DIR,
-        timeoutMs: 5 * 60 * 1000,
-        onStdout: (chunk) => {
-          hierarchyOutput.write(chunk);
-        },
-        onStderr: (chunk) => {
-          hierarchyErrorOutput.write(chunk);
-        },
-        onSpawn: (child) => {
-          hierarchyChild = child;
-          liveChildren.add(child);
-        },
-      },
-    );
-  } finally {
-    if (hierarchyChild) liveChildren.delete(hierarchyChild);
-    await Promise.all([
-      new Promise<void>((resolveClosed) => hierarchyOutput.end(resolveClosed)),
-      new Promise<void>((resolveClosed) => hierarchyErrorOutput.end(resolveClosed)),
-    ]);
-  }
+  // CLI startup means the hierarchy is a later observation than the screenshot.
+  const hierarchy = await capturePhoneHierarchy(primary, 'profile-filter');
   deviceScreenshot(primary, resolve(LOG_DIR, 'profile-filter-after-hierarchy.png'));
-  const report = {
-    flowStatus,
-    hierarchyStatus,
-    hierarchyStartedAt,
-    completedAt: new Date().toISOString(),
-    hierarchyPath: relative(ROOT_DIR, hierarchyPath),
-  };
+  const report = { flowStatus, ...hierarchy };
   writeFileSync(resolve(LOG_DIR, 'profile-filter-diagnostic.json'), JSON.stringify(report, null, 2));
   console.log(`${LOG} profile filter diagnostic: ${JSON.stringify(report)}`);
-  return flowStatus !== 0 ? flowStatus : hierarchyStatus;
+  return flowStatus !== 0 ? flowStatus : hierarchy.hierarchyStatus;
+}
+
+async function diagnoseSessionVisibility(primary: Phone, label: string, flowStatus: number): Promise<void> {
+  // Keep an immediate screen before the separate, bounded CLI hierarchy query.
+  const screenshotPath = resolve(LOG_DIR, `${label}-visibility.png`);
+  deviceScreenshot(primary, screenshotPath);
+  try {
+    const hierarchy = await capturePhoneHierarchy(primary, `${label}-visibility`, 60_000);
+    writeFileSync(
+      resolve(LOG_DIR, `${label}-visibility.json`),
+      JSON.stringify({ flowStatus, screenshotPath: relative(ROOT_DIR, screenshotPath), ...hierarchy }, null, 2),
+    );
+  } catch (error) {
+    // Diagnostics cannot turn a missing privacy event into permission to Start.
+    console.warn(
+      `${LOG} ${label}: visibility hierarchy failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function recordTake(context: RunContext, take: ShowcaseTake): Promise<TakeResult> {
@@ -1461,8 +1490,18 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     return failed(take, [`[${take.id}] could not open its deep links (Maestro exit ${primeStatus})`]);
 
   if (take.privateSession) {
-    const privateStatus = await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`);
+    let privateDebugDirectory: string | null = null;
+    const privateStatus = await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`, {
+      // A completed Maestro tap is not the app's privacy postcondition. Keep its
+      // screenshots and target/hierarchy metadata until that event is confirmed.
+      retainDebug: true,
+      onDebugDirectory: (directory) => {
+        privateDebugDirectory = directory;
+      },
+    });
+    const diagnosticLabel = `${take.id}-private-${maestroRunCounter}`;
     if (privateStatus !== 0) {
+      await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus);
       return failed(take, [
         `[${take.id}] the session visibility control could not be tapped (Maestro exit ${privateStatus}).`,
       ]);
@@ -1474,11 +1513,13 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
       await sleep(250);
     } while (Date.now() < visibilityDeadline);
     if (!sessionVisibilityIsOff(window.text)) {
+      await diagnoseSessionVisibility(primary, diagnosticLabel, privateStatus);
       return failed(take, [
         `[${take.id}] no pre-session visibility-off event arrived after tapping "Show this session live". ` +
           `The recorder has not tapped Start. Check the control and app responsiveness in ${SESSION_PRIVATE_FLOW}.`,
       ]);
     }
+    if (privateDebugDirectory) rmSync(privateDebugDirectory, { recursive: true, force: true });
   }
 
   let secondaryRun: Promise<number> | null = null;

@@ -17,11 +17,15 @@ name: showcase setup - live session hidden
 # session running, so the pre-session view is up (with the now-playing bar, which
 # puts Start at 84%,82%).
 #
-# Match the localized SwiftUI switch label (title plus subtitle). Its position
-# changes with the board, native layout and text size.
+# Match the localized SwiftUI switch label (title plus subtitle), then tap its
+# trailing switch thumb. A center tap lands on the label, which may not toggle.
+# Maestro 2.6.1 treats text + point as an element-relative point (not a screen
+# coordinate): YamlFluentCommand.tapCommand -> TapOnElementCommand.relativePoint.
 
 - extendedWaitUntil:
     visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
     timeout: 15000
-- tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+- tapOn:
+    text: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+    point: '90%,50%'
 - waitForAnimationToEnd
