@@ -5,10 +5,9 @@ name: showcase setup - live session hidden (Android)
 # off on the pre-session Record tab. The recorder checks the app logged
 # `Session Visibility Changed {"isPublic": false}` before it starts anything.
 #
-# Match the localized row label so different native layouts remain tappable.
+# Coordinates (1080x2424 emulator, 411x923 dp, portrait):
+#   82%,46%  the "Show this session live" switch
 
-- extendedWaitUntil:
-    visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
-    timeout: 15000
-- tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}'
+- tapOn:
+    point: '82%,46%'
 - waitForAnimationToEnd

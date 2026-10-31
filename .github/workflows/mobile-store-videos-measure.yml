@@ -1,13 +1,13 @@
 name: Mobile Store Videos (Measure)
 
-# Phase 0: dispatch-only MoonBoard measurement. No R2 or store writes.
+# Dispatch-only capture and measurement. No R2 or store writes.
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Four-locale measurement, filter diagnostic, progress take, or English sequence
+        description: Four-locale measurement, filter diagnostic, progress take, English sequence, or crew capture
         type: choice
-        options: [measure, diagnose-profile-filter, record-profile, record-english]
+        options: [measure, diagnose-profile-filter, record-profile, record-english, record-crew]
         default: measure
 
 permissions:
@@ -15,15 +15,16 @@ permissions:
   actions: read
 
 concurrency:
-  group: store-videos-measure-${{ github.ref }}
-  cancel-in-progress: true
+  # Crew uses the normal pipeline's account lock, including across feature refs.
+  group: ${{ inputs.mode == 'record-crew' && 'store-videos-crew' || format('store-videos-measure-{0}', github.ref) }}
+  cancel-in-progress: ${{ inputs.mode != 'record-crew' }}
 
 jobs:
   record:
     runs-on: macos-26
     # Three locale children already measured 91 minutes; four plus setup can
     # exceed two hours. Diagnostic/single-take modes get 45 minutes; English gets 60.
-    timeout-minutes: ${{ inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile') && 45 || 180 }}
+    timeout-minutes: ${{ inputs.mode == 'record-english' && 60 || (inputs.mode == 'diagnose-profile-filter' || inputs.mode == 'record-profile' || inputs.mode == 'record-crew') && 45 || 180 }}
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -104,8 +105,30 @@ jobs:
         run: |
           set -euo pipefail
           vp exec tsx scripts/store-video-measure.ts record-english metrics/record-english.json -- vp run video:record -- --kind moonboard --locale en-US --app-path packages/mobile/.app-cache/Boardsesh.app
+      - name: Record one English crew take without publishing
+        if: inputs.mode == 'record-crew'
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+          SHOWCASE_SECONDARY_EMAIL: ${{ secrets.SHOWCASE_SECONDARY_EMAIL }}
+          SHOWCASE_SECONDARY_PASSWORD: ${{ secrets.SHOWCASE_SECONDARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p metrics
+          git rev-parse HEAD > metrics/crew-source-sha.txt
+          vp exec tsx scripts/store-video-measure.ts crew-check metrics/crew-check.json -- vp run video:record -- --kind default --locale en-US --only crew --app-path packages/mobile/.app-cache/Boardsesh.app
+      - name: Retain the crew capture for one day
+        if: inputs.mode == 'record-crew'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-video-frames-crew-check
+          path: .boardsesh/showcase-video/work/boards/default
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
       - name: Hand off frames for one day
-        if: inputs.mode != 'diagnose-profile-filter'
+        if: inputs.mode != 'diagnose-profile-filter' && inputs.mode != 'record-crew'
         uses: actions/upload-artifact@v4
         with:
           name: store-video-frames-moonboard

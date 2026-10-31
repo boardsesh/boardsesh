@@ -130,7 +130,7 @@ describe('crew capture memory lifecycle', () => {
   });
 });
 
-describe('private-session native switch targeting', () => {
+describe('private-session iOS switch targeting', () => {
   it.each(SHOWCASE_LOCALES)('matches the %s native label without depending on its screen position', (locale) => {
     const catalog = JSON.parse(
       readFileSync(new URL(`../../packages/shared/i18n/locales/${locale}/session.json`, import.meta.url), 'utf8'),
@@ -149,8 +149,10 @@ describe('private-session native switch targeting', () => {
     expect(pattern.test('Live crew now')).toBe(false);
   });
 
-  it.each(['session-private.yaml', 'android/session-private.yaml'])('waits for and taps the label in %s', (flow) => {
-    const steps = parseAllDocuments(readFileSync(showcaseFlowPath(flow), 'utf8'))[1].toJS() as unknown[];
+  it('waits for and taps the iOS switch label', () => {
+    const steps = parseAllDocuments(
+      readFileSync(showcaseFlowPath('session-private.yaml'), 'utf8'),
+    )[1].toJS() as unknown[];
     expect(steps).toEqual([
       { extendedWaitUntil: { visible: '${SHOWCASE_SESSION_VISIBILITY_LABEL}', timeout: 15000 } },
       { tapOn: '${SHOWCASE_SESSION_VISIBILITY_LABEL}' },

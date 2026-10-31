@@ -17,6 +17,8 @@ interface Step {
   with?: Record<string, unknown>;
 }
 interface Job {
+  'runs-on'?: string;
+  concurrency?: { group: string; 'cancel-in-progress': boolean | string };
   'timeout-minutes'?: number | string;
   if?: string;
   needs?: string | string[];
@@ -41,7 +43,10 @@ describe('store video workflow handoff', () => {
     expect(measure.name).toBe('Mobile Store Videos (Measure)');
     expect(measure.on).not.toHaveProperty('workflow_run');
     expect(measure.on.workflow_dispatch.inputs).toMatchObject({
-      mode: { options: ['measure', 'diagnose-profile-filter', 'record-profile', 'record-english'], default: 'measure' },
+      mode: {
+        options: ['measure', 'diagnose-profile-filter', 'record-profile', 'record-english', 'record-crew'],
+        default: 'measure',
+      },
     });
     expect(measure.jobs.record['timeout-minutes']).toContain("inputs.mode == 'record-english' && 60");
     expect(measure.jobs.record['timeout-minutes']).toContain('&& 45 || 180');
@@ -51,11 +56,62 @@ describe('store video workflow handoff', () => {
       "inputs.mode == 'diagnose-profile-filter'",
       "inputs.mode == 'record-profile'",
       "inputs.mode == 'record-english'",
+      "inputs.mode == 'record-crew'",
     ]);
     expect(commands[1].run).toContain('--diagnose-profile-filter');
     expect(commands[2].run).toContain('--only log');
     expect(commands[3].run).toContain('--kind moonboard --locale en-US --app-path');
     expect(measure.jobs.render.if).toBe("inputs.mode == 'measure'");
+  });
+
+  it('captures only the English crew take on a feature ref without render or publish access', () => {
+    const measure = workflow('mobile-store-videos-measure');
+    const evaluate = (expression: unknown) =>
+      runInNewContext(String(expression).replace(/^\$\{\{\s*|\s*\}\}$/g, ''), {
+        inputs: { mode: 'record-crew' },
+        github: { ref: 'refs/heads/qa/crew-capture' },
+        format: (template: string, argument: string) => template.replace('{0}', argument),
+      }) as unknown;
+    expect(measure.jobs.record['runs-on']).toBe(workflow('mobile-store-videos-pipeline').jobs.crew['runs-on']);
+    expect(evaluate(measure.jobs.record['timeout-minutes'])).toBe(45);
+    expect(evaluate(measure.concurrency?.group)).toBe(
+      workflow('mobile-store-videos-pipeline').jobs.crew.concurrency?.group,
+    );
+    expect(evaluate(measure.concurrency?.['cancel-in-progress'])).toBe(false);
+    expect(measure.jobs.record.environment).toBeUndefined();
+    const recordingSteps = measure.jobs.record.steps?.filter(
+      (step) => step.run?.includes('vp run video:record') && evaluate(step.if) === true,
+    );
+    expect(recordingSteps).toHaveLength(1);
+    const capture = recordingSteps?.[0];
+    expect(capture?.run).toContain('scripts/store-video-measure.ts crew-check metrics/crew-check.json');
+    expect(capture?.run).toContain('--kind default --locale en-US --only crew --app-path');
+    expect(capture?.run).toContain('git rev-parse HEAD > metrics/crew-source-sha.txt');
+    for (const credential of [
+      'SCREENSHOT_USER_EMAIL',
+      'SCREENSHOT_USER_PASSWORD',
+      'SHOWCASE_SECONDARY_EMAIL',
+      'SHOWCASE_SECONDARY_PASSWORD',
+    ]) {
+      expect(capture?.env?.[credential]).toBe(`\u0024{{ secrets.${credential} }}`);
+    }
+    const crewFrames = measure.jobs.record.steps?.find((step) => step.with?.name === 'store-video-frames-crew-check');
+    expect(evaluate(crewFrames?.if)).toBe(true);
+    expect(crewFrames?.with).toMatchObject({
+      path: '.boardsesh/showcase-video/work/boards/default',
+      'retention-days': 1,
+      'if-no-files-found': 'error',
+    });
+    const ordinaryFrames = measure.jobs.record.steps?.find(
+      (step) => step.with?.name === 'store-video-frames-moonboard',
+    );
+    expect(evaluate(ordinaryFrames?.if)).toBe(false);
+    const debugLogs = measure.jobs.record.steps?.find((step) => step.with?.name === 'store-video-record-metrics');
+    expect(debugLogs?.if).toBe('always()');
+    expect(debugLogs?.with?.path).toContain('metrics/');
+    expect(evaluate(measure.jobs.render.if)).toBe(false);
+    expect(JSON.stringify(measure)).not.toMatch(/STORE_CREATIVES_R2|APP_STORE_CONNECT|store-videos-publish/);
+    expect(measure.jobs).not.toHaveProperty('publish');
   });
 
   it('admits successful release-train drafts without filtering their reported main branch', () => {
