@@ -269,6 +269,15 @@ build. The screenshot producer selects release Xcode27.1+ **before** looking up
 that key. Other video and smoke producers record their actual selected toolchain;
 they can share a product only when those identities match.
 
+Cache helpers and the two capture/record actions come from a separate sparse
+checkout of the immutable workflow commit at `.boardsesh/cache-tooling`. The
+application stays at the requested captured source at workspace root, including
+for older supported commits that do not contain those helpers. Both checkout
+SHAs are verified and printed. Native application inputs, builds and Metro
+capture continue to use that requested source; reviewed cache tooling is never
+overlaid onto application files. The tooling copy has its own paths in the shared
+native-hash recipe.
+
 Every new product is checked before it is saved. Screenshot and video consumers
 check restored product metadata, ARM64 slices and Debug Metro identity before
 installation. The check uses the producer's identity from the key, rather than

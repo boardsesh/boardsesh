@@ -22,7 +22,8 @@ runs:
       shell: bash
       env:
         APP_CACHE_KEY: ${{ inputs.app-cache-key }}
-      run: node --experimental-strip-types scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
+        CACHE_TOOLING_ROOT: ${{ github.action_path }}/../../..
+      run: node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
     - uses: actions/setup-java@v4
       with:
         distribution: temurin

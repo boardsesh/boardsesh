@@ -1,0 +1,9 @@
+{
+  "sourceSha": "6e8c46f203385c6587dcf2669e29df1c9d611cf8",
+  "kind": "selected exact historical source files; not a full build fixture",
+  "files": {
+    "package.json": "a21a3f67234b6a1014e297c9dd0fd3337d1fd4f28a6b8fcfb609515dc8bfe812",
+    "scripts/screenshot-sim.entitlements": "e918f88960334f411aec13c3114f177ef9ef1e142b5aa44a3a09b91bd7dfba04",
+    ".gitignore": "8b19e1115c2041cdabaed128774bef7945cc393dc95880313144e3398637a10d"
+  }
+}

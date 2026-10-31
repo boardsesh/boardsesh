@@ -21,7 +21,7 @@ const ANDROID_CAPTURE_PATH = '.github/workflows/mobile-screenshots-android.yml';
 const IOS_CAPTURE_PATH = '.github/workflows/mobile-screenshots-ios.yml';
 const ANDROID_ACTION_PATH = '.github/actions/android-emulator-capture/action.yml';
 const ANDROID_ACTION_USES = './.github/actions/android-emulator-capture';
-const IOS_ACTION_USES = './.github/actions/ios-screenshot-shard';
+const IOS_ACTION_USES = './.boardsesh/cache-tooling/.github/actions/ios-screenshot-shard';
 
 const TESTED_SHA = '${{ needs.resolve.outputs.sha }}';
 
@@ -149,13 +149,26 @@ describe('mobile-e2e-gate.yml jobs', () => {
 
   it('pins every checkout to the resolved commit', () => {
     const checkouts = Object.entries(workflow.jobs).flatMap(([name, job]) =>
-      stepsUsing(job, 'actions/checkout@').map((step) => ({ name, ref: step.with?.ref })),
+      stepsUsing(job, 'actions/checkout@').map((step) => ({
+        name,
+        ref: step.with?.ref,
+        tooling: step.with?.path === '.boardsesh/cache-tooling',
+      })),
     );
-    expect(checkouts.map((checkout) => checkout.name)).toEqual(['android-smoke', 'ios-smoke', 'verdict']);
+    expect(checkouts.filter((checkout) => !checkout.tooling).map((checkout) => checkout.name)).toEqual([
+      'android-smoke',
+      'ios-smoke',
+      'verdict',
+    ]);
+    expect(checkouts.filter((checkout) => checkout.tooling).map((checkout) => checkout.name)).toEqual(['ios-smoke']);
     for (const checkout of checkouts) {
       // The verdict falls back to the triggering commit only when `resolve`
       // failed, and then fails on the missing SHA.
-      const expected = checkout.name === 'verdict' ? '${{ needs.resolve.outputs.sha || github.sha }}' : TESTED_SHA;
+      const expected = checkout.tooling
+        ? '${{ github.workflow_sha }}'
+        : checkout.name === 'verdict'
+          ? '${{ needs.resolve.outputs.sha || github.sha }}'
+          : TESTED_SHA;
       expect(checkout.ref, `${checkout.name} checkout`).toBe(expected);
     }
   });
