@@ -51,6 +51,7 @@ describe('store video workflow handoff', () => {
           'record-english',
           'record-crew',
           'observe-session-input',
+          'export-session-input-app',
         ],
         default: 'measure',
       },

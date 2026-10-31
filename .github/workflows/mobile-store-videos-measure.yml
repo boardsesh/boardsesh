@@ -5,9 +5,18 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Measurement, capture, or finite session-input observation
+        description: Measurement, capture, or finite session-input observation, or cached app export
         type: choice
-        options: [measure, diagnose-profile-filter, record-profile, record-english, record-crew, observe-session-input]
+        options:
+          [
+            measure,
+            diagnose-profile-filter,
+            record-profile,
+            record-english,
+            record-crew,
+            observe-session-input,
+            export-session-input-app,
+          ]
         default: measure
 
 permissions:
@@ -21,6 +30,7 @@ concurrency:
 
 jobs:
   record:
+    if: inputs.mode != 'export-session-input-app'
     runs-on: macos-26
     # Three locale children already measured 91 minutes; four plus setup can
     # exceed two hours. Diagnostic/single-take modes get 45 minutes; English gets 60.
@@ -233,7 +243,7 @@ jobs:
           retention-days: 7
 
   timings:
-    if: always() && inputs.mode != 'observe-session-input'
+    if: always() && inputs.mode != 'observe-session-input' && inputs.mode != 'export-session-input-app'
     needs: [record, render]
     runs-on: ubuntu-latest
     steps:
@@ -251,3 +261,55 @@ jobs:
             timings.md
             steps.json
           retention-days: 14
+
+  # Temporary diagnostic handoff: restore and inspect the original CI build product only.
+  # No dependency install, build, simulator, app launch, Metro, account, or capture path.
+  export-app:
+    if: inputs.mode == 'export-session-input-app'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore only the exact failed-run dev-client
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a
+          fail-on-cache-miss: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Record cache inventory metadata without exporting cache contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_KEY: macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a
+        run: |
+          set -euo pipefail
+          mkdir -p .boardsesh/session-input-app-export/metadata
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/caches" -f key="$CACHE_KEY" --jq '.actions_caches | map({id, key, ref, size_in_bytes, created_at, last_accessed_at})' > .boardsesh/session-input-app-export/metadata/cache-metadata.json
+          jq -e 'length > 0 and all(.[]; .key == env.CACHE_KEY)' .boardsesh/session-input-app-export/metadata/cache-metadata.json > /dev/null
+      - name: Inspect the restored build product and archive unchanged native bytes
+        id: inspect
+        env:
+          SESSION_INPUT_APP_EXPORT: '1'
+          OBSERVATION_CACHE_HIT: ${{ steps.app-cache.outputs.cache-hit }}
+          OBSERVATION_CACHE_KEY: macOS-ARM64-screenshot-sim-app-v1-9dd78a74eb71965f2e0876a147045ef8207d824eb936ee349170ddcd54a8082a
+        run: node --experimental-strip-types scripts/export-session-input-app.ts
+      - name: Retain sanitized inventory even when binary export is rejected
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-input-app-inventory
+          path: .boardsesh/session-input-app-export/metadata/
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Retain only the inspected cached dev-client for local diagnosis
+        if: steps.inspect.outputs.safe == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-input-cached-app-sdk26_5
+          path: .boardsesh/session-input-app-export/binary/Boardsesh-ci-sdk26_5.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
