@@ -92,6 +92,9 @@ import {
   REFERENCE_CHANNEL_TOLERANCE,
   SHOWCASE_DEFAULT_BOARDS,
   SHOWCASE_IOS_HOME_READY_TIMEOUT_MS,
+  createDeferredCrewPhone,
+  showcaseMetroArgs,
+  showcaseSessionVisibilityPattern,
   showcaseDevice,
   showcaseCalendarPattern,
   showcaseBoardHistoryPattern,
@@ -530,7 +533,8 @@ function startMetro(port: number, env: NodeJS.ProcessEnv, logPath: string): Chil
   mkdirSync(dirname(logPath), { recursive: true });
   // `| tee` keeps Metro's stdout a line-buffered pipe; a plain `>` block-buffers
   // and the anchor lines would arrive in bursts (see lib/metro-dev-server.ts).
-  const child = spawnGroup('sh', ['-c', `vp exec expo start --port ${port} 2>&1 | tee ${shellQuote(logPath)}`], {
+  const command = ['vp', ...showcaseMetroArgs(port)].map(shellQuote).join(' ');
+  const child = spawnGroup('sh', ['-c', `${command} 2>&1 | tee ${shellQuote(logPath)}`], {
     cwd: MOBILE_DIR,
     env: { ...env, CI: '1' },
   });
@@ -620,43 +624,59 @@ async function preparePhone(
   const spec = showcaseDevice(role, process.env.SHOWCASE_SIMULATOR_NAME_SUFFIX);
   const device = findOrCreateIosDevice({ name: spec.name, typeId: spec.typeId, orientation: 'PORTRAIT' });
   console.log(`${LOG} ${role}: ${device.name} (${device.udid})`);
-  bootDevice(device);
-  applyCleanStatusBar(device.udid);
-  // Dark system appearance: the lock-screen take films the home screen behind
-  // the Dynamic Island, and the dark wallpaper keeps it from reading as a white flash.
-  simctl(['ui', device.udid, 'appearance', 'dark']);
-  onCleanup(`${role} simulator`, () => {
-    clearStatusBar(device.udid);
-    simctl(['shutdown', device.udid]);
-  });
-  // The shared keychain group survives an uninstall; a stale token would sign in
-  // against the wrong backend.
-  simctl(['keychain', device.udid, 'reset']);
-  simctl(['uninstall', device.udid, APP_ID]);
-  const install = simctl(['install', device.udid, appPath]);
-  if (install.status !== 0) throw new Error(`simctl install on ${device.name} failed: ${install.stderr.trim()}`);
-
   const metroLog = resolve(LOG_DIR, `metro-${role}.log`);
   console.log(`${LOG} ${role}: starting Metro on ${metroPort} (log ${relative(ROOT_DIR, metroLog)})...`);
   const phone: Phone = { platform: 'ios', role, spec, device, appPath, metroPort, metroLog, metro: null, signal };
-  phone.metro = startMetro(
-    metroPort,
-    { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl(role) },
-    metroLog,
-  );
-  if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
-    throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
+  onCleanup(`${role} simulator`, () => releasePhone(phone));
+  try {
+    phone.metro = startMetro(
+      metroPort,
+      { ...env, EXPO_PUBLIC_SCREENSHOT_READY_URL: signal.readinessUrl(role) },
+      metroLog,
+    );
+    if (!(await waitForHttp(`http://localhost:${metroPort}/status`, 120_000))) {
+      throw new Error(`Metro on ${metroPort} never answered /status; see ${metroLog}`);
+    }
+    // Keep the simulator shut down during the bundle's peak transform memory.
+    await prewarmBundle(metroPort);
+    bootDevice(device);
+    applyCleanStatusBar(device.udid);
+    // The lock-screen take films the home screen behind the Dynamic Island.
+    simctl(['ui', device.udid, 'appearance', 'dark']);
+    // The shared keychain group survives an uninstall; stale tokens must not
+    // sign in against the wrong backend.
+    simctl(['keychain', device.udid, 'reset']);
+    simctl(['uninstall', device.udid, APP_ID]);
+    const install = simctl(['install', device.udid, appPath]);
+    if (install.status !== 0) throw new Error(`simctl install on ${device.name} failed: ${install.stderr.trim()}`);
+    await relaunch(phone);
+    const primed = await runMaestro({
+      udid: device.udid,
+      flowFile: writeSchemePrimeFlow(),
+      label: `${role}-prime-dialog`,
+      signalUrl: signal.url,
+    });
+    if (primed !== 0)
+      console.warn(`${LOG} ${role}: scheme-dialog prime exited ${primed}; later links still tap "Open".`);
+    return phone;
+  } catch (error) {
+    // A failed deferred preparation must release its Metro and simulator before
+    // a retry starts the primary again.
+    await releasePhone(phone);
+    throw error;
   }
-  await prewarmBundle(metroPort);
-  await relaunch(phone);
-  const primed = await runMaestro({
-    udid: device.udid,
-    flowFile: writeSchemePrimeFlow(),
-    label: `${role}-prime-dialog`,
-    signalUrl: signal.url,
-  });
-  if (primed !== 0) console.warn(`${LOG} ${role}: scheme-dialog prime exited ${primed}; later links still tap "Open".`);
-  return phone;
+}
+
+async function releasePhone(phone: Phone): Promise<void> {
+  clearStatusBar(phone.device.udid);
+  simctl(['shutdown', phone.device.udid]);
+  const metro = phone.metro;
+  phone.metro = null;
+  if (metro && metro.exitCode === null) {
+    const exited = once(metro, 'exit');
+    stopGroup(metro);
+    await Promise.race([exited, sleep(10_000)]);
+  }
 }
 
 /** Cold-start the app (fresh JS state, so one-shot deep-link params fire again) and wait for home. */
@@ -1201,7 +1221,7 @@ type RunContext = {
   /** Where this platform's footage, anchors and marks go. */
   dirs: ShowcaseWorkDirs;
   primary: Phone;
-  secondary: Phone | null;
+  secondary: ReturnType<typeof createDeferredCrewPhone<Phone>> | null;
   signal: SignalServer;
   /** Whether a take left a live session running on the account that the teardown must end. */
   session: { open: boolean; cleanupRegistered: boolean };
@@ -1243,6 +1263,13 @@ function showcaseCloseLabel(locale: ShowcaseRecordArgs['locales'][number]): stri
     readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'common.json'), 'utf8'),
   ) as { ariaLabels: { close: string } };
   return catalog.ariaLabels.close;
+}
+
+function showcaseSessionVisibilityLabel(locale: ShowcaseRecordArgs['locales'][number]): string {
+  const catalog = JSON.parse(
+    readFileSync(resolve(ROOT_DIR, 'packages/shared/i18n/locales', locale, 'session.json'), 'utf8'),
+  ) as { mobile: { sessionVisibility: { title: string } } };
+  return showcaseSessionVisibilityPattern(catalog.mobile.sessionVisibility.title);
 }
 
 function showcaseProgressLabels(locale: ShowcaseRecordArgs['locales'][number]): {
@@ -1300,6 +1327,7 @@ async function runFlow(context: RunContext, flow: string, label: string): Promis
         existsSync(context.primary.metroLog) ? readFileSync(context.primary.metroLog, 'utf8') : '',
       ),
       SHOWCASE_CLOSE_LABEL: showcaseCloseLabel(context.args.locales[0]),
+      SHOWCASE_SESSION_VISIBILITY_LABEL: showcaseSessionVisibilityLabel(context.args.locales[0]),
       SHOWCASE_LOG_BOARD_LABEL: formatBoardDisplayName(context.args.kind),
       SHOWCASE_ALL_BOARDS_LABEL: progressLabels.allBoards,
       SHOWCASE_CALENDAR_LABEL: progressLabels.calendar,
@@ -1425,13 +1453,22 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     return failed(take, [`[${take.id}] could not open its deep links (Maestro exit ${primeStatus})`]);
 
   if (take.privateSession) {
-    await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`);
-    await sleep(1000);
-    window.pull();
+    const privateStatus = await runFlow(context, SESSION_PRIVATE_FLOW, `${take.id}-private`);
+    if (privateStatus !== 0) {
+      return failed(take, [
+        `[${take.id}] the session visibility control could not be tapped (Maestro exit ${privateStatus}).`,
+      ]);
+    }
+    const visibilityDeadline = Date.now() + 10_000;
+    do {
+      window.pull();
+      if (sessionVisibilityIsOff(window.text)) break;
+      await sleep(250);
+    } while (Date.now() < visibilityDeadline);
     if (!sessionVisibilityIsOff(window.text)) {
       return failed(take, [
-        `[${take.id}] "Show this session live" was not switched off, so no session was started. ` +
-          `Check the switch's point in ${SESSION_PRIVATE_FLOW}, and that no session is running on the account.`,
+        `[${take.id}] no pre-session visibility-off event arrived after tapping "Show this session live". ` +
+          `The recorder has not tapped Start. Check the control and app responsiveness in ${SESSION_PRIVATE_FLOW}.`,
       ]);
     }
   }
@@ -1443,7 +1480,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     if (typeof prepared === 'string') return failed(take, [prepared]);
     secondaryRun = runMaestro({
       udid: prepared.udid,
-      flowFile: showcaseFlowPathFor(take.secondary.flow, context.secondary?.platform ?? 'ios'),
+      flowFile: showcaseFlowPathFor(take.secondary.flow, 'ios'),
       label: `${take.id}-secondary`,
       signalUrl: signal.url,
       child: (child) => {
@@ -1453,6 +1490,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
     const readyBy = Date.now() + 60_000;
     while (!signal.marks.has('secondary-ready') && Date.now() < readyBy) await sleep(250);
     if (!signal.marks.has('secondary-ready')) {
+      (secondaryChild as ChildProcess | null)?.kill('SIGINT');
       return failed(take, [`[${take.id}] the second phone's flow never started (no secondary-ready mark within 60s)`]);
     }
   } else {
@@ -1598,8 +1636,8 @@ async function endStraySession(context: RunContext, sessionId: string): Promise<
  * Climbs. Returns the secondary's UDID, or the problem.
  */
 async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ udid: string } | string> {
-  const { primary, secondary, signal } = context;
-  if (!secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not set up`;
+  const { primary, signal } = context;
+  if (!context.secondary || !take.secondary) return `[${take.id}] needs the second phone, which was not configured`;
   const [startFlow] = take.setupFlows;
   const window = new LogWindow(primary.metroLog);
   let sessionId: string | null = null;
@@ -1627,6 +1665,9 @@ async function prepareCrew(context: RunContext, take: ShowcaseTake): Promise<{ u
   }
   console.log(`${LOG} [${take.id}] hidden session ${sessionId} started; sending the second phone in.`);
 
+  // The primary's privacy and Start taps run before the second simulator and
+  // account bundle consume memory. A retry releases this phone first too.
+  const secondary = await context.secondary.get();
   const secondaryWindow = await relaunch(secondary);
   const joinStatus = await runMaestro({
     udid: secondary.device.udid,
@@ -2000,27 +2041,31 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
             signal,
           );
 
-    let secondary: Phone | null = null;
-    if (credentials.secondary) {
-      const port = SECONDARY_METRO_PORTS.find((candidate) => !portInUse(candidate));
-      if (!port) throw new Error(`No free Metro port for the second phone among ${SECONDARY_METRO_PORTS.join(', ')}`);
-      // Its own TMPDIR keeps the second account's bundle (credentials inlined)
-      // out of the shared Metro cache; teardown deletes it, and the app with it.
-      mkdirSync(SECONDARY_METRO_TMP, { recursive: true });
-      onCleanup('second phone bundle cache', () => rmSync(SECONDARY_METRO_TMP, { recursive: true, force: true }));
-      secondary = await preparePhone(
-        'secondary',
-        patchedRecorderApp(appPath, port, 'secondary'),
-        port,
-        metroEnv(args, credentials.secondary, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
-        signal,
-      );
-      const secondaryUdid = secondary.device.udid;
-      onCleanup('second phone app', () => {
-        simctl(['uninstall', secondaryUdid, APP_ID]);
-        simctl(['keychain', secondaryUdid, 'reset']);
-      });
-    }
+    const secondaryCredentials = credentials.secondary;
+    const secondary = secondaryCredentials
+      ? createDeferredCrewPhone(async () => {
+          const port = SECONDARY_METRO_PORTS.find((candidate) => !portInUse(candidate));
+          if (!port)
+            throw new Error(`No free Metro port for the second phone among ${SECONDARY_METRO_PORTS.join(', ')}`);
+          // Its own TMPDIR keeps the second account's bundle (credentials inlined)
+          // out of the shared Metro cache; teardown deletes it, and the app with it.
+          mkdirSync(SECONDARY_METRO_TMP, { recursive: true });
+          onCleanup('second phone bundle cache', () => rmSync(SECONDARY_METRO_TMP, { recursive: true, force: true }));
+          const phone = await preparePhone(
+            'secondary',
+            patchedRecorderApp(appPath, port, 'secondary'),
+            port,
+            metroEnv(args, secondaryCredentials, backendUrl, { TMPDIR: SECONDARY_METRO_TMP }),
+            signal,
+          );
+          const secondaryUdid = phone.device.udid;
+          onCleanup('second phone app', () => {
+            simctl(['uninstall', secondaryUdid, APP_ID]);
+            simctl(['keychain', secondaryUdid, 'reset']);
+          });
+          return phone;
+        }, releasePhone)
+      : null;
 
     const context: RunContext = {
       args,
@@ -2043,6 +2088,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     }
     const mode = recordRunMode(args);
     if (mode === 'hold') {
+      await secondary?.get();
       console.log(
         `${LOG} Holding ${primary.device.name} (${primary.device.udid}) with Metro on ${primary.metroPort}; ` +
           'calibrate flows, then Ctrl-C to tear down.',
@@ -2073,6 +2119,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         async () => {
           try {
             await ensureCaptureSessionClosed(context.session, () => endSession(context, `${take.id}-cleanup`));
+            await context.secondary?.reset();
             return null;
           } catch (error) {
             return error instanceof Error ? error.message : String(error);
