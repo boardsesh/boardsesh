@@ -48,14 +48,19 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+// The last `data` array the list was handed, so a test can tell a list that kept
+// its identity from one rebuilt with the same rows.
+const flatList = vi.hoisted(() => ({ lastData: undefined as DiscoveredDevice[] | undefined }));
 type FlatListMockProps = { data?: DiscoveredDevice[] };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetFlatList: ({ data }: FlatListMockProps) =>
-    createElement('div', {
+  BottomSheetFlatList: ({ data }: FlatListMockProps) => {
+    flatList.lastData = data;
+    return createElement('div', {
       'data-list': 'true',
       'data-count': String(data?.length ?? 0),
       'data-device-ids': JSON.stringify(data?.map((device) => device.deviceId) ?? []),
-    }),
+    });
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -642,6 +647,18 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     expect(listedIds(container)).toEqual(['kilter', 'unknown', 'unrecorded', 'quiet-bare']);
   });
 
+  it('sorts controllers that are both the intended board by signal among themselves', () => {
+    // A gym wall can carry two boxes recorded against the one board.
+    const twin = { deviceId: 'kilter-twin', name: 'Kilter Board#K-3@3', rssi: -30 };
+    const twinResolutions = new Map([...resolutions, ['K-3', recordedBoard('qa-kilter')]]);
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({ devices: [kilter, unknown, twin], resolvedBoards: twinResolutions, targetBoard })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['kilter-twin', 'kilter', 'unknown']);
+  });
+
   it('lists a bare-name Kilter box with no "not found" copy when the intended board never resolves', () => {
     // Kilter-built boxes advertise no serial, so nothing can resolve them and
     // nothing remembers them: hiding them meant "not found" on every connect.
@@ -707,6 +724,37 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
     expect(listedIds(container)).toEqual(['kilter']);
     expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  // The scan cache refreshes RSSI in place between pushes, so a list re-sorted
+  // when a lookup lands could swap two rows under the climber's thumb.
+  it.each([
+    { label: 'with no intended board', scope: {} },
+    { label: 'after the escape', scope: { targetBoard, showAllBoards: true } },
+  ])('keeps the full list in place when a lookup lands $label', ({ scope }) => {
+    const quiet = { deviceId: 'quiet', name: 'Kilter Board#K-1@3', rssi: -70 };
+    const loud = { deviceId: 'loud', name: 'Kilter Board#K-2@3', rssi: -30 };
+    const props = makeProps({ devices: [quiet, loud], ...scope });
+    const { container, rerender } = render(<DevicePickerSheet {...props} />);
+    expect(listedIds(container)).toEqual(['loud', 'quiet']);
+    const listedBeforeLookup = flatList.lastData;
+
+    quiet.rssi = -20;
+    rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
+    expect(listedIds(container)).toEqual(['loud', 'quiet']);
+    expect(flatList.lastData).toBe(listedBeforeLookup);
+  });
+
+  it('moves a row on a lookup only when the lookup changes its group', () => {
+    const bare = { deviceId: 'bare', name: 'Kilter Board', rssi: -40 };
+    const unrecorded = { deviceId: 'unrecorded', name: 'Kilter Board#K-9@3', rssi: -60 };
+    const props = makeProps({ devices: [unrecorded, bare], targetBoard });
+    const { container, rerender } = render(<DevicePickerSheet {...props} />);
+    expect(listedIds(container)).toEqual(['bare', 'unrecorded']);
+
+    unrecorded.rssi = -10;
+    rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
+    expect(listedIds(container)).toEqual(['bare', 'unrecorded']);
   });
 
   it('keeps searching while every controller heard so far is another board', () => {
