@@ -493,7 +493,7 @@
       "onTapLabel": "Light the board when I tap a climb",
       "onTapDescription": "A tap in any list puts the climb on the wall. Off, the tap opens a preview.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
-      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. With Light the board when I tap a climb off, use Play to load it."
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. Only while Light the board when I tap a climb is on. Otherwise the tap and Play open a preview."
     },
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",

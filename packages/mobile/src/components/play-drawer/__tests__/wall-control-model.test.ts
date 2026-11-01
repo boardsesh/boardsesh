@@ -918,9 +918,9 @@ describe('resolveWallControl: driving the wall', () => {
   });
 });
 
-// #7113 QA (Marco): "When I'm alone I should just always end up in the driving
-// state when I press the button." Solo, every press that puts the climb up ends
-// in driving; in a crew it stays a one-off put.
+// Preview-first lighting: a press lights one climb. Solo it only resumes an
+// opted-in Light the board as I swipe; in a crew it stays a one-off put. The
+// MoonBoard keeps #7113's "a solo press ends in driving" (below).
 describe('resolveWallControl: a press only resumes opted-in automatic lighting', () => {
   const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
     ['connect', {}],
@@ -1008,6 +1008,57 @@ describe('resolveWallControl: a press only resumes opted-in automatic lighting',
     });
     expect(after.driving).toBe(drivingAfter);
     expect(after.labelKey).toBe(drivingAfter ? 'youAreDriving' : 'disconnectBoard');
+  });
+});
+
+// #7113 QA (Marco): "When I'm alone I should just always end up in the driving
+// state when I press the button." Most MoonBoard controllers don't like phones
+// switching, so on a MoonBoard a solo press that puts the climb up still ends in
+// driving; in a crew it stays a one-off put.
+describe('resolveWallControl: a MoonBoard solo press still drives', () => {
+  const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
+    ['connect', {}],
+    ['put_on_wall', { commitButton: 'putOnWall' }],
+    ['put_on_wall, linked', { ...MINE, commitButton: 'putOnWall' }],
+    ['dark', MINE],
+    ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
+  ];
+
+  // [solo, light on swipe, stopped, tapDrive]
+  const RULES: [boolean, boolean, boolean, 'start' | 'resume' | null][] = [
+    [true, true, false, 'resume'],
+    [true, true, true, 'resume'],
+    [true, false, false, 'start'],
+    [true, false, true, 'start'],
+    [false, true, false, null],
+    [false, false, false, null],
+  ];
+  const cases = PUT_UP.flatMap(([name, input]) => RULES.map((rule) => [name, input, ...rule] as const));
+
+  it.each(cases)(
+    '%s, solo %s, light on swipe %s, stopped %s: %s',
+    (_name, input, solo, lightOnSwipe, stopped, tapDrive) => {
+      const model = resolveWallControl({
+        ...FREE,
+        ...input,
+        navigationCommits: lightOnSwipe && solo && !stopped,
+        drivingStopped: stopped,
+        solo,
+        lightOnSwipe,
+        tapStartsDrive: true,
+      });
+      expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
+      expect(model.tapDrive).toBe(tapDrive);
+    },
+  );
+
+  it('starts no second drive while one is arming, a connect is in flight, or on Set active', () => {
+    const moonboard = { solo: true, lightOnSwipe: false, tapStartsDrive: true };
+    expect(resolveWallControl({ ...FREE, ...MINE, ...moonboard, driveMode: 'arming' }).tapDrive).toBe('resume');
+    expect(resolveWallControl({ ...FREE, ...moonboard, pending: true }).tapDrive).toBe('resume');
+    expect(
+      resolveWallControl({ ...FREE, ...moonboard, commitButton: 'putOnWall', commitLabel: 'setActive' }).tapDrive,
+    ).toBeNull();
   });
 });
 

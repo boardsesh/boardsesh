@@ -64,7 +64,7 @@ function PlayScreen() {
     onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
-  const { boardConfig: storedBoardConfig, openPlayDrawer, getClimbActions } = useDrawerHost();
+  const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions } = useDrawerHost();
   const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
@@ -132,9 +132,9 @@ function PlayScreen() {
   // ⋯ is a native menu inside PlayDrawer and needs none of this.
   const openPlayerClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
-      return getClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
+      openClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
     },
-    [getClimbActions, dismissPlayerAndWait],
+    [openClimbActions, dismissPlayerAndWait],
   );
 
   // Drop the board override + open target when the route unmounts (any dismiss:
@@ -186,7 +186,7 @@ function PlayScreen() {
   const { handleClimbPress, handleOpenActions, handleSuggestionPress, handleTickHistory } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    getClimbActions: openPlayerClimbActions,
+    openClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,
@@ -201,7 +201,7 @@ function PlayScreen() {
   } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    getClimbActions: openPlayerClimbActions,
+    openClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,

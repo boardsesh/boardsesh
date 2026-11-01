@@ -290,6 +290,7 @@ function ClimbListInner() {
     screenshotOpenBoardSheet,
     screenshotOpenPreview,
     screenshotOpenWallPreview,
+    screenshotOpenClimbActions,
   } = useLocalSearchParams<{
     screenshotOpenFirst?: string;
     screenshotDrive?: string;
@@ -302,6 +303,7 @@ function ClimbListInner() {
     screenshotOpenBoardSheet?: string;
     screenshotOpenPreview?: string;
     screenshotOpenWallPreview?: string;
+    screenshotOpenClimbActions?: string;
   }>();
   const [screenshotGradesReadyFor, setScreenshotGradesReadyFor] = useState<string | null>(null);
   const screenshotGradeSetupKey =
@@ -333,7 +335,7 @@ function ClimbListInner() {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
-  const { getClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
@@ -1550,6 +1552,18 @@ function ClimbListInner() {
   // while placeholder data is showing, and this latch is one-shot — it would open
   // the menu over the wrong climb and never correct itself. Dead-strips in normal
   // builds.
+  const screenshotClimbActionsOpenedRef = useRef(false);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenClimbActions) return;
+    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
+    if (!activeBoard || !searchReady || screenshotClimbActionsOpenedRef.current) return;
+    if (isPlaceholderDataRef.current) return;
+    const firstClimb = visibleClimbs[0];
+    if (!firstClimb) return;
+    screenshotClimbActionsOpenedRef.current = true;
+    openClimbActions(firstClimb);
+  }, [screenshotOpenClimbActions, screenshotTargetBoard, activeBoard, searchReady, visibleClimbs, openClimbActions]);
+
   // Row actions ignore stale placeholder rows, same as handleClimbPress. The
   // right swipe is Play next: the top of Up next, so a climber with a long queue
   // still reaches what they swiped (#6772).
@@ -1564,9 +1578,9 @@ function ClimbListInner() {
   const handleOpenClimbActions = useCallback(
     (climb: Climb) => {
       if (isPlaceholderDataRef.current) return;
-      return getClimbActions(climb);
+      openClimbActions(climb);
     },
-    [getClimbActions, isPlaceholderData],
+    [openClimbActions],
   );
 
   const handleOpenAddToPlaylist = useCallback(

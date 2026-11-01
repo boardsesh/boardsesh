@@ -15,7 +15,6 @@ import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 import { useLogAscentSheetHost } from '../tick/use-log-ascent-sheet-host';
 import type { QueueHistoryTickHandler } from './use-queue-sheet-handlers';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
-import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 type QueueSheetProps = {
   board: QueueItemRowBoard;
@@ -26,8 +25,8 @@ type QueueSheetProps = {
    *  no longer needs this to unmount, so callers may omit it. */
   onDismissed?: () => void;
   onClimbPress: (item: ClimbQueueItem) => void;
-  /** Resolve the row's native menu target. */
-  onOpenActions?: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
+  /** Long press a queue row → open the climb reaction menu. */
+  onOpenActions?: (item: ClimbQueueItem) => void;
   onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
   onTickHistory: QueueHistoryTickHandler;
 };

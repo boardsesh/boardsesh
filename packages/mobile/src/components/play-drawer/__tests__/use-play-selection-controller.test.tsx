@@ -795,6 +795,20 @@ describe('preview-first host selections and deferred commits', () => {
     );
   });
 
+  it('reopens the committed current slot, not a preview copy, when automatic tap lighting is off', () => {
+    // The mini player and the workout card's current-climb row: the drawer must
+    // show the committed queue item, whose uuid the workout stage label and the
+    // timed block's Fell / Sent row key on.
+    setSetting('lightOnClimbTap', false);
+    const initialProps = inputs();
+    initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+  });
+
   it('does not relight an already-current held climb when it opens as preview', () => {
     setSetting('lightOnClimbTap', false);
     const initialProps = inputs();

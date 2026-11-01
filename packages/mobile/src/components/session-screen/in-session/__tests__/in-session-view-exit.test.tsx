@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-vi.mock('../../../climb-actions/ClimbActionsPressable', () => import('../../../../../test/climb-menu-stub'));
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -209,12 +208,7 @@ vi.mock('../../../../providers/queue-provider', () => ({
   useQueueLiveStats: () => ({ liveStats: null, sessionUsers: session.users }),
   useQueueSessionControls: () => ({ participantId: 'participant-1', sessionId: 'session-1' }),
 }));
-vi.mock('../../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({
-    openPlayDrawer: vi.fn(),
-    getClimbActions: (climb: unknown, boardConfig: unknown) => ({ climb, boardConfig }),
-  }),
-}));
+vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({
     data: {

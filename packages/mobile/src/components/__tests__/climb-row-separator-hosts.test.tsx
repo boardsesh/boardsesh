@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-vi.mock('../climb-actions/ClimbActionsMenu', () => import('../../../test/climb-menu-stub'));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';

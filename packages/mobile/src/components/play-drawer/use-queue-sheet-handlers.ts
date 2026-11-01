@@ -14,7 +14,6 @@ import type {
   LogAscentInput,
   OpenClimbActionsOptions,
   OpenPlayDrawerOptions,
-  ClimbActionsTarget,
 } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { readClimbChangeLights } from './use-climb-change-lights';
@@ -22,11 +21,7 @@ import { readClimbChangeLights } from './use-climb-change-lights';
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   openPlayDrawer: (climb: Climb, options?: OpenPlayDrawerOptions) => void;
-  getClimbActions: (
-    climb: Climb,
-    boardConfigOverride?: BoardConfig,
-    options?: OpenClimbActionsOptions,
-  ) => ClimbActionsTarget | null;
+  openClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   openLogAscent: (input: LogAscentInput) => void;
   /** The user's STORED active board (never a drawer override) — the queue renders
    *  against it, and a tick-history log is filed against it. */
@@ -46,7 +41,7 @@ export type QueueHistoryTickHandler = (
 
 type QueueSheetHandlers = {
   handleClimbPress: (item: ClimbQueueItem) => void;
-  handleOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null;
+  handleOpenActions: (item: ClimbQueueItem) => void;
   handleSuggestionPress: (climb: QueueClimb, source: PlaylistSuggestionSource) => void;
   handleTickHistory: QueueHistoryTickHandler;
 };
@@ -62,7 +57,7 @@ type QueueSheetHandlers = {
 export function useQueueSheetHandlers({
   setCurrentClimb,
   openPlayDrawer,
-  getClimbActions,
+  openClimbActions,
   openLogAscent,
   storedBoardConfig,
   sessionId,
@@ -100,12 +95,12 @@ export function useQueueSheetHandlers({
     (item: ClimbQueueItem) => {
       // `queueItemUuid` names the exact row that was long-pressed, so "Play next"
       // moves that slot instead of the first copy of a twice-queued climb.
-      return getClimbActions(item.climb, undefined, {
+      openClimbActions(item.climb, undefined, {
         dismissSourceSheet: dismissQueueSheetAndWait,
         queueItemUuid: item.uuid,
       });
     },
-    [getClimbActions, dismissQueueSheetAndWait],
+    [openClimbActions, dismissQueueSheetAndWait],
   );
 
   // Tap a suggestion → activate it with a suggestion source built from the

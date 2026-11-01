@@ -733,6 +733,7 @@
       }
     },
     "hidden": {
+      "short": "hidden",
       "chip": "Hidden",
       "banner": "Hidden by the community"
     },
@@ -763,6 +764,7 @@
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
       "changeGrade": "Change grade",
+      "closeOverlay": "Close climb actions",
       "openQueue": "Open the queue",
       "deleteClimb": {
         "row": "Delete climb",

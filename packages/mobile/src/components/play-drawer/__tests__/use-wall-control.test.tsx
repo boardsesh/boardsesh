@@ -400,6 +400,32 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', false, true, true],
     ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', false, true, true],
     ['a crew', { solo: false, lightOnSwipe: true }, 'button', false, true, true],
+    // Most MoonBoard controllers don't like phones switching: a solo press there still drives.
+    [
+      'MoonBoard, solo, Light on swipe off',
+      { solo: true, lightOnSwipe: false, tapStartsDrive: true },
+      'button',
+      true,
+      false,
+      false,
+    ],
+    [
+      'MoonBoard, solo, Light on swipe off, the bulb',
+      { solo: true, lightOnSwipe: false, tapStartsDrive: true },
+      'bulb',
+      true,
+      false,
+      false,
+    ],
+    [
+      'MoonBoard, solo, Light on swipe on',
+      { solo: true, lightOnSwipe: true, tapStartsDrive: true },
+      'button',
+      false,
+      true,
+      false,
+    ],
+    ['MoonBoard, a crew', { solo: false, lightOnSwipe: false, tapStartsDrive: true }, 'button', false, true, true],
   ])('%s', (_name, input, control, drives, lights, stoppedAfter) => {
     stopDrivingForLink();
     const run = runners();
@@ -411,6 +437,7 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     const { hook } = setup(previewAfterStop(input), run);
     act(() => hook.result.current.press(control));
     expect(run.drive).toHaveBeenCalledTimes(drives ? 1 : 0);
+    if (drives) expect(run.drive).toHaveBeenCalledWith('tap');
     expect(run.light).toHaveBeenCalledTimes(lights ? 1 : 0);
     expect(isDrivingStoppedForLink()).toBe(stoppedAfter);
     expect(getDriveMode() !== null).toBe(drives);
@@ -447,5 +474,37 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     act(() => hook.result.current.press('button'));
     expect(run.drive).not.toHaveBeenCalled();
     expect(run.lightAgain).toHaveBeenCalledOnce();
+  });
+
+  it('on a MoonBoard, starts the drive instead of lighting again on the wall with no link', () => {
+    const run = runners();
+    const model = resolveWallControl({
+      ...PREVIEW_AFTER_STOP,
+      commitButton: null,
+      pressAction: 'connect',
+      localConnected: false,
+      displayedIsWallClimb: true,
+      presenceFresh: true,
+      displayedIsOwnCurrent: true,
+      solo: true,
+      lightOnSwipe: false,
+      tapStartsDrive: true,
+    });
+    expect(model.state).toBe('on_wall_unlinked');
+    const { hook } = setup(model, run);
+    act(() => hook.result.current.press('button'));
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.lightAgain).not.toHaveBeenCalled();
+  });
+
+  it('on a MoonBoard, lights as before with the stop dropped where the drive cannot start', () => {
+    stopDrivingForLink();
+    const run = runners();
+    run.drive.mockReturnValue('unavailable');
+    const { hook } = setup(previewAfterStop({ solo: true, lightOnSwipe: false, tapStartsDrive: true }), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(isDrivingStoppedForLink()).toBe(false);
   });
 });

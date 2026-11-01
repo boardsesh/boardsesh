@@ -136,7 +136,8 @@
         "a11yHasBetaVideo": "has beta video",
         "a11yMirrored": "mirrored",
         "editAction": "Edit entry",
-        "deleteAction": "Delete entry"
+        "deleteAction": "Delete entry",
+        "moreActions": "More actions"
       },
       "day": {
         "today": "Today",

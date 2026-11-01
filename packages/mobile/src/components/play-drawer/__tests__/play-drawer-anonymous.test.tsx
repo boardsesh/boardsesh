@@ -2118,6 +2118,35 @@ describe('PlayDrawer — reading the wall', () => {
     expect(lastActionBarProps().wallControl).toMatchObject({ state: 'lit', holder: 'self', driving: false });
   });
 
+  // Preview-first: a solo press lights one climb. On a MoonBoard, whose
+  // controllers mostly don't like phones switching, a press that puts a climb
+  // up still starts Driver mode.
+  it.each([
+    ['a Kilter', BOARD_CONFIG, CLIMB, null],
+    [
+      'a MoonBoard',
+      { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 },
+      { ...CLIMB, boardType: 'moonboard', layoutId: 3 } as unknown as Climb,
+      'start',
+    ],
+  ] as const)('on %s, a solo press that lights a dark climb drives: %s', (_board, boardConfig, climb, tapDrive) => {
+    connectBoard();
+    lightbulb.lit = false;
+    session.currentItem = { uuid: 'queue-item-current', climb };
+    wall.uuid = null;
+    render(
+      createElement(PlayDrawer, {
+        viewer: 'member',
+        presentation: 'pane',
+        boardConfig,
+        reachableBoardKeys: new Set([configKey(boardConfig)]),
+        openTarget: committedTargetFor(climb),
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'dark', tapAction: 'relight', tapDrive });
+  });
+
   // #7015: the crewmate holding the link turned all the lights off. This phone
   // has no link; it only hears it through board presence. The board control
   // stops reading their climb as lit (an amber outline, not filled), and a new

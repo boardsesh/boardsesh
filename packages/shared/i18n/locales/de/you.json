@@ -136,7 +136,8 @@
         "a11yHasBetaVideo": "hat Beta-Video",
         "a11yMirrored": "gespiegelt",
         "editAction": "Eintrag bearbeiten",
-        "deleteAction": "Eintrag löschen"
+        "deleteAction": "Eintrag löschen",
+        "moreActions": "Weitere Aktionen"
       },
       "day": {
         "today": "Heute",

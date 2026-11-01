@@ -66,7 +66,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
   const { systemColors, brandColors } = useTheme();
   const router = useRouter();
   const bottomChrome = useBottomChromeMetrics();
-  const { openPlayDrawer, getClimbActions } = useDrawerHost();
+  const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const { data: authToken } = useAuthToken();
   const { data: activeBoard } = useActiveBoard();
   const activeBoardType = activeBoard?.boardType ?? null;
@@ -205,7 +205,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
       const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
       const climb = proposalToClimb(proposal);
       if (!climb || !boardConfig) return;
-      return getClimbActions(climb, {
+      openClimbActions(climb, {
         boardName: boardConfig.boardName,
         layoutId: boardConfig.layoutId,
         sizeId: boardConfig.sizeId,
@@ -213,7 +213,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
         angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
       });
     },
-    [getClimbActions],
+    [openClimbActions],
   );
 
   const renderItem = useCallback(

@@ -67,13 +67,6 @@ const managedSheet = vi.hoisted(() => ({
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 const climbRows = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
-const menuViewability = vi.hoisted(() => ({
-  changed: null as
-    | ((input: {
-        viewableItems: { item: BoardPresenceClimb; isViewable: boolean; key: string; index: number }[];
-      }) => void)
-    | null,
-}));
 const thumbnails = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 // Mutable safe-area inset so a test can simulate an Android 3-button nav bar
 // (a non-zero bottom inset) and assert the last history row stays above it.
@@ -181,7 +174,6 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl,
     onEndReached,
     onScrollBeginDrag,
-    onViewableItemsChanged,
     contentContainerStyle,
   }: {
     data: BoardPresenceClimb[];
@@ -193,11 +185,9 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl?: ReactNode;
     onEndReached?: () => void;
     onScrollBeginDrag?: () => void;
-    onViewableItemsChanged?: typeof menuViewability.changed;
     contentContainerStyle?: { paddingBottom?: number };
-  }) => {
-    menuViewability.changed = onViewableItemsChanged ?? null;
-    return createElement(
+  }) =>
+    createElement(
       'div',
       { 'data-list': 'true', 'data-padding-bottom': contentContainerStyle?.paddingBottom },
       refreshControl,
@@ -208,8 +198,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
       ListFooterComponent,
       createElement('button', { 'aria-label': 'begin scroll', onClick: () => onScrollBeginDrag?.() }),
       createElement('button', { 'aria-label': 'reach list end', onClick: () => onEndReached?.() }),
-    );
-  },
+    ),
 }));
 
 // Isolate from the real coordinator (covered by sheet-presentation-provider.test):
@@ -387,8 +376,7 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { md: 8, lg: 12 },
 }));
 
-import { BoardSheet, type BoardSheetHandle, type BoardSheetClimbAction } from '../BoardSheet';
-import type { ClimbActionsTarget } from '../../../providers/drawer-host-provider';
+import { BoardSheet, type BoardSheetHandle } from '../BoardSheet';
 import {
   clearSprayWallRegistry,
   LIVE_SPRAY_WALL_ARCHIVE_STATE,
@@ -1070,20 +1058,25 @@ describe('BoardSheet', () => {
     });
   });
 
-  it('hydrates authoritative native menu metadata in a bounded effect before enabling it', async () => {
+  it('hydrates action-sheet actions on a cold cache', async () => {
     presence.history = [
-      makeClimb('old-climb', 2, { frames: 'old-frames', grade: 'V4', angle: 30, queueItemUuid: 'queue-old' }),
+      makeClimb('old-climb', 2, {
+        frames: 'old-frames',
+        grade: 'V4',
+        angle: 30,
+        queueItemUuid: 'queue-old',
+      }),
     ];
-    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
-      climb: action.climb,
-      boardConfig: action.boardConfig,
-      queueItemUuid: action.queueItemUuid ?? undefined,
-    }));
-    const oldDetail = makeFullClimb('old-climb', { name: 'Hydrated Old', angle: 30, difficulty: 'V5' });
-    const climbRequest = createDeferred<{ climb: Climb | null }>();
-    graphql.request.mockReturnValueOnce(climbRequest.promise);
+    const onOpenActions = vi.fn();
+    const oldDetail = makeFullClimb('old-climb', {
+      name: 'Hydrated Old',
+      angle: 30,
+      difficulty: 'V5',
+    });
+    graphql.request.mockResolvedValueOnce({ climb: oldDetail });
+
     const ref = createRef<BoardSheetHandle>();
-    render(
+    const { getByLabelText } = render(
       createElement(BoardSheet, {
         ref,
         boardLabel: 'Garage Wall',
@@ -1095,7 +1088,19 @@ describe('BoardSheet', () => {
       }),
     );
     act(() => ref.current?.present());
-    expect(graphql.request).toHaveBeenCalledExactlyOnceWith(GET_CLIMB, {
+
+    fireEvent.click(getByLabelText('actions old-climb'));
+
+    await waitFor(() =>
+      expect(onOpenActions).toHaveBeenCalledWith({
+        climb: oldDetail,
+        queueItemUuid: 'queue-old',
+        boardConfig: { ...boardConfig, angle: 30 },
+      }),
+    );
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    expect(graphql.request).toHaveBeenCalledTimes(1);
+    expect(graphql.request).toHaveBeenCalledWith(GET_CLIMB, {
       boardName: 'kilter',
       layoutId: 1,
       sizeId: 10,
@@ -1103,90 +1108,6 @@ describe('BoardSheet', () => {
       angle: 30,
       climbUuid: 'old-climb',
     });
-    const pendingResolver = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
-    expect(pendingResolver?.()).toBeNull();
-    expect(onOpenActions).not.toHaveBeenCalled();
-    expect(graphql.request).toHaveBeenCalledOnce();
-    await act(async () => {
-      climbRequest.resolve({ climb: oldDetail });
-      await climbRequest.promise;
-    });
-    const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
-    const target = resolveMenu?.();
-    expect(onOpenActions).toHaveBeenCalledExactlyOnceWith({
-      climb: oldDetail,
-      queueItemUuid: 'queue-old',
-      boardConfig: { ...boardConfig, angle: 30 },
-    });
-    expect(await target?.resolveClimb?.()).toBe(oldDetail);
-    expect(graphql.request).toHaveBeenCalledOnce();
-  });
-
-  it('hydrates only the initial bounded rows, then the newly visible history row', async () => {
-    presence.history = Array.from({ length: 20 }, (_, index) => makeClimb(`history-${index}`, index + 1));
-    graphql.request.mockImplementation(async (_query: unknown, variables: { climbUuid: string }) => ({
-      climb: makeFullClimb(variables.climbUuid),
-    }));
-    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
-      climb: action.climb,
-      boardConfig: action.boardConfig,
-    }));
-    const ref = createRef<BoardSheetHandle>();
-    render(
-      createElement(BoardSheet, {
-        ref,
-        boardLabel: 'Garage Wall',
-        onClose: noop,
-        onDismissed: noop,
-        boardConfig,
-        onSwitchBoard: noop,
-        onOpenActions,
-      }),
-    );
-    act(() => ref.current?.present());
-    await waitFor(() => expect(graphql.request).toHaveBeenCalledTimes(8));
-    expect(historyPagination.loadOlder).not.toHaveBeenCalled();
-    const newlyVisible = presence.history[15];
-    act(() =>
-      menuViewability.changed?.({
-        viewableItems: [{ item: newlyVisible, isViewable: true, key: 'visible', index: 15 }],
-      }),
-    );
-    await waitFor(() => expect(graphql.request).toHaveBeenCalledTimes(9));
-    expect(graphql.request.mock.calls.at(-1)?.[1]).toMatchObject({ climbUuid: newlyVisible.climbUuid });
-    expect(historyPagination.loadOlder).not.toHaveBeenCalled();
-  });
-
-  it.each(['dismiss', 'board-change'] as const)('cancels an awaiting native-menu command after %s', async (cancel) => {
-    presence.history = [makeClimb('old-climb', 2, { frames: 'old-frames', angle: 30 })];
-    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
-      climb: action.climb,
-      boardConfig: action.boardConfig,
-    }));
-    graphql.request.mockResolvedValue({ climb: makeFullClimb('old-climb') });
-    const ref = createRef<BoardSheetHandle>();
-    const element = (selectedBoardConfig: typeof boardConfig) =>
-      createElement(BoardSheet, {
-        ref,
-        boardLabel: 'Garage Wall',
-        onClose: noop,
-        onDismissed: noop,
-        boardConfig: selectedBoardConfig,
-        onSwitchBoard: noop,
-        onOpenActions,
-      });
-    const view = render(element(boardConfig));
-    act(() => ref.current?.present());
-    let target: ClimbActionsTarget | null | undefined;
-    await waitFor(() => {
-      const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
-      target = resolveMenu?.();
-      expect(target).toBeTruthy();
-    });
-    const pendingClimb = target?.resolveClimb?.();
-    if (cancel === 'dismiss') act(() => ref.current?.dismiss());
-    else view.rerender(element({ ...boardConfig, sizeId: boardConfig.sizeId + 1 }));
-    expect(await pendingClimb).toBeNull();
   });
 
   it('shows loading feedback and ignores repeat taps while a climb action is resolving', async () => {

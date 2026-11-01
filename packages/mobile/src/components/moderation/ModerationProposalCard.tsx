@@ -1,5 +1,3 @@
-import { ClimbActionsPressable } from '../climb-actions/ClimbActionsPressable';
-import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 // One row of the moderation feed: the climb, what the crew is asking for, who
 // asked, and — for anyone who can act — the buttons to act with.
 //
@@ -10,6 +8,11 @@ import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 // values that never change identity.
 
 import { memo, useCallback, useMemo, useState } from 'react';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Proposal } from '@boardsesh/shared-schema';
@@ -34,7 +37,7 @@ import {
 import { useVoteOnProposal } from '../../lib/graphql/hooks/use-vote-on-proposal';
 import { useResolveProposal } from '../../lib/graphql/hooks/use-resolve-proposal';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
-import { hapticLight } from '../../lib/haptics';
+import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -54,7 +57,7 @@ type ModerationProposalCardProps = {
   /** Outline this card: it is the proposal a notification sent the viewer to. */
   highlighted?: boolean;
   onOpenClimb: (proposal: Proposal) => void;
-  onLongPressClimb: (proposal: Proposal) => ClimbActionsTarget | null | undefined;
+  onLongPressClimb: (proposal: Proposal) => void;
 };
 
 export const ModerationProposalCard = memo(function ModerationProposalCard({
@@ -97,7 +100,18 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
     onOpenClimb(proposal);
   }, [onOpenClimb, proposal]);
 
-  const menuTarget = useMemo(() => onLongPressClimb(proposal) ?? null, [onLongPressClimb, proposal]);
+  const longPressActions = useMemo(
+    () => namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('mobile.climbRow.moreActions')),
+    [t],
+  );
+  const handleLongPressClimb = useCallback(() => {
+    hapticMedium();
+    onLongPressClimb(proposal);
+  }, [onLongPressClimb, proposal]);
+  const onLongPressAction = useMemo(
+    () => onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPressClimb),
+    [handleLongPressClimb],
+  );
 
   const handleToggleReasons = useCallback(() => {
     hapticLight();
@@ -166,9 +180,12 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         {/* The climb block is its own tap target: pressing it previews the climb,
             long-pressing opens the same actions menu every other climb row has.
             The rest of the card stays inert so a vote is never a mis-tap. */}
-        <ClimbActionsPressable
-          target={menuTarget}
+        <PressableSurface
           onPress={handleOpenClimb}
+          onLongPress={handleLongPressClimb}
+          accessibilityActions={longPressActions}
+          onAccessibilityAction={onLongPressAction}
+          feedback="opacity"
           accessibilityRole="button"
           accessibilityLabel={t('mobile.moderation.openClimb', {
             climb: proposal.climbName ?? t('mobile.moderation.unknownClimb'),
@@ -229,7 +246,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
               ) : null}
             </View>
           </View>
-        </ClimbActionsPressable>
+        </PressableSurface>
 
         <Text variant="body" style={styles.typeLine}>
           {t(typeLine.textI18nKey, typeLine.params)}

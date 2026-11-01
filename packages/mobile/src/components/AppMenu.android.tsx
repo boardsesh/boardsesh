@@ -10,9 +10,7 @@
 // select.
 
 import { Fragment, useMemo, useState } from 'react';
-import { Pressable } from 'react-native';
 import { ComposeHost } from './ComposeHost.android';
-import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import {
   Column,
   DropdownMenu,
@@ -21,7 +19,6 @@ import {
   Icon,
   IconButton,
   Row,
-  RNHostView,
   Text,
 } from '@expo/ui/jetpack-compose';
 import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
@@ -43,7 +40,6 @@ export function AppMenu(props: AppMenuProps) {
   const { brandColors, m3, systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
-  const hasLongPressAnchor = props.trigger === 'longPress';
 
   // Every `Text` carries an explicit, scheme-aware colour. The trigger and the menu
   // popup are separate Compose compositions, and a custom `Text` in a slot does NOT
@@ -59,7 +55,7 @@ export function AppMenu(props: AppMenuProps) {
   const showCaret = props.iconName == null && props.showCaret !== false;
   const headline = props.iconName == null ? props.headline : undefined;
 
-  const renderMenu = (anchorWidth?: number) => (
+  return (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
     // sits leading in the app bar (the find-climbers action is held trailing by a flex
     // spacer). `maxWidth` caps the RN Host (the anchor) only — the `DropdownMenu.Items`
@@ -72,34 +68,15 @@ export function AppMenu(props: AppMenuProps) {
     // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
     <ComposeHost
-      key={anchorWidth}
-      matchContents={hasLongPressAnchor ? { vertical: true } : true}
-      accessible={hasLongPressAnchor ? false : undefined}
-      accessibilityRole={hasLongPressAnchor ? undefined : 'button'}
-      accessibilityLabel={
-        hasLongPressAnchor
-          ? undefined
-          : (accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label))
-      }
-      accessibilityHint={hasLongPressAnchor ? undefined : accessibilityHint}
-      style={[maxWidth != null ? { maxWidth } : null, hasLongPressAnchor ? { width: anchorWidth } : style]}
+      matchContents
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
+      accessibilityHint={accessibilityHint}
+      style={[maxWidth != null ? { maxWidth } : null, style]}
     >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
-          {props.trigger === 'longPress' ? (
-            <RNHostView matchContents>
-              <Pressable
-                style={{ width: anchorWidth, flexDirection: 'row' }}
-                onLongPress={resolved.length > 0 ? () => setExpanded(true) : undefined}
-                delayLongPress={400}
-                accessible={false}
-                focusable={false}
-                android_disableSound
-              >
-                {props.children}
-              </Pressable>
-            </RNHostView>
-          ) : props.iconName != null && isOverflowAnchor(props.iconName) ? (
+          {props.iconName != null && isOverflowAnchor(props.iconName) ? (
             // The M3 overflow button: an IconButton (a 48dp touch target) holding
             // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
             // titleLarge text. Its spoken name rides the Host's label above.
@@ -185,12 +162,5 @@ export function AppMenu(props: AppMenuProps) {
         </DropdownMenu.Items>
       </DropdownMenu>
     </ComposeHost>
-  );
-  return props.trigger === 'longPress' ? (
-    <MeasuredMenuAnchor style={style}>
-      {(width) => (width === undefined ? props.children : renderMenu(width))}
-    </MeasuredMenuAnchor>
-  ) : (
-    renderMenu()
   );
 }

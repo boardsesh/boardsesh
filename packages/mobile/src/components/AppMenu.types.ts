@@ -1,5 +1,4 @@
-import type { ReactElement } from 'react';
-import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import type { IconName } from './icon-map';
 
 /** A single menu row, neutral across the native iOS `Menu` / Android `DropdownMenu` impls. */
@@ -65,8 +64,6 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
    */
   headline?: string;
   anchorSize?: never;
-  children?: never;
-  trigger?: never;
 };
 
 /** Icon anchor: a bare glyph trigger (the "⋯" overflow button), with no visible text. */
@@ -86,26 +83,7 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
    * IconButton keeps its 48dp target. The glyph keeps its size.
    */
   anchorSize?: number;
-  children?: never;
-  trigger?: never;
 };
 
-/** A row body keeps its own tap/accessibility behavior while a hold opens its menu. */
-type AppMenuLongPressAnchorProps = AppMenuSharedProps & {
-  children: ReactElement;
-  trigger: 'longPress';
-  /** Lift a list row as an opaque, rounded native preview on iOS. */
-  liftPreview?: boolean;
-  /** Preserve a selected row's translucent wash over the opaque preview surface. */
-  previewOverlayColor?: ColorValue;
-  accessibilityLabel?: string;
-  label?: never;
-  iconName?: never;
-  iconAppearance?: never;
-  showCaret?: never;
-  headline?: never;
-  anchorSize?: never;
-};
-
-/** A text, icon, or custom long-press anchor. */
-export type AppMenuProps = AppMenuTextAnchorProps | AppMenuIconAnchorProps | AppMenuLongPressAnchorProps;
+/** Exactly one of `label` / `iconName`: a text anchor or a glyph anchor, never both. */
+export type AppMenuProps = AppMenuTextAnchorProps | AppMenuIconAnchorProps;

@@ -400,7 +400,8 @@ export type WallControlInput = WallControlStateInput & {
   drivingStopped?: boolean;
   /**
    * Not in a crew session (the roster, whatever the browse rollout flag says).
-   * A press may resume an opted-in lighting preference, but never starts a drive.
+   * A press may resume an opted-in lighting preference. It starts a drive only
+   * on a board that keeps one phone (`tapStartsDrive`).
    */
   solo?: boolean;
   /**
@@ -409,14 +410,30 @@ export type WallControlInput = WallControlStateInput & {
    * off, the press lights this climb once.
    */
   lightOnSwipe?: boolean;
+  /**
+   * The board is a MoonBoard. Most MoonBoard controllers don't like phones
+   * switching, so solo a press that puts the climb up still ends in driving
+   * there, as it did before preview-first lighting: this phone keeps the
+   * board. Still to be tested in the field on real MoonBoard controllers.
+   */
+  tapStartsDrive?: boolean;
 };
 
 /**
- * A tap lights once. Solo with automatic swipe lighting opted in, it may
- * resume that preference after a stop on this link. Starting an explicit
- * drive belongs to the swipe and its accessible equivalent.
+ * What a press that puts the climb up does about driving. A tap lights one
+ * climb; starting a drive belongs to the swipe and its accessible equivalent,
+ * except on a MoonBoard (`tapStartsDrive`).
+ *
+ * - `start` — MoonBoard, solo: start a live drive (`WallControlRunners.drive`)
+ *   where nothing else would drive after the press (Light the board as I swipe
+ *   off, no drive on).
+ * - `resume` — solo, with Light the board as I swipe opted in (or on a
+ *   MoonBoard where a drive is already on): drop a stop on this link and light
+ *   the climb as before.
+ * - null — the press lights this climb once: a crew, Set active (no wall in
+ *   reach), automatic lighting off, or a press that puts nothing up.
  */
-export type WallControlTapDrive = 'resume' | null;
+export type WallControlTapDrive = 'start' | 'resume' | null;
 
 /**
  * What a swipe on the wall button does (#7113): `drive` connects (or takes the
@@ -613,11 +630,17 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
-  // A press never starts a live drive. It only resumes the climber's existing
-  // swipe-lighting opt-in, solo and with an actual wall in reach.
+  // A press lights one climb. Solo with an actual wall in reach it resumes the
+  // climber's swipe-lighting opt-in, and on a MoonBoard it still ends in
+  // driving: it starts a live drive only where nothing else would (the setting
+  // is off and no drive is on), and the swipe's own rule says where one can start.
   let tapDrive: WallControlTapDrive = null;
-  if (input.solo === true && input.lightOnSwipe === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
-    tapDrive = 'resume';
+  if (input.solo === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
+    if (input.tapStartsDrive === true) {
+      tapDrive = driveMode === 'off' && input.lightOnSwipe !== true && swipeAction === 'drive' ? 'start' : 'resume';
+    } else if (input.lightOnSwipe === true) {
+      tapDrive = 'resume';
+    }
   }
   const a11yHintKey =
     state === 'on_wall_unlinked' && tapAction !== 'noop'

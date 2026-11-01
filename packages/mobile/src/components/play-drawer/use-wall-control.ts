@@ -150,8 +150,15 @@ export function useWallControl({
       ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
     });
     // A tap lights this climb once. Only an existing swipe-lighting opt-in
-    // resumes after a stop; the swipe/action below starts Driver mode.
+    // resumes after a stop; the swipe or its action starts Driver mode. On a
+    // MoonBoard a solo press still starts a live drive (`tapDrive: 'start'`),
+    // which commits, connects and lights as the swipe does; anywhere the drive
+    // can't start, it falls through to the plain light below.
     if (current.tapDrive !== null && isPutUpAction(action)) {
+      if (current.tapDrive === 'start' && run.drive('tap') === 'started') {
+        hapticMedium();
+        return;
+      }
       clearDrivingStopped();
     }
     if (current.state === 'on_wall_unlinked' && action !== 'noop') {

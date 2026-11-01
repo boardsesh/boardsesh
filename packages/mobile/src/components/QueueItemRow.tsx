@@ -10,6 +10,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS } from 
 import {
   Gesture,
   GestureDetector,
+  type GestureType,
   type GestureUpdateEvent,
   type PanGestureHandlerEventPayload,
 } from 'react-native-gesture-handler';
@@ -35,8 +36,6 @@ import type { QueueDragControls } from './play-drawer/use-queue-drag';
 import { rowReorderShift } from './play-drawer/queue-drag-math';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
 import { useShowcaseAnchor } from '../lib/showcase-anchor';
-import type { ClimbActionsTarget } from '../providers/drawer-host-provider';
-import { ClimbMenu, useClimbMenu } from './climb-actions/ClimbActionsMenu';
 
 // The tick button is nested inside the row's `accessible` container, so it needs
 // both its own props (TalkBack focuses it) and a labelled custom action published
@@ -67,8 +66,8 @@ type QueueItemRowProps = {
   board: QueueItemRowBoard;
   isCurrentClimb: boolean;
   onPress: (item: ClimbQueueItem) => void;
-  /** Resolve the native menu's target without opening a surface. */
-  onOpenActions?: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
+  /** Long press → open the climb reaction menu (omit to disable long-press). */
+  onOpenActions?: (item: ClimbQueueItem) => void;
   onRemove: (uuid: string) => void;
   isEditMode?: boolean;
   isSelected?: boolean;
@@ -175,11 +174,13 @@ function QueueItemRowComponent({
   // nothing here scans the queue.
   const rowClimb = item.climb;
   const rowBoard = useMemo(() => resolveClimbRenderBoard(rowClimb, board)?.boardConfig ?? board, [rowClimb, board]);
-  // The resolver reads the live board through the host; re-read on a board or
-  // preference render even when this queue slot itself did not change.
-  const resolvedMenuTarget = isEditMode ? null : (onOpenActions?.(item) ?? null);
-  const menuTarget = resolvedMenuTarget ? { ...resolvedMenuTarget, boardConfig: rowBoard } : null;
-  const menu = useClimbMenu(menuTarget);
+
+  // Refs so the drag handle's Pan gesture can `blocksExternalGesture` the row's own
+  // tap/long-press (see dragHandleGesture below) — a touch that starts on the handle
+  // is claimed exclusively by the drag and never also opens the reaction menu. Mirrors
+  // the identical ⋯-button-vs-row relationship in ClimbListRow.
+  const singleTapRef = useRef<GestureType | undefined>(undefined);
+  const longPressRef = useRef<GestureType | undefined>(undefined);
 
   // Disable swipe-to-delete for edit mode and history items.
   const swipeEnabled = !isEditMode && !isHistoryItem;
@@ -346,10 +347,9 @@ function QueueItemRowComponent({
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handlePress();
-      else if (event.nativeEvent.actionName === LOG_ASCENT_ACTION_NAME) handleTickPress();
-      else menu.onAccessibilityAction(event);
+      if (event.nativeEvent.actionName === LOG_ASCENT_ACTION_NAME) handleTickPress();
     },
-    [handlePress, handleTickPress, menu.onAccessibilityAction],
+    [handlePress, handleTickPress],
   );
 
   const handleTickAccessibilityAction = useCallback(
@@ -359,11 +359,24 @@ function QueueItemRowComponent({
     [handleTickPress],
   );
 
-  // Only the climb body owns this tap. Native long-press, drag and tick controls
-  // occupy separate sibling targets, so a handle hold cannot open the menu.
-  const tapGesture = useMemo(
+  const handleLongPress = useCallback(() => {
+    if (isEditMode || !onOpenActions) return;
+    hapticMedium();
+    onOpenActions(itemRef.current);
+  }, [isEditMode, onOpenActions]);
+
+  // Row press/long-press run as RNGH gestures — not RN core Pressable's onPress/
+  // onLongPress — so they can be arbitrated against the nested drag-handle's Pan
+  // gesture in the same gesture arena (see dragHandleGesture below). Before this,
+  // onLongPress lived on a plain Pressable wrapping the handle's GestureDetector:
+  // two independent touch systems (RN's legacy responder + RNGH's native arena)
+  // raced for the same hold, and on iOS the row's long-press could win, opening the
+  // reaction menu instead of letting the handle's Pan activate. Mirrors ClimbListRow's
+  // singleTapGesture/longPressGesture/tapGesture composition.
+  const singleTapGesture = useMemo(
     () =>
       Gesture.Tap()
+        .withRef(singleTapRef)
         .maxDuration(300)
         .maxDistance(15)
         .onStart(() => {
@@ -373,19 +386,46 @@ function QueueItemRowComponent({
     [handlePress],
   );
 
-  // The drag handle sits outside the native context-menu trigger.
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .withRef(longPressRef)
+        .minDuration(400)
+        .onStart(() => {
+          'worklet';
+          runOnJS(handleLongPress)();
+        }),
+    [handleLongPress],
+  );
+
+  // Long-press wins over tap; a quick tap fires once the long-press fails.
+  const tapGesture = useMemo(
+    () => Gesture.Exclusive(longPressGesture, singleTapGesture),
+    [longPressGesture, singleTapGesture],
+  );
+
+  // Long-press drag handle gesture (future rows only). Memoized on the row's
+  // identity so it doesn't churn while the list re-renders. `blocksExternalGesture`
+  // makes the row's own tap/long-press wait for this gesture to fail before they can
+  // activate — a touch that starts on the handle is claimed by the drag (or falls
+  // through to a plain row tap if released before the long-press-to-arm threshold),
+  // and never also opens the reaction menu.
   const dragHandleGesture = useMemo(() => {
     if (!isDraggable || !drag || rowIndex == null || queueIndex == null) return null;
-    return drag.makeHandleGesture(rowIndex, item.uuid, queueIndex);
+    return drag.makeHandleGesture(rowIndex, item.uuid, queueIndex).blocksExternalGesture(singleTapRef, longPressRef);
   }, [isDraggable, drag, rowIndex, queueIndex, item.uuid]);
 
-  // A history tick is also a sibling of the climb body: it opens Log Ascent
-  // without selecting the queue row or opening its context menu.
+  // The history-row tick button's own tap. Like the drag handle, it
+  // `blocksExternalGesture`s the row's tap/long-press so a touch that starts on the
+  // tick opens Log Ascent without also firing the row press — which would make the
+  // history climb current, open the Play Drawer, and dismiss the Queue Sheet. Only
+  // built for history rows (see showTick). Mirrors ClimbListRow's moreButtonGesture.
   const tickGesture = useMemo(() => {
     if (!isHistoryItem || isEditMode || !onTickHistory) return null;
     return Gesture.Tap()
       .maxDuration(300)
       .maxDistance(15)
+      .blocksExternalGesture(singleTapRef, longPressRef)
       .onStart(() => {
         'worklet';
         runOnJS(handleTickPress)();
@@ -416,12 +456,13 @@ function QueueItemRowComponent({
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const logAscentLabel = t('mobile.queue.logAscent');
-  const rowAccessibilityActions = useMemo(() => {
-    const rowActions = showTick
-      ? rowAccessibilityActionsWith({ name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel })
-      : ACTIVATE_ACCESSIBILITY_ACTIONS;
-    return menu.accessibilityActions.length === 0 ? rowActions : [...(rowActions ?? []), ...menu.accessibilityActions];
-  }, [showTick, logAscentLabel, menu.accessibilityActions]);
+  const rowAccessibilityActions = useMemo(
+    () =>
+      showTick
+        ? rowAccessibilityActionsWith({ name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel })
+        : ACTIVATE_ACCESSIBILITY_ACTIONS,
+    [showTick, logAscentLabel],
+  );
 
   // History rows pin the grade for the angle the climb was CLIMBED at, which can
   // differ from the live board angle (e.g. the session moved on after the send).
@@ -459,110 +500,103 @@ function QueueItemRowComponent({
     // starting on the row. pan-y lets a vertical drag fall through to the list's
     // own scroll natively; only a horizontal drag is intercepted here or by the
     // swipe Pan below.
-    <Animated.View
-      style={[
-        styles.row,
-        minimumHeight === undefined ? null : { minHeight: minimumHeight },
-        { backgroundColor: systemColors.secondaryBackground },
-        isCurrentClimb && !isHistoryItem && { backgroundColor: `${brandColors.primary}14` },
-        isHistoryItem && styles.historyRow,
-        rowAnimatedStyle,
-      ]}
-    >
-      <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} style={styles.menuAnchor}>
-        <GestureDetector gesture={tapGesture} touchAction="pan-y">
-          <View
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={rowAccessibilityLabel}
-            accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
-            onAccessibilityTap={handlePress}
-            accessibilityActions={rowAccessibilityActions}
-            onAccessibilityAction={handleRowAccessibilityAction}
-            style={styles.climbBody}
+    <GestureDetector gesture={tapGesture} touchAction="pan-y">
+      <Animated.View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={rowAccessibilityLabel}
+        accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
+        onAccessibilityTap={handlePress}
+        accessibilityActions={rowAccessibilityActions}
+        onAccessibilityAction={handleRowAccessibilityAction}
+        style={[
+          styles.row,
+          minimumHeight === undefined ? null : { minHeight: minimumHeight },
+          { backgroundColor: systemColors.secondaryBackground },
+          isCurrentClimb && !isHistoryItem && { backgroundColor: `${brandColors.primary}14` },
+          isHistoryItem && styles.historyRow,
+          rowAnimatedStyle,
+        ]}
+      >
+        {/* Position number / play indicator / edit checkbox */}
+        <View style={styles.positionContainer}>
+          <PositionIndicator
+            isEditMode={isEditMode}
+            isSelected={isSelected}
+            isCurrentClimb={isCurrentClimb}
+            position={position}
+          />
+        </View>
+
+        {/* Shared climb visual: thumbnail + name/subtitle + grade */}
+        <ClimbListItemContent
+          allowNameWrapping={false}
+          climb={item.climb}
+          boardName={rowBoard.boardName as BoardName}
+          layoutId={rowBoard.layoutId}
+          sizeId={rowBoard.sizeId}
+          setIds={rowBoard.setIds}
+          angle={rowBoard.angle}
+        />
+
+        {/* Sent-at-angle chip: history climbed at an angle other than the wall's */}
+        {showSentAtAngle && (
+          <Text
+            variant="caption1"
+            color={systemColors.secondaryLabel}
+            style={styles.sentAtAngle}
+            accessibilityLabel={t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
           >
-            {/* Position number / play indicator / edit checkbox */}
-            <View style={styles.positionContainer}>
-              <PositionIndicator
-                isEditMode={isEditMode}
-                isSelected={isSelected}
-                isCurrentClimb={isCurrentClimb}
-                position={position}
-              />
+            {t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
+          </Text>
+        )}
+
+        {/* Who queued it — decorative; the row's own label carries the name. */}
+        {showAddedByAvatar && addedBy && (
+          <View
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={styles.addedByAvatar}
+            {...avatarAnchor}
+          >
+            <BoardDriverAvatar uri={addedBy.avatarUrl} name={addedBy.name} size={20} status="none" />
+          </View>
+        )}
+
+        {/* Trailing action: tick (history) or drag handle (upcoming) */}
+        {showTick && tickGesture ? (
+          <GestureDetector gesture={tickGesture} touchAction="pan-y">
+            <View
+              testID="tick-button"
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.queue.logAscent')}
+              onAccessibilityTap={handleTickPress}
+              accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+              onAccessibilityAction={handleTickAccessibilityAction}
+              style={trailingButtonStyle}
+            >
+              <Icon name="tick.fill" size={26} color={tickColor} />
             </View>
-
-            {/* Shared climb visual: thumbnail + name/subtitle + grade */}
-            <ClimbListItemContent
-              allowNameWrapping={false}
-              climb={item.climb}
-              boardName={rowBoard.boardName as BoardName}
-              layoutId={rowBoard.layoutId}
-              sizeId={rowBoard.sizeId}
-              setIds={rowBoard.setIds}
-              angle={rowBoard.angle}
-            />
-
-            {/* Sent-at-angle chip: history climbed at an angle other than the wall's */}
-            {showSentAtAngle && (
-              <Text
-                variant="caption1"
-                color={systemColors.secondaryLabel}
-                style={styles.sentAtAngle}
-                accessibilityLabel={t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
-              >
-                {t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
-              </Text>
-            )}
-
-            {/* Who queued it — decorative; the row's own label carries the name. */}
-            {showAddedByAvatar && addedBy && (
-              <View
-                pointerEvents="none"
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-                style={styles.addedByAvatar}
-                {...avatarAnchor}
-              >
-                <BoardDriverAvatar uri={addedBy.avatarUrl} name={addedBy.name} size={20} status="none" />
-              </View>
-            )}
-          </View>
-        </GestureDetector>
-      </ClimbMenu>
-
-      {/* Trailing action: tick (history) or drag handle (upcoming) */}
-      {showTick && tickGesture ? (
-        <GestureDetector gesture={tickGesture} touchAction="pan-y">
-          <View
-            testID="tick-button"
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.queue.logAscent')}
-            onAccessibilityTap={handleTickPress}
-            accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
-            onAccessibilityAction={handleTickAccessibilityAction}
-            style={trailingButtonStyle}
-          >
-            <Icon name="tick.fill" size={26} color={tickColor} />
-          </View>
-        </GestureDetector>
-      ) : showDragHandle && dragHandleGesture ? (
-        // Deliberately NOT given an `activate` action: reordering with a screen
-        // reader needs worded move-up/move-down custom actions, not a plain
-        // activate (an activate here has nothing meaningful to do). That's a UX
-        // decision, tracked as a follow-up rather than guessed at here.
-        <GestureDetector gesture={dragHandleGesture}>
-          <View
-            testID="queue-row-drag-handle"
-            style={trailingButtonStyle}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.queue.dragHandleAria', { name: climbName })}
-          >
-            <Icon name="drag.handle" size={22} color={systemColors.secondaryLabel} />
-          </View>
-        </GestureDetector>
-      ) : null}
-    </Animated.View>
+          </GestureDetector>
+        ) : showDragHandle && dragHandleGesture ? (
+          // Deliberately NOT given an `activate` action: reordering with a screen
+          // reader needs worded move-up/move-down custom actions, not a plain
+          // activate (an activate here has nothing meaningful to do). That's a UX
+          // decision, tracked as a follow-up rather than guessed at here.
+          <GestureDetector gesture={dragHandleGesture}>
+            <View
+              style={trailingButtonStyle}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.queue.dragHandleAria', { name: climbName })}
+            >
+              <Icon name="drag.handle" size={22} color={systemColors.secondaryLabel} />
+            </View>
+          </GestureDetector>
+        ) : null}
+      </Animated.View>
+    </GestureDetector>
   );
 
   return (
@@ -631,15 +665,6 @@ const styles = StyleSheet.create({
     columnGap: spacing[3],
     paddingVertical: CLIMB_ROW_VERTICAL_PADDING,
     paddingHorizontal: spacing[3],
-  },
-  menuAnchor: {
-    flex: 1,
-  },
-  climbBody: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    columnGap: spacing[3],
   },
   historyRow: {
     opacity: 0.5,

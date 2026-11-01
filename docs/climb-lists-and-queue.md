@@ -71,6 +71,8 @@ The two lighting settings, in Settings › Board, are **Light the board when I t
 With untouched settings, selecting a climb opens a preview without committing it or
 lighting the wall, including playlist **Play** and queue rows. Tap the board button to
 put that climb up once; swipe the button, or use **Light every climb**, to start Driver mode.
+On a MoonBoard a solo tap on the board button still starts Driver mode, because most MoonBoard
+controllers don't like phones switching (still to be tested in the field).
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -127,12 +129,6 @@ A preview walks only its list.
 
 ### Crew, swipes and long-press
 
-Long-press and the list/player ellipsis share grouped core actions. On the main iOS climb
-list, holding a row or tapping its ellipsis opens the same lifted row and menu above the
-dimmed list. Other surfaces keep their native menus. Logbook Edit entry and player controls
-stay contextual; the player omits actions already shown as buttons. Menu descriptors stay
-bound to the climb and exact queue slot. The old enlarged-board reaction overlay is removed.
-
 | Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
 | --- | --- | --- | --- | --- | --- |
 | Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Commits and lights it | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
@@ -142,7 +138,7 @@ bound to the climb and exact queue slot. The old enlarged-board reaction overlay
 | Home new-climb card | Trackless preview | Trackless preview | Trackless preview | None | None |
 | Board history sheet, iPad wall column | Commits for the whole room | Preview with the wall's history as the track (F2) | Commits and lights it | As search | Climb menu |
 | Record in-session history | Commits for the whole room | Preview with the session's ticks as the track (F2) | Commits and lights it | None | Climb menu |
-| Queue sheet | Preview by default; commits with automatic lighting opted in | Preview of the exact queue slot | Commits and lights it | Left only: delete | Native climb menu |
+| Queue sheet | Preview by default; commits with automatic lighting opted in | Preview of the exact queue slot | Commits and lights it | Left only: delete | Climb menu |
 | Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | Commits and lights it; from a climb on another board, a preview | None | None |
 | Workout preview | No session yet | No session yet | Trackless preview | None | None |
 | Wall display kiosk | Lights the board; the room's current climb doesn't move | Same | Same | None | None |
@@ -181,10 +177,11 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
 - **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
   default settings, later taps and swipes preview. A board-button tap puts one climb up;
-  it never starts a live drive. Solo with Light on swipe explicitly enabled, that tap may
-  resume the saved setting after a stop. The settings themselves never flip.
+  it never starts a live drive, except solo on a MoonBoard (`tapStartsDrive`), where it
+  still does. Solo with Light on swipe explicitly enabled, that tap may resume the saved
+  setting after a stop. The settings themselves never flip.
 - **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
-  started it (a swipe or the accessible action), goes on into the crew in the same session. Solo
+  started it (a swipe, a MoonBoard press or the accessible action), goes on into the crew in the same session. Solo
   driving by Light on swipe alone (no stop, a link up) turns into a live drive the moment the
   crew forms (`shouldCarryDriveIntoCrew` in `DriveModeWatcher`, `startedBy: 'solo_carry'`), so
   "You are driving the wall" stays and swipes, Next, list taps and the MiniPlayer keep lighting.

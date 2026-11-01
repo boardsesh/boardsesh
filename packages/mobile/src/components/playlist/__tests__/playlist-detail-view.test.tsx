@@ -1101,8 +1101,8 @@ describe('PlaylistDetailView', () => {
       const playAction = container.querySelector('[data-appbar-action="play"]');
       expect(playAction).not.toBeNull();
       fireEvent.click(playAction as HTMLElement);
-      // A deliberate start: Light the board when I tap a climb (a row-tap
-      // setting) must not turn the Play button into a preview (#6667).
+      // The Play button selects the first row through the row-tap callback, so
+      // Light the board when I tap a climb decides whether it previews.
       expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
       expect(playAction?.getAttribute('aria-label')).toBe('detail.activateAll');
     });

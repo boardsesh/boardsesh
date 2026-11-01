@@ -72,7 +72,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
   const { t } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { getClimbActions } = useDrawerHost();
+  const { openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
@@ -114,7 +114,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
       if (!climb.boardType) return;
       const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
       if (!config) return;
-      return getClimbActions(climb, {
+      openClimbActions(climb, {
         boardName: config.boardName,
         layoutId: config.layoutId,
         sizeId: config.sizeId,
@@ -122,7 +122,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
         angle: climb.angle,
       });
     },
-    [getClimbActions],
+    [openClimbActions],
   );
 
   const handleEndReached = useCallback(() => {

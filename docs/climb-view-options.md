@@ -59,7 +59,7 @@ wall button.
 Climbs open in preview by default, including playlist Play and queue selections. Both
 lighting switches default off and preserve stored opt-ins. Tap the board control to light
 one climb; swipe the wall button, or choose **Light every climb**, to enter Driver mode.
-A tap does not start Driver mode.
+A tap does not start Driver mode, except solo on a MoonBoard (below).
 
 ### One model, several views
 
@@ -131,11 +131,20 @@ flat amber fallback; the label still says what the next press does.
   explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved opt-in
   applies again. With it off, later selections stay previews. Swipe or the accessible
   **Light every climb** command starts the live drive.
+- **A MoonBoard press still drives.** Most MoonBoard controllers don't like phones switching,
+  so on a MoonBoard (`tapStartsDrive`, set from `isMoonboardBoardName`) a solo press that puts
+  a climb up keeps the #7113 rule: with Light the board as I swipe off and no drive on, the
+  model's `tapDrive` is `start`, and the press starts a live drive through the swipe's runner
+  (`startDrive`: commit, connect, light); otherwise it is `resume`. Where the drive can't start
+  (no swipe offered, the `wall-swipe-to-drive` flag off) the press drops the stop and lights as
+  before. Never on Set active, and in a crew a press stays a one-off put. `Drive Mode Ended`
+  says `startedBy: 'tap'` for these drives. This still needs a field test on real MoonBoard
+  controllers.
 - **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
   first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
-  nothing. A press's "stopped" lasts until that link drops, or a solo press resumes an explicit Light on swipe opt-in (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
+  nothing. A press's "stopped" lasts until that link drops, or a solo press resumes an explicit Light on swipe opt-in or, on a MoonBoard, starts a drive (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
   (this phone's board) and on Disconnect board while not driving; never on Sam's board (his phone holds it), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise

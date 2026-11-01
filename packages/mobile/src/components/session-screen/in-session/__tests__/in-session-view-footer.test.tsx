@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-vi.mock('../../../climb-actions/ClimbActionsPressable', () => import('../../../../../test/climb-menu-stub'));
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -200,12 +199,7 @@ vi.mock('../../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../use-session-exit-options', () => ({
   useSessionExitOptions: () => ({ canEnd: true, startedOnThisDevice: true, defaultMode: 'end' }),
 }));
-vi.mock('../../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({
-    openPlayDrawer: vi.fn(),
-    getClimbActions: (climb: unknown, boardConfig: unknown) => ({ climb, boardConfig }),
-  }),
-}));
+vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({
     data: {
@@ -482,7 +476,7 @@ describe('InSessionView footer', () => {
       },
     ];
     const { getAllByTestId } = render(createElement(InSessionView));
-    expect(getAllByTestId('climb-actions-body')[0].getAttribute('aria-label')).toBe(
+    expect(getAllByTestId('pressable')[0].getAttribute('aria-label')).toBe(
       frames.includes(',') ? 'mobile.session.historyRowAria, 3 frames' : 'mobile.session.historyRowAria',
     );
   });
@@ -524,7 +518,7 @@ describe('InSessionView footer', () => {
     const { getAllByTestId } = render(createElement(InSessionView));
 
     act(() => {
-      getAllByTestId('climb-actions-body')[0].click();
+      getAllByTestId('pressable')[0].click();
     });
 
     // Newest first, as the history lists them, and named for the player.
