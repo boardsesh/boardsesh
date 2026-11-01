@@ -40,10 +40,10 @@ const preferences = vi.hoisted(() => ({
 const accessibility = vi.hoisted(() => ({ announce: vi.fn() }));
 const playerButtons = vi.hoisted(() => ({
   buttons: {
-    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
-    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+    order: ['mirror', 'angle', 'favorite', 'share', 'queue'],
+    visible: { mirror: true, favorite: true, queue: true, share: true, angle: true },
   } as { order: string[]; visible: Record<string, boolean> },
-  previousNext: true,
+  previousNext: false,
   position: 'below' as 'below' | 'above',
   boardControl: 'wallButton' as 'wallButton' | 'lightbulb',
   setBoardControl: vi.fn(),
@@ -66,15 +66,15 @@ vi.mock('../../../lib/player-buttons-preference', () => ({
     position: string;
     boardControl: string;
   }) =>
-    previousNext &&
+    !previousNext &&
     position === 'below' &&
     boardControl === 'wallButton' &&
-    buttons.order.join() === 'mirror,favorite,queue,share,angle' &&
+    buttons.order.join() === 'mirror,angle,favorite,share,queue' &&
     buttons.visible.mirror &&
     buttons.visible.favorite &&
     buttons.visible.queue &&
-    !buttons.visible.share &&
-    !buttons.visible.angle,
+    buttons.visible.share &&
+    buttons.visible.angle,
 }));
 const miniPlayer = vi.hoisted(() => ({
   buttons: {
@@ -347,10 +347,10 @@ beforeEach(() => {
   preferences.restoreDefaults.mockClear();
   accessibility.announce.mockClear();
   playerButtons.buttons = {
-    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
-    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+    order: ['mirror', 'angle', 'favorite', 'share', 'queue'],
+    visible: { mirror: true, favorite: true, queue: true, share: true, angle: true },
   };
-  playerButtons.previousNext = true;
+  playerButtons.previousNext = false;
   playerButtons.position = 'below';
   playerButtons.boardControl = 'wallButton';
   miniPlayer.buttons = {
@@ -590,10 +590,10 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual([
       'mobile.settings.playerButtons.previousNext',
       'mobile.settings.playerButtons.buttons.mirror',
-      'mobile.settings.playerButtons.buttons.favorite',
-      'mobile.settings.playerButtons.buttons.queue',
-      'mobile.settings.playerButtons.buttons.share',
       'mobile.settings.playerButtons.buttons.angle',
+      'mobile.settings.playerButtons.buttons.favorite',
+      'mobile.settings.playerButtons.buttons.share',
+      'mobile.settings.playerButtons.buttons.queue',
     ]);
     expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(5);
     // The board control is always there; the climber picks how it looks (#7000).
@@ -619,7 +619,7 @@ describe('PlayDrawerSectionsSheet', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.position.above' }));
     expect(playerButtons.setPosition).toHaveBeenCalledWith('above');
     fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.previousNext' }));
-    expect(playerButtons.setPreviousNext).toHaveBeenCalledWith(false);
+    expect(playerButtons.setPreviousNext).toHaveBeenCalledWith(true);
   });
 
   it('lists the buttons in their saved order and draws the chosen position', () => {
@@ -639,7 +639,7 @@ describe('PlayDrawerSectionsSheet', () => {
     const restore = screen.getByTestId('player-buttons-restore-defaults') as HTMLButtonElement;
     expect(restore.disabled).toBe(true);
 
-    playerButtons.previousNext = false;
+    playerButtons.previousNext = true;
     screen.rerender(sheet());
     expect(restore.disabled).toBe(false);
     fireEvent.click(restore);

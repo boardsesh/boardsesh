@@ -552,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Pulsanti",
-        "description": "Scegli i pulsanti attorno a Registra, il loro ordine e dove stanno.",
+        "description": "Scegli fino a quattro pulsanti attorno a Registra, il loro ordine e dove stanno.",
         "position": {
           "label": "Posizione",
           "below": "Sotto il pannello",
@@ -560,7 +560,7 @@
           "footer": "Registra e Luce del pannello restano sempre al loro posto."
         },
         "previousNext": "Precedente e successivo",
-        "previousNextDescription": "Scorrere il pannello con il dito continua a cambiare blocco.",
+        "previousNextDescription": "Mostra le frecce accanto a Registra al posto di due pulsanti di azione. Scorrere il pannello con il dito continua a cambiare blocco.",
         "buttons": {
           "mirror": "Specchia",
           "favorite": "Preferito",
@@ -576,7 +576,7 @@
           "log": "Registra",
           "boardLight": "Luce del pannello"
         },
-        "footer": "Il primo pulsante attivo va all'estremità sinistra della riga in alto e l'ultimo a quella destra. Gli altri, e quelli che nascondi, sono nel menu ⋯.",
+        "footer": "Senza frecce, fino a quattro pulsanti attivi circondano Registra. Se ce ne sono di più per questo pannello, trovano posto il primo e gli ultimi tre. Con le frecce, appaiono solo il primo e l’ultimo. Gli altri, e quelli che nascondi, sono nel menu ⋯.",
         "settingsFooter": "Per cambiare l'ordine, apri il menu ⋯ su un blocco e scegli Opzioni di visualizzazione.",
         "previewLabel": "Anteprima, {{position}}: {{buttons}}",
         "boardControl": {

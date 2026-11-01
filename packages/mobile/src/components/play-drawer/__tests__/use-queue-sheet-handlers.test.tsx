@@ -28,6 +28,39 @@ function queueItemWithCount(ascensionistCount: null | undefined): ClimbQueueItem
 }
 
 describe('useQueueSheetHandlers', () => {
+  it('uses the queue-local presenter override without opening the root sheet or closing Queue', () => {
+    const rootOpen = vi.fn();
+    const localOpen = vi.fn();
+    const requestCloseQueueSheet = vi.fn();
+    const dismissQueueSheetAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const { result } = renderHook(() =>
+      useQueueSheetHandlers({
+        setCurrentClimb: vi.fn(),
+        openPlayDrawer: vi.fn(),
+        openClimbActions: vi.fn(),
+        openLogAscent: rootOpen,
+        storedBoardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+        sessionId: 'session-local',
+        requestCloseQueueSheet,
+        dismissQueueSheetAndWait,
+      }),
+    );
+    const item = queueItemWithCount(null);
+    act(() => result.current.handleTickHistory(item, localOpen));
+    expect(localOpen).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        climbUuid: item.climb.uuid,
+        boardName: 'kilter',
+        angle: item.climb.angle,
+        sessionId: 'session-local',
+        baseAscensionistCount: 0,
+      }),
+    );
+    expect(rootOpen).not.toHaveBeenCalled();
+    expect(requestCloseQueueSheet).not.toHaveBeenCalled();
+    expect(dismissQueueSheetAndWait).not.toHaveBeenCalled();
+  });
+
   it.each([
     { label: 'null', ascensionistCount: null },
     { label: 'undefined', ascensionistCount: undefined },

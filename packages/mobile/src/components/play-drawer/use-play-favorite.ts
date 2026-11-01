@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { TFunction } from 'i18next';
 import { hapticSelection } from '../../lib/haptics';
 import type { useToast } from '../../providers/toast-provider';
@@ -9,6 +10,7 @@ import type { PlayCoreEnhancementSnapshot } from './PlayCoreEnhancements';
 type PlayFavoriteSource = 'mobile_play_drawer' | 'play_drawer_menu';
 
 type PlayFavoriteOptions = {
+  analyticsContext?: AnalyticsEventProperties;
   displayedClimb: Climb | null | undefined;
   boardName: string;
   layoutId: number;
@@ -31,6 +33,7 @@ type PlayFavoriteOptions = {
  * and a new climb shows its own entry with nothing left over from the last.
  */
 export function usePlayFavorite({
+  analyticsContext,
   displayedClimb,
   boardName,
   layoutId,
@@ -52,13 +55,29 @@ export function usePlayFavorite({
         {
           input: { boardName, climbUuid: displayedClimb.uuid, angle },
           currentlyFavorited: isFavorited,
-          tracking: { source, layoutId, connected: bluetoothConnected },
+          tracking: {
+            source,
+            layoutId,
+            connected: bluetoothConnected,
+            ...(analyticsContext ? { analyticsContext } : {}),
+          },
         },
         // The toggle puts the heart back itself; this says it didn't stick.
         { onError: () => showToast(t('playView.favoriteError'), 'error') },
       );
     },
-    [displayedClimb, isFavorited, boardName, layoutId, angle, bluetoothConnected, toggleFavoriteMutate, showToast, t],
+    [
+      displayedClimb,
+      isFavorited,
+      boardName,
+      layoutId,
+      angle,
+      bluetoothConnected,
+      toggleFavoriteMutate,
+      showToast,
+      t,
+      analyticsContext,
+    ],
   );
 
   // The action bar's heart.

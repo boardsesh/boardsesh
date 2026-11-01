@@ -39,6 +39,7 @@ export interface BottomSheetMethods {
 }
 
 type WebBottomSheetProps = Omit<GorhomBottomSheetProps, 'onChange'> & {
+  stackBehavior?: 'replace' | 'push';
   onChange?: (index: number) => void;
   onDismiss?: () => void;
   onFullyDismissed?: () => void;
@@ -225,6 +226,7 @@ function runModalAction(modal: GorhomModalRef, action: PendingModalAction): void
 
 const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function BottomSheetModal(props, ref) {
   const {
+    stackBehavior = 'replace',
     index: indexProp,
     onChange,
     onClose,
@@ -331,7 +333,7 @@ const BottomSheetModal = forwardRef<BottomSheetMethods, WebBottomSheetProps>(fun
       index={initialIndex}
       enablePanDownToClose={enablePanDownToClose}
       enableDismissOnClose
-      stackBehavior="replace"
+      stackBehavior={stackBehavior}
       onChange={handleChange}
       onDismiss={handleDismiss}
       {...chrome}

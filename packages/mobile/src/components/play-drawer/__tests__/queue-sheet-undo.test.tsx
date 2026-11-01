@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
 import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
+vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -53,9 +54,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({
+    sheetId: 'queue-sheet-undo-test',
     handle: { present: vi.fn(), dismiss: vi.fn(), dismissAndWait: vi.fn() },
     onChange: vi.fn(),
     onFullyDismissed: vi.fn(),
+    waitForPresentation: vi.fn(async () => ({ status: 'presented' as const })),
   }),
 }));
 vi.mock('react-native-safe-area-context', () => ({

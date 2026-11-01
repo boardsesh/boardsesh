@@ -552,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Buttons",
-        "description": "Pick the buttons around Log, their order, and where they sit.",
+        "description": "Pick up to four buttons around Log, their order, and where they sit.",
         "position": {
           "label": "Position",
           "below": "Below the board",
@@ -560,7 +560,7 @@
           "footer": "Log and Board light always keep their places."
         },
         "previousNext": "Previous and next",
-        "previousNextDescription": "Swiping the board still moves between climbs.",
+        "previousNextDescription": "Show navigation arrows beside Log instead of two action buttons. Swiping the board still changes climbs.",
         "buttons": {
           "mirror": "Mirror",
           "favorite": "Favorite",
@@ -576,7 +576,7 @@
           "log": "Log",
           "boardLight": "Board light"
         },
-        "footer": "The first button on takes the top row's left end and the last one its right end. The rest, and any you hide, are in the ⋯ menu.",
+        "footer": "With navigation arrows off, up to four enabled buttons appear around Log. If more are available for this board, the first and last three take the places. With arrows on, only the first and last appear. The rest, and any you hide, are in the ⋯ menu.",
         "settingsFooter": "To change the order, open the ⋯ menu on a climb and pick View options.",
         "previewLabel": "Preview, {{position}}: {{buttons}}",
         "boardControl": {

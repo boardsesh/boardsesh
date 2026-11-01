@@ -33,11 +33,16 @@ type QueueSheetHandlerDeps = {
   dismissQueueSheetAndWait: () => Promise<DismissAndWaitResult>;
 };
 
+export type QueueHistoryTickHandler = (
+  item: ClimbQueueItem,
+  presentLogAscent?: (input: LogAscentInput) => void,
+) => void;
+
 type QueueSheetHandlers = {
   handleClimbPress: (item: ClimbQueueItem) => void;
   handleOpenActions: (item: ClimbQueueItem) => void;
   handleSuggestionPress: (climb: QueueClimb, source: PlaylistSuggestionSource) => void;
-  handleTickHistory: (item: ClimbQueueItem) => void;
+  handleTickHistory: QueueHistoryTickHandler;
 };
 
 /**
@@ -104,9 +109,9 @@ export function useQueueSheetHandlers({
   // Tick a history climb → open the log-ascent sheet (stacks above the queue
   // sheet, which stays open beneath) pre-filled with the active session.
   const handleTickHistory = useCallback(
-    (item: ClimbQueueItem) => {
+    (item: ClimbQueueItem, presentLogAscent = openLogAscent) => {
       if (!storedBoardConfig) return;
-      openLogAscent({
+      presentLogAscent({
         climb: item.climb,
         climbUuid: item.climb.uuid,
         climbName: item.climb.name,

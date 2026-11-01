@@ -1,3 +1,4 @@
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
@@ -50,6 +51,7 @@ export type WallControlRunners = {
 };
 
 export type UseWallControlOptions = {
+  analyticsContext?: AnalyticsEventProperties;
   model: WallControlModel;
   runners: WallControlRunners;
   /** For Wall Control Shown: the climb on screen. */
@@ -100,6 +102,7 @@ export type WallControlHandlers = {
  * through a ref), so a memoised bar doesn't re-render for them.
  */
 export function useWallControl({
+  analyticsContext,
   model,
   runners,
   climbUuid,
@@ -110,8 +113,8 @@ export function useWallControl({
   const { t: tSettings } = useTranslation('settings');
   const { t } = useTranslation('session');
   const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
-  const latest = useRef({ model, runners, stoppedDrivingLabel });
-  latest.current = { model, runners, stoppedDrivingLabel };
+  const latest = useRef({ model, runners, stoppedDrivingLabel, analyticsContext });
+  latest.current = { model, runners, stoppedDrivingLabel, analyticsContext };
   // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
   const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
@@ -140,7 +143,12 @@ export function useWallControl({
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
     // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
     const action = control === 'button' ? current.tapAction : current.bulbTapAction;
-    trackWallControlTapped({ state: current.state, action, control });
+    trackWallControlTapped({
+      state: current.state,
+      action,
+      control,
+      ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
+    });
     // Solo, a press that puts the climb up ends in driving (#7113 QA, Marco),
     // on the button and the bulb alike. With Light the board as I swipe off it
     // starts a live drive, which commits, connects and lights as the swipe

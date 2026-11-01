@@ -24,7 +24,14 @@ const player = vi.hoisted(() => ({
   nativeWait: vi.fn<() => Promise<DismissAndWaitResult>>(),
 }));
 const surface = vi.hoisted(() => ({ onLayout: null as ((event: LayoutChangeEvent) => void) | null }));
-const queueSheet = vi.hoisted(() => ({ mounted: 0, present: vi.fn(), dismiss: vi.fn(), dismissAndWait: vi.fn() }));
+const queueSheet = vi.hoisted(() => ({
+  mounted: 0,
+  present: vi.fn(),
+  dismiss: vi.fn(),
+  dismissAndWait: vi.fn(),
+  dismissWhenUncovered: vi.fn(),
+}));
+const logAscentHost = vi.hoisted(() => ({ open: vi.fn(), queueOpeners: [] as unknown[] }));
 // An iPhone by default; the iPad cases change it before rendering.
 const device = vi.hoisted(() => ({ isPad: false, width: 400, height: 900 }));
 const drawerProps = vi.hoisted(() => ({ fitBoardToHeight: undefined as boolean | undefined }));
@@ -139,6 +146,7 @@ vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
         present: queueSheet.present,
         dismiss: queueSheet.dismiss,
         dismissAndWait: queueSheet.dismissAndWait,
+        dismissWhenUncovered: queueSheet.dismissWhenUncovered,
       }));
       useEffect(() => {
         queueSheet.mounted += 1;
@@ -150,7 +158,18 @@ vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
 vi.mock('../../src/components/ble/DevicePickerSheetHost', () => ({ DevicePickerSheetHost: () => null }));
 // The route reports its picker as busy for the phone split; no picker is up here.
 vi.mock('../../src/providers/ble-picker-host', () => ({ useBlePickerHost: () => ({ pickerState: null }) }));
-vi.mock('../../src/components/play-drawer/use-queue-sheet-handlers', () => ({ useQueueSheetHandlers: () => ({}) }));
+vi.mock('../../src/components/play-drawer/use-queue-sheet-handlers', () => ({
+  useQueueSheetHandlers: ({ openLogAscent }: { openLogAscent: unknown }) => {
+    logAscentHost.queueOpeners.push(openLogAscent);
+    return {};
+  },
+}));
+vi.mock('../../src/components/tick/use-log-ascent-sheet-host', () => ({
+  useLogAscentSheetHost: () => ({
+    openLogAscent: logAscentHost.open,
+    sheet: createElement('div', { 'data-testid': 'route-tick-host' }),
+  }),
+}));
 vi.mock('../../src/providers/drawer-host-provider', () => ({
   usePlayDrawerRoute: () => ({
     activeBoardConfig: boardConfig,
@@ -191,6 +210,7 @@ function renderPlayer() {
 }
 
 beforeEach(() => {
+  logAscentHost.queueOpeners = [];
   queueSheet.mounted = 0;
   Object.assign(device, { isPad: false, width: 400, height: 900 });
   drawerProps.fitBoardToHeight = undefined;
@@ -581,6 +601,12 @@ describe('player swipe dismissal', () => {
 });
 
 describe('iPad player arrangement', () => {
+  it('uses the route-owned Tick host for both queue entry points', () => {
+    renderPlayer();
+    expect(logAscentHost.queueOpeners).toHaveLength(2);
+    expect(logAscentHost.queueOpeners.every((opener) => opener === logAscentHost.open)).toBe(true);
+    expect(screen.getByTestId('moving-surface').contains(screen.getByTestId('route-tick-host'))).toBe(true);
+  });
   it('puts Up next beside the board in landscape and selects it from the queue button', () => {
     Object.assign(device, { isPad: true, width: 1376, height: 1032 });
     renderPlayer();
@@ -598,7 +624,7 @@ describe('iPad player arrangement', () => {
     expect(queueSheet.present).not.toHaveBeenCalled();
   });
 
-  it('folds an open queue sheet away when the iPad turns to landscape', () => {
+  it('requests a deferred queue fold when the iPad turns to landscape', () => {
     Object.assign(device, { isPad: true, width: 1032, height: 1376 });
     const { rerender } = renderPlayer();
     fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
@@ -608,7 +634,11 @@ describe('iPad player arrangement', () => {
     Object.assign(device, { width: 1376, height: 1032 });
     rerender(createElement(PlayScreen));
     expect(screen.getByTestId('side-panel')).toBeTruthy();
-    expect(queueSheet.dismiss).toHaveBeenCalledTimes(1);
+    expect(queueSheet.dismissWhenUncovered).toHaveBeenLastCalledWith(true);
+    expect(queueSheet.dismiss).not.toHaveBeenCalled();
+    Object.assign(device, { width: 1032, height: 1376 });
+    rerender(createElement(PlayScreen));
+    expect(queueSheet.dismissWhenUncovered).toHaveBeenLastCalledWith(false);
   });
 
   it('keeps the board on top in portrait and presents the queue sheet', () => {

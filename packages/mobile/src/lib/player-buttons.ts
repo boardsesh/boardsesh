@@ -6,9 +6,10 @@ import type { SectionLayout, SectionLayoutSpec } from './section-layout';
 // Log and the wall button are not here. They are the loop the player exists
 // for, so they never move and never hide. Previous and next is one switch of
 // its own, not an entry in this list: the pair keeps its two slots either side
-// of Log. These five share the first row's two end slots; the rest live in ⋯.
+// of Log when shown. With the pair hidden, these five share four positions
+// around Log; with it shown, they share the two ends. The rest live in ⋯.
 
-export const PLAYER_BUTTON_IDS = ['mirror', 'favorite', 'queue', 'share', 'angle'] as const;
+export const PLAYER_BUTTON_IDS = ['mirror', 'angle', 'favorite', 'share', 'queue'] as const;
 export type PlayerButtonId = (typeof PLAYER_BUTTON_IDS)[number];
 export type PlayerButtonsLayout = SectionLayout<PlayerButtonId>;
 
@@ -29,14 +30,13 @@ export function sanitisePlayerBoardControl(stored: unknown): PlayerBoardControl 
 }
 
 /**
- * Marco's bar (#7000): `⇄ ⏮ ✓ ⏭ ☰` on a board that mirrors, with the heart in
- * ⋯, and `♡ ⏮ ✓ ⏭ ☰` on one that doesn't. The first button on fills the
- * leading slot and the last the trailing one (`resolveActionBarLayout`). Share
- * and Angle start in ⋯.
+ * The first candidate and last three fill the four positions around Log:
+ * `⇄ ♡ ✓ Share ☰` on a board that mirrors, and `Angle ♡ ✓ Share ☰` on an
+ * adjustable board that doesn't. Angle stays in ⋯ while Mirror takes its place.
  */
 export const DEFAULT_PLAYER_BUTTONS: PlayerButtonsLayout = Object.freeze({
   order: PLAYER_BUTTON_IDS,
-  visible: Object.freeze({ mirror: true, favorite: true, queue: true, share: false, angle: false }),
+  visible: Object.freeze({ mirror: true, angle: true, favorite: true, share: true, queue: true }),
 });
 
 export const PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {
@@ -44,7 +44,7 @@ export const PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {
   defaults: DEFAULT_PLAYER_BUTTONS,
 };
 
-export const DEFAULT_PLAYER_PREVIOUS_NEXT = true;
+export const DEFAULT_PLAYER_PREVIOUS_NEXT = false;
 export const DEFAULT_PLAYER_BUTTONS_POSITION: PlayerButtonsPosition = 'below';
 
 /** A stored position this build doesn't know (a newer bundle's) reads as the default. */
@@ -52,7 +52,7 @@ export function sanitisePlayerButtonsPosition(stored: unknown): PlayerButtonsPos
   return stored === 'above' ? 'above' : DEFAULT_PLAYER_BUTTONS_POSITION;
 }
 
-/** Only an explicit `false` hides the pair. */
+/** Preserve a stored choice; a missing or unrecognized value uses today's default. */
 export function sanitisePlayerPreviousNext(stored: unknown): boolean {
-  return stored !== false;
+  return typeof stored === 'boolean' ? stored : DEFAULT_PLAYER_PREVIOUS_NEXT;
 }

@@ -12,6 +12,7 @@ import type {
 } from '../../lib/player-buttons';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { useVariantValue } from '../../theme/variants';
 
 /** What the preview needs to know about the board it stands for. */
 export type PlayerButtonsPreviewBoard = {
@@ -69,6 +70,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
 }: PlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
+  const actionColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   const layout = useMemo(
     () =>
       resolveActionBarLayout({
@@ -105,8 +107,10 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
   const spokenButtons: string[] = [];
   if (layout.leadingSlot) spokenButtons.push(buttonLabel(layout.leadingSlot));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.previous'));
+  else if (layout.innerLeadingSlot) spokenButtons.push(buttonLabel(layout.innerLeadingSlot));
   spokenButtons.push(t('mobile.settings.playerButtons.fixed.log'));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.next'));
+  else if (layout.innerTrailingSlot) spokenButtons.push(buttonLabel(layout.innerTrailingSlot));
   if (layout.trailingSlot === 'lightbulb') spokenButtons.push(t('mobile.settings.playerButtons.fixed.boardLight'));
   else if (layout.trailingSlot) spokenButtons.push(buttonLabel(layout.trailingSlot));
   const smallRow = typeof layout.secondaryRow === 'string' ? [] : layout.secondaryRow;
@@ -123,7 +127,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
   });
 
   const glyph = (name: IconName, size: number) => (
-    <Icon maxFontSizeMultiplier={1} name={name} size={size} color={systemColors.label} />
+    <Icon maxFontSizeMultiplier={1} name={name} size={size} color={actionColor} />
   );
   const bar = (
     <View style={styles.bar}>
@@ -131,11 +135,23 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
         <View style={styles.bigSlot}>
           {layout.leadingSlot ? glyph(BUTTON_ICONS[layout.leadingSlot], BIG_ICON) : null}
         </View>
-        <View style={styles.bigSlot}>{layout.showPreviousNext ? glyph('skip.previous', BIG_ICON) : null}</View>
         <View style={styles.bigSlot}>
-          <Icon maxFontSizeMultiplier={1} name="tick.outline" size={BIG_ICON + 4} color={brandColors.success} />
+          {layout.showPreviousNext
+            ? glyph('skip.previous', BIG_ICON)
+            : layout.innerLeadingSlot
+              ? glyph(BUTTON_ICONS[layout.innerLeadingSlot], BIG_ICON)
+              : null}
         </View>
-        <View style={styles.bigSlot}>{layout.showPreviousNext ? glyph('skip.next', BIG_ICON) : null}</View>
+        <View style={styles.bigSlot}>
+          <Icon maxFontSizeMultiplier={1} name="tick.fill" size={32} color={actionColor} />
+        </View>
+        <View style={styles.bigSlot}>
+          {layout.showPreviousNext
+            ? glyph('skip.next', BIG_ICON)
+            : layout.innerTrailingSlot
+              ? glyph(BUTTON_ICONS[layout.innerTrailingSlot], BIG_ICON)
+              : null}
+        </View>
         <View style={styles.bigSlot}>
           {layout.trailingSlot === 'lightbulb' ? (
             <Icon maxFontSizeMultiplier={1} name="lightbulb" size={BIG_ICON} color={brandColors.primary} />

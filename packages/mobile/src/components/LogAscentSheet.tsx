@@ -19,13 +19,17 @@ import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
 import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
 import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
-import type { ManagedSheetHandle } from '../providers/sheet-presentation-provider';
+import type { ManagedSheetHandle, PresenterGroup } from '../providers/sheet-presentation-provider';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
 
 const SAVE_ICON = 'tick.outline' as const;
 
 type LogAscentSheetProps = {
+  /** Only set when this host is physically inside another native sheet. */
+  presenterGroup?: PresenterGroup;
+  parentSheetId?: string;
+  stacked?: boolean;
   climb?: TickClimbIdentity;
   visible: boolean;
   /** Request an animated close (close button, pan-down, tick complete). The
@@ -62,11 +66,17 @@ export function LogAscentSheet(props: LogAscentSheetProps) {
       visible={props.visible}
       onClose={props.onClose}
       onFullyDismissed={props.onFullyDismissed}
+      presenterGroup={props.presenterGroup}
+      parentSheetId={props.parentSheetId}
+      stacked={props.stacked}
     />
   );
 }
 
 function LogAscentSheetContent({
+  presenterGroup,
+  parentSheetId,
+  stacked,
   climb,
   visible,
   onClose,
@@ -194,6 +204,9 @@ function LogAscentSheetContent({
 
   return (
     <ModalSheet
+      presenterGroup={presenterGroup}
+      parentSheetId={parentSheetId}
+      stacked={stacked}
       ref={sheetRef}
       visible={visible}
       onClose={handleClose}

@@ -13,11 +13,32 @@ this page covers the buttons, the MiniPlayer and what they share.
   **Previous and next**; a **Board control**, Wall button (the default) or Lightbulb; and a **Position**, Below the
   board (the default) or Above the board. A pinned preview draws the bar for the board on screen as the climber
   changes it. Settings › Climb view has the same Board control picker.
-- **Defaults**: Mirror, Favorite, Queue, Share, Angle in that order, Share and Angle off. That gives
-  `⇄ ⏮ ✓ ⏭ ☰` with ♡ in ⋯ on a board that mirrors, and `♡ ⏮ ✓ ⏭ ☰` on one that doesn't.
-- **Restore defaults** on the Buttons tab brings back exactly that bar, with the wall button, below the board, with
-  Previous and next. The Below the climb tab has its own Restore defaults for the sections.
-- Nothing changes until the climber changes it.
+- **Defaults**: Mirror, Angle, Favorite, Share, Queue in that order, all on, with Previous and next off. The first
+  candidate and last three fill the four positions around Log: `⇄ ♡ ✓ Share ☰` on a board that mirrors,
+  `Angle ♡ ✓ Share ☰` on an adjustable board that doesn't. Angle waits in ⋯ while Mirror takes its place.
+- **Restore defaults** on the Buttons tab brings back that bar, with the wall button below the board and Previous
+  and next off. The Below the climb tab has its own Restore defaults for the sections.
+- Existing customized button choices, position and board control survive the upgrade. An untouched layout adopts
+  the new defaults. Explicitly stored Previous and next choices stay as they were.
+
+Log uses a 56 pt filled circled-check symbol in the same neutral colour as the other actions (white in dark mode).
+The native symbol centres the check within its circle. Its ordinary row keeps its existing 60 pt height:
+4 pt top padding plus the 56 pt control replaces 12 pt plus 48 pt. Neighbouring controls keep their sizes, and
+the rendered board keeps its allocation. The count badge, tap and hold behavior are unchanged.
+
+Queue history keeps its smaller 26 pt Tick, using the same neutral action colour rather than green.
+Tapping it opens the logging form above the Queue, retaining the Queue's detent and scroll position.
+Close or save dismisses Tick alone. A pending opening is cancelled if its Queue closes or credentials
+change; an old dismissal cannot close a later Tick. On iPad, a layout-only Queue fold waits for an
+open Tick to finish, so rotation does not discard its note.
+
+The `queue-sheet--history-tick` development story mounts the real QueueSheet with recorded climb data
+and two local queue occurrences. It exercises native child presentation without changing the saved queue.
+These iOS 27 simulator captures show the logging form and the retained Queue after closing it:
+
+| Tick above Queue | Queue after closing Tick |
+| --- | --- |
+| <img src="images/queue-tick-stacked.png" alt="Tick form presented above the native Queue" width="300" /> | <img src="images/queue-tick-return.png" alt="Queue history and scroll position retained after closing Tick" width="300" /> |
 
 Fixed, and why:
 
@@ -259,35 +280,37 @@ bar, the player's ⋯ menu and the preview all read it, so they can't disagree.
 
 ```
 Wall button (the default)
-Kilter, MoonBoard          [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡        Put on board             ]
-Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [☰]   /  [ 💡      Disconnect board       (me) ]
-Busy wall                  [♡]  [⏮]  [✓]  [⏭]  [☰]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
-Fell / Sent                [⏮] [ 💡   Disconnect board   (me) ] [⏭]  /  [ Fell              Sent ]
+Adjustable, no mirror     [40°] [♡]  [✓] [Share] [☰]   /  [ 💡        Put on board             ]
+Tension, Decoy, Woods      [⇄]  [♡]  [✓] [Share] [☰]   /  [ 💡      Disconnect board       (me) ]
+Busy wall                 [40°] [♡]  [✓] [Share] [☰]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
+Fell / Sent                [ ] [ 💡   Disconnect board   (me) ] [ ]  /  [ Fell              Sent ]
+Previous and next on       [⇄] [⏮]  [✓]  [⏭]   [☰]   /  [ 💡        Put on board             ]
 
 Lightbulb
-Tension, Decoy, Woods      [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [♡] ······················ [☰]
-A preview                  [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [♡] [ 💡 Put on the wall ] [☰]
-Fell / Sent                [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [ Fell              Sent ]
-Busy wall                  [⇄]  [⏮]  [✓]  [⏭]  [💡]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
+Tension, Decoy, Woods      [⇄]  [♡]  [✓] [Share] [💡]   /  [40°] ······················ [☰]
+A preview                  [⇄]  [♡]  [✓] [Share] [💡]   /  [40°] [ 💡 Put on the wall ] [☰]
+Fell / Sent                [⇄]  [♡]  [✓] [Share] [💡]   /  [ Fell              Sent ]
+Busy wall                  [⇄]  [♡]  [✓] [Share] [💡]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
 
 Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ················ [⬆]   (mirror boards keep [⇄])
 ```
 
-- **Two end slots.** The first row has a leading and a trailing slot around ⏮ ✓ ⏭. Of the climber's buttons that
-  are on and apply here, the **first** in their order takes the leading slot and the **last** the trailing slot.
-  Every other one, and every one switched off, is a ⋯ row. Mirror only counts on a board that mirrors
-  (`boardSupportsMirroring`), Angle only on a board whose angle changes; a draft has no Share. With one button on it
-  takes the leading slot alone; with none both slots are empty and the row keeps its five-slot spacing. So the
-  defaults (M, F, Q on) put ⇄ and ☰ at the ends on a mirror board and ♡ in ⋯; on any other board M doesn't count,
-  so ♡ and ☰ take the ends.
+- **Four positions around Log.** With Previous and next off, up to four enabled, applicable buttons take the row.
+  If more than four apply, the first and last three in the climber's order get the positions, in that order.
+  With Previous and next on, the pair takes the two inner positions and the first and last candidates get the
+  ends. A single candidate takes the leading end; with fewer than four, the first and last stay at the ends and
+  intermediate candidates fill the inner positions from left to right. Mirror only applies on a board that
+  mirrors (`boardSupportsMirroring`), Angle only where the angle changes. A draft keeps Share's empty position,
+  so other controls don't jump between climbs. Every applicable action not drawn remains in ⋯.
 - **Second row**: with the wall button chosen, the wall button alone, full width, in every wall state. With the bulb
   chosen, the bulb takes the trailing slot and the second row stays on every board with lights, as the bar before
-  #7000 did, so the board never jumps mid-swipe: the climber's other buttons on (everything after the leading
-  one), small, the first half left and the rest right, and Put on board in the gap for a preview, which pushes
+  #7000 did, so the board never jumps mid-swipe: the climber's other enabled buttons not in the first row, small,
+  the first half left and the rest right, and Put on board in the gap for a preview, which pushes
   nothing into ⋯. With no Bluetooth, on a spray wall or on a board with
   no lights there is no wall to light, so the row collapses (and there is no bulb). A preview keeps the row there
   for its Set active button.
-- **Previous and next off** leaves both slots empty, so Log stays centred. Swiping the board still moves.
+- **Previous and next off** fills the two inner positions with actions while Log stays centred. Swiping the board
+  still moves, and the board’s screen-reader increment/decrement actions still navigate.
 - **The busy-wall question** (#7017, `commitButton: 'confirm'`): someone else put a climb up while this climber
   looked around. Nothing draws over the first row or the climb. The question is the header caption, "Sam just put
   up Crimp Ladder" (`playView.wallState.busyWall.captionNamed`, the climb's name last and cut first), in place of
@@ -455,21 +478,22 @@ bar: no jump from today's bar to theirs.
 
 | Key                     | Type                          | Default   | Notes                                                                                         |
 | ----------------------- | ----------------------------- | --------- | --------------------------------------------------------------------------------------------- |
-| `playerButtonsV2`       | `SectionLayoutRecord & { boardControl? } \| null` | `null`    | Order and switches for Mirror, Favorite, Queue, Share and Angle (#7000), plus `boardControl: 'lightbulb'` when the bulb is chosen. Read and written only by `playerButtonsStore` (`createSectionLayoutStore`) and `setPlayerBoardControl`; the store's writes carry `boardControl` across. A record whose `version` isn't 1, or that isn't a record, reads as the defaults (and the wall button); a `boardControl` this build doesn't know reads as the wall button; unknown ids are kept, unknown switches dropped. The record stays non-null while the bulb is chosen, even with the buttons on their defaults. |
-| `playerPreviousNext`    | `boolean`                     | `true`    | Only an explicit `false` hides the pair.                                                      |
-| `playerButtonsPosition` | `'below' \| 'above'`          | `'below'` | Anything else reads as `'below'`.                                                             |
+| `playerButtonsV3`       | `SectionLayoutRecord & { boardControl? } \| null` | `null`    | Order and switches for Mirror, Angle, Favorite, Share and Queue, plus `boardControl: 'lightbulb'` when chosen. Read and written only by `playerButtonsStore` and `setPlayerBoardControl`. Unknown ids and boolean switches survive writes. A non-v1 or malformed record uses the new defaults. |
+| `playerButtonsV2`       | Legacy layout record          | `null`    | Imported once when V3 is physically absent, then left untouched for rollback. |
+| `playerPreviousNext`    | `boolean`                     | `false`   | Stored booleans survive; missing or malformed values use the new default. |
+| `playerButtonsPosition` | `'below' \| 'above'`          | `'below'` | Anything else reads as `'below'`. |
 
-- `null` means the defaults, so a later release's default order still reaches a climber who never changed it. The
-  store writes `null` again when a change lands back on the defaults, and on Restore defaults.
-- Ids this build doesn't know survive its writes, after the id they followed (`createSectionLayoutStore`), so a
-  newer bundle's buttons survive an OTA rollback and one edit.
-- **Rollback**: an older bundle ignores all three keys and draws its own bar below the board. Nothing is lost; the
-  choices come back with the newer bundle. A `playerWallBadge` stored by round 2 (the "Lit on the wall" text's
-  switch) is no longer read.
-- **Why V2.** `playerButtonsV1` stored choices made when each button had a fixed slot and Share and Angle had no
-  switch. Under the first/last rule the same record would move buttons the climber never moved, so #7000 starts a
-  new key and no longer reads V1. Everyone starts on the defaults once; an older bundle still finds its V1 record.
-- `resetAllSettings` clears all three.
+- `null` means the defaults, so a later release's default order reaches a climber who never changed it. Restore
+  defaults writes V3's default state; an explicit V3 `null` blocks re-importing V2, including after a relaunch.
+- **V2 migration** runs before the first snapshot. A valid customized V2 record keeps its full old order,
+  switches and board-control choice, with missing switches filled from frozen V2 defaults (Share and Angle off).
+  An unchanged V2 layout gets the new defaults. A record saved only to choose Lightbulb gets the new buttons
+  and keeps Lightbulb. Unknown ids and boolean switches are retained rather than collapsed into a default record.
+- **Rollback**: a V2 bundle still reads its untouched V2 layout. V3 writes do not overwrite it. Both generations
+  share the Previous and next switch and position, so explicit choices there remain available to either bundle.
+- **Why V3.** The old first/last-only row and the four-action row give order different placement semantics. The
+  new key makes that change explicit while preserving customized V2 choices through a one-time migration.
+- `resetAllSettings` clears current and legacy keys. A fresh launch then uses the new defaults.
 
 The sections below the climb keep their own AsyncStorage record (`playDrawerSections`); see
 [mobile-sheets-vs-routes.md](mobile-sheets-vs-routes.md#play-drawer-section-controls).
@@ -754,6 +778,33 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 | Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
 | View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |
 
+## Measuring the drawer's buttons
+
+The same recorded climb on the same iPhone 16 Pro simulator, before and after the action-row change.
+The board and its surrounding full-width band (pixels 400–2063 of the 1206 × 2622 captures) are pixel-identical.
+This fixed-angle capture has no Angle action; its three optional actions keep the first/last positions.
+
+| Before | After |
+| --- | --- |
+| <img src="images/play-drawer-actions-v3-before.png" alt="Previous and Next beside a small outline Tick" width="300" /> | <img src="images/play-drawer-actions-v3-after.png" alt="Share beside a larger white Tick, with the same board size" width="300" /> |
+
+`Play Drawer Actions Shown` records the actual action rows that fit completely inside the drawer's viewport.
+It waits for native layout measurements, excludes loading placeholders, board-mismatch scrims, open sheets and
+MiniPlayer-delegated rows, and captures through the existing analytics-consent gate. Ordinary renders and scroll
+frames do not emit events. A visible climb/layout transition or foreground resume can emit a new exposure.
+
+The exposure and drawer-origin action events carry `player_layout_version: 3`, `player_previous_next`,
+`player_board_control`, `player_tick_size`, and ordered `player_primary_slots` / `player_secondary_actions`.
+These lists are comma-separated strings because the analytics wrapper accepts primitive properties only; `-`
+marks an empty primary position. `player_visible_actions` includes only actions in fully visible rows, with
+`player_tick_visible` and `player_share_visible` as direct filters. Draft Share placeholders never count.
+
+Compare unique sessions using Share or Tick with unique sessions shown that action in the same layout cohort,
+and report the exposed sample size. Use the drawer-specific source/surface filters so menu and MiniPlayer use
+does not inflate button usage. Share still records opening the share flow, not a completed share or a referral.
+The old `Board Connect Tapped` series remains historical connect intent; new wall-button taps carry the layout
+context on `Wall Control Tapped`. Never add those two event counts together.
+
 ## Adding a button
 
 1. Add the id to `PLAYER_BUTTON_IDS` in `player-buttons.ts`, at the place its default should be. A stored order
@@ -764,7 +815,7 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 3. Add its label (and a subtitle if it only shows on some boards) to `use-player-button-controls.ts`, in every
    locale.
 4. Extend the "the climber's buttons" table in `resolve-action-bar-layout.test.ts`. If the change would move an
-   existing climber's buttons, start a new key (`playerButtonsV3`) rather than reading the old record differently.
+   existing climber's buttons, start a new key (next: `playerButtonsV4`) rather than reading the old record differently.
 
 ## Adding a section
 

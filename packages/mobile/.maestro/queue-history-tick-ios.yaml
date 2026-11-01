@@ -1,0 +1,44 @@
+# Manual iPhone regression using the dev-client and English recorded fixtures.
+# The story changes no persisted queue data. Keep the backend/Metro running.
+appId: com.boardsesh.app
+---
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: Home
+    timeout: 60000
+- openLink: com.boardsesh.app://dev/stories/queue-sheet--history-tick
+- tapOn:
+    text: Open
+    optional: true
+- extendedWaitUntil:
+    visible:
+      text: Open queue with history
+      enabled: true
+    timeout: 30000
+- tapOn: Open queue with history
+- extendedWaitUntil:
+    visible: Up next
+    timeout: 10000
+# Queue opens at the current item; reveal its history row below the header.
+- swipe:
+    start: 50%,76%
+    end: 50%,92%
+    duration: 600
+- waitForAnimationToEnd
+- tapOn:
+    id: tick-button
+- waitForAnimationToEnd
+- assertVisible: Log Attempt
+- tapOn: Tick note.*
+- inputText: Queue note retained
+- assertVisible: Queue note retained
+- tapOn: done
+- waitForAnimationToEnd
+- assertVisible: Queue note retained
+- tapOn:
+    id: tick-sheet-close
+- waitForAnimationToEnd
+- assertVisible: Up next
+- assertNotVisible:
+    id: tick-sheet-close

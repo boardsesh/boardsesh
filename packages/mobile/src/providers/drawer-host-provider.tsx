@@ -21,7 +21,7 @@ import { useWallDisplayOpen } from '../lib/wall-display-presence';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget } from '../components/play-drawer';
 import { LogAscentSheet } from '../components/LogAscentSheet';
 import { QueueSheet, type QueueSheetHandle } from '../components/play-drawer/QueueSheet';
@@ -159,7 +159,7 @@ export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
  *  resolved. Consumed by `IpadPlayPane`. */
 export type PlayDrawerPaneProps = {
   boardConfig: BoardConfig;
-  onAngleChange: (angle: number) => void;
+  onAngleChange: (angle: number, analyticsContext?: AnalyticsEventProperties) => void;
   isAngleAdjustable: boolean;
   onOpenQueue: () => void;
   boardMismatch: boolean;
@@ -299,7 +299,7 @@ type PlayDrawerRouteValue = {
   /** Board models standing at this gym. A climb on one of them invites the walk
    *  instead of raising the blocking scrim. */
   reachableBoardKeys: ReadonlySet<string>;
-  onAngleChange: (angle: number) => void;
+  onAngleChange: (angle: number, analyticsContext?: AnalyticsEventProperties) => void;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   /** Run from the route's unmount cleanup: clears the board override + open
    *  target so the next open starts clean. */
@@ -812,7 +812,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   // Apply an angle change made from the play drawer's angle selector.
   const handleAngleChange = useCallback(
-    (newAngle: number) => {
+    (newAngle: number, analyticsContext?: AnalyticsEventProperties) => {
       const cfg = activeBoardConfigRef.current;
       if (boardConfigOverride) {
         // Guard against the override's current angle, not the base board's.
@@ -838,6 +838,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       }
 
       track(SHARED_EVENTS.AngleChanged, {
+        ...analyticsContext,
         angle: newAngle,
         boardName: cfg?.boardName,
         layoutId: cfg?.layoutId,

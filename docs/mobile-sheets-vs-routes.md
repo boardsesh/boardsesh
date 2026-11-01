@@ -57,16 +57,15 @@ cleared behind your back. `AddToPlaylistSheet` is the reference.
 
 **Stacking above everything:** a **custom, non-sheet** overlay (Reanimated + plain views) can
 render in a higher iOS window via react-native-screens' `FullWindowOverlay` — that's how
-`ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. This does
-**not** work for a native `@expo/ui` sheet: a SwiftUI `.sheet` presents off the **key window**
-regardless of a `FullWindowOverlay` wrapper (the scar the player learned — see rule 1), so
-wrapping a sheet in one pushes it _under_ the overlay window, not above. A native sheet mounted
-inside a modal route presents above that route instead — that's how `HoldRoleSheet` shows over
-the New climb editor. There is **no**
+`ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. That wrapper
+does not supply a native sheet presenter. A native sheet must be physically mounted under the
+view controller it presents from: inside a modal route, or inside another sheet's native content.
+The Queue's Tick host uses the latter, with an explicit child presenter group and `parentId`.
+`HoldRoleSheet` presents inside the New climb editor's modal route. There is **no**
 `fullWindowOverlay` prop on `Sheet`; it was an inert no-op and has been removed.
 
-**Inline body instead of a nested sheet:** when a surface needs a secondary picker/form but a
-second native sheet can't stack (rule 1), extract the body as a **presentation-agnostic component**
+**Inline body instead of a nested sheet:** when a surface needs a secondary picker/form without
+its own native presenter (rule 1), extract the body as a **presentation-agnostic component**
 that mounts no sheet/overlay of its own and takes its text input by injection, then render it inline
 in both hosts. `InlinePlaylistPicker` (the "add to playlist" list + create form) is the reference:
 it renders inline in `ClimbReactionMenu`'s `FullWindowOverlay` (plain `TextInput`) and inside
@@ -91,9 +90,8 @@ disagree. Off the player (climb list, logbook, board sheet) the long-press `Clim
 omits the overrides and the root sheet is correct — nothing covers it. **Any new ⋯ row that opens
 a native sheet needs an in-tree opener**, or it re-hits the bug.
 
-**Every native sheet must go through the presentation coordinator.** `@expo/ui`
-sheets all present off the **same** root-window view controller, and the library
-does no serialization — overlapping a present with another sheet's dismiss
+**Every native sheet must go through the presentation coordinator.** Sibling `@expo/ui`
+sheet hosts share a presenter, and the library does no serialization — overlapping a present with another sheet's dismiss
 deadlocks UIKit and freezes the whole app (renders, but ignores every tap). The
 `ModalSheet`/`Sheet` wrappers route through `SheetPresentationProvider`
 (`src/providers/sheet-presentation-provider.tsx`) automatically. A surface with
@@ -106,9 +104,22 @@ the coordinator clears its desired-open flag and fires `onDisplaced`, which
 `useManagedSheet` delivers as the sheet's `onClose` (same contract as a user
 pan-down), so the parent clears the state that drove `open`. Never design a flow
 that expects a displaced sheet to come back by itself when the displacer closes —
-that implicit resume was the phantom-tick-sheet bug (PR #3595). One exception: the
+that implicit resume was the phantom-tick-sheet bug (PR #3595).
+
+**Explicit native children:** Queue history logging mounts its `LogAscentSheet` inside Queue's
+native content, gives it a separate group, and passes Queue's managed `sheetId` as `parentId`.
+`waitForPresentation()` waits for the parent's existing presentation settle without closing it.
+The coordinator permits children only while their ancestors are presented and desired open;
+closing or displacing a parent cancels pending child opens, then settles descendants before
+dismissing the parent. Removed presenters and their empty groups are pruned after native teardown.
+Changing a group name without physically nesting the host does not create a native presenter.
+On web, only the explicit child opts into modal `push`; ordinary siblings retain `replace`.
+The Queue's Tick target stays pinned through dismissal, with a new native host per opening and
+request-guarded callbacks. iPad layout-only queue folding waits until Tick finishes, preserving
+its note through rotation. The `/play` side panel uses a Tick host inside the player route.
+
 `FullWindowOverlay` menus (e.g. `ClimbReactionMenu`), which are custom overlays in a higher
-window, not native sheets. (`CreateDrawer` used to be a second one, a raw `BottomSheet` as the
+window, are not native sheets and do not need a coordinator group. (`CreateDrawer` used to be a second one, a raw `BottomSheet` as the
 create-climb route's primary sheet; New climb is a modal route now, so it has no sheet to
 coordinate.)
 
@@ -435,12 +446,13 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 
 ## The four hard rules (the _why_)
 
-1. **A bottom sheet can't host other native sheets stacking above it.** `@expo/ui` sheets
-   present off the **main window's** view controller, not off the sheet. So the moment a
-   surface needs several sub-sheets to stack _above_ it (the player opens beta / queue / share
-   / angle / tick / climb-actions), it **must** be a route — a real modal view controller, off
-   which those sub-sheets present and stack naturally. This is the single reason the player is
-   a route and not a sheet. **If a sheet only needs to hand off to ONE sub-surface at a time**
+1. **Sibling sheet hosts do not form a native stack.** A surface with several independently
+   opened sub-sheets (the player's beta / queue / share / angle / tick / climb-actions) uses a
+   modal route, with its sheet hosts inside that route. A small nested flow can instead mount
+   its child Host inside the parent's native content and declare the managed parent/child
+   relationship, as Queue history Tick does. It requires native retention and dismissal QA;
+   a sibling Host with an invented presenter group remains unsafe.
+   **If a sheet only needs to hand off to ONE sub-surface at a time**
    (not stack several), it can stay a sheet and instead **suspend → push a route → re-present**:
    set its controlled `open` to `false` (a coordinator self-dismiss, so it doesn't unmount and
    its local state survives), `router.push` the sub-route, and flip `open` back to `true` on a

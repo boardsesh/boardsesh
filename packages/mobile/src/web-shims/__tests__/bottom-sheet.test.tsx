@@ -14,6 +14,7 @@ type MockGorhomProps = {
   onClose?: () => void;
   onDismiss?: () => void;
   snapPoints?: readonly (number | string)[];
+  stackBehavior?: 'replace' | 'push';
 };
 
 const gorhom = vi.hoisted(() => ({
@@ -107,6 +108,21 @@ afterEach(() => {
 });
 
 describe('Expo web bottom-sheet adapter', () => {
+  it('replaces by default and preserves an explicitly stacked child sheet', () => {
+    const rendered = render(
+      <BottomSheetModal>
+        <span />
+      </BottomSheetModal>,
+    );
+    expect(gorhom.state.modalProps?.stackBehavior).toBe('replace');
+    rendered.rerender(
+      <BottomSheetModal stackBehavior="push">
+        <span />
+      </BottomSheetModal>,
+    );
+    expect(gorhom.state.modalProps?.stackBehavior).toBe('push');
+  });
+
   it('normalizes explicit snap points before forwarding both sheet variants to Gorhom', () => {
     render(
       <>

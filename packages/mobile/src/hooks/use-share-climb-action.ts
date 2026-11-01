@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/shared-schema';
 import { track } from '../lib/analytics';
 import { useToast } from '../providers/toast-provider';
@@ -17,6 +17,7 @@ type ShareClimbActionArgs = {
   setIds: string;
   angle: number;
   source: ShareClimbSource;
+  analyticsContext?: AnalyticsEventProperties;
 };
 
 /**
@@ -36,6 +37,7 @@ export function useShareClimbAction({
   setIds,
   angle,
   source,
+  analyticsContext,
 }: ShareClimbActionArgs): () => void {
   const { t } = useTranslation('session');
   const { showToast } = useToast();
@@ -43,6 +45,7 @@ export function useShareClimbAction({
   return useCallback(() => {
     if (!climb) return;
     track(SHARED_EVENTS.ClimbShared, {
+      ...analyticsContext,
       method: 'share',
       source,
       climbUuid: climb.uuid,
@@ -53,5 +56,5 @@ export function useShareClimbAction({
       console.warn(`[${source}] share failed:`, error);
       showToast(t('playView.shareError'), 'error');
     });
-  }, [climb, source, boardName, layoutId, shareClimb, showToast, t]);
+  }, [climb, source, boardName, layoutId, shareClimb, showToast, t, analyticsContext]);
 }

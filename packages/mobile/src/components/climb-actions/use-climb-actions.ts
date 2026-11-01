@@ -19,7 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
 import { canEditClimb } from '@boardsesh/create-climb-react';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../providers/drawer-host-provider';
@@ -186,6 +186,7 @@ type UseClimbActionsArgs = {
   dismissPlayerAndWait?: DismissSurfaceAndWait;
   /** See {@link ClimbActionsAnalyticsSource}. */
   analyticsSource?: ClimbActionsAnalyticsSource;
+  analyticsContext?: AnalyticsEventProperties;
   /**
    * When provided, the favourite row reads and toggles the caller's state (see
    * {@link ClimbActionsFavoriteControl}), and the hook skips its own favourite read.
@@ -222,6 +223,7 @@ export function useClimbActions({
   dismissSourceSheet,
   dismissPlayerAndWait,
   analyticsSource,
+  analyticsContext,
   favoriteControl,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
@@ -483,6 +485,7 @@ export function useClimbActions({
       color: successColor,
       run: () => {
         track(SHARED_EVENTS.QuickTickOpened, {
+          ...analyticsContext,
           climbUuid: climb.uuid,
           layoutId,
           source: analyticsSource ?? 'climb_actions',
@@ -607,6 +610,7 @@ export function useClimbActions({
           // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
           after();
           track(SHARED_EVENTS.ClimbShared, {
+            ...analyticsContext,
             method: 'share',
             source: analyticsSource ?? 'climb_actions_menu',
             climbUuid: climb.uuid,
@@ -719,6 +723,7 @@ export function useClimbActions({
     isFavorited,
     toggleFavoriteOverride,
     analyticsSource,
+    analyticsContext,
     openPlayDrawer,
     openLogAscent,
     openAddBetaVideo,

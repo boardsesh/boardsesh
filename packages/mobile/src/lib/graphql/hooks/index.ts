@@ -160,6 +160,7 @@ import {
 
 /** What a heart's FavoriteToggle event says beside the climb and the direction. */
 export type FavoriteToggleTracking = {
+  analyticsContext?: import('@boardsesh/analytics').AnalyticsEventProperties;
   source: string;
   layoutId: number;
   /** This phone holds the board's link. */
@@ -1218,6 +1219,7 @@ export function useToggleFavorite() {
       noteFavoriteStatusToggleStarted(favoriteStatusOrderKey(variables.input));
       if (variables.tracking && typeof variables.currentlyFavorited === 'boolean') {
         track(SHARED_EVENTS.FavoriteToggle, {
+          ...variables.tracking.analyticsContext,
           action: variables.currentlyFavorited ? 'removed' : 'added',
           climbUuid: variables.input.climbUuid,
           boardName: variables.input.boardName,

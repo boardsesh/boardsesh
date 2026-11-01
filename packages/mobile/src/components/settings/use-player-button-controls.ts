@@ -48,9 +48,9 @@ export function usePlayerButtonControls() {
   const mirrorDescription = t('mobile.settings.playerButtons.mirrorDescription');
   const angleDescription = t('mobile.settings.playerButtons.angleDescription');
 
-  // The five buttons that share the top row's two ends (#7000), in the
-  // climber's order: the first on takes the left end, the last the right, the
-  // rest live in ⋯. Log, ⏮ ⏭ and the wall button are fixed and not listed.
+  // The five buttons that share four places around Log (two ends when ⏮ ⏭
+  // are on), in the climber's order. The resolver chooses which fit; all other
+  // applicable actions remain in ⋯. Log and the wall button are fixed.
   const controls = useMemo<PlayerButtonControl[]>(() => {
     const labels: Record<PlayerButtonId, string> = {
       mirror: mirrorLabel,

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { resolveActionBarLayout, type ActionBarLayoutInput } from '../action-bar-layout';
 import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout } from '../../../lib/player-buttons';
 
+// A saved V2 layout remains usable with explicit navigation enabled.
+const LEGACY_BUTTONS: PlayerButtonsLayout = {
+  order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+  visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+};
+
 const MEMBER: ActionBarLayoutInput = {
   supportsMirroring: false,
   isAnonymous: false,
@@ -10,18 +16,106 @@ const MEMBER: ActionBarLayoutInput = {
   showLightbulb: true,
   hasShare: true,
   angleAvailable: true,
-  buttons: DEFAULT_PLAYER_BUTTONS,
+  buttons: LEGACY_BUTTONS,
   previousNext: true,
 };
 const MIRROR: ActionBarLayoutInput = { ...MEMBER, supportsMirroring: true };
 const NOTHING_HIDDEN = { tick: false, favorite: false, share: false, queue: false, mirror: false, angle: false };
 const BULB: Partial<ActionBarLayoutInput> = { boardControl: 'lightbulb' };
 
+function sideSlots(resolved: ReturnType<typeof resolveActionBarLayout>) {
+  return [resolved.leadingSlot, resolved.innerLeadingSlot, resolved.innerTrailingSlot, resolved.trailingSlot];
+}
+
+describe('resolveActionBarLayout: four actions around Log', () => {
+  const CURRENT = { ...MEMBER, buttons: DEFAULT_PLAYER_BUTTONS, previousNext: false };
+
+  it.each([
+    [true, ['mirror', 'favorite', 'share', 'queue']],
+    [false, ['angle', 'favorite', 'share', 'queue']],
+  ] as const)(
+    'uses Mirror or Angle while preserving Favorite, Share and Queue (mirror=%s)',
+    (supportsMirroring, slots) => {
+      const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring });
+      expect(sideSlots(resolved)).toEqual(slots);
+      expect(resolved.hidden).toEqual({ ...NOTHING_HIDDEN, angle: supportsMirroring });
+    },
+  );
+
+  it('restores the first and last positions when navigation is enabled', () => {
+    const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, previousNext: true });
+    expect(sideSlots(resolved)).toEqual(['mirror', null, null, 'queue']);
+    expect(resolved.showPreviousNext).toBe(true);
+    expect(resolved.hidden).toMatchObject({ favorite: true, share: true, angle: true });
+  });
+
+  it('respects a custom first action and hides only the action outside capacity', () => {
+    const resolved = resolveActionBarLayout({
+      ...CURRENT,
+      supportsMirroring: true,
+      buttons: { ...DEFAULT_PLAYER_BUTTONS, order: ['angle', 'mirror', 'favorite', 'queue', 'share'] },
+    });
+    expect(sideSlots(resolved)).toEqual(['angle', 'favorite', 'queue', 'share']);
+    expect(resolved.hidden.mirror).toBe(true);
+    expect(resolved.hidden.share).toBe(false);
+  });
+
+  it.each([
+    [[], [null, null, null, null]],
+    [['queue'], ['queue', null, null, null]],
+    [
+      ['favorite', 'queue'],
+      ['favorite', null, null, 'queue'],
+    ],
+    [
+      ['favorite', 'share', 'queue'],
+      ['favorite', 'share', null, 'queue'],
+    ],
+  ] as const)('anchors sparse choices at the ends: %s', (enabled, expected) => {
+    const resolved = resolveActionBarLayout({
+      ...CURRENT,
+      buttons: layout(['favorite', 'share', 'queue', 'mirror', 'angle'], enabled),
+    });
+    expect(sideSlots(resolved)).toEqual(expected);
+  });
+
+  it('keeps the draft Share placeholder without offering Share in the menu', () => {
+    const publicClimb = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true });
+    const draft = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, hasShare: false });
+    expect(sideSlots(draft)).toEqual(sideSlots(publicClimb));
+    expect(draft.innerTrailingSlot).toBe('share');
+    expect(draft.hidden.share).toBe(false);
+  });
+
+  it('places the bulb last and moves only unused actions into the second row', () => {
+    const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, ...BULB });
+    expect(sideSlots(resolved)).toEqual(['mirror', 'favorite', 'share', 'lightbulb']);
+    expect(resolved.secondaryRow).toEqual(['angle', 'spacer', 'queue']);
+    expect(resolved.hidden).toEqual(NOTHING_HIDDEN);
+    const busy = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, ...BULB, commitButton: 'confirm' });
+    expect(sideSlots(busy)).toEqual(sideSlots(resolved));
+    expect(busy.hidden).toMatchObject({ angle: true, queue: true, favorite: false, share: false });
+  });
+
+  it('clears all four action positions when the workout owns the top row', () => {
+    const resolved = resolveActionBarLayout({ ...CURRENT, supportsMirroring: true, workoutOutcome: true });
+    expect(sideSlots(resolved)).toEqual([null, null, null, null]);
+    expect(resolved.hidden).toEqual({
+      tick: true,
+      mirror: true,
+      angle: true,
+      favorite: true,
+      share: true,
+      queue: true,
+    });
+  });
+});
+
 /** The default switches, with the listed buttons switched off. */
 function off(...buttonIds: PlayerButtonId[]): PlayerButtonsLayout {
-  const visible = { ...DEFAULT_PLAYER_BUTTONS.visible };
+  const visible = { ...LEGACY_BUTTONS.visible };
   for (const buttonId of buttonIds) visible[buttonId] = false;
-  return { order: DEFAULT_PLAYER_BUTTONS.order, visible };
+  return { order: LEGACY_BUTTONS.order, visible };
 }
 
 // #7000: one wall button fills the second row on every board, in every wall
@@ -31,6 +125,8 @@ describe('resolveActionBarLayout: the bars', () => {
   it('leads with the heart on a board that cannot mirror', () => {
     expect(resolveActionBarLayout(MEMBER)).toEqual({
       primaryCenter: 'tick',
+      innerLeadingSlot: null,
+      innerTrailingSlot: null,
       leadingSlot: 'favorite',
       trailingSlot: 'queue',
       showPreviousNext: true,
@@ -43,6 +139,8 @@ describe('resolveActionBarLayout: the bars', () => {
   it('keeps Mirror first on a board that mirrors, and the heart lives in ⋯ only', () => {
     expect(resolveActionBarLayout(MIRROR)).toEqual({
       primaryCenter: 'tick',
+      innerLeadingSlot: null,
+      innerTrailingSlot: null,
       leadingSlot: 'mirror',
       trailingSlot: 'queue',
       showPreviousNext: true,
@@ -120,7 +218,7 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
   type Ends = [PlayerButtonId | null, PlayerButtonId | null];
   type Row = [string, PlayerButtonsLayout, Ends, Ends];
   const rows: Row[] = [
-    ['the defaults', DEFAULT_PLAYER_BUTTONS, ['mirror', 'queue'], ['favorite', 'queue']],
+    ['the saved defaults', LEGACY_BUTTONS, ['mirror', 'queue'], ['favorite', 'queue']],
     [
       'Share moved first and on',
       layout(['share', 'mirror', 'favorite', 'queue', 'angle'], ['share', 'mirror', 'favorite', 'queue']),
@@ -210,14 +308,14 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
     expect(draft.hidden.share).toBe(false);
   });
 
-  it('defaults to Marco’s bar, Share and Angle in ⋯', () => {
-    expect(DEFAULT_PLAYER_BUTTONS.order).toEqual(['mirror', 'favorite', 'queue', 'share', 'angle']);
+  it('enables the five actions in fallback-first priority order', () => {
+    expect(DEFAULT_PLAYER_BUTTONS.order).toEqual(['mirror', 'angle', 'favorite', 'share', 'queue']);
     expect(DEFAULT_PLAYER_BUTTONS.visible).toEqual({
       mirror: true,
       favorite: true,
       queue: true,
-      share: false,
-      angle: false,
+      share: true,
+      angle: true,
     });
   });
 });
@@ -403,6 +501,8 @@ describe('resolveActionBarLayout: the signed-out reader', () => {
   it('keeps Angle and Share in the row, with no heart, queue, bulb or wall button, and flags nothing', () => {
     expect(resolveActionBarLayout({ ...MEMBER, isAnonymous: true, commitButton: 'putOnWall' })).toEqual({
       primaryCenter: 'tick',
+      innerLeadingSlot: null,
+      innerTrailingSlot: null,
       leadingSlot: null,
       trailingSlot: null,
       showPreviousNext: true,

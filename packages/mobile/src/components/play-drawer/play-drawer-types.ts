@@ -1,3 +1,4 @@
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -93,7 +94,7 @@ export type PlayDrawerProps = {
   swipeDismiss?: SwipeDismissAnimation;
   onClose?: () => void;
   boardConfig: BoardConfig;
-  onAngleChange?: (angle: number) => void;
+  onAngleChange?: (angle: number, analyticsContext?: AnalyticsEventProperties) => void;
   /** When false, the board's angle is fixed — the angle pill is hidden. */
   isAngleAdjustable?: boolean;
   /** Open the queue list sheet (the route hosts its own QueueSheet instance so it

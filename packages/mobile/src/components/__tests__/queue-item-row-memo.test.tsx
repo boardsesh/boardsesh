@@ -24,6 +24,10 @@ import type { QueueDragControls } from '../play-drawer/use-queue-drag';
 // faithful proxy for "QueueItemRow's body ran". If React.memo is working, an
 // identical-props re-render must NOT bump this counter.
 const renderCounter = vi.hoisted(() => ({ count: 0 }));
+const themeState = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  scheme: 'dark' as 'dark' | 'light',
+}));
 
 // Capture the latest callback handed to the row's tap gesture, long-press gesture,
 // history-row tick-button gesture, and delete button so a test can assert identity
@@ -226,10 +230,12 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    variant: themeState.variant,
     systemColors: {
       secondaryBackground: '#fff',
       separator: '#ccc',
-      secondaryLabel: 'secondaryLabel',
+      label: themeState.scheme === 'dark' ? '#FFFFFF' : '#1C1C1E',
+      secondaryLabel: themeState.scheme === 'dark' ? '#D0D0D0' : '#3C3C43',
       tertiaryLabel: 'tertiaryLabel',
       error: 'systemRed',
     },
@@ -244,7 +250,8 @@ vi.mock('../Text', () => ({
 }));
 
 vi.mock('../Icon', () => ({
-  Icon: () => createElement('span', { 'data-icon': 'true' }),
+  Icon: ({ name, size, color }: { name: string; size: number; color: string }) =>
+    createElement('span', { 'data-icon': 'true', 'data-name': name, 'data-size': size, 'data-color': color }),
 }));
 
 vi.mock('../ClimbListItemContent', () => ({
@@ -301,6 +308,8 @@ const onToggleSelect = vi.fn();
 
 describe('QueueItemRow React.memo', () => {
   beforeEach(() => {
+    themeState.variant = 'liquidGlass';
+    themeState.scheme = 'dark';
     renderCounter.count = 0;
     captured.rowPress = null;
     captured.longPress = null;
@@ -314,6 +323,33 @@ describe('QueueItemRow React.memo', () => {
     a11y.row = null;
     a11y.tick = null;
     vi.clearAllMocks();
+  });
+
+  it.each([
+    ['liquidGlass', 'dark', '#FFFFFF'],
+    ['liquidGlass', 'light', '#1C1C1E'],
+    ['material', 'dark', '#D0D0D0'],
+    ['material', 'light', '#3C3C43'],
+  ] as const)('keeps the queue history Tick neutral at 26 pt (%s, %s)', (variant, scheme, expectedColor) => {
+    themeState.variant = variant;
+    themeState.scheme = scheme;
+    const props = {
+      item: makeItem('history', 'Crimp Master'),
+      position: 1,
+      board,
+      isHistoryItem: true,
+      isCurrentClimb: false,
+      onPress,
+      onRemove,
+      onTickHistory: vi.fn(),
+    };
+    const rendered = render(<QueueItemRow {...props} />);
+    for (const isCurrentClimb of [false, true]) {
+      rendered.rerender(<QueueItemRow {...props} isCurrentClimb={isCurrentClimb} />);
+      const tick = rendered.container.querySelector('[data-name="tick.fill"]');
+      expect(tick?.getAttribute('data-color')).toBe(expectedColor);
+      expect(tick?.getAttribute('data-size')).toBe('26');
+    }
   });
 
   it('announces frame counts when route metadata arrives for the same queue climb', () => {

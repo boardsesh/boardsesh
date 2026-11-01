@@ -34,6 +34,21 @@ afterEach(() => {
 });
 
 describe('SheetPresentationProvider coordinator (Android)', () => {
+  it('resolves requested presentation waiters at the existing Android ceiling without dismissing', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    const result = coordinator.waitForPresentation('a');
+    const settled = vi.fn();
+    void result.then(settled);
+    vi.advanceTimersByTime(SETTLE_MS - 1);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    await expect(result).resolves.toEqual({ status: 'presented' });
+    expect(a.dismiss).not.toHaveBeenCalled();
+  });
+
   it('does not warn (dev) when a coordinator-driven dismiss settles via the ceiling timer', () => {
     vi.stubGlobal('__DEV__', true);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

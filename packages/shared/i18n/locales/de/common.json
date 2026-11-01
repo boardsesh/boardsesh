@@ -552,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Buttons",
-        "description": "Wähle die Buttons rund um Eintragen, ihre Reihenfolge und ihren Platz.",
+        "description": "Wähle bis zu vier Buttons rund um Eintragen, ihre Reihenfolge und ihren Platz.",
         "position": {
           "label": "Position",
           "below": "Unter dem Board",
@@ -560,7 +560,7 @@
           "footer": "Eintragen und Board beleuchten behalten immer ihren Platz."
         },
         "previousNext": "Zurück und Weiter",
-        "previousNextDescription": "Das Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
+        "previousNextDescription": "Zeige Navigationspfeile neben Eintragen statt zwei Aktionsbuttons. Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
         "buttons": {
           "mirror": "Spiegeln",
           "favorite": "Favorit",
@@ -576,7 +576,7 @@
           "log": "Eintragen",
           "boardLight": "Board beleuchten"
         },
-        "footer": "Der erste eingeschaltete Button kommt ans linke Ende der oberen Reihe, der letzte ans rechte. Die übrigen und alle, die du ausblendest, sind im ⋯-Menü.",
+        "footer": "Ohne Navigationspfeile erscheinen bis zu vier eingeschaltete Buttons rund um Eintragen. Sind mehr für dieses Board verfügbar, bekommen der erste und die letzten drei einen Platz. Mit Pfeilen erscheinen nur der erste und der letzte. Die übrigen und alle ausgeblendeten Buttons sind im ⋯-Menü.",
         "settingsFooter": "Die Reihenfolge änderst du im Menü ⋯ eines Boulders unter Ansichtsoptionen.",
         "previewLabel": "Vorschau, {{position}}: {{buttons}}",
         "boardControl": {

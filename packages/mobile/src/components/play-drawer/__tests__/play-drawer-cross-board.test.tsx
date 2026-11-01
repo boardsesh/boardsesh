@@ -153,18 +153,22 @@ vi.mock('react-native', () => ({
     onLayout,
     style,
     testID,
+    ref,
   }: {
     children?: ReactNode;
     onLayout?: (event: LayoutChangeEvent) => void;
     style?: Props[] | Props;
     testID?: string;
+    ref?: unknown;
   }) => {
     const firstScreenStyle = Array.isArray(style)
       ? style.find((entry) => entry && 'height' in entry && 'paddingTop' in entry)
       : undefined;
     if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
     if (onLayout && style && !Array.isArray(style) && 'marginHorizontal' in style) recorded.boardLayout = onLayout;
-    else if (onLayout && !style) recorded.headerLayout = onLayout;
+    // Geometry telemetry has a ref-bearing wrapper without a style, too. The
+    // title header remains the unreffed measurement this suite drives.
+    else if (onLayout && !style && ref == null) recorded.headerLayout = onLayout;
     if (testID === 'play-drawer-tabletop-controls') return createElement('div', { 'data-testid': testID }, children);
     if (testID === 'play-drawer-controls-region') {
       const flattened = Object.assign({}, ...[style].flat(10).filter(Boolean)) as Props;
@@ -1412,23 +1416,27 @@ describe('PlayDrawer ⋯ menu', () => {
     expect(typeof recorded.actionsMenu.at(-1)?.onToggleFavorite).toBe('function');
   });
 
-  // Nothing on the bar is hidden outside commit mode and the connect pill.
-  // #7000: on a mirror board the heart, Share and Angle are ⋯ rows; Mirror and
-  // the queue sit in the bar.
+  // The four-action default exposes the heart and Share alongside Mirror and
+  // Queue. Angle stays available from the overflow menu on a mirroring board.
   it('tells ⋯ which bar buttons are put away', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     renderDrawer();
+    expect(recorded.actionBar.at(-1)?.previousNext).toBe(false);
+    // The adjustable board keeps its own navigation, independent of arrows.
+    expect(lastBoardProps().onSwipeNext).toBeTypeOf('function');
+    expect(lastBoardProps().onSwipePrevious).toBeTypeOf('function');
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: true,
-      share: true,
+      favorite: false,
+      share: false,
       queue: false,
       mirror: false,
+      angle: true,
     });
   });
 
   it('hands ⋯ a button the climber switched off, and the bar the same buttons', () => {
     onTestFinished(() => resetAllSettings());
-    setSetting('playerButtonsV2', {
+    setSetting('playerButtonsV3', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { queue: false },
@@ -1475,7 +1483,7 @@ describe('PlayDrawer controls position (#6229)', () => {
   // (below it), and they would take the taps meant for Switch board.
   it('holds the whole switch-board card inside the controls, above the board with every small button off', () => {
     setSetting('playerButtonsPosition', 'above');
-    setSetting('playerButtonsV2', {
+    setSetting('playerButtonsV3', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
@@ -1686,13 +1694,22 @@ describe('PlayDrawer queue analytics', () => {
   }
 
   it('reports the action bar ⏮ ⏭ as button steps, once each', () => {
+    setSetting('playerPreviousNext', true);
+    onTestFinished(() => resetAllSettings());
     arrangeNeighbours();
     renderDrawer();
+    expect(recorded.actionBar.at(-1)?.previousNext).toBe(true);
     press(recorded.actionBar.at(-1), 'onPrevClick');
     press(recorded.actionBar.at(-1), 'onNextClick');
     expect(queueAnalytics.navigation.mock.calls).toEqual([
-      [expect.objectContaining({ ...solo, direction: 'previous', method: 'button', outcome: 'moved' })],
-      [expect.objectContaining({ ...solo, direction: 'next', method: 'button', outcome: 'moved' })],
+      [
+        expect.objectContaining({ ...solo, direction: 'previous', method: 'button', outcome: 'moved' }),
+        expect.objectContaining({ player_layout_version: 3, player_previous_next: true }),
+      ],
+      [
+        expect.objectContaining({ ...solo, direction: 'next', method: 'button', outcome: 'moved' }),
+        expect.objectContaining({ player_layout_version: 3, player_previous_next: true }),
+      ],
     ]);
   });
 
@@ -1704,15 +1721,18 @@ describe('PlayDrawer queue analytics', () => {
     expect(queueAnalytics.navigation).toHaveBeenCalledOnce();
     expect(queueAnalytics.navigation).toHaveBeenCalledWith(
       expect.objectContaining({ ...solo, direction: 'previous', method: 'swipe', outcome: 'moved' }),
+      expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
     );
   });
 
   it("counts the board's screen-reader adjust action as the swipe it stands in for", () => {
     arrangeNeighbours();
     renderDrawer();
+    expect(recorded.actionBar.at(-1)?.previousNext).toBe(false);
     press(lastBoardProps(), 'onSwipeNext');
     expect(queueAnalytics.navigation).toHaveBeenCalledWith(
       expect.objectContaining({ direction: 'next', method: 'swipe' }),
+      expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
     );
   });
 
@@ -1722,8 +1742,14 @@ describe('PlayDrawer queue analytics', () => {
     press(recorded.actionBar.at(-1), 'onOpenQueue');
     press(recorded.actionsMenu.at(-1), 'onOpenQueue');
     expect(queueAnalytics.sheetOpened.mock.calls).toEqual([
-      [{ surface: 'player', boardType: 'kilter' }],
-      [{ surface: 'player_menu', boardType: 'kilter' }],
+      [
+        { surface: 'player', boardType: 'kilter' },
+        expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
+      ],
+      [
+        { surface: 'player_menu', boardType: 'kilter' },
+        expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
+      ],
     ]);
   });
 });
@@ -1851,7 +1877,12 @@ describe('PlayDrawer wall button taps', () => {
     expect(bluetooth.clearBoard).not.toHaveBeenCalled();
     expect(lightbulbState.onPress).not.toHaveBeenCalled();
     expect(wallControlTapped).toHaveBeenCalledOnce();
-    expect(wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action: 'disconnect', control });
+    expect(wallControlTapped).toHaveBeenCalledWith({
+      state: 'lit',
+      action: 'disconnect',
+      control,
+      analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
+    });
     // Letting go buzzes like a warning, and a screen reader hears it once the link drops.
     expect(wallHaptics.hapticWarning).toHaveBeenCalledOnce();
     expect(announceQueued).not.toHaveBeenCalled();
@@ -1953,7 +1984,12 @@ describe('PlayDrawer wall button taps', () => {
     expect(disconnectAllBluetooth).not.toHaveBeenCalled();
     expect(getDriveMode()).toBeNull();
     expect(isDrivingStoppedForLink()).toBe(true);
-    expect(wallControlTapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_driving', control: 'button' });
+    expect(wallControlTapped).toHaveBeenCalledWith({
+      state: 'lit',
+      action: 'stop_driving',
+      control: 'button',
+      analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
+    });
     expect(wallHaptics.hapticLight).toHaveBeenCalledOnce();
     expect(wallHaptics.hapticWarning).not.toHaveBeenCalled();
     expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
@@ -1983,7 +2019,12 @@ describe('PlayDrawer wall button taps', () => {
     expect(handed.result.current?.model.state).toBe('lit');
     // The bar's bulb runs the player's own handler, as `mini_bar`.
     act(() => handed.result.current?.press());
-    expect(wallControlTapped).toHaveBeenLastCalledWith({ state: 'lit', action: 'disconnect', control: 'mini_bar' });
+    expect(wallControlTapped).toHaveBeenLastCalledWith({
+      state: 'lit',
+      action: 'disconnect',
+      control: 'mini_bar',
+      analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
+    });
     view.unmount();
     handed.rerender();
     expect(handed.result.current).toBeNull();
@@ -2044,6 +2085,7 @@ describe('PlayDrawer wall button taps', () => {
         state: 'on_wall_unlinked',
         action: 'relight',
         control: 'button',
+        analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
       });
     });
 
@@ -2056,7 +2098,7 @@ describe('PlayDrawer wall button taps', () => {
 
   it('hands the bar the climber’s board control choice', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    setSetting('playerButtonsV2', {
+    setSetting('playerButtonsV3', {
       version: 1,
       order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
       visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
@@ -2083,7 +2125,12 @@ describe('PlayDrawer wall button taps', () => {
 
     expect(lightbulbState.onPress).toHaveBeenCalledOnce();
     expect(disconnectAllBluetooth).not.toHaveBeenCalled();
-    expect(wallControlTapped).toHaveBeenCalledWith({ state: 'crew', action: 'relay', control: 'button' });
+    expect(wallControlTapped).toHaveBeenCalledWith({
+      state: 'crew',
+      action: 'relay',
+      control: 'button',
+      analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
+    });
   });
 
   it('opens the board sheet from a hold on the wall button and from ⋯ › Board controls, connected', () => {
@@ -2228,7 +2275,13 @@ describe('PlayDrawer wall button taps', () => {
     expect(setCurrentClimb).not.toHaveBeenCalled();
     expect(bluetooth.reassertWall).not.toHaveBeenCalled();
     expect(lightbulbState.onPress).not.toHaveBeenCalled();
-    expect(wallControlTapped).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'noop', control: 'bulb' }));
+    expect(wallControlTapped).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: 'noop',
+        control: 'bulb',
+        analyticsContext: expect.objectContaining({ player_layout_version: 3 }),
+      }),
+    );
   });
 
   it('hands the bar one model for both views, and the bulb’s tap runs the same handler', () => {
