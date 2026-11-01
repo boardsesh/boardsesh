@@ -766,6 +766,14 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 
 ## Measuring the drawer's buttons
 
+The same recorded climb on the same iPhone 16 Pro simulator, before and after the action-row change.
+The board and its surrounding full-width band (pixels 400–2063 of the 1206 × 2622 captures) are pixel-identical.
+This fixed-angle capture has no Angle action; its three optional actions keep the first/last positions.
+
+| Before | After |
+| --- | --- |
+| <img src="images/play-drawer-actions-v3-before.png" alt="Previous and Next beside a small outline Tick" width="300" /> | <img src="images/play-drawer-actions-v3-after.png" alt="Share beside a larger filled Tick, with the same board size" width="300" /> |
+
 `Play Drawer Actions Shown` records the actual action rows that fit completely inside the drawer's viewport.
 It waits for native layout measurements, excludes loading placeholders, board-mismatch scrims, open sheets and
 MiniPlayer-delegated rows, and captures through the existing analytics-consent gate. Ordinary renders and scroll
