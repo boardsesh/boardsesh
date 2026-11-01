@@ -6,6 +6,8 @@ import { randomUUID } from 'expo-crypto';
 import { useQueryClient } from '@tanstack/react-query';
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
+import { getDatabaseHandle } from '../../db';
+import { getPendingFavoriteOverridesLocal } from '../../db/queries/get-favorite-status-local';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { reportHandledError } from '../../lib/error-reporting';
 import { readClimbChangeLights } from '../play-drawer/use-climb-change-lights';
@@ -473,22 +475,82 @@ export function useClimbActions({
           });
         if (resolveFavoriteOnAction) {
           const credentialScope = getCredentialGeneration();
-          void queryClient
-            .fetchQuery({
-              queryKey: ['favoriteStatus', boardName, climb.uuid, angle],
-              queryFn: () =>
-                offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
-                  boardName,
-                  climbUuids: [climb.uuid],
-                  angle,
-                }),
-              staleTime: 0,
-            })
+          const queryKey = ['favoriteStatus', boardName, climb.uuid, angle];
+          // Warm state includes optimistic/outbox intent and remains authoritative.
+          const cachedFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+          // A cold entry may already have an unguarded network read in flight.
+          // Replace that display read, without cancelling other menu actions'
+          // shared lookup under the separate transient key below.
+          if (cachedFavoriteResponse === undefined) {
+            void queryClient.cancelQueries({ queryKey, exact: true });
+          }
+          const assertCurrentCredentials = () => {
+            if (credentialScope !== getCredentialGeneration()) {
+              throw new Error('Favorite resolution interrupted by account change');
+            }
+          };
+          const favoriteResolution =
+            cachedFavoriteResponse !== undefined
+              ? Promise.resolve(cachedFavoriteResponse)
+              : queryClient.fetchQuery({
+                  // Coalesce cold menu lookups without joining a display query or
+                  // matching useToggleFavorite's per-heart cancellation prefix.
+                  // The private prefix still clears this data on account changes.
+                  queryKey: ['favoriteStatus', 'menu-resolution', boardName, climb.uuid, angle, credentialScope],
+                  staleTime: 0,
+                  gcTime: 0,
+                  retry: false,
+                  queryFn: async () => {
+                    assertCurrentCredentials();
+                    let pendingFavorite: boolean | undefined;
+                    const db = getDatabaseHandle();
+                    if (db && currentUserId) {
+                      try {
+                        const pendingOverrides = await getPendingFavoriteOverridesLocal(
+                          db,
+                          [climb.uuid],
+                          currentUserId,
+                        );
+                        pendingFavorite = pendingOverrides.get(climb.uuid);
+                      } catch {
+                        // An unavailable local outbox still permits the network read.
+                      }
+                      assertCurrentCredentials();
+                    }
+                    // Another heart can move while the outbox read is in flight.
+                    const cached = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+                    if (cached) return cached;
+                    // This also preserves cold-start/dead-letter intent, even if the
+                    // drainer acknowledges its row before a server response arrives.
+                    if (pendingFavorite !== undefined) {
+                      return { favorites: pendingFavorite ? [climb.uuid] : [] };
+                    }
+                    const response = await offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
+                      boardName,
+                      climbUuids: [climb.uuid],
+                      angle,
+                    });
+                    assertCurrentCredentials();
+                    return queryClient.getQueryData<FavoritesQueryResponse>(queryKey) ?? response;
+                  },
+                });
+          void favoriteResolution
             .then((response) => {
-              if (credentialScope === getCredentialGeneration())
-                toggleKnownFavorite(response.favorites.includes(climb.uuid));
+              assertCurrentCredentials();
+              // Two cold actions share the lookup but each keeps its toggle.
+              // The first toggle moves this primary entry synchronously, so
+              // the next continuation must read it again rather than restore
+              // their shared lookup's older answer.
+              const latestFavoriteResponse = queryClient.getQueryData<FavoritesQueryResponse>(queryKey);
+              if (latestFavoriteResponse === undefined) queryClient.setQueryData(queryKey, response);
+              assertCurrentCredentials();
+              toggleKnownFavorite((latestFavoriteResponse ?? response).favorites.includes(climb.uuid));
             })
-            .catch((error: unknown) => reportHandledError(error, { tags: { source: 'climb-menu', op: 'favorite' } }));
+            .catch((error: unknown) => {
+              if (credentialScope === getCredentialGeneration()) {
+                reportHandledError(error, { tags: { source: 'climb-menu', op: 'favorite' } });
+              }
+            });
         } else toggleKnownFavorite(isFavorited);
         after();
       },
