@@ -129,12 +129,18 @@ export function DevicePickerSheet({
   // controllers nothing identifies (no serial, or a serial nobody recorded),
   // strongest signal first within each. Only controllers that are positively a
   // different board wait behind "Search for any board" (#7125).
+  //
+  // Sorted once per scan push, never per serial lookup: the scan cache refreshes
+  // RSSI in place between pushes, so re-sorting on a lookup could swap rows the
+  // climber is about to tap. Grouping keeps the sorted order, so a lookup moves
+  // a row only when its group changes, and the full list keeps its identity.
   const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
+  const devicesByRssi = useMemo(() => sortByRssi(devices), [devices]);
   const listedDevices = useMemo(() => {
-    if (!filteringTarget || !targetBoard) return sortByRssi(devices);
-    const groups = groupPickerDevices(devices, resolvedBoards, targetBoard);
-    return [...sortByRssi(groups.target), ...sortByRssi(groups.unknown)];
-  }, [devices, filteringTarget, resolvedBoards, targetBoard]);
+    if (!filteringTarget || !targetBoard) return devicesByRssi;
+    const groups = groupPickerDevices(devicesByRssi, resolvedBoards, targetBoard);
+    return [...groups.target, ...groups.unknown];
+  }, [devicesByRssi, filteringTarget, resolvedBoards, targetBoard]);
 
   // Pre-compute once per devices update; name is stable for a given device
   // throughout a scan session so parsing per renderItem invocation is wasteful.

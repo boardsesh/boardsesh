@@ -66,6 +66,12 @@ describe('classifyPickerDevice', () => {
     expect(classifyPickerDevice(kilter, new Map([['12345', recorded(boardUuid)]]), target)).toBe('unknown');
   });
 
+  it('leaves a recording for a board type this app does not know unknown', () => {
+    expect(classifyPickerDevice(kilter, new Map([['12345', recorded('qa-kilter', 'not-a-board')]]), target)).toBe(
+      'unknown',
+    );
+  });
+
   it('sets apart anonymous geometry recorded for a different board type', () => {
     expect(classifyPickerDevice(kilter, new Map([['12345', recorded(null, 'tension')]]), target)).toBe('other');
   });
@@ -104,7 +110,7 @@ describe('classifyPickerDevice', () => {
     );
   });
 
-  it('sets apart the gym Tension at a Kilter connect with or without a resolvable serial (#7125)', () => {
+  it('sets apart the gym Tension at a Kilter connect with or without a serial (#7125)', () => {
     expect(classifyPickerDevice(tension, new Map(), target)).toBe('other');
     expect(classifyPickerDevice({ ...tension, name: 'Tension Board' }, new Map(), target)).toBe('other');
   });
