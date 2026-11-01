@@ -173,6 +173,70 @@ class TestflightDistributionTest < Minitest::Test
     assert_equal "Discord Users", receipt.fetch("groupName")
   end
 
+  def test_defers_only_the_specific_apple_beta_review_conflict_then_recovers
+    @after_distribution = -> { raise "Another build is in review. Another build in the same train is already in beta review. Please submit it again once it gets completed." }
+    deferred = runner.run
+    assert_equal "deferred-beta-review", deferred.fetch("status")
+    assert_equal "build-2", deferred.fetch("buildId")
+    assert_equal false, deferred.fetch("notificationRequested")
+    assert_includes BoardseshTestflightDistribution.summary(deferred), "hourly retry"
+    @after_distribution = -> do
+      @group.builds = [@build]
+      @build.build_beta_detail.external_build_state = "WAITING_FOR_BETA_REVIEW"
+    end
+    assert_equal "pending-beta-review", runner.run.fetch("status")
+    assert_equal 2, @distribution_options.length
+    runner.run
+    assert_equal 2, @distribution_options.length
+  end
+
+  def test_processing_timeout_requires_an_authenticated_read_confirming_processing_or_absence
+    @after_distribution = -> { raise "FastlaneCore::BuildWatcher exceeded the '2700' seconds, Stopping now!" }
+    @build.processing_state = "PROCESSING"
+    assert_equal "deferred-processing", runner.run.fetch("status")
+    @builds = []
+    assert_equal "deferred-processing", runner.run.fetch("status")
+    @builds = [@build]
+    @build.processing_state = "VALID"
+    assert_raises(RuntimeError) { runner.run }
+  end
+
+  def test_authentication_errors_and_generic_timeouts_never_become_deferrals
+    ["Unauthorized", "Forbidden", "Connection timed out", "Timed out waiting for build to finish processing.", "FastlaneCore::BuildWatcher exceeded the '600' seconds, Stopping now!", "Another build is in review"].each do |message|
+      @after_distribution = -> { raise message }
+      error = assert_raises(RuntimeError) { runner.run }
+      assert_equal message, error.message
+    end
+  end
+
+  def test_a_deferred_error_cannot_hide_a_rejected_build_or_failed_readback
+    @after_distribution = -> do
+      @build.build_beta_detail.external_build_state = "BETA_REJECTED"
+      raise "Another build in the same train is already in beta review"
+    end
+    assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
+    @build.build_beta_detail.external_build_state = "READY_FOR_BETA_SUBMISSION"
+    queries = 0
+    guarded = BoardseshTestflightDistribution::Runner.new(
+      app: @app, version: "2.7.0", build_number: "2", notes: @notes,
+      find_builds: -> { queries += 1; raise "Forbidden" if queries > 1; [@build] },
+      distribute: ->(_options) { raise "FastlaneCore::BuildWatcher exceeded the '2700' seconds, Stopping now!" }
+    )
+    assert_equal "Forbidden", assert_raises(RuntimeError) { guarded.run }.message
+  end
+
+  def test_lost_success_response_reconciles_assignment_without_resubmission
+    @after_distribution = -> do
+      @group.builds = [@build]
+      @build.build_beta_detail.external_build_state = "WAITING_FOR_BETA_REVIEW"
+      raise "Another build in the same train is already in beta review"
+    end
+    assert_equal "already-assigned", runner.run.fetch("action")
+    @distribution_options.clear
+    runner.run
+    assert_empty @distribution_options
+  end
+
   def test_repairs_an_existing_unsubmitted_assignment_with_approval_notifications_enabled
     @group.builds = [@build]
     receipt = runner.run
@@ -372,7 +436,9 @@ class TestflightDistributionTest < Minitest::Test
   def test_actual_lane_uses_workflow_environment_and_validates_before_authentication
     lane = load_lane
     ENV["RELEASE_VERSION"], ENV["IOS_BUILD_NUMBER"], ENV["TESTFLIGHT_NOTES_PATH"] = "2.7.0", "2", "notes.txt"
+    ENV["TESTFLIGHT_DISTRIBUTION_OUTPUT"] = File.join(@root, "lane-result.json")
     assert_equal "pending-beta-review", lane.call({}).fetch("status")
+    assert_equal "pending-beta-review", JSON.parse(File.read(ENV.fetch("TESTFLIGHT_DISTRIBUTION_OUTPUT"))).fetch("status")
     ENV["RELEASE_VERSION"] = "wrong"
     ENV.delete("APP_STORE_CONNECT_API_KEY_ID")
     error = assert_raises(RuntimeError) { lane.call({}) }

@@ -16,6 +16,7 @@
   "include": [
     "testflight-build.ts",
     "testflight-notes.ts",
+    "testflight-distribution.ts",
     "lib/testflight-*.ts",
     "__tests__/testflight-*.test.ts",
     "mobile-store-submission-guard.ts",
