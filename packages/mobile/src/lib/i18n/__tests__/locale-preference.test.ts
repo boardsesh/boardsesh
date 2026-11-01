@@ -24,10 +24,15 @@ describe('isLocaleOverride', () => {
     expect(isLocaleOverride('es')).toBe(true);
     expect(isLocaleOverride('fr')).toBe(true);
     expect(isLocaleOverride('de')).toBe(true);
+    expect(isLocaleOverride('zh-Hans')).toBe(true);
   });
 
   it('rejects unknown locales and non-string junk', () => {
     expect(isLocaleOverride('ja')).toBe(false);
+    // The picker stores app locale ids, never raw device tags.
+    expect(isLocaleOverride('zh')).toBe(false);
+    expect(isLocaleOverride('zh-CN')).toBe(false);
+    expect(isLocaleOverride('zh-Hant')).toBe(false);
     expect(isLocaleOverride('')).toBe(false);
     expect(isLocaleOverride(null)).toBe(false);
     expect(isLocaleOverride(undefined)).toBe(false);

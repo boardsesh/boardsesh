@@ -1,8 +1,8 @@
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@boardsesh/i18n';
+import { DEFAULT_LOCALE, WEB_LOCALES } from '@boardsesh/i18n';
 
 const LEGACY_PREVIEW_PREFIX = /^(?:https:\/\/(?:www\.)?boardsesh\.com(?:\/|$)|com\.boardsesh\.app:\/\/\/?)/i;
 const LEGACY_PREVIEW_BRANCH = /^pr-([1-9]\d*)$/;
-const LOCALE_PREFIXES: ReadonlySet<string> = new Set(SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE));
+const LOCALE_PREFIXES: ReadonlySet<string> = new Set(WEB_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE));
 
 /** Recognize durable links emitted by Boardsesh's retired OTA picker. */
 export function isLegacyPreviewLink(url: string): boolean {

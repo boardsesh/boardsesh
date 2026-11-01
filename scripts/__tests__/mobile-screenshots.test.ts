@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
-import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
+import { SUPPORTED_LOCALES, type Locale } from '../../packages/shared/i18n/src/config';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1116,19 +1116,21 @@ describe('renderMaestroFlowForIosDevice', () => {
   });
 
   it('provides the current native sidebar labels for every supported locale', () => {
-    const expected = {
+    const expected: Partial<Record<Locale, string[]>> = {
       'en-US': ['Home', 'Climbs', 'On the Wall', 'Session', 'Discover', 'Profile'],
       es: ['Inicio', 'Bloques', 'En el muro', 'Sesión', 'Descubre', 'Perfil'],
       fr: ['Accueil', 'Blocs', 'Sur le mur', 'Session', 'Découvrir', 'Profil'],
       de: ['Start', 'Boulder', 'An der Wand', 'Session', 'Entdecken', 'Profil'],
     };
     for (const locale of allAppLocales) {
+      const labels = expected[locale];
+      if (!labels) throw new Error(`no expected sidebar labels for ${locale}`);
       const env = buildIosSidebarMaestroEnv(locale);
       expect(env).toHaveLength(16);
       expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
       expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
       for (const [index, segment] of ['HOME', 'CLIMBS', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
-        expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + expected[locale][index]);
+        expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + labels[index]);
       }
     }
   });

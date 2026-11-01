@@ -11,9 +11,9 @@
 // only ever sees paths that already failed to match, so it can't shadow a real
 // route. Pure and React-free so the segment rules are unit-testable on their own.
 
-import { SUPPORTED_LOCALES } from '@boardsesh/i18n';
+import { WEB_LOCALES } from '@boardsesh/i18n';
 
-const localeSegments: ReadonlySet<string> = new Set<string>(SUPPORTED_LOCALES);
+const localeSegments: ReadonlySet<string> = new Set<string>(WEB_LOCALES);
 
 /**
  * `path` with one leading supported-locale segment removed, or `null` when there

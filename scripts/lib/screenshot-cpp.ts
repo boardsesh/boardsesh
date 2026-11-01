@@ -14,6 +14,7 @@ import {
   screenshotCppBoardMatches,
   type ScreenshotCppBoardIdentity,
 } from '../../packages/mobile/src/lib/screenshot-cpp-board-identity';
+import type { Locale } from '../../packages/shared/i18n/src/config';
 
 export const CPP_TARGETS = ['kilter', 'tension', 'moonboard', 'spray'] as const;
 export type CppTarget = (typeof CPP_TARGETS)[number];
@@ -47,7 +48,9 @@ export interface CppSceneCoverage {
   ascentId?: string;
   /** Actual rendered climb identifier, preserving Aurora's compact UUID form. */
   climbId?: string;
-  readyTextByLocale?: Record<'en-US' | 'es' | 'fr' | 'de', string>;
+  // Captured for the store locales only. Partial so an app-only locale (zh-Hans)
+  // reads undefined and falls back to `readyText`.
+  readyTextByLocale?: Partial<Record<Locale, string>>;
   sessionId?: string;
   /** Genuine GradeRail bounds and the API count for this exact selection. */
   gradeFilter?: {
@@ -94,7 +97,7 @@ export interface CppCaptureCoverage {
   /** Actual visible names from the verified UUID/config-matched owned roster. */
   boardNames?: Record<string, string>;
   boardReadyText: Record<string, string>;
-  boardReadyTextByLocale?: Record<string, Record<'en-US' | 'es' | 'fr' | 'de', string>>;
+  boardReadyTextByLocale?: Record<string, Partial<Record<Locale, string>>>;
   boardHeroModes?: Record<string, 'climb' | 'wall-editor'>;
   boardClimbCounts?: Record<string, number>;
   boardPhotoSha256?: Record<string, string>;

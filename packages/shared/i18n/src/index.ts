@@ -1,4 +1,6 @@
 export {
+  WEB_LOCALES,
+  APP_ONLY_LOCALES,
   SUPPORTED_LOCALES,
   DEFAULT_LOCALE,
   DEFAULT_NAMESPACE,
@@ -7,8 +9,10 @@ export {
   LOCALE_LABELS,
   ALL_NAMESPACES,
   MOBILE_NAMESPACES,
+  isWebLocale,
   isSupportedLocale,
   type Locale,
+  type WebLocale,
   type Namespace,
   type MobileNamespace,
 } from './config';
