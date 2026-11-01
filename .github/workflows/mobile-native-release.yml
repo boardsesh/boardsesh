@@ -16,18 +16,26 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Plan, coordinate native releases, or bootstrap the protected baseline'
+        description: 'Plan, coordinate, bootstrap the baseline, or restore a mistaken version bump'
         type: choice
-        options: [plan, coordinate, baseline]
+        options: [plan, coordinate, baseline, restore-version]
         default: plan
       source_sha:
         description: 'Pre-cutover main SHA for baseline only'
         type: string
         required: false
       apply:
-        description: 'Publish the baseline tag (baseline action only)'
+        description: 'Apply a baseline or version restoration; false only plans'
         type: boolean
         default: false
+      target_version:
+        description: 'Exact unreleased version to restore (restore-version only)'
+        type: string
+        required: false
+      expected_stamp_sha:
+        description: 'Exact latest mistaken version-bump SHA to supersede (restore-version only)'
+        type: string
+        required: false
 
 concurrency:
   group: mobile-native-release
@@ -77,7 +85,7 @@ jobs:
         run: vp test run scripts/mobile-native-release.test.ts --reporter=agent
       - name: Mint repository App token for version stamps and protected baseline
         id: push_token
-        if: inputs.action != 'plan'
+        if: inputs.action != 'plan' && (inputs.action != 'restore-version' || inputs.apply)
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
@@ -88,6 +96,8 @@ jobs:
           ACTION: ${{ inputs.action || 'coordinate' }}
           BASELINE_SHA: ${{ inputs.source_sha }}
           APPLY_BASELINE: ${{ inputs.apply || 'false' }}
+          TARGET_VERSION: ${{ inputs.target_version }}
+          EXPECTED_STAMP_SHA: ${{ inputs.expected_stamp_sha }}
           GH_TOKEN: ${{ github.token }}
           PUSH_TOKEN: ${{ steps.push_token.outputs.token }}
           NATIVE_ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -98,6 +108,10 @@ jobs:
             coordinate) args=(coordinate) ;;
             baseline)
               args=(baseline --source-sha "$BASELINE_SHA")
+              if [ "$APPLY_BASELINE" = true ]; then args+=(--apply); fi
+              ;;
+            restore-version)
+              args=(restore-version --target-version "$TARGET_VERSION" --expected-stamp-sha "$EXPECTED_STAMP_SHA")
               if [ "$APPLY_BASELINE" = true ]; then args+=(--apply); fi
               ;;
             *) echo '::error::Unknown native release action.'; exit 1 ;;

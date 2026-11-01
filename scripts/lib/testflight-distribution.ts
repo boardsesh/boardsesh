@@ -2,6 +2,29 @@
 
 import { parseBuildTag } from './release-tags';
 import { objectFields, type TestflightBuildReceipt } from './testflight-build';
+import { getSupersededNativeStampShas } from '../mobile-native-release';
+
+/** Refresh authority before retiring uploads; a failed refresh must fail closed. */
+export function readSupersededTestflightSources(
+  execute: (binary: string, argumentsList: string[]) => string,
+  readLineage = getSupersededNativeStampShas,
+  directory = process.cwd(),
+): ReadonlySet<string> {
+  execute('git', [
+    '-C',
+    directory,
+    '-c',
+    'credential.helper=',
+    '-c',
+    'credential.helper=!gh auth git-credential',
+    'fetch',
+    '--quiet',
+    '--no-tags',
+    'origin',
+    '+refs/heads/main:refs/remotes/origin/main',
+  ]);
+  return new Set(readLineage(directory));
+}
 
 export const DISTRIBUTION_WORKFLOW = '.github/workflows/ios-testflight-distribute.yml';
 export const DISTRIBUTION_STATUSES = [
@@ -65,10 +88,11 @@ export function parseDistributionResult(input: unknown): DistributionResult {
 
 export function latestUploadedIosBuild(
   tags: readonly { name: string; sha: string }[],
+  supersededSources: ReadonlySet<string> = new Set(),
 ): { name: string; sha: string } | null {
   const builds = tags.flatMap((tag) => {
     const parsed = parseBuildTag(tag.name);
-    if (parsed?.platform !== 'ios' || !SHA.test(tag.sha)) return [];
+    if (parsed?.platform !== 'ios' || !SHA.test(tag.sha) || supersededSources.has(tag.sha)) return [];
     return [{ tag, parsed }];
   });
   builds.sort((left, right) => {

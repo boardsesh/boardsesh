@@ -4,6 +4,9 @@ import { parseBuildTag, parseReleaseTag } from './release-tags.ts';
 
 export const NATIVE_BASELINE_TAG = 'release/native-baseline';
 export const NATIVE_STAMP_MARKER = 'Native-Release: version-bump';
+export const NATIVE_ADOPTION_MARKER = 'Native-Release: version-adoption';
+export const NATIVE_RESTORATION_MARKER = 'Native-Release: version-restoration';
+export const NATIVE_STAMP_PATTERN = '^Native-Release: version-(bump|adoption|restoration)$';
 export const NATIVE_BASELINE_MARKER = 'Native-Release: baseline';
 export const NATIVE_WORKFLOWS = [
   { platform: 'ios', file: 'ios-testflight-rn.yml', uploadStep: 'Export archive (uploads to TestFlight)' },
@@ -11,8 +14,15 @@ export const NATIVE_WORKFLOWS = [
 ] as const;
 export type NativePlatform = (typeof NATIVE_WORKFLOWS)[number]['platform'];
 export type NativeFingerprints = Record<NativePlatform, string>;
-export type NativeReleaseMetadata = NativeFingerprints & { sourceSha: string; version?: string };
-export type NativeStamp = NativeFingerprints & { sourceSha: string; version: string; sha: string };
+export type NativeStampKind = 'version-bump' | 'version-adoption' | 'version-restoration';
+export type NativeReleaseMetadata = NativeFingerprints & { sourceSha: string; version?: string; supersedes?: string };
+export type NativeStamp = NativeFingerprints & {
+  sourceSha: string;
+  version: string;
+  sha: string;
+  kind?: NativeStampKind;
+  supersedes?: string;
+};
 export type TaggedNativeBuild = { tag: string; sha: string };
 
 /** Success is remote evidence, including when a push lost its response. */
@@ -30,6 +40,24 @@ export function publishNativeBaseline(
     throw new Error(
       'Could not verify the exact annotated native baseline on origin. No baseline publication was confirmed.',
     );
+}
+
+/** A restoration plan cannot push; applying requires readback of the exact commit. */
+export function publishNativeRestoration(
+  stampSha: string,
+  runtime: { push: (stampSha: string) => void; committed: (stampSha: string) => boolean },
+  apply = false,
+): boolean {
+  requireFullSha(stampSha, 'Restoration stamp');
+  if (!apply) return false;
+  try {
+    runtime.push(stampSha);
+  } catch {
+    if (!runtime.committed(stampSha))
+      throw new Error('Main moved or the restoration push failed. Plan again; no force push was attempted.');
+  }
+  if (!runtime.committed(stampSha)) throw new Error('The exact restoration was not confirmed on main.');
+  return true;
 }
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -52,7 +80,13 @@ function trailer(message: string, name: string): string {
   return matches[0]![1]!;
 }
 
-export function parseNativeReleaseMetadata(message: string, kind: 'baseline' | 'version-bump'): NativeReleaseMetadata {
+export function nativeStampKind(message: string): NativeStampKind | null {
+  const matches = [...message.matchAll(/^Native-Release: (version-bump|version-adoption|version-restoration)$/gm)];
+  if (matches.length > 1) throw new Error('Expected exactly one native stamp marker.');
+  return (matches[0]?.[1] as NativeStampKind | undefined) ?? null;
+}
+
+export function parseNativeReleaseMetadata(message: string, kind: 'baseline' | NativeStampKind): NativeReleaseMetadata {
   if (trailer(message, 'Native-Release') !== kind) throw new Error(`Expected a native ${kind} record.`);
   const metadata: NativeReleaseMetadata = {
     sourceSha: requireFullSha(trailer(message, 'Native-Source')),
@@ -61,27 +95,34 @@ export function parseNativeReleaseMetadata(message: string, kind: 'baseline' | '
       android: trailer(message, 'Native-Android-Fingerprint'),
     }),
   };
-  if (kind === 'version-bump') {
+  if (kind !== 'baseline') {
     const version = trailer(message, 'Native-Version');
     if (!VERSION.test(version)) throw new Error('Invalid native release version.');
     metadata.version = version;
   }
+  if (kind === 'version-restoration')
+    metadata.supersedes = requireFullSha(trailer(message, 'Native-Supersedes'), 'Superseded native stamp');
+  else if (/^Native-Supersedes:/m.test(message)) throw new Error('Only a restoration may supersede a native stamp.');
   return metadata;
 }
 
-export function nativeReleaseMessage(metadata: NativeReleaseMetadata, kind: 'baseline' | 'version-bump'): string {
+export function nativeReleaseMessage(metadata: NativeReleaseMetadata, kind: 'baseline' | NativeStampKind): string {
   requireFullSha(metadata.sourceSha);
   requireFingerprints(metadata);
-  if (kind === 'version-bump' && !VERSION.test(metadata.version ?? ''))
-    throw new Error('Missing native release version.');
+  if (kind !== 'baseline' && !VERSION.test(metadata.version ?? '')) throw new Error('Missing native release version.');
+  if (kind === 'version-restoration') requireFullSha(metadata.supersedes ?? '', 'Superseded native stamp');
+  else if (metadata.supersedes) throw new Error('Only a restoration may supersede a native stamp.');
   return [
-    kind === 'baseline' ? 'Native release baseline' : `chore(mobile): open native v${metadata.version}`,
+    kind === 'baseline'
+      ? 'Native release baseline'
+      : `chore(mobile): ${kind === 'version-restoration' ? 'restore' : kind === 'version-adoption' ? 'adopt' : 'open'} native v${metadata.version}`,
     '',
     `Native-Release: ${kind}`,
     `Native-Source: ${metadata.sourceSha}`,
     `Native-iOS-Fingerprint: ${metadata.ios}`,
     `Native-Android-Fingerprint: ${metadata.android}`,
-    ...(kind === 'version-bump' ? [`Native-Version: ${metadata.version}`] : []),
+    ...(kind !== 'baseline' ? [`Native-Version: ${metadata.version}`] : []),
+    ...(kind === 'version-restoration' ? [`Native-Supersedes: ${metadata.supersedes}`] : []),
     '',
   ].join('\n');
 }
@@ -116,6 +157,45 @@ export function nextNativeVersion(currentVersion: string, tagNames: readonly str
   if (!Number.isSafeInteger(patch) || patch! >= Number.MAX_SAFE_INTEGER)
     throw new Error('Native patch version overflow.');
   return `${major}.${minor}.${patch! + 1}`;
+}
+
+/** Supersession removes only that source's tester reservations, never public releases. */
+export function nativeVersionTagNames(
+  references: readonly TaggedNativeBuild[],
+  supersededStampShas: readonly string[] = [],
+): string[] {
+  const superseded = new Set(supersededStampShas.map((source) => requireFullSha(source)));
+  return references
+    .filter((reference) => !parseBuildTag(reference.tag) || !superseded.has(reference.sha))
+    .map((reference) => reference.tag);
+}
+
+export function requireUnreleasedNativeVersion(version: string, tagNames: readonly string[]): void {
+  compareNativeVersions(version, version);
+  if (
+    tagNames.some((tag) => {
+      const released = parseReleaseTag(tag);
+      return released && compareNativeVersions(released.version, version) >= 0;
+    })
+  )
+    throw new Error(`Native ${version} is not above every public release anchor.`);
+}
+
+export function planNativeVersion(
+  currentVersion: string,
+  previousNativeVersion: string,
+  references: readonly TaggedNativeBuild[],
+  supersededStampShas: readonly string[] = [],
+): { kind: 'version-adoption' | 'version-bump'; version: string } {
+  const names = nativeVersionTagNames(references, supersededStampShas);
+  const higherReservation = names.some((tag) => {
+    const parsed = parseBuildTag(tag) ?? parseReleaseTag(tag);
+    return parsed && compareNativeVersions(parsed.version, currentVersion) > 0;
+  });
+  const alreadyReleased = names.some((tag) => parseReleaseTag(tag)?.version === currentVersion);
+  if (compareNativeVersions(currentVersion, previousNativeVersion) > 0 && !higherReservation && !alreadyReleased)
+    return { kind: 'version-adoption', version: currentVersion };
+  return { kind: 'version-bump', version: nextNativeVersion(currentVersion, names) };
 }
 
 export function replaceNativeVersion(source: string, version: string): string {
@@ -159,7 +239,12 @@ export type NativeBuildRun = {
 };
 export type NativeRecovery = { action: 'done' | 'wait' | 'dispatch' | 'inspect'; reason: string; runId?: number };
 
-export type PreparedNativeSnapshot = { mainSha: string; stampSha: string | null; previousStamp: NativeStamp | null };
+export type PreparedNativeSnapshot = {
+  mainSha: string;
+  stampSha: string | null;
+  previousStamp: NativeStamp | null;
+  immediateRecoveryStamp?: NativeStamp;
+};
 export type NativeCoordinatorRuntime = {
   prepare: () => PreparedNativeSnapshot;
   push: (stampSha: string) => void;
@@ -178,11 +263,16 @@ export function coordinateNativeSnapshots(
       if (prepared.previousStamp) runtime.recover(prepared.previousStamp, dryRun);
       return { changed: false, sourceSha: prepared.previousStamp?.sha ?? prepared.mainSha };
     }
+    if (prepared.immediateRecoveryStamp && prepared.immediateRecoveryStamp.sha !== prepared.stampSha)
+      throw new Error('Immediate native recovery must name the committed stamp.');
     if (!dryRun) {
       try {
         runtime.push(prepared.stampSha);
       } catch {
         if (!runtime.committed(prepared.stampSha)) continue;
+      }
+      if (prepared.immediateRecoveryStamp) {
+        runtime.recover(prepared.immediateRecoveryStamp, false);
       }
     }
     return { changed: true, sourceSha: prepared.stampSha };

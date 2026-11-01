@@ -6,6 +6,7 @@ import {
   createDistributionResult,
   latestUploadedIosBuild,
   parseDistributionResult,
+  readSupersededTestflightSources,
   retryableDistribution,
   type DistributionResult,
 } from '../lib/testflight-distribution';
@@ -76,6 +77,45 @@ describe('TestFlight retry selection', () => {
       'Ambiguous',
     );
   });
+
+  it('excludes only explicitly retired source SHAs before ranking restored uploads', () => {
+    const expired = { name: 'build-ios-v2.7.1-1-abcdef123456', sha: 'c'.repeat(40) };
+    const restored = { name: 'build-ios-v2.7.0-9-abcdef123456', sha: 'd'.repeat(40) };
+    expect(latestUploadedIosBuild([latest, expired, restored], new Set([expired.sha]))).toEqual(restored);
+    expect(latestUploadedIosBuild([latest, expired, restored])).toEqual(expired);
+    expect(latestUploadedIosBuild([expired], new Set([expired.sha]))).toBeNull();
+    expect(latestUploadedIosBuild([latest, expired, restored], new Set([restored.sha]))).toEqual(expired);
+  });
+
+  it('refreshes main without token arguments and refuses stale lineage after fetch or proof failures', () => {
+    const execute = vi.fn(() => '');
+    const readLineage = vi.fn(() => ['c'.repeat(40)]);
+    expect([...readSupersededTestflightSources(execute, readLineage, '/repo')]).toEqual(['c'.repeat(40)]);
+    expect(execute).toHaveBeenCalledExactlyOnceWith('git', [
+      '-C',
+      '/repo',
+      '-c',
+      'credential.helper=',
+      '-c',
+      'credential.helper=!gh auth git-credential',
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      'origin',
+      '+refs/heads/main:refs/remotes/origin/main',
+    ]);
+    expect(readLineage).toHaveBeenCalledExactlyOnceWith('/repo');
+    execute.mockImplementation(() => {
+      throw new Error('origin unavailable');
+    });
+    expect(() => readSupersededTestflightSources(execute, readLineage)).toThrow('origin unavailable');
+    expect(readLineage).toHaveBeenCalledOnce();
+    execute.mockReturnValue('');
+    readLineage.mockImplementation(() => {
+      throw new Error('forged restoration');
+    });
+    expect(() => readSupersededTestflightSources(execute, readLineage)).toThrow('forged restoration');
+  });
 });
 
 describe('TestFlight distribution result provenance', () => {
@@ -137,7 +177,7 @@ describe('distribution result capture after earlier job failures', () => {
 
   function selectFixture(
     status: DistributionResult['status'] | 'malformed' | 'missing',
-    options: { rerunTerminal?: boolean; paginate?: boolean; unrelatedMissing?: boolean } = {},
+    options: { rerunTerminal?: boolean; paginate?: boolean; unrelatedMissing?: boolean; restored?: boolean } = {},
   ) {
     const directory = mkdtempSync(join(tmpdir(), 'testflight-select-'));
     directories.push(directory);
@@ -147,8 +187,22 @@ describe('distribution result capture after earlier job failures', () => {
     vi.stubEnv('GITHUB_OUTPUT', outputPath);
     const downloads: string[] = [];
     const pages: number[] = [];
+    const uploadedReceipt = options.restored
+      ? {
+          ...receipt,
+          buildNumber: '9',
+          buildTag: 'build-ios-v2.7.0-9-abcdef123456',
+          sourceSha: 'd'.repeat(40),
+          sourceRunId: '124',
+          previousBuildTag: receipt.buildTag,
+          previousBuildSha: receipt.sourceSha,
+        }
+      : receipt;
     const execute = (binary: string, argumentsList: string[]) => {
-      if (binary === 'git') return `${receipt.buildTag} ${receipt.sourceSha}`;
+      if (binary === 'git')
+        return argumentsList[0] === 'for-each-ref'
+          ? `${uploadedReceipt.buildTag} ${uploadedReceipt.sourceSha}${options.restored ? `\n${receipt.buildTag} ${receipt.sourceSha}\nbuild-ios-v2.7.1-1-abcdef123456 ${'c'.repeat(40)}` : ''}`
+          : '';
       if (argumentsList[0] === 'run') {
         const runId = argumentsList[2];
         downloads.push(runId);
@@ -168,7 +222,7 @@ describe('distribution result capture after earlier job failures', () => {
         };
         writeFileSync(
           join(target, 'testflight-build.json'),
-          JSON.stringify(older && options.unrelatedMissing ? oldReceipt : receipt),
+          JSON.stringify(older && options.unrelatedMissing ? oldReceipt : uploadedReceipt),
         );
         if (statusForRun !== 'missing' && !(older && options.unrelatedMissing))
           writeFileSync(
@@ -177,7 +231,11 @@ describe('distribution result capture after earlier job failures', () => {
               statusForRun === 'malformed'
                 ? { status: 'broken' }
                 : {
-                    ...result(statusForRun),
+                    ...createDistributionResult(uploadedReceipt, identity, {
+                      version: uploadedReceipt.version,
+                      buildNumber: uploadedReceipt.buildNumber,
+                      status: statusForRun,
+                    }),
                     distributionRunId: runId,
                     distributionRunAttempt: older && options.rerunTerminal ? 2 : 1,
                     checkedAt,
@@ -225,7 +283,7 @@ describe('distribution result capture after earlier job failures', () => {
 
   it('skips no-op runs and resumes only the newest classified deferred source attempt', () => {
     const fixture = selectFixture('deferred-processing');
-    main(['select'], fixture.execute);
+    main(['select'], fixture.execute, () => []);
     expect(fixture.downloads).toEqual(['2', '1']);
     expect(fixture.outputs()).toBe('selected=true\nsource_run_id=123\nsource_run_attempt=1\n');
   });
@@ -234,7 +292,7 @@ describe('distribution result capture after earlier job failures', () => {
     'does not retry an older deferred result after the newest outcome is %s',
     (status) => {
       const fixture = selectFixture(status);
-      main(['select'], fixture.execute);
+      main(['select'], fixture.execute, () => []);
       expect(fixture.downloads).toEqual(['2', '1']);
       expect(fixture.outputs()).toBe('selected=false\n');
     },
@@ -242,14 +300,14 @@ describe('distribution result capture after earlier job failures', () => {
 
   it.each(['missing', 'malformed'] as const)('fails closed on a %s newest matching artifact', (status) => {
     const fixture = selectFixture(status);
-    expect(() => main(['select'], fixture.execute)).toThrow('no valid result');
+    expect(() => main(['select'], fixture.execute, () => [])).toThrow('no valid result');
     expect(fixture.downloads).toEqual(['2', '1']);
     expect(fixture.outputs()).toBe('');
   });
 
   it('reads later pages and lets an older run rerun terminally supersede newer-created deferred runs', () => {
     const fixture = selectFixture('deferred-beta-review', { rerunTerminal: true, paginate: true });
-    main(['select'], fixture.execute);
+    main(['select'], fixture.execute, () => []);
     expect(fixture.pages).toEqual([1, 2]);
     expect(fixture.downloads).toEqual(['2', '1']);
     expect(fixture.outputs()).toBe('selected=false\n');
@@ -257,7 +315,36 @@ describe('distribution result capture after earlier job failures', () => {
 
   it('does not let unrelated historical artifacts without results block the current delivery', () => {
     const fixture = selectFixture('deferred-processing', { unrelatedMissing: true });
-    main(['select'], fixture.execute);
+    main(['select'], fixture.execute, () => []);
     expect(fixture.outputs()).toBe('selected=true\nsource_run_id=123\nsource_run_attempt=1\n');
+  });
+
+  it('retries restored 2.7.0 after the higher 2.7.1 source is explicitly retired', () => {
+    const fixture = selectFixture('deferred-processing', { restored: true });
+    main(['select'], fixture.execute, () => ['c'.repeat(40)]);
+    expect(fixture.outputs()).toBe('selected=true\nsource_run_id=124\nsource_run_attempt=1\n');
+  });
+
+  it('keeps higher uploaded versions eligible without a validated restoration record', () => {
+    const fixture = selectFixture('deferred-processing', { restored: true });
+    main(['select'], fixture.execute, () => []);
+    expect(fixture.outputs()).toBe('selected=false\n');
+  });
+
+  it('emits no retry authorization when main refresh fails', () => {
+    const fixture = selectFixture('deferred-processing');
+    const lineage = vi.fn(() => []);
+    expect(() =>
+      main(
+        ['select'],
+        (binary, argumentsList) => {
+          if (binary === 'git' && argumentsList.includes('fetch')) throw new Error('origin unavailable');
+          return fixture.execute(binary, argumentsList);
+        },
+        lineage,
+      ),
+    ).toThrow('origin unavailable');
+    expect(lineage).not.toHaveBeenCalled();
+    expect(fixture.outputs()).toBe('');
   });
 });

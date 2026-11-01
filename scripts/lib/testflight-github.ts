@@ -86,6 +86,13 @@ function preparationDeadline(now: number): number {
   return Number(configured);
 }
 
+function isGitFetch(binary: string, argumentsList: string[]): boolean {
+  if (binary !== 'git') return false;
+  let index = 0;
+  while (argumentsList[index] === '-C' || argumentsList[index] === '-c') index += 2;
+  return argumentsList[index] === 'fetch';
+}
+
 /** Keep the synchronous CLI contract; retry only read-only GitHub API queries. */
 export function createTestflightCommandRunner(options: RetryOptions = {}): CommandRunner {
   const now = options.now ?? Date.now;
@@ -96,7 +103,7 @@ export function createTestflightCommandRunner(options: RetryOptions = {}): Comma
       execFileSync(binary, argumentsList, {
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
-        ...(binary === 'gh' ? { timeout: Math.max(1, deadline - now()) } : {}),
+        ...(binary === 'gh' || isGitFetch(binary, argumentsList) ? { timeout: Math.max(1, deadline - now()) } : {}),
       }));
   const warn = options.warn ?? ((message) => console.warn(message));
   const sleep =
@@ -107,6 +114,10 @@ export function createTestflightCommandRunner(options: RetryOptions = {}): Comma
       while (now() < until) Atomics.wait(signal, 0, 0, Math.min(60_000, until - now()));
     });
   return (binary, argumentsList) => {
+    if (isGitFetch(binary, argumentsList) && now() >= deadline)
+      throw new Error(
+        'TestFlight preparation exceeded 65 minutes; rerun distribution with the original source_run_id.',
+      );
     if (binary !== 'gh' || argumentsList[0] !== 'api') return execute(binary, argumentsList);
     for (let attempt = 0; ; attempt++) {
       if (now() >= deadline)

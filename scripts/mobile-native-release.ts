@@ -10,24 +10,29 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { APP_CONFIG_PATH, BOT_EMAIL, BOT_NAME, readMarketingVersion } from './lib/mobile-release-version.ts';
 import {
   NATIVE_BASELINE_TAG,
-  NATIVE_STAMP_MARKER,
+  NATIVE_RESTORATION_MARKER,
+  NATIVE_STAMP_PATTERN,
   NATIVE_WORKFLOWS,
   compareNativeVersions,
   coordinateNativeSnapshots,
   exactNativeBuilds,
   nativeRecoveryDecision,
   nativeReleaseMessage,
-  nextNativeVersion,
+  nativeStampKind,
+  planNativeVersion,
   parseNativeReleaseMetadata,
   publishNativeBaseline,
+  publishNativeRestoration,
   replaceNativeVersion,
   requireFingerprints,
   requireFullSha,
+  requireUnreleasedNativeVersion,
   sameNativeFingerprints,
   type NativeBuildRun,
   type NativeFingerprints,
   type NativePlatform,
   type NativeStamp,
+  type NativeStampKind,
   type TaggedNativeBuild,
 } from './lib/native-release.ts';
 
@@ -49,15 +54,17 @@ const ENVIRONMENT_KEYS = [
 function execute(
   binary: string,
   argumentsList: string[],
-  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
+  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv; trim?: boolean } = {},
 ): string {
-  return execFileSync(binary, argumentsList, {
+  const { trim = true, ...executionOptions } = options;
+  const result = execFileSync(binary, argumentsList, {
     cwd: options.cwd ?? ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe'],
-    ...options,
-  }).trim();
+    ...executionOptions,
+  });
+  return trim ? result.trim() : result;
 }
 
 function git(argumentsList: string[], options: Parameters<typeof execute>[2] = {}): string {
@@ -93,56 +100,123 @@ function output(fields: Record<string, string | boolean>): void {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${rendered}\n`);
 }
 
-/** Strictly validate a stamp's provenance and its sole app.config version-line edit. */
+type ValidationContext = { stamps: Map<string, NativeStamp>; pending: Set<string> };
+type NativeBaseline = NativeFingerprints & { sourceSha: string; version: string };
+const validationContext = (): ValidationContext => ({ stamps: new Map(), pending: new Set() });
+
+/** Historical proofs use immutable git ancestry/bytes, never today's public-store state. */
 export function validateNativeStampSource(sourceSha: string, mainSha?: string, directory = ROOT): NativeStamp {
+  const latestMain = mainSha ?? git(['rev-parse', MAIN_REF], { cwd: directory });
+  return validateStamp(sourceSha, latestMain, directory, validationContext());
+}
+
+function validateStamp(
+  sourceSha: string,
+  latestMain: string,
+  directory: string,
+  context: ValidationContext,
+): NativeStamp {
   const read = (argumentsList: string[]) => git(argumentsList, { cwd: directory });
-  const latestMain = mainSha ?? read(['rev-parse', MAIN_REF]);
+  const configAt = (commit: string) => git(['show', `${commit}:${APP_CONFIG_PATH}`], { cwd: directory, trim: false });
   requireFullSha(sourceSha);
   requireFullSha(latestMain);
   if (!ancestor(sourceSha, latestMain, directory))
     throw new Error('Native build source is not an ancestor of current main.');
-  const message = read(['show', '-s', '--format=%B', sourceSha]);
-  const metadata = parseNativeReleaseMetadata(message, 'version-bump');
-  const parents = read(['show', '-s', '--format=%P', sourceSha]).split(' ');
-  if (parents.length !== 1 || parents[0] !== metadata.sourceSha)
-    throw new Error('Native stamp must name its only parent.');
-  if (
-    read(['show', '-s', '--format=%an', sourceSha]) !== BOT_NAME ||
-    read(['show', '-s', '--format=%ae', sourceSha]) !== BOT_EMAIL
-  )
-    throw new Error('Native stamp has an unexpected author.');
-  const paths = read(['diff-tree', '--no-commit-id', '--name-only', '-r', sourceSha]).split('\n');
-  if (paths.length !== 1 || paths[0] !== APP_CONFIG_PATH)
-    throw new Error('Native stamp must change only the app version.');
-  const before = read(['show', `${metadata.sourceSha}:${APP_CONFIG_PATH}`]);
-  const after = read(['show', `${sourceSha}:${APP_CONFIG_PATH}`]);
-  const version = readMarketingVersion(after);
-  if (
-    version !== metadata.version ||
-    compareNativeVersions(version, readMarketingVersion(before)) <= 0 ||
-    replaceNativeVersion(before, version) !== after
-  )
-    throw new Error('Native stamp contains changes beyond its increasing marketing version.');
-  return { ...metadata, version, sha: sourceSha };
-}
-
-function latestStamp(mainSha: string): NativeStamp | null {
-  const candidate = git(['log', '--first-parent', '-1', '--format=%H', `--grep=^${NATIVE_STAMP_MARKER}$`, mainSha]);
-  return candidate ? validateNativeStampSource(candidate, mainSha) : null;
-}
-
-function baseline(mainSha: string): NativeFingerprints {
+  const cached = context.stamps.get(sourceSha);
+  if (cached) return cached;
+  if (context.pending.has(sourceSha)) throw new Error('Cyclic native stamp provenance.');
+  context.pending.add(sourceSha);
   try {
-    if (git(['cat-file', '-t', `refs/tags/${NATIVE_BASELINE_TAG}`]) !== 'tag')
+    const message = read(['show', '-s', '--format=%B', sourceSha]);
+    const kind = nativeStampKind(message);
+    if (!kind) throw new Error('Native source is not a release stamp.');
+    const metadata = parseNativeReleaseMetadata(message, kind);
+    const parents = read(['show', '-s', '--format=%P', sourceSha]).split(' ');
+    if (parents.length !== 1 || parents[0] !== metadata.sourceSha)
+      throw new Error('Native stamp must name its only parent.');
+    if (
+      read(['show', '-s', '--format=%an', sourceSha]) !== BOT_NAME ||
+      read(['show', '-s', '--format=%ae', sourceSha]) !== BOT_EMAIL
+    )
+      throw new Error('Native stamp has an unexpected author.');
+    const paths = read(['diff-tree', '--no-commit-id', '--name-only', '-r', sourceSha]).split('\n').filter(Boolean);
+    const before = configAt(metadata.sourceSha);
+    const after = configAt(sourceSha);
+    const version = readMarketingVersion(after);
+    if (version !== metadata.version) throw new Error('Native stamp marketing version does not match its provenance.');
+    if (kind === 'version-adoption') {
+      if (
+        paths.length ||
+        read(['rev-parse', `${sourceSha}^{tree}`]) !== read(['rev-parse', `${metadata.sourceSha}^{tree}`])
+      )
+        throw new Error('Native adoption must preserve its parent tree exactly.');
+      const previous = latestStamp(metadata.sourceSha, directory, context) ?? baseline(metadata.sourceSha, directory);
+      if (compareNativeVersions(version, previous.version) <= 0 || sameNativeFingerprints(metadata, previous))
+        throw new Error('Native adoption requires an already-raised version and a changed native pair.');
+    } else {
+      if (paths.length !== 1 || paths[0] !== APP_CONFIG_PATH)
+        throw new Error('Native stamp must change only the app version.');
+      const entryMode = (commit: string) =>
+        read(['ls-tree', commit, '--', APP_CONFIG_PATH]).split(/\s+/).slice(0, 2).join(' ');
+      if (
+        entryMode(sourceSha) !== entryMode(metadata.sourceSha) ||
+        !['100644 blob', '100755 blob'].includes(entryMode(sourceSha))
+      )
+        throw new Error('Native version stamps must preserve the app config file mode.');
+      if (replaceNativeVersion(before, version) !== after)
+        throw new Error('Native stamp contains changes beyond its marketing version.');
+      if (kind === 'version-bump') {
+        if (compareNativeVersions(version, readMarketingVersion(before)) <= 0)
+          throw new Error('Native stamp must contain an increasing marketing version.');
+      } else {
+        const superseded = validateStamp(metadata.supersedes!, metadata.sourceSha, directory, context);
+        const previous = latestStamp(metadata.sourceSha, directory, context);
+        const originalVersion = readMarketingVersion(configAt(superseded.sourceSha));
+        const originalAnchor =
+          latestStamp(superseded.sourceSha, directory, context) ?? baseline(superseded.sourceSha, directory);
+        if (
+          superseded.kind !== 'version-bump' ||
+          previous?.sha !== superseded.sha ||
+          readMarketingVersion(before) !== superseded.version ||
+          version !== originalVersion ||
+          compareNativeVersions(version, superseded.version) >= 0 ||
+          compareNativeVersions(version, originalAnchor.version) <= 0 ||
+          !sameNativeFingerprints(metadata, superseded)
+        )
+          throw new Error(
+            'Native restoration must undo the exact latest pre-bumped release without changing its native pair.',
+          );
+      }
+    }
+    const stamp = { ...metadata, version, sha: sourceSha, kind };
+    context.stamps.set(sourceSha, stamp);
+    return stamp;
+  } finally {
+    context.pending.delete(sourceSha);
+  }
+}
+
+function latestStamp(mainSha: string, directory = ROOT, context = validationContext()): NativeStamp | null {
+  const candidate = git(
+    ['log', '--first-parent', '-1', '--format=%H', '--extended-regexp', `--grep=${NATIVE_STAMP_PATTERN}`, mainSha],
+    { cwd: directory },
+  );
+  return candidate ? validateStamp(candidate, mainSha, directory, context) : null;
+}
+
+function baseline(mainSha: string, directory = ROOT): NativeBaseline {
+  const read = (argumentsList: string[]) => git(argumentsList, { cwd: directory });
+  try {
+    if (read(['cat-file', '-t', `refs/tags/${NATIVE_BASELINE_TAG}`]) !== 'tag')
       throw new Error('Baseline is not annotated.');
-    const sourceSha = git(['rev-parse', `refs/tags/${NATIVE_BASELINE_TAG}^{commit}`]);
+    const sourceSha = read(['rev-parse', `refs/tags/${NATIVE_BASELINE_TAG}^{commit}`]);
     const metadata = parseNativeReleaseMetadata(
-      git(['for-each-ref', '--format=%(contents)', `refs/tags/${NATIVE_BASELINE_TAG}`]),
+      read(['for-each-ref', '--format=%(contents)', `refs/tags/${NATIVE_BASELINE_TAG}`]),
       'baseline',
     );
-    if (metadata.sourceSha !== sourceSha || !ancestor(sourceSha, mainSha))
+    if (metadata.sourceSha !== sourceSha || !ancestor(sourceSha, mainSha, directory))
       throw new Error('Baseline does not identify main history.');
-    return metadata;
+    return { ...metadata, sourceSha, version: readMarketingVersion(read(['show', `${sourceSha}:${APP_CONFIG_PATH}`])) };
   } catch {
     throw new Error(
       `Missing or invalid protected ${NATIVE_BASELINE_TAG}. Dispatch baseline with the pre-cutover main SHA before coordinating releases.`,
@@ -150,8 +224,26 @@ function baseline(mainSha: string): NativeFingerprints {
   }
 }
 
+/** Only explicit, validated restoration records retire tester reservations. */
+export function getSupersededNativeStampShas(directory = ROOT, mainSha?: string): string[] {
+  const currentMain = mainSha ?? git(['rev-parse', MAIN_REF], { cwd: directory });
+  requireFullSha(currentMain);
+  const commits = git(['log', '--first-parent', '--format=%H', `--grep=^${NATIVE_RESTORATION_MARKER}$`, currentMain], {
+    cwd: directory,
+  })
+    .split('\n')
+    .filter(Boolean);
+  const context = validationContext();
+  return [...new Set(commits.map((commit) => validateStamp(commit, currentMain, directory, context).supersedes!))];
+}
+
 function tagReferences(): TaggedNativeBuild[] {
-  return git(['for-each-ref', '--format=%(refname:strip=2) %(objectname) %(*objectname)', 'refs/tags/build-*'])
+  return git([
+    'for-each-ref',
+    '--format=%(refname:strip=2) %(objectname) %(*objectname)',
+    'refs/tags/build-*',
+    'refs/tags/release/*',
+  ])
     .split('\n')
     .filter(Boolean)
     .map((line) => {
@@ -364,16 +456,27 @@ function recoverLatest(stamp: NativeStamp, dryRun: boolean): void {
   }
 }
 
-function createStamp(directory: string, mainSha: string, fingerprints: NativeFingerprints): string {
+function writeStamp(
+  directory: string,
+  mainSha: string,
+  fingerprints: NativeFingerprints,
+  version: string,
+  kind: NativeStampKind,
+  supersedes?: string,
+): NativeStamp {
   const configPath = join(directory, APP_CONFIG_PATH);
-  const config = readFileSync(configPath, 'utf8');
-  const version = nextNativeVersion(readMarketingVersion(config), allTagNames());
-  writeFileSync(configPath, replaceNativeVersion(config, version));
-  git(['add', '--', APP_CONFIG_PATH], { cwd: directory });
-  const tree = git(['write-tree'], { cwd: directory });
-  const timestamp = String(Number(git(['show', '-s', '--format=%ct', mainSha])) + 1);
-  return git(['commit-tree', tree, '-p', mainSha], {
-    input: nativeReleaseMessage({ ...fingerprints, sourceSha: mainSha, version }, 'version-bump'),
+  const config = git(['show', `${mainSha}:${APP_CONFIG_PATH}`], { cwd: directory, trim: false });
+  let tree = git(['rev-parse', `${mainSha}^{tree}`], { cwd: directory });
+  if (kind !== 'version-adoption') {
+    writeFileSync(configPath, replaceNativeVersion(config, version));
+    git(['add', '--', APP_CONFIG_PATH], { cwd: directory });
+    tree = git(['write-tree'], { cwd: directory });
+  }
+  const timestamp = String(Number(git(['show', '-s', '--format=%ct', mainSha], { cwd: directory })) + 1);
+  const metadata = { ...fingerprints, sourceSha: mainSha, version, ...(supersedes ? { supersedes } : {}) };
+  const stampSha = git(['commit-tree', tree, '-p', mainSha], {
+    cwd: directory,
+    input: nativeReleaseMessage(metadata, kind),
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: BOT_NAME,
@@ -384,6 +487,65 @@ function createStamp(directory: string, mainSha: string, fingerprints: NativeFin
       GIT_COMMITTER_DATE: `${timestamp} +0000`,
     },
   });
+  return { ...metadata, sha: stampSha, kind };
+}
+
+export function prepareNativeVersionStamp(
+  directory: string,
+  mainSha: string,
+  fingerprints: NativeFingerprints,
+  previousNativeVersion: string,
+  references: readonly TaggedNativeBuild[],
+  supersededStampShas: readonly string[] = [],
+): NativeStamp {
+  const currentVersion = readMarketingVersion(git(['show', `${mainSha}:${APP_CONFIG_PATH}`], { cwd: directory }));
+  const plan = planNativeVersion(currentVersion, previousNativeVersion, references, supersededStampShas);
+  return writeStamp(directory, mainSha, fingerprints, plan.version, plan.kind);
+}
+
+/** Prepare an explicit undo of one mistaken pre-bumped release; never mutate refs. */
+export function prepareNativeVersionRestoration(
+  directory: string,
+  mainSha: string,
+  targetVersion: string,
+  expectedStampSha: string,
+  fingerprints: NativeFingerprints,
+): { stamp: NativeStamp; alreadyApplied: boolean } {
+  requireFullSha(mainSha);
+  requireFullSha(expectedStampSha, 'Expected latest native stamp');
+  compareNativeVersions(targetVersion, targetVersion);
+  requireFingerprints(fingerprints);
+  const latest = latestStamp(mainSha, directory);
+  const currentVersion = readMarketingVersion(git(['show', `${mainSha}:${APP_CONFIG_PATH}`], { cwd: directory }));
+  if (
+    latest?.kind === 'version-restoration' &&
+    latest.supersedes === expectedStampSha &&
+    latest.version === targetVersion &&
+    currentVersion === targetVersion &&
+    sameNativeFingerprints(latest, fingerprints)
+  )
+    return { stamp: latest, alreadyApplied: true };
+  if (latest?.sha !== expectedStampSha || latest.kind !== 'version-bump')
+    throw new Error('The expected latest native version-bump stamp changed. Plan restoration again.');
+  const originalVersion = readMarketingVersion(
+    git(['show', `${latest.sourceSha}:${APP_CONFIG_PATH}`], { cwd: directory }),
+  );
+  const previous = latestStamp(latest.sourceSha, directory) ?? baseline(latest.sourceSha, directory);
+  if (
+    currentVersion !== latest.version ||
+    targetVersion !== originalVersion ||
+    compareNativeVersions(targetVersion, latest.version) >= 0 ||
+    compareNativeVersions(targetVersion, previous.version) <= 0
+  )
+    throw new Error('Restoration must undo only the mistaken bump of an already-raised native version.');
+  if (!sameNativeFingerprints(latest, fingerprints))
+    throw new Error('Native fingerprints changed after the expected stamp; refusing version restoration.');
+  const references = git(['tag', '--list'], { cwd: directory }).split('\n').filter(Boolean);
+  requireUnreleasedNativeVersion(targetVersion, references);
+  return {
+    stamp: writeStamp(directory, mainSha, fingerprints, targetVersion, 'version-restoration', expectedStampSha),
+    alreadyApplied: false,
+  };
 }
 
 function coordinate(dryRun: boolean): void {
@@ -392,15 +554,28 @@ function coordinate(dryRun: boolean): void {
       prepare() {
         const mainSha = refresh();
         const stamp = latestStamp(mainSha);
-        const lastFingerprints = stamp ?? baseline(mainSha);
-        const stampSha = withSourceTree(mainSha, (directory) => {
+        const previous = stamp ?? baseline(mainSha);
+        const prepared = withSourceTree(mainSha, (directory) => {
           const fingerprints = resolveFingerprints(directory);
-          if (sameNativeFingerprints(lastFingerprints, fingerprints)) return null;
-          const preparedSha = createStamp(directory, mainSha, fingerprints);
-          console.log(`Native change on ${mainSha}: prepared ${preparedSha}.`);
-          return preparedSha;
+          if (sameNativeFingerprints(previous, fingerprints)) return null;
+          const prepared = prepareNativeVersionStamp(
+            directory,
+            mainSha,
+            fingerprints,
+            previous.version,
+            tagReferences(),
+            getSupersededNativeStampShas(ROOT, mainSha),
+          );
+          console.log(`Native change on ${mainSha}: prepared ${prepared.sha} (${prepared.kind}).`);
+          return prepared;
         });
-        return { mainSha, stampSha, previousStamp: stamp };
+        return {
+          mainSha,
+          stampSha: prepared?.sha ?? null,
+          previousStamp: stamp,
+          // Empty adoption commits do not match the native workflows' push paths.
+          ...(prepared?.kind === 'version-adoption' ? { immediateRecoveryStamp: prepared } : {}),
+        };
       },
       push(stampSha) {
         authenticatedPush(`${stampSha}:refs/heads/main`);
@@ -415,6 +590,41 @@ function coordinate(dryRun: boolean): void {
   // The App push starts both stamped native workflows; its follow-up/schedule
   // reconciles missing starts, without waiting for binaries under this lock.
   output({ changed: result.changed, source_sha: result.sourceSha, dry_run: dryRun });
+}
+
+function restoreVersion(targetVersion: string, expectedStampSha: string, apply: boolean): void {
+  compareNativeVersions(targetVersion, targetVersion);
+  requireFullSha(expectedStampSha, 'Expected latest native stamp');
+  const mainSha = refresh();
+  const prepared = withSourceTree(mainSha, (directory) =>
+    prepareNativeVersionRestoration(
+      directory,
+      mainSha,
+      targetVersion,
+      expectedStampSha,
+      resolveFingerprints(directory),
+    ),
+  );
+  const applied =
+    prepared.alreadyApplied ||
+    publishNativeRestoration(
+      prepared.stamp.sha,
+      {
+        push: (stampSha) => authenticatedPush(`${stampSha}:refs/heads/main`),
+        committed: (stampSha) => ancestor(stampSha, refresh()),
+      },
+      apply,
+    );
+  output({
+    source_sha: prepared.stamp.sha,
+    main_sha: mainSha,
+    version: prepared.stamp.version,
+    supersedes_sha: expectedStampSha,
+    fingerprint_ios: prepared.stamp.ios,
+    fingerprint_android: prepared.stamp.android,
+    applied,
+    already_applied: prepared.alreadyApplied,
+  });
 }
 
 function createBaseline(sourceSha: string, apply: boolean): void {
@@ -476,9 +686,11 @@ function resolveSource(): void {
   const mainSha = refresh();
   const sourceSha = requireFullSha(process.env.REQUESTED_SOURCE_SHA || process.env.GITHUB_SHA || '');
   if (!ancestor(sourceSha, mainSha)) throw new Error('Native source is not in current main history.');
+  if (getSupersededNativeStampShas(ROOT, mainSha).includes(sourceSha))
+    throw new Error('Native source was explicitly superseded by a version restoration.');
   const forced = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.FORCE_NATIVE === 'true';
   const message = git(['show', '-s', '--format=%B', sourceSha]);
-  if (!message.split('\n').includes(NATIVE_STAMP_MARKER)) {
+  if (!nativeStampKind(message)) {
     if (forced && sourceSha === process.env.GITHUB_SHA) {
       output({ source_sha: sourceSha, eligible: true });
       return;
@@ -513,19 +725,22 @@ function gate(): void {
   const version = readMarketingVersion(readFileSync(join(ROOT, APP_CONFIG_PATH), 'utf8'));
   const message = git(['show', '-s', '--format=%B', sourceSha]);
   const forced = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && process.env.FORCE_NATIVE === 'true';
-  const stamp = message.split('\n').includes(NATIVE_STAMP_MARKER) ? validateNativeStampSource(sourceSha) : null;
+  if (getSupersededNativeStampShas().includes(sourceSha))
+    throw new Error('Native source was explicitly superseded by a version restoration.');
+  const stamp = nativeStampKind(message) ? validateNativeStampSource(sourceSha) : null;
   if (stamp && (stamp.version !== version || stamp[platform] !== fingerprint))
     throw new Error('Resolved native state differs from the release stamp.');
-  if (platform === 'ios' && allTagNames().some((tag) => tag.startsWith(`release/ios-v${version}-`)))
-    throw new Error(
-      `Apple already approved iOS ${version}; merge a native change or bump the marketing version before rebuilding.`,
-    );
   const exact = exactNativeBuilds(tagReferences(), platform, {
     sha: sourceSha,
     version,
     ios: fingerprint,
     android: fingerprint,
   });
+  const shouldBuild = forced || exact.length === 0;
+  if (shouldBuild && platform === 'ios' && allTagNames().some((tag) => tag.startsWith(`release/ios-v${version}-`)))
+    throw new Error(
+      `Apple already approved iOS ${version}; merge a native change or bump the marketing version before rebuilding.`,
+    );
   if (!forced && exact.length === 0) {
     const workflow = NATIVE_WORKFLOWS.find((candidate) => candidate.platform === platform)!;
     const currentRunId = Number(process.env.GITHUB_RUN_ID);
@@ -538,7 +753,6 @@ function gate(): void {
         'An upload of this exact native source already started without a build tag. Reconcile its store receipt before rebuilding.',
       );
   }
-  const shouldBuild = forced || exact.length === 0;
   output({
     source_sha: sourceSha,
     fingerprint,
@@ -562,6 +776,13 @@ function main(): void {
     case 'baseline':
       createBaseline(flag('--source-sha') ?? '', process.argv.includes('--apply'));
       break;
+    case 'restore-version':
+      restoreVersion(
+        flag('--target-version') ?? '',
+        flag('--expected-stamp-sha') ?? '',
+        process.argv.includes('--apply'),
+      );
+      break;
     case 'source':
       resolveSource();
       break;
@@ -569,7 +790,7 @@ function main(): void {
       gate();
       break;
     default:
-      throw new Error('Expected coordinate, baseline, source or gate.');
+      throw new Error('Expected coordinate, baseline, restore-version, source or gate.');
   }
 }
 

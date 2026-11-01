@@ -52,7 +52,9 @@ describe('external TestFlight distribution workflow', () => {
     });
     expect(steps.find((step) => step.id === 'source')?.if).toContain("steps.selection.outputs.selected == 'true'");
     const record = steps.find((step) => step.run === 'vp exec tsx scripts/testflight-distribution.ts record');
-    expect(record?.if).toBe("always() && steps.build.outcome == 'success'");
+    expect(record?.if).toBe(
+      "always() && steps.build.outcome == 'success' && steps.build.outputs.should_distribute == 'true'",
+    );
     expect(record?.env?.SOURCE_RUN_ATTEMPT).toBe('${{ steps.source.outputs.source_run_attempt }}');
     expect(steps.find((step) => step.uses === 'actions/upload-artifact@v4')?.with?.path).toContain(
       'testflight-result/',
@@ -128,7 +130,9 @@ describe('external TestFlight distribution workflow', () => {
       RELEASE_VERSION: '${{ steps.build.outputs.version }}',
       IOS_BUILD_NUMBER: '${{ steps.build.outputs.build_number }}',
     });
-    expect(steps[distribution].if).toBe("steps.source.outputs.should_distribute == 'true'");
+    expect(steps[distribution].if).toBe("steps.build.outputs.should_distribute == 'true'");
+    for (const step of steps.slice(validate + 1, distribution + 1))
+      expect(step.if).toContain("steps.build.outputs.should_distribute == 'true'");
     expect(steps.at(-1)).toMatchObject({ if: 'always()', run: 'rm -f "$RUNNER_TEMP/testflight-auth.p8"' });
   });
 });
