@@ -30,8 +30,7 @@
  * SECONDARY, informational signal ("already on a released build"), surfaced only
  * when confidently true.
  *
- * This check is informational. Native store builds run from release/next, which
- * release-train-sync.yml keeps level with main, so a native change merged into
+ * This check is informational. Native store builds run from version-stamped main commits, so a native change merged into
  * either branch reaches TestFlight and Play without a waiver.
  *
  * Usage:
@@ -244,14 +243,8 @@ const HEADLINE: Record<Verdict, string> = {
 /** Explain where the replacement build comes from for native changes on either release branch. */
 export function enforcementNote(input: EnforcementInput): string | null {
   if (input.overall !== 'native-change-required') return null;
-  if (input.baseBranch === 'release/next') {
-    return 'Merging into `release/next` starts fingerprint-gated TestFlight and Play builds; no waiver label is needed.';
-  }
   if (input.baseBranch === 'main') {
-    return (
-      'Store builds come from `release/next`, which is synced from `main` automatically, so merging into `main` ' +
-      'starts fingerprint-gated TestFlight and Play builds once the sync lands; no waiver label is needed.'
-    );
+    return 'Merging into `main` automatically opens a patch version and starts TestFlight and Play tester builds; no waiver label is needed.';
   }
   return null;
 }
@@ -317,7 +310,7 @@ export function renderComment(result: OtaCompatResult, ctx: CommentContext): str
     `Branch \`${ctx.branch}\` → \`${ctx.baseBranch}\` · commit \`${ctx.sha.slice(0, 7)}\`.`,
     '',
     '<sub>Fingerprint is resolved per platform against this PR’s base branch. Native store builds run ' +
-      `from \`release/next\`, which is synced from \`main\` automatically. See \`docs/mobile-ota-updates.md\`.</sub>`,
+      `from \`main\` after an automatic native patch bump. See \`docs/mobile-ota-updates.md\`.</sub>`,
   ].join('\n');
 }
 

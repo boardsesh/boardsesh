@@ -18,7 +18,7 @@
  * expected name. Artifacts uploaded anywhere else under the same name are
  * never listed. A run qualifies when it is:
  *
- * - `.github/workflows/mobile-ota-production.yml` on main or release/next, or
+ * - `.github/workflows/mobile-ota-production.yml` on main, or
  *   `.github/workflows/production-deploy.yml` on main (main's staging publish
  *   runs inside it as a workflow_call, so that is the run's path);
  * - triggered by push or workflow_dispatch, from this repository, not a fork;
@@ -52,11 +52,6 @@ export const TRUSTED_SOURCES: readonly TrustedSource[] = [
     workflowFile: 'mobile-ota-production.yml',
     path: '.github/workflows/mobile-ota-production.yml',
     branch: 'main',
-  },
-  {
-    workflowFile: 'mobile-ota-production.yml',
-    path: '.github/workflows/mobile-ota-production.yml',
-    branch: 'release/next',
   },
   { workflowFile: 'production-deploy.yml', path: '.github/workflows/production-deploy.yml', branch: 'main' },
 ];

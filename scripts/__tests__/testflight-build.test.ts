@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { main } from '../testflight-build';
+import { main, validatePinnedTestflightSource } from '../testflight-build';
 import {
   parseTestflightBuildReceipt,
   previousNativeBuild,
@@ -107,6 +107,19 @@ describe('receipt and source provenance', () => {
     expect(() => validateReceiptSource(parsed, run)).toThrow('validated native-release stamp');
     expect(() => validateReceiptSource(parsed, run, 'c'.repeat(40))).toThrow('validated native-release stamp');
     expect(() => validateReceiptSource(parsed, run, sourceSha)).not.toThrow();
+    const validatedSources: string[] = [];
+    expect(() =>
+      validatePinnedTestflightSource(parsed, run, (sha) => {
+        validatedSources.push(sha);
+        return { sha };
+      }),
+    ).not.toThrow();
+    expect(validatedSources).toEqual([sourceSha]);
+    expect(() =>
+      validatePinnedTestflightSource(parsed, run, () => {
+        throw new Error('not a validated main stamp');
+      }),
+    ).toThrow('not a validated main stamp');
     expect(() => validateReceiptSource({ ...parsed, workflowSha: sourceSha }, run, sourceSha)).toThrow(
       'does not belong',
     );

@@ -1,21 +1,19 @@
 name: Refresh Mobile OTA Previews
 
 # Metadata only: a base push re-publishes a same-repository mobile PR's preview
-# only when the push changed the runtime that preview serves (native inputs of
-# main or an active release/next), flipped the release train on or off, or the
+# only when the push changed main native inputs, or the
 # PR's last preview record is missing, unreadable or failed. An unrelated base
 # commit leaves the preview offered to the same installed binaries; the PR's
 # next push picks it up. Rules: scripts/mobile-ota-preview-refresh.ts and
 # docs/mobile-ota-updates.md ("When an open preview is republished").
 #
 # `plan` reads PR, deployment and git-object metadata with a read-only token. It
-# checks out this workflow's own trusted commit (main or release/next, never a PR
+# checks out this workflow's own trusted commit (main, never a PR
 # head), installs nothing and runs one dependency-free script. `dispatch` holds
 # the only write scope and runs no checked-out code. Dispatched runs use the
 # default-branch publisher; forks still require a fresh maintainer authorization.
 #
-# A red run on a push (most release/next pushes are the sync bot's, so nobody is
-# watching) posts to the Discord deploy channel from `notify`, and so does a
+# A red run on a push posts to the Discord deploy channel from `notify`, and so does a
 # green run that dispatched more than 10 PRs for a missing, unreadable, failed or
 # stuck record: previews are then not landing at all (CONSERVATIVE_ALERT_THRESHOLD). The webhook is a
 # Production environment secret, so `notify` declares that environment, holds no
@@ -24,9 +22,7 @@ name: Refresh Mobile OTA Previews
 # refresh lane (docs/production-deploy.md, "The failure mode").
 on:
   push:
-    branches: [main, release/next]
-  create:
-  delete:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -35,8 +31,8 @@ permissions:
 jobs:
   plan:
     if: >-
-      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
-      (github.event.ref_type == 'branch' && github.event.ref == 'release/next')
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:

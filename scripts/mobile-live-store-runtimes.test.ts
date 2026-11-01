@@ -9,10 +9,7 @@ import {
   resolveLiveStoreRuntimes,
 } from './mobile-live-store-runtimes';
 import {
-  isReleaseTrainActive,
   LIVE_STORE_MAX_AGE_MS,
-  TRAIN_LIVE_STORE_MAX_AGE_MS,
-  mayPublishTrainRuntime,
   parseLiveStoreRuntimes,
   readMarketingVersion,
   stableCandidateMatchesLiveRuntimes,
@@ -21,7 +18,7 @@ import {
 const NOW = Date.parse('2026-10-19T01:00:00Z');
 const IOS_RUNTIME = 'a'.repeat(40);
 const ANDROID_RUNTIME = 'b'.repeat(40);
-const TRAIN_RUNTIME = 'c'.repeat(40);
+const NEW_RUNTIME = 'c'.repeat(40);
 const COMMIT = 'd'.repeat(40);
 const publicBuilds = [
   { platform: 'ios' as const, versionString: '2.6.0', buildNumber: 41, state: PUBLIC_IOS_STATE },
@@ -37,27 +34,18 @@ const live = () => resolveLiveStoreRuntimes(publicBuilds, tags, () => COMMIT, NO
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('release train policy', () => {
+describe('public runtime policy', () => {
   it('compares literal marketing versions without running configuration', () => {
     const config = (version: string) => `throw new Error('never execute');\nversion: '${version}',\n`;
     expect(readMarketingVersion(config('2.6.0'))).toBe('2.6.0');
-    expect(isReleaseTrainActive(config('2.6.0'), config('2.6.1'))).toBe(true);
-    expect(isReleaseTrainActive(config('2.6.0'), config('2.6.0'))).toBe(false);
     expect(() => readMarketingVersion('version: process.env.VERSION,\n')).toThrow();
     expect(() => readMarketingVersion(config('2.6.0') + config('2.6.1'))).toThrow();
   });
 
-  it('protects the store fleet even after main already moved to a newer native runtime', () => {
-    expect(mayPublishTrainRuntime(live(), 'ios', IOS_RUNTIME)).toBe(false);
-    expect(mayPublishTrainRuntime(live(), 'ios', TRAIN_RUNTIME)).toBe(true);
-    expect(mayPublishTrainRuntime(live(), 'android', ANDROID_RUNTIME)).toBe(false);
-    expect(mayPublishTrainRuntime(live(), 'ios', 'unknown')).toBe(false);
-  });
-
   it('soaks only when both candidate platforms match the current public stores', () => {
     expect(stableCandidateMatchesLiveRuntimes(live(), { ios: IOS_RUNTIME, android: ANDROID_RUNTIME })).toBe(true);
-    expect(stableCandidateMatchesLiveRuntimes(live(), { ios: TRAIN_RUNTIME, android: ANDROID_RUNTIME })).toBe(false);
-    expect(stableCandidateMatchesLiveRuntimes(live(), { ios: IOS_RUNTIME, android: TRAIN_RUNTIME })).toBe(false);
+    expect(stableCandidateMatchesLiveRuntimes(live(), { ios: NEW_RUNTIME, android: ANDROID_RUNTIME })).toBe(false);
+    expect(stableCandidateMatchesLiveRuntimes(live(), { ios: IOS_RUNTIME, android: NEW_RUNTIME })).toBe(false);
   });
 
   it('validates full hashes, schema, provenance and freshness', () => {
@@ -75,15 +63,6 @@ describe('release train policy', () => {
     }
     expect(() => parseLiveStoreRuntimes(live(), NOW + LIVE_STORE_MAX_AGE_MS + 1)).toThrow(/stale/);
     expect(() => parseLiveStoreRuntimes(live(), NOW - 61_000)).toThrow(/stale/);
-    // The train publish refuses evidence older than two hours; it is resolved
-    // outside the OTA lane, before the publish job queued for it.
-    expect(TRAIN_LIVE_STORE_MAX_AGE_MS).toBe(2 * 60 * 60 * 1_000);
-    expect(parseLiveStoreRuntimes(live(), NOW + TRAIN_LIVE_STORE_MAX_AGE_MS, TRAIN_LIVE_STORE_MAX_AGE_MS)).toEqual(
-      live(),
-    );
-    expect(() =>
-      parseLiveStoreRuntimes(live(), NOW + TRAIN_LIVE_STORE_MAX_AGE_MS + 1, TRAIN_LIVE_STORE_MAX_AGE_MS),
-    ).toThrow(/stale.*re-run all jobs/);
   });
 });
 
@@ -131,19 +110,19 @@ describe('live store runtime resolution', () => {
     ];
     const newerTags = [
       ...tags,
-      `build-android-v2.7.0-43-${TRAIN_RUNTIME.slice(0, 12)}`,
-      `fingerprint-android-${TRAIN_RUNTIME}`,
+      `build-android-v2.7.0-43-${NEW_RUNTIME.slice(0, 12)}`,
+      `fingerprint-android-${NEW_RUNTIME}`,
     ];
     const resolved = resolveLiveStoreRuntimes(newerBuilds, newerTags, () => COMMIT, NOW);
-    expect(resolved.android.runtimeVersion).toBe(TRAIN_RUNTIME);
-    expect(resolved.android.protectedRuntimeVersions).toEqual([TRAIN_RUNTIME, ANDROID_RUNTIME]);
-    expect(mayPublishTrainRuntime(resolved, 'android', ANDROID_RUNTIME)).toBe(false);
+    expect(resolved.android.runtimeVersion).toBe(NEW_RUNTIME);
+    expect(resolved.android.protectedRuntimeVersions).toEqual([NEW_RUNTIME, ANDROID_RUNTIME]);
+    expect(resolved.android.protectedRuntimeVersions).toContain(ANDROID_RUNTIME);
   });
 
   it.each([
     ['missing build', tags.filter((tag) => !tag.startsWith('build-ios'))],
     ['missing full fingerprint', tags.filter((tag) => !tag.startsWith('fingerprint-ios'))],
-    ['ambiguous build', [...tags, `build-ios-v2.6.0-41-${TRAIN_RUNTIME.slice(0, 12)}`]],
+    ['ambiguous build', [...tags, `build-ios-v2.6.0-41-${NEW_RUNTIME.slice(0, 12)}`]],
     ['ambiguous full fingerprint', [...tags, `fingerprint-ios-${IOS_RUNTIME.slice(0, 12)}${'f'.repeat(28)}`]],
   ])('fails closed on %s evidence', (_label, configuredTags) => {
     expect(() => resolveLiveStoreRuntimes(publicBuilds, configuredTags, () => COMMIT, NOW)).toThrow(/unique/);

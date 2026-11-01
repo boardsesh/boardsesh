@@ -1,15 +1,15 @@
 /// <reference types="node" />
 
 /**
- * Decides which open PR previews a push to `main` or `release/next` makes stale.
+ * Decides which open PR previews a push to `main` makes stale.
  *
  * A published preview variant exists only where the replayed PR resolved the
  * same runtimeVersion as its pinned base (`mobile-ota-preview-candidates.ts`
  * publishes with OTA_EXPECT_RUNTIME_VERSION set to that baseline). So the
  * runtime a preview serves for a target and platform is the runtime of that
  * target at the SHA its deployment payload records (`otaPreviewBases`). A base
- * push makes the preview stale for testers only when it changes that runtime,
- * or flips whether the release train is a second target. An unrelated base
+ * push makes the preview stale for testers only when it changes that runtime.
+ * An unrelated base
  * commit leaves every preview offered to the same installed binaries, and the
  * PR's next push picks the commit up.
  *
@@ -26,10 +26,8 @@ import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { readMarketingVersion } from './lib/mobile-release-policy.ts';
 
 export type PreviewPlatform = 'ios' | 'android';
-export type PreviewTarget = 'main' | 'release/next';
 
 const PLATFORMS: readonly PreviewPlatform[] = ['ios', 'android'];
 const BOTH: readonly PreviewPlatform[] = PLATFORMS;
@@ -39,8 +37,6 @@ const APP_CONFIG = 'packages/mobile/app.config.ts';
 export interface RuntimeInput {
   path: string;
   platforms: readonly PreviewPlatform[];
-  /** The dispatched publisher always runs main's copy, so only main's copy counts. */
-  mainOnly?: boolean;
 }
 
 /**
@@ -76,7 +72,7 @@ export const RUNTIME_INPUTS: readonly RuntimeInput[] = [
   { path: 'packages/mobile/targets', platforms: BOTH },
   { path: 'packages/mobile/ios', platforms: ['ios'] },
   { path: 'packages/mobile/android', platforms: ['android'] },
-  { path: '.github/workflows/mobile-ota-preview.yml', platforms: BOTH, mainOnly: true },
+  { path: '.github/workflows/mobile-ota-preview.yml', platforms: BOTH },
   // A candidate whose eoas pin differs from main's is skipped as `server-upgrade`
   // (mobile-ota-preview-candidates.ts), on either target.
   { path: 'scripts/lib/eoas.ts', platforms: BOTH },
@@ -125,21 +121,19 @@ export interface BaseSnapshot {
   readable: boolean;
   /** Object id per runtime input path, '' when absent. app.config.ts holds a version-free digest. */
   inputs: Readonly<Record<string, string>>;
-  marketingVersion: string | null;
 }
 
 export const unreadableSnapshot = (sha: string): BaseSnapshot => ({
   sha,
   readable: false,
   inputs: {},
-  marketingVersion: null,
 });
 
 const MARKETING_VERSION_LINE = /^\s*version\s*:\s*(['"])(\d+\.\d+\.\d+)\1\s*,?\s*$/gm;
 
 /**
  * The fingerprint skips the marketing version (`ExpoConfigVersions` in
- * fingerprint.config.js), so a train version bump must not count as a runtime
+ * fingerprint.config.js), so a version bump must not count as a runtime
  * change. Anything other than exactly one literal version line is hashed as-is.
  */
 export function appConfigDigest(source: string): string {
@@ -148,47 +142,28 @@ export function appConfigDigest(source: string): string {
   return `sha256:${createHash('sha256').update(normalized).digest('hex')}`;
 }
 
-export function marketingVersionOf(source: string): string | null {
-  try {
-    return readMarketingVersion(source);
-  } catch {
-    return null;
-  }
-}
-
 /** Platforms whose runtime inputs differ between two snapshots of one target. */
-export function runtimeInputChanges(
-  before: BaseSnapshot,
-  after: BaseSnapshot,
-  target: PreviewTarget,
-): PreviewPlatform[] {
+export function runtimeInputChanges(before: BaseSnapshot, after: BaseSnapshot): PreviewPlatform[] {
   if (!before.readable || !after.readable) return [...PLATFORMS];
   const changed = new Set<PreviewPlatform>();
   for (const input of RUNTIME_INPUTS) {
-    if (input.mainOnly && target !== 'main') continue;
     if ((before.inputs[input.path] ?? '') !== (after.inputs[input.path] ?? ''))
       for (const platform of input.platforms) changed.add(platform);
   }
   return PLATFORMS.filter((platform) => changed.has(platform));
 }
 
-/** Same rule as isReleaseTrainActive; null when a version cannot be read. */
-export function isTrainActive(main: BaseSnapshot, train: BaseSnapshot | null): boolean | null {
-  if (!train) return false;
-  if (!main.marketingVersion || !train.marketingVersion) return null;
-  return main.marketingVersion !== train.marketingVersion;
-}
-
 export interface PreviewBases {
-  version: 1;
+  version: 1 | 2;
   mainSha: string;
-  trainSha: string;
+  trainSha?: string;
   sourceBaseRef: string;
   sourceBaseSha: string;
 }
 
 /** Keep in sync with the gate's `baseKeys` in mobile-ota-preview.yml (the test checks). */
-export const PREVIEW_BASE_KEYS = ['version', 'mainSha', 'trainSha', 'sourceBaseRef', 'sourceBaseSha'] as const;
+export const PREVIEW_BASE_KEYS = ['version', 'mainSha', 'sourceBaseRef', 'sourceBaseSha'] as const;
+const LEGACY_PREVIEW_BASE_KEYS = [...PREVIEW_BASE_KEYS, 'trainSha'] as const;
 
 /** The same validation the publisher's pin step applies before it trusts a record. */
 export function parsePreviewBases(payload: unknown): PreviewBases | null {
@@ -205,21 +180,21 @@ export function parsePreviewBases(payload: unknown): PreviewBases | null {
   if (typeof bases !== 'object' || bases === null || Array.isArray(bases)) return null;
   const record = bases as Record<string, unknown>;
   const { version, mainSha, trainSha, sourceBaseRef, sourceBaseSha } = record;
+  const keys = version === 1 ? LEGACY_PREVIEW_BASE_KEYS : PREVIEW_BASE_KEYS;
   if (
-    Object.keys(record).length !== PREVIEW_BASE_KEYS.length ||
-    !PREVIEW_BASE_KEYS.every((key) => Object.hasOwn(record, key)) ||
-    version !== 1 ||
+    Object.keys(record).length !== keys.length ||
+    !keys.every((key) => Object.hasOwn(record, key)) ||
+    (version !== 1 && version !== 2) ||
     typeof mainSha !== 'string' ||
     !FULL_SHA.test(mainSha) ||
-    typeof trainSha !== 'string' ||
-    !/^(?:[0-9a-f]{40})?$/.test(trainSha) ||
+    (version === 1 && (typeof trainSha !== 'string' || !/^(?:[0-9a-f]{40})?$/.test(trainSha))) ||
     typeof sourceBaseRef !== 'string' ||
     sourceBaseRef.length === 0 ||
     typeof sourceBaseSha !== 'string' ||
     !FULL_SHA.test(sourceBaseSha)
   )
     return null;
-  return { version, mainSha, trainSha, sourceBaseRef, sourceBaseSha };
+  return { version, mainSha, ...(version === 1 ? { trainSha: trainSha as string } : {}), sourceBaseRef, sourceBaseSha };
 }
 
 export interface PreviewAttempt {
@@ -250,8 +225,6 @@ export type PreviewRecord =
 
 export interface BaseHeads {
   main: BaseSnapshot;
-  /** null when release/next does not exist (or did not, for a recorded context). */
-  train: BaseSnapshot | null;
 }
 
 export interface RefreshDecision {
@@ -298,7 +271,7 @@ function resetHold(record: Partial<PreviewStatus>, now: number): RefreshDecision
 /**
  * Decide one mobile PR. `recorded` holds the snapshots at the SHAs the latest
  * preview deployment pinned; it is only read for a found record. A runtime
- * change or train flip always dispatches. Otherwise a failed, errored or stuck
+ * change or a legacy deployment record always dispatches. Otherwise a failed, errored or stuck
  * attempt dispatches, with two caps so a PR cannot be re-dispatched on every
  * base push: after two failures in a row at the current head, and after a
  * reset that did not republish, it is retried at most once per 12 hours. A
@@ -316,6 +289,8 @@ export function decidePreviewRefresh(
   if (record.kind === 'unreadable')
     return resetHold(record, now) ?? conservative(`unreadable preview record (${record.detail}), refreshing`);
   if (!recorded) return conservative('recorded bases unavailable, refreshing');
+  if (record.bases.version === 1)
+    return resetHold(record, now) ?? { dispatch: true, reason: 'legacy preview bases retired, refreshing' };
   const runtime = runtimeDecision(current, recorded);
   if (runtime.dispatch) return runtime;
   if (record.status === 'error')
@@ -343,19 +318,9 @@ export function decidePreviewRefresh(
 }
 
 function runtimeDecision(current: BaseHeads, recorded: BaseHeads): RefreshDecision {
-  const wasActive = isTrainActive(recorded.main, recorded.train);
-  const isActive = isTrainActive(current.main, current.train);
-  if (wasActive === null || isActive === null)
-    return { dispatch: true, reason: 'release train version unreadable, refreshing' };
-  if (wasActive !== isActive)
-    return { dispatch: true, reason: isActive ? 'release train activated' : 'release train deactivated' };
   const changes: string[] = [];
-  const mainChanges = runtimeInputChanges(recorded.main, current.main, 'main');
+  const mainChanges = runtimeInputChanges(recorded.main, current.main);
   if (mainChanges.length > 0) changes.push(`main ${mainChanges.join('+')}`);
-  if (isActive && recorded.train && current.train) {
-    const trainChanges = runtimeInputChanges(recorded.train, current.train, 'release/next');
-    if (trainChanges.length > 0) changes.push(`release/next ${trainChanges.join('+')}`);
-  }
   if (changes.length > 0) return { dispatch: true, reason: `runtime inputs changed on ${changes.join(', ')}` };
   return { dispatch: false, reason: 'unchanged runtime, skipped' };
 }
@@ -393,23 +358,17 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 export async function planPreviewRefresh(api: RefreshApi, repository: string, now = Date.now()): Promise<RefreshPlan> {
   const pulls = (await api.openPulls()).filter(
-    (pull) =>
-      pull.headRepository === repository &&
-      ['main', 'release/next'].includes(pull.baseRef) &&
-      // The train's own merge-back PR is a version/native branch, not a feature
-      // preview. It already receives train OTAs directly.
-      pull.headRef !== 'release/next',
+    (pull) => pull.headRepository === repository && pull.baseRef === 'main' && pull.headRef !== 'release/next',
   );
   if (pulls.length === 0)
     return {
       dispatch: [],
-      lines: ['No open same-repository PRs target main or release/next.'],
+      lines: ['No open same-repository PRs target main.'],
       conservativeDispatches: 0,
     };
 
   const mainHead = await api.branchHead('main');
   if (!mainHead) throw new Error('main has no readable head.');
-  const trainHead = await api.branchHead('release/next');
 
   const decided: Array<{ pull: number; decision: RefreshDecision }> = [];
   const pending: Array<{ pull: number; headSha: string; record: PreviewRecord }> = [];
@@ -437,26 +396,23 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string, no
     }
   }
 
-  const shas = new Set<string>([mainHead, ...(trainHead ? [trainHead] : [])]);
+  const shas = new Set<string>([mainHead]);
   for (const { record } of pending) {
     if (record.kind !== 'found') continue;
     shas.add(record.bases.mainSha);
-    if (record.bases.trainSha) shas.add(record.bases.trainSha);
   }
   const snapshots = await api.snapshots([...shas]);
   const snapshot = (sha: string) => snapshots.get(sha) ?? unreadableSnapshot(sha);
-  const current: BaseHeads = { main: snapshot(mainHead), train: trainHead ? snapshot(trainHead) : null };
+  const current: BaseHeads = { main: snapshot(mainHead) };
   // Without the current inputs every PR would look changed; fail visibly
   // instead of fanning out a dispatch per PR.
-  if (!current.main.readable || (current.train && !current.train.readable))
-    throw new Error('Could not read the runtime inputs of the current bases.');
+  if (!current.main.readable) throw new Error('Could not read the runtime inputs of the current bases.');
 
   for (const { pull, headSha, record } of pending) {
     const recorded =
       record.kind === 'found'
         ? {
             main: snapshot(record.bases.mainSha),
-            train: record.bases.trainSha ? snapshot(record.bases.trainSha) : null,
           }
         : undefined;
     decided.push({ pull, decision: decidePreviewRefresh(record, current, recorded, { headSha, now }) });
@@ -515,7 +471,6 @@ export function parseSnapshots(shas: readonly string[], repositoryData: unknown)
       return;
     }
     const inputs: Record<string, string> = {};
-    let marketingVersion: string | null = null;
     RUNTIME_INPUTS.forEach(({ path }, inputIndex) => {
       const entry = repositoryObjects[`c${shaIndex}_${inputIndex}`];
       if (entry === null || entry === undefined) {
@@ -527,10 +482,9 @@ export function parseSnapshots(shas: readonly string[], repositoryData: unknown)
       inputs[path] = object.oid;
       if (path === APP_CONFIG && typeof object.text === 'string' && object.isTruncated === false) {
         inputs[path] = appConfigDigest(object.text);
-        marketingVersion = marketingVersionOf(object.text);
       }
     });
-    result.set(sha, { sha, readable: true, inputs, marketingVersion });
+    result.set(sha, { sha, readable: true, inputs });
   });
   return result;
 }

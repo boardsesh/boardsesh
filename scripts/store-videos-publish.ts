@@ -5,8 +5,8 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { APP_CONFIG_PATH, BOT_EMAIL, BOT_NAME, parseSemver, readMarketingVersion } from './release-train-sync';
-import { parseVariantSelection, sourceStillOnTrain } from './store-videos-gate';
+import { APP_CONFIG_PATH, BOT_EMAIL, BOT_NAME, parseSemver, readMarketingVersion } from './lib/mobile-release-version';
+import { parseVariantSelection, sourceStillOnMain } from './store-videos-gate';
 import {
   changedSearchVariants,
   createCreativeStore,
@@ -78,7 +78,7 @@ export function parseVideoSourceTrailers(message: string): Record<string, string
 }
 
 /**
- * Keep the search entries an earlier subset run of this train put on the open review branch, so recording
+ * Keep the search entries an earlier subset run of this release put on the open review branch, so recording
  * one variant never drops another from the review. Only variants the branch itself changed against its
  * merge-base with main are carried; everything else, headers included, comes from the latest main, so a
  * later fix on main is never reverted.
@@ -143,7 +143,7 @@ export function videoReviewBody(
   const lines = [
     '## Summary',
     '',
-    `Review ${reviewed.length * LOCALES.length} Search Results videos (${reviewed.join(', ')}) for train v${version}.`,
+    `Review ${reviewed.length * LOCALES.length} Search Results videos (${reviewed.join(', ')}) for release v${version}.`,
     '',
     review.places.length
       ? `Merging places search videos for exactly: ${review.places.join(', ')}. Every other page keeps what App Store Connect already has.`
@@ -238,17 +238,17 @@ export async function publishVideos(
     return;
   }
   if (existing.some((pullRequest) => pullRequest.state === 'CLOSED'))
-    throw new Error('This train review PR was closed; reopen it before regenerating');
-  git('fetch', '--no-tags', 'origin', 'main', 'release/next');
-  // Ordinary train syncs may advance HEAD without shipping a newer build.
-  const trainSha = git('rev-parse', 'origin/release/next');
-  const trainVersion = readMarketingVersion(git('show', `origin/release/next:${APP_CONFIG_PATH}`));
+    throw new Error('This release review PR was closed; reopen it before regenerating');
+  git('fetch', '--no-tags', 'origin', 'main');
+  // Ordinary release syncs may advance HEAD without shipping a newer build.
+  const mainSha = git('rev-parse', 'origin/main');
+  const mainVersion = readMarketingVersion(git('show', `origin/main:${APP_CONFIG_PATH}`));
   const comparison =
-    sourceSha === trainSha
+    sourceSha === mainSha
       ? 'identical'
-      : gh('api', `repos/${repository}/compare/${sourceSha}...${trainSha}`, '--jq', '.status');
-  if (!sourceStillOnTrain(version, trainVersion, comparison))
-    throw new Error('Recording source no longer belongs to the open train');
+      : gh('api', `repos/${repository}/compare/${sourceSha}...${mainSha}`, '--jq', '.status');
+  if (!sourceStillOnMain(version, mainVersion, comparison))
+    throw new Error('Recording source no longer belongs to the open release');
   const main = parseCreativeManifest(JSON.parse(git('show', `origin/main:${MANIFEST_PATH}`)));
   const previous = git('ls-remote', '--heads', 'origin', `refs/heads/${branch}`).split(/\s+/)[0] ?? '';
   let review: CreativeManifest | undefined;
@@ -329,7 +329,7 @@ export async function publishVideos(
     const pullRequests = JSON.parse(
       gh('pr', 'list', '--repo', repository, '--head', branch, '--base', 'main', '--state', 'open', '--json', 'number'),
     ) as { number: number }[];
-    if (pullRequests.length > 1) throw new Error('Multiple review PRs for one train');
+    if (pullRequests.length > 1) throw new Error('Multiple review PRs for one release');
     if (pullRequests[0]) {
       gh('pr', 'edit', String(pullRequests[0].number), '--repo', repository, '--body-file', bodyPath);
     } else {

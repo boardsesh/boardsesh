@@ -51,7 +51,6 @@ function artifact(overrides: Partial<ArtifactRecord> = {}): ArtifactRecord {
 describe('judgeRun', () => {
   it.each<[string, Partial<RunRecord>]>([
     ['the OTA workflow on main', {}],
-    ['the OTA workflow on release/next, from a push', { head_branch: 'release/next', event: 'push' }],
     // Main's staging publish runs as a workflow_call inside production-deploy.yml.
     ['production-deploy on main', { path: DEPLOY_PATH, event: 'push' }],
   ])('accepts %s', (_label, overrides) => {
@@ -59,6 +58,7 @@ describe('judgeRun', () => {
   });
 
   it.each<[string, Partial<RunRecord>]>([
+    ['the retired release branch', { head_branch: 'release/next', event: 'push' }],
     ['another workflow file', { path: '.github/workflows/mobile-ota-preview.yml' }],
     ['the renumber bot', { path: '.github/workflows/db-migration-renumber.yml' }],
     ['production-deploy off main', { path: DEPLOY_PATH, head_branch: 'release/next' }],
@@ -103,7 +103,6 @@ describe('selectStore', () => {
     await selectStore(listRuns, async () => [], OPTIONS);
     expect(listRuns.mock.calls.map(([source]) => `${source.workflowFile}@${source.branch}`)).toEqual([
       'mobile-ota-production.yml@main',
-      'mobile-ota-production.yml@release/next',
       'production-deploy.yml@main',
     ]);
   });
@@ -126,8 +125,8 @@ describe('selectStore', () => {
       async (runId) => artifactsByRun[runId] ?? [],
       OPTIONS,
     );
-    expect(chosen?.run.id).toBe(200);
-    expect(chosen?.artifact.id).toBe(20);
+    expect(chosen?.run.id).toBe(100);
+    expect(chosen?.artifact.id).toBe(10);
   });
 
   it('never asks an untrusted run for artifacts, even one listed under a trusted workflow', async () => {
@@ -241,7 +240,6 @@ describe('main', () => {
     const runQuery = `status=success&exclude_pull_requests=true&per_page=${MAX_RUN_LOOKUPS}`;
     expect(requested).toEqual([
       `${base}/workflows/mobile-ota-production.yml/runs?branch=main&${runQuery}`,
-      `${base}/workflows/mobile-ota-production.yml/runs?branch=release%2Fnext&${runQuery}`,
       `${base}/workflows/production-deploy.yml/runs?branch=main&${runQuery}`,
       `${base}/runs/100/artifacts?name=${NAME}&per_page=100`,
     ]);

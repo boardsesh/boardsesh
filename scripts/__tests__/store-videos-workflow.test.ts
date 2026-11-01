@@ -36,7 +36,7 @@ interface Workflow {
 const workflow = (name: string): Workflow => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8')) as Workflow;
 
 describe('store video workflow handoff', () => {
-  it('preserves measurement and diagnostic dispatch modes beside the train entry', () => {
+  it('preserves measurement and diagnostic dispatch modes beside the release entry', () => {
     const measure = workflow('mobile-store-videos-measure');
     expect(measure.name).toBe('Mobile Store Videos (Measure)');
     expect(measure.on).not.toHaveProperty('workflow_run');
@@ -58,13 +58,13 @@ describe('store video workflow handoff', () => {
     expect(measure.jobs.render.if).toBe("inputs.mode == 'measure'");
   });
 
-  it('admits successful release-train drafts without filtering their reported main branch', () => {
+  it('admits successful release-release drafts without filtering their reported main branch', () => {
     const entry = workflow('mobile-store-videos');
     expect(entry.on.workflow_run.workflows).toEqual(['Mobile Store Draft Submission']);
     expect(entry.on.workflow_run.branches).toBeUndefined();
-    expect(entry.jobs.train.if).toContain("github.event.workflow_run.conclusion == 'success'");
-    expect(entry.jobs.train.if).toContain('Mobile Store Draft (release/next)');
-    expect(entry.jobs.train.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository');
+    expect(entry.jobs.source.if).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(entry.jobs.source.if).toContain('Mobile Store Draft (main)');
+    expect(entry.jobs.source.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository');
   });
 
   it.each([
@@ -72,12 +72,12 @@ describe('store video workflow handoff', () => {
     { scenario: 'disabled automatic recording', enabled: 'false', expected: false },
     { scenario: 'enabled trusted draft', enabled: 'true', expected: true },
     { scenario: 'failed draft', enabled: 'true', conclusion: 'failure', expected: false },
-    { scenario: 'unrelated draft', enabled: 'true', title: 'Mobile Store Draft (main)', expected: false },
+    { scenario: 'unrelated draft', enabled: 'true', title: 'Mobile Store Draft (feature)', expected: false },
     { scenario: 'foreign repository', enabled: 'true', repository: 'someone/boardsesh', expected: false },
     { scenario: 'manual dispatch while disabled', enabled: 'false', eventName: 'workflow_dispatch', expected: true },
     { scenario: 'manual dispatch without flag', enabled: undefined, eventName: 'workflow_dispatch', expected: true },
   ])('gates $scenario before credentials or macOS recording', (scenario) => {
-    const condition = workflow('mobile-store-videos').jobs.train.if!;
+    const condition = workflow('mobile-store-videos').jobs.source.if!;
     const admitted: unknown = runInNewContext(condition, {
       vars: { STORE_VIDEOS_ENABLED: scenario.enabled },
       github: {
@@ -86,7 +86,7 @@ describe('store video workflow handoff', () => {
         event: {
           workflow_run: {
             conclusion: scenario.conclusion ?? 'success',
-            display_title: scenario.title ?? 'Mobile Store Draft (release/next)',
+            display_title: scenario.title ?? 'Mobile Store Draft (main)',
             head_repository: { full_name: scenario.repository ?? 'boardsesh/boardsesh' },
           },
         },
@@ -95,11 +95,11 @@ describe('store video workflow handoff', () => {
     expect(admitted).toBe(scenario.expected);
   });
 
-  it('checks closed trains without store secrets, dependency installation or environment approval', () => {
-    const { train, editable, pipeline } = workflow('mobile-store-videos').jobs;
-    expect(train.environment).toBeUndefined();
-    expect(train.steps?.some((step) => step.run?.includes('--train-only'))).toBe(true);
-    for (const job of [train, editable]) {
+  it('checks closed releases without store secrets, dependency installation or environment approval', () => {
+    const { source: release, editable, pipeline } = workflow('mobile-store-videos').jobs;
+    expect(release.environment).toBeUndefined();
+    expect(release.steps?.some((step) => step.run?.includes('--source-only'))).toBe(true);
+    for (const job of [release, editable]) {
       const checkout = job.steps?.find((step) => step.uses === 'actions/checkout@v4');
       expect(checkout?.with?.['fetch-depth']).toBe(1);
       expect(checkout?.with?.['sparse-checkout-cone-mode']).toBe(false);
@@ -109,17 +109,17 @@ describe('store video workflow handoff', () => {
         expect(step.run ?? '').not.toContain('vp install');
       }
     }
-    expect(JSON.stringify(train)).not.toContain('APP_STORE_CONNECT');
-    expect(editable.needs).toBe('train');
-    expect(editable.if).toContain("needs.train.outputs.open == 'true'");
+    expect(JSON.stringify(release)).not.toContain('APP_STORE_CONNECT');
+    expect(editable.needs).toBe('source');
+    expect(editable.if).toContain("needs.source.outputs.open == 'true'");
     expect(pipeline.needs).toBe('editable');
     expect(pipeline.if).toContain("needs.editable.outputs.open == 'true'");
   });
 
-  it('publishes source provenance only for a successful iOS release/next draft', () => {
+  it('publishes source provenance only for a successful iOS main draft', () => {
     const steps = workflow('mobile-store-draft').jobs.ios.steps ?? [];
     const artifact = steps.find((step) => step.with?.name === 'store-video-source');
-    expect(artifact?.if).toBe("steps.draft.outcome == 'success' && env.RELEASE_BRANCH == 'release/next'");
+    expect(artifact?.if).toBe("steps.draft.outcome == 'success' && env.RELEASE_BRANCH == 'main'");
     expect(artifact?.with?.path).toContain('source.json');
     const sourceWriter = steps.find((step) => step.run?.includes('sourceBranch:$sourceBranch'));
     expect(sourceWriter?.env?.SOURCE_SHA).toContain('needs.release-candidate.outputs.sha');
@@ -133,7 +133,7 @@ describe('store video workflow handoff', () => {
       runInNewContext(String(pipeline.concurrency?.['cancel-in-progress']).replace(/^\$\{\{\s*|\s*\}\}$/g, ''), {
         github: { event_name: eventName },
       }) as boolean;
-    // A newer automatic draft supersedes the old pipeline; manual subset runs for one train queue instead.
+    // A newer automatic draft supersedes the old pipeline; manual subset runs for one release queue instead.
     expect(cancels('workflow_run')).toBe(true);
     expect(cancels('workflow_dispatch')).toBe(false);
     const { preflight, app, record, crew, render } = pipeline.jobs;
@@ -339,7 +339,7 @@ describe('store video workflow handoff', () => {
     const upload = byName('Upload immutable review candidates');
     expect(upload?.env?.VARIANTS).toBe('${{ needs.preflight.outputs.variants_csv }}');
     expect(upload?.run).toContain('upload-candidates --placement search --variant "$VARIANTS"');
-    const review = byName("Refresh the train's review PR with public posters and video links");
+    const review = byName("Refresh the release's review PR with public posters and video links");
     expect(review?.env?.VIDEO_VARIANTS).toBe('${{ needs.preflight.outputs.variants_csv }}');
     expect(review?.run).toContain('"$VIDEO_VERSION" "$VIDEO_SOURCE_SHA" "$VIDEO_VARIANTS"');
     // Carried candidates are HEAD-checked before the review branch is pushed.
@@ -367,10 +367,10 @@ describe('store video workflow handoff', () => {
     expect(JSON.stringify(publish)).not.toContain('fastlane ios creatives');
   });
 
-  it('rechecks train state and exact source before any candidate or review-PR write', () => {
+  it('rechecks release state and exact source before any candidate or review-PR write', () => {
     const publish = workflow('mobile-store-videos-pipeline').jobs.publish;
     const gateIndex = publish.steps!.findIndex(
-      (step) => step.name === 'Recheck the open train immediately before publishing',
+      (step) => step.name === 'Recheck the open release immediately before publishing',
     );
     expect(gateIndex).toBeGreaterThan(0);
     const gate = publish.steps![gateIndex];

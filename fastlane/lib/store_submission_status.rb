@@ -3,9 +3,8 @@
 require_relative "store_review_submission"
 require_relative "app_store_version_states"
 
-# Where one iOS marketing version stands for the automatic merge-back submission
-# (mobile-store-submit.yml) and its readiness check on merge-back PRs
-# (mobile-store-submit-review-state.yml). Pure: it classifies the app's
+# Where one exact iOS candidate stands for manual public-store submission
+# (mobile-store-submit.yml). Pure: it classifies the app's
 # appStoreVersions as App Store Connect returned them; the caller does the GET.
 #
 #   pending     nothing blocks a submission; the draft and submit jobs may run.
@@ -32,6 +31,7 @@ module BoardseshStoreSubmissionStatus
   # would fight whoever is handling it.
   NEEDS_PERSON = STATES::NEEDS_PERSON
   DONE = (BoardseshStoreReview::SUBMITTED + %w[REPLACED_WITH_NEW_VERSION]).freeze
+  BUILD_BOUND_STATES = (DONE + %w[READY_FOR_REVIEW]).freeze
 
   def self.semver(version)
     raise Error, "Expected iOS version must be semver" unless version.is_a?(String) && version.match?(/\A\d+\.\d+\.\d+\z/)
@@ -42,8 +42,11 @@ module BoardseshStoreSubmissionStatus
     versions.map { |entry| "#{entry.fetch('versionString')} (#{entry.fetch('state')})" }.join(", ")
   end
 
-  def self.ios(app_store_versions, version)
+  def self.ios(app_store_versions, version, expected_build: nil, attached_build: nil)
     wanted = semver(version)
+    if expected_build && (!expected_build.is_a?(String) || !expected_build.match?(/\A[1-9]\d*\z/))
+      raise Error, "Expected iOS build must be a positive build number"
+    end
     versions = app_store_versions.filter_map do |resource|
       attributes = resource.fetch("attributes", {})
       next unless resource["type"] == "appStoreVersions" && attributes["platform"] == "IOS"
@@ -67,6 +70,15 @@ module BoardseshStoreSubmissionStatus
     result = lambda do |status, reason|
       { "platform" => "ios", "version" => version, "status" => status, "state" => state, "versionId" => target && target["id"],
         "needsDraft" => status == "pending" && (target.nil? || state == "PREPARE_FOR_SUBMISSION"), "reason" => reason }
+    end
+
+    if expected_build && BUILD_BOUND_STATES.include?(state)
+      exact_build = attached_build.is_a?(Hash) && target["id"].is_a?(String) && !target["id"].empty? &&
+        attached_build["versionId"] == target["id"] && attached_build["buildNumber"] == expected_build &&
+        attached_build["marketingVersion"] == version && attached_build["platform"] == "IOS"
+      unless exact_build
+        return result.call("blocked", "iOS #{version} is #{state} but does not have the exact requested build #{expected_build} attached; inspect App Store Connect before submitting this candidate.")
+      end
     end
 
     return result.call("done", "iOS #{version} is already #{state}; nothing to submit.") if DONE.include?(state)

@@ -20,7 +20,7 @@ describe('store submission source guard', () => {
     expect(() => selectSubmissionBuildTag([IOS_TAG], 'ios', '31; exit 0')).toThrow('positive');
   });
 
-  it('blocks a train build before merge, then accepts that exact build after merge', () => {
+  it('blocks a unmerged candidate build before merge, then accepts that exact build after merge', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'store-submit-'));
     const git = (...arguments_: string[]) =>
       execFileSync('git', arguments_, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -32,7 +32,7 @@ describe('store submission source guard', () => {
       git('add', '.');
       git('commit', '-m', 'main');
       git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-      git('checkout', '-b', 'release/next');
+      git('checkout', '-b', 'feature/native-candidate');
       writeFileSync(join(cwd, 'native.txt'), 'new runtime\n');
       git('add', '.');
       git('commit', '-m', 'native candidate');
@@ -40,9 +40,9 @@ describe('store submission source guard', () => {
       const buildCommit = git('rev-parse', 'HEAD');
       expect(() =>
         requireSubmissionMergedToMain({ platform: 'ios', buildNumber: '31', version: '2.7.0', cwd }),
-      ).toThrow('Merge release/next');
+      ).toThrow('Merge the source into main');
       git('checkout', 'main');
-      git('merge', '--no-ff', 'release/next', '-m', 'merge train');
+      git('merge', '--no-ff', 'feature/native-candidate', '-m', 'merge candidate');
       git('update-ref', 'refs/remotes/origin/main', 'HEAD');
       expect(requireSubmissionMergedToMain({ platform: 'ios', buildNumber: '31', version: '2.7.0', cwd })).toEqual({
         buildTag: IOS_TAG,

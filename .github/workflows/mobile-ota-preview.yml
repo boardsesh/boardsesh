@@ -178,7 +178,6 @@ jobs:
       source_base_sha: ${{ steps.pin.outputs.source_base_sha }}
       source_base_ref: ${{ steps.pin.outputs.source_base_ref }}
       main_sha: ${{ steps.pin.outputs.main_sha }}
-      train_sha: ${{ steps.pin.outputs.train_sha }}
     steps:
       - name: Decide action + resolve PR
         id: decide
@@ -376,7 +375,7 @@ jobs:
             core.setOutput('needs_reset', String(needsReset));
             core.setOutput('head_sha', headSha);
 
-      - name: Pin both preview bases
+      - name: Pin the main preview base
         id: pin
         if: steps.decide.outputs.action == 'publish'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -389,15 +388,9 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: Number(process.env.PR_NUMBER) });
             if (pr.state !== 'open' || pr.head.sha !== process.env.HEAD_SHA) throw new Error('Preview head moved before base pinning.');
             const { data: main } = await github.rest.repos.getBranch({ ...context.repo, branch: 'main' });
-            let trainSha = '';
-            try {
-              const { data: train } = await github.rest.repos.getBranch({ ...context.repo, branch: 'release/next' });
-              trainSha = train.commit.sha;
-            } catch (error) { if (error.status !== 404) throw error; }
             const bases = {
-              version: 1,
+              version: 2,
               mainSha: main.commit.sha,
-              trainSha,
               sourceBaseRef: pr.base.ref,
               sourceBaseSha: pr.base.sha,
             };
@@ -423,13 +416,12 @@ jobs:
             }
             const previousBases = previousPayload && typeof previousPayload === 'object' && !Array.isArray(previousPayload)
               ? previousPayload.otaPreviewBases : null;
-            const baseKeys = ['version', 'mainSha', 'trainSha', 'sourceBaseRef', 'sourceBaseSha'];
+            const baseKeys = ['version', 'mainSha', 'sourceBaseRef', 'sourceBaseSha'];
             const validBases = previousBases && typeof previousBases === 'object' && !Array.isArray(previousBases) &&
               Object.keys(previousBases).length === baseKeys.length &&
               baseKeys.every((key) => Object.hasOwn(previousBases, key)) &&
-              previousBases.version === 1 &&
+              previousBases.version === 2 &&
               typeof previousBases.mainSha === 'string' && /^[0-9a-f]{40}$/.test(previousBases.mainSha) &&
-              typeof previousBases.trainSha === 'string' && /^(?:[0-9a-f]{40})?$/.test(previousBases.trainSha) &&
               typeof previousBases.sourceBaseRef === 'string' && previousBases.sourceBaseRef.length > 0 &&
               typeof previousBases.sourceBaseSha === 'string' && /^[0-9a-f]{40}$/.test(previousBases.sourceBaseSha);
             const sameBases = validBases && baseKeys.every((key) => previousBases[key] === bases[key]);
@@ -446,7 +438,6 @@ jobs:
             core.setOutput('source_base_sha', bases.sourceBaseSha);
             core.setOutput('source_base_ref', bases.sourceBaseRef);
             core.setOutput('main_sha', bases.mainSha);
-            core.setOutput('train_sha', bases.trainSha);
 
   # ── Default-branch runs never execute PR code. Re-dispatch this workflow on a
   # fresh `ci-sandbox/ota-preview/pr-<n>/<run id>` branch at the same trusted commit;
@@ -745,7 +736,6 @@ jobs:
           # github.rest.pulls.get here: re-resolving could pick up a post-gate push.
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
           MAIN_SHA: ${{ needs.gate.outputs.main_sha }}
-          TRAIN_SHA: ${{ needs.gate.outputs.train_sha }}
           SOURCE_BASE_REF: ${{ needs.gate.outputs.source_base_ref }}
           SOURCE_BASE_SHA: ${{ needs.gate.outputs.source_base_sha }}
         with:
@@ -758,9 +748,8 @@ jobs:
               task: `ota-preview-pr-${process.env.PR_NUMBER}`,
               payload: {
                 otaPreviewBases: {
-                  version: 1,
+                  version: 2,
                   mainSha: process.env.MAIN_SHA,
-                  trainSha: process.env.TRAIN_SHA,
                   sourceBaseRef: process.env.SOURCE_BASE_REF,
                   sourceBaseSha: process.env.SOURCE_BASE_SHA,
                 },
@@ -810,16 +799,14 @@ jobs:
 
       # Neither the publisher key nor maps key exists while dependencies or
       # app.config execute in the candidate and corresponding baseline trees.
-      - name: Rebase and compare both pinned preview candidates
+      - name: Rebase and compare the pinned main preview candidate
         env:
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
           SOURCE_BASE_SHA: ${{ needs.gate.outputs.source_base_sha }}
           SOURCE_BASE_REF: ${{ needs.gate.outputs.source_base_ref }}
           MAIN_SHA: ${{ needs.gate.outputs.main_sha }}
-          TRAIN_SHA: ${{ needs.gate.outputs.train_sha }}
         run: |
           git -C source fetch origin "$SOURCE_BASE_SHA" "$MAIN_SHA"
-          if [ -n "$TRAIN_SHA" ]; then git -C source fetch origin "$TRAIN_SHA"; fi
           node --experimental-strip-types tooling/scripts/mobile-ota-preview-candidates.ts prepare \
             "$GITHUB_WORKSPACE/source" "$RUNNER_TEMP/preview-candidates" "$RUNNER_TEMP/preview-artifacts"
 
@@ -847,7 +834,6 @@ jobs:
           SOURCE_BASE_SHA: ${{ needs.gate.outputs.source_base_sha }}
           SOURCE_BASE_REF: ${{ needs.gate.outputs.source_base_ref }}
           MAIN_SHA: ${{ needs.gate.outputs.main_sha }}
-          TRAIN_SHA: ${{ needs.gate.outputs.train_sha }}
         run: |
           node --experimental-strip-types tooling/scripts/mobile-ota-preview-candidates.ts publish \
             "$GITHUB_WORKSPACE/source" "$RUNNER_TEMP/preview-candidates" "$RUNNER_TEMP/preview-artifacts"

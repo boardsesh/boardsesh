@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-// The automatic merge-back submission and the workflows it shares locks with.
+// The automatic manual release submission and the workflows it shares locks with.
 // Text and structure are pinned here; the decisions that live in shell are run
 // under bash further down.
 
@@ -49,19 +49,23 @@ const step = (job: string, name: string) => {
 };
 
 describe('mobile-store-submit.yml triggers', () => {
-  it('runs on every main push, hourly, and on dispatch, and never on a PR', () => {
-    expect(Object.keys(submit.on).sort()).toEqual(['push', 'schedule', 'workflow_dispatch']);
-    expect(submit.on['push']).toEqual({ branches: ['main'] });
-    const [schedule] = submit.on['schedule'] as Array<{ cron: string }>;
-    // Hourly. The next train version's Android build cannot race a deferred
-    // release: android-apk-rn.yml holds it until production carries the merge-back.
-    expect(schedule?.cron).toBe('13 * * * *');
-  });
-
-  it('plans by default when dispatched, with an optional version', () => {
+  it('only runs on explicit dispatch and requires an exact build pair', () => {
+    expect(Object.keys(submit.on)).toEqual(['workflow_dispatch']);
     const inputs = (submit.on['workflow_dispatch'] as { inputs: Record<string, Record<string, unknown>> }).inputs;
     expect(inputs['action']).toMatchObject({ type: 'choice', default: 'plan', options: ['plan', 'submit'] });
-    expect(inputs['version']).toMatchObject({ type: 'string', required: false, default: '' });
+    for (const key of ['version', 'release_sha', 'ios_build_number', 'android_version_code']) {
+      expect(inputs[key]).toMatchObject({ type: 'string', required: true });
+      expect(inputs[key]).not.toHaveProperty('default');
+    }
+    expect(submit.jobs['target']?.if).toContain("github.event_name == 'workflow_dispatch'");
+    expect(submit.jobs['draft']?.with?.['ios_build_number']).toBe('${{ needs.target.outputs.ios_build_number }}');
+    expect(submit.jobs['draft']?.with?.['android_version_code']).toBe(
+      '${{ needs.target.outputs.android_version_code }}',
+    );
+  });
+
+  it('binds iOS status to the exact requested build', () => {
+    expect(submit.jobs['status-ios']?.env?.['IOS_BUILD_NUMBER']).toBe('${{ needs.target.outputs.ios_build_number }}');
   });
 
   it('works only from main', () => {
@@ -72,7 +76,7 @@ describe('mobile-store-submit.yml triggers', () => {
   });
 
   it('asks for read-only repository access, and actions: write only for the called draft', () => {
-    expect(submit.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
+    expect(submit.permissions).toEqual({ contents: 'read' });
     expect(submit.jobs['draft']?.permissions).toEqual({ contents: 'read', actions: 'write' });
     for (const [name, job] of Object.entries(submit.jobs)) {
       if (name !== 'draft') expect(job.permissions, name).toBeUndefined();
@@ -86,7 +90,7 @@ describe('the mobile-store-draft lock', () => {
   });
 
   // GitHub keeps one pending run per group and replaces the rest unless every
-  // member queues. A merge-back submission must never be dropped behind a draft.
+  // member queues. A manual release submission must never be dropped behind a draft.
   it.each([
     'mobile-store-draft.yml',
     'mobile-store-review-submission.yml',
@@ -127,7 +131,7 @@ describe('the mobile-store-draft lock', () => {
     expect(submitSource).not.toContain('mobile-store-metadata.yml');
     expect(step('submit-ios', "Push listing text and What's New").run).toContain('bundle exec fastlane ios metadata');
     // The draft only dispatches it (no wait), so that run just queues behind the draft.
-    expect(draftSource).toContain('gh workflow run mobile-store-metadata.yml');
+    expect(draftSource).toContain('bundle exec fastlane ios metadata');
     expect(draftSource).not.toMatch(/gh run watch|uses: \.\/\.github\/workflows\/mobile-store-metadata\.yml/);
   });
 
@@ -181,7 +185,7 @@ describe('mobile-store-draft.yml as a called workflow', () => {
 
   // Main moves many times a day, so "the branch has not moved" would abort most
   // called runs. A pinned commit must stay in main's history instead.
-  it('pins the merge commit and checks it is in main instead of checking the branch head', () => {
+  it('pins the selected release commit and checks it is in main instead of checking the branch head', () => {
     expect(draft.env?.['PINNED_RELEASE_SHA']).toBe('${{ inputs.release_sha }}');
     const compare =
       /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/compare\/\$\{(?:PINNED|EXPECTED)_RELEASE_SHA\}\.\.\.main" --jq '\.status'/g;
@@ -193,13 +197,12 @@ describe('mobile-store-draft.yml as a called workflow', () => {
     expect(draftSource.match(/assert_ref "tags\/\$EXPECTED_ANDROID_TAG" "\$EXPECTED_ANDROID_SHA"/g)).toHaveLength(2);
   });
 
-  // A later rebuild of the same version is not part of the merge-back, so it is
-  // never the merge-back's candidate. Other drafts keep considering every tag.
-  it("selects only builds in the merge commit's history when pinned", () => {
-    const selections = draftSource.match(
-      /CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="\$[A-Za-z_]+" \\\n\s+CANDIDATE_ANCESTOR_OF="\$PINNED_RELEASE_SHA" \\\n\s+GITHUB_OUTPUT="\$result" node --import tsx scripts\/mobile-cut-release-tags\.ts/g,
-    );
-    expect(selections).toHaveLength(2);
+  // A later rebuild of the same version is not part of the manual release, so it is
+  // never the manual release's candidate. Other drafts keep considering every tag.
+  it("selects only builds in the selected release commit's history when pinned", () => {
+    expect(draftSource).toContain('CANDIDATE_ANCESTOR_OF="$RELEASE_HEAD_SHA"');
+    expect(draftSource).toContain('CANDIDATE_ANCESTOR_OF="$EXPECTED_RELEASE_SHA"');
+    expect(draftSource.match(/scripts\/mobile-store-submit-target\.ts/g)).toHaveLength(2);
     const script = readFileSync('scripts/mobile-cut-release-tags.ts', 'utf8');
     expect(script).toContain("execFileSync('git', ['merge-base', '--is-ancestor', `${tagName}^{commit}`, ancestorOf]");
     // Unset (workflow_run and dispatch drafts): no filter.
@@ -265,10 +268,8 @@ describe('store writes', () => {
     expect(flatten(step('submit-android', 'Plan the Android release').if)).toBe("env.SUBMIT != 'true'");
     expect(step('submit-android', 'Plan the Android release').run).not.toContain('--apply');
     // With the kill switch off, hourly runs stop; a push or a dispatch still plans.
-    expect(flatten(submit.jobs['target']?.if)).toContain(
-      "github.event_name != 'schedule' || vars.STORE_AUTO_SUBMIT != 'off'",
-    );
-    expect(step('target', 'Resolve the merge-back to submit').env).toMatchObject({
+    expect(flatten(submit.jobs['target']?.if)).toContain("github.event_name == 'workflow_dispatch'");
+    expect(step('target', 'Resolve the exact manual target').env).toMatchObject({
       STORE_AUTO_SUBMIT: '${{ vars.STORE_AUTO_SUBMIT }}',
       SUBMIT_ACTION: '${{ inputs.action }}',
     });
@@ -313,7 +314,7 @@ describe('store writes', () => {
   it('pushes the text, checks readiness, sets release on approval, plans, then submits', () => {
     const names = (submit.jobs['submit-ios']?.steps ?? []).map((entry) => entry.name);
     const order = [
-      'Take the listing text from the merge commit',
+      'Take the listing text from the selected release commit',
       "Push listing text and What's New",
       'Check the App Store version is ready',
       'Release on approval',
@@ -350,52 +351,6 @@ describe('store writes', () => {
   });
 });
 
-describe('cheap runs under the lock', () => {
-  // Most runs end at the target job while holding mobile-store-draft, so it does
-  // not install the workspace: the scripts it and the store reads run import only
-  // Node builtins, through a tsx pinned to the lockfile's.
-  const lockfileTsx = /\n {6}tsx:\n {8}specifier: [^\n]+\n {8}version: ([0-9.]+)\n/.exec(
-    readFileSync('pnpm-lock.yaml', 'utf8'),
-  )?.[1];
-
-  it('installs nothing in the target and status jobs', () => {
-    for (const job of ['target', 'status-ios', 'status-android']) {
-      const runs = (submit.jobs[job]?.steps ?? []).map((entry) => entry.run ?? '').join('\n');
-      expect(runs, job).not.toContain('vp install');
-      expect(runs, job).not.toContain('node --import tsx');
-    }
-  });
-
-  it('pins every vp dlx tsx to the lockfile version', () => {
-    expect(lockfileTsx).toMatch(/^\d+\.\d+\.\d+$/);
-    const sources = [submitSource, read('mobile-store-submit-readiness-stores.yml')].join('\n');
-    const pins = [...sources.matchAll(/vp dlx tsx@([0-9.]+) /g)].map((match) => match[1]);
-    expect(pins.length).toBeGreaterThanOrEqual(4);
-    expect(new Set(pins)).toEqual(new Set([lockfileTsx]));
-  });
-
-  it('runs only scripts whose imports are Node builtins or other such scripts', () => {
-    const scripts = [
-      'scripts/mobile-store-submit-target.ts',
-      'scripts/mobile-store-submit-android.ts',
-      'scripts/release-train-sync.ts',
-      'scripts/lib/release-tags.ts',
-      'scripts/mobile-store-android-production.ts',
-      'scripts/lib/google-play-tracks.ts',
-      'scripts/mobile-store-android-audit.ts',
-      'scripts/mobile-auto-version-bump.ts',
-    ];
-    for (const script of scripts) {
-      const imports = [...readFileSync(script, 'utf8').matchAll(/^import [^;]*? from '([^']+)';/gms)].map(
-        (match) => match[1],
-      );
-      for (const source of imports) {
-        expect(source.startsWith('node:') || source.startsWith('.'), `${script} imports ${source}`).toBe(true);
-      }
-    }
-  });
-});
-
 describe('release on approval and 100% stay on the automatic path', () => {
   // The shared draft lane, the hand-run release control and the hand-run review
   // submission keep MANUAL; only mobile-store-submit.yml asks for AFTER_APPROVAL.
@@ -425,50 +380,6 @@ describe('release on approval and 100% stay on the automatic path', () => {
   });
 });
 
-describe('readiness checks on merge-back PRs', () => {
-  const builds = load('mobile-store-submit-readiness.yml');
-  const stores = load('mobile-store-submit-readiness-stores.yml');
-  const storesSource = read('mobile-store-submit-readiness-stores.yml');
-  const ownTrain =
-    "github.event.pull_request.head.ref == 'release/next' && github.event.pull_request.head.repo.full_name == github.repository";
-
-  it('runs only for this repository’s own release train', () => {
-    expect(flatten(builds.jobs['builds']?.if)).toBe(ownTrain);
-    expect(flatten(stores.jobs['stores']?.if)).toBe(ownTrain);
-  });
-
-  it('checks builds under pull_request with no secrets or environment', () => {
-    expect(Object.keys(builds.on)).toEqual(['pull_request']);
-    expect(builds.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
-    expect(builds.jobs['builds']?.environment).toBeUndefined();
-    expect(read('mobile-store-submit-readiness.yml')).not.toContain('secrets.');
-  });
-
-  // pull_request_target runs with Production credentials, so it must never run
-  // the PR's code: one checkout, of main, and the PR head read as git data.
-  it('reads store state under pull_request_target without ever checking out the PR', () => {
-    expect(Object.keys(stores.on)).toEqual(['pull_request_target']);
-    expect(stores.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
-    expect(stores.jobs['stores']?.environment).toBe('Production');
-    const checkouts = (stores.jobs['stores']?.steps ?? []).filter((entry) =>
-      entry.uses?.startsWith('actions/checkout'),
-    );
-    expect(checkouts).toHaveLength(1);
-    expect(JSON.stringify(checkouts[0])).not.toMatch(/head|ref/);
-    // PR-controlled values reach shell only through env.
-    for (const entry of stores.jobs['stores']?.steps ?? []) {
-      expect(entry.run ?? '', entry.name).not.toContain('${{');
-    }
-    expect(stores.jobs['stores']?.env?.['HEAD_SHA']).toBe('${{ github.event.pull_request.head.sha }}');
-    // No node_modules cache a later trusted run could restore from.
-    expect(storesSource).not.toMatch(/^\s+cache: true$/m);
-    // GET-only store reads: the status lanes and the audit, never a write lane.
-    expect(storesSource).not.toMatch(
-      /--apply|action:submit|store_release_control|fastlane ios metadata|draft_submission/,
-    );
-  });
-});
-
 // ─── Executed ───────────────────────────────────────────────────────────────────
 
 type ScriptRun = { status: number | null; stdout: string; outputs: Record<string, string> };
@@ -493,6 +404,7 @@ function runScript(script: string, env: Record<string, string>, stubs: Record<st
         HOME: sandbox,
         GITHUB_OUTPUT: outputPath,
         GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+        NATIVE_SOURCE_RUN_ID: '',
         ...env,
       },
     });
@@ -513,7 +425,7 @@ describe('the decisions, executed', { timeout: 30_000 }, () => {
   const ghStub = `#!/usr/bin/env bash\ncase "$*" in *compare*) printf '%s\\n' "$STUB_COMPARE" ;; *) exit 9 ;; esac\n`;
   const resolve = draft.jobs['release-candidate']?.steps?.find((entry) => entry.id === 'ref')?.run ?? '';
 
-  it('pins a merge commit that is in main, and refuses one that is not', () => {
+  it('pins a selected release commit that is in main, and refuses one that is not', () => {
     for (const compare of ['ahead', 'identical']) {
       const run = runScript(
         resolve,

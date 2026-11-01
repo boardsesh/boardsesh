@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "tmpdir"
+require "fileutils"
 require_relative "../lib/store_submission_status"
 
 class StoreSubmissionStatusTest < Minitest::Test
@@ -118,5 +120,165 @@ class StoreSubmissionStatusTest < Minitest::Test
     ["2.7", "v2.7.0", "", nil].each do |wanted|
       assert_raises(BoardseshStoreSubmissionStatus::Error, wanted.inspect) { status([], wanted) }
     end
+  end
+
+  def test_exact_build_is_required_for_submitted_and_review_draft_versions
+    attached = { "versionId" => "id-2.7.0", "buildNumber" => "9", "marketingVersion" => "2.7.0", "platform" => "IOS" }
+    BoardseshStoreSubmissionStatus::BUILD_BOUND_STATES.each do |state|
+      versions = [version("2.7.0", state)]
+      expected_status = state == "READY_FOR_REVIEW" ? "pending" : "done"
+      assert_equal expected_status, BoardseshStoreSubmissionStatus.ios(versions, "2.7.0", expected_build: "9", attached_build: attached).fetch("status"), state
+      [nil, attached.merge("buildNumber" => "8"), attached.merge("versionId" => "other-version"),
+       attached.merge("marketingVersion" => "2.6.0"), attached.merge("platform" => "MAC_OS")].each do |mismatch|
+        result = BoardseshStoreSubmissionStatus.ios(versions, "2.7.0", expected_build: "9", attached_build: mismatch)
+        assert_equal "blocked", result.fetch("status"), "#{state}, #{mismatch.inspect}"
+        assert_includes result.fetch("reason"), "exact requested build 9"
+        assert_equal false, result.fetch("needsDraft")
+      end
+    end
+  end
+
+  def test_editable_draft_can_replace_an_earlier_build
+    result = BoardseshStoreSubmissionStatus.ios([version("2.7.0", "PREPARE_FOR_SUBMISSION")], "2.7.0",
+      expected_build: "9", attached_build: { "buildNumber" => "8" })
+    assert_equal "pending", result.fetch("status")
+    assert_equal true, result.fetch("needsDraft")
+  end
+
+  def test_exact_build_input_is_validated_even_when_no_version_exists
+    ["", "latest", "0", 9].each do |build|
+      assert_raises(BoardseshStoreSubmissionStatus::Error) do
+        BoardseshStoreSubmissionStatus.ios([], "2.7.0", expected_build: build)
+      end
+    end
+  end
+end
+
+class StoreSubmissionStatusLaneTest < Minitest::Test
+  class FakeClient
+    attr_accessor :versions, :build, :prerelease, :read_failure
+    attr_reader :requests
+
+    def initialize
+      @requests = []
+      @versions = [{ "type" => "appStoreVersions", "id" => "store-version",
+        "attributes" => { "versionString" => "2.7.0", "platform" => "IOS", "appVersionState" => "IN_REVIEW" } }]
+      @build = { "type" => "builds", "id" => "build-id", "attributes" => { "version" => "9" } }
+      @prerelease = { "type" => "preReleaseVersions", "id" => "prerelease-id",
+        "attributes" => { "version" => "2.7.0", "platform" => "IOS" } }
+    end
+
+    def list(path)
+      @requests << ["GET", path]
+      @versions
+    end
+
+    def request(method, path)
+      @requests << [method, path]
+      raise BoardseshASC::Error, "Authenticated read failed" if @read_failure
+      case path
+      when "/v1/appStoreVersions/store-version/build" then { "data" => @build }
+      when "/v1/builds/build-id/preReleaseVersion" then { "data" => @prerelease }
+      else raise "Unexpected status request #{method} #{path}"
+      end
+    end
+  end
+
+  def setup
+    @saved_env = %w[RELEASE_VERSION IOS_BUILD_NUMBER STORE_SUBMISSION_STATUS_OUTPUT].to_h { |key| [key, ENV[key]] }
+    @directory = Dir.mktmpdir("store-status-lane-")
+    File.write(File.join(@directory, "spaceship.rb"), "# Status lane test supplies its own App model.\n")
+    $LOAD_PATH.unshift(@directory)
+    ENV["RELEASE_VERSION"] = "2.7.0"
+    ENV["IOS_BUILD_NUMBER"] = "9"
+    ENV["STORE_SUBMISSION_STATUS_OUTPUT"] = File.join(@directory, "status.json")
+    @client = FakeClient.new
+    @dsl = Module.new
+    @dsl.const_set(:REPO_ROOT, File.expand_path("../..", __dir__))
+    @dsl.const_set(:APP_IDENTIFIER, "com.boardsesh.app")
+    ui = Module.new
+    ui.define_singleton_method(:user_error!) { |message| raise message }
+    ui.define_singleton_method(:message) { |_message| }
+    @dsl.const_set(:UI, ui)
+    app_model = Class.new
+    app_model.define_singleton_method(:find) { |_identifier| Struct.new(:id).new("app-id") }
+    connect_api = Module.new
+    connect_api.const_set(:App, app_model)
+    spaceship = Module.new
+    spaceship.const_set(:ConnectAPI, connect_api)
+    @dsl.const_set(:Spaceship, spaceship)
+    status_client = @client
+    client_class = Class.new
+    client_class.define_singleton_method(:new) { |token:| status_client }
+    asc = Module.new
+    asc.const_set(:Client, client_class)
+    asc.const_set(:Error, BoardseshASC::Error)
+    @dsl.const_set(:BoardseshASC, asc)
+    @dsl.define_singleton_method(:asc_api_key) { }
+    @dsl.define_singleton_method(:lane) { |_name, &block| @status_lane = block }
+    @dsl.define_singleton_method(:run_status_lane) { instance_exec(&@status_lane) }
+    path = File.expand_path("../Fastfile", __dir__)
+    lane_source = File.read(path)[/^  lane :submission_status do\n.*?^  end$/m]
+    raise "Missing submission_status lane" unless lane_source
+    @dsl.module_eval(lane_source, path)
+  end
+
+  def teardown
+    @saved_env.each { |key, previous| previous ? ENV[key] = previous : ENV.delete(key) }
+    $LOAD_PATH.delete(@directory)
+    FileUtils.remove_entry(@directory)
+  end
+
+  def run_lane
+    @dsl.run_status_lane
+    JSON.parse(File.read(ENV.fetch("STORE_SUBMISSION_STATUS_OUTPUT")))
+  end
+
+  def test_lane_reads_the_attached_build_and_prerelease_before_reporting_done
+    assert_equal "done", run_lane.fetch("status")
+    assert_equal [
+      ["GET", "/v1/apps/app-id/appStoreVersions?filter[platform]=IOS&limit=200"],
+      ["GET", "/v1/appStoreVersions/store-version/build"],
+      ["GET", "/v1/builds/build-id/preReleaseVersion"]
+    ], @client.requests
+  end
+
+  def test_lane_blocks_a_different_or_missing_attached_build
+    @client.build["attributes"]["version"] = "8"
+    assert_equal "blocked", run_lane.fetch("status")
+    @client.build = nil
+    assert_equal "blocked", run_lane.fetch("status")
+  end
+
+  def test_lane_does_not_resume_a_review_draft_with_a_different_build
+    @client.versions.first["attributes"]["appVersionState"] = "READY_FOR_REVIEW"
+    @client.build["attributes"]["version"] = "8"
+    result = run_lane
+    assert_equal "blocked", result.fetch("status")
+    assert_equal false, result.fetch("needsDraft")
+  end
+
+  def test_lane_allows_a_prepare_for_submission_draft_to_attach_the_requested_build
+    @client.versions.first["attributes"]["appVersionState"] = "PREPARE_FOR_SUBMISSION"
+    @client.read_failure = true
+    result = run_lane
+    assert_equal "pending", result.fetch("status")
+    assert_equal true, result.fetch("needsDraft")
+    assert_equal 1, @client.requests.length
+  end
+
+  def test_authenticated_build_read_failure_does_not_become_done_or_deferred
+    @client.read_failure = true
+    error = assert_raises(RuntimeError) { run_lane }
+    assert_includes error.message, "Authenticated read failed"
+    refute File.exist?(ENV.fetch("STORE_SUBMISSION_STATUS_OUTPUT"))
+  end
+
+  def test_lane_blocks_wrong_marketing_version_and_platform
+    @client.prerelease["attributes"]["version"] = "2.6.0"
+    assert_equal "blocked", run_lane.fetch("status")
+    @client.prerelease["attributes"]["version"] = "2.7.0"
+    @client.prerelease["attributes"]["platform"] = "MAC_OS"
+    assert_equal "blocked", run_lane.fetch("status")
   end
 end

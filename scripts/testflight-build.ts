@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { formatBuildTag, shortFingerprint } from './lib/release-tags';
 import { createTestflightCommandRunner } from './lib/testflight-github';
+import { validateNativeStampSource } from './mobile-native-release';
 import {
   objectFields,
   parseTestflightBuildReceipt,
@@ -13,6 +14,16 @@ import {
   trustedTestflightRun,
   validateReceiptSource,
 } from './lib/testflight-build';
+import type { TestflightBuildReceipt, TrustedTestflightRun } from './lib/testflight-build';
+
+export function validatePinnedTestflightSource(
+  receipt: TestflightBuildReceipt,
+  run: TrustedTestflightRun,
+  validateStamp: (sha: string) => { sha: string } = validateNativeStampSource,
+): void {
+  const proof = receipt.sourceSha === run.sha ? undefined : validateStamp(receipt.sourceSha).sha;
+  validateReceiptSource(receipt, run, proof);
+}
 
 const runCommand = createTestflightCommandRunner();
 function command(binary: string, argumentsList: string[]): string {
@@ -162,9 +173,7 @@ export function main(argumentsList = process.argv.slice(2)): void {
     return;
   }
   const receipt = parseTestflightBuildReceipt(JSON.parse(readFileSync(option('--receipt'), 'utf8')));
-  validateReceiptSource(receipt, run, process.env.NATIVE_SOURCE_VALIDATED_SHA);
-  if (receipt.sourceSha !== run.sha)
-    command('git', ['merge-base', '--is-ancestor', receipt.sourceSha, 'refs/remotes/origin/main']);
+  validatePinnedTestflightSource(receipt, run);
   const resolveTag = (tag: string) => command('git', ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]);
   if (resolveTag(receipt.buildTag) !== receipt.sourceSha) throw new Error('Uploaded build tag moved or is missing.');
   if (receipt.previousBuildTag && receipt.previousBuildSha) {

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -94,8 +94,8 @@ function workflowName(path: string): string {
 function deployBranches(deployPath: string): string[] {
   const push = (parseWorkflow(deployPath).on ?? {}).push as PushTrigger | undefined;
   const branches = push?.branches ?? [];
-  // Only the release train builds on push; release-train-sync.yml keeps it level with main.
-  expect(branches, `${deployPath} must build on push from the release train only`).toEqual(['release/next']);
+  // Only main stamps produce automatic native candidates.
+  expect(branches, `${deployPath} must build stamped sources from main only`).toEqual(['main']);
   return branches;
 }
 
@@ -572,23 +572,84 @@ describe('screenshot captures follow the native deploys', () => {
     expect(flatten(parseWorkflow(entry.path).jobs[entry.firstJob].if)).toBe(CONCLUSION_GUARD);
   });
 
-  it.each(workflows)('$platform captures only when a binary actually shipped', (entry) => {
-    const source = readYaml(entry.path);
+  it.each(workflows)('$platform follows the exact uploaded source receipt rather than a fingerprint tag', (entry) => {
     const workflow = parseWorkflow(entry.path);
     const gateJob = workflow.jobs[entry.firstJob];
-
-    // A green deploy run is not proof: a JS-only push completes it with the
-    // build job skipped. The fingerprint tag is the proof.
-    expect(source).toContain(`repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-${entry.platform}-`);
+    const steps = gateJob.steps ?? [];
+    const gate = steps.find((step) => step.id === 'shipped');
     expect(gateJob.outputs?.shipped).toBe('${{ steps.shipped.outputs.shipped }}');
-    // A dispatch is an explicit request and bypasses the gate.
-    expect(source).toContain('capturing without the shipped-binary gate');
-    // The skipped run says why, in the place a human looks first.
-    expect(source).toContain(
-      `No ${entry.platform === 'ios' ? 'iOS' : 'Android'} binary shipped at $SOURCE_SHA ` +
-        `(no fingerprint-${entry.platform}-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"`,
-    );
+    expect(gate?.run).toContain('scripts/mobile-native-build-source.ts --run-id "$NATIVE_SOURCE_RUN_ID"');
+    expect(gate?.run).toContain('GITHUB_OUTPUT="$source_file"');
+    expect(gate?.run).toContain('echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"');
+    expect(gate?.env?.NATIVE_SOURCE_RUN_ID).toBe('${{ github.event.workflow_run.id }}');
+    expect(gate?.run).not.toContain('matching-refs/tags/fingerprint-');
+    const checkout = steps.find((step) => (step.uses ?? '').startsWith('actions/checkout@'));
+    expect(checkout?.with?.ref).toBe('${{ github.workflow_sha }}');
+    expect(checkout?.with?.['persist-credentials']).toBe(false);
   });
+
+  it.each(workflows)(
+    '$platform propagates receipt sources and never captures an absent or failed upload proof',
+    (entry) => {
+      const script = parseWorkflow(entry.path).jobs[entry.firstJob].steps?.find((step) => step.id === 'shipped')?.run;
+      expect(script).toBeDefined();
+      for (const outcome of ['uploaded', 'skipped', 'error', 'manual'] as const) {
+        const temporary = mkdtempSync(join(tmpdir(), 'capture-source-gate-'));
+        try {
+          const bin = join(temporary, 'bin');
+          mkdirSync(bin);
+          const stub = join(bin, 'node');
+          writeFileSync(
+            stub,
+            `#!/usr/bin/env bash
+if [ "$STUB_OUTCOME" = error ]; then exit 1; fi
+if [ "$STUB_OUTCOME" = skipped ]; then printf 'shipped=false\\n' >> "$GITHUB_OUTPUT"; exit 0; fi
+printf 'shipped=true\\nsource_sha=%s\\n' "$STUB_BINARY_SHA" >> "$GITHUB_OUTPUT"
+`,
+          );
+          chmodSync(stub, 0o755);
+          const output = join(temporary, 'output');
+          const environment = join(temporary, 'environment');
+          writeFileSync(output, '');
+          writeFileSync(environment, '');
+          const run = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script!], {
+            encoding: 'utf8',
+            cwd: temporary,
+            env: {
+              ...process.env,
+              BASH_ENV: undefined,
+              PATH: `${bin}:${process.env.PATH ?? ''}`,
+              EVENT_NAME: outcome === 'manual' ? 'workflow_dispatch' : 'workflow_run',
+              NATIVE_SOURCE_RUN_ID: '123',
+              SOURCE_SHA: 'b'.repeat(40),
+              RUNNER_TEMP: temporary,
+              GITHUB_OUTPUT: output,
+              GITHUB_ENV: environment,
+              STUB_OUTCOME: outcome,
+              STUB_BINARY_SHA: 'a'.repeat(40),
+            },
+          });
+          const outputs = readFileSync(output, 'utf8');
+          if (outcome === 'error') {
+            expect(run.status).not.toBe(0);
+            expect(outputs).not.toContain('shipped=true');
+          } else if (outcome === 'skipped') {
+            expect(run.status).toBe(0);
+            expect(outputs).toBe('shipped=false\n');
+          } else if (outcome === 'manual') {
+            expect(run.status).toBe(0);
+            expect(outputs).toContain(`source_sha=${'b'.repeat(40)}`);
+          } else {
+            expect(run.status).toBe(0);
+            expect(outputs).toContain(`source_sha=${'a'.repeat(40)}`);
+            expect(readFileSync(environment, 'utf8')).toBe(`SOURCE_SHA=${'a'.repeat(40)}\n`);
+          }
+        } finally {
+          rmSync(temporary, { recursive: true, force: true });
+        }
+      }
+    },
+  );
 
   it.each(workflows)('$platform requires credentials only for record/live captures', (entry) => {
     // Replay uses its synthetic account; record/live require the configured test account.
@@ -618,9 +679,11 @@ describe('screenshot captures follow the native deploys', () => {
       const checkouts = (job.steps ?? []).filter((step) => (step.uses ?? '').startsWith('actions/checkout@'));
       for (const step of checkouts) {
         expect(step.with?.ref, `${jobName} must pin the source sha`).toBe(
-          entry.platform === 'ios' && jobName.startsWith('cpp-')
-            ? '${{ needs.setup.outputs.source_sha }}'
-            : SOURCE_SHA_EXPRESSION,
+          jobName === entry.firstJob
+            ? '${{ github.workflow_sha }}'
+            : entry.platform === 'ios'
+              ? '${{ needs.setup.outputs.source_sha }}'
+              : '${{ needs.gate.outputs.source_sha }}',
         );
       }
     }

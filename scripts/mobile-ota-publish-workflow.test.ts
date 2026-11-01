@@ -52,7 +52,7 @@ function stepBlock(workflow: string, stepName: string): string {
 
 describe('production OTA workflow reliability', () => {
   it('stages main alongside service builds, then promotes after backend deployment', () => {
-    const mobile = parse(production) as { on: { push: { branches: string[] } }; jobs: Record<string, unknown> };
+    const mobile = parse(production) as { on: { push?: { branches: string[] } }; jobs: Record<string, unknown> };
     const deploy = parse(pipeline) as {
       jobs: Record<
         string,
@@ -64,7 +64,7 @@ describe('production OTA workflow reliability', () => {
         }
       >;
     };
-    expect(mobile.on.push.branches).toEqual(['release/next']);
+    expect(mobile.on.push).toBeUndefined();
     expect(deploy.jobs['stage-mobile-ota'].needs).toBe('detect-changes');
     expect(deploy.jobs['stage-mobile-ota'].uses).toBe('./.github/workflows/mobile-ota-production.yml');
     expect(deploy.jobs['stage-mobile-ota'].with?.stage_for_production_deploy).toBe(true);
@@ -202,7 +202,7 @@ describe('production OTA workflow reliability', () => {
       jobs: Record<string, { if?: string; needs?: string[] }>;
     };
     const publisher = workflow.jobs.publish;
-    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines', 'live-store-runtimes']);
+    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines']);
     const expression = publisher
       .if!.replace(/needs\.([a-z-]+)/g, 'needs["$1"]')
       .replaceAll('github.ref', '"refs/heads/main"');
@@ -483,7 +483,7 @@ describe('production OTA workflow reliability', () => {
       'scripts/lib/ota-branch-probe.ts',
       'scripts/lib/eoas.ts',
     ]) {
-      expect(parse(production).on.push.paths).toBeUndefined();
+      expect(parse(production).on.push).toBeUndefined();
       // Preview intentionally has no trigger paths filter: every synchronize
       // must run so removing the final mobile change tears down the old branch.
       expect(preview).toContain(`path === '${implementationPath}'`);
@@ -534,7 +534,6 @@ describe('backport OTA workflow upload pressure', () => {
 
     for (const implementationPath of [
       'scripts/mobile-publish.ts',
-      'scripts/mobile-release-train-policy.ts',
       'scripts/lib/mobile-release-policy.ts',
       'scripts/lib/release-tags.ts',
       'scripts/lib/ota-preview-boot-receipt.ts',
@@ -1099,11 +1098,11 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     });
   });
 
-  it('publishes only a sealed store, from main and release/next, after a platform published', () => {
+  it('publishes only a sealed store, from main, after a platform published', () => {
     expect(packStep.if).toContain("steps.metro_seal.outcome == 'success'");
     expect(uploadStep.if).toContain("steps.metro_pack.outcome == 'success'");
     expect(sealStep.run).toContain('scripts/ci/metro-cache-seal.sh seal');
-    expect(sealStep.if).toContain("(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next')");
+    expect(sealStep.if).toContain("github.ref == 'refs/heads/main'");
     expect(sealStep.if).toContain(
       "(steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')",
     );

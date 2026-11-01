@@ -32,7 +32,7 @@ describe('external TestFlight distribution workflow', () => {
     expect(followup.on.workflow_run).toEqual({
       workflows: [native.name],
       types: ['completed'],
-      branches: ['main', 'release/next'],
+      branches: ['main'],
     });
     expect(followup.concurrency).toMatchObject({ 'cancel-in-progress': false, queue: 'max' });
     expect(followup.concurrency.group).not.toBe(native.concurrency.group);

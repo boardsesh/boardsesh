@@ -1,41 +1,34 @@
 /// <reference types="node" />
 
-// Keep this entry point dependency-free: closed trains exit before vp install.
+// Keep this entry point dependency-free: closed releases exit before vp install.
 import { createPrivateKey, sign } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import {
-  APP_CONFIG_PATH,
-  createGhGitHubClient,
-  createGitClient,
-  isVersionTaken,
-  parseAnchoredIosVersions,
-  readMarketingVersion,
-  selectLastMergedBack,
-} from './release-train-sync.ts';
+import { APP_CONFIG_PATH, parseSemver, readMarketingVersion } from './lib/mobile-release-version.ts';
+import { parseReleaseTag } from './lib/release-tags.ts';
 
 export interface VideoSource {
   sourceSha: string;
-  sourceBranch: 'release/next';
+  sourceBranch: 'main';
   version: string;
   iosBuild: string;
 }
 
-export function sourceStillOnTrain(sourceVersion: string, trainVersion: string, comparison: string): boolean {
-  return sourceVersion === trainVersion && (comparison === 'ahead' || comparison === 'identical');
+export function sourceStillOnMain(sourceVersion: string, mainVersion: string, comparison: string): boolean {
+  return sourceVersion === mainVersion && (comparison === 'ahead' || comparison === 'identical');
 }
 
 export function parseVideoSource(input: unknown): VideoSource {
   if (!input || typeof input !== 'object') throw new Error('Invalid draft video source');
   const source = input as Partial<VideoSource>;
   if (
-    source.sourceBranch !== 'release/next' ||
+    source.sourceBranch !== 'main' ||
     !/^[a-f0-9]{40}$/.test(source.sourceSha ?? '') ||
     !/^\d+\.\d+\.\d+$/.test(source.version ?? '') ||
     !/^\d+$/.test(source.iosBuild ?? '')
   ) {
-    throw new Error('Draft video source needs release/next, a full commit, version and uploaded iOS build');
+    throw new Error('Draft video source needs main, a full commit, version and uploaded iOS build');
   }
   return source as VideoSource;
 }
@@ -86,69 +79,63 @@ export function editableVersion(versions: AppleResource[], marketingVersion: str
       version.attributes.versionString === marketingVersion &&
       editableStates.includes(String(version.attributes.appVersionState || version.attributes.appStoreState)),
   );
-  if (matches.length > 1) throw new Error('Multiple editable iOS versions match this train');
+  if (matches.length > 1) throw new Error('Multiple editable iOS versions match this release');
   return matches[0];
 }
 
 export async function gate(
   sourceFile?: string,
-  trainOnly = false,
+  sourceOnly = false,
   pin?: { sourceSha: string; version: string },
 ): Promise<void> {
   const repository = process.env.GITHUB_REPOSITORY;
   if (!repository) throw new Error('Missing GITHUB_REPOSITORY');
-  const git = createGitClient({ cwd: process.cwd(), remote: 'origin' });
+  const git = (...argumentsList: string[]) =>
+    execFileSync('git', argumentsList, { encoding: 'utf8', timeout: 20_000 }).trim();
   execFileSync(
     'git',
-    [
-      'fetch',
-      '--depth=1',
-      '--no-tags',
-      '--quiet',
-      'origin',
-      '+refs/heads/release/next:refs/remotes/origin/release/next',
-    ],
+    ['fetch', '--depth=1', '--no-tags', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
     { timeout: 20_000 },
   );
-  const trainSha = git.remoteTrackingSha('release/next');
-  const trainVersion = readMarketingVersion(git.readFile(trainSha, APP_CONFIG_PATH));
+  const mainSha = git('rev-parse', 'origin/main');
+  const mainVersion = readMarketingVersion(git('show', `${mainSha}:${APP_CONFIG_PATH}`));
   let reason = '';
   let source: VideoSource | undefined;
   if (sourceFile) {
     source = parseVideoSource(JSON.parse(readFileSync(sourceFile, 'utf8')));
     pin = source;
   }
-  const sourceSha = pin?.sourceSha ?? trainSha;
-  const version = pin?.version ?? trainVersion;
+  const sourceSha = pin?.sourceSha ?? mainSha;
+  const version = pin?.version ?? mainVersion;
   if (!/^[a-f0-9]{40}$/.test(sourceSha) || !/^\d+\.\d+\.\d+$/.test(version))
     throw new Error('Invalid recording source pin');
-  if (version !== trainVersion) reason = 'Recording belongs to a different marketing version';
-  if (!reason && sourceSha !== trainSha) {
+  if (version !== mainVersion) reason = 'Recording belongs to a different marketing version';
+  if (!reason && sourceSha !== mainSha) {
     const comparison = execFileSync(
       'gh',
-      ['api', `repos/${repository}/compare/${sourceSha}...${trainSha}`, '--jq', '.status'],
+      ['api', `repos/${repository}/compare/${sourceSha}...${mainSha}`, '--jq', '.status'],
       { encoding: 'utf8', timeout: 15_000 },
     ).trim();
-    if (!sourceStillOnTrain(version, trainVersion, comparison))
-      reason = 'Recording source is no longer part of this train';
+    if (!sourceStillOnMain(version, mainVersion, comparison))
+      reason = 'Recording source is no longer part of this release';
     else {
       execFileSync('git', ['fetch', '--depth=1', '--no-tags', '--quiet', 'origin', sourceSha], { timeout: 20_000 });
-      if (readMarketingVersion(git.readFile(sourceSha, APP_CONFIG_PATH)) !== version)
+      if (readMarketingVersion(git('show', `${sourceSha}:${APP_CONFIG_PATH}`)) !== version)
         throw new Error('Recording source version does not match its pin');
     }
   }
-  const github = createGhGitHubClient({ repository, cwd: process.cwd() });
-  const lastMerged = selectLastMergedBack(github.listMergedBackPullRequests());
-  if (lastMerged)
-    execFileSync('git', ['fetch', '--depth=1', '--no-tags', '--quiet', 'origin', lastMerged.mergeCommitOid], {
-      timeout: 20_000,
-    });
-  const lastMergedBackVersion = lastMerged
-    ? readMarketingVersion(git.readFile(lastMerged.mergeCommitOid, APP_CONFIG_PATH))
-    : undefined;
-  const anchoredIosVersions = parseAnchoredIosVersions(git.lsRemote(['refs/tags/release/ios-v*'], { tags: true }));
-  if (isVersionTaken(version, { lastMergedBackVersion, anchoredIosVersions }))
-    reason = `v${version} is taken; the train is closed`;
+  const versionParts = parseSemver(version);
+  const anchors = git('ls-remote', '--tags', 'origin', 'refs/tags/release/ios-v*');
+  const alreadyAccepted = anchors.split('\n').some((line) => {
+    const tag = parseReleaseTag((line.split(/\s+/)[1] ?? '').replace(/^refs\/tags\//, '').replace(/\^\{\}$/, ''));
+    if (!tag || tag.platform !== 'ios') return false;
+    const accepted = parseSemver(tag.version);
+    for (let index = 0; index < 3; index++) {
+      if (accepted[index] !== versionParts[index]) return accepted[index]! > versionParts[index]!;
+    }
+    return true;
+  });
+  if (alreadyAccepted) reason = `v${version} is already accepted by Apple`;
   if (!reason) {
     const reviews = JSON.parse(
       execFileSync(
@@ -174,7 +161,7 @@ export async function gate(
     else if (reviews.some((review) => review.state === 'CLOSED'))
       reason = `The v${version} review PR was closed; reopen it to regenerate`;
   }
-  if (!reason && !trainOnly) {
+  if (!reason && !sourceOnly) {
     const token = appleToken();
     const apps = await appleList('/v1/apps?filter[bundleId]=com.boardsesh.app&limit=2', token);
     if (apps.length !== 1) throw new Error('Need exactly one Boardsesh App Store app');
@@ -185,10 +172,10 @@ export async function gate(
   const output = `open=${open}\nversion=${version}\nsource_sha=${sourceSha}\nbranch=store-videos/v${version}\n`;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, output);
   console.log(
-    open ? `Open train v${version} at ${sourceSha}${source ? ` (iOS build ${source.iosBuild})` : ''}` : reason,
+    open ? `Open release v${version} at ${sourceSha}${source ? ` (iOS build ${source.iosBuild})` : ''}` : reason,
   );
   if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${open ? `Open train v${version}` : reason}\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${open ? `Open release v${version}` : reason}\n`);
 }
 
 /** A dispatch's page selection, resolved against the recording source's storyboards. */
@@ -255,9 +242,9 @@ async function main(): Promise<void> {
     let sourceFile: string | undefined;
     let pinnedSha: string | undefined;
     let pinnedVersion: string | undefined;
-    let trainOnly = false;
+    let sourceOnly = false;
     for (let index = 0; index < args.length; index += 1) {
-      if (args[index] === '--train-only') trainOnly = true;
+      if (args[index] === '--source-only') sourceOnly = true;
       else if (args[index] === '--pinned-sha') pinnedSha = args[++index];
       else if (args[index] === '--pinned-version') pinnedVersion = args[++index];
       else if (!args[index].startsWith('--') && !sourceFile) sourceFile = args[index];
@@ -267,7 +254,7 @@ async function main(): Promise<void> {
       throw new Error('Supply either a draft source file or both recording pins');
     return gate(
       sourceFile,
-      trainOnly,
+      sourceOnly,
       pinnedSha && pinnedVersion ? { sourceSha: pinnedSha, version: pinnedVersion } : undefined,
     );
   }
