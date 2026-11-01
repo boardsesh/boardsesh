@@ -1,7 +1,6 @@
 import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { brandColors as staticBrandColors } from '@boardsesh/velvet-tokens';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
@@ -13,6 +12,7 @@ import type {
 } from '../../lib/player-buttons';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { useVariantValue } from '../../theme/variants';
 
 /** What the preview needs to know about the board it stands for. */
 export type PlayerButtonsPreviewBoard = {
@@ -70,6 +70,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
 }: PlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
+  const actionColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   const layout = useMemo(
     () =>
       resolveActionBarLayout({
@@ -126,7 +127,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
   });
 
   const glyph = (name: IconName, size: number) => (
-    <Icon maxFontSizeMultiplier={1} name={name} size={size} color={systemColors.label} />
+    <Icon maxFontSizeMultiplier={1} name={name} size={size} color={actionColor} />
   );
   const bar = (
     <View style={styles.bar}>
@@ -142,9 +143,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
               : null}
         </View>
         <View style={styles.bigSlot}>
-          <View style={styles.tick}>
-            <Icon maxFontSizeMultiplier={1} name="check.small" size={18} color={staticBrandColors.onPrimary} />
-          </View>
+          <Icon maxFontSizeMultiplier={1} name="tick.fill" size={32} color={actionColor} />
         </View>
         <View style={styles.bigSlot}>
           {layout.showPreviousNext
@@ -222,14 +221,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tick: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: staticBrandColors.success,
   },
   smallRow: {
     flexDirection: 'row',

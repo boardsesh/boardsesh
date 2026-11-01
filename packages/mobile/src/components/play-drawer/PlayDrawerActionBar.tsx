@@ -25,9 +25,7 @@ import type { WallControlSurface } from '../../lib/analytics-wall-control';
 import type { DriveStartOutcome } from './use-wall-control';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
-// Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
-// `staticBrandColors` supplies filled surfaces with white foregrounds, so they
-// stay legible in both schemes.
+// Static brand fill keeps the count badge legible with its white foreground.
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -710,6 +708,8 @@ type TickButtonProps = {
 };
 
 function TickButton({ ascentCount, onPress, onLongPress, accessibilityLabel }: TickButtonProps) {
+  const { systemColors } = useTheme();
+  const tickColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   const handleLongPress = useCallback(() => {
     if (!onLongPress) return;
     hapticMedium();
@@ -729,7 +729,7 @@ function TickButton({ ascentCount, onPress, onLongPress, accessibilityLabel }: T
         pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon maxFontSizeMultiplier={1} name="check.small" size={32} color={iosSystemColors.white} />
+      <Icon maxFontSizeMultiplier={1} name="tick.fill" size={PLAY_DRAWER_TICK_SIZE} color={tickColor} />
       {ascentCount > 0 && (
         <View style={styles.countBadge}>
           <Text
@@ -756,7 +756,6 @@ const styles = StyleSheet.create({
     width: PLAY_DRAWER_TICK_SIZE,
     height: PLAY_DRAWER_TICK_SIZE,
     borderRadius: PLAY_DRAWER_TICK_SIZE / 2,
-    backgroundColor: staticBrandColors.success,
   },
   // Above the board the hairline moves to the edge that faces it.
   containerAbove: {

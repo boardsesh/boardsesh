@@ -17,9 +17,13 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
-const themeState = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+const themeState = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  scheme: 'dark' as 'dark' | 'light',
+}));
 afterEach(() => {
   themeState.variant = 'liquidGlass';
+  themeState.scheme = 'dark';
 });
 
 // Minimal RN surface. Pressable exposes its a11y label + hitSlop so the angle
@@ -79,8 +83,8 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-// Icon → expose name + colour so the tick glyph's green (colour-on-glyph, not a
-// fill) is assertable. Paths are relative to THIS test file (one level under the
+// Icon → expose name, size and colour so the composite Tick is inspectable.
+// Paths are relative to THIS test file (one level under the
 // source in __tests__), so they carry an extra `../`.
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color, size }: { name?: string; color?: string; size?: number }) =>
@@ -216,9 +220,9 @@ vi.mock('../../../providers/theme-provider', () => ({
     variant: themeState.variant,
     brandColors: { primary: '#6D28D9', success: '#047857', error: 'brandError' },
     systemColors: {
-      label: 'label',
+      label: themeState.scheme === 'dark' ? '#FFFFFF' : '#1C1C1E',
       fill: 'rgba(109, 40, 217, 0.14)',
-      secondaryLabel: 'secondaryLabel',
+      secondaryLabel: themeState.scheme === 'dark' ? '#D0D0D0' : '#3C3C43',
       separator: 'separator',
     },
     actionColors: { favoriteSelected: 'favoriteSelected' },
@@ -407,21 +411,52 @@ describe('PlayDrawerActionBar', () => {
     expect(labels(container)).not.toContain(ANGLE_LABEL);
   });
 
-  it('renders a 56pt filled Tick with a 32pt white checkmark inside the existing row height', () => {
+  it('renders a centered 56pt composite Tick inside the existing row height', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
-    const tick = container.querySelector('[data-icon="check.small"]') as HTMLElement;
+    const tick = container.querySelector('[data-icon="tick.fill"]') as HTMLElement;
 
     expect(tick).toBeTruthy();
     expect(tick.getAttribute('data-color')).toBe('#FFFFFF');
-    expect(tick.getAttribute('data-icon-size')).toBe('32');
+    expect(tick.getAttribute('data-icon-size')).toBe('56');
     const target = container.querySelector('[data-testid="play-drawer-tick"]');
     expect(target?.getAttribute('data-width')).toBe('56');
     expect(target?.getAttribute('data-height')).toBe('56');
-    expect(target?.getAttribute('data-background')).toBe('#047857');
+    expect(target?.getAttribute('data-background')).toBeNull();
     const row = container.querySelector('[data-testid="play-drawer-action-bar-primary-row"]');
     expect(row?.getAttribute('data-padding-top')).toBe('4');
     expect(row?.getAttribute('data-min-height')).toBe('60');
     expect(Number(row?.getAttribute('data-padding-top')) + Number(target?.getAttribute('data-height'))).toBe(60);
+  });
+
+  it.each([
+    ['liquidGlass', 'dark'],
+    ['liquidGlass', 'light'],
+    ['material', 'dark'],
+    ['material', 'light'],
+  ] as const)('keeps Tick the same neutral color as Share across ascent counts (%s, %s)', (variant, scheme) => {
+    themeState.variant = variant;
+    themeState.scheme = scheme;
+    const props = { ...baseProps, buttons: DEFAULT_PLAYER_BUTTONS, previousNext: false, ascentCount: 0 };
+    const rendered = render(createElement(PlayDrawerActionBar, props));
+    const expectedColor =
+      variant === 'liquidGlass'
+        ? scheme === 'dark'
+          ? '#FFFFFF'
+          : '#1C1C1E'
+        : scheme === 'dark'
+          ? '#D0D0D0'
+          : '#3C3C43';
+    for (const ascentCount of [0, 1, 140]) {
+      rendered.rerender(createElement(PlayDrawerActionBar, { ...props, ascentCount }));
+      const tick = rendered.container.querySelector('[data-icon="tick.fill"]');
+      const share = rendered.container.querySelector('[data-icon="share"]');
+      expect(tick?.getAttribute('data-color')).toBe(expectedColor);
+      expect(tick?.getAttribute('data-color')).toBe(share?.getAttribute('data-color'));
+      expect(tick?.getAttribute('data-icon-size')).toBe('56');
+      const target = rendered.getByTestId('play-drawer-tick');
+      expect(target.getAttribute('data-background')).toBeNull();
+      expect(target.textContent).toBe(ascentCount === 0 ? '' : ascentCount === 140 ? '99+' : '1');
+    }
   });
 
   it.each(['liquidGlass', 'material'] as const)('keeps the favourite colour on %s', (variant) => {
@@ -475,7 +510,7 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, previousNext: false }));
     expect(actions(container)).not.toContain(ACTION_ICONS.previous);
     expect(actions(container)).not.toContain(ACTION_ICONS.next);
-    expect(container.querySelector('[data-icon="check.small"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="tick.fill"]')).toBeTruthy();
   });
 
   it('gives the heart the leading slot on a mirror board with Mirror switched off', () => {
@@ -507,7 +542,7 @@ describe("PlayDrawerActionBar (the climber's buttons)", () => {
   it('collapses the second row when there is no wall to light', () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, hasWall: false }));
     expect(container.querySelector('[data-wall-control]')).toBeNull();
-    expect(container.querySelector('[data-icon="check.small"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="tick.fill"]')).toBeTruthy();
   });
 
   it('keeps the wall button with every button switched off', () => {
@@ -550,7 +585,7 @@ describe('PlayDrawerActionBar (the busy-wall question)', () => {
     expect(container.querySelector('[data-wall-control]')).toBeNull();
     // Put mine up carries the bulb, so the bulb doesn't come back.
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
-    expect(container.querySelector('[data-icon="check.small"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="tick.fill"]')).not.toBeNull();
     expect(actions(container)).toEqual(actions(plain));
     expect(labels(container)).toContain(QUEUE_LABEL);
   });
@@ -567,7 +602,7 @@ describe('PlayDrawerActionBar (the busy-wall question)', () => {
     );
     expect(container.querySelector('[data-commit-bar="true"]')).not.toBeNull();
     expect(container.querySelector('[data-ble="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-icon="check.small"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="tick.fill"]')).not.toBeNull();
   });
 
   it('routes Put mine up to the commit and Keep theirs to its own handler', () => {
@@ -604,7 +639,7 @@ describe('PlayDrawerActionBar (beside a MiniPlayer, tablets and the open Duo)', 
     expect(row).not.toBeNull();
     expect(row?.querySelector('[data-wall-control]')?.getAttribute('data-compact')).toBe('false');
     expect(actions(container)).toEqual([]);
-    expect(container.querySelector('[data-icon="check.small"]')).toBeNull();
+    expect(container.querySelector('[data-icon="tick.fill"]')).toBeNull();
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
     expect(container.querySelectorAll('[data-wall-control]')).toHaveLength(1);
   });
@@ -784,7 +819,7 @@ describe('PlayDrawerActionBar (anonymous viewer)', () => {
     const tick = container.querySelector('[data-label="mobile.anonymous.tickAria"]') as HTMLElement;
 
     expect(tick).toBeTruthy();
-    expect(container.querySelector('[data-icon="check.small"]')).toBeTruthy();
+    expect(container.querySelector('[data-icon="tick.fill"]')).toBeTruthy();
     tick.click();
     expect(onSignInPress).toHaveBeenCalledTimes(1);
     expect(onTickPress).not.toHaveBeenCalled();
@@ -989,7 +1024,7 @@ describe('PlayDrawerActionBar (timed workout block)', () => {
     expect(container.querySelector('[data-wall-control]')?.getAttribute('data-compact')).toBe('true');
     // Mirror, Log and the queue wait in ⋯; no bulb.
     expect(actions(container)).toEqual([ACTION_ICONS.previous, ACTION_ICONS.next]);
-    expect(container.querySelector('[data-icon="check.small"]')).toBeNull();
+    expect(container.querySelector('[data-icon="tick.fill"]')).toBeNull();
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
     expect(container.querySelector(`[data-label="${QUEUE_LABEL}"]`)).toBeNull();
   });
@@ -1008,7 +1043,7 @@ describe('PlayDrawerActionBar (timed workout block)', () => {
     );
 
     expect(actions(container)).toEqual([ACTION_ICONS.mirror, ACTION_ICONS.previous, ACTION_ICONS.next]);
-    expect(container.querySelector('[data-icon="check.small"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="tick.fill"]')).not.toBeNull();
     expect(container.querySelector('[data-ble="true"]')).not.toBeNull();
     expect(container.querySelector('[data-wall-control]')).toBeNull();
     expect(container.querySelector('[data-workout-outcome]')).toBeTruthy();

@@ -21,7 +21,8 @@ this page covers the buttons, the MiniPlayer and what they share.
 - Existing customized button choices, position and board control survive the upgrade. An untouched layout adopts
   the new defaults. Explicitly stored Previous and next choices stay as they were.
 
-Log is a filled green 56 pt circle with a white 32 pt checkmark. Its ordinary row keeps its existing 60 pt height:
+Log uses a 56 pt filled circled-check symbol in the same neutral colour as the other actions (white in dark mode).
+The native symbol centres the check within its circle. Its ordinary row keeps its existing 60 pt height:
 4 pt top padding plus the 56 pt control replaces 12 pt plus 48 pt. Neighbouring controls keep their sizes, and
 the rendered board keeps its allocation. The count badge, tap and hold behavior are unchanged.
 
@@ -772,7 +773,7 @@ This fixed-angle capture has no Angle action; its three optional actions keep th
 
 | Before | After |
 | --- | --- |
-| <img src="images/play-drawer-actions-v3-before.png" alt="Previous and Next beside a small outline Tick" width="300" /> | <img src="images/play-drawer-actions-v3-after.png" alt="Share beside a larger filled Tick, with the same board size" width="300" /> |
+| <img src="images/play-drawer-actions-v3-before.png" alt="Previous and Next beside a small outline Tick" width="300" /> | <img src="images/play-drawer-actions-v3-after.png" alt="Share beside a larger white Tick, with the same board size" width="300" /> |
 
 `Play Drawer Actions Shown` records the actual action rows that fit completely inside the drawer's viewport.
 It waits for native layout measurements, excludes loading placeholders, board-mismatch scrims, open sheets and

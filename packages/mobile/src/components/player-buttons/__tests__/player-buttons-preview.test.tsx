@@ -3,6 +3,11 @@ import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
+const previewTheme = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  scheme: 'dark' as 'dark' | 'light',
+}));
+
 vi.mock('react-native', () => ({
   View: ({
     children,
@@ -40,18 +45,19 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name, color }: { name: string; color: string }) =>
-    createElement('i', { 'data-icon': name, 'data-color': color }),
+  Icon: ({ name, color, size }: { name: string; color: string; size: number }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color, 'data-size': size }),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    variant: previewTheme.variant,
     brandColors: { success: 'green' },
     systemColors: {
-      label: 'label',
-      secondaryLabel: 'secondary',
+      label: previewTheme.scheme === 'dark' ? '#FFFFFF' : '#1C1C1E',
+      secondaryLabel: previewTheme.scheme === 'dark' ? '#D0D0D0' : '#3C3C43',
       separator: 'separator',
       secondaryBackground: 'surface',
       tertiaryFill: 'fill',
@@ -62,7 +68,11 @@ vi.mock('../../../providers/theme-provider', () => ({
 import { FALLBACK_PREVIEW_BOARD, PlayerButtonsPreview } from '../PlayerButtonsPreview';
 import { DEFAULT_PLAYER_BUTTONS } from '../../../lib/player-buttons';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  previewTheme.variant = 'liquidGlass';
+  previewTheme.scheme = 'dark';
+});
 
 const TENSION = { ...FALLBACK_PREVIEW_BOARD, supportsMirroring: true };
 const icons = (container: HTMLElement) =>
@@ -84,7 +94,7 @@ describe('PlayerButtonsPreview', () => {
   // #7000: [♡] [⏮] [✓] [⏭] [☰] over the full-width wall button.
   it("draws today's Kilter bar under the board, and says it in one sentence", () => {
     const screen = preview();
-    expect(icons(screen.container)).toEqual(['angle', 'favorite', 'check.small', 'share', 'queue', 'lightbulb']);
+    expect(icons(screen.container)).toEqual(['angle', 'favorite', 'tick.fill', 'share', 'queue', 'lightbulb']);
     expect(screen.queryByText('40°')).toBeNull();
     expect(screen.getByTestId('player-buttons-preview').getAttribute('aria-label')).toBe(
       'mobile.settings.playerButtons.previewLabel ' +
@@ -104,27 +114,37 @@ describe('PlayerButtonsPreview', () => {
 
   it('draws the board it stands for: Mirror replaces Angle on Tension', () => {
     const screen = preview({ board: { ...TENSION, angleAvailable: false } });
-    expect(icons(screen.container)).toEqual(['mirror', 'favorite', 'check.small', 'share', 'queue', 'lightbulb']);
+    expect(icons(screen.container)).toEqual(['mirror', 'favorite', 'tick.fill', 'share', 'queue', 'lightbulb']);
   });
 
-  it('shows the filled hero Tick in proportion to the neighboring icons', () => {
+  it('shows the composite hero Tick in proportion to the neighboring icons', () => {
     const screen = preview();
-    const tick = screen.container.querySelector('[data-icon="check.small"]');
+    const tick = screen.container.querySelector('[data-icon="tick.fill"]');
     expect(tick?.getAttribute('data-color')).toBe('#FFFFFF');
-    expect(tick?.parentElement?.getAttribute('data-width')).toBe('32');
-    expect(tick?.parentElement?.getAttribute('data-background')).toBe('#047857');
+    expect(tick?.getAttribute('data-size')).toBe('32');
+    expect(tick?.parentElement?.getAttribute('data-background')).toBeNull();
+  });
+
+  it.each([
+    ['liquidGlass', 'dark', '#FFFFFF'],
+    ['liquidGlass', 'light', '#1C1C1E'],
+    ['material', 'dark', '#D0D0D0'],
+    ['material', 'light', '#3C3C43'],
+  ] as const)('uses the neutral action color for the Tick preview (%s, %s)', (variant, scheme, expectedColor) => {
+    previewTheme.variant = variant;
+    previewTheme.scheme = scheme;
+    const screen = preview();
+    const tick = screen.container.querySelector('[data-icon="tick.fill"]');
+    const share = screen.container.querySelector('[data-icon="share"]');
+    expect(tick?.getAttribute('data-color')).toBe(expectedColor);
+    expect(tick?.getAttribute('data-color')).toBe(share?.getAttribute('data-color'));
+    expect(tick?.getAttribute('data-size')).toBe('32');
+    expect(tick?.parentElement?.getAttribute('data-background')).toBeNull();
   });
 
   it('shows and announces navigation instead of the two inner actions when enabled', () => {
     const screen = preview({ previousNext: true });
-    expect(icons(screen.container)).toEqual([
-      'angle',
-      'skip.previous',
-      'check.small',
-      'skip.next',
-      'queue',
-      'lightbulb',
-    ]);
+    expect(icons(screen.container)).toEqual(['angle', 'skip.previous', 'tick.fill', 'skip.next', 'queue', 'lightbulb']);
     const label = screen.getByTestId('player-buttons-preview').getAttribute('aria-label');
     expect(label).toContain('mobile.settings.playerButtons.fixed.previous');
     expect(label).toContain('mobile.settings.playerButtons.fixed.next');
@@ -144,6 +164,6 @@ describe('PlayerButtonsPreview', () => {
       visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
     };
     const screen = preview({ buttons: allOff, previousNext: false });
-    expect(icons(screen.container)).toEqual(['check.small', 'lightbulb']);
+    expect(icons(screen.container)).toEqual(['tick.fill', 'lightbulb']);
   });
 });

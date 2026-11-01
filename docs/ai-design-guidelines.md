@@ -387,8 +387,9 @@ floor; `bar` is a slot inside UIKit's navigation bar, which owns that bar's hit 
 | `bar`           | 38  | UIKit grouped bar-item slot in the native navigation bar; UIKit's own grouped minimum is 36 |
 | `mini`          | 32  | Label-only pill (angle); carries 44pt hit-slop when tappable |
 
-**Play drawer Log.** The drawer's primary Log action uses a 56pt filled success-green circle and a 32pt white
-checkmark. Its row keeps the same 60pt height by using 4pt top padding instead of 12pt; the board does not shrink.
+**Play drawer Log.** The drawer's primary Log action uses a 56pt filled circled-check symbol in the same neutral
+colour as its neighbours (white in dark mode). The native symbol centres its check without a separate glyph's
+baseline correction. Its row keeps the same 60pt height by using 4pt top padding instead of 12pt; the board does not shrink.
 Other inline buttons keep their existing sizes. The default row is Mirror (Angle on adjustable boards without
 mirroring), Favorite, Log, Share, Queue. Previous and next remain available in View options.
 
