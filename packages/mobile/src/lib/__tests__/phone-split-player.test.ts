@@ -159,4 +159,21 @@ describe('buildCarriedPaneTarget', () => {
     expect(buildCarriedPaneTarget({ climbUuid: 'current', offsetY: 40, preview: null }, 1)).toBeNull();
     expect(buildCarriedPaneTarget(null, 1)).toBeNull();
   });
+
+  it('carries deferred history replay options into the pane without activating it', () => {
+    const item = queueItem('history');
+    const previewCommitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
+    const target = buildCarriedPaneTarget(
+      {
+        climbUuid: 'history',
+        offsetY: 0,
+        preview: { item, suggestionSource: null, isWallClimb: false, previewCommitOptions },
+      },
+      8,
+    );
+    expect(target?.options?.previewQueueItem).toBe(item);
+    expect(target?.options?.previewCommitOptions).toBe(previewCommitOptions);
+    expect(target?.options?.committedExternally).toBeUndefined();
+    expect(target?.claimFirstApply?.()).toBe(false);
+  });
 });

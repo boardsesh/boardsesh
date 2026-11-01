@@ -363,9 +363,7 @@ describe('useWallControl swipe', () => {
   });
 });
 
-// #7113 QA (Marco): solo, a press that puts the climb up ends in driving, on
-// the button and the bulb; in a crew it stays a one-off put.
-describe('useWallControl: a solo press ends in driving', () => {
+describe('useWallControl: a press lights once without starting Driver mode', () => {
   beforeEach(() => {
     resetDriveModeForTests();
     for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
@@ -399,8 +397,8 @@ describe('useWallControl: a solo press ends in driving', () => {
   it.each<[string, Partial<WallControlInput>, 'button' | 'bulb', boolean, boolean, boolean]>([
     ['solo, stopped, Light on swipe on', { solo: true, lightOnSwipe: true }, 'button', false, true, false],
     ['solo, stopped, Light on swipe on, the bulb', { solo: true, lightOnSwipe: true }, 'bulb', false, true, false],
-    ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', true, false, false],
-    ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', true, false, false],
+    ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', false, true, true],
+    ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', false, true, true],
     ['a crew', { solo: false, lightOnSwipe: true }, 'button', false, true, true],
   ])('%s', (_name, input, control, drives, lights, stoppedAfter) => {
     stopDrivingForLink();
@@ -413,7 +411,6 @@ describe('useWallControl: a solo press ends in driving', () => {
     const { hook } = setup(previewAfterStop(input), run);
     act(() => hook.result.current.press(control));
     expect(run.drive).toHaveBeenCalledTimes(drives ? 1 : 0);
-    if (drives) expect(run.drive).toHaveBeenCalledWith('tap');
     expect(run.light).toHaveBeenCalledTimes(lights ? 1 : 0);
     expect(isDrivingStoppedForLink()).toBe(stoppedAfter);
     expect(getDriveMode() !== null).toBe(drives);
@@ -421,18 +418,18 @@ describe('useWallControl: a solo press ends in driving', () => {
     expect(analytics.tapped).toHaveBeenCalledOnce();
   });
 
-  it('lights as before, with the stop dropped, where the drive cannot start', () => {
+  it('lights once and leaves a stopped link stopped with automatic lighting off', () => {
     stopDrivingForLink();
     const run = runners();
     run.drive.mockReturnValue('unavailable');
     const { hook } = setup(previewAfterStop({ solo: true, lightOnSwipe: false }), run);
     act(() => hook.result.current.press('button'));
-    expect(run.drive).toHaveBeenCalledOnce();
+    expect(run.drive).not.toHaveBeenCalled();
     expect(run.light).toHaveBeenCalledOnce();
-    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(isDrivingStoppedForLink()).toBe(true);
   });
 
-  it('starts the drive instead of lighting again on the wall with no link', () => {
+  it('lights again without starting Driver mode on the wall with no link', () => {
     const run = runners();
     const model = resolveWallControl({
       ...PREVIEW_AFTER_STOP,
@@ -448,7 +445,7 @@ describe('useWallControl: a solo press ends in driving', () => {
     expect(model.state).toBe('on_wall_unlinked');
     const { hook } = setup(model, run);
     act(() => hook.result.current.press('button'));
-    expect(run.drive).toHaveBeenCalledOnce();
-    expect(run.lightAgain).not.toHaveBeenCalled();
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(run.lightAgain).toHaveBeenCalledOnce();
   });
 });

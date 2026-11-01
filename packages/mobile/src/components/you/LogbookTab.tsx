@@ -235,7 +235,7 @@ export function LogbookTab({
   const boardOptions = useLogbookBoardOptions(userId);
   const { pinned: pinnedChips, isPinned } = useLogbookPinnedChips();
   const scopedRouter = useScopedRouter();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   // One dimension subscription for the whole list; rows take fontScale as a prop.
   const { fontScale } = useWindowDimensions();
@@ -759,7 +759,7 @@ export function LogbookTab({
       });
       const config = renderBoardToPlaylistConfig(ascent.boardType, ascent.layoutId, ascent.renderBoard);
       if (!climb || !config) return;
-      openClimbActions(
+      return getClimbActions(
         climb,
         {
           boardName: config.boardName,
@@ -771,7 +771,7 @@ export function LogbookTab({
         viewerIsOwner ? { onEditEntry: () => handleEdit(ascent, 'a11y') } : undefined,
       );
     },
-    [openClimbActions, viewerIsOwner, handleEdit],
+    [getClimbActions, viewerIsOwner, handleEdit],
   );
 
   const handleEndReached = useCallback(() => {

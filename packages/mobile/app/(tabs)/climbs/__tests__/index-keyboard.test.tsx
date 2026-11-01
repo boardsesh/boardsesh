@@ -110,7 +110,7 @@ const mocks = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   // Row actions, hoisted so tests can assert a stale row never reaches them.
   playNext: vi.fn(),
-  openClimbActions: vi.fn(),
+  getClimbActions: vi.fn(),
   openAddToPlaylist: vi.fn(),
   // Mutable per-test: whether another climber is in the session.
   isSharedSession: false,
@@ -733,7 +733,7 @@ vi.mock('../../../../src/hooks/use-tab-reselect', () => ({
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
-    openClimbActions: mocks.openClimbActions,
+    getClimbActions: mocks.getClimbActions,
     openAddToPlaylist: mocks.openAddToPlaylist,
     openBoardSheet: vi.fn(),
     openPlayDrawer: mocks.openPlayDrawer,
@@ -1735,7 +1735,7 @@ describe('ClimbList previous results standing in for a loading search', () => {
   it('ignores queue, actions and playlist on a stale row', async () => {
     mocks.isPlaceholderData = true;
     mocks.playNext.mockClear();
-    mocks.openClimbActions.mockClear();
+    mocks.getClimbActions.mockClear();
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
 
@@ -1744,13 +1744,13 @@ describe('ClimbList previous results standing in for a loading search', () => {
     fireEvent.click(getByText('playlist:Moonage'));
 
     expect(mocks.playNext).not.toHaveBeenCalled();
-    expect(mocks.openClimbActions).not.toHaveBeenCalled();
+    expect(mocks.getClimbActions).not.toHaveBeenCalled();
     expect(mocks.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
   it('runs queue, actions and playlist on a fresh row', async () => {
     mocks.playNext.mockClear();
-    mocks.openClimbActions.mockClear();
+    mocks.getClimbActions.mockClear();
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
 
@@ -1762,7 +1762,7 @@ describe('ClimbList previous results standing in for a loading search', () => {
     expect(mocks.playNext).toHaveBeenCalledWith({
       item: expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
     });
-    expect(mocks.openClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
+    expect(mocks.getClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
     expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: 'climb-1' }),
       undefined,

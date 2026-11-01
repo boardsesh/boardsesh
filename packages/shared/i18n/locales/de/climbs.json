@@ -733,7 +733,6 @@
       }
     },
     "hidden": {
-      "short": "ausgeblendet",
       "chip": "Ausgeblendet",
       "banner": "Von der Community ausgeblendet"
     },
@@ -764,7 +763,6 @@
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
       "changeGrade": "Grad ändern",
-      "closeOverlay": "Boulder-Aktionen schließen",
       "openQueue": "Warteschlange öffnen",
       "deleteClimb": {
         "row": "Boulder löschen",

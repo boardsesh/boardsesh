@@ -34,7 +34,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
 import { useTheme } from '../../providers/theme-provider';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
-import type { BoardConfig } from '../../providers/drawer-host-provider';
+import type { BoardConfig, ClimbActionsTarget } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -88,8 +88,8 @@ type BoardSheetProps = {
   onPlayNext?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: open the add-to-playlist sheet for this climb. */
   onOpenPlaylist?: (action: BoardSheetClimbAction) => void;
-  /** Long press action: open the existing climb actions sheet. */
-  onOpenActions?: (action: BoardSheetClimbAction) => void;
+  /** Resolve the row's native climb menu without running an action. */
+  onOpenActions?: (action: BoardSheetClimbAction) => ClimbActionsTarget | null | undefined;
 };
 
 export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function BoardSheet(

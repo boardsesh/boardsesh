@@ -136,8 +136,7 @@
         "a11yHasBetaVideo": "con vídeo de beta",
         "a11yMirrored": "en espejo",
         "editAction": "Editar registro",
-        "deleteAction": "Eliminar registro",
-        "moreActions": "Más acciones"
+        "deleteAction": "Eliminar registro"
       },
       "day": {
         "today": "Hoy",

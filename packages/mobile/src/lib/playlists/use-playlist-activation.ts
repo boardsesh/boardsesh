@@ -270,8 +270,7 @@ export type UsePlaylistActivationOptions = {
    * climber's "Tapping a playlist loads it into my queue" setting on, a tap
    * replaces the queue with the list instead of playing from it. The setting is
    * read at the tap. Off (the default), the tap plays from the list. Either way
-   * "Light the board when I tap a climb" off makes a row tap a preview; the
-   * Play button (`deliberate`) still plays or loads the list.
+   * "Light the board when I tap a climb" off makes the tap or Play a preview.
    */
   honorPlaylistLoadSetting?: boolean;
 };
@@ -291,18 +290,9 @@ export type PlaylistAddToQueueState = {
   pendingPlacement: QueueAddPlacement | null;
 };
 
-export type PlaylistActivationOptions = {
-  /**
-   * A deliberate play, not a row tap: the list header's Play button. "Light the board
-   * when I tap a climb" is about row taps, so it does not turn this
-   * into a preview. The crew rule still does.
-   */
-  deliberate?: boolean;
-};
-
 export type PlaylistActivationResult = {
-  /** Callback to wire onto a climb row tap, or with `deliberate` the Play button. */
-  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => Promise<void>;
+  /** Callback shared by climb row taps and the header Play button. */
+  activate: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => Promise<void>;
   /** Bulk additive queueing for the detail screen's Play next / Play last rows. */
   addToQueue: PlaylistAddToQueueState;
 };
@@ -1269,7 +1259,7 @@ export function usePlaylistActivation({
   // the caller already dispatched, so it doesn't re-commit or treat this as a
   // preview.
   const activatePlaylistClimb = useCallback(
-    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot, activationOptions?: PlaylistActivationOptions) => {
+    (requestedClimb: Climb, tappedBoardArt?: ReadyBoardArtSnapshot) => {
       if (credentialGeneration !== getCredentialGeneration()) return Promise.resolve();
       // Row adapters may clone a climb. Prefer the loaded projection over
       // details retained by a menu or native gesture callback. Not when it is
@@ -1460,10 +1450,8 @@ export function usePlaylistActivation({
       // every list reads it, not only search). The setting is read here, at the
       // tap, so the callback does not change identity when it flips.
       //
-      // Light on tap is about row taps: the Play button (`deliberate`) skips it.
-      // It wins over "Tapping a playlist loads it into my queue" for a row tap,
-      // since a replace lights the wall too; with both on, the Play button is
-      // how a climber loads the list without lighting from a tap.
+      // The header Play button follows the same lighting preference as a row.
+      // Loading a playlist must not bypass preview-first browsing either.
       //
       // Ordered ahead of the replace deliberately: replacing a crew's whole
       // queue is the loudest write in the app, and a row tap must never be it.
@@ -1474,7 +1462,6 @@ export function usePlaylistActivation({
       if (
         !readClimbChangeLights('tap', {
           inSharedSession: previewOnlyRef.current,
-          deliberate: activationOptions?.deliberate === true,
         })
       ) {
         openListPreview();

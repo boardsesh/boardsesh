@@ -776,3 +776,91 @@ describe('driving the wall', () => {
     }
   });
 });
+
+describe('preview-first host selections and deferred commits', () => {
+  it('does not reactivate a stale accessory target when the current climb changes before opening', () => {
+    const initialProps = { ...inputs(), openTarget: open(item('old-current'), { reopensCurrent: true }) };
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+  });
+
+  it('keeps a fresh solo open in preview when automatic tap lighting is off', () => {
+    setSetting('lightOnClimbTap', false);
+    const initialProps = { ...inputs(), openTarget: open(item('new')) };
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+    );
+  });
+
+  it('does not relight an already-current held climb when it opens as preview', () => {
+    setSetting('lightOnClimbTap', false);
+    const initialProps = inputs();
+    initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: initialProps.queue.currentClimbQueueItem!.climb }),
+    );
+  });
+
+  it('commits the selected duplicate slot and clears the former playlist source', () => {
+    const selected = { ...item('duplicate'), uuid: 'second-duplicate-slot' };
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { playlistSuggestionSource: null },
+    });
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(selected, {
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('keeps deferred replay placement when the same preview is re-anchored at another angle', () => {
+    const selected = item('history');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    const atAnotherAngle = { ...selected, climb: { ...selected.climb, angle: 45 } };
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: atAnotherAngle } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(atAnotherAngle, {
+      placement: 'STEP',
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('does not carry deferred replay placement to a climb reached by Next', () => {
+    const selected = item('history');
+    const initialProps = inputs();
+    initialProps.navigation.lightOnSwipe = false;
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('button'));
+    const next = initialProps.navigation.navigationState.nextItem;
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: next } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(next, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+});

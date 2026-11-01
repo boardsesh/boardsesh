@@ -30,7 +30,6 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb, QueueAddPlacement } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
-import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -154,11 +153,10 @@ export type PlaylistDetailViewProps = {
   hasNextPage: boolean;
   fetchNextPage: () => void;
   /**
-   * Activate a tapped climb (wires the queue + opens the play drawer). The
-   * header's Play button calls it with the first row and `deliberate` (see
-   * `PlaylistActivationOptions`).
+   * Select a climb using the current lighting preference. The header's Play
+   * button selects the first row through the same callback.
    */
-  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => void;
+  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
   /** An unavailable climb source keeps the hero while explaining the gap. */
@@ -392,7 +390,7 @@ export function PlaylistDetailView({
   // `showPlayAll` already hides the button behind the board banner.
   const handleActivateAll = useCallback(() => {
     const first = playAllClimbsRef.current[0];
-    if (first) onActivateClimbRef.current(first, undefined, { deliberate: true });
+    if (first) onActivateClimbRef.current(first);
   }, []);
 
   const navigation = useNavigation();
@@ -496,7 +494,7 @@ export function PlaylistDetailView({
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
-  const { openClimbActions, openAddToPlaylist } = useDrawerHost();
+  const { getClimbActions, openAddToPlaylist } = useDrawerHost();
   const { playNext } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
   // A row's right swipe is Play next, the same as in search (#6772).
@@ -582,9 +580,9 @@ export function PlaylistDetailView({
       const resolved = resolvedRowsByClimbUuid.get(tapped.uuid);
       if (!resolved || resolved.kind !== 'renderable') return;
       const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
-      openClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
+      return getClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
     },
-    [openClimbActions, resolvedRowsByClimbUuid],
+    [getClimbActions, resolvedRowsByClimbUuid],
   );
   const handleOpenPlaylist = useCallback(
     (climb: SchemaClimb, anchorPoint?: WindowAnchorPoint) => {

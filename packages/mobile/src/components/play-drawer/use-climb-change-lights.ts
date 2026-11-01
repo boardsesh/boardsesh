@@ -35,19 +35,18 @@ export function isDrivingWall(): boolean {
  * The same rule as `useClimbChangeLights`, read at the moment of a tap, for the
  * list taps (`usePlaylistActivation`, a board-history row, a row with nothing
  * to draw) that read the setting at the tap so their handlers keep one
- * identity. `inSharedSession` is the caller's own read of the crew. A
- * `deliberate` pick (a list's Play button) skips Light the board when I tap a
- * climb and a stop on this link, as it always skipped the setting: only a crew
- * makes it a preview, and driving overrides that too.
+ * identity. `inSharedSession` is the caller's own read of the crew. Explicit
+ * list Play follows the same preference as a row tap: only the board control
+ * can put a preview on the wall without opting in to automatic lighting.
  */
 export function readClimbChangeLights(
   kind: ClimbChangeKind,
-  { inSharedSession, deliberate = false }: { inSharedSession: boolean; deliberate?: boolean },
+  { inSharedSession }: { inSharedSession: boolean },
 ): boolean {
   return !climbChangeStaysViewOnly({
     driving: isDrivingWall(),
     inSharedSession,
-    lightSetting: deliberate || getSetting(kind === 'swipe' ? 'lightOnSwipe' : 'lightOnClimbTap'),
-    stoppedForLink: deliberate ? false : isDrivingStoppedForLink(),
+    lightSetting: getSetting(kind === 'swipe' ? 'lightOnSwipe' : 'lightOnClimbTap'),
+    stoppedForLink: isDrivingStoppedForLink(),
   });
 }

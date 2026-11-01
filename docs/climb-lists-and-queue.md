@@ -65,17 +65,21 @@ remain internal state names for screen-reader announcements.
 | Put on board / Set active    | The commit button under a preview (#7113 relabelled Put on the wall). It says Set active on a board with no lights, or when nothing can be lit. | `CommitButtonLabel`, `wall-state.ts:166`             |
 | Crew                         | A party session with at least one other person connected. A newly arrived peer counts after 3 s, and a peer whose phone drops stays counted while reconnecting. With `shared-session-browse` active at 100%, ordinary crew browsing previews; driving explicitly overrides it. | `shouldDefaultToBrowse`, `SHARED_SESSION_DWELL_MS`, `queue-provider.tsx` |
 
-The two lighting settings, in Settings › Board: **Light the board when I tap a climb**
-(`lightOnClimbTap`) and, nested under it, **Light the board as I swipe** (`lightOnSwipe`).
-Both default to on (`src/settings/defaults.ts:20-21`). They were called "Light problems
-when tapping the list" and "Light problems on swipe" until the climber panel of
-2026-10-24, where four of six read "problems" as errors; the storage keys did not change.
-The two sit in a group of their own, swipe under tap, and the swipe switch's caption says
-it only works once a climb is on the wall: a preview never lights the board as you swipe,
-whatever that switch says (`swipeStaysViewOnly`). The lightbulb's long-press sheet shows
-the same pair in the same order, swipe under tap. This page shortens them to Light on tap and
-Light on swipe. Since F4 the same lighting group on the Board page has **Tapping a playlist loads it into my
-queue** (`playlistTapLoadsQueue`), default off; this page calls it the playlist switch.
+The two lighting settings, in Settings › Board, are **Light the board when I tap a climb**
+(`lightOnClimbTap`) and **Light the board as I swipe** (`lightOnSwipe`). Both default to
+**off**. Stored choices are preserved: someone who already saved either switch keeps it.
+With untouched settings, selecting a climb opens a preview without committing it or
+lighting the wall, including playlist **Play** and queue rows. Tap the board button to
+put that climb up once; swipe the button, or use **Light every climb**, to start Driver mode.
+The two switches remain independent opt-ins to automatic lighting outside Driver mode.
+Changing the angle keeps a default preview and regrades it instead of restoring the
+committed climb underneath it.
+
+The settings were called "Light problems when tapping the list" and "Light problems on
+swipe" until 2026-10-24; the storage keys did not change. This page shortens them to Light
+on tap and Light on swipe. The lighting group also contains **Tapping a playlist loads it
+into my queue** (`playlistTapLoadsQueue`), default off. That option does not bypass preview:
+with Light on tap off, a row tap and header Play both remain previews.
 
 ## Today, surface by surface
 
@@ -96,11 +100,14 @@ column describes the explicit override that lights every supported climb change.
 
 ### What a row tap does
 
+The commit behavior below applies when automatic lighting is opted in or Driver mode is
+live. Untouched settings take each surface's preview path instead.
+
 | Surface | How you get there | Tap (solo) | Next after the tap | End of the list |
 | --- | --- | --- | --- | --- |
 | Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1329`). Since F2, with Light on tap off: a preview with the results as its track (`src/lib/playlists/use-playlist-activation.ts:1350`). | Walks the results | Track end. The first load holds about 250 climbs after the tapped one (rounded up to a page of 100); since F1 one more page loads as the climber nears its end, up to the first 1,000 results. |
 | Setter page | For You setter card, the setter's name in the player, Home's "See all" | Since F4: commits, flagged `suggested`, with the setter's climbs as the track, named after the setter, and leaves the rest of the queue alone (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). With Light on tap off: a preview with the same track. With the playlist switch on: replaces the queue with the setter's climbs this board can draw, after "Start playlist?" if anything is queued after the current climb; there, Cancel previews the tapped climb and Play last appends the list and plays the tapped climb next, keeping everything already queued and queuing the tapped climb once. That climb plays from the queue, with no track: the list now sits behind what was queued, so a swipe walks what was queued and then the list, and never queues a second copy of a list climb. The same holds when the prompt comes up a second time, because climbs were queued while the list loaded. A replace longer than the 500-climb queue cap queues the tapped climb, the climbs after it and, near the end, the ones before it, 500 in all, and a toast says how many fit (#6673). | Walks the list, under the setter's name | Track end |
-| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The header's **Play** button (both looks since F4) does the same with the first climb, and ignores Light on tap. The **Play next** and **Play last** rows put the whole list at the top or the bottom of Up next, in list order, with or without the switch (#6772). With a sort or filter on, all of them use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
+| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The header's **Play** button (both looks since F4) does the same with the first climb, and follows Light on tap. The **Play next** and **Play last** rows put the whole list at the top or the bottom of Up next, in list order, with or without the switch (#6772). With a sort or filter on, all of them use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
 | For You and smart lists (Projects, Liked Climbs and the rest) | Discover › For You | As the setter page (`app/(tabs)/discover/smart/[type].tsx:119-128`) | As the setter page | As the setter page |
 | Logbook | You › Logbook, someone's logbook | Since F2: commits, flagged `suggested`, with the logbook's rows as the track, named "Logbook" (`src/components/you/LogbookTab.tsx:574`, through `src/lib/playlists/use-tick-list-activation.ts`). A tick on another board model opens as a preview on its own board. The tapped tick is drawn at the size and angle it was climbed at. With Light on tap off: a preview with the same track. | Walks the rows on screen, in their order (one entry per climb) | Track end. The track pages on through the logbook's own feed as the climber nears its end, from the first climb not yet in the track and at most 5 of the feed's pages per request, so a logbook of repeats is never loaded in one go (`src/lib/playlists/loaded-list-pages.ts`). |
 | Session detail | Home session card, You › Sessions | As the logbook, named "Session climbs" (`src/components/session/SessionDetailScreen.tsx:91`) | Walks the session's ticks | Track end |
@@ -108,7 +115,7 @@ column describes the explicit override that lights every supported climb change.
 | Home cards | Home tab | New-climb card: a trackless preview (`src/components/feed/NewClimbFeedCard.tsx:111`). A session card's climb (the hardest send): as the logbook, with a one-climb track named "Hardest send" (`app/(tabs)/home/index.tsx:253`; the Sessions tab's cards the same, `src/components/you/SessionsTab.tsx:106`). | New-climb card: nothing. Session card: the end card. | — |
 | Board history sheet, iPad wall column | The clock button on Climbs, the wall strip, the iPad side column | Since F2: commits with the wall's history as the track (the wall's climb first, then back through what was lit), named "Wall history", reusing the queue entry when the wall's climb has one (`src/providers/drawer-host-provider.tsx:1070`; the track is built in `src/components/board-presence/NowOnTheWallPanel.tsx:539`). With Light on tap off: a preview with the same track. | Walks the history the sheet had loaded | Track end. It does not page past what the sheet loaded. |
 | Record in-session history | Record tab during a session | Since F2: as the session detail, through the same hook (`src/components/session-screen/in-session/InSessionView.tsx:435`). It no longer commits the climb itself with a fresh queue entry. | Walks the session's ticks, newest first | Track end |
-| Queue sheet | The queue button in the player, the mini-player | Makes the row current, clears the track (`src/components/play-drawer/use-queue-sheet-handlers.ts:61-70`). A suggestion row commits with the suggestions as the track (`:90-99`). | The queue, or the suggestions | Stops at the end of the queue |
+| Queue sheet | The queue button in the player, the mini-player | Previews the exact queue slot by default, deferring the current-climb change and track clear until the board button is pressed. A suggestion preview retains its suggestions as the track. An automatic-lighting opt-in or live Driver mode commits immediately. | The queue, or the suggestions | Stops at the end of the queue |
 | Similar climbs | The strip under the board in the player | Since F2: commits, flagged `suggested`, inserted after the current climb, with the strip as the track, named "Similar climbs" (`use-play-selection-controller.ts:373`). The strip is the climbs this wall fits, plus the one tapped. A preview with the same track with Light on tap off, or when the player shows a climb from another board. | Walks the strip | Track end |
 | Workout preview | Record tab before a session, workout on | A trackless preview (`src/components/session-screen/pre-session/PreSessionView.tsx:245-251`). **Start** appends the workout behind the queue (`:301`). | Nothing | — |
 | Wall display kiosk | Wall display on a tablet bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
@@ -120,6 +127,11 @@ A preview walks only its list.
 
 ### Crew, swipes and long-press
 
+Long-press and the list/player ellipsis use the same native climb menu and grouped core
+actions. Logbook Edit entry and player controls stay contextual; the player omits actions
+already shown as buttons. Native menu descriptors stay bound to the climb and exact queue
+slot. The custom enlarged-board reaction overlay is removed.
+
 | Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
 | --- | --- | --- | --- | --- | --- |
 | Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Commits and lights it | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
@@ -129,7 +141,7 @@ A preview walks only its list.
 | Home new-climb card | Trackless preview | Trackless preview | Trackless preview | None | None |
 | Board history sheet, iPad wall column | Commits for the whole room | Preview with the wall's history as the track (F2) | Commits and lights it | As search | Climb menu |
 | Record in-session history | Commits for the whole room | Preview with the session's ticks as the track (F2) | Commits and lights it | None | Climb menu |
-| Queue sheet | Commits for the whole room | Commits, on purpose: it is the room's queue | Commits and lights it | Left only: delete | Climb menu |
+| Queue sheet | Preview by default; commits with automatic lighting opted in | Preview of the exact queue slot | Commits and lights it | Left only: delete | Native climb menu |
 | Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | Commits and lights it; from a climb on another board, a preview | None | None |
 | Workout preview | No session yet | No session yet | Trackless preview | None | None |
 | Wall display kiosk | Lights the board; the room's current climb doesn't move | Same | Same | None | None |
@@ -166,13 +178,12 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
-- **Stopping it.** A press on the button labelled "You are driving the wall" stops driving and keeps the link; solo, swipes
-  and taps then stay previews until the link drops or the climber presses to put a climb up
-  again (the settings never flip). Solo, every such press (Put on board, a re-light, a
-  connect) ends in driving: it drops the stop, and with Light on swipe off it starts a live
-  drive (`tapDrive`, docs/climb-view-options.md). In a crew a press stays a one-off put.
+- **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
+  default settings, later taps and swipes preview. A board-button tap puts one climb up;
+  it never starts a live drive. Solo with Light on swipe explicitly enabled, that tap may
+  resume the saved setting after a stop. The settings themselves never flip.
 - **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
-  started it (a swipe, a press, the action), goes on into the crew in the same session. Solo
+  started it (a swipe or the accessible action), goes on into the crew in the same session. Solo
   driving by Light on swipe alone (no stop, a link up) turns into a live drive the moment the
   crew forms (`shouldCarryDriveIntoCrew` in `DriveModeWatcher`, `startedBy: 'solo_carry'`), so
   "You are driving the wall" stays and swipes, Next, list taps and the MiniPlayer keep lighting.
@@ -337,7 +348,7 @@ Home cards and similar climbs open a private preview. Three places still didn't 
 - The playlist header's Play button (Start playlist before F4) calls the row-tap path with the
   first climb (`handleActivateAll` in `src/components/playlist/PlaylistDetailView.tsx`). With
   the flag on, in a crew that path previews, so the button only shows climb 1. Since F4 that is
-  deliberate: Play skips Light on tap, never the crew rule.
+  a private look: Play now follows Light on tap and the crew rule.
 
 Two smaller gaps: list screens read the crew state at the moment of the tap, while the
 logbook, sessions, profile and similar climbs read the player's browse latch. The latch arms
@@ -581,9 +592,9 @@ The model keeps what exists and adds one switch, which shipped with F4.
 
 | Setting                                     | Status                    | What it does                                                                                                                                                         |
 | ------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Light the board when I tap a climb          | Exists, default on        | Off: a tap opens a preview instead of lighting the board, and the preview still walks the list it came from. Since F2 every list reads it, at the tap (`src/lib/playlists/use-playlist-activation.ts:1350`); before, only search results did. Since F4 playlists, For You and setter pages read it too, with the playlist switch on as well. The header Play button skips it, so with Light on tap off it is how a climber plays or loads the list. |
-| Light the board as I swipe                  | Exists, default on        | Off: swipes in the player stay Browsing (`play-drawer-navigation.ts:67`). On, it only applies once a climb is on the wall: a preview stays a preview as you swipe, and the setting's caption says so. Nested under Light on tap in Settings › Board. |
-| Tapping a playlist loads it into my queue   | Exists since F4, default off | On: a playlist, For You or setter tap (and their Play button) replaces the queue with that list, the behaviour before F4, after "Start playlist?" when anything is queued after the current climb. Off: the tap plays from the list (rule 5). With Light on tap off a row tap is still a preview, and the Play button loads the list. In Settings › Board, in the lighting group under Light on tap (`playlistTapLoadsQueue`, read at the tap). |
+| Light the board when I tap a climb | Exists, default off | Off: list taps, playlist Play and queue selection preview without moving the wall. On: solo selections commit; a crew still previews unless this phone is driving. Saved choices are preserved. |
+| Light the board as I swipe | Exists, default off | Off: player and MiniPlayer navigation preview. On: supported solo navigation lights after a climb is on the wall; explicit tracked previews remain view-only. Driver mode overrides the setting. Saved choices are preserved. |
+| Tapping a playlist loads it into my queue | Exists since F4, default off | On: an active playlist, For You or setter selection replaces the queue with that list, after confirmation when needed. Row taps and header Play still preview while Light on tap is off. |
 | End of list: stop or continue into my queue | Rejected                  | Moot since #6777: the queue plays before the list continues (rule 2), so a list only ends once Up next is played too, and the end card offers what the walk passed over. A "list first" setting would bring back the order the owner QA of #6772 rejected. |
 
 F1, F2, F3 and F5 change behaviour for everyone without a setting; F4 changes it too, with

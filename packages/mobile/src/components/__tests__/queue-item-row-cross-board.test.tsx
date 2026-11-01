@@ -23,7 +23,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { QueueItemRowBoard } from '../QueueItemRow';
 
 type BoardProps = { boardName?: string; layoutId?: number; sizeId?: number; setIds?: string; angle?: number };
-const recorded = vi.hoisted(() => ({ rows: [] as BoardProps[] }));
+const recorded = vi.hoisted(() => ({ rows: [] as BoardProps[], menuTarget: null as unknown }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -89,6 +89,13 @@ vi.mock('../../theme/tokens', () => ({
 }));
 vi.mock('../../theme/animations', () => ({ springs: { interactive: {} } }));
 vi.mock('../play-drawer/queue-drag-math', () => ({ rowReorderShift: () => 0 }));
+vi.mock('../climb-actions/ClimbActionsMenu', () => ({
+  ClimbMenu: ({ children }: { children?: ReactNode }) => children,
+  useClimbMenu: (target: unknown) => {
+    recorded.menuTarget = target;
+    return { rows: [], menuKey: 'none', accessibilityActions: [], onAccessibilityAction: () => {} };
+  },
+}));
 
 const { QueueItemRow } = await import('../QueueItemRow');
 
@@ -108,6 +115,11 @@ function renderRow(item: ClimbQueueItem) {
       isCurrentClimb: false,
       onPress: vi.fn(),
       onRemove: vi.fn(),
+      onOpenActions: (queueItem) => ({
+        climb: queueItem.climb,
+        boardConfig: queueBoard,
+        queueItemUuid: queueItem.uuid,
+      }),
     }),
   );
 }
@@ -126,6 +138,7 @@ describe('QueueItemRow board resolution (#5099)', () => {
     expect(row?.sizeId).not.toBe(queueBoard.sizeId);
     // The angle its grade was baked at, not the wall the queue is bound to.
     expect(row?.angle).toBe(30);
+    expect(recorded.menuTarget).toMatchObject({ queueItemUuid: 'homewall', boardConfig: { layoutId: 8, angle: 30 } });
   });
 
   it('leaves a row from the queue board on the queue board', () => {

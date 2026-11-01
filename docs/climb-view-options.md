@@ -56,6 +56,11 @@ The board control is the whole answer to "is this climb on the wall, how do I ge
 It took the place of the header's On the wall and Live chips, the "Lit on the wall" text and the separate Put on the
 wall button.
 
+Climbs open in preview by default, including playlist Play and queue selections. Both
+lighting switches default off and preserve stored opt-ins. Tap the board control to light
+one climb; swipe the wall button, or choose **Light every climb**, to enter Driver mode.
+A tap does not start Driver mode.
+
 ### One model, several views
 
 Every view of it draws one model and runs one handler:
@@ -121,22 +126,16 @@ flat amber fallback; the label still says what the next press does.
   relay, so a press on You are driving the wall never disconnects. Solo with
   Light the board as I swipe on, the stop holds until the link drops, or until the climber presses to put a climb
   up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
-- **Solo, a press that puts a climb up ends in driving** (#7113 QA, Marco: "When I'm alone I should just always end
-  up in the driving state when I press the button"). Put on board, Put on board on a dark climb, the connect and
-  the press on the wall with no link (`connect`, `put_on_wall`, `relight`, `on_wall_unlinked`), on the button and
-  the bulb alike. The model's `tapDrive` says how: `resume` with Light the board as I swipe on drops a stop on this
-  link and lights as before, and the setting drives from there; `start` with it off starts a live drive through
-  the swipe's runner (`startDrive`: commit, connect, light), so "You are driving the wall" is honest either way.
-  Never on Set active, where no wall is in reach. `Drive Mode Ended` says what started each drive (`startedBy`:
-  `swipe`, `tap`, `action` for the screen-reader action and the sheet row, or `solo_carry` when a crew formed).
-  Where a drive can't start (the model offers no swipe, the `wall-swipe-to-drive` flag is off) the press drops the
-  stop and lights as before. Solo means no crew session on the roster (`useIsCrewSession`, whatever the browse
-  flag says) and no browse latch. In a crew a press stays a one-off put; crews drive by swiping.
+- **A tap puts one climb up.** Connect, Put on board and re-light use the existing one-climb
+  runner. They never promote a tap to a live drive. Solo with **Light the board as I swipe**
+  explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved opt-in
+  applies again. With it off, later selections stay previews. Swipe or the accessible
+  **Light every climb** command starts the live drive.
 - **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
   first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
-  nothing. A press's "stopped" lasts until that link drops, or a solo press puts a climb up (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
+  nothing. A press's "stopped" lasts until that link drops, or a solo press resumes an explicit Light on swipe opt-in (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
   (this phone's board) and on Disconnect board while not driving; never on Sam's board (his phone holds it), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise

@@ -399,33 +399,24 @@ export type WallControlInput = WallControlStateInput & {
    */
   drivingStopped?: boolean;
   /**
-   * Not in a crew session (the roster, whatever the browse rollout flag says):
-   * a press that puts the climb up ends in driving (`tapDrive`). In a crew it
-   * stays a one-off put; crews drive by swiping.
+   * Not in a crew session (the roster, whatever the browse rollout flag says).
+   * A press may resume an opted-in lighting preference, but never starts a drive.
    */
   solo?: boolean;
   /**
    * The climber's Light the board as I swipe. Solo with it on, a lit climb is
-   * already driven by the setting, so a press only has to drop a stop; with it
-   * off, a press starts a live drive.
+   * already driven by the setting, so a press only has to drop a stop. With it
+   * off, the press lights this climb once.
    */
   lightOnSwipe?: boolean;
 };
 
 /**
- * What a press that puts the climb up does about driving (#7113 QA, Marco:
- * "When I'm alone I should just always end up in the driving state when I
- * press the button"). Solo, every press that connects, puts the climb up or
- * lights it again ends in driving:
- *
- * - `start` — start a live drive (`WallControlRunners.drive`): nothing else
- *   would drive after the press, because Light the board as I swipe is off.
- * - `resume` — drop a stop on this link and light the climb as before: the
- *   setting drives from there, or a drive already does.
- * - null — a crew (a press is a one-off put), Set active (no wall in reach),
- *   or a press that puts nothing up.
+ * A tap lights once. Solo with automatic swipe lighting opted in, it may
+ * resume that preference after a stop on this link. Starting an explicit
+ * drive belongs to the swipe and its accessible equivalent.
  */
-export type WallControlTapDrive = 'start' | 'resume' | null;
+export type WallControlTapDrive = 'resume' | null;
 
 /**
  * What a swipe on the wall button does (#7113): `drive` connects (or takes the
@@ -622,13 +613,11 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
-  // Solo, a press that puts the climb up ends in driving (#7113 QA). It starts
-  // a live drive only where nothing else would drive: the setting is off and no
-  // drive is on. The swipe's own rule says where a drive can start. Never on
-  // Set active: no wall is in reach, so the press only makes it current.
+  // A press never starts a live drive. It only resumes the climber's existing
+  // swipe-lighting opt-in, solo and with an actual wall in reach.
   let tapDrive: WallControlTapDrive = null;
-  if (input.solo === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
-    tapDrive = driveMode === 'off' && input.lightOnSwipe !== true && swipeAction === 'drive' ? 'start' : 'resume';
+  if (input.solo === true && input.lightOnSwipe === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
+    tapDrive = 'resume';
   }
   const a11yHintKey =
     state === 'on_wall_unlinked' && tapAction !== 'noop'

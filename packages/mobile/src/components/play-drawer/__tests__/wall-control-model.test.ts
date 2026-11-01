@@ -921,7 +921,7 @@ describe('resolveWallControl: driving the wall', () => {
 // #7113 QA (Marco): "When I'm alone I should just always end up in the driving
 // state when I press the button." Solo, every press that puts the climb up ends
 // in driving; in a crew it stays a one-off put.
-describe('resolveWallControl: a solo press that puts the climb up drives', () => {
+describe('resolveWallControl: a press only resumes opted-in automatic lighting', () => {
   const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
     ['connect', {}],
     ['put_on_wall', { commitButton: 'putOnWall' }],
@@ -931,11 +931,11 @@ describe('resolveWallControl: a solo press that puts the climb up drives', () =>
   ];
 
   // [solo, light on swipe, stopped, tapDrive]
-  const RULES: [boolean, boolean, boolean, 'start' | 'resume' | null][] = [
+  const RULES: [boolean, boolean, boolean, 'resume' | null][] = [
     [true, true, false, 'resume'],
     [true, true, true, 'resume'],
-    [true, false, false, 'start'],
-    [true, false, true, 'start'],
+    [true, false, false, null],
+    [true, false, true, null],
     [false, true, false, null],
     [false, true, true, null],
     [false, false, false, null],
@@ -967,9 +967,9 @@ describe('resolveWallControl: a solo press that puts the climb up drives', () =>
       resolveWallControl({ ...FREE, ...MINE, ...solo, displayedLit: true, driveMode: 'live' }).tapDrive,
     ).toBeNull();
     // Arming already: the press lights as before.
-    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, driveMode: 'arming' }).tapDrive).toBe('resume');
+    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, driveMode: 'arming' }).tapDrive).toBeNull();
     // A connect in flight offers no drive.
-    expect(resolveWallControl({ ...FREE, ...solo, pending: true }).tapDrive).toBe('resume');
+    expect(resolveWallControl({ ...FREE, ...solo, pending: true }).tapDrive).toBeNull();
     // Set active: no wall in reach, so the press only makes the climb current.
     expect(resolveWallControl({ ...FREE, ...solo, commitButton: 'putOnWall', commitLabel: 'setActive' })).toMatchObject(
       { tapAction: 'put_on_wall', labelKey: 'setActive', tapDrive: null },
@@ -980,7 +980,7 @@ describe('resolveWallControl: a solo press that puts the climb up drives', () =>
   // [case, solo, light on swipe, driving after]
   it.each<[string, boolean, boolean, boolean]>([
     ['solo, stopped, Light on swipe on', true, true, true],
-    ['solo, Light on swipe off', true, false, true],
+    ['solo, Light on swipe off', true, false, false],
     ['a crew, stopped', false, true, false],
     ['a crew, Light on swipe off', false, false, false],
   ])('%s: a press ends driving %s', (_name, solo, lightOnSwipe, drivingAfter) => {
@@ -994,15 +994,14 @@ describe('resolveWallControl: a solo press that puts the climb up drives', () =>
       navigationCommits: false,
     });
     expect(before.tapAction).toBe('put_on_wall');
-    // `resume` drops the stop; `start` runs a drive that goes live; null leaves both.
+    // `resume` drops the stop; null leaves it in place. A tap starts no drive.
     const stopped = before.tapDrive === null;
-    const driveMode = before.tapDrive === 'start' ? 'live' : 'off';
     const after = resolveWallControl({
       ...FREE,
       ...MINE,
       displayedLit: true,
       drivingStopped: stopped,
-      driveMode,
+      driveMode: 'off',
       solo,
       lightOnSwipe,
       navigationCommits: solo && lightOnSwipe && !stopped,

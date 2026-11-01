@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
+vi.mock('../../climb-actions/ClimbActionsPressable', () => import('../../../../test/climb-menu-stub'));
 import { createElement, type ReactNode } from 'react';
 import { fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
+import type { Climb, SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
+import type { BoardConfig } from '../../../providers/drawer-host-provider';
+import { climbMenuTestState } from '../../../../test/climb-menu-stub';
 
 // Capture what ClimbListItemContent receives so we can assert primarySubtitleOverride.
 const mockClimbListItemContent = vi.hoisted(() => vi.fn());
@@ -135,8 +138,8 @@ vi.mock('../../../lib/session-tick-mapping', () => ({
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => {}, hapticMedium: () => {} }));
-const openClimbActions = vi.hoisted(() => vi.fn());
-vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openClimbActions }) }));
+const getClimbActions = vi.hoisted(() => vi.fn((climb: Climb, boardConfig: BoardConfig) => ({ climb, boardConfig })));
+vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ getClimbActions }) }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => ({ uuid: 'climb-1' }) }));
 
 import { SessionTickRow } from '../SessionTickRow';
@@ -174,7 +177,9 @@ function participant(displayName: string): SessionFeedParticipant {
 }
 
 beforeEach(() => {
-  openClimbActions.mockClear();
+  getClimbActions.mockClear();
+  climbMenuTestState.commands = [];
+  climbMenuTestState.openedRows = null;
   mockClimbListItemContent.mockClear();
 });
 
@@ -227,19 +232,36 @@ describe('SessionTickRow — primarySubtitleOverride', () => {
   });
 });
 
-describe('SessionTickRow — screen-reader route to the long-press menu', () => {
-  it('publishes a Climb actions custom action that opens the same menu as a long press', () => {
-    const { getByTestId } = render(
-      createElement(SessionTickRow, { tick: tick(), isMultiUser: false, onPress: () => {} }),
+describe('SessionTickRow — native climb commands', () => {
+  it('pins the tick board and angle for native long press and direct screen-reader commands', () => {
+    const onPress = vi.fn();
+    const { container } = render(
+      createElement(SessionTickRow, {
+        tick: tick({ angle: 37 }),
+        isMultiUser: false,
+        onPress,
+      }),
     );
-    const row = getByTestId('tick-press');
-    expect(row.getAttribute('data-action-label')).toBe('playView.actionBar.climbActionsAria');
-
+    const row = container.querySelector('[data-climb-actions-body]')!;
+    const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 37 };
+    expect(getClimbActions).toHaveBeenCalledExactlyOnceWith({ uuid: 'climb-1' }, boardConfig);
+    expect(row.getAttribute('data-action-label')).toBe('Share');
     fireEvent.contextMenu(row);
-    expect(openClimbActions).toHaveBeenCalledTimes(1);
-    openClimbActions.mockClear();
-
+    expect(climbMenuTestState.openedRows?.map((action) => action.id)).toEqual(['share']);
+    expect(climbMenuTestState.commands).toEqual([]);
+    expect(onPress).not.toHaveBeenCalled();
     fireEvent.doubleClick(row);
-    expect(openClimbActions).toHaveBeenCalledTimes(1);
+    expect(climbMenuTestState.commands).toEqual([{ id: 'share', target: { climb: { uuid: 'climb-1' }, boardConfig } }]);
+    expect(getClimbActions).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('retains the row primary action independently of the native menu', () => {
+    const onPress = vi.fn();
+    const tickEntry = tick();
+    const { container } = render(createElement(SessionTickRow, { tick: tickEntry, isMultiUser: false, onPress }));
+    fireEvent.click(container.querySelector('[data-climb-actions-body]')!);
+    expect(onPress).toHaveBeenCalledExactlyOnceWith(tickEntry);
+    expect(climbMenuTestState.commands).toEqual([]);
   });
 });

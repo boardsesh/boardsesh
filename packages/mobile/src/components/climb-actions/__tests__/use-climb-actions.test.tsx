@@ -7,6 +7,8 @@ import type { ClimbActionId } from '../use-climb-actions';
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
 const ctrl = vi.hoisted(() => ({
+  lightsOn: false,
+  generation: 0,
   wallArchived: false,
   sessionId: null as string | null,
   moderationEnabled: true,
@@ -34,6 +36,17 @@ const openers = vi.hoisted(() => ({
   requestDelete: vi.fn(async (_climb: unknown, _boardName: string, _onDeleted?: () => void) => {}),
 }));
 
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@tanstack/react-query')>();
+  const client = new original.QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return { ...original, useQueryClient: () => client };
+});
+vi.mock('../../../lib/graphql/offline-request', () => ({
+  offlineAwareRequest: vi.fn(async () => ({ favorites: [] })),
+}));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => ctrl.generation }));
+vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => ctrl.lightsOn }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: openers.push }),
@@ -76,6 +89,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
   useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
   useActiveClimbUuid: () => ctrl.activeClimbUuid,
+  useIsSharedSession: () => false,
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -135,6 +149,8 @@ function ids(args: ActionArgs): ClimbActionId[] {
 }
 
 beforeEach(() => {
+  ctrl.lightsOn = false;
+  ctrl.generation = 0;
   ctrl.wallArchived = false;
   ctrl.sessionId = null;
   ctrl.currentItem = null;
@@ -593,6 +609,7 @@ describe('useClimbActions colours and dispatch', () => {
         onAfterAction,
       });
       expect(openers.findReplayFromHereItem).toHaveBeenCalledWith('history-slot-2');
+      ctrl.lightsOn = true;
       const replay = result.current.find((action) => action.id === 'replayFromHere');
       expect(replay?.title).toBe('mobile.climbActions.replayFromHere');
       replay?.run();
@@ -601,6 +618,28 @@ describe('useClimbActions colours and dispatch', () => {
         playlistSuggestionSource: null,
       });
       expect(onAfterAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('previews replay by default and carries the exact history placement to the board button', () => {
+      ctrl.replayItem = historyRow;
+      const { result } = renderHook(() =>
+        useClimbActions({
+          climb,
+          boardConfig: kilterBoard,
+          queueItemUuid: historyRow.uuid,
+          isAuthenticated: true,
+          onSelectPlaylist: () => {},
+        }),
+      );
+      act(() => result.current.find((action) => action.id === 'replayFromHere')?.run());
+      expect(openers.setCurrentClimb).not.toHaveBeenCalled();
+      expect(openers.openPlayDrawer).toHaveBeenCalledWith(
+        historyRow.climb,
+        expect.objectContaining({
+          previewQueueItem: historyRow,
+          previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+        }),
+      );
     });
 
     it('is absent when the provider has no History entry to replay (Up next, Now, nothing current, legacy)', () => {

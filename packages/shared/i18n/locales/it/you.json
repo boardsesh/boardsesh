@@ -136,8 +136,7 @@
         "a11yHasBetaVideo": "ha un video della beta",
         "a11yMirrored": "specchiato",
         "editAction": "Modifica salita",
-        "deleteAction": "Elimina salita",
-        "moreActions": "Altre azioni"
+        "deleteAction": "Elimina salita"
       },
       "day": {
         "today": "Oggi",

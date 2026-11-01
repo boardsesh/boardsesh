@@ -637,7 +637,7 @@ describe('PlaylistDetailView', () => {
       expect(play.getAttribute('aria-label')).toBe('detail.activateAll');
       fireEvent.click(play);
       expect(onActivateClimb).toHaveBeenCalledTimes(1);
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
     });
 
     it('sits after the playlist controls, inside the glass region', () => {
@@ -673,7 +673,7 @@ describe('PlaylistDetailView', () => {
 
       // The handler the header already holds calls the newest callback.
       fireEvent.click(headerRightNode().querySelector('[data-icon="play.fill"]') as HTMLElement);
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
     });
   });
 
@@ -1103,7 +1103,7 @@ describe('PlaylistDetailView', () => {
       fireEvent.click(playAction as HTMLElement);
       // A deliberate start: Light the board when I tap a climb (a row-tap
       // setting) must not turn the Play button into a preview (#6667).
-      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB, undefined, { deliberate: true });
+      expect(onActivateClimb).toHaveBeenCalledWith(CLIMB);
       expect(playAction?.getAttribute('aria-label')).toBe('detail.activateAll');
     });
 

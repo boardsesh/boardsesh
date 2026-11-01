@@ -17,6 +17,7 @@ import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 // Long enough to notice and reach for the button; the removal is already live
 // for the crew, so it isn't held open forever.
@@ -46,8 +47,8 @@ type QueueListBodyProps = {
   /** The header's fold-away chevron. The side panel has nothing to close. */
   onClose?: () => void;
   onClimbPress: (item: ClimbQueueItem) => void;
-  /** Long press a queue row → open the climb reaction menu. */
-  onOpenActions?: (item: ClimbQueueItem) => void;
+  /** Resolve the row's native menu target. */
+  onOpenActions?: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
   onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
   onTickHistory: (item: ClimbQueueItem) => void;
   onDraggingChange?: (dragging: boolean) => void;

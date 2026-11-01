@@ -14,7 +14,18 @@
 // and a `headline` anchor (Material's title-menu) draws as flat title text.
 
 import { Host } from '@expo/ui';
-import { Menu, Button, ControlGroup, Divider, HStack, VStack, Text, Image } from '@expo/ui/swift-ui';
+import {
+  Menu,
+  ContextMenu,
+  RNHostView,
+  Button,
+  ControlGroup,
+  Divider,
+  HStack,
+  VStack,
+  Text,
+  Image,
+} from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
@@ -134,6 +145,41 @@ export function AppMenu(props: AppMenuProps) {
     />
   );
 
+  // Both trigger styles draw the same native actions, including their guarded
+  // indices. The custom anchor adds no minimum height, glass, or extra label:
+  // the hosted row keeps its existing layout and accessibility nodes.
+  const menuItems = (
+    <>
+      {paletteCount > 0 ? (
+        <ControlGroup>
+          {resolved.slice(0, paletteCount).map((action, index) => renderButton(action, index))}
+        </ControlGroup>
+      ) : null}
+      {resolved.slice(paletteCount).map((action, offset) => {
+        const index = paletteCount + offset;
+        return (
+          <Fragment key={`${index}-${action.label}`}>
+            {action.dividerBefore ? <Divider /> : null}
+            {renderButton(action, index)}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+
+  if (props.trigger === 'longPress') {
+    return (
+      <Host matchContents ignoreSafeArea="all" style={style}>
+        <ContextMenu>
+          <ContextMenu.Trigger>
+            <RNHostView matchContents>{props.children}</RNHostView>
+          </ContextMenu.Trigger>
+          <ContextMenu.Items>{menuItems}</ContextMenu.Items>
+        </ContextMenu>
+      </Host>
+    );
+  }
+
   // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
   // mounts while it is scrolled up under the status bar takes the screen's
   // safe-area inset and keeps it, so once it scrolls back its anchor draws up
@@ -198,25 +244,7 @@ export function AppMenu(props: AppMenuProps) {
           )
         }
       >
-        {paletteCount > 0 ? (
-          // One icon-over-label row (UIKit's medium element size). Its rows keep their
-          // place in `resolved`, so `onSelectIndex` counts exactly as without it.
-          <ControlGroup>
-            {resolved.slice(0, paletteCount).map((action, index) => renderButton(action, index))}
-          </ControlGroup>
-        ) : null}
-        {resolved.slice(paletteCount).map((action, offset) => {
-          const index = paletteCount + offset;
-          return (
-            // Composite key: scope entries can share a display name (two gyms named
-            // the same), so the label alone isn't unique — pair it with the position.
-            <Fragment key={`${index}-${action.label}`}>
-              {/* A UIMenu separator. Not a Button, so it takes no index. */}
-              {action.dividerBefore ? <Divider /> : null}
-              {renderButton(action, index)}
-            </Fragment>
-          );
-        })}
+        {menuItems}
       </Menu>
     </Host>
   );

@@ -921,6 +921,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   // A pinned preview over a committed climb shows the back chip: the header
   // chip is the one way back, and since #7000 the header's only chip.
   it('gives a solo pinned preview the back chip while the wall is lit', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     wall.uuid = SIMILAR_CLIMB.uuid;
     wall.name = SIMILAR_CLIMB.name;
@@ -948,6 +950,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   });
 
   it('gives a solo pinned preview the back chip to the climber’s climb while a different one is lit', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     wall.uuid = 'wall-climb-b';
     wall.name = 'Their Project';
@@ -1065,6 +1069,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   it.each([false, true])(
     'releases only a crew-captured track after departure (explicit preview: %s)',
     (explicitPreview) => {
+      setSetting('lightOnClimbTap', true);
+      setSetting('lightOnSwipe', true);
       vi.useFakeTimers();
       try {
         CREW();
@@ -1141,6 +1147,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   });
 
   it('still commits the same open when nobody else is here', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     render(drawerElement('member', freshTargetFor(CLIMB)));
 
@@ -1226,6 +1234,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   });
 
   it('releases the latch on its own once the session has been solo for a dwell', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     vi.useFakeTimers({ shouldAdvanceTime: true });
     CREW();
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
@@ -1290,6 +1300,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
   });
 
   it('drops the latch on Back to live, so the next swipe drives the wall again', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     CREW();
     // A committed head to fall back to, on a different climb than the preview.
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
@@ -2091,6 +2103,8 @@ describe('PlayDrawer — reading the wall', () => {
   // #7017, Marco: the coloured lit look only while this climber drives the
   // board, i.e. the next swipe from this screen changes what the wall shows.
   it('drives the board solo on its own lit climb, and not once a crew makes swipes browse', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     connectBoard();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = CLIMB.uuid;
@@ -2513,6 +2527,8 @@ describe('PlayDrawer — the anonymous joins', () => {
   // up once, inserted after the current climb, and is never appended to the
   // end of the queue first.
   it('activates a similar climb for a member, playing from the strip, without queuing it', async () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     renderDrawer('member');
     const onSimilarClimbPress = lastSimilarClimbHandler();
 
@@ -2585,6 +2601,8 @@ describe('PlayDrawer — the anonymous joins', () => {
   // "Set active" contract), and dropping it here would strand the explicit
   // Preview action with no way to promote.
   it('withholds the browse promise — but not the commit button — from a preview whose next swipe would commit', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     // The sheet, with nothing committed: back has nowhere to go, so no chip.
     const sheet = renderDrawer('member', undefined, 'route');
 
@@ -2679,6 +2697,8 @@ describe('PlayDrawer — an angle change and the pinned preview', () => {
   }
 
   it('drops a solo preview when the angle moves, so the next swipe drives the wall', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     // A committed head to fall back to once the preview goes.
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     // Same target object across both renders, so re-rendering doesn't re-run the
@@ -2882,6 +2902,8 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   // #6777: what you queue plays before the list continues, so the last list
   // climb's Next goes into Up next, not to the end card.
   it('plays Up next from the last climb of the list before any end card', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     onTheLastClimbOfProjects();
     expect(lastActionBarProps().canSwipeNext).toBe(true);
 
@@ -2949,6 +2971,8 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   });
 
   it('carries on with the queue solo, leaving the list behind', () => {
+    setSetting('lightOnClimbTap', true);
+    setSetting('lightOnSwipe', true);
     onTheLastClimbOfProjects(itemOffBoard);
     pressNext();
 

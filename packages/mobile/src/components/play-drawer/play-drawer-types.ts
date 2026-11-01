@@ -1,7 +1,7 @@
 import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import type { SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
@@ -38,6 +38,8 @@ export type PlayDrawerOpenOptions = {
    * acting on the active climb, not this preview.
    */
   previewQueueItem?: ClimbQueueItem | null;
+  /** Queue selection/replay intent, applied only when this preview is put on the wall. */
+  previewCommitOptions?: SetCurrentClimbOptions;
   /**
    * The preview is the live wall climb behind the accessory bar — a peer (or
    * another climber on this board) is driving the wall and this climb is lit

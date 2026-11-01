@@ -149,16 +149,9 @@ export function useWallControl({
       control,
       ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
     });
-    // Solo, a press that puts the climb up ends in driving (#7113 QA, Marco),
-    // on the button and the bulb alike. With Light the board as I swipe off it
-    // starts a live drive, which commits, connects and lights as the swipe
-    // does; anywhere the drive can't start, it falls through to the plain
-    // light below. With the setting on, dropping a stop is all it takes.
+    // A tap lights this climb once. Only an existing swipe-lighting opt-in
+    // resumes after a stop; the swipe/action below starts Driver mode.
     if (current.tapDrive !== null && isPutUpAction(action)) {
-      if (current.tapDrive === 'start' && run.drive('tap') === 'started') {
-        hapticMedium();
-        return;
-      }
       clearDrivingStopped();
     }
     if (current.state === 'on_wall_unlinked' && action !== 'noop') {

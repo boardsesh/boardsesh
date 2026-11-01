@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type {
   Climb as QueueClimb,
@@ -6,7 +6,7 @@ import type {
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
-import { useQueueActions } from '../../providers/queue-provider';
+import { useIsSharedSession, useQueueActions } from '../../providers/queue-provider';
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import type {
@@ -14,13 +14,19 @@ import type {
   LogAscentInput,
   OpenClimbActionsOptions,
   OpenPlayDrawerOptions,
+  ClimbActionsTarget,
 } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
+import { readClimbChangeLights } from './use-climb-change-lights';
 
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   openPlayDrawer: (climb: Climb, options?: OpenPlayDrawerOptions) => void;
-  openClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
+  getClimbActions: (
+    climb: Climb,
+    boardConfigOverride?: BoardConfig,
+    options?: OpenClimbActionsOptions,
+  ) => ClimbActionsTarget | null;
   openLogAscent: (input: LogAscentInput) => void;
   /** The user's STORED active board (never a drawer override) — the queue renders
    *  against it, and a tick-history log is filed against it. */
@@ -40,7 +46,7 @@ export type QueueHistoryTickHandler = (
 
 type QueueSheetHandlers = {
   handleClimbPress: (item: ClimbQueueItem) => void;
-  handleOpenActions: (item: ClimbQueueItem) => void;
+  handleOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null;
   handleSuggestionPress: (climb: QueueClimb, source: PlaylistSuggestionSource) => void;
   handleTickHistory: QueueHistoryTickHandler;
 };
@@ -56,7 +62,7 @@ type QueueSheetHandlers = {
 export function useQueueSheetHandlers({
   setCurrentClimb,
   openPlayDrawer,
-  openClimbActions,
+  getClimbActions,
   openLogAscent,
   storedBoardConfig,
   sessionId,
@@ -64,14 +70,24 @@ export function useQueueSheetHandlers({
   dismissQueueSheetAndWait,
 }: QueueSheetHandlerDeps): QueueSheetHandlers {
   const { getQueueSnapshot } = useQueueActions();
-  // Tap a queue item → make it current (for the whole session, always-live) and
-  // show it in the play drawer.
+  const inSharedSession = useIsSharedSession();
+  const inSharedSessionRef = useRef(inSharedSession);
+  inSharedSessionRef.current = inSharedSession;
+  // Selecting a queue slot previews it until automatic lighting is opted in
+  // or this phone is driving. Keep the slot's identity for the later commit.
   const handleClimbPress = useCallback(
     (item: ClimbQueueItem) => {
       // Opening from the queue sheet means "walk the queue" — drop any list
       // source so next/previous follow the queue again, not a stale list.
-      setCurrentClimb(item, { playlistSuggestionSource: null });
-      openPlayDrawer(item.climb, { committedExternally: true });
+      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+        setCurrentClimb(item, { playlistSuggestionSource: null });
+        openPlayDrawer(item.climb, { committedExternally: true });
+      } else {
+        openPlayDrawer(item.climb, {
+          previewQueueItem: item,
+          previewCommitOptions: { playlistSuggestionSource: null },
+        });
+      }
       requestCloseQueueSheet();
     },
     [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
@@ -84,12 +100,12 @@ export function useQueueSheetHandlers({
     (item: ClimbQueueItem) => {
       // `queueItemUuid` names the exact row that was long-pressed, so "Play next"
       // moves that slot instead of the first copy of a twice-queued climb.
-      openClimbActions(item.climb, undefined, {
+      return getClimbActions(item.climb, undefined, {
         dismissSourceSheet: dismissQueueSheetAndWait,
         queueItemUuid: item.uuid,
       });
     },
-    [openClimbActions, dismissQueueSheetAndWait],
+    [getClimbActions, dismissQueueSheetAndWait],
   );
 
   // Tap a suggestion → activate it with a suggestion source built from the
@@ -99,8 +115,12 @@ export function useQueueSheetHandlers({
     (climb: QueueClimb, source: PlaylistSuggestionSource) => {
       const item = climbToQueueItem(climb, { suggested: true });
       const schemaClimb = item.climb as Climb;
-      setCurrentClimb(item, { playlistSuggestionSource: source });
-      openPlayDrawer(schemaClimb, { committedExternally: true });
+      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+        setCurrentClimb(item, { playlistSuggestionSource: source });
+        openPlayDrawer(schemaClimb, { committedExternally: true });
+      } else {
+        openPlayDrawer(schemaClimb, { previewQueueItem: item, playlistSuggestionSource: source });
+      }
       requestCloseQueueSheet();
     },
     [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],

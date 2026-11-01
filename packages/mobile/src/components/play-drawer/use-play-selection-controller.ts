@@ -108,6 +108,7 @@ type SwipeSelectionInputs = PreviewSelection &
     navigateQueue: () => void;
     setCurrentClimb: PlaySelectionInputs['queue']['setCurrentClimb'];
     clearMirror: () => void;
+    clearPreviewCommitOptions: () => void;
     direction: QueueNavigationDirection;
     onNavigationStep: (step: PlayNavigationStep) => void;
   };
@@ -132,6 +133,7 @@ function useSwipeSelection({
   navigateQueue,
   setCurrentClimb,
   clearMirror,
+  clearPreviewCommitOptions,
   direction,
   onNavigationStep,
 }: SwipeSelectionInputs) {
@@ -149,6 +151,7 @@ function useSwipeSelection({
       });
       if (previewTarget.viewOnly) {
         if (!previewTarget.targetItem) return;
+        clearPreviewCommitOptions();
         setDrawerPreviewItem(previewTarget.targetItem);
         // The displayed climb moved; the wall did not.
         setDrawerPreviewIsWallClimb(false);
@@ -162,6 +165,7 @@ function useSwipeSelection({
       // one: a fresh copy at the Now slot, never a climb pulled out of History.
       if (drawerPreviewItem && drawerPreviewSuggestionSource) {
         if (!targetItem) return;
+        clearPreviewCommitOptions();
         const { item } = resolveCommittableQueueItem(targetItem);
         setCurrentClimb(item, {
           playlistSuggestionSource: reanchorPlaylistSuggestionSource(drawerPreviewSuggestionSource, item.climb?.uuid),
@@ -177,6 +181,7 @@ function useSwipeSelection({
         return;
       }
       setDrawerPreviewItem(null);
+      clearPreviewCommitOptions();
       setDrawerPreviewIsWallClimb(false);
       navigateQueue();
       clearMirror();
@@ -199,6 +204,7 @@ function useSwipeSelection({
       setDrawerPreviewIsWallClimb,
       setSharedBrowseLatched,
       clearMirror,
+      clearPreviewCommitOptions,
       direction,
       onNavigationStep,
     ],
@@ -238,6 +244,33 @@ export function usePlaySelectionController({
   hold: { heldQueueItemUuid, putHeldClimbOnWall },
   onNavigationStep,
 }: PlaySelectionInputs) {
+  // A queue/history pick can defer its exact commit behavior until the board
+  // button is pressed. It belongs to this slot only and never follows a swipe.
+  const previewCommitRef = useRef<{
+    queueItemUuid: string;
+    options: NonNullable<PlayDrawerOpenOptions['previewCommitOptions']>;
+  } | null>(
+    openTarget?.options?.previewQueueItem && openTarget.options.previewCommitOptions
+      ? { queueItemUuid: openTarget.options.previewQueueItem.uuid, options: openTarget.options.previewCommitOptions }
+      : null,
+  );
+  const previewCommitTargetRef = useRef(openTarget);
+  if (previewCommitTargetRef.current !== openTarget) {
+    previewCommitTargetRef.current = openTarget;
+    previewCommitRef.current =
+      openTarget?.options?.previewQueueItem && openTarget.options.previewCommitOptions
+        ? { queueItemUuid: openTarget.options.previewQueueItem.uuid, options: openTarget.options.previewCommitOptions }
+        : null;
+  }
+  const clearPreviewCommitOptions = useCallback(() => {
+    previewCommitRef.current = null;
+  }, []);
+  const previewQueueItemUuid = drawerPreviewItem?.uuid;
+  const getPreviewCommitOptions = useCallback(
+    () =>
+      previewCommitRef.current?.queueItemUuid === previewQueueItemUuid ? previewCommitRef.current?.options : undefined,
+    [previewQueueItemUuid],
+  );
   const openDrawer = useCallback(
     (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
       const previewItem = options?.previewQueueItem ?? null;
@@ -248,7 +281,7 @@ export function usePlaySelectionController({
       // Lists don't come through here: since #6665 they play through the
       // activation hook, which commits (committedExternally) or previews. A fresh-uuid item on a genuinely new selection is
       // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
-      const isFreshActiveOpen = !previewItem && !options?.committedExternally;
+      const isFreshActiveOpen = !previewItem && !options?.committedExternally && !options?.reopensCurrent;
       const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
       // ...except in a crew, where the same taps are a LOOK. Tapping a peer's
       // tick in the session feed, or a row in your own logbook, must not move the
@@ -264,11 +297,24 @@ export function usePlaySelectionController({
       //
       // Driving the wall (#7113) is the exception: every change of climb lights
       // it, in a crew too, so the open puts the climb up.
-      const opensAsBrowse = isFreshActiveOpen && !isAlreadyCurrent && browseByDefault && !driving;
+      const opensAsBrowse =
+        isFreshActiveOpen &&
+        (viewer === 'anonymous' ||
+          showBoardMismatch ||
+          climbChangeStaysViewOnly({
+            driving,
+            inSharedSession: browseByDefault,
+            lightSetting: getSetting('lightOnClimbTap'),
+            stoppedForLink,
+          }));
       // A view-only preview is shown without committing; the browse chrome keys
       // off this. Commit paths (committedExternally) and solo fresh active opens
       // leave it null so the drawer renders the real currentClimbQueueItem.
       const pinnedItem = previewItem ?? (opensAsBrowse ? climbToQueueItem(selectedClimb) : null);
+      previewCommitRef.current =
+        pinnedItem && options?.previewCommitOptions
+          ? { queueItemUuid: pinnedItem.uuid, options: options.previewCommitOptions }
+          : null;
       setDrawerPreviewItem(pinnedItem);
       setDrawerPreviewSuggestionSource(pinnedItem ? playlistSuggestionSource : null);
       setDrawerPreviewIsWallClimb(pinnedItem ? (options?.previewIsWallClimb ?? false) : false);
@@ -297,7 +343,7 @@ export function usePlaySelectionController({
       // pick: the drawer shows the climb as it is, with Put on the wall and the
       // "Last on the wall" line. Previews never light the wall, held climb or not.
       if (
-        !previewItem &&
+        !pinnedItem &&
         !options?.committedExternally &&
         !options?.reopensCurrent &&
         viewer !== 'anonymous' &&
@@ -314,6 +360,7 @@ export function usePlaySelectionController({
       setCurrentClimb,
       browseByDefault,
       driving,
+      stoppedForLink,
       setDrawerPreviewItem,
       setDrawerPreviewSuggestionSource,
       viewer,
@@ -363,6 +410,7 @@ export function usePlaySelectionController({
     navigateQueue: previousClimb,
     setCurrentClimb,
     clearMirror,
+    clearPreviewCommitOptions,
     direction: 'previous',
     onNavigationStep,
   });
@@ -382,6 +430,7 @@ export function usePlaySelectionController({
     navigateQueue: nextClimb,
     setCurrentClimb,
     clearMirror,
+    clearPreviewCommitOptions,
     direction: 'next',
     onNavigationStep,
   });
@@ -428,6 +477,8 @@ export function usePlaySelectionController({
       // verbatim — committing one straight would put a uuid on the wire that no
       // peer can reconcile against their queue. Same helper `nextClimb()` uses.
       const { item, converted } = resolveCommittableQueueItem(drawerPreviewItem);
+      const deferredOptions =
+        previewCommitRef.current?.queueItemUuid === drawerPreviewItem.uuid ? previewCommitRef.current.options : null;
       // Re-anchor the track on the climb actually going up. Browsing moves
       // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
       // walk from A to Z the source still says the pass began at A — and committing
@@ -453,19 +504,21 @@ export function usePlaySelectionController({
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
       const walkedPeek = keepWalkedTrack && converted;
       setCurrentClimb(item, {
-        ...(keepWalkedTrack
-          ? { keepWalkedTrack, ...(walkedPeek ? { walkedPeek, historyCopy: 'fresh' as const } : {}) }
-          : {
-              playlistSuggestionSource: reanchorPlaylistSuggestionSource(
-                drawerPreviewSuggestionSource,
-                item.climb?.uuid,
-              ),
-            }),
+        ...(deferredOptions ??
+          (keepWalkedTrack
+            ? { keepWalkedTrack, ...(walkedPeek ? { walkedPeek, historyCopy: 'fresh' as const } : {}) }
+            : {
+                playlistSuggestionSource: reanchorPlaylistSuggestionSource(
+                  drawerPreviewSuggestionSource,
+                  item.climb?.uuid,
+                ),
+              })),
         // Put on the wall: the deliberate commit at the end of a browse, told apart
         // from a plain list or queue pick so the crew ramp can be measured.
         trigger: 'put_on_wall',
       });
       setSharedBrowseLatched(false);
+      clearPreviewCommitOptions();
       setDrawerPreviewItem(null);
       setDrawerPreviewSuggestionSource(null);
       setDrawerPreviewIsWallClimb(false);
@@ -490,6 +543,7 @@ export function usePlaySelectionController({
       driving,
       wallClimbUuid,
       displayedClimbUuid,
+      clearPreviewCommitOptions,
     ],
   );
 
@@ -511,6 +565,7 @@ export function usePlaySelectionController({
    */
   const continueIntoQueue = useCallback(
     (target: ClimbQueueItem) => {
+      clearPreviewCommitOptions();
       const landing = getSwipeNavigationTarget({
         previewItem: drawerPreviewItem,
         previewSuggestionSource: drawerPreviewSuggestionSource,
@@ -544,6 +599,7 @@ export function usePlaySelectionController({
       setDrawerPreviewIsWallClimb,
       setCurrentClimb,
       clearMirror,
+      clearPreviewCommitOptions,
     ],
   );
 
@@ -575,6 +631,7 @@ export function usePlaySelectionController({
   displayedClimbUuidRef.current = displayedClimbUuid;
   const handleSimilarClimbPress = useCallback(
     (similarClimb: Climb, similarClimbs: Climb[] = []) => {
+      clearPreviewCommitOptions();
       const previewOnly =
         getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving }) === 'preview' ||
         showBoardMismatch ||
@@ -619,6 +676,7 @@ export function usePlaySelectionController({
       setDrawerPreviewIsWallClimb,
       clearMirror,
       setIsTickBarActive,
+      clearPreviewCommitOptions,
     ],
   );
 
@@ -629,5 +687,6 @@ export function usePlaySelectionController({
     handleSimilarClimbPress,
     commitDisplayedToWall,
     continueIntoQueue,
+    getPreviewCommitOptions,
   };
 }

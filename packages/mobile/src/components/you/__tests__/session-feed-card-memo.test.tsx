@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../../climb-actions/ClimbActionsPressable', () => import('../../../../test/climb-menu-stub'));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { SessionFeedItem } from '@boardsesh/shared-schema';
+import type { Climb, SessionFeedItem } from '@boardsesh/shared-schema';
+import type { BoardConfig } from '../../../providers/drawer-host-provider';
+import { climbMenuTestState } from '../../../../test/climb-menu-stub';
 
 // Count how many times SessionFeedCard's body actually runs. The body renders a
 // `Card` exactly once, so a counter in the Card mock is a faithful proxy: if
 // React.memo bails an identical-props re-render, this must NOT bump.
 const renderCounter = vi.hoisted(() => ({ count: 0 }));
 const heroMocks = vi.hoisted(() => ({
-  openClimbActions: vi.fn(),
+  getClimbActions: vi.fn((climb: Climb, boardConfig: BoardConfig) => ({ climb, boardConfig })),
   tickToClimb: vi.fn(() => null as unknown),
 }));
 
@@ -59,7 +62,7 @@ vi.mock('../../../providers/toast-provider', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openClimbActions: heroMocks.openClimbActions }),
+  useDrawerHost: () => ({ getClimbActions: heroMocks.getClimbActions }),
 }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticMedium: vi.fn() }));
@@ -130,6 +133,12 @@ function makeSession(overrides: Partial<SessionFeedItem> = {}): SessionFeedItem 
 const onOpenComments = vi.fn();
 const onPress = vi.fn();
 const onOpenClimb = vi.fn();
+
+beforeEach(() => {
+  heroMocks.getClimbActions.mockClear();
+  climbMenuTestState.commands = [];
+  climbMenuTestState.openedRows = null;
+});
 
 describe('SessionFeedCard React.memo', () => {
   beforeEach(() => {
@@ -207,10 +216,10 @@ describe('SessionFeedCard hero board art', () => {
     expect(container.querySelector('[data-thumb]')?.getAttribute('data-thumb')).toBe('1');
   });
 
-  it('opens the climb actions on the server-resolved renderBoard when the hero is long-pressed', () => {
+  it('pins the hero native menu and direct commands to the server-resolved renderBoard', () => {
     const climb = { uuid: 'c1' };
     heroMocks.tickToClimb.mockReturnValue(climb);
-    heroMocks.openClimbActions.mockClear();
+    heroMocks.getClimbActions.mockClear();
     const hardestSend = {
       boardType: 'woods',
       layoutId: 1,
@@ -228,19 +237,31 @@ describe('SessionFeedCard hero board art', () => {
         onOpenClimb={onOpenClimb}
       />,
     );
-    for (const pressable of Array.from(container.querySelectorAll('[data-pressable]'))) {
-      fireEvent.contextMenu(pressable);
-    }
-    expect(heroMocks.openClimbActions).toHaveBeenCalledWith(
+    expect(heroMocks.getClimbActions).toHaveBeenCalledExactlyOnceWith(
       climb,
       expect.objectContaining({ boardName: 'woods', sizeId: 1, setIds: '1', angle: 40 }),
     );
+    const row = container.querySelector('[data-climb-actions-body]')!;
+    fireEvent.contextMenu(row);
+    expect(climbMenuTestState.openedRows?.map((action) => action.id)).toEqual(['share']);
+    expect(climbMenuTestState.commands).toEqual([]);
+    fireEvent.doubleClick(row);
+    expect(climbMenuTestState.commands).toEqual([
+      {
+        id: 'share',
+        target: {
+          climb,
+          boardConfig: { boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 },
+        },
+      },
+    ]);
+    expect(onOpenClimb).not.toHaveBeenCalled();
     heroMocks.tickToClimb.mockReturnValue(null);
   });
 
   it('draws no board art and opens no actions for a Woods send with no renderBoard', () => {
     heroMocks.tickToClimb.mockReturnValue({ uuid: 'c1' });
-    heroMocks.openClimbActions.mockClear();
+    heroMocks.getClimbActions.mockClear();
     const hardestSend = {
       boardType: 'woods',
       layoutId: 1,
@@ -261,10 +282,8 @@ describe('SessionFeedCard hero board art', () => {
     // No size known, so no 12x12 guess: the card still renders, without the art.
     expect(container.querySelector('[data-card]')).not.toBeNull();
     expect(container.querySelector('[data-thumb]')).toBeNull();
-    for (const pressable of Array.from(container.querySelectorAll('[data-pressable]'))) {
-      fireEvent.contextMenu(pressable);
-    }
-    expect(heroMocks.openClimbActions).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-native-climb-menu]')).toBeNull();
+    expect(heroMocks.getClimbActions).not.toHaveBeenCalled();
     heroMocks.tickToClimb.mockReturnValue(null);
   });
 });

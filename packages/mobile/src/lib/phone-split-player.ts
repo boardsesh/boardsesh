@@ -121,6 +121,7 @@ export function buildCarriedPaneTarget(
       previewQueueItem: preview.item,
       previewIsWallClimb: preview.isWallClimb,
       playlistSuggestionSource: preview.suggestionSource,
+      ...(preview.previewCommitOptions ? { previewCommitOptions: preview.previewCommitOptions } : {}),
     },
     nonce,
     claimFirstApply: () => false,

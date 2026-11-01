@@ -92,7 +92,7 @@ export function SessionSummaryContent({
   // This screen is a modal route: on Android the dialog window ignores
   // adjustResize, so the keyboard overlays the recap editor's Save/Cancel row
   // and automaticallyAdjustKeyboardInsets is an iOS-only no-op. Track the
-  // keyboard height ourselves (same listener pattern as ClimbReactionMenu),
+  // keyboard height ourselves ,
   // pad the scroll content by it, and scroll the editor into view on focus.
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;

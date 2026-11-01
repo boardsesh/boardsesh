@@ -6,8 +6,20 @@ import { createElement, type ReactNode } from 'react';
 // The Compose tree can't mount under vitest, so each Compose primitive renders as
 // a tagged DOM node: enough to tell an IconButton from a Text.
 vi.mock('@expo/ui', () => ({
-  Host: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
-    createElement('div', { 'data-host': true, 'aria-label': accessibilityLabel }, children),
+  Host: ({
+    children,
+    accessibilityLabel,
+    accessible,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    accessible?: boolean;
+  }) =>
+    createElement(
+      'div',
+      { 'data-host': true, 'aria-label': accessibilityLabel, 'data-host-accessible': String(accessible) },
+      children,
+    ),
 }));
 vi.mock('@expo/ui/jetpack-compose', () => {
   const DropdownMenu = ({ children, expanded }: { children?: ReactNode; expanded?: boolean }) =>
@@ -30,6 +42,8 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     Icon: ({ size, tint }: { size?: number; tint?: string }) =>
       createElement('i', { 'data-compose-icon': true, 'data-size': size, 'data-tint': tint }),
     HorizontalDivider: () => createElement('hr'),
+    RNHostView: ({ children, matchContents }: { children?: ReactNode; matchContents?: boolean }) =>
+      createElement('div', { 'data-rn-match-contents': String(Boolean(matchContents)) }, children),
   };
 });
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
@@ -37,6 +51,27 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   padding: () => ({}),
 }));
 vi.mock('react-native', () => ({
+  Pressable: ({
+    children,
+    onLongPress,
+    accessible,
+    focusable,
+  }: {
+    children?: ReactNode;
+    onLongPress?: () => void;
+    accessible?: boolean;
+    focusable?: boolean;
+  }) =>
+    createElement(
+      'div',
+      {
+        onContextMenu: onLongPress,
+        'data-long-press-anchor': true,
+        'data-accessible': String(accessible),
+        'data-focusable': String(focusable),
+      },
+      children,
+    ),
   Platform: { OS: 'android', select: (options: { android?: unknown }) => options.android },
   PlatformColor: (name: string) => name,
 }));
@@ -111,6 +146,37 @@ describe('AppMenu (Android) overflow anchor', () => {
 });
 
 describe('AppMenu (Android) dividers', () => {
+  it('opens a custom row only on long press, keeping row taps and accessibility with the child', () => {
+    const onRowPress = vi.fn();
+    const onSelectIndex = vi.fn();
+    const { container, getByText } = render(
+      createElement(AppMenu, {
+        trigger: 'longPress',
+        children: createElement('button', { onClick: onRowPress }, 'Climb row'),
+        accessibilityLabel: 'Climb actions',
+        actions: [{ label: 'Blocked', disabled: true }, { label: 'Share' }],
+        onSelectIndex,
+      }),
+    );
+    const menu = () => container.querySelector('[data-expanded]')?.getAttribute('data-expanded');
+    const anchor = container.querySelector('[data-long-press-anchor]') as Element;
+    expect(anchor.getAttribute('data-accessible')).toBe('false');
+    expect(anchor.getAttribute('data-focusable')).toBe('false');
+    expect(container.querySelector('[data-host]')?.getAttribute('data-host-accessible')).toBe('false');
+    expect(container.querySelector('[data-host]')?.hasAttribute('aria-label')).toBe(false);
+    expect(container.querySelector('[data-rn-match-contents="true"]')).not.toBeNull();
+    fireEvent.click(getByText('Climb row'));
+    expect(onRowPress).toHaveBeenCalledOnce();
+    expect(menu()).toBe('false');
+    fireEvent.contextMenu(anchor);
+    expect(menu()).toBe('true');
+    fireEvent.click(getByText('Blocked'));
+    expect(onSelectIndex).not.toHaveBeenCalled();
+    fireEvent.click(getByText('Share'));
+    expect(onSelectIndex).toHaveBeenCalledWith(1);
+    expect(menu()).toBe('false');
+  });
+
   it('draws an M3 divider above a row that opens a group, without taking an index', () => {
     const onSelectIndex = vi.fn();
     const { container } = render(

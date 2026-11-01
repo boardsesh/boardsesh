@@ -14,7 +14,6 @@ import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from '
 import {
   View,
   StyleSheet,
-  Platform,
   type AccessibilityActionEvent,
   type StyleProp,
   type ViewStyle,
@@ -31,7 +30,6 @@ import Animated, {
 import {
   GestureDetector,
   useTapGesture,
-  useLongPressGesture,
   useExclusiveGestures,
   useSimultaneousGestures,
 } from 'react-native-gesture-handler';
@@ -39,6 +37,8 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
+import { ClimbMenu, useClimbMenu } from './climb-actions/ClimbActionsMenu';
+import type { ClimbActionsTarget } from '../providers/drawer-host-provider';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
 import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
@@ -50,7 +50,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
-import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS } from '../lib/row-accessibility-actions';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtSnapshot,
@@ -66,7 +66,6 @@ const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
 // The ⋮ button is nested inside the row's `accessible` container, so it needs both
 // its own props (TalkBack focuses it) and a labelled custom action published on the
 // row (VoiceOver does not) — see lib/row-accessibility-actions.
-const MORE_ACTIONS_ACTION_NAME = 'moreActions';
 
 // Per-row swipe perf: the panels below split into a cheap always-mounted shell
 // (just the coloured panel + its resting-state icon, zero shared values /
@@ -252,7 +251,7 @@ type ClimbListRowProps = {
   /** Right swipe: put the climb at the top of Up next (the menu's Play next). */
   onPlayNext?: (climb: Climb) => void;
   onOpenPlaylist?: (climb: Climb, anchor?: WindowAnchorPoint) => void;
-  onOpenActions?: (climb: Climb) => void;
+  onOpenActions?: (climb: Climb) => ClimbActionsTarget | null | undefined;
   selected?: boolean;
   unsupported?: boolean;
   renderContent?: (args: ClimbListRowRenderContentArgs) => ReactNode;
@@ -367,8 +366,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onPlayNextRef.current = onPlayNext;
   const onOpenPlaylistRef = useRef(onOpenPlaylist);
   onOpenPlaylistRef.current = onOpenPlaylist;
-  const onOpenActionsRef = useRef(onOpenActions);
-  onOpenActionsRef.current = onOpenActions;
   const contentViewRef = useRef<ViewInstance | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
@@ -377,15 +374,11 @@ const ClimbListRow = React.memo(function ClimbListRow({
   readyScopeRef.current = { boardName, layoutId, sizeId, setIds };
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
-  // One place that opens the reaction menu, whether it was reached by long press
-  // or by the ⋮ button.
-  const openActions = useCallback(() => {
-    if (unsupportedRef.current) return;
-    const openActionsMenu = onOpenActionsRef.current;
-    if (!openActionsMenu) return;
-    hapticMedium();
-    openActionsMenu(climbRef.current);
-  }, []);
+  const menuTarget = useMemo(
+    () => (unsupported ? null : (onOpenActions?.(climb) ?? null)),
+    [unsupported, onOpenActions, climb, boardName, layoutId, sizeId, setIds, angle],
+  );
+  const menu = useClimbMenu(menuTarget);
 
   const handleRowPress = useCallback(() => {
     if (unsupportedRef.current) return;
@@ -406,47 +399,18 @@ const ClimbListRow = React.memo(function ClimbListRow({
     else press(currentClimb);
   }, []);
 
-  const handleLongPress = useCallback(() => {
-    openActions();
-  }, [openActions]);
-
-  // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
-  // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
-  const handleOpenActions = useCallback(() => {
-    openActions();
-  }, [openActions]);
-
-  // Screen-reader activate → the same handlers the RNGH taps call. Branch on the
-  // action name so a future custom action on these rows can't turn every action
-  // into a row press / menu open.
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handleRowPress();
-      if (event.nativeEvent.actionName === MORE_ACTIONS_ACTION_NAME) handleOpenActions();
+      else menu.onAccessibilityAction(event);
     },
-    [handleRowPress, handleOpenActions],
+    [handleRowPress, menu.onAccessibilityAction],
   );
-
-  const handleMoreButtonAccessibilityAction = useCallback(
-    (event: AccessibilityActionEvent) => {
-      if (event.nativeEvent.actionName === 'activate') handleOpenActions();
-    },
-    [handleOpenActions],
-  );
-
-  const canOpenActions = !!onOpenActions && !unsupported;
-  // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
-  // `t` identity on plenty of renders, which would rebuild this array every time
-  // and churn the row element's props.
-  const moreActionsLabel = t('mobile.climbRow.moreActions');
   const playNextActionLabel = t('mobile.climbActions.playNext');
   const playlistActionLabel = t('actions.playlist.popover.title');
   const rowAccessibilityActions = useMemo(
-    () =>
-      canOpenActions
-        ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
-        : ACTIVATE_ACCESSIBILITY_ACTIONS,
-    [canOpenActions, moreActionsLabel],
+    () => [...(ACTIVATE_ACCESSIBILITY_ACTIONS ?? []), ...menu.accessibilityActions],
+    [menu.accessibilityActions],
   );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
@@ -522,27 +486,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
       runOnJS(handleRowPress)();
     },
   });
-  const longPressGesture = useLongPressGesture({
-    minDuration: 400,
-    onActivate: () => {
-      'worklet';
-      runOnJS(handleLongPress)();
-    },
-  });
-  const tapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
-  // Mount the lock on the row and make the full-swipe tracker wait for it too.
+  // Native context-menu long press owns the hold; the bounded tap cannot fire on release.
   const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
-  const rowGestures = useSimultaneousGestures(tapGesture, guardedFullSwipe);
-  // The menu tap blocks the row so only the menu opens when its button wins.
-  const moreButtonGesture = useTapGesture({
-    maxDuration: 400,
-    maxDistance: 15,
-    block: [singleTapGesture, longPressGesture],
-    onActivate: () => {
-      'worklet';
-      runOnJS(handleOpenActions)();
-    },
-  });
+  const rowGestures = useSimultaneousGestures(singleTapGesture, guardedFullSwipe);
 
   // Left actions (revealed by a left-to-right swipe) = Play next; right actions
   // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
@@ -619,64 +565,47 @@ const ClimbListRow = React.memo(function ClimbListRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={rowGestures} touchAction="pan-y">
-          <View
-            ref={contentViewRef}
-            collapsable={false}
-            testID={testID}
-            style={[
-              climbListRowStyles.contentRow,
-              fillCell && styles.fillCell,
-              { backgroundColor: systemColors.background },
-              contentRowStyle,
-            ]}
-            accessible
-            accessibilityRole="button"
-            // Let React Native compose the name, grade and status from the
-            // content labels instead of replacing them with just the name.
-            accessibilityState={{ selected: !!selected }}
-            onAccessibilityTap={handleRowPress}
-            // Keep the menu reachable through screen-reader actions even when
-            // the climber hides its visible quick-actions button.
-            accessibilityActions={rowAccessibilityActions}
-            onAccessibilityAction={handleRowAccessibilityAction}
-          >
-            {/* Active-climb highlight: violet wash + left accent bar */}
-            {selected ? (
-              <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
-            ) : null}
-            {selected ? (
-              <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
-            ) : null}
-
-            {rowContent}
-
-            {showMoreButton && quickActionsEnabled && onOpenActions ? (
-              <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
-                <View
-                  testID="climb-row-more-button"
-                  style={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
-                  accessible
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.climbRow.moreActions')}
-                  // iOS reaches this menu through the row's custom action;
-                  // exclude its button label from the composed row description.
-                  // Android retains the separately focusable button.
-                  accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
-                  onAccessibilityTap={handleOpenActions}
-                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
-                  onAccessibilityAction={handleMoreButtonAccessibilityAction}
-                >
-                  {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
-                        Android's dots-vertical is already vertical (no rotation). */}
-                  <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
-                    <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
-                  </View>
-                </View>
-              </GestureDetector>
-            ) : null}
-          </View>
-        </GestureDetector>
+        <View
+          ref={contentViewRef}
+          collapsable={false}
+          style={[
+            climbListRowStyles.contentRow,
+            fillCell && styles.fillCell,
+            { backgroundColor: systemColors.background },
+            contentRowStyle,
+          ]}
+        >
+          {selected ? (
+            <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
+          ) : null}
+          {selected ? (
+            <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
+          ) : null}
+          <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} style={styles.menuBody}>
+            <GestureDetector gesture={rowGestures} touchAction="pan-y">
+              <View
+                testID={testID}
+                style={styles.menuBody}
+                accessible
+                accessibilityRole="button"
+                accessibilityState={{ selected: !!selected }}
+                onAccessibilityTap={handleRowPress}
+                accessibilityActions={rowAccessibilityActions}
+                onAccessibilityAction={handleRowAccessibilityAction}
+              >
+                {rowContent}
+              </View>
+            </GestureDetector>
+          </ClimbMenu>
+          {showMoreButton && quickActionsEnabled && menu.rows.length > 0 ? (
+            <View
+              testID="climb-row-more-button"
+              style={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
+            >
+              <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} iconAppearance="plain" />
+            </View>
+          ) : null}
+        </View>
       </ReanimatedSwipeable>
 
       {/* Separator — inset to start at the text column (after the thumbnail, when there is one) */}
@@ -698,6 +627,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 export { ClimbListRow };
 
 const styles = StyleSheet.create({
+  menuBody: { flex: 1 },
   outerContainer: {
     position: 'relative',
     overflow: 'hidden',

@@ -805,22 +805,22 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.activate).not.toHaveBeenCalled();
     });
 
-    it('leaves the Play button (a deliberate play) playing from the list', async () => {
+    it('previews the Play button when automatic tap lighting is off', async () => {
       setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
-      await result.current.activate(climb, undefined, { deliberate: true });
+      await result.current.activate(climb);
 
-      expect(mocks.activate).toHaveBeenCalledWith(climb);
-      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+      expect(mocks.activate).not.toHaveBeenCalled();
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
-    it('still previews a deliberate play in a crew', async () => {
+    it('still previews header Play in a crew', async () => {
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
 
-      await result.current.activate(climb, undefined, { deliberate: true });
+      await result.current.activate(climb);
 
       expect(mocks.activate).not.toHaveBeenCalled();
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
@@ -842,7 +842,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
-    it('leaves the Play button loading the list with the playlist switch on', async () => {
+    it('previews Play without replacing the queue when automatic lighting is off', async () => {
       setSetting('lightOnClimbTap', false);
       setSetting('playlistTapLoadsQueue', true);
       const climb = makeClimb('a');
@@ -850,11 +850,11 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        await result.current.activate(climb, undefined, { deliberate: true });
+        await result.current.activate(climb);
       });
 
-      expect(mocks.setQueue.mock.calls[0]?.[1].climb.uuid).toBe('a');
-      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
     it('reads the setting at the tap, so turning it back on commits the next tap', async () => {

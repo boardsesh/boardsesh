@@ -1,20 +1,15 @@
-// Single source of truth for the climb action list, rendered by the long-press
-// `ClimbReactionMenu` overlay and by the player's native ⋯ menu
-// (`PlayDrawerActionsMenu`). Each item carries the display metadata (label, icon,
-// colour) plus a `run()` that performs the action and then calls `onAfterAction` (the
-// reaction menu passes its animated dismiss).
-//
-// The hook self-sources most openers (preview / queue / tick / beta video / report) from
-// `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
-// `useToggleFavorite`, the native share from `useShareClimb`, and the create-climb
-// routes from `useCreateClimbNavigation`, so a caller supplies the climb, its board
-// config, the two contextual flags (`currentUserId`, `isAuthenticated`), the required
-// inline playlist host (`onSelectPlaylist`), and the logbook-only `onEditEntry`.
-
+// Executes the shared climb commands after a native menu selection.
 import { useCallback, useEffect, useMemo } from 'react';
 import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
+import { useQueryClient } from '@tanstack/react-query';
+import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
+import { offlineAwareRequest } from '../../lib/graphql/offline-request';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
+import { reportHandledError } from '../../lib/error-reporting';
+import { readClimbChangeLights } from '../play-drawer/use-climb-change-lights';
+import { useIsSharedSession } from '../../providers/queue-provider';
 import * as WebBrowser from 'expo-web-browser';
 import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
@@ -36,6 +31,7 @@ import { canDeleteClimb } from './delete-climb-rules';
 import { useDeleteClimbAction } from './use-delete-climb-action';
 
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
+import { buildClimbMenuItems } from './climb-menu-items';
 import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 
 export type ClimbActionId =
@@ -98,7 +94,7 @@ export type ClimbActionsMirrorControl = {
   onToggle: () => void;
 };
 
-type UseClimbActionsArgs = {
+export type UseClimbActionsArgs = {
   climb: Climb | null;
   boardConfig: BoardConfig | null;
   /**
@@ -115,18 +111,7 @@ type UseClimbActionsArgs = {
   onEditEntry?: () => void;
   /** Run after any action fires. The sheet passes its `onClose`; the native menu omits it. */
   onAfterAction?: () => void;
-  /**
-   * Required in-place host for the "Add to playlist" action: `run()` calls this
-   * and does NOT dismiss the menu, so the picker renders inline (a view switch in
-   * the reaction overlay's `FullWindowOverlay`) rather than opening a native
-   * sheet. Deliberately NOT optional: a fallback that opened the root
-   * `AddToPlaylistSheet` here would present a second native sheet off the root
-   * window and, from over a modal route (`/play`), flash open and vanish — the
-   * #3335 / #3294 bug (docs/mobile-sheets-vs-routes.md, rule 1 + the in-tree-opener
-   * trap). Surfaces that genuinely want the standalone sheet (the climb-list row,
-   * the board sheet) call `useDrawerHost().openAddToPlaylist` directly, off the
-   * player, instead of going through this hook.
-   */
+  /** Required sheet opener owned by the current surface, above any player route. */
   onSelectPlaylist: () => void;
   /**
    * When provided, the "Add beta video" action runs this INSTEAD of opening the
@@ -192,6 +177,8 @@ type UseClimbActionsArgs = {
    * {@link ClimbActionsFavoriteControl}), and the hook skips its own favourite read.
    */
   favoriteControl?: ClimbActionsFavoriteControl;
+  /** Row-menu commands resolve exact favorite state only after selection. */
+  resolveFavoriteOnAction?: boolean;
 };
 
 // Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
@@ -225,8 +212,11 @@ export function useClimbActions({
   analyticsSource,
   analyticsContext,
   favoriteControl,
+  resolveFavoriteOnAction = false,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
+  const queryClient = useQueryClient();
+  const inSharedSession = useIsSharedSession();
   const { openRemix, openEdit, resetActionGuard } = useCreateClimbNavigation({
     dismissSourceSheet,
     dismissPlayerAndWait,
@@ -291,7 +281,7 @@ export function useClimbActions({
     climb?.uuid ?? null,
     boardConfig?.angle ?? 0,
     {
-      enabled: !!climb && !!boardConfig && !favoriteControl,
+      enabled: !!climb && !!boardConfig && !favoriteControl && !resolveFavoriteOnAction,
     },
   );
   const isFavorited = favoriteControl ? favoriteControl.isFavorited : serverFavorited;
@@ -398,7 +388,16 @@ export function useClimbActions({
         color: accentColor,
         run: () => {
           // Walking the queue again, like the row tap: drop any list source.
-          setCurrentClimb(replayItem, { placement: 'STEP', playlistSuggestionSource: null });
+          const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
+          if (readClimbChangeLights('tap', { inSharedSession })) {
+            setCurrentClimb(replayItem, commitOptions);
+          } else {
+            openPlayDrawer(replayItem.climb as Climb, {
+              boardConfig,
+              previewQueueItem: replayItem,
+              previewCommitOptions: commitOptions,
+            });
+          }
           after();
         },
       });
@@ -439,10 +438,7 @@ export function useClimbActions({
       title: t('actions.playlist.popover.title'),
       icon: 'playlist',
       color: accentColor,
-      // Always the inline host: swap the reaction overlay to its playlist view
-      // (no dismiss, no second native sheet). `onSelectPlaylist` is required so
-      // this action can never fall back to opening the root AddToPlaylistSheet
-      // over a modal route and flash closed — the #3335 / #3294 class.
+      // The presenter belongs to this surface, above any player route.
       run: () => {
         onSelectPlaylist();
       },
@@ -469,11 +465,31 @@ export function useClimbActions({
         // climb list optimistically, and it's what the offline local-first path
         // needs to know which way to write. The toggle tracks the tap, in the
         // direction it really goes (the heart's cache entry has the last word).
-        toggleFavoriteMutate({
-          input: { boardName, climbUuid: climb.uuid, angle },
-          currentlyFavorited: isFavorited,
-          tracking: { source: analyticsSource ?? 'mobile_climb_actions', layoutId, connected: bluetoothConnected },
-        });
+        const toggleKnownFavorite = (currentlyFavorited: boolean | undefined) =>
+          toggleFavoriteMutate({
+            input: { boardName, climbUuid: climb.uuid, angle },
+            currentlyFavorited,
+            tracking: { source: analyticsSource ?? 'mobile_climb_actions', layoutId, connected: bluetoothConnected },
+          });
+        if (resolveFavoriteOnAction) {
+          const credentialScope = getCredentialGeneration();
+          void queryClient
+            .fetchQuery({
+              queryKey: ['favoriteStatus', boardName, climb.uuid, angle],
+              queryFn: () =>
+                offlineAwareRequest<FavoritesQueryResponse>(GET_FAVORITES, {
+                  boardName,
+                  climbUuids: [climb.uuid],
+                  angle,
+                }),
+              staleTime: 0,
+            })
+            .then((response) => {
+              if (credentialScope === getCredentialGeneration())
+                toggleKnownFavorite(response.favorites.includes(climb.uuid));
+            })
+            .catch((error: unknown) => reportHandledError(error, { tags: { source: 'climb-menu', op: 'favorite' } }));
+        } else toggleKnownFavorite(isFavorited);
         after();
       },
     });
@@ -686,7 +702,25 @@ export function useClimbActions({
       });
     }
 
-    return items;
+    const runners = new Map(items.map((item) => [item.id, item.run]));
+    return buildClimbMenuItems(
+      {
+        climb,
+        boardConfig,
+        queueItemUuid,
+        currentUserId,
+        isAuthenticated,
+        onEditEntry,
+        onSelectPlaylist,
+        onOpenQueue,
+        onOpenViewOptions,
+        mirrorControl,
+        onOpenAngle,
+        favoriteControl,
+      },
+      { t, actionColors, activeClimbUuid, wallArchived, moderationEnabled, isFavorited, canReplay: !!replayItem },
+      (id) => runners.get(id)?.(),
+    );
   }, [
     climb,
     boardConfig,
@@ -722,6 +756,10 @@ export function useClimbActions({
     bluetoothConnected,
     isFavorited,
     toggleFavoriteOverride,
+    favoriteControl,
+    resolveFavoriteOnAction,
+    queryClient,
+    inSharedSession,
     analyticsSource,
     analyticsContext,
     openPlayDrawer,

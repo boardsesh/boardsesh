@@ -16,6 +16,16 @@ vi.mock('@expo/ui', () => ({
     ),
 }));
 vi.mock('@expo/ui/swift-ui', () => ({
+  ContextMenu: Object.assign(
+    ({ children }: { children: ReactNode }) => createElement('div', { 'data-context-menu': true }, children),
+    {
+      Trigger: ({ children }: { children: ReactNode }) =>
+        createElement('div', { 'data-context-trigger': true }, children),
+      Items: ({ children }: { children: ReactNode }) => createElement('div', { 'data-context-items': true }, children),
+    },
+  ),
+  RNHostView: ({ children, matchContents }: { children: ReactNode; matchContents?: boolean }) =>
+    createElement('div', { 'data-rn-match-contents': String(Boolean(matchContents)) }, children),
   Menu: ({ label, children, modifiers }: { label: ReactNode; children: ReactNode; modifiers: Modifier[] }) =>
     createElement('div', { 'data-menu-modifiers': JSON.stringify(modifiers) }, label, children),
   Button: ({ label, onPress }: { label: string; onPress: () => void }) =>
@@ -184,6 +194,37 @@ describe('AppMenu (iOS) dividers', () => {
 });
 
 describe('AppMenu (iOS) hosting', () => {
+  it('hosts the existing row body in a native context menu without adding icon sizing or consuming its tap', () => {
+    const onRowPress = vi.fn();
+    const onSelectIndex = vi.fn();
+    const { container, getByText } = render(
+      createElement(AppMenu, {
+        trigger: 'longPress',
+        children: createElement('button', { onClick: onRowPress }, 'Climb row'),
+        actions,
+        onSelectIndex,
+      }),
+    );
+    expect(container.querySelector('[data-context-menu]')).not.toBeNull();
+    expect(container.querySelector('[data-context-trigger] [data-rn-match-contents="true"]')?.textContent).toBe(
+      'Climb row',
+    );
+    expect(container.querySelector('[data-menu-modifiers]')).toBeNull();
+    expect(JSON.parse(container.querySelector('[data-host-style]')?.getAttribute('data-host-style') ?? '{}')).toEqual(
+      {},
+    );
+    expect(container.querySelector('[data-host-ignore-safe-area]')?.getAttribute('data-host-ignore-safe-area')).toBe(
+      'all',
+    );
+    fireEvent.click(getByText('Climb row'));
+    expect(onRowPress).toHaveBeenCalledOnce();
+    expect(onSelectIndex).not.toHaveBeenCalled();
+    fireEvent.click(getByText('Blocked route action'));
+    expect(onSelectIndex).not.toHaveBeenCalled();
+    fireEvent.click(getByText('Choose holds'));
+    expect(onSelectIndex).toHaveBeenCalledWith(0);
+  });
+
   it('never takes the screen safe-area inset, so a menu that mounts scrolled under the status bar stays in its frame', () => {
     for (const props of [{ iconName: 'more' as const, accessibilityLabel: 'More actions' }, { label: 'Everyone' }]) {
       const { container, unmount } = render(createElement(AppMenu, { ...props, actions, onSelectIndex: vi.fn() }));
