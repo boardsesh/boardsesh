@@ -55,18 +55,23 @@ genuinely going away out from under the parent — a user pan-down / backdrop, o
 another sheet in the group — never for a close the parent itself drove, so parent state can't be
 cleared behind your back. `AddToPlaylistSheet` is the reference.
 
-**Native climb menus.** `ClimbActionsMenu` shares the same core actions and native menu
-rendering for row long-press, list ellipsis and player ellipsis: SwiftUI ContextMenu/Menu
-on iOS, Compose dropdowns on Android, and Paper on Expo web. `getClimbActions` resolves a
-snapshot without opening anything. The custom `ClimbReactionMenu` overlay is removed;
-add-to-playlist uses the normal sheet with its correct presenter.
-On iOS, the held row lifts as an opaque, rounded native preview above the dimmed list,
-so the menu's climb stays identifiable without mounting a second row.
-Native iOS captures: [before](./images/climb-menu-before.png), [after](./images/climb-menu-after.png).
+**Climb menus.** `ClimbActionsMenu` shares the core action definitions for row long-press,
+list ellipsis and player ellipsis. On the main iOS climb list, both row triggers open
+`ClimbListRowMenu`: the same opaque, rounded row above a dimmed list and a scrollable
+action menu. Public iOS context-menu APIs cannot present the preview from a tap, so
+these two triggers use one controlled `FullWindowOverlay`. The source body is replaced
+with a placeholder while lifted; the row content is mounted only once. Recycled rows,
+account changes and window-size changes retire the menu. Commands run after the overlay
+unmounts, preserving the normal sheet presenter for add-to-playlist and other actions.
+Other surfaces retain SwiftUI ContextMenu/Menu on iOS, Compose dropdowns on Android,
+and Paper on Expo web. `getClimbActions` resolves a snapshot without opening anything.
+The old `ClimbReactionMenu` overlay and its embedded sheets are removed.
+Native iOS captures: [before](./images/climb-menu-before.png),
+[long press](./images/climb-menu-after.png), [ellipsis](./images/climb-menu-ellipsis.png).
 
-A row's native long-press body excludes drag handles and sibling controls, preserving
+A row's long-press body excludes drag handles and sibling controls, preserving
 queue reorder and swipe actions. Screen readers get direct enabled commands and the
-separately focusable ellipsis when visible; iOS exposes no imperative menu-opening API.
+separately focusable ellipsis when visible.
 
 **Stacking above everything:** custom non-sheet overlays may use `FullWindowOverlay`, but
 native `@expo/ui` sheets present from their own view controller. A native sheet must be

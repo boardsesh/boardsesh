@@ -13,6 +13,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
+  Platform,
   StyleSheet,
   type AccessibilityActionEvent,
   type StyleProp,
@@ -30,6 +31,7 @@ import Animated, {
 import {
   GestureDetector,
   useTapGesture,
+  useLongPressGesture,
   useExclusiveGestures,
   useSimultaneousGestures,
 } from 'react-native-gesture-handler';
@@ -37,7 +39,8 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
-import { ClimbMenu, useClimbMenu } from './climb-actions/ClimbActionsMenu';
+import { useClimbMenu } from './climb-actions/ClimbActionsMenu';
+import { ClimbListRowMenu, type ClimbListRowMenuHandle } from './climb-actions/ClimbListRowMenu';
 import type { ClimbActionsTarget } from '../providers/drawer-host-provider';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
@@ -283,7 +286,7 @@ type ClimbListRowProps = {
    */
   showFavorite?: boolean;
   /**
-   * Let this surface show a trailing ⋮ button that opens the native menu on tap
+   * Let this surface show a trailing ⋮ button that opens the row's menu on tap
    * — a visible, discoverable entry point beside the long-press. Only the climbs
    * list opts in; other surfaces keep long-press only. The button also needs the
    * climber's "Show quick-actions button" setting (on by default), which the row
@@ -368,6 +371,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
   const onOpenPlaylistRef = useRef(onOpenPlaylist);
   onOpenPlaylistRef.current = onOpenPlaylist;
   const contentViewRef = useRef<ViewInstance | null>(null);
+  const rowFocusRef = useRef<ViewInstance | null>(null);
+  const rowMenuRef = useRef<ClimbListRowMenuHandle | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
   const readyBoardArtRef = useRef<ReadyBoardArtSource | null>(null);
@@ -487,9 +492,25 @@ const ClimbListRow = React.memo(function ClimbListRow({
       runOnJS(handleRowPress)();
     },
   });
-  // Native context-menu long press owns the hold; the bounded tap cannot fire on release.
+  const prepareLiftedMenu = useCallback(() => {
+    swipeableRef.current?.reset();
+    disarm();
+  }, [disarm]);
+  const openLiftedMenu = useCallback(() => rowMenuRef.current?.open(), []);
+  const longPressGesture = useLongPressGesture({
+    enabled: Platform.OS === 'ios' && showMoreButton && menu.rows.length > 0,
+    minDuration: 400,
+    maxDistance: 15,
+    onActivate: () => {
+      'worklet';
+      runOnJS(openLiftedMenu)();
+    },
+  });
+  // A successful hold suppresses the tap on release. Other surfaces retain
+  // their platform menu's own hold recognizer.
+  const rowActivation = useExclusiveGestures(longPressGesture, singleTapGesture);
   const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
-  const rowGestures = useSimultaneousGestures(singleTapGesture, guardedFullSwipe);
+  const rowGestures = useSimultaneousGestures(rowActivation, guardedFullSwipe);
 
   // Left actions (revealed by a left-to-right swipe) = Play next; right actions
   // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
@@ -537,6 +558,21 @@ const ClimbListRow = React.memo(function ClimbListRow({
       showFavorite={showFavorite}
     />
   );
+  const rowBody = (
+    <View
+      ref={rowFocusRef}
+      testID={testID}
+      style={styles.menuBody}
+      accessible
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      onAccessibilityTap={handleRowPress}
+      accessibilityActions={rowAccessibilityActions}
+      onAccessibilityAction={handleRowAccessibilityAction}
+    >
+      {rowContent}
+    </View>
+  );
 
   return (
     <View
@@ -582,36 +618,25 @@ const ClimbListRow = React.memo(function ClimbListRow({
           {selected ? (
             <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
           ) : null}
-          <ClimbMenu
+          <ClimbListRowMenu
+            ref={rowMenuRef}
+            onBeforeOpen={prepareLiftedMenu}
+            enabled={showMoreButton}
             rows={menu.rows}
             menuKey={menu.menuKey}
-            style={styles.menuBody}
-            liftPreview
+            title={climb.name}
+            accessibilityLabel={t('mobile.climbRow.moreActions')}
+            bodyStyle={styles.menuBody}
+            moreButtonStyle={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
+            showMoreButton={showMoreButton && quickActionsEnabled}
+            preview={rowBody}
+            focusRef={rowFocusRef}
             previewOverlayColor={selected ? highlight.fill : undefined}
           >
             <GestureDetector gesture={rowGestures} touchAction="pan-y">
-              <View
-                testID={testID}
-                style={styles.menuBody}
-                accessible
-                accessibilityRole="button"
-                accessibilityState={{ selected: !!selected }}
-                onAccessibilityTap={handleRowPress}
-                accessibilityActions={rowAccessibilityActions}
-                onAccessibilityAction={handleRowAccessibilityAction}
-              >
-                {rowContent}
-              </View>
+              {rowBody}
             </GestureDetector>
-          </ClimbMenu>
-          {showMoreButton && quickActionsEnabled && menu.rows.length > 0 ? (
-            <View
-              testID="climb-row-more-button"
-              style={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
-            >
-              <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} iconAppearance="plain" />
-            </View>
-          ) : null}
+          </ClimbListRowMenu>
         </View>
       </ReanimatedSwipeable>
 

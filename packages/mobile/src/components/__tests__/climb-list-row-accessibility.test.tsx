@@ -101,6 +101,7 @@ type GestureCapture = {
   kind: 'tap' | 'longPress' | 'pan' | 'manual';
   maxDuration?: number;
   minDuration?: number;
+  enabled?: boolean;
   onStart?: () => void;
   reference?: unknown;
   blockedReferences?: unknown[];
@@ -149,10 +150,11 @@ vi.mock('react-native-gesture-handler', () => {
       capture.blockedReferences = config.block;
       return gesture;
     },
-    useLongPressGesture: (config: { minDuration?: number; onActivate?: () => void }) => {
+    useLongPressGesture: (config: { enabled?: boolean; minDuration?: number; onActivate?: () => void }) => {
       const gesture = makeBuilder('longPress');
       const capture = rowGestures.captures.get(gesture)!;
       capture.minDuration = config.minDuration;
+      capture.enabled = config.enabled;
       capture.onStart = config.onActivate;
       capture.reference = gesture;
       return gesture;
@@ -367,7 +369,7 @@ describe('ClimbListRow screen-reader activation', () => {
     );
     const tap = [...rowGestures.captures.values()].find((gesture) => gesture.kind === 'tap');
     expect(tap?.maxDuration).toBe(400);
-    expect([...rowGestures.captures.values()].some((gesture) => gesture.kind === 'longPress')).toBe(false);
+    expect([...rowGestures.captures.values()].find((gesture) => gesture.kind === 'longPress')?.enabled).toBe(false);
     expect(onOpenActions).toHaveBeenCalledExactlyOnceWith(climb);
     expect(onPress).not.toHaveBeenCalled();
     act(() => tap?.onStart?.());
@@ -377,6 +379,27 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(climbMenuTestState.openedRows?.map((row) => row.id)).toEqual(['share']);
     expect(onOpenActions).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('makes the main-list hold exclusive with opening the player, even when its ellipsis is hidden', () => {
+    const onPress = vi.fn();
+    setClimbRowField('quickActions', false);
+    render(
+      <ClimbListRow
+        climb={climb}
+        {...boardProps}
+        onPress={onPress}
+        onOpenActions={resolveClimbActions}
+        showMoreButton
+      />,
+    );
+    expect(rowGestures.exclusive.map((gesture) => gesture.kind)).toEqual(['longPress', 'tap']);
+    const hold = rowGestures.exclusive[0];
+    expect(hold.enabled).toBe(true);
+    expect(hold.minDuration).toBe(400);
+    act(() => hold.onStart?.());
+    expect(onPress).not.toHaveBeenCalled();
+    expect(a11y.moreButton).toBeNull();
   });
 
   it('keeps the native ellipsis outside the row trigger and uses the same descriptors', () => {

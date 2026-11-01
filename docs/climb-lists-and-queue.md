@@ -127,10 +127,11 @@ A preview walks only its list.
 
 ### Crew, swipes and long-press
 
-Long-press and the list/player ellipsis use the same native climb menu and grouped core
-actions. Logbook Edit entry and player controls stay contextual; the player omits actions
-already shown as buttons. Native menu descriptors stay bound to the climb and exact queue
-slot. The custom enlarged-board reaction overlay is removed.
+Long-press and the list/player ellipsis share grouped core actions. On the main iOS climb
+list, holding a row or tapping its ellipsis opens the same lifted row and menu above the
+dimmed list. Other surfaces keep their native menus. Logbook Edit entry and player controls
+stay contextual; the player omits actions already shown as buttons. Menu descriptors stay
+bound to the climb and exact queue slot. The old enlarged-board reaction overlay is removed.
 
 | Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
 | --- | --- | --- | --- | --- | --- |
