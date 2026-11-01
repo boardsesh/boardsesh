@@ -927,7 +927,8 @@
       "backMyPick": "Mon choix",
       "backOnWall": "Au mur",
       "backToMyPickNamed": "Revenir à mon choix : {{name}}",
-      "backToWallNamed": "Revenir au bloc au mur : {{name}}"
+      "backToWallNamed": "Revenir au bloc au mur : {{name}}",
+      "previewNotLit": "Aperçu · pas sur la board"
     },
     "wallControl": {
       "connectHint": "Connecte ta board et allume ce bloc",
@@ -959,7 +960,8 @@
       "onWall": "Au mur",
       "lightAgainHint": "Le rallume sur la board",
       "putOnGymBoard": "Allumer sur la {{board}}",
-      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc"
+      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc",
+      "driveWindowValue": "Chaque bloc choisi s’allume, il reste {{time}}"
     },
     "setActive": "Activer",
     "paneEmpty": {

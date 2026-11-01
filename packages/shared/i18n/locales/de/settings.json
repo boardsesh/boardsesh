@@ -493,7 +493,9 @@
       "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
       "onTapDescription": "Jedes Antippen in einer Liste beleuchtet den Boulder, ohne Zeitlimit. Ist das aus, öffnet das Antippen eine Vorschau.",
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
-      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste in deine Warteschlange und zeigt den angetippten Boulder als Vorschau. Das Board behält seinen Boulder, bis du Am Board beleuchten wählst."
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste in deine Warteschlange und zeigt den angetippten Boulder als Vorschau. Das Board behält seinen Boulder, bis du Am Board beleuchten wählst.",
+      "putOnBoardDrivesInSession": "Auch in einer Session",
+      "putOnBoardDrivesInSessionDescription": "Wenn an, beleuchtet Am Board beleuchten in einer Session auch die nächsten Boulder, die du wählst. Aus, beleuchtet es nur diesen einen Boulder."
     },
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",

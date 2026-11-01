@@ -927,7 +927,8 @@
       "backMyPick": "My pick",
       "backOnWall": "On the wall",
       "backToMyPickNamed": "Back to my pick: {{name}}",
-      "backToWallNamed": "Back to the climb on the wall: {{name}}"
+      "backToWallNamed": "Back to the climb on the wall: {{name}}",
+      "previewNotLit": "Preview · not on the wall"
     },
     "wallControl": {
       "connectHint": "Connects your board and lights this climb",
@@ -959,7 +960,8 @@
       "onWall": "On the wall",
       "lightAgainHint": "Lights it again on the board",
       "putOnGymBoard": "Put on {{board}}",
-      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb"
+      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb",
+      "driveWindowValue": "Each pick lights, {{time}} left"
     },
     "setActive": "Set active",
     "paneEmpty": {

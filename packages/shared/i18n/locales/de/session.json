@@ -927,7 +927,8 @@
       "backMyPick": "Meine Wahl",
       "backOnWall": "Am Board",
       "backToMyPickNamed": "Zurück zu meiner Wahl: {{name}}",
-      "backToWallNamed": "Zurück zum Boulder am Board: {{name}}"
+      "backToWallNamed": "Zurück zum Boulder am Board: {{name}}",
+      "previewNotLit": "Vorschau · nicht am Board"
     },
     "wallControl": {
       "connectHint": "Verbindet dein Board und beleuchtet diesen Boulder",
@@ -959,7 +960,8 @@
       "onWall": "Am Board",
       "lightAgainHint": "Beleuchtet ihn noch mal am Board",
       "putOnGymBoard": "Am {{board}} beleuchten",
-      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder"
+      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder",
+      "driveWindowValue": "Jeder gewählte Boulder wird beleuchtet, noch {{time}}"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

@@ -927,7 +927,8 @@
       "backMyPick": "Mi elección",
       "backOnWall": "En el plafón",
       "backToMyPickNamed": "Volver a mi elección: {{name}}",
-      "backToWallNamed": "Volver al bloque del plafón: {{name}}"
+      "backToWallNamed": "Volver al bloque del plafón: {{name}}",
+      "previewNotLit": "Vista previa · no está en el plafón"
     },
     "wallControl": {
       "connectHint": "Conecta tu plafón y enciende este bloque",
@@ -959,7 +960,8 @@
       "onWall": "En el plafón",
       "lightAgainHint": "Lo vuelve a encender en el plafón",
       "putOnGymBoard": "Ponerlo en el {{board}}",
-      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque"
+      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque",
+      "driveWindowValue": "Cada bloque que elijas se enciende, quedan {{time}}"
     },
     "setActive": "Activar",
     "paneEmpty": {

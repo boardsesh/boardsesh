@@ -1,5 +1,5 @@
 Novedades de 2.7:
-- Tocar muestra sin encender. Poner en el plafón enciende y tus siguientes 45 s; MoonBoard hasta que pares. Desliza el botón a la izquierda para seguir al mando.
+- Tocar muestra sin encender. Poner en el plafón enciende y tus siguientes 45 s; MoonBoard hasta que pares. Desliza el botón a la izquierda para seguir al mando; tócalo para parar.
 - Italiano. Cuenta atrás y tono de descanso en la notificación.
 - Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
 - Ordena y filtra playlists, Favoritos y Proyectos.

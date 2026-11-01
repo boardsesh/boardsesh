@@ -13,7 +13,8 @@ name: help clip - Start playlist? confirm
 # Seed the queue with a few climbs before recording: on the Climbs tab, swipe
 # two or three rows left-to-right.
 #
-# Switches this take needs (Settings > Board): turn ON Tapping a playlist loads
+# Switches this take needs: run start-playlist-queue-setup.yaml first (or by hand,
+# Settings > Board): turn ON Tapping a playlist loads
 # it into my queue, and leave Light the board when I tap a climb OFF (the 2.7
 # default). The tap then loads the list into Up next, keeps the wall's climb and
 # previews the tapped one. With the playlist switch off the tap just previews and

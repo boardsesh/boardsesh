@@ -927,7 +927,8 @@
       "backMyPick": "La mia scelta",
       "backOnWall": "In parete",
       "backToMyPickNamed": "Torna alla mia scelta: {{name}}",
-      "backToWallNamed": "Torna al blocco in parete: {{name}}"
+      "backToWallNamed": "Torna al blocco in parete: {{name}}",
+      "previewNotLit": "Anteprima · non sul pannello"
     },
     "wallControl": {
       "connectHint": "Connette il tuo pannello e illumina questo blocco",
@@ -959,7 +960,8 @@
       "onWall": "In parete",
       "lightAgainHint": "Lo illumina di nuovo in parete",
       "putOnGymBoard": "Metti sul {{board}}",
-      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco"
+      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco",
+      "driveWindowValue": "Ogni blocco che scegli si illumina, restano {{time}}"
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {

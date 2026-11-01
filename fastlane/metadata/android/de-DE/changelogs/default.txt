@@ -1,5 +1,5 @@
 Neu in 2.7:
-- Antippen stöbert ohne Licht. Am Board beleuchten, dann leuchten 45 s lang deine nächsten; MoonBoard bis zum Stopp. Taste nach links wischen: weiter beleuchten.
+- Antippen stöbert ohne Licht. Am Board beleuchten, dann leuchten 45 s lang deine nächsten; MoonBoard bis zum Stopp. Taste nach links wischen: weiter beleuchten; antippen stoppt.
 - Jetzt auf Italienisch. Pausen-Countdown und Endton in der Benachrichtigung.
 - Workouts in Blöcken. Wischen bleibt in deiner Liste; als Nächstes oder Letztes spielen.
 - Playlists, Gelikt und Projekte sortieren/filtern.
