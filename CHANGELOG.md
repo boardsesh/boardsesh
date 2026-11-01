@@ -4,19 +4,34 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-01
+
+### New
+
+- The board button frosts only while your swipes light climbs. ([#7170](https://github.com/boardsesh/boardsesh/pull/7170))
+
 ## 2026-10-31
 
 ### Improved
 
+- Clearer help for the wall button ([#7177](https://github.com/boardsesh/boardsesh/pull/7177))
+  Learn when changing climbs lights the wall, how to start driving, and how to stop without disconnecting.
 - Save climbs, sends and grades on your spray wall offline. ([#6911](https://github.com/boardsesh/boardsesh/pull/6911))
   Try your crew's drafts on walls you can access.
 
 ### Fixed
 
 - Busy-wall questions name whoever put the climb up, even when someone else queued it. ([#7179](https://github.com/boardsesh/boardsesh/pull/7179))
+- Italian climbers can read draft save messages and support choices in Italian. ([#7178](https://github.com/boardsesh/boardsesh/pull/7178))
+- Your board’s controls carry the climb’s hold colours, including before you connect. Walls without lights keep their current colours. ([#7175](https://github.com/boardsesh/boardsesh/pull/7175))
+- See when a climb was last on the wall, and swipe its capsule away. ([#7169](https://github.com/boardsesh/boardsesh/pull/7169))
+  Your climb's hold colours now fill its capsule while you hold the board.
 - On a US iPhone, Acknowledgements now links straight to the Boardsesh support page ([#7172](https://github.com/boardsesh/boardsesh/pull/7172))
 - Scroll climbs and your logbook without accidentally opening row actions. ([#7161](https://github.com/boardsesh/boardsesh/pull/7161))
+- Scroll climbs and your logbook without accidentally opening row actions. ([#7165](https://github.com/boardsesh/boardsesh/pull/7165))
+- Pick a board from the player without the screen flashing blank. ([#7159](https://github.com/boardsesh/boardsesh/pull/7159))
 - Opening Boardsesh for the first time from a shared link no longer crashes after the privacy prompt ([#7153](https://github.com/boardsesh/boardsesh/pull/7153))
+- The player no longer shows when a climb was last on the wall, so the controls stay uncluttered. ([#7157](https://github.com/boardsesh/boardsesh/pull/7157))
 
 ## 2026-10-30
 
@@ -26,15 +41,29 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Swipe the board button left to drive the wall: every climb you pick lights up, even in a crew session. ([#7138](https://github.com/boardsesh/boardsesh/pull/7138))
+  The board button now says what it does: Put on board, Disconnect board. Tap "You are driving the wall" to go back to browsing.
 - Your climbing calendar now shows months and weekdays, and tapping a day shows how many climbs you logged ([#7112](https://github.com/boardsesh/boardsesh/pull/7112))
 
 ### Improved
 
+- At a gym with several boards, your first connection shows the board you picked. Search for any board still finds the rest. ([#7152](https://github.com/boardsesh/boardsesh/pull/7152))
+  Calendar and board editing show the missing Italian labels.
+- On Android, the notification's bulb shows "Connecting…" while it looks for your board ([#7099](https://github.com/boardsesh/boardsesh/pull/7099))
+  With no saved board, the bulb opens Boardsesh so you can pick your board
+- Your Live Activity bulb only reconnects a board paired successfully in the app. ([#7143](https://github.com/boardsesh/boardsesh/pull/7143))
 - Rename your gym's boards and correct their settings from gym management. Boardsesh admins can also find registered boards in one searchable list. ([#7123](https://github.com/boardsesh/boardsesh/pull/7123))
+- When a busy wall asks, Put mine up takes you straight to your climb's board. ([#7133](https://github.com/boardsesh/boardsesh/pull/7133))
+- At a gym with several boards, a climb from another board shows "Put on Kilter" (or MoonBoard, Tension): one tap takes you there and lights it. ([#7117](https://github.com/boardsesh/boardsesh/pull/7117))
+  Coming back to a board you already used reconnects without the board list.
 
 ### Fixed
 
 - See recent climbing on your board, even without starting a session. ([#6617](https://github.com/boardsesh/boardsesh/pull/6617))
+- Alone at the board, Put on board always gets you driving again ([#7146](https://github.com/boardsesh/boardsesh/pull/7146))
+  Putting a climb up from search results keeps your place in the list
+  On Android, swiping the wall button near the screen edge no longer closes the player
+- Rapid avatar taps open one Account menu. ([#7132](https://github.com/boardsesh/boardsesh/pull/7132))
 - Scrolling climb lists no longer stops and slides a row open halfway through ([#7108](https://github.com/boardsesh/boardsesh/pull/7108))
 - Keep your wall feed updating after a connection failure, without switching boards. ([#7089](https://github.com/boardsesh/boardsesh/pull/7089))
 - The tab underline on your Android profile now fits the tab name ([#7110](https://github.com/boardsesh/boardsesh/pull/7110))
@@ -47,16 +76,44 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- On an unfolded iPhone Duo, the mini player is a slim capsule and your heart and share buttons stay in view. ([#7094](https://github.com/boardsesh/boardsesh/pull/7094))
+- On iPad, Wall display is one tap away on the mini player. ([#7092](https://github.com/boardsesh/boardsesh/pull/7092))
+- On iPad, the mini player's ⋯ has quick Playlist and Share buttons right next to the bar. ([#7090](https://github.com/boardsesh/boardsesh/pull/7090))
+- On iPad the mini player works like Music's: skip on the left, log on the right, and ⋯ for everything else. ([#7086](https://github.com/boardsesh/boardsesh/pull/7086))
 - Every Android tab now says where you are at the top, with your board or feed right under the title ([#6946](https://github.com/boardsesh/boardsesh/pull/6946))
   The top bar stays flat until you scroll, then shades in so the list reads cleanly underneath
+- On a big iPad screen, the Climbs list shows two columns with bigger climb pictures, so you can see the holds before you tap ([#7054](https://github.com/boardsesh/boardsesh/pull/7054))
+  Prefer one column? Switch it in Climb list settings
+- Log every go of a 4x4 straight from the mini player: tap Fell or Sent without opening the climb ([#6995](https://github.com/boardsesh/boardsesh/pull/6995))
+
+### Improved
+
+- Share climbs with frosted hold colours and clearer climb details. ([#7105](https://github.com/boardsesh/boardsesh/pull/7105))
+- On iPad in landscape with the bulb chosen, Put on the wall always sits fully on screen. ([#7073](https://github.com/boardsesh/boardsesh/pull/7073))
+- Finding your board over Bluetooth works right after the app updates, no restart needed ([#7036](https://github.com/boardsesh/boardsesh/pull/7036))
+- When the climber driving the wall turns off all its lights, the rest of the crew stops seeing that climb as on the wall. ([#7045](https://github.com/boardsesh/boardsesh/pull/7045))
+  When your crew picks a climb your board can't light, nobody watching your board sees the previous climb as still on the wall.
+- The Android notification's bulb now stops searching for a board that's off, tells you, and is ready for another tap ([#7088](https://github.com/boardsesh/boardsesh/pull/7088))
+- The Android session notification no longer shows a black box or the previous climb's board. ([#7084](https://github.com/boardsesh/boardsesh/pull/7084))
+- Opening your iPhone Duo with a climb up now shows it beside your tabs, not covering them ([#7071](https://github.com/boardsesh/boardsesh/pull/7071))
+- At a gym with several boards, Connect now finds the board your climb is on, so a MoonBoard climb connects to the MoonBoard. ([#7077](https://github.com/boardsesh/boardsesh/pull/7077))
+- A crewmate's workout now saves with the session, even when they leave early ([#7075](https://github.com/boardsesh/boardsesh/pull/7075))
+- Switching between one and two columns on iPad keeps you on the climb you were reading ([#7070](https://github.com/boardsesh/boardsesh/pull/7070))
 
 ### Fixed
 
 - Browse climbs without a refresh spinner appearing between goes. ([#7118](https://github.com/boardsesh/boardsesh/pull/7118))
+- One big button under your climb says what the wall is doing and does it: Connect board, Put on the wall, You have the board ([#7017](https://github.com/boardsesh/boardsesh/pull/7017))
+  When your swipes drive the board, the button glows with the colours of the climb's holds
+  See who has the board at a glance: their face sits on the button
+  In a crew, if someone puts a climb up while you browse, you choose to keep theirs or put yours up, without anything covering your buttons
+  Nothing covers the climb any more
+  Prefer the old lightbulb? Switch back in View options › Board control
 - Filter chips on Android line up with the search bar and scroll all the way to the screen edge ([#7111](https://github.com/boardsesh/boardsesh/pull/7111))
 - With VoiceOver on, the bar at the bottom opens the full player, and VoiceOver can now read the board and its buttons. ([#7098](https://github.com/boardsesh/boardsesh/pull/7098))
 - Climb thumbnails on iPad stay put when you close the player ([#7096](https://github.com/boardsesh/boardsesh/pull/7096))
 - Friends who join your session on your home wall see and light your wall, not a copy. ([#7049](https://github.com/boardsesh/boardsesh/pull/7049))
+- Your mini player is now a slim capsule, centred under your climbs, on iPad and on an unfolded iPhone Duo. ([#7083](https://github.com/boardsesh/boardsesh/pull/7083))
 - Scrolling climb lists feels steadier: rows no longer slide open while you scroll ([#7080](https://github.com/boardsesh/boardsesh/pull/7080))
 - The Android session notification shows your climb's board again instead of a black box. ([#7040](https://github.com/boardsesh/boardsesh/pull/7040))
 - Delete several logbook entries in a row without waiting ([#7044](https://github.com/boardsesh/boardsesh/pull/7044))
@@ -65,21 +122,38 @@ A new version shipped to the App Store and Play Store.
 - On iPad, Log ascent opens with the climb's grade in view, not V0 ([#7072](https://github.com/boardsesh/boardsesh/pull/7072))
 - Un-liking your last climb offline now shows 0 climbs on your Liked list. ([#7033](https://github.com/boardsesh/boardsesh/pull/7033))
 - Previous and Next in the Android notification now light the whole climb on your MoonBoard ([#7034](https://github.com/boardsesh/boardsesh/pull/7034))
+- The player bar on iPad sits centred, with its buttons evenly spaced ([#7053](https://github.com/boardsesh/boardsesh/pull/7053))
+- Italian: if Sessions or Progress can't load, the error message now reads in Italian instead of English. ([#7032](https://github.com/boardsesh/boardsesh/pull/7032))
 - Joining a crew's session at a gym puts you on the same wall, with its history. ([#7037](https://github.com/boardsesh/boardsesh/pull/7037))
 - Your crew sees your name and photo when you host a session from an iPhone ([#7035](https://github.com/boardsesh/boardsesh/pull/7035))
+- The last climb in a list stays clear of the bottom bar when it pops back up ([#7006](https://github.com/boardsesh/boardsesh/pull/7006))
+  On iPad and iPhone Duo, the rest timer sits right above your current climb
+  The Session screen hides the rest timer until it starts counting, so Start no longer sits on a waiting timer
 
 ## 2026-10-28
 
 ### New
 
 - When something won't load, the screen now tells you what failed and whether it's our server, with a clear Try again button. ([#7021](https://github.com/boardsesh/boardsesh/pull/7021))
+- Finish a workout and your session summary shows it block by block: every rep of your 4x4, what you sent, what you tried. Your session page and feed card show it too. ([#7002](https://github.com/boardsesh/boardsesh/pull/7002))
+- Pick which buttons sit on the mini player (next, previous, mirror, favorite, queue, share, angle) and their order, in View options or Settings. ([#6952](https://github.com/boardsesh/boardsesh/pull/6952))
+- Flip a climb from the mini player on Tension, Decoy and Woods boards ([#6967](https://github.com/boardsesh/boardsesh/pull/6967))
+- Stand your iPhone Duo half open on a table and the board sits above the fold, with your tick and next buttons below it. ([#6992](https://github.com/boardsesh/boardsesh/pull/6992))
+- On iPhone Duo, the mini player now has your heart, angle and share, so the player's buttons stay in reach ([#6961](https://github.com/boardsesh/boardsesh/pull/6961))
 - Browse three board previews on one Waveshare using its buttons. ([#6989](https://github.com/boardsesh/boardsesh/pull/6989))
   Reconnect to compatible MoonBoard controllers that advertise a serial number.
+- Find Boardsesh in Italian on the App Store and Google Play. ([#6973](https://github.com/boardsesh/boardsesh/pull/6973))
+  Open Wall display from the Climbs menu on iPad.
 - Share your gym with the crew by link while keeping it out of search and maps. ([#6985](https://github.com/boardsesh/boardsesh/pull/6985))
 
 ### Fixed
 
 - Recognize your spray wall by its thumbnail in the quick switcher. ([#6969](https://github.com/boardsesh/boardsesh/pull/6969))
+- The mini player's lightbulb stays beside the tick as the bar expands. ([#7012](https://github.com/boardsesh/boardsesh/pull/7012))
+  Your tick keeps its normal color, even on climbs you've sent.
+- Your saved MoonBoard keeps its own history with a serial-less controller. A Tension climb stops claiming it is lit when you switch to MoonBoard. ([#7011](https://github.com/boardsesh/boardsesh/pull/7011))
+- Log mirrored climbs correctly from actions and queue history. ([#7007](https://github.com/boardsesh/boardsesh/pull/7007))
+  Replay a queued climb with its saved mirror direction.
 - Your saved MoonBoard keeps its own wall history when its controller has no serial. ([#7005](https://github.com/boardsesh/boardsesh/pull/7005))
 - Next no longer brings back a climb you already did earlier in the session ([#6996](https://github.com/boardsesh/boardsesh/pull/6996))
 - Connecting through the lightbulb finds the correct saved board before connecting. ([#6998](https://github.com/boardsesh/boardsesh/pull/6998))
@@ -95,7 +169,15 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Skip to the next climb from the bar above the tabs, without opening the climb ([#6951](https://github.com/boardsesh/boardsesh/pull/6951))
+- See at a glance whether the climb is lit on the wall: a badge on the board says On the wall, Preview, or Not on the wall ([#6954](https://github.com/boardsesh/boardsesh/pull/6954))
+  Put on the wall works before you've connected: one tap finds your board and lights the climb
+  The bulb now says Connect or On, so you know what it does
 - Add your gym from the directory and link boards already on Boardsesh. ([#6970](https://github.com/boardsesh/boardsesh/pull/6970))
+- Boardsesh now speaks Italian: pick Italiano in Settings › General › Language ([#6971](https://github.com/boardsesh/boardsesh/pull/6971))
+  Phones set to Italian open the app in Italian, including the Lock Screen controls
+- The climb at the top of your list now shows its grade and sends, with the face of whoever put it up ([#6948](https://github.com/boardsesh/boardsesh/pull/6948))
+  Tap "You have the board" to let go of the board; hold it for board controls
 
 ### Fixed
 
@@ -114,14 +196,34 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- On iPad, header buttons sit neatly beside the sidebar and tab bar. ([#6913](https://github.com/boardsesh/boardsesh/pull/6913))
+- On iPad in landscape, the board sits beside your Up next list, logbook and beta ([#6914](https://github.com/boardsesh/boardsesh/pull/6914))
+- Mount an iPad at your board and open Wall display: the climb on the wall, full screen and big enough to read from the mat ([#6916](https://github.com/boardsesh/boardsesh/pull/6916))
+  Find it in the Climbs ⋯ menu or the board sheet; tap the screen to bring back Exit
+- On iPad, climbs get the whole screen: the current climb sits in a mini player at the bottom, and tapping it opens the board full screen, like Music. ([#6912](https://github.com/boardsesh/boardsesh/pull/6912))
+- On iPhone Duo, your notifications, add and history buttons sit in the side bar next to your tabs. ([#6905](https://github.com/boardsesh/boardsesh/pull/6905))
+- Open your iPhone Duo and the board sits beside your list, with the current climb on one half and everything else on the other. ([#6904](https://github.com/boardsesh/boardsesh/pull/6904))
+  Build a workout on an open Duo and see the planned climbs next to your blocks.
+- See at a glance that you're connected to the board, even when the bottom bar is tucked away ([#6888](https://github.com/boardsesh/boardsesh/pull/6888))
+  Climbs shows "You have the board" at the top while you hold it; tap it for board controls
+- On iPhone, Filters now looks and feels like iOS Settings, and opens at half height so you can watch your list change. ([#6887](https://github.com/boardsesh/boardsesh/pull/6887))
+  Pick which quick filters show above your climbs, and their order, in Settings › Climbs & grades › Quick filters.
+- Climbs now sits at the right end of the tab bar. Tap it again to open Filters and search by climb name. ([#6866](https://github.com/boardsesh/boardsesh/pull/6866))
 - A crew 4x4 stays on one climb through your reps and moves the wall once when the set rest ends. ([#6829](https://github.com/boardsesh/boardsesh/pull/6829))
 - Rests now show over the board: see what's next and skip the wait. Finish a workout and get a recap of your sends, tries and skips. ([#6835](https://github.com/boardsesh/boardsesh/pull/6835))
+
+### Improved
+
+- Your lock-screen Live Activity now follows the queue's Up next list, so it shows the right climb after you finish one. ([#6771](https://github.com/boardsesh/boardsesh/pull/6771))
+- The Lock Screen card no longer says your session ended when it just lost signal. It keeps your climb and rest clock and asks you to open Boardsesh to refresh ([#6841](https://github.com/boardsesh/boardsesh/pull/6841))
 
 ### Fixed
 
 - Your profile no longer says you've sent 0 climbs when your totals are still loading or didn't come through. ([#6944](https://github.com/boardsesh/boardsesh/pull/6944))
+- Swipe down to close the climb player again. ([#6910](https://github.com/boardsesh/boardsesh/pull/6910))
 - Keep Bluetooth reconnects on the saved board you selected after reopening. ([#6894](https://github.com/boardsesh/boardsesh/pull/6894))
 - Old climb links now land on the current climb URL. ([#6892](https://github.com/boardsesh/boardsesh/pull/6892))
+- Boardsesh fits the iPhone Duo's closed screen: nothing hides behind the side tab bar. ([#6900](https://github.com/boardsesh/boardsesh/pull/6900))
 - Lit holds stay visible when you open or edit a climb. ([#6899](https://github.com/boardsesh/boardsesh/pull/6899))
 - Choose another saved board's controller and confirm which wall you're connecting to. ([#6883](https://github.com/boardsesh/boardsesh/pull/6883))
 - Following a setter no longer sends a follow request to someone else who happens to use the same name on another board. ([#6764](https://github.com/boardsesh/boardsesh/pull/6764))
@@ -192,11 +294,13 @@ A new version shipped to the App Store and Play Store.
 - Your rest timer now follows the workout you're running. 4x4 rests 0:10 between climbs and 0:30 between rounds, Limit Bouldering rests 3:00 after each send, and On the Minute starts a new climb every beat. ([#6729](https://github.com/boardsesh/boardsesh/pull/6729))
 - Fill a workout block from climbs you've sent or liked. Pick Sent or Liked under Climb bias and the block draws only from your own logbook and hearts, whatever their ascents or rating. ([#6755](https://github.com/boardsesh/boardsesh/pull/6755))
   Attempted works as before and keeps your Min ascents and Min rating.
+- Hear the rest run out: a soft tick in the last seconds and a clear tone when it ends, even with your phone on silent. Your music dips for a moment and comes right back. ([#6732](https://github.com/boardsesh/boardsesh/pull/6732))
 - Workouts now pick climbs you haven't sent first, and only fall back to ones you have when a grade runs short, marked as sent. New "Skip what I've sent", "Skip what I've tried" and "Benchmarks only" switches in a block's Climb filters, and Benchmarks only now finds the real benchmarks on Kilter. ([#6749](https://github.com/boardsesh/boardsesh/pull/6749))
 
 ### Fixed
 
 - Previous goes back to the queued climb you just played, even after you swiped up and down the list. ([#6834](https://github.com/boardsesh/boardsesh/pull/6834))
+- Climbs is back in the tab bar with its name, and search sits at the top of the list. Tap Climbs again to start typing. ([#6827](https://github.com/boardsesh/boardsesh/pull/6827))
 - A send you logged offline can no longer end up on someone else's account when they sign in on your phone. ([#6825](https://github.com/boardsesh/boardsesh/pull/6825))
   Climbs from setters you follow show under Following right after you sign in, no restart needed.
 - Signing in on a shared phone no longer shows the last climber's offline boards. ([#6821](https://github.com/boardsesh/boardsesh/pull/6821))
@@ -249,6 +353,7 @@ A new version shipped to the App Store and Play Store.
 - Sends and stars are back under the climb name in the player ([#6746](https://github.com/boardsesh/boardsesh/pull/6746))
   The list you're playing from now sits at the top of the player, and long list names no longer hide your place in it
 - Climbs without a real benchmark grade no longer show the benchmark mark in your logbook, and the Benchmarks filter skips them. ([#6751](https://github.com/boardsesh/boardsesh/pull/6751))
+- The Lock Screen rest countdown now matches the rest timer in the app. ([#6728](https://github.com/boardsesh/boardsesh/pull/6728))
 - Logging a send and offline sync keep working on Android right after the app installs an update. ([#6710](https://github.com/boardsesh/boardsesh/pull/6710))
 - Workout previews now pick climbs by the grade you see. With Boardsesh grades on, a V5 block shows V5 climbs, not a mix of V4+ and V5. ([#6720](https://github.com/boardsesh/boardsesh/pull/6720))
 - Flick quickly between climbs in either direction while keeping the holds visible. ([#6526](https://github.com/boardsesh/boardsesh/pull/6526))
@@ -302,6 +407,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Boardsesh now asks for Bluetooth when you first look for your board, not at launch. ([#6577](https://github.com/boardsesh/boardsesh/pull/6577))
 - Closing a climb no longer freezes the app when someone else takes over the board ([#6629](https://github.com/boardsesh/boardsesh/pull/6629))
 
 ## 2026-10-21
@@ -357,6 +463,11 @@ A new version shipped to the App Store.
 
 - The board scan now finds MoonBoards and newer Kilter boxes, closest first. ([#6574](https://github.com/boardsesh/boardsesh/pull/6574))
   Found a board we don't know yet? Pick it from your gym or set it up as your own.
+- Your rest timer now counts down on the Lock Screen and in the Dynamic Island ([#6537](https://github.com/boardsesh/boardsesh/pull/6537))
+  Android: the session notification shows your rest countdown too
+  Turn it off any time with "Show on Lock Screen" in the rest timer
+  The Lock Screen card now speaks Spanish, French and German
+  Tension and Font grades keep their colour on the Lock Screen
 - Rerun a recent search in one tap: your last 10 searches now sit as chips in Filters. ([#6542](https://github.com/boardsesh/boardsesh/pull/6542))
   Don't use the Recent chip? Unpin it there to free up your filter row. Your searches stay saved.
 - You'll now hear about comments on your sessions, climbs, playlists, boards and gyms, and when someone reports one of your climbs. ([#6557](https://github.com/boardsesh/boardsesh/pull/6557))
@@ -371,6 +482,7 @@ A new version shipped to the App Store.
 
 ### Fixed
 
+- Playlist headers show their colour cleanly, without the blurred strip under the status bar ([#6525](https://github.com/boardsesh/boardsesh/pull/6525))
 - Bluetooth scan lists each private board in range as its own row ([#6552](https://github.com/boardsesh/boardsesh/pull/6552))
 - The Bluetooth picker remembers a private board you connected to while signed in ([#6553](https://github.com/boardsesh/boardsesh/pull/6553))
 - Downloaded boards stay downloaded: the app no longer re-downloads every board about once a week. ([#6560](https://github.com/boardsesh/boardsesh/pull/6560))
