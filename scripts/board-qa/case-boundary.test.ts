@@ -208,10 +208,10 @@ describe('independent physical case boundaries', () => {
     ).toEqual([
       { openLink: 'com.boardsesh.app://record' },
       { extendedWaitUntil: { visible: { id: 'session-start' }, timeout: 10000 } },
-      { assertNotVisible: { id: 'session-active-.+' } },
+      { assertNotVisible: { id: 'session-presence-.+' } },
     ]);
   });
-  it.each(['mixedBoards', 'sessions'] as const)(
+  it.each(['solo', 'mixedBoards', 'sessions'] as const)(
     'blocks %s before UI actions when any board is linked',
     async (scope) => {
       const current = harness();
@@ -259,9 +259,7 @@ describe('independent physical case boundaries', () => {
   it('requires mounted iOS navigation before sending its account route and preserves infrastructure failure', async () => {
     const current = harness();
     const cause = new QaFailure('Native readiness query timed out', 'infrastructure');
-    current.phones.ios.flow.mockImplementation(async (name) => {
-      if (name === 'wait-ios-app-ready') throw cause;
-    });
+    current.phones.ios.restart.mockRejectedValue(cause);
     await expect(current.suite.mixedBoards()).rejects.toBe(cause);
     expect(current.phones.ios.flow.mock.calls.some(([name]) => name === 'inspect-account')).toBe(false);
     expect(current.phones.android.restart).not.toHaveBeenCalled();
@@ -341,4 +339,16 @@ describe('explicit physical CLI scopes', () => {
     expect(output.mock.calls[0][0]).toContain('mixed = 6 cross-board cases');
     expect(output.mock.calls[0][0]).toContain('all = 18 cases');
   });
+});
+
+it('retains an ambiguous session creation for recovery and blocks subsequent boundaries', async () => {
+  const current = harness();
+  current.suite['sessionMayExist'] = true;
+  await current.suite.failureArtifacts();
+  expect(JSON.parse(readFileSync(join(current.directory, 'recovery.json'), 'utf8'))).toMatchObject({
+    sessionId: null,
+    sessionMayExist: true,
+  });
+  await expect(current.suite.solo()).rejects.toMatchObject({ kind: 'blocked' });
+  expect(current.phones.ios.restart).not.toHaveBeenCalled();
 });

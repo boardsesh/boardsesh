@@ -1,0 +1,11 @@
+appId: ${APP_ID}
+name: Wait for and close the required recap after this QA creator ends
+---
+- extendedWaitUntil:
+    visible: ${SESSION_SUMMARY_LABEL}
+    timeout: 30000
+- tapOn:
+    id: header-leading-action
+- extendedWaitUntil:
+    notVisible: ${SESSION_SUMMARY_LABEL}
+    timeout: 30000

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,41 @@ function compileSuite(name, sources, includeFlags, extraFlags = [], unity = true
   run(executable, []);
 }
 
+// Read the real gym logging flags, including inherited defaults and unflags.
+// The regression must fail if production stops including the override header
+// or accidentally restores inherited Arduino INFO logging.
+function gymLoggingFlags() {
+  const project = join(repositoryRoot, 'embedded/projects/board-controller');
+  const sections = new Map();
+  let section;
+  let option;
+  for (const rawLine of readFileSync(join(project, 'platformio.ini'), 'utf8').split('\n')) {
+    const line = rawLine.split(';')[0].trim();
+    if (!line) continue;
+    const heading = line.match(/^\[([^\]]+)\]$/);
+    if (heading) { section = heading[1]; sections.set(section, new Map()); option = undefined; continue; }
+    const assignment = rawLine.match(/^(\w+)\s*=\s*(.*)$/);
+    if (assignment) {
+      option = assignment[1];
+      sections.get(section)?.set(option, assignment[2].trim());
+    } else if (option) {
+      sections.get(section).set(option, `${sections.get(section).get(option)}\n${line}`);
+    }
+  }
+  function expand(sectionName, optionName) {
+    const content = sections.get(sectionName)?.get(optionName) ?? '';
+    return content.replace(/\$\{([^}]+)\.([^}.]+)\}/g, (_match, parent, key) => expand(parent, key));
+  }
+  const excluded = new Set(expand('env:waveshare-amoled-gym', 'build_unflags').split('\n').map((line) => line.trim()));
+  const flags = [];
+  for (const line of expand('env:waveshare-amoled-gym', 'build_flags').split('\n').map((entry) => entry.trim())) {
+    if (excluded.has(line)) continue;
+    if (/^-D (CORE_DEBUG_LEVEL|CONFIG_NIMBLE_CPP_LOG_LEVEL)=/.test(line)) flags.push(...line.split(/\s+/));
+    if (line === '-include src/gym/qa_logging.h') flags.push('-include', join(project, 'src/gym/qa_logging.h'));
+  }
+  return flags;
+}
+
 try {
   run(compilerC, [
     '-std=c11', '-O1', '-g', ...warningFlags, ...sanitizerFlags,
@@ -81,8 +116,11 @@ try {
     '-I', join(testRoot, 'test_fixture_client/mocks'), '-I', unityRoot,
   ]);
   compileSuite('geometry', [join(testRoot, 'test_amoled_preview/test_amoled_preview.cpp')], ['-I', unityRoot]);
+  compileSuite('qa-logging', [join(testRoot, 'test_fixture_qa_logging/test_fixture_qa_logging.cpp')], [
+    '-I', join(testRoot, 'test_fixture_qa_logging/mocks'),
+  ], ['-D', 'CONFIG_BT_NIMBLE_LOG_LEVEL=5', ...gymLoggingFlags()], false);
   compileSuite('qa-output', [join(testRoot, 'test_fixture_qa_output/test_fixture_qa_output.cpp')], [], [], false);
-  console.log(`[fixture-tests] All six suites passed${sanitize ? ' with address/undefined sanitizers' : ''}.`);
+  console.log(`[fixture-tests] All seven suites passed${sanitize ? ' with address/undefined sanitizers' : ''}.`);
 } finally {
   rmSync(buildDirectory, { recursive: true, force: true });
 }

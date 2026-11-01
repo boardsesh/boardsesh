@@ -262,9 +262,12 @@ int main() {
     // Read-only status and foreign heartbeats cannot prolong a dead run. Owner
     // heartbeats renew it; expiration restores concurrent policy without drops.
     fixtureBleTestMillis += 29000;
-    CHECK(fixture.snapshotQa("qa-run", snapshot, error) && snapshot.leaseRemainingMs == 30000);
+    CHECK(fixture.renewQa("qa-run", error));
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.leaseRemainingMs == 30000);
     fixtureBleTestMillis += 29000;
     CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.leaseRemainingMs == 1000);
+    CHECK(fixture.renewQa("", error));
+    CHECK(!fixture.renewQa("wrong-owner", error));
     CHECK(!fixture.snapshotQa("wrong-owner", snapshot, error));
     fixtureBleTestMillis += 1000;
     fixture.loop();

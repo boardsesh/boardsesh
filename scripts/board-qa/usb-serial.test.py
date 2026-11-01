@@ -11,8 +11,8 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
-from contextlib import redirect_stderr
+from unittest.mock import patch, Mock
+from contextlib import redirect_stderr, redirect_stdout
 
 specification = importlib.util.spec_from_file_location("usb_serial", Path(__file__).with_name("usb-serial.py"))
 transport = importlib.util.module_from_spec(specification)
@@ -91,6 +91,40 @@ class UsbTraceTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 transport.UsbTrace(filename)
             self.assertEqual(target.read_text(), "unchanged")
+
+
+class ReceiverTests(unittest.TestCase):
+    def test_receiver_failures_are_typed_immediate_and_private(self):
+        for failure in [b'BOARDSESH_QA {"broken":\xff\r\n', OSError("private device path")]:
+            connection = Mock(is_open=True, in_waiting=1)
+            if isinstance(failure, bytes):
+                connection.read.return_value = failure
+            else:
+                connection.read.side_effect = failure
+            terminate = Mock()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                transport.receive(connection, transport.UsbTrace(None), transport.TransportOutput(), terminate)
+            self.assertIn("transportError", json.loads(output.getvalue()))
+            self.assertNotIn("private", output.getvalue())
+            terminate.assert_called_once_with(1)
+
+    def test_ready_precedes_receiver_and_port_has_both_exclusive_guards(self):
+        connection = Mock()
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        output = io.StringIO()
+        def start_receiver():
+            self.assertEqual(json.loads(output.getvalue()), {"transportReady": True})
+        with patch.object(transport.serial, "Serial", return_value=connection) as constructor, patch.object(
+            transport.fcntl, "ioctl"
+        ) as ioctl, patch.object(transport.threading, "Thread") as thread, patch.object(
+            transport.sys, "stdin", io.StringIO("")
+        ), redirect_stdout(output):
+            thread.return_value.start.side_effect = start_receiver
+            transport.run_transport("unused fake port", transport.UsbTrace(None))
+        self.assertTrue(constructor.call_args.kwargs["exclusive"])
+        ioctl.assert_called_once_with(connection.fileno(), transport.termios.TIOCEXCL)
 
 
 if __name__ == "__main__":

@@ -2279,14 +2279,12 @@ export function PlayCore({
     registerPaneWallControl(owner, paneWallControl);
     return () => registerPaneWallControl(owner, null);
   }, [miniPlayerMirrors, paneWallControl]);
-  // Physical LED actions share the player's actual hold colours, even when
-  // swipes browse. A target gym board owns its LED contract; no-lights and spray
-  // controls retain their colours. The swipe overlay keeps its existing gate.
+  // Only confirmed physical driving needs hold geometry for the button's frost.
+  // Swipe previews use flat progress; a target gym board owns its LED contract.
   const wallGlowShown =
     !isAnonymous &&
     wallControlFrostHasLeds({ boardType: boardName, hasLeds: !boardIsLedless }, climbGymBoard) &&
-    (wallControlUsesFrost(wallControl) ||
-      (swipeToDriveEnabled && (wallControl.swipeAction === 'drive' || wallControl.drivePhase === 'arming')));
+    wallControlUsesFrost(wallControl);
   const wallGlowFrames = wallGlowShown
     ? playback.isAnimatable
       ? playback.currentFrameString

@@ -10,7 +10,13 @@ import { EXAMPLE_CONFIG, type Board, type Phone, type Role } from './config';
 import type { Driver } from './drivers';
 import { Evidence, QaFailure } from './evidence';
 import { Fixture, type FixtureStatus } from './fixture';
-import { Suite, QA_SESSION_QUEUE_QUERY, previousQueueWitness, type QaQueueSnapshot } from './suite';
+import {
+  Suite,
+  boardHistoryLabelPattern,
+  QA_SESSION_QUEUE_QUERY,
+  previousQueueWitness,
+  type QaQueueSnapshot,
+} from './suite';
 
 const directories: string[] = [];
 const roles: Role[] = ['ios', 'android'];
@@ -89,6 +95,7 @@ function soloHarness(initiallyDriving: boolean, deliverNext: boolean) {
   };
   const backend = new Backend(EXAMPLE_CONFIG, evidence);
   backend.users.set(EXAMPLE_CONFIG.phones.ios.email, 'qa-ios');
+  backend.users.set(EXAMPLE_CONFIG.phones.android.email, 'qa-android');
   vi.spyOn(backend, 'snapshot').mockImplementation(async () => {
     timeline.push(`presence:${presence.recent[0]?.seq ?? 0}`);
     return structuredClone(presence);
@@ -140,7 +147,9 @@ function soloHarness(initiallyDriving: boolean, deliverNext: boolean) {
       deliver(0, true);
     } else if (name === 'stop-driving') throw finished;
   });
-  phones.ios.hierarchy.mockImplementation(async () => `wall-control-lit-self-${driving ? 'driving' : 'idle'}`);
+  phones.ios.hierarchy.mockImplementation(
+    async () => `app-runtime-release-test-runtime-embedded wall-control-lit-self-${driving ? 'driving' : 'idle'}`,
+  );
   return {
     suite: new Suite(EXAMPLE_CONFIG, phones, fixture, backend, [board], evidence),
     phones,
@@ -162,18 +171,23 @@ describe('physical suite solo driving action order', () => {
       const completed = harness.suite.solo().catch((error: unknown) => error);
       await vi.advanceTimersByTimeAsync(35_000);
       expect(await completed).toBe(harness.finished);
-      expect(harness.phones.ios.flow.mock.calls.filter(([name]) => name !== 'assert-id').map(([name]) => name)).toEqual(
-        [
-          'open-climb',
-          'connect',
-          'open-climb',
-          'queue-next',
-          'return-current',
-          ...(driving ? [] : ['drive']),
-          'next',
-          'stop-driving',
-        ],
-      );
+      expect(
+        harness.phones.ios.flow.mock.calls
+          .filter(
+            ([name]) =>
+              name !== 'assert-id' && name !== 'inspect-account' && !name.endsWith('inspect-inactive-record.yaml'),
+          )
+          .map(([name]) => name),
+      ).toEqual([
+        'open-climb',
+        'connect',
+        'open-climb',
+        'queue-next',
+        'return-current',
+        ...(driving ? [] : ['drive']),
+        'next',
+        'stop-driving',
+      ]);
       expect(harness.phones.ios.flow).toHaveBeenCalledWith('return-current', {
         CURRENT_CLIMB_UUID: harness.board.catalog[0].uuid,
         CURRENT_CLIMB_LABEL_PATTERN: '.*Climb 0.*',
@@ -332,5 +346,23 @@ describe('physical suite named-board climb routes', () => {
       expect(variables?.CLIMB_LABEL_PATTERN).toContain(climb.name);
     }
     expect(start).toHaveBeenCalledOnce();
+  });
+});
+
+describe('native named-fixture history label', () => {
+  it('accepts the captured adjustable-wall label and fixed-wall label only', () => {
+    const pattern = new RegExp(boardHistoryLabelPattern('Boardsesh QA Kilter Homewall Full', 40));
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full • 40°')).toBe(true);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full')).toBe(true);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full • 45°')).toBe(false);
+    expect(pattern.test('Board history, Boardsesh QA Tension 2 Mirror • 40°')).toBe(false);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full extra')).toBe(false);
+    expect(pattern.test('Other Board history, Boardsesh QA Kilter Homewall Full')).toBe(false);
+  });
+  it('escapes fixture names and fractional angles instead of interpreting regex syntax', () => {
+    const pattern = new RegExp(boardHistoryLabelPattern('Fixture (A) + [B].', 22.5));
+    expect(pattern.test('Board history, Fixture (A) + [B]. • 22.5°')).toBe(true);
+    expect(pattern.test('Board history, Fixture (A) + [B]. • 22x5°')).toBe(false);
+    expect(pattern.test('Board history, Fixture A + B. • 22.5°')).toBe(false);
   });
 });

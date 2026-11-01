@@ -276,7 +276,10 @@ describe('physical iPhone request diagnostics', () => {
     await vi.advanceTimersByTimeAsync(14999);
     expect(finished).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    expect(await completed).toMatchObject({ kind: 'failed', message: 'Deadline exceeded: iPhone assertVisible' });
+    expect(await completed).toMatchObject({
+      kind: 'infrastructure',
+      message: 'Deadline exceeded: iPhone assertVisible',
+    });
     expect(harness.events()).toContain(
       '"status":null,"elapsedMs":15000,"timeoutMs":15000,"outcome":"timeout","errorName":"TimeoutError"',
     );
@@ -473,7 +476,18 @@ describe('fresh iPhone element-query retries', () => {
     expect(queries).toBeGreaterThan(1);
   });
 
-  it('fails persistent stale queries as infrastructure after at most three attempts', async () => {
+  it('allows a transition to remain stale longer than three attempts within its deadline', async () => {
+    vi.useFakeTimers();
+    let queries = 0;
+    const harness = await diagnosticDriver(async () => (++queries <= 6 ? stale() : Response.json({ value: [] })));
+    negative(harness.flow, 3000);
+    const completed = harness.driver.flow(harness.flow);
+    await vi.advanceTimersByTimeAsync(1500);
+    await completed;
+    expect(queries).toBe(7);
+  });
+
+  it('fails persistent stale queries as infrastructure within the assertion deadline', async () => {
     vi.useFakeTimers();
     let queries = 0;
     const harness = await diagnosticDriver(async () => {
@@ -482,9 +496,9 @@ describe('fresh iPhone element-query retries', () => {
     });
     negative(harness.flow, 30000);
     const completed = harness.driver.flow(harness.flow).catch((error: unknown) => error);
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(30000);
     expect(await completed).toMatchObject({ kind: 'infrastructure', webdriverError: 'stale element reference' });
-    expect(queries).toBe(3);
+    expect(queries).toBe(120);
   });
 
   it('stops a stale retry sequence at the shared assertion deadline', async () => {
@@ -778,4 +792,29 @@ finally:
     writePlist(original, { WebDriverAgentRunner: { TestHostBundleIdentifier: 'someone.else.runner' } });
     expect(() => prepareBoardQaIosLaunch(stage)).toThrow();
   });
+});
+
+it('waits for mounted iOS navigation inside every restart before resolving', async () => {
+  vi.useFakeTimers();
+  let queries = 0;
+  const harness = await diagnosticDriver(async (url) => {
+    if (url.pathname.endsWith('/elements')) {
+      queries++;
+      return Response.json({ value: queries === 1 ? [] : [{ ELEMENT: 'native-tab' }] });
+    }
+    return Response.json({ value: null });
+  });
+  let restarted = false;
+  const completed = harness.driver.restart().then(() => {
+    restarted = true;
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(restarted).toBe(false);
+  expect(harness.calls.filter((call) => call.path.includes('/wda/apps/')).map((call) => call.path)).toEqual([
+    '/session/owned-session/wda/apps/terminate',
+    '/session/owned-session/wda/apps/activate',
+  ]);
+  await vi.advanceTimersByTimeAsync(250);
+  await completed;
+  expect(queries).toBe(4);
 });

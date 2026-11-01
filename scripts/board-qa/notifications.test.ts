@@ -23,3 +23,10 @@ describe('scoped Android notification action', () => {
     expect(previousNotificationTarget('<node><node text="Boardsesh"/><node text="DUNES"/></node>', 'DUNES')).toBeNull();
   });
 });
+
+it('decodes XML entities once and tolerates a malformed transient dump', () => {
+  expect(previousNotificationTarget(notification('Boardsesh', '&amp;lt;'), '&lt;')).toEqual({ x: 30, y: 40 });
+  expect(previousNotificationTarget(notification('Boardsesh', '&amp;lt;'), '<')).toBeNull();
+  expect(previousNotificationTarget('<node><node text="DUNES"/>', 'DUNES')).toBeNull();
+  expect(previousNotificationTarget('ERROR: null root node', 'DUNES')).toBeNull();
+});

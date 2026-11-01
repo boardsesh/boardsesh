@@ -70,10 +70,10 @@ unset. Start with Put on board or Disconnect board and visible chevrons. Record
 swiping the **button** left until Let go to light every climb, releasing into
 You are driving the wall, swiping the **board** to another climb, and tapping
 **You are driving the wall** to stop. The final label is Disconnect board,
-still frosted: the link stays up. Physical-board buttons are frosted at rest,
-including Put on board and Disconnect board. The label identifies driving;
-frost alone does not. The physical-board button has no visible frost wipe during
-the gesture, so review the release label and climb change instead.
+with a plain background: the link stays up. Put on board and non-driving
+Disconnect board stay plain. During the gesture the button shows flat amber
+progress; bokeh appears only when driving is confirmed. Review the release
+label, frosting and climb change together.
 `screenshotDrive=1` is for a driving **still**; it starts driving before the
 gesture and would skip the lesson this clip teaches.
 

@@ -17,11 +17,11 @@ function tree(xml: string): Node {
       [...match[1].matchAll(/([\w-]+)="([^"]*)"/g)].map((entry) => [
         entry[1],
         entry[2]
-          .replaceAll('&amp;', '&')
           .replaceAll('&quot;', '"')
           .replaceAll('&apos;', "'")
           .replaceAll('&lt;', '<')
-          .replaceAll('&gt;', '>'),
+          .replaceAll('&gt;', '>')
+          .replaceAll('&amp;', '&'),
       ]),
     );
     const node: Node = { attributes, children: [], parent: stack[stack.length - 1] };
@@ -31,6 +31,7 @@ function tree(xml: string): Node {
       if (stack.length > 100) throw new Error('Hierarchy too deep');
     }
   }
+  if (stack.length !== 1 || count === 0) throw new Error('Invalid hierarchy');
   return root;
 }
 function descendants(node: Node): Node[] {
@@ -38,7 +39,13 @@ function descendants(node: Node): Node[] {
 }
 /** Locate only this app's notification for the expected queue item, never another media app. */
 export function previousNotificationTarget(xml: string, currentClimb: string): { x: number; y: number } | null {
-  const root = tree(xml);
+  let root: Node;
+  try {
+    root = tree(xml);
+  } catch (error) {
+    if (error instanceof QaFailure) throw error;
+    return null;
+  }
   const labels = (node: Node) => [node.attributes.text, node.attributes['content-desc']];
   const titles = descendants(root).filter((node) => labels(node).includes(currentClimb));
   const targets = new Set<Node>();
@@ -81,15 +88,19 @@ export async function notificationPrevious(
   await command(adb, ['-s', device, 'shell', 'cmd', 'statusbar', 'expand-notifications']);
   try {
     const selected = await until(
-      async () =>
-        previousNotificationTarget(
-          await command(adb, ['-s', device, 'exec-out', 'uiautomator', 'dump', '/dev/tty']),
-          currentClimb,
-        ),
+      async () => {
+        const xml = await command(adb, ['-s', device, 'exec-out', 'uiautomator', 'dump', '/dev/tty']);
+        if (!/<hierarchy\b/.test(xml) || !xml.includes('</hierarchy>')) return null;
+        return previousNotificationTarget(xml, currentClimb);
+      },
       Boolean,
       15_000,
       'Boardsesh notification scoped to current QA climb',
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof QaFailure && error.kind === 'failed' && error.message.startsWith('Deadline exceeded:'))
+        throw new QaFailure('No unique Boardsesh notification action', 'blocked');
+      throw error;
+    });
     if (!selected) throw new QaFailure('No unique Boardsesh notification action', 'blocked');
     evidence.event('notification-previous', {
       currentClimb,
@@ -98,6 +109,6 @@ export async function notificationPrevious(
     });
     await command(adb, ['-s', device, 'shell', 'input', 'tap', String(selected.x), String(selected.y)]);
   } finally {
-    await command(adb, ['-s', device, 'shell', 'input', 'keyevent', 'KEYCODE_BACK']);
+    await command(adb, ['-s', device, 'shell', 'cmd', 'statusbar', 'collapse']);
   }
 }

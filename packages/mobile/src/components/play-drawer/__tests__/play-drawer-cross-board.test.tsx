@@ -2138,7 +2138,7 @@ describe('PlayDrawer wall button taps', () => {
       expect(recorded.actionsMenu.at(-1)?.onOpenBoardControls).toBeUndefined();
     });
 
-    it('hands the swipe, the action and prepared holds where the swipe is offered', () => {
+    it('offers the swipe without preparing frost until driving is confirmed', () => {
       swipeToDrive.on = true;
       putOnBoardWithNoLink();
       renderDrawer();
@@ -2146,9 +2146,7 @@ describe('PlayDrawer wall button taps', () => {
       expect(bar?.onWallControlSwipe).toEqual(expect.any(Function));
       expect(bar?.onWallControlSwipeCancel).toEqual(expect.any(Function));
       expect(bar?.onWallControlDrive).toEqual(expect.any(Function));
-      // Geometry is prepared for driving; the button keeps its preview progress flat.
-      const glow = bar?.wallGlow as { holds: unknown[] } | null;
-      expect(glow?.holds).toHaveLength(1);
+      expect(bar?.wallGlow).toBeNull();
     });
 
     it('opens ⋯ › Board controls with no link, offering Light every climb', () => {

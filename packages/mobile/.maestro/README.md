@@ -1,5 +1,9 @@
 # Maestro screenshot flows
 
+For real USB-connected phones and the ESP32 fixture, see the separate
+[local board QA runbook](../../../docs/local-board-qa.md). Its hardware suite is
+local-only and uses normal app Bluetooth; these screenshot flows use their own setup.
+
 Native App Store / onboarding screenshot capture for the Boardsesh mobile app.
 Driven by [Maestro](https://maestro.mobile.dev). Don't run these by hand — the
 orchestrator (`scripts/mobile-screenshots.ts`, exposed as `vp run

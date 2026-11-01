@@ -107,7 +107,7 @@ describe('first-cause observer abort', () => {
     expect(await running).toBe(cause);
     await drivers.cancelCommands();
     expect(existsSync(laterTap)).toBe(false);
-    const run = vi.fn(async () => '');
+    const run = vi.fn(async () => '<hierarchy></hierarchy>');
     const phone = new drivers.AndroidDriver(
       { id: 'owned', appId: 'com.boardsesh.app.dev', scheme: 'com.boardsesh.app', email: 'qa@example.com' },
       '/unused/adb',

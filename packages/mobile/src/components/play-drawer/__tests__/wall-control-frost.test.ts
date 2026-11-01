@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_WALL_CONTROL } from '../wall-control';
+import type { WallControlModel } from '../wall-control';
 import { wallControlFrostHasLeds, wallControlUsesFrost } from '../wall-control-frost';
 
 describe('wall control frost requires physical driving', () => {
@@ -15,23 +16,23 @@ describe('wall control frost requires physical driving', () => {
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state, driving: true })).toBe(false);
   });
   it('keeps Set active and passive crew status plain, but preserves a confirmed drive', () => {
-    expect(
-      wallControlUsesFrost({
-        ...EMPTY_WALL_CONTROL,
-        state: 'put_on_wall',
-        tapAction: 'put_on_wall',
-        labelKey: 'setActive',
-        driving: true,
-      }),
-    ).toBe(false);
+    const setActiveModel: WallControlModel = {
+      ...EMPTY_WALL_CONTROL,
+      state: 'put_on_wall',
+      tapAction: 'put_on_wall',
+      labelKey: 'setActive',
+      driving: true,
+    };
+    expect(wallControlUsesFrost(setActiveModel)).toBe(false);
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'crew' })).toBe(false);
-    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'crew', pending: true })).toBe(false);
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', driving: true })).toBe(true);
-    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'connect', pending: true })).toBe(false);
-    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', writing: true })).toBe(false);
-    expect(
-      wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', driving: true, pending: true, writing: true }),
-    ).toBe(true);
+    const busyModels: [WallControlModel, boolean][] = [
+      [{ ...EMPTY_WALL_CONTROL, state: 'crew', pending: true }, false],
+      [{ ...EMPTY_WALL_CONTROL, state: 'connect', pending: true }, false],
+      [{ ...EMPTY_WALL_CONTROL, state: 'lit', writing: true }, false],
+      [{ ...EMPTY_WALL_CONTROL, state: 'lit', driving: true, pending: true, writing: true }, true],
+    ];
+    for (const [model, expected] of busyModels) expect(wallControlUsesFrost(model)).toBe(expected);
   });
   it('uses the actual target board LED contract, including moves from a ledless board', () => {
     expect(wallControlFrostHasLeds({ boardType: 'kilter' })).toBe(true);

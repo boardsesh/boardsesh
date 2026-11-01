@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { stringify } from 'yaml';
 import {
   AndroidDriver,
+  CommandExitFailure,
   IosDriver,
   assertIosFlow,
   assertRecordedAndroidFlow,
@@ -175,6 +176,7 @@ describe('physical flow preflight', () => {
         CLIMB_LABEL_PATTERN: 'Fixture climb',
         ACCOUNT_URL: 'com.boardsesh.app://account',
         USER_ID: 'qa-user',
+        SESSION_SUMMARY_LABEL: 'Session Summary',
       };
       variableNames.forEach((key) => {
         supplied[key] ??= 'fixture';
@@ -562,4 +564,98 @@ describe('owned command lifetime', () => {
     await verdict;
     await expect(cancelCommands()).resolves.toBeUndefined();
   });
+});
+
+describe('Android transport evidence', () => {
+  const phone = { id: 'owned', appId: 'com.boardsesh.app', scheme: 'com.boardsesh.app', email: 'qa@example.com' };
+  it.each(['ERROR: could not get idle state', 'null root node', '<hierarchy>'])(
+    'rejects invalid hierarchy output: %s',
+    async (output) => {
+      const driver = new AndroidDriver(
+        phone,
+        '/unused/adb',
+        new Evidence(directory()),
+        vi.fn(async () => output),
+      );
+      await expect(driver.hierarchy()).rejects.toMatchObject({ kind: 'infrastructure' });
+    },
+  );
+  it('rejects a zero-exit unresolved deep link before sending Maestro actions', async () => {
+    const run = vi.fn(async () => 'Error: Activity not started, unable to resolve Intent');
+    const root = directory();
+    const driver = new AndroidDriver(phone, '/unused/adb', new Evidence(root), run);
+    const filename = flow(root, 'link.yaml', [{ openLink: 'com.boardsesh.app://record' }, { assertVisible: 'Ready' }]);
+    await expect(driver.flow(filename)).rejects.toMatchObject({ kind: 'infrastructure' });
+    expect(run).toHaveBeenCalledOnce();
+  });
+  it('allows an explicit missing-probe exit without swallowing other command failures', async () => {
+    expect(await command(process.execPath, ['-e', 'process.exit(1)'], 1000, process.env, false, [0, 1])).toBe('');
+    await expect(
+      command(process.execPath, ['-e', 'process.exit(2)'], 1000, process.env, false, [0, 1]),
+    ).rejects.toMatchObject({ kind: 'infrastructure' });
+  });
+  it('passes host locale labels to mounted navigation and picker controls', async () => {
+    const recorded: unknown[][] = [];
+    const root = directory();
+    const run = vi.fn(async (_executable: string, args: string[]) => {
+      recorded.push(readFlow(args.at(-1)!, { APP_ID: phone.appId }));
+      return '';
+    });
+    const driver = new AndroidDriver(
+      {
+        ...phone,
+        labels: { HOME_LABEL: 'Inicio', CLIMBS_LABEL: 'Bloques', CANCEL_LABEL: 'Cancelar', CLOSE_LABEL: 'Cerrar' },
+      },
+      '/unused/adb',
+      new Evidence(root),
+      run,
+    );
+    await driver.flow('wait-app-ready');
+    await driver.flow('dismiss-picker', { BOARD_UUID: 'wall' });
+    await driver.flow('close-history', { BOARD_UUID: 'wall' });
+    expect(recorded[2]).toContainEqual({ tapOn: 'Cerrar' });
+    expect(recorded[0]).toContainEqual({ assertVisible: 'Inicio' });
+    expect(recorded[0]).toContainEqual({ assertVisible: 'Bloques' });
+    expect(recorded[1]).toContainEqual({ tapOn: 'Cancelar' });
+  });
+});
+
+it.each([
+  ['Assertion is false: id: actual-control', 'failed'],
+  ['Assertion is false: id: session-start\nElement may be temporarily unavailable due to loading state', 'failed'],
+  [
+    'Assertion is false: id: session-start\nCaused by: io.grpc.StatusRuntimeException: UNAVAILABLE: io exception',
+    'infrastructure',
+  ],
+  ['Assertion failed: session-start\ngRPC status=UNAVAILABLE', 'infrastructure'],
+  ['io.grpc.StatusRuntimeException: DEADLINE_EXCEEDED', 'infrastructure'],
+  ['Assertion failed after driver timed out', 'infrastructure'],
+])('classifies Maestro evidence %s as %s', async (message, kind) => {
+  const root = directory();
+  const driver = new AndroidDriver(
+    { id: 'owned', appId: 'com.boardsesh.app', scheme: 'com.boardsesh.app', email: 'qa@example.com' },
+    '/unused/adb',
+    new Evidence(root),
+    vi.fn(async () => {
+      throw new CommandExitFailure(message, 'infrastructure');
+    }),
+  );
+  await expect(driver.flow('put')).rejects.toMatchObject({ kind });
+});
+
+it('accepts Android successful delivery to an existing top-most activity', async () => {
+  const root = directory();
+  const run = vi.fn(
+    async () =>
+      'Warning: Activity not started, intent has been delivered to currently running top-most instance.\nStatus: ok',
+  );
+  const driver = new AndroidDriver(
+    { id: 'owned', appId: 'com.boardsesh.app', scheme: 'com.boardsesh.app', email: 'qa@example.com' },
+    '/unused/adb',
+    new Evidence(root),
+    run,
+  );
+  const filename = flow(root, 'reuse.yaml', [{ openLink: 'com.boardsesh.app://record' }, { assertVisible: 'Ready' }]);
+  await driver.flow(filename);
+  expect(run).toHaveBeenCalledTimes(2);
 });

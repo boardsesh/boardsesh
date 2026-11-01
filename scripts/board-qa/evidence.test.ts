@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Evidence, QaFailure, canonical, lease, until } from './evidence';
 
 describe('physical QA evidence', () => {
@@ -52,4 +52,25 @@ describe('physical QA evidence', () => {
       ),
     ).rejects.toMatchObject({ kind: 'infrastructure' });
   });
+});
+
+it('rejects a matching read that completes after its deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    const matches = vi.fn(() => true);
+    await expect(
+      until(
+        async () => {
+          vi.setSystemTime(Date.now() + 101);
+          return 'late';
+        },
+        matches,
+        100,
+        'late observer',
+      ),
+    ).rejects.toMatchObject({ kind: 'failed' });
+    expect(matches).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

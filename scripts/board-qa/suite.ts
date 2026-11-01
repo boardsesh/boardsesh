@@ -40,12 +40,19 @@ export function previousQueueWitness(
   return { currentSlotUuid: current.uuid, previousSlotUuid: previous.uuid };
 }
 
+/** Native board labels append the selected angle for adjustable walls. */
+export function boardHistoryLabelPattern(boardName: string, angle: number): string {
+  const escape = (label: string) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `^Board history, ${escape(boardName)}( • ${escape(String(angle))}°)?$`;
+}
+
 function climbLabelPattern(climb: CatalogClimb): string {
   return `.*${climb.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`;
 }
 export class Suite {
   private identities = new Map<Role, string>();
   private sessionId = '';
+  private sessionMayExist = false;
   constructor(
     private config: QaConfig,
     private phones: Record<Role, Driver>,
@@ -254,11 +261,12 @@ export class Suite {
       throw new QaFailure('Independent case boundary requires the exact fixture boards with zero links', 'blocked');
   }
   private async caseBoundary(): Promise<void> {
-    if (this.sessionId) throw new QaFailure('Independent case boundary requires an ended QA session', 'blocked');
+    if (this.sessionId || this.sessionMayExist)
+      throw new QaFailure('Independent case boundary requires an ended QA session', 'blocked');
     await this.requireZeroLinks();
     this.evidence.save(
       'inspect-inactive-record.yaml',
-      'appId: ${APP_ID}\n---\n- openLink: ${RECORD_URL}\n- extendedWaitUntil:\n    visible:\n      id: session-start\n    timeout: 10000\n- assertNotVisible:\n    id: session-active-.+\n',
+      'appId: ${APP_ID}\n---\n- openLink: ${RECORD_URL}\n- extendedWaitUntil:\n    visible:\n      id: session-start\n    timeout: 10000\n- assertNotVisible:\n    id: session-presence-.+\n',
     );
     // Check both real Record surfaces before restarting either participant.
     // A local empty sessionId alone does not rule out a retained session.
@@ -277,9 +285,6 @@ export class Suite {
       // test's cross-board or active-session continuity is in progress.
       await this.requireZeroLinks();
       await this.phones[role].restart();
-      // Android restart uses its mounted root View. Native iOS tab controls
-      // expose visibility reliably where the root View identifier does not.
-      if (role === 'ios') await this.phones[role].flow('wait-ios-app-ready');
       await this.identity(role);
     }
   }
@@ -467,6 +472,7 @@ export class Suite {
       for (const holder of ROLES) {
         const peer: Role = holder === 'ios' ? 'android' : 'ios';
         await this.evidence.scenario(`solo/${board.family}/${holder}`, [7023], async () => {
+          await this.caseBoundary();
           await this.open(holder, board, board.catalog[0]);
           await this.send(holder, board, board.catalog[0], 'connect', { picker: true });
           // Public links preview. Queue the pinned successor, reopen current,
@@ -591,9 +597,10 @@ export class Suite {
             await this.caseBoundary();
             await this.open(holder, board, board.catalog[0]);
             await this.send(holder, board, board.catalog[0], 'connect', { picker: true });
+            this.sessionMayExist = true;
             await this.phones[holder].flow('start-session', { RECORD_URL: this.url(holder, '/record') });
             const tree = await this.phones[holder].hierarchy();
-            this.sessionId = tree.match(/session-active-([0-9a-f-]{36})/i)?.[1] ?? '';
+            this.sessionId = tree.match(/session-presence-([0-9a-f-]{36})-[0-9]+/i)?.[1] ?? '';
             if (!this.sessionId) throw new QaFailure('Session creation did not expose its real session ID');
             await this.unchanged(board, async () => {
               await this.phones[peer].restart();
@@ -612,7 +619,7 @@ export class Suite {
             await this.history(peer, board, board.catalog[0], this.user(holder));
             await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
-            await this.history(peer, board, board.catalog[0], this.user(holder));
+            await this.history(peer, board, board.catalog[0], this.user(holder), { keepOpen: true });
             const lit = (await this.backend.snapshot(board)).recent[0];
             if (!lit || lit.climbUuid !== board.catalog[1].uuid || lit.sentByUserId !== this.user(holder))
               throw new QaFailure('Clear requires the freshly confirmed shared climb');
@@ -673,6 +680,7 @@ export class Suite {
               WRITER_ID: this.user(holder),
               HISTORY_SEQ: String(lit.seq),
             });
+            await this.phones[peer].flow('close-history', { BOARD_UUID: board.uuid });
             await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
             await this.assertId(peer, 'wall-control-crew-crew-idle');
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
@@ -767,13 +775,14 @@ export class Suite {
               SESSION_EXIT_LABEL: 'End session',
             });
             const id = this.sessionId;
-            this.sessionId = '';
             await until(
               () => this.backend.query('query QaEnded($id: ID!) { sessionStatus(sessionId: $id) }', { id }),
               (snapshot) => snapshot.sessionStatus === 'ended',
               30_000,
               'session ended durably',
             );
+            this.sessionId = '';
+            this.sessionMayExist = false;
             // End does not promise BLE teardown; explicitly release the remaining link.
             await this.open(holder, board, board.catalog[0]);
             if (this.device(await this.fixture.request('status'), board).connections)
@@ -782,7 +791,13 @@ export class Suite {
         );
       }
   }
-  private async history(role: Role, board: Board, climb: CatalogClimb, writer: string): Promise<void> {
+  private async history(
+    role: Role,
+    board: Board,
+    climb: CatalogClimb,
+    writer: string,
+    options: { keepOpen?: boolean } = {},
+  ): Promise<void> {
     const snapshot = await this.backend.snapshot(board);
     const entry = snapshot.history.find((entry) => entry.climbUuid === climb.uuid && entry.sentByUserId === writer);
     if (!entry) throw new QaFailure('Expected confirmed climb missing from saved wall history');
@@ -794,10 +809,11 @@ export class Suite {
     await this.phones[role].flow('open-history', {
       BOARD_URL: this.url(role, `/b/${board.slug}`),
       BOARD_UUID: board.uuid,
-      BOARD_HISTORY_LABEL: `Board history, ${boardName}`,
+      BOARD_HISTORY_LABEL: boardHistoryLabelPattern(boardName, board.angle),
     });
     if (snapshot.recent[0]?.seq === entry.seq) await this.assertId(role, `board-current-${climb.uuid}-${writer}`);
     else await this.assertId(role, `board-history-${climb.uuid}-${entry.seq}`);
+    if (!options.keepOpen) await this.phones[role].flow('close-history', { BOARD_UUID: board.uuid });
   }
   async failureArtifacts(): Promise<void> {
     for (const role of ROLES) {
@@ -808,13 +824,14 @@ export class Suite {
         this.evidence.event('artifact-unavailable', { role });
       }
     }
-    if (this.sessionId)
+    if (this.sessionId || this.sessionMayExist)
       this.evidence.event('retained-session', {
         id: this.sessionId,
         recovery: 'End the QA session normally on its creator phone; no record deletion is performed.',
       });
     this.evidence.save('recovery.json', {
       sessionId: this.sessionId || null,
+      sessionMayExist: this.sessionMayExist,
       directory: join(this.evidence.directory),
     });
   }
