@@ -29,6 +29,7 @@ import {
   height as heightModifier,
   padding,
   size,
+  testID as testIDModifier,
 } from '@expo/ui/jetpack-compose/modifiers';
 import { useWindowDimensions, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
@@ -177,6 +178,7 @@ export function Button({
   // whose native styles measure differently (the tick bar). Compose takes it
   // directly; the Host stops measuring that axis so the value survives.
   const composeModifiers = [
+    ...(testID ? [testIDModifier(testID)] : []),
     ...(fills.width ? [fillMaxWidth()] : []),
     ...(pinnedHeight != null ? [heightModifier(pinnedHeight)] : []),
     ...(minHeight != null ? [defaultMinSize({ minHeight })] : []),

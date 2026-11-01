@@ -186,9 +186,10 @@ displays (inner 2853 × 2007 open, outer 1398 × 2034 closed); deliver routes bo
 sizes to `APP_IPHONE_DUO`, which needs fastlane 2.241.1 or newer.
 
 The upload expects the generated Apple locale folders `en-US`, `es-ES`, `es-MX`,
-`fr-FR`, and `de-DE`. The app has one Spanish locale (`es`), so the capture
+`fr-FR`, `de-DE`, and `it`. The app has one Spanish locale (`es`), so the capture
 pipeline writes the same Spanish screenshots to both App Store Connect Spanish
-locales; German and French each map to one.
+locales; German, French and Italian each map to one. Apple's Italian locale is
+`it`; Google Play metadata uses `it-IT`.
 
 The Android lane uploads PNGs in `app-stores/google/screenshots/pixel-2/` to the
 Google Play phone screenshot slot as **screenshots only**, staged into
@@ -197,15 +198,21 @@ SHA-256 (matching leading images stay, the rest are replaced). It commits throug
 the review-protected Play listing runner described below.
 
 The default iOS replay campaign produces nine composed iPhone images from
-18 real captures and retains the six-image iPad story. It uses the dedicated
-Apple campaign fixture described in the [creative asset runbook](../docs/app-store-creative-assets.md).
+18 real captures and retains the six-image iPad story. Five app locales on five devices
+generate 25 native shards and 30 storefront sets, containing 228 default-listing
+images (the iPhone Duo set adds eight per storefront).
+Italian phone slot 07 uses `07-session-detail.png`, framed from the native
+session recap, until a reviewed Italian physical Live Activity fixture exists.
+CPP/ad/video campaigns keep their four app locales and five Apple locales.
+The default listing uses the dedicated Apple campaign fixture described in the
+[creative asset runbook](../docs/app-store-creative-assets.md).
 Android and navigation smoke keep their existing fixture pin. Review every
 locale/device set in the canonical upload tree before publication. Explicit
 record/live captures are diagnostic; the iOS workflow requires replay for store
 upload and baseline publication.
 
 The `Mobile Screenshots (iOS)` manual workflow dispatch uploads only with
-`upload = true` and all 16 native shards successful for the complete App Store
+`upload = true` and all 20 native shards successful for the complete App Store
 locale/device set. Failed captures still retain diagnostics and run image gates,
 but cannot prepare Apple credentials or upload. Capture-only defaults leave the
 store unchanged. Qualifying

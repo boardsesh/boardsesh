@@ -3,13 +3,13 @@
 // system: on the liquid-glass variant this file delegates to CollapsingTopChrome
 // (left/right glass islands over the progressive blur), fills its right island
 // with the climb-list board actions (angle · history · ⋯ menu) and adds the
-// climbs-only search row. Climbs is the one tab that keeps a header title — the
-// filter summary sits persistently in the centre. The Material variant draws the
-// shared MaterialTopAppBar: "Climbs" as its title with the board switcher as the
-// subtitle, then create, history and the ⋯ menu; its angle is the first chip in
-// the filter row (FilterChipRow).
+// filter chips under it. There is no search field: the climb-name search is the
+// first row of the Filters sheet, like the Logbook. On iOS the native header draws
+// no title (`titleHidden`), because the tab already names the screen. The Material
+// variant uses MaterialTopAppBar with "Climbs" above the board switcher, history
+// and the ⋯ menu; its angle is the first chip in the filter row (FilterChipRow).
 
-import { memo, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -21,29 +21,39 @@ import { useFloatingHeaderControls } from '../../hooks/use-floating-header-contr
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
-import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
-import { CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
+import { CollapsingTopChrome } from '../chrome';
 import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { ClimbListBoardActions, climbListBoardActionCount } from '../chrome/ClimbListBoardActions';
-import { BoardSwitcherButton } from '../chrome/BoardSwitcherButton';
 import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
+import { BoardSwitcherButton } from '../chrome/BoardSwitcherButton';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
+import { BoardHeldCapsule } from '../queue-control/BoardHeldCapsule';
+import { useBoardConnectionState } from '../ble/use-board-connection-state';
+import { useTabChrome } from '../../hooks/use-bottom-accessory';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
+import { trustedWallCapsuleClimb, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
+import { useBoardPresenceControls } from '../../providers/board-presence-provider';
+import {
+  dismissWallCapsule,
+  useWallCapsuleDismissed,
+  wallCapsuleOccurrenceKey,
+} from '../../lib/wall-capsule-dismissal-store';
+import { useWallCapsuleHistoryAge } from '../queue-control/use-wall-capsule-history-age';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
 import { FilterButton } from './FilterButton';
 import { GradeFilterControl } from './GradeFilterControl';
 
-// One 48dp baseline shared by the search field, the grade control, and the filter
-// button so the row reads as a matched set (M3 docked/inline height).
-const MATERIAL_SEARCH_HEIGHT = 48;
+// One 48dp baseline shared by the grade control and the filter button so the row
+// reads as a matched set (M3 docked/inline height).
+const MATERIAL_CONTROL_HEIGHT = 48;
 
 type ClimbTopChromeProps = {
-  searchMode?: 'custom' | 'native';
   /** Optional persistent plain centre title (the legacy filter summary, e.g.
    *  "V4–V6 · Quality"). Omitted when the persistent filter chips carry the filter
    *  state — the centre then reads empty (the redundant "All climbs" label is
@@ -61,21 +71,14 @@ type ClimbTopChromeProps = {
    *  on both variants: the glass board glyph and the Material board switcher. */
   anchorBoardButton?: boolean;
   onHeightChange: (height: number) => void;
-  searchFieldRef: RefObject<SearchHeaderHandle | null>;
-  searchInitialValue: string;
-  searchPlaceholder: string;
-  onSearchChange: (text: string) => void;
-  onSearchFocus: () => void;
-  onSearchBlur: () => void;
   /** The grade control's own toggle: hides the grade rail. */
   onCloseGrade: () => void;
-  /** Closes the transient grade popover (regular-width iPad). Called on search
-   *  focus and when the screen loses focus. Neither of those hides the grade
-   *  rail, which stays until the climber hides it. */
+  /** Closes the transient grade popover (regular-width iPad). Called when the
+   *  screen loses focus, which does not hide the grade rail: that stays until the
+   *  climber hides it. */
   onDismissGradePopover: () => void;
-  /** Active-filter count for the Material variant's filter button (rendered to
-   *  the left of the search field — the affordance the native search bar can't
-   *  host). Liquid Glass keeps the bottom filter FAB instead. */
+  /** Active-filter count for the Material variant's filter button, used when the
+   *  persistent chip row is off. */
   activeFilterCount?: number;
   onOpenFilters?: () => void;
   /** Active-filter summary shown as a chip in the Material quick row. Tapping it
@@ -91,25 +94,22 @@ type ClimbTopChromeProps = {
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound, change: GradeRailChange) => void;
-  /** Persistent native filter-chip row + token row, rendered under the title on
-   *  Liquid Glass, independent of search focus. On Material it renders in the search
-   *  stack instead when `showPersistentChips` is set. The caller composes it so every
-   *  filter handler and the search-provider state stay in the screen, not drilled
-   *  through here. */
+  /** Persistent native filter-chip row + token row, rendered under the header on
+   *  Liquid Glass. On Material it renders under the app bar when
+   *  `showPersistentChips` is set. The caller composes it so every filter handler and
+   *  the search-provider state stay in the screen, not drilled through here. */
   filterChrome?: ReactNode;
   /** Android Material only: the native chip row (`filterChrome`) is the default
    *  filtering surface. When set, the Material top-chrome filter affordances (grade
    *  control, filter button, condensed summary) are suppressed and `filterChrome` is
-   *  rendered in the search stack instead; the app-bar search field, angle chip, and
-   *  the in-chrome grade rail stay. Always false on Liquid Glass (its own path renders
-   *  `filterChrome`). */
+   *  rendered under the app bar instead; the angle chip and the in-chrome grade rail
+   *  stay. Always false on Liquid Glass (its own path renders `filterChrome`). */
   showPersistentChips?: boolean;
   /** Legacy native scroll-edge wiring. The filter row draws only its individual capsules. */
   scrollEdge?: ScrollEdgeBackdrop;
 };
 
 function ClimbTopChromeComponent({
-  searchMode = 'custom',
   title,
   boardName,
   canCreate,
@@ -118,12 +118,6 @@ function ClimbTopChromeComponent({
   showBoardBadge = false,
   anchorBoardButton = false,
   onHeightChange,
-  searchFieldRef,
-  searchInitialValue,
-  searchPlaceholder,
-  onSearchChange,
-  onSearchFocus,
-  onSearchBlur,
   onCloseGrade,
   onDismissGradePopover,
   activeFilterCount = 0,
@@ -148,7 +142,6 @@ function ClimbTopChromeComponent({
   const { systemColors, variant } = useTheme();
   const { data: activeBoard } = useActiveBoard();
   const glassGradeRail = useFloatingHeaderControls();
-  const usesCustomSearch = searchMode === 'custom';
   // "On the wall" capsule: own the gate here so a falsy centre slot falls back to
   // the title, and the capsule gets a clean mount/unmount (entering/exiting fade).
   // Only present when a board feed lights a climb that differs from the user's own
@@ -156,13 +149,77 @@ function ClimbTopChromeComponent({
   // header out of large-title mode, which must not happen under the player's
   // dismiss animation (#6619).
   const currentClimbUuid = useActiveClimbUuid();
-  const liveWallClimb = useWallClimbIfDistinct(currentClimbUuid);
-  const wallClimb = useSettledHeaderValue(liveWallClimb);
-  const wallCapsule = useMemo(
-    () => (wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined),
-    [wallClimb, boardName],
+  const distinctWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
+  const { boardId } = useBoardPresenceControls();
+  const linked = inAppBoardConnection !== 'disconnected';
+  // Hidden past an hour with no live link (#7095): the same trust rule as the player.
+  const wallPresenceFresh = usePresenceFresh(distinctWallClimb?.sentAt ?? null);
+  const liveWallClimb = trustedWallCapsuleClimb(distinctWallClimb, {
+    linked,
+    presenceFresh: wallPresenceFresh,
+  });
+  const occurrenceKey =
+    boardId !== null && liveWallClimb !== null ? wallCapsuleOccurrenceKey(boardId, liveWallClimb) : null;
+  const { loaded: dismissalLoaded, dismissed } = useWallCapsuleDismissed(boardId, occurrenceKey);
+  const historyAge = useWallCapsuleHistoryAge(
+    liveWallClimb?.sentAt ?? null,
+    !linked && dismissalLoaded && !dismissed && liveWallClimb !== null,
   );
-  const hasWallCapsule = wallClimb !== null;
+  // Keep the climb, its meaning and its dismissal scope together while a modal
+  // covers the list. None may change the native title during player dismissal.
+  const liveWallCapsule = useMemo(
+    () =>
+      liveWallClimb !== null && boardId !== null && occurrenceKey !== null && dismissalLoaded && !dismissed
+        ? {
+            climb: liveWallClimb,
+            boardId,
+            occurrenceKey,
+            presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
+          }
+        : null,
+    [liveWallClimb, boardId, occurrenceKey, dismissalLoaded, dismissed, linked, historyAge],
+  );
+  const wallCapsuleState = useSettledHeaderValue(liveWallCapsule);
+  const handleDismissWallCapsule = useCallback(
+    (dismissedOccurrence: string) => {
+      if (wallCapsuleState === null || dismissedOccurrence !== wallCapsuleState.occurrenceKey) return;
+      dismissWallCapsule(wallCapsuleState.boardId, dismissedOccurrence);
+    },
+    [wallCapsuleState],
+  );
+  // "You have the board" takes the same slot while this climber holds the board
+  // and the wall shows their own climb. Only where the iOS 26 accessory platter
+  // mounts on iPhone: that platter collapses on scroll and drops its bulb, while
+  // the Material bar and the iOS 18 floating bar keep theirs on screen. A
+  // regular-width iPad has no bottom tab bar for the platter to collapse into, so
+  // its bulb stays in view and a capsule up here would only repeat it; an iPad in
+  // a narrow Split View has the phone's bottom bar and keeps the cue. Every input
+  // is settled, like the wall capsule, so nothing in the title view changes while
+  // the player covers the list (#6619).
+  const { nativeAccessory } = useTabChrome();
+  const { isPad, widthClass } = useDeviceLayout();
+  const accessoryCollapses = !(isPad && widthClass === 'regular');
+  const boardHeld = useSettledHeaderValue(
+    nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe',
+  );
+  const ledless = useSettledHeaderValue(liveLedless);
+  const wallCapsule = useMemo(() => {
+    if (wallCapsuleState) {
+      return (
+        <WallStatusCapsule
+          climb={wallCapsuleState.climb}
+          boardName={boardName}
+          presentation={wallCapsuleState.presentation}
+          occurrenceKey={wallCapsuleState.occurrenceKey}
+          onDismiss={handleDismissWallCapsule}
+        />
+      );
+    }
+    if (boardHeld) return <BoardHeldCapsule ledless={ledless} />;
+    return undefined;
+  }, [wallCapsuleState, boardName, handleDismissWallCapsule, boardHeld, ledless]);
+  const hasWallCapsule = wallCapsuleState !== null;
   const loggedWallCapsuleRef = useRef(false);
   useEffect(() => {
     // Skip the "hidden" every Climbs mount would log; only transitions are a trail.
@@ -174,25 +231,19 @@ function ClimbTopChromeComponent({
     });
   }, [hasWallCapsule]);
 
-  // The same switcher the ⋯ menu's "Switch board" row opens.
   const handleOpenBoardSwitcher = useCallback(() => router.push('/boards'), [router]);
+  // The same history and ⋯ actions as native bar items on the iOS 26 iPhone header.
+  const climbListBarActions = useMemo(
+    () => ({ onOpenHistory: onOpenBoardDetail, badge: showBoardBadge }),
+    [onOpenBoardDetail, showBoardBadge],
+  );
 
   const handleCloseOverlays = useCallback(() => {
-    searchFieldRef.current?.blur();
     Keyboard.dismiss();
     onDismissGradePopover();
-  }, [onDismissGradePopover, searchFieldRef]);
+  }, [onDismissGradePopover]);
 
   useFocusEffect(useCallback(() => () => handleCloseOverlays(), [handleCloseOverlays]));
-
-  const handleFocus = useCallback(() => {
-    onDismissGradePopover();
-    onSearchFocus();
-  }, [onDismissGradePopover, onSearchFocus]);
-
-  const handleBlur = useCallback(() => {
-    onSearchBlur();
-  }, [onSearchBlur]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const gradeRail =
@@ -243,82 +294,66 @@ function ClimbTopChromeComponent({
             means "let touches reach the controls". If an inner control ever adopts
             an RNGH gesture it needs no change — the outer container already stops
             the list's handlers from being recorded. */}
-            {usesCustomSearch ? (
-              <View
-                pointerEvents="box-none"
-                style={[styles.materialSearchStack, persistentChips ? styles.materialSearchStackAboveChips : null]}
-              >
-                <View pointerEvents="box-none" style={styles.materialSearchRow}>
-                  <View pointerEvents="box-none" style={styles.materialSearchSlot}>
-                    <SearchHeader
-                      ref={searchFieldRef}
-                      initialValue={searchInitialValue}
-                      placeholder={searchPlaceholder}
-                      onChangeText={onSearchChange}
-                      onFocus={handleFocus}
-                      onBlur={handleBlur}
-                      height={MATERIAL_SEARCH_HEIGHT}
-                    />
-                  </View>
-                  {showTopChromeFilters ? (
-                    <GradeFilterControl
-                      label={visibleGradeLabel}
-                      active={hasGradeFilter}
-                      expanded={gradeRailVisible}
-                      height={MATERIAL_SEARCH_HEIGHT}
-                      onPress={() => {
-                        if (gradeRailVisible) {
-                          onCloseGrade();
-                          return;
-                        }
-                        onOpenGrade?.();
-                      }}
-                      onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
-                      toggleAccessibilityLabel={t('mobile.search.gradeAction')}
-                      clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
-                      openHint={t('mobile.search.gradeOpenHint')}
-                      closeHint={t('mobile.search.gradeCloseHint')}
-                    />
-                  ) : null}
-                  {showTopChromeFilters && onOpenFilters ? (
+            <View
+              pointerEvents="box-none"
+              style={[styles.materialFilterStack, persistentChips ? styles.materialFilterStackAboveChips : null]}
+            >
+              {showTopChromeFilters ? (
+                <View pointerEvents="box-none" style={styles.materialControlRow}>
+                  <GradeFilterControl
+                    label={visibleGradeLabel}
+                    active={hasGradeFilter}
+                    expanded={gradeRailVisible}
+                    height={MATERIAL_CONTROL_HEIGHT}
+                    onPress={() => {
+                      if (gradeRailVisible) {
+                        onCloseGrade();
+                        return;
+                      }
+                      onOpenGrade?.();
+                    }}
+                    onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
+                    toggleAccessibilityLabel={t('mobile.search.gradeAction')}
+                    clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
+                    openHint={t('mobile.search.gradeOpenHint')}
+                    closeHint={t('mobile.search.gradeCloseHint')}
+                  />
+                  {onOpenFilters ? (
                     <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
                   ) : null}
                 </View>
+              ) : null}
 
-                {/* The quick row carries the condensed summary when the persistent
-                chip row is off. The angle rides the persistent chip row above. */}
-                {visibleFilterSummary ? (
-                  <View pointerEvents="box-none" style={styles.materialQuickRow}>
-                    <Chip
-                      compact
-                      mode="flat"
-                      icon={iconMap.filter.android}
-                      onPress={visibleFilterSummary.onClear}
-                      onClose={visibleFilterSummary.onClear}
-                      closeIcon={iconMap.close.android}
-                      accessibilityLabel={visibleFilterSummary.text}
-                      style={styles.materialChip}
-                      textStyle={styles.materialChipText}
-                    >
-                      {visibleFilterSummary.text}
-                    </Chip>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-            {/* The persistent native chip row owns filtering when the Material
-            default; it sits directly under the search field, like Liquid Glass. It
-            runs full-bleed: the row's own 16dp content inset lines the first chip up
-            with the search field, and the chips scroll out to the screen edge. */}
-            {usesCustomSearch && persistentChips ? (
+              {/* The quick row carries the condensed summary when the persistent
+              chip row is off. The angle rides the persistent chip row above. */}
+              {visibleFilterSummary ? (
+                <View pointerEvents="box-none" style={styles.materialQuickRow}>
+                  <Chip
+                    compact
+                    mode="flat"
+                    icon={iconMap.filter.android}
+                    onPress={visibleFilterSummary.onClear}
+                    onClose={visibleFilterSummary.onClear}
+                    closeIcon={iconMap.close.android}
+                    accessibilityLabel={visibleFilterSummary.text}
+                    style={styles.materialChip}
+                    textStyle={styles.materialChipText}
+                  >
+                    {visibleFilterSummary.text}
+                  </Chip>
+                </View>
+              ) : null}
+            </View>
+            {/* The persistent chip row runs full-bleed under the app bar: its own
+              16dp content inset is the gutter, and chips scroll to the screen edge. */}
+            {persistentChips ? (
               <View pointerEvents="box-none" style={styles.materialChipRow}>
                 {persistentChips}
               </View>
             ) : null}
             {/* Measure the disclosed rail with the rest of the chrome so the first
-              result clears it. Full-bleed like the chip row: the rail's own 16dp
-              content inset is the gutter, so its chips also scroll to the edge. */}
-            {usesCustomSearch && gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
+              result clears it. Its own content inset is the gutter too. */}
+            {gradeRail ? <View style={styles.materialGradeRail}>{gradeRail}</View> : null}
           </>
         }
       >
@@ -347,9 +382,9 @@ function ClimbTopChromeComponent({
   }
 
   // Liquid-glass variant: the shared chrome (left/right glass islands over the
-  // progressive blur) with the climbs-only search row as its below-row content.
-  // Climbs is the one tab that keeps a header title — the filter summary sits
-  // persistently in the centre via `centerTitle`.
+  // progressive blur) with the filter chips as its below-row content. The native
+  // header draws no title; off it, an optional filter summary can sit in the
+  // centre via `centerTitle`.
   //
   // `hideLight`: the climbs tab suppresses the toolbar BLE lightbulb. Board-LED
   // control already lives on the queue bar / current-climb pill
@@ -360,6 +395,8 @@ function ClimbTopChromeComponent({
     <CollapsingTopChrome
       materialTitle={tCommon('mobile.nav.climbs')}
       centerTitle={title}
+      // The tab names the screen: the iOS native header draws no "Climbs" title.
+      titleHidden
       // "On the wall" status — a compact capsule in the centre islands slot (where
       // the title used to sit) when a board feed lights a climb that differs from
       // the user's own current climb; otherwise undefined, so the centre falls back
@@ -381,30 +418,13 @@ function ClimbTopChromeComponent({
         ),
         actionCount: climbListBoardActionCount(activeBoard),
       }}
+      climbListBarActions={climbListBarActions}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
       hideLight
     >
-      {usesCustomSearch ? (
-        <View pointerEvents="box-none" style={styles.searchStack}>
-          <View pointerEvents="box-none" style={styles.searchRow}>
-            <View pointerEvents="box-none" style={styles.searchSlot}>
-              <SearchHeader
-                ref={searchFieldRef}
-                initialValue={searchInitialValue}
-                placeholder={searchPlaceholder}
-                onChangeText={onSearchChange}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                height={TOP_ACTION_SIZE}
-              />
-            </View>
-          </View>
-        </View>
-      ) : null}
-      {/* Persistent filter chips sit under the title on every glass path —
-          including the iOS 26 native-search path (no custom search row) — so
-          filtering is always glanceable, never gated behind keyboard focus. */}
+      {/* Persistent filter chips sit right under the header on every glass path,
+          so filtering is always glanceable. */}
       {filterChrome}
       {/* The disclosed rail participates in the measured chrome height. At rest,
           even compact climb rows start below it; glass stays on each capsule. */}
@@ -426,52 +446,30 @@ function ClimbTopChromeComponent({
 export const ClimbTopChrome = memo(ClimbTopChromeComponent);
 
 const styles = StyleSheet.create({
-  searchStack: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-    gap: spacing[2],
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[2],
-  },
-  searchSlot: {
-    flex: 1,
-    flexDirection: 'row',
-    minWidth: 0,
-  },
   materialWallStatusRow: {
     // Full-bleed "On the wall" status band — it owns its own padding, accent rail
     // and bottom divider, so the wrapper adds no inset.
     width: '100%',
   },
-  materialSearchStack: {
+  materialFilterStack: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
     gap: spacing[2],
   },
-  materialSearchStackAboveChips: {
+  materialFilterStackAboveChips: {
     // The chip row follows outside the stack; keep the stack's gap above it.
     paddingBottom: spacing[2],
   },
   materialChipRow: {
-    // `filterChrome` is a fragment (chip row + sheet-only filter tokens); keep the
-    // stack's gap between its rows.
+    // `filterChrome` is a fragment (chip row + sheet-only filter tokens).
     paddingBottom: spacing[3],
     gap: spacing[2],
   },
-  materialSearchRow: {
+  materialControlRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: spacing[2],
-  },
-  materialSearchSlot: {
-    // The search field flex-grows; the grade control and filter button are
-    // intrinsic-width trailing affordances (M3 input + trailing controls row).
-    flex: 1,
-    minWidth: 0,
   },
   materialQuickRow: {
     minHeight: 36,

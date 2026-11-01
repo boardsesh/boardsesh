@@ -32,6 +32,9 @@ import { useToast } from '../../providers/toast-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { getSoleBoardType } from '../../lib/grade-label';
+import { WorkoutHeadlineChip } from '../session/workout/WorkoutHeadlineChip';
+import { workoutHeadlineText } from '../session/workout/workout-summary-format';
+import type { WorkoutHeadlineView } from '../session/workout/types';
 
 type SessionFeedCardProps = {
   session: SessionFeedItem;
@@ -40,6 +43,8 @@ type SessionFeedCardProps = {
   onOpenComments: (entityId: string, entityType: SocialEntityType) => void;
   onPress: (session: SessionFeedItem) => void;
   onOpenClimb?: (tick: SessionFeedTickHighlight) => void;
+  /** The workout the session was climbed to (#6903): one line under the header. */
+  workoutHeadline?: WorkoutHeadlineView;
 };
 
 /** Hero media cell — sized for a portrait beta thumbnail / enlarged board art. */
@@ -75,8 +80,10 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   onOpenComments,
   onPress,
   onOpenClimb,
+  workoutHeadline,
 }: SessionFeedCardProps) {
   const { t } = useTranslation('feed');
+  const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { showToast } = useToast();
@@ -171,6 +178,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
     metaLine,
     t('sessionFeedCard.sendsCount', { count: session.totalSends }),
     displayHardestGrade ? t('sessionFeedCard.hardestGrade', { grade: displayHardestGrade }) : null,
+    workoutHeadline ? workoutHeadlineText(workoutHeadline, tSession).spoken : null,
   ]);
 
   return (
@@ -207,6 +215,12 @@ export const SessionFeedCard = memo(function SessionFeedCard({
               </Text>
             </View>
           </View>
+
+          {workoutHeadline ? (
+            <View style={styles.workoutChip}>
+              <WorkoutHeadlineChip headline={workoutHeadline} />
+            </View>
+          ) : null}
 
           {session.goal ? (
             <View style={styles.goal}>
@@ -429,6 +443,7 @@ const styles = StyleSheet.create({
   title: { fontWeight: '600' },
   metaLine: { marginTop: 2 },
   statEmphasis: { fontWeight: '600' },
+  workoutChip: { marginTop: spacing[2] },
   goal: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginTop: spacing[2] },
   hero: { flexDirection: 'row', gap: spacing[3], marginTop: spacing[2] },
   media: { width: HERO_MEDIA.width, height: HERO_MEDIA.height, borderRadius: borderRadius.md },

@@ -313,6 +313,23 @@ describe('uploadArchiveDsyms', () => {
 });
 
 describe('sentry-cli resolution', () => {
+  it.each([
+    ['CLI 2 default class', 'module.exports = SentryCli;'],
+    ['CLI 3 named class', 'exports.SentryCli = SentryCli;'],
+  ])('resolves the binary through the %s API', (_description, exportStatement) => {
+    const fixture = createArchiveFixture();
+    const cliRoot = join(fixture.mobileDir, 'node_modules', '@sentry', 'cli');
+    mkdirSync(cliRoot, { recursive: true });
+    const binaryPath = join(cliRoot, 'sentry-cli');
+    writeFileSync(binaryPath, 'fixture binary');
+    writeFileSync(join(cliRoot, 'package.json'), JSON.stringify({ name: '@sentry/cli', main: 'index.js' }));
+    writeFileSync(
+      join(cliRoot, 'index.js'),
+      `class SentryCli { static binaryPath = ${JSON.stringify(binaryPath)}; static getPath() { return this.binaryPath; } }\n${exportStatement}\n`,
+    );
+    expect(resolveSentryCli(fixture.mobileDir)).toBe(binaryPath);
+  });
+
   it('resolves the installed binary from packages/mobile', () => {
     const executablePath = resolveSentryCli(resolve(REPO_ROOT, 'packages/mobile'));
     expect(executablePath).toContain('sentry-cli');

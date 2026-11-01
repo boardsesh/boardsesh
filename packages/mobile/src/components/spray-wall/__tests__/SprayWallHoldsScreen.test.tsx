@@ -23,7 +23,7 @@ const router = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), canGoBack: v
 const navigation = vi.hoisted(() => ({ dispatch: vi.fn() }));
 const guard = vi.hoisted(() => ({
   enabled: false,
-  callback: null as ((event: { data: { action: { type: string } } }) => void) | null,
+  callback: null as ((event: { data: { action: { type: string } }; repeat: () => void }) => void) | null,
   confirm: null as (() => void) | null,
   ask: vi.fn(),
 }));
@@ -43,8 +43,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
-vi.mock('expo-router', () => ({ useRouter: () => router, useNavigation: () => navigation }));
-vi.mock('expo-router/react-navigation', () => ({
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useNavigation: () => navigation,
+  unstable_useIsNavigating: () => false,
   usePreventRemove: (enabled: boolean, callback: NonNullable<typeof guard.callback>) => {
     guard.enabled = enabled;
     guard.callback = callback;
@@ -121,7 +123,7 @@ function editorProps(): EditorProps {
 
 function tryRemove() {
   const action = { type: 'GO_BACK' };
-  if (guard.enabled) guard.callback?.({ data: { action } });
+  if (guard.enabled) guard.callback?.({ data: { action }, repeat: () => navigation.dispatch(action) });
   else navigation.dispatch(action);
 }
 
@@ -339,6 +341,20 @@ describe('SprayWallHoldsScreen', () => {
     act(() => editorProps().onHandoverChange(false));
     act(() => guard.confirm?.());
     expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'GO_BACK' });
+  });
+
+  it('asks again if a confirmed removal leaves the dirty editor mounted', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => editorProps().onDirtyChange(true));
+    act(tryRemove);
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).toHaveBeenCalledOnce();
+    expect(guard.ask).toHaveBeenCalledOnce();
+    expect(guard.enabled).toBe(true);
+    act(tryRemove);
+    expect(guard.ask).toHaveBeenCalledTimes(2);
+    expect(navigation.dispatch).toHaveBeenCalledOnce();
   });
 
   it('blocks removal during preparation and publication without asking', async () => {

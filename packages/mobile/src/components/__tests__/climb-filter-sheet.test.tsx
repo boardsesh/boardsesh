@@ -71,6 +71,8 @@ const bottomSheetModalProps = vi.hoisted(() => ({
   // real native close arrives later (after the slide-down). Tests fire that close
   // explicitly with simulateNativeClose().
   dismiss: vi.fn(),
+  // The raw ref's snapToIndex: the keyboard raise to the tall detent.
+  snapToIndex: vi.fn(),
 }));
 
 // Captures the controlled `open` the sheet hands the coordinator, so tests can
@@ -94,6 +96,17 @@ const bottomSheetScrollViewProps = vi.hoisted(() => ({
 
 type ScrollViewMockProps = NonNullable<typeof bottomSheetScrollViewProps.latest> & { children?: ReactNode };
 const platformMock = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' | 'web' }));
+// The theme variant the mocked useTheme reports; 'material' keeps the RN body.
+const themeVariantMock = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
+// The iOS Form stub records the model the sheet hands it (#6872).
+const filterFormMock = vi.hoisted(() => ({
+  latest: null as null | {
+    sections: {
+      key: string;
+      rows: { key: string; kind: string; onPress?: () => void; onSelect?: (key: string) => void }[];
+    }[];
+  },
+}));
 
 // expo-router stand-ins: a push spy and a holder for the focus callback so a test
 // can simulate the climbs screen regaining focus after a sub-route pops.
@@ -226,7 +239,15 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ref,
   ) {
     bottomSheetModalProps.latest = props;
-    useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: bottomSheetModalProps.dismiss }), []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        present: vi.fn(),
+        dismiss: bottomSheetModalProps.dismiss,
+        snapToIndex: bottomSheetModalProps.snapToIndex,
+      }),
+      [],
+    );
     useEffect(() => {
       bottomSheetModalProps.mountCount += 1;
     }, []);
@@ -347,6 +368,7 @@ vi.mock('../../lib/create-board-holds', () => ({
 vi.mock('../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    variant: themeVariantMock.variant,
     systemColors: {
       fill: '#eee',
       tertiaryBackground: '#fff',
@@ -355,6 +377,13 @@ vi.mock('../../providers/theme-provider', () => ({
     },
     brandColors: { primary: '#6D28D9' },
   }),
+}));
+
+vi.mock('../ClimbFilterForm', () => ({
+  ClimbFilterForm: ({ model }: { model: NonNullable<typeof filterFormMock.latest> }) => {
+    filterFormMock.latest = model;
+    return createElement('div', { 'data-testid': 'native-filter-form' });
+  },
 }));
 
 vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
@@ -607,6 +636,8 @@ beforeEach(() => {
   authMock.isAuthenticated = true;
   pinStore.pinnedKind = null;
   platformMock.OS = 'android';
+  themeVariantMock.variant = 'material';
+  filterFormMock.latest = null;
 });
 
 describe('ClimbFilterSheet scroll adapters', () => {
@@ -2481,5 +2512,129 @@ describe('ClimbFilterSheet list seams', () => {
     });
     expect(countPreviewMock.gradeBoards.at(-1)).toBe('tension');
     expect(getByPlaceholderText('Climb name')).toBeDefined();
+  });
+});
+
+describe('ClimbFilterSheet native iOS form (#6872)', () => {
+  function formRow(sectionKey: string, rowKey: string) {
+    const row = filterFormMock.latest?.sections
+      .find((section) => section.key === sectionKey)
+      ?.rows.find((entry) => entry.key === rowKey);
+    if (!row) throw new Error(`no ${sectionKey}/${rowKey} row in the form model`);
+    return row;
+  }
+
+  function lastFormRow() {
+    const section = filterFormMock.latest?.sections.at(-1);
+    const row = section?.rows.at(-1);
+    if (!section || !row) throw new Error('the form model has no rows');
+    return { section, row };
+  }
+
+  it('renders the form with a medium and a large detent on iOS with Liquid Glass', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    const { getByTestId, queryByTestId } = renderFilterSheet();
+
+    expect(getByTestId('native-filter-form')).toBeTruthy();
+    expect(queryByTestId('filter-scroll-view')).toBeNull();
+    expect(bottomSheetModalProps.latest).toMatchObject({ snapPoints: ['50%', '90%'] });
+  });
+
+  it.each([
+    ['ios', 'material'],
+    ['android', 'liquidGlass'],
+  ] as const)('keeps the RN body and one 90%% detent on %s with the %s variant', (platform, variant) => {
+    platformMock.OS = platform;
+    themeVariantMock.variant = variant;
+    const { getByTestId, queryByTestId } = renderFilterSheet();
+
+    expect(getByTestId('filter-scroll-view')).toBeTruthy();
+    expect(queryByTestId('native-filter-form')).toBeNull();
+    expect(filterFormMock.latest).toBeNull();
+    expect((bottomSheetModalProps.latest as { snapPoints?: unknown } | null)?.snapPoints).toEqual(['90%']);
+  });
+
+  it('ends the form on a Quick filters row that suspends the sheet and pushes the Climbs route', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet();
+
+    const { section, row } = lastFormRow();
+    expect(section.key).toBe('quickFilters');
+    expect(row.kind).toBe('nav');
+    act(() => {
+      row.onPress?.();
+    });
+
+    expect(routerPush).toHaveBeenCalledTimes(1);
+    expect(routerPush.mock.calls[0]?.[0]).toBe('/(tabs)/climbs/quick-filters');
+    expect(managedSheetProps.latest?.open).toBe(false);
+  });
+
+  it('raises the form to its tall detent when the keyboard shows', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet();
+
+    // iPhone listens on the will-change event (sheet-keyboard-inset.ts).
+    expect(keyboardListeners.has('keyboardWillChangeFrame')).toBe(true);
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
+
+    expect(bottomSheetModalProps.snapToIndex).toHaveBeenCalledWith(1);
+  });
+
+  it('leaves the suspended sheet alone when a picker route raises the keyboard', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet();
+    act(() => {
+      lastFormRow().row.onPress?.();
+    });
+    expect(managedSheetProps.latest?.open).toBe(false);
+
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
+
+    expect(bottomSheetModalProps.snapToIndex).not.toHaveBeenCalled();
+  });
+
+  it('pushes the Discover Quick filters route for the discover picker stack', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet({ pickers: { stack: 'discover', heatmap: false, setterList: null } });
+
+    act(() => {
+      lastFormRow().row.onPress?.();
+    });
+
+    expect(routerPush.mock.calls[0]?.[0]).toBe('/(tabs)/discover/quick-filters');
+    expect(managedSheetProps.latest?.open).toBe(false);
+  });
+
+  it('publishes a Progress pick from the form the way the RN chip does', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    const onSelectionChange = vi.fn();
+    renderFilterSheet({ onSelectionChange });
+
+    act(() => {
+      formRow('progress', 'progress').onSelect?.('sent');
+    });
+
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith(
+      {
+        ...currentFilters,
+        hideAttempted: undefined,
+        hideCompleted: undefined,
+        showOnlyAttempted: undefined,
+        showOnlyCompleted: true,
+      },
+      currentBoardFilters,
+    );
   });
 });

@@ -6,12 +6,22 @@ import { fileURLToPath } from 'node:url';
 import {
   type Dimensions,
   EXPECTED_APP_STORE_LOCALES,
+  EXPECTED_APP_STORE_DEVICE_SLUGS,
+  ACCEPTED_SIZES,
+  acceptedSizesForFile,
   findGooglePlayOffenders,
   findOffenders,
   findScreenshotTreeOffenders,
   readPngDimensions,
   type ScreenshotTree,
 } from '../assert-screenshot-dimensions';
+
+import {
+  captionLocaleForStore,
+  IOS_CAMPAIGN_CAPTURE_NAMES,
+  resolveScreenshotRecipes,
+  screenshotCaptions,
+} from '../lib/screenshot-presentation';
 
 /** Build a minimal valid PNG header: signature + IHDR length + "IHDR" + width/height. */
 function pngHeader({ width, height }: Dimensions): Buffer {
@@ -183,6 +193,66 @@ describe('findScreenshotTreeOffenders', () => {
   it('accepts a complete localized common-device tree', () => {
     expect(findScreenshotTreeOffenders(screenshotTree())).toEqual([]);
   });
+
+  function campaignTree(): ScreenshotTree {
+    const tree: ScreenshotTree = {};
+    for (const locale of EXPECTED_APP_STORE_LOCALES) {
+      tree[locale] = {};
+      for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
+        const sources =
+          device.startsWith('iphone-') && device !== 'iphone-duo'
+            ? IOS_CAMPAIGN_CAPTURE_NAMES
+            : Object.keys(screenshotCaptions('ios', device));
+        tree[locale][device] = resolveScreenshotRecipes(
+          'ios',
+          device,
+          sources,
+          captionLocaleForStore('ios', locale),
+        ).map((recipe) => {
+          // The Duo set mixes displays, so its size depends on the file.
+          const sizes = acceptedSizesForFile(device, recipe.output);
+          if (typeof sizes === 'string') throw new Error(sizes);
+          return { name: `${locale}/${device}/${recipe.output}`, buffer: pngHeader(sizes[0]) };
+        });
+      }
+    }
+    return tree;
+  }
+
+  it('accepts the complete 228-image campaign with the intentional Italian phone substitution', () => {
+    const tree = campaignTree();
+    // Six storefronts x (9 + 9 phone, 6 + 6 iPad, 8 iPhone Duo).
+    expect(Object.values(tree).flatMap((devices) => Object.values(devices).flat()).length).toBe(228);
+    expect(findScreenshotTreeOffenders(tree)).toEqual([]);
+  });
+
+  it.each(['missing session', 'both frames', 'English Live Activity', 'French session', 'iPad session'])(
+    'rejects an unapproved campaign difference: %s',
+    (mutation) => {
+      const tree = campaignTree();
+      const device = mutation === 'iPad session' ? 'ipad-pro-13-inch-m5' : 'iphone-16-pro';
+      const locale = mutation === 'French session' ? 'fr-FR' : 'it';
+      const files = tree[locale][device];
+      if (mutation === 'missing session')
+        tree[locale][device] = files.filter((file) => !file.name.endsWith('/07-session-detail.png'));
+      else if (mutation === 'both frames' || mutation === 'iPad session')
+        files.push({
+          name: `${locale}/${device}/${mutation === 'iPad session' ? '07-session-detail.png' : '07-live-activity.png'}`,
+          buffer: pngHeader(ACCEPTED_SIZES[device][0]),
+        });
+      else {
+        const original = mutation === 'French session' ? '07-live-activity.png' : '07-session-detail.png';
+        files.find((file) =>
+          file.name.endsWith(`/${original}`),
+        )!.name = `${locale}/${device}/${mutation === 'French session' ? '07-session-detail.png' : '07-live-activity.png'}`;
+      }
+      expect(
+        findScreenshotTreeOffenders(tree).some(
+          (offender) => offender.file === `${locale}/${device}` && /PNG set/.test(offender.reason),
+        ),
+      ).toBe(true);
+    },
+  );
 
   it('flags a missing expected iPad device folder even when every locale is consistent', () => {
     const tree = screenshotTree();

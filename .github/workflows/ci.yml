@@ -339,6 +339,7 @@ jobs:
               - 'packages/shared/board-react/**'
               - 'packages/shared/board-look/**'
               - 'packages/shared/board-render/**'
+              - 'packages/shared/frosted-bokeh/**'
               - 'packages/shared/climb-actions/**'
               - 'packages/shared/climb-filters/**'
               - 'packages/shared/community-roles/**'
@@ -624,6 +625,8 @@ jobs:
       #
       # Effective config is the `lint` block in root vite.config.ts, NOT
       # .oxlintrc.json — see issue #4548 and the comment on that block.
+      - name: Check web and native React declaration isolation
+        run: vp test run --project scripts scripts/__tests__/react-types-resolution.test.ts --reporter=agent
       - name: Lint full repo
         # vp/Vite+ panics with "failed printing to stdout: Resource temporarily
         # unavailable (os error 11)" when it flushes the full-repo warning list to the
@@ -750,13 +753,27 @@ jobs:
       # The Mobile OTA Production workflow is the SOLE writer of
       # changelog.generated.json: it regenerates and pushes it on every publish.
       # A PR must never hand-edit it (that would fight the OTA bot and could
-      # revert shipped entries). Fail if a PR touches the file.
+      # revert shipped entries). The checker rejects edits on every PR target;
+      # there is no special import exception.
       - name: changelog-owned (no manual changelog edits)
         id: changelog-owned
         if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true' }}
+        env:
+          PR_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          echo "::error::The changelog files (packages/mobile/src/data/changelog.generated.json and CHANGELOG.md) are owned by the Mobile OTA Production workflow (it regenerates and pushes them on every OTA). Revert your change — they're generated from PR Release Notes, never edited in a PR."
-          exit 1
+          if ! [[ "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ && "$PR_HEAD_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo '::error::Generated changelog verification requires exact PR commit SHAs.'
+            exit 1
+          fi
+          # Fetch exact commit identities before the read-only generated-file diff.
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --unshallow origin "$PR_BASE_SHA" "$PR_HEAD_SHA" '+refs/heads/main:refs/remotes/origin/main'
+          else
+            git fetch --no-tags origin "$PR_BASE_SHA" "$PR_HEAD_SHA" '+refs/heads/main:refs/remotes/origin/main'
+          fi
+          vp exec tsx scripts/check-changelog-ownership.ts
 
       # No path gate on purpose. The version is derived from the whole board
       # catalogue plus the compiled renderer and every board photo the catalogue

@@ -25,8 +25,13 @@ function loadInstalledModule(
 ): Record<string, unknown> {
   const source = readFileSync(join(sqliteBuildDirectory, filename), 'utf8')
     .replace(/^import\s[\s\S]*?;\s*$/gm, '')
-    .replace(/^export\s/gm, '');
-  return runInNewContext(`${source}\n;({ ${exports.join(', ')} });`, bindings, { filename }) as Record<string, unknown>;
+    .replace(/\bexport\s+(?=(?:async\s+)?(?:class|function|const|let)\b)/g, '');
+  // The native boundary and JS wrappers share one typed-array realm in the app.
+  return runInNewContext(
+    `${source}\n;({ ${exports.join(', ')} });`,
+    { Uint8Array, ArrayBuffer, ...bindings },
+    { filename },
+  ) as Record<string, unknown>;
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {

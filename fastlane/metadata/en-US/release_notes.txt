@@ -1,29 +1,47 @@
-Spraywalls: your Spraywall in Boardsesh
+Boardsesh is now available in Italian.
 
-Add a photo of your home Spraywall or your gym's Spraywall, review the detected holds, and start setting boulders. Queue climbs, save them to playlists and log your sends. No LEDs needed.
+KNOW WHEN YOU’RE LIGHTING THE WALL
 
-Keep a Spraywall private or share it with your crew by link or QR code. Reset your Spraywall while keeping its old climbs and sends archived. Download a Spraywall to keep its photo, holds and climbs available with no signal. On iPad, use Apple Pencil to mark holds.
+“Put on board” connects and lights your climb. Read the player’s frosted button: “You are driving the wall” means every climb you pick lights up. Swipe it left to start, or tap “You are driving the wall” to stop and browse while staying connected.
 
-YOUR CREW AND YOUR NEXT GO
+iPad and iPhone Duo: more room for the board
 
-Find your crew's live sessions on Home. Open a climb to see logs from people you follow alongside your own, and follow setters to see their new climbs in your crew feed.
+On iPad, your climbs get the whole screen and the climb on the wall sits in a mini player at the bottom. Tap it to open the player. In landscape, the board sits beside Up next, your logbook and beta. Mount an iPad by your board and open Wall display from the mini player to show the climb full screen, big enough to read from the mat.
 
-Set a rest interval after each logged climb, or climb on a fixed timer. Turn on automatic queue advance and keep Boardsesh open between goes. Use Play next to put a climb straight after the one on the wall, or add a playlist without clearing your queue.
+Open your iPhone Duo and the board sits beside your list. Build a workout on an open Duo and see the planned climbs next to your blocks.
+
+Choose two columns for the Climbs list when there's room on iPad. Pick the mini player's buttons in View options, log a send without opening the player, and reach Favourite, Playlist and Share from its menu on wide screens.
+
+YOUR REST TIMER ON THE LOCK SCREEN
+
+Your rest countdown shows on the Lock Screen and in the Dynamic Island. A soft tick plays in the last seconds and a tone when rest ends, even with your phone on silent.
+
+WORKOUTS IN BLOCKS
+
+Build a session out of blocks: warm up, then a pyramid, then volume. Add a block mid-session, give each block its own climb filters, and see where you are at a glance. Workouts pick climbs you haven't sent first, can skip what you've sent or tried, and can fill from your Sent or Liked climbs. Mark Fell or Sent from the mini player. Your session recap keeps your workout blocks, reps and results together.
+
+PLAY FROM THE LIST YOU TAPPED
+
+The player shows which list you're climbing from, and swiping stays on that list, from your logbook and sessions to profiles and similar climbs. Playlists play without touching your queue. Swipe a climb in any list to play it next or last.
 
 MORE WAYS TO MAKE IT YOURS
 
-- Choose which sections appear below a climb, including beta videos, logs and similar climbs.
-- Turn on Use my grades to browse, sort and filter by your own grades.
-- Similar climbs and the hold heatmap work on your downloaded board with no signal.
-- Switch to another board at your gym from the wall panel.
-- Export your climbing history, playlists and climbs from Settings.
+- Sort any playlist by difficulty, newest added, rating or shuffle. Liked, Five Stars, Projects and setter pages sort and filter too.
+- Climbs has its own tab. Tap it again for Filters and name search. On iPhone, Filters opens at half height and looks like iOS Settings.
+- Choose which sections show on Home and in what order, and whether the app opens on Home or Climbs.
+- Settings is down to six pages, with your timers in one place.
+- Log a send at a different angle from the one on the wall.
+- Get notified about comments on your sessions, climbs, playlists, boards and gyms.
 
 FIXES FOR YOUR NEXT SESSION
 
-- MoonBoard grades now use MoonBoard's V scale. Logbook imports also accept exports with reordered columns or climb names instead of IDs.
-- On Woods, turn on Other angles to include climbs set at different angles. The setter filter follows your angle choice.
-- Sends logged on a flaky connection wait for signal and retry syncing.
-- Swiping through climbs stays on the list you picked, even when a new log reorders it.
-- Fixed an iOS launch crash and unwanted Safari tabs when opening the app.
+- Your logbook, likes and playlists work with no signal, and downloaded boards no longer download again every week.
+- Board scans find MoonBoards and newer Kilter boxes, closest first. Boardsesh asks for Bluetooth at your first scan, not at launch.
+- Swiping down closes the player again. Lit holds stay visible while you browse.
+- At multi-board gyms, connecting follows the board your current climb is on. The board light button shows whether it's lit, connecting or off, including when a crewmate turns it off.
+- Mirrored climbs keep their orientation in your logbook and queue history.
+- Delete several logbook entries in a row, or a climb's grouped entries for one day.
+- Climbs you unlike leave Liked straight away.
+- Better VoiceOver and large text support.
 
 Free, no ads, open source.

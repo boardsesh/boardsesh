@@ -1,32 +1,17 @@
 import React, { useEffect, useRef, type MutableRefObject } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { PixelRatio, View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import { isBoardArtInMemory, warmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
+import {
+  climbListThumbnailRenderWidth,
+  sizedThumbnailRenderWidth,
+  useClimbListThumbnailSize,
+} from './climb-list-thumbnail-metrics';
 import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
-
-/**
- * Portrait dimensions of the list thumbnail cell. Exported so ClimbListRow
- * can size its wrapper and align the row separator to the thumbnail's right
- * edge from a single source of truth. Portrait (not square) so the portrait
- * board image fills the cell instead of letterboxing to ~40px wide.
- */
-export { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH };
-
-/**
- * Overlay + background width for a thumbnail cell: ~5× the cell width (≥400px,
- * covering the default 76px cell at up to ~3× DPR and a ~100px hero cell at ~4×)
- * so expo-image never has to downscale a ~1080px source on the main thread while
- * scrolling. One function, because the width is part of the overlay cache key:
- * the thumbnail and its prewarm below have to ask for the same PNG.
- */
-function thumbnailRenderWidth(cellWidth: number): number {
-  return Math.max(400, Math.round(cellWidth * 5));
-}
 
 type ClimbListThumbnailPrewarmProps = {
   frames: string;
@@ -57,6 +42,7 @@ export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailP
   sizeId,
   setIds,
 }: ClimbListThumbnailPrewarmProps) {
+  const { width: cellWidth } = useClimbListThumbnailSize();
   const { overlayUri } = useNativeClimbRender({
     frames,
     boardName,
@@ -66,7 +52,7 @@ export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailP
     // Must match ClimbListThumbnail's call exactly, or this warms a PNG no row
     // ever looks up.
     filledStyle: true,
-    renderWidth: thumbnailRenderWidth(THUMBNAIL_WIDTH),
+    renderWidth: climbListThumbnailRenderWidth(cellWidth, PixelRatio.get()),
     prefetch: true,
   });
   useEffect(() => {
@@ -87,16 +73,17 @@ type ClimbListThumbnailProps = {
   setIds: string;
   mirrored?: boolean;
   /**
-   * Override the fixed 76×96 list cell. The session feed hero passes a larger
-   * size (~100×128); ClimbListRow omits it and keeps the default. The internal
-   * render width scales with `width` so the enlarged cell stays crisp.
+   * Override the list cell. The session feed hero passes a larger size
+   * (84×104); ClimbListRow omits it and takes the list's cell
+   * (`useClimbListThumbnailSize`: 76×96, or 88×112 in two columns). The
+   * internal render width scales with `width` so the enlarged cell stays crisp.
    */
   size?: { width: number; height: number };
 };
 
 /**
  * Layered climb thumbnail for the list view. Wraps the shared
- * LayeredClimbImage stack in a fixed 76×96 portrait cell (override via `size`)
+ * LayeredClimbImage stack in the list's portrait cell (override via `size`)
  * with rounded corners, using the filled hold style so the lit climb reads as
  * solid dots against the board photo at this small size.
  *
@@ -117,8 +104,8 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   size,
 }: ClimbListThumbnailProps) {
   const { systemColors } = useTheme();
-  const cellWidth = size?.width ?? THUMBNAIL_WIDTH;
-  const cellHeight = size?.height ?? THUMBNAIL_HEIGHT;
+  const listCell = useClimbListThumbnailSize();
+  const cell = size ?? listCell;
   const {
     overlayUri,
     overlayLoadKey,
@@ -138,7 +125,9 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     sizeId,
     setIds,
     filledStyle: true,
-    renderWidth: thumbnailRenderWidth(cellWidth),
+    renderWidth: size
+      ? sizedThumbnailRenderWidth(size.width)
+      : climbListThumbnailRenderWidth(listCell.width, PixelRatio.get()),
   });
 
   // Rendered when the row took this climb (a revisit, or a row the list warmed
@@ -170,7 +159,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   }
 
   return (
-    <View style={[styles.container, size ? { width: cellWidth, height: cellHeight } : null]}>
+    <View style={[styles.container, cell]}>
       <LayeredClimbImage
         overlayUri={overlayUri}
         overlayLoadKey={overlayLoadKey}
@@ -203,9 +192,8 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
 export { ClimbListThumbnail };
 
 const styles = StyleSheet.create({
+  // Sized at the call site: the caller's `size`, or the list's cell.
   container: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
     borderRadius: borderRadius.md,
     overflow: 'hidden',
   },

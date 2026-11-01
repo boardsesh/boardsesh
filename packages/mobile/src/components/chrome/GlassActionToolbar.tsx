@@ -101,6 +101,7 @@ export function GlassActionToolbar({
 
 /** One action target inside a `GlassActionToolbar` (create +, angle, light). */
 export function GlassToolbarAction({
+  testID,
   onPress,
   onLongPress,
   accessibilityLabel,
@@ -109,6 +110,7 @@ export function GlassToolbarAction({
   onAccessibilityAction,
   children,
 }: {
+  testID?: string;
   onPress: () => void;
   onLongPress?: () => void;
   accessibilityLabel: string;
@@ -121,6 +123,7 @@ export function GlassToolbarAction({
   const actionSize = useToolbarActionSize();
   return (
     <PressableSurface
+      testID={testID}
       onPress={onPress}
       onLongPress={onLongPress}
       feedback="opacity"

@@ -150,7 +150,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'stale-current-hold-kill',
     label: 'Disable the stale-climb hold',
     description:
-      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall with "Last on the wall …". With it on, connecting lights that climb as before and the line never shows. Unresolved reads as enabled.',
+      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
     key: 'moonboard-wide-angles',
@@ -223,13 +223,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
-      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs and the one-time "Connected to" confirmation (the play view pill went in #7000: its Connect board button does that job for everyone). With it on, no new account is enrolled and everyone already enrolled stops seeing the card. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
   },
   {
     key: 'first-connect-cta-arm',
     label: 'Force the connect-step arm (QA)',
     description:
-      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+      'QA only. Puts the signed-in account in the treatment (the Climbs card) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
   {
@@ -251,6 +251,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Offers the 4x4, Limit Bouldering and On the Minute blocks on the Record tab and in "Add a block" before they launch (#5380): 8 type chips instead of 5. Dev builds always offer them. A POSITIVE rollout flag, off by default: with no value at all a store build shows the 5 chips climbers have today. Screenshot mode ignores it.',
     defaultEnabled: false,
+  },
+  {
+    key: 'wall-swipe-to-drive',
+    label: 'Swipe the wall button to drive',
+    description:
+      'Swipe the player\'s wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action "Light every climb" appears, and the board sheet gets a Light every climb row. A POSITIVE rollout flag: unresolved or off is today\'s button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.',
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
@@ -535,8 +541,8 @@ export function useFirstBoardPickerEnabled(): boolean {
 }
 
 /**
- * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
- * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card and the
+ * first-connect confirmation, plus new enrolments.
  * Unresolved reads as "not killed". The gate waits for
  * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
  * the value lands, so flipping it in PostHog takes the whole test down.
@@ -626,6 +632,27 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useWorkoutTimedBlocksFlag(): boolean {
   return useFeatureFlag('workout-timed-blocks') === true;
+}
+
+/**
+ * Swipe the wall button left to drive the wall (#7113): the gesture, its
+ * chevrons and peek, the "Light every climb" screen-reader action and the board
+ * sheet's row. A POSITIVE rollout flag read strictly: unresolved or off is
+ * today's button, so the first frames of a cold open never offer a swipe a
+ * flag then takes back. Dev builds read it as on unless a tester turns it off
+ * on the Feature Flags screen. Explicit store hero captures opt in through
+ * screenshot driving; other screenshot flows and E2E smokes keep it off.
+ */
+export function useWallSwipeToDriveEnabled(): boolean {
+  return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
+}
+
+/** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
+export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+    return process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
+  }
+  return __DEV__ ? flag !== false : flag === true;
 }
 
 /**

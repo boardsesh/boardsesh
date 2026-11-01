@@ -165,7 +165,7 @@ export function LogbookEntryChooserSheet({
           </Text>
         }
         renderItem={renderEntry}
-        ListFooterComponent={deleteAllFooter}
+        ListFooterComponent={deleteAllFooter ?? undefined}
       />
     </BottomSheetModal>
   );

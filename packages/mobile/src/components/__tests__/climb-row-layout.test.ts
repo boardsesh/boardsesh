@@ -17,10 +17,14 @@ import {
   climbRowReorderHeight,
   climbRowSeparatorInset,
   climbRowSkeletonCount,
+  climbRowThumbnailRowHeight,
   type ClimbRowLayoutInput,
   type ClimbRowSurface,
 } from '../climb-row-layout';
-import { THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { climbListThumbnailSize } from '../climb-list-thumbnail-metrics';
+
+const ONE_COLUMN = climbListThumbnailSize(1);
+const TWO_COLUMNS = climbListThumbnailSize(2);
 import {
   CLIMB_ROW_FIELD_IDS,
   CLIMB_ROW_PRESETS,
@@ -31,9 +35,14 @@ import { materialTextStyles } from '../../theme/typography';
 
 describe('climbRowSeparatorInset', () => {
   it('starts a plain row’s separator at the text column: gutter, thumbnail, gap', () => {
-    expect(THUMBNAIL_WIDTH).toBe(76);
+    expect(ONE_COLUMN.width).toBe(76);
     expect(CLIMB_ROW_GUTTER).toBe(16);
     expect(climbRowSeparatorInset(true)).toBe(104);
+  });
+
+  it('follows the two-column cell: gutter, 88pt thumbnail, gap', () => {
+    expect(climbRowSeparatorInset(true, CLIMB_ROW_GUTTER, TWO_COLUMNS.width)).toBe(16 + 88 + 12);
+    expect(climbRowSeparatorInset(false, CLIMB_ROW_GUTTER, TWO_COLUMNS.width)).toBe(16);
   });
 
   it('starts at the gutter when the row has no thumbnail', () => {
@@ -95,6 +104,14 @@ describe('climbRowLayout: the row’s structure', () => {
       separatorInset: 104,
       estimatedHeight: 112,
     });
+  });
+
+  it('grows the row and moves its separator with the two-column thumbnail', () => {
+    const layout = layoutOf({ thumbnailSize: TWO_COLUMNS });
+    expect(layout.estimatedHeight).toBe(112 + 2 * CLIMB_ROW_VERTICAL_PADDING);
+    expect(layout.separatorInset).toBe(116);
+    // Without a picture the cell size changes nothing.
+    expect(layoutOf({ display: TEXT_ONLY, thumbnailSize: TWO_COLUMNS })).toEqual(layoutOf({ display: TEXT_ONLY }));
   });
 
   it('describes the text-only row: no thumbnail, late lines reserved, separator at the gutter', () => {
@@ -366,6 +383,14 @@ describe('climbRowSkeletonCount', () => {
 
   it('never draws fewer than the default count for a taller row', () => {
     expect(climbRowSkeletonCount(10, 138)).toBe(10);
+  });
+
+  it('measures against the two-column row (128pt) when the list draws that cell', () => {
+    expect(climbRowThumbnailRowHeight()).toBe(112);
+    expect(climbRowThumbnailRowHeight(TWO_COLUMNS)).toBe(128);
+    expect(climbRowSkeletonCount(10, 128, TWO_COLUMNS)).toBe(10);
+    // 10 × 128 = 1280pt of text-only rows.
+    expect(climbRowSkeletonCount(10, 58, TWO_COLUMNS)).toBe(23);
   });
 
   it('keeps the default count for a height that makes no sense', () => {

@@ -6,24 +6,30 @@ import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { useTheme } from '../../providers/theme-provider';
-import { useQueueSessionId } from '../../providers/queue-provider';
+import { useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
 import { countSentAscents } from '../../lib/ascent-status-utils';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
+import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 
-export function useLogAscentAction(climb: Climb) {
+/**
+ * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
+ * Tick Opened can be told apart from the JS bars that share `source: 'queue_bar'`.
+ */
+export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement, queueItemUuid?: string) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
   const { sessionId } = useQueueSessionId();
+  const { getQueueSnapshot } = useQueueActions();
   const boardLogbook = useOptionalBoardLogbook();
   const boardActions = useOptionalBoardActions();
   const reduceMotion = useReduceMotion();
 
   const angle = climb.angle;
-  const isMirror = climb.mirrored === true;
 
   // Count of send/flash ticks for this climb at this angle — the same logbook
   // selector the climb-row status glyph uses, so the toolbar and the list
@@ -74,7 +80,12 @@ export function useLogAscentAction(climb: Climb) {
       climbUuid: climb.uuid,
       layoutId: boardConfig.layoutId ?? null,
       source: 'queue_bar',
+      ...(placement ? { placement } : {}),
     });
+    const matchesBoard =
+      (climb.boardType == null || climb.boardType === boardConfig.boardName) &&
+      (climb.layoutId == null || climb.layoutId === boardConfig.layoutId);
+    const isMirror = resolveTickMirror(getQueueSnapshot(), climb, queueItemUuid, matchesBoard);
     openLogAscent({
       climb,
       climbUuid: climb.uuid,
@@ -90,13 +101,11 @@ export function useLogAscentAction(climb: Climb) {
       sessionId,
       consensusGradeName: climb.difficulty,
     });
-  }, [openLogAscent, boardConfig, sessionId, climb, angle, isMirror]);
+  }, [openLogAscent, boardConfig, sessionId, climb, angle, placement, queueItemUuid, getQueueSnapshot]);
 
-  // Always neutral glass — no coloured background. The "you sent this" signal
-  // rides the glyph instead: a green tick when logged, the system label otherwise
-  // (colour on the icon, suitable for a glass element), keeping the action
-  // readable over whatever scrolls behind it.
-  const iconColor = isLogged ? brandColors.success : systemColors.label;
+  // The tick stays an action in the same label colour, even on a logged climb.
+  // Its accessibility label still announces that the climb was already logged.
+  const iconColor = systemColors.label;
 
   const baseLabel = t('mobile.queue.logAscent');
   const accessibilityLabel = isLogged ? `${baseLabel}, ${t('mobile.queue.alreadyLogged')}` : baseLabel;

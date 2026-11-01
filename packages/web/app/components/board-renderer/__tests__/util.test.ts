@@ -14,6 +14,7 @@ import {
   buildBoardRenderUrl,
   buildOverlayUrl,
   buildOgBoardRenderUrl,
+  buildSprayOgImageUrl,
 } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
@@ -333,7 +334,7 @@ describe('buildOgBoardRenderUrl', () => {
     // heats an entry no crawler asks for.
     expect(url).toBe(
       'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20' +
-        '&frames=p1r42p2r43&format=jpeg&render_mode=aura&field_color=%23181225',
+        `&frames=p1r42p2r43&format=jpeg&render_mode=aura&field_color=%23181225&v=${BOARD_RENDER_VERSION}`,
     );
   });
 
@@ -370,15 +371,32 @@ describe('buildOgBoardRenderUrl', () => {
     expect(url).toContain(`&v=${BOARD_RENDER_VERSION}`);
   });
 
-  it('leaves the backend /og/climb URL unversioned', () => {
+  it('versions the backend card after its identity so changed drawings bypass immutable CDN copies', () => {
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
 
-    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12');
+    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12', { name: 'A climb', grade: '6a' });
 
-    // Mobile builds this exact URL independently from a shipped binary
-    // (packages/mobile/src/hooks/use-share-climb.ts), so a `v` on this side
-    // alone would split the Cloudflare entry instead of versioning it.
-    expect(url).not.toContain('v=');
+    expect(url).toContain('n=A+climb&g=6a');
+    expect(url.endsWith(`&v=${BOARD_RENDER_VERSION}`)).toBe(true);
+  });
+});
+
+describe('buildSprayOgImageUrl', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('versions the public spray card in the same parameter order as mobile prewarming', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+
+    expect(buildSprayOgImageUrl(4321, 'p12r42p19r43')).toBe(
+      `https://ws.boardsesh.com/og/climb?board_name=spray&layout_id=4321&size_id=4321&set_ids=1&frames=p12r42p19r43&format=jpeg&v=${BOARD_RENDER_VERSION}`,
+    );
+  });
+
+  it('does not advertise a card without a backend or climb frames', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+    expect(buildSprayOgImageUrl(4321, 'p12r42')).toBeNull();
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+    expect(buildSprayOgImageUrl(4321, '')).toBeNull();
   });
 });
 

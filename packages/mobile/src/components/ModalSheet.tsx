@@ -20,7 +20,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+  type ViewInstance,
+} from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -288,8 +296,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     </View>
   );
 
-  const headerRef = useRef<View>(null);
-  const footerRef = useRef<View>(null);
+  const headerRef = useRef<ViewInstance>(null);
+  const footerRef = useRef<ViewInstance>(null);
   useEffect(() => {
     if (onHeaderLayout) headerRef.current?.measure((_left, _top, _measuredWidth, height) => onHeaderLayout(height));
   }, [onHeaderLayout]);

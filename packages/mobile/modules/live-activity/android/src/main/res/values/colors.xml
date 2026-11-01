@@ -9,4 +9,10 @@
     <!-- Near-black backing behind the climb thumbnail (matches the rounded bitmap
          backing) so the fitCenter letterbox bars + load state read dark, not white. -->
     <color name="session_image_placeholder">#FF0A0A0A</color>
+    <!-- Rest digits once past the rest length ("over your rest"), the app's red.
+         values-night/colors.xml lightens it for the dark notification surface. -->
+    <color name="session_rest_over">#D93025</color>
+    <!-- Rest digits once the queue has run out: still counting, but quiet.
+         values-night/colors.xml lightens it for the dark notification surface. -->
+    <color name="session_rest_muted">#5F6368</color>
 </resources>

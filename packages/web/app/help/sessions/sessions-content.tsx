@@ -80,6 +80,11 @@ export default function SessionsContent() {
             {t('help.sessions.crowd.previewLink')}
           </MuiLink>
         </Prose>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/help/board-and-bluetooth#driving">
+            {t('help.sessions.crowd.drivingLink')}
+          </MuiLink>
+        </Prose>
       </PageSection>
 
       <PageSection id="history" title={t('help.sessions.history.title')}>

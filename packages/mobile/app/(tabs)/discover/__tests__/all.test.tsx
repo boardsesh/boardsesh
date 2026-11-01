@@ -47,6 +47,11 @@ vi.mock('expo-router', () => ({
 
 // react-native primitives → DOM. FlatList renders its data (or the empty
 // component) plus the footer so the error/retry affordances are assertable.
+// ReadableColumn pads by the side safe area; a portrait phone has none.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-native-style': JSON.stringify(style) }, children),

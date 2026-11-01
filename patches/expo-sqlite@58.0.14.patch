@@ -1,0 +1,1584 @@
+diff --git a/build/SQLiteDatabase.d.ts b/build/SQLiteDatabase.d.ts
+index 2782080..3efaf69 100644
+--- a/build/SQLiteDatabase.d.ts
++++ b/build/SQLiteDatabase.d.ts
+@@ -12,6 +12,10 @@ export declare class SQLiteDatabase {
+     readonly databasePath: string;
+     readonly options: SQLiteOpenOptions;
+     readonly nativeDatabase: NativeDatabase;
++    private pendingAsyncOperations;
++    private isClosing;
++    private closePromise;
++    private resolveAsyncDrain;
+     constructor(databasePath: string, options: SQLiteOpenOptions, nativeDatabase: NativeDatabase);
+     /**
+      * Asynchronous call to return whether the database is currently in a transaction.
+@@ -243,6 +247,13 @@ export declare class SQLiteDatabase {
+      * ```
+      */
+     sql: <T = unknown>(strings: TemplateStringsArray, ...values: unknown[]) => SQLiteTaggedQuery<T>;
++    private beginAsyncOperation;
++    private runAsyncOperation;
++    private closeAfterPendingOperationsAsync;
++    private prepareStatementAsync;
++    private withStatementAsync;
++    private finalizeStatementWithErrorPreservation;
++    private attachCleanupError;
+     /**
+      * A convenience wrapper around [`SQLiteDatabase.prepareAsync()`](#prepareasyncsource), [`SQLiteStatement.executeAsync()`](#executeasyncparams), and [`SQLiteStatement.finalizeAsync()`](#finalizeasync).
+      * @param source A string containing the SQL query.
+diff --git a/build/SQLiteDatabase.js b/build/SQLiteDatabase.js
+index bc83c9c..abac882 100644
+--- a/build/SQLiteDatabase.js
++++ b/build/SQLiteDatabase.js
+@@ -1,375 +1,515 @@
+ import { Platform } from 'react-native';
+ import ExpoSQLite from './ExpoSQLite';
+-import { registerDatabaseForDevToolsAsync, unregisterDatabaseForDevToolsAsync } from './SQLiteDevToolsClient';
++import { registerDatabaseForDevToolsAsync, unregisterDatabaseForDevToolsAsync, } from './SQLiteDevToolsClient';
+ import { SQLiteSession } from './SQLiteSession';
+ import { SQLiteStatement } from './SQLiteStatement';
+ import { SQLiteTaggedQuery } from './SQLiteTaggedQuery';
+ import { createDatabasePath } from './pathUtils';
+ /**
+  * A SQLite database.
+- */ export class SQLiteDatabase {
++ */
++export class SQLiteDatabase {
+     databasePath;
+     options;
+     nativeDatabase;
+-    constructor(databasePath, options, nativeDatabase){
++    // Boardsesh #5851: each admitted helper owns its native reference through cleanup.
++    pendingAsyncOperations = 0;
++    isClosing = false;
++    closePromise = null;
++    resolveAsyncDrain = null;
++    constructor(databasePath, options, nativeDatabase) {
+         this.databasePath = databasePath;
+         this.options = options;
+         this.nativeDatabase = nativeDatabase;
+     }
+     /**
+-   * Asynchronous call to return whether the database is currently in a transaction.
+-   */ isInTransactionAsync() {
+-        return this.nativeDatabase.isInTransactionAsync();
++     * Asynchronous call to return whether the database is currently in a transaction.
++     */
++    isInTransactionAsync() {
++        return this.runAsyncOperation(() => this.nativeDatabase.isInTransactionAsync());
+     }
+     /**
+-   * Close the database.
+-   */ closeAsync() {
+-        if (this.options.useNewConnection !== true) {
+-            unregisterDatabaseForDevToolsAsync(this);
++     * Close the database.
++     */
++    closeAsync() {
++        if (this.closePromise === null) {
++            this.isClosing = true;
++            this.closePromise = this.closeAfterPendingOperationsAsync();
+         }
+-        return this.nativeDatabase.closeAsync();
++        return this.closePromise;
+     }
+     /**
+-   * Execute all SQL queries in the supplied string.
+-   * > Note: The queries are not escaped for you! Be careful when constructing your queries.
+-   *
+-   * @param source A string containing all the SQL queries.
+-   */ execAsync(source) {
+-        return this.nativeDatabase.execAsync(source);
++     * Execute all SQL queries in the supplied string.
++     * > Note: The queries are not escaped for you! Be careful when constructing your queries.
++     *
++     * @param source A string containing all the SQL queries.
++     */
++    execAsync(source) {
++        return this.runAsyncOperation(() => this.nativeDatabase.execAsync(source));
+     }
+     /**
+-   * [Serialize the database](https://sqlite.org/c3ref/serialize.html) as `Uint8Array`.
+-   *
+-   * @param databaseName The name of the current attached databases. The default value is `main` which is the default database name.
+-   */ async serializeAsync(databaseName = 'main') {
+-        return toUint8Array(await this.nativeDatabase.serializeAsync(databaseName));
++     * [Serialize the database](https://sqlite.org/c3ref/serialize.html) as `Uint8Array`.
++     *
++     * @param databaseName The name of the current attached databases. The default value is `main` which is the default database name.
++     */
++    serializeAsync(databaseName = 'main') {
++        return this.runAsyncOperation(async () => toUint8Array(await this.nativeDatabase.serializeAsync(databaseName)));
+     }
+     /**
+-   * Create a [prepared SQLite statement](https://www.sqlite.org/c3ref/prepare.html).
+-   *
+-   * @param source A string containing the SQL query.
+-   */ async prepareAsync(source) {
+-        const nativeStatement = new ExpoSQLite.NativeStatement();
+-        await this.nativeDatabase.prepareAsync(nativeStatement, source);
+-        return new SQLiteStatement(this.nativeDatabase, nativeStatement);
++     * Create a [prepared SQLite statement](https://www.sqlite.org/c3ref/prepare.html).
++     *
++     * @param source A string containing the SQL query.
++     */
++    async prepareAsync(source) {
++        return this.runAsyncOperation(() => this.prepareStatementAsync(source));
+     }
+     /**
+-   * Create a new session for the database.
+-   * @see [`sqlite3session_create`](https://www.sqlite.org/session/sqlite3session_create.html)
+-   * @param dbName The name of the database to create a session for. The default value is `main`.
+-   */ async createSessionAsync(dbName = 'main') {
++     * Create a new session for the database.
++     * @see [`sqlite3session_create`](https://www.sqlite.org/session/sqlite3session_create.html)
++     * @param dbName The name of the database to create a session for. The default value is `main`.
++     */
++    async createSessionAsync(dbName = 'main') {
+         const nativeSession = new ExpoSQLite.NativeSession();
+         await this.nativeDatabase.createSessionAsync(nativeSession, dbName);
+         return new SQLiteSession(this.nativeDatabase, nativeSession);
+     }
+     /**
+-   * Load a SQLite extension.
+-   * @param libPath The path to the extension library file.
+-   * @param entryPoint The entry point of the extension. If not provided, the default entry point is inferred by [`sqlite3_load_extension`](https://www.sqlite.org/c3ref/load_extension.html).
+-   *
+-   * @platform android
+-   * @platform ios
+-   * @platform macos
+-   * @platform tvos
+-   *
+-   * @example
+-   * ```ts
+-   * // Load `sqlite-vec` from `bundledExtensions`. You need to enable `withSQLiteVecExtension` to include `sqlite-vec`.
+-   * const extension = SQLite.bundledExtensions['sqlite-vec'];
+-   * await db.loadExtensionAsync(extension.libPath, extension.entryPoint);
+-   *
+-   * // You can also load a custom extension.
+-   * await db.loadExtensionAsync('/path/to/extension');
+-   * ```
+-   */ loadExtensionAsync(libPath, entryPoint) {
+-        return this.nativeDatabase.loadExtensionAsync(libPath, entryPoint);
++     * Load a SQLite extension.
++     * @param libPath The path to the extension library file.
++     * @param entryPoint The entry point of the extension. If not provided, the default entry point is inferred by [`sqlite3_load_extension`](https://www.sqlite.org/c3ref/load_extension.html).
++     *
++     * @platform android
++     * @platform ios
++     * @platform macos
++     * @platform tvos
++     *
++     * @example
++     * ```ts
++     * // Load `sqlite-vec` from `bundledExtensions`. You need to enable `withSQLiteVecExtension` to include `sqlite-vec`.
++     * const extension = SQLite.bundledExtensions['sqlite-vec'];
++     * await db.loadExtensionAsync(extension.libPath, extension.entryPoint);
++     *
++     * // You can also load a custom extension.
++     * await db.loadExtensionAsync('/path/to/extension');
++     * ```
++     */
++    loadExtensionAsync(libPath, entryPoint) {
++        return this.runAsyncOperation(() => this.nativeDatabase.loadExtensionAsync(libPath, entryPoint));
+     }
+     /**
+-   * Execute a transaction and automatically commit/rollback based on the `task` result.
+-   *
+-   * > **Note:** This transaction is not exclusive and can be interrupted by other async queries.
+-   *
+-   * @example
+-   * ```ts
+-   * db.withTransactionAsync(async () => {
+-   *   await db.execAsync('UPDATE test SET name = "aaa"');
+-   *
+-   *   //
+-   *   // We cannot control the order of async/await order, so order of execution is not guaranteed.
+-   *   // The following UPDATE query out of transaction may be executed here and break the expectation.
+-   *   //
+-   *
+-   *   const result = await db.getFirstAsync<{ name: string }>('SELECT name FROM Users');
+-   *   expect(result?.name).toBe('aaa');
+-   * });
+-   * db.execAsync('UPDATE test SET name = "bbb"');
+-   * ```
+-   * If you worry about the order of execution, use `withExclusiveTransactionAsync` instead.
+-   *
+-   * @param task An async function to execute within a transaction.
+-   */ async withTransactionAsync(task) {
+-        try {
+-            await this.execAsync('BEGIN');
+-            await task();
+-            await this.execAsync('COMMIT');
+-        } catch (e) {
++     * Execute a transaction and automatically commit/rollback based on the `task` result.
++     *
++     * > **Note:** This transaction is not exclusive and can be interrupted by other async queries.
++     *
++     * @example
++     * ```ts
++     * db.withTransactionAsync(async () => {
++     *   await db.execAsync('UPDATE test SET name = "aaa"');
++     *
++     *   //
++     *   // We cannot control the order of async/await order, so order of execution is not guaranteed.
++     *   // The following UPDATE query out of transaction may be executed here and break the expectation.
++     *   //
++     *
++     *   const result = await db.getFirstAsync<{ name: string }>('SELECT name FROM Users');
++     *   expect(result?.name).toBe('aaa');
++     * });
++     * db.execAsync('UPDATE test SET name = "bbb"');
++     * ```
++     * If you worry about the order of execution, use `withExclusiveTransactionAsync` instead.
++     *
++     * @param task An async function to execute within a transaction.
++     */
++    async withTransactionAsync(task) {
++        return this.runAsyncOperation(async () => {
+             try {
+-                await this.execAsync('ROLLBACK');
+-            } catch  {
+-            // SQLite may already have rolled back (for example, after an interrupted write).
+-            // Preserve the original error if rollback also fails.
++                await this.nativeDatabase.execAsync('BEGIN');
++                await task();
++                await this.nativeDatabase.execAsync('COMMIT');
+             }
+-            throw e;
+-        }
++            catch (error) {
++                try {
++                    await this.nativeDatabase.execAsync('ROLLBACK');
++                }
++                catch (cleanupError) {
++                    this.attachCleanupError(error, cleanupError);
++                }
++                throw error;
++            }
++        });
+     }
+     /**
+-   * Execute a transaction and automatically commit/rollback based on the `task` result.
+-   *
+-   * The transaction may be exclusive.
+-   * As long as the transaction is converted into a write transaction,
+-   * the other async write queries will abort with `database is locked` error.
+-   *
+-   * > **Note:** This function is not supported on web.
+-   *
+-   * @param task An async function to execute within a transaction. Any queries inside the transaction must be executed on the `txn` object.
+-   * The `txn` object has the same interfaces as the [`SQLiteDatabase`](#sqlitedatabase) object. You can use `txn` like a [`SQLiteDatabase`](#sqlitedatabase) object.
+-   *
+-   * @platform android
+-   * @platform ios
+-   * @platform macos
+-   * @platform tvos
+-   *
+-   * @example
+-   * ```ts
+-   * db.withExclusiveTransactionAsync(async (txn) => {
+-   *   await txn.execAsync('UPDATE test SET name = "aaa"');
+-   * });
+-   * ```
+-   */ async withExclusiveTransactionAsync(task) {
+-        if (Platform.OS === 'web') {
+-            throw new Error('withExclusiveTransactionAsync is not supported on web');
+-        }
+-        const transaction = await Transaction.createAsync(this);
+-        let error;
+-        try {
+-            await transaction.execAsync('BEGIN');
+-            await task(transaction);
+-            await transaction.execAsync('COMMIT');
+-        } catch (e) {
++     * Execute a transaction and automatically commit/rollback based on the `task` result.
++     *
++     * The transaction may be exclusive.
++     * As long as the transaction is converted into a write transaction,
++     * the other async write queries will abort with `database is locked` error.
++     *
++     * > **Note:** This function is not supported on web.
++     *
++     * @param task An async function to execute within a transaction. Any queries inside the transaction must be executed on the `txn` object.
++     * The `txn` object has the same interfaces as the [`SQLiteDatabase`](#sqlitedatabase) object. You can use `txn` like a [`SQLiteDatabase`](#sqlitedatabase) object.
++     *
++     * @platform android
++     * @platform ios
++     * @platform macos
++     * @platform tvos
++     *
++     * @example
++     * ```ts
++     * db.withExclusiveTransactionAsync(async (txn) => {
++     *   await txn.execAsync('UPDATE test SET name = "aaa"');
++     * });
++     * ```
++     */
++    async withExclusiveTransactionAsync(task) {
++        return this.runAsyncOperation(async () => {
++            if (Platform.OS === 'web') {
++                throw new Error('withExclusiveTransactionAsync is not supported on web');
++            }
++            const transaction = await Transaction.createAsync(this);
++            let operationFailed = false;
++            let operationError;
+             try {
+-                await transaction.execAsync('ROLLBACK');
+-            } catch  {
+-            // SQLite may already have rolled back; preserve the original error.
++                await transaction.execAsync('BEGIN');
++                await task(transaction);
++                await transaction.execAsync('COMMIT');
+             }
+-            error = e;
+-        } finally{
+-            await transaction.closeAsync();
+-        }
+-        if (error) {
+-            throw error;
+-        }
++            catch (error) {
++                operationFailed = true;
++                operationError = error;
++                try {
++                    await transaction.execAsync('ROLLBACK');
++                }
++                catch (cleanupError) {
++                    this.attachCleanupError(error, cleanupError);
++                }
++            }
++            finally {
++                try {
++                    await transaction.closeAsync();
++                }
++                catch (cleanupError) {
++                    if (!operationFailed)
++                        throw cleanupError;
++                    this.attachCleanupError(operationError, cleanupError);
++                }
++            }
++            if (operationFailed)
++                throw operationError;
++        });
+     }
+     /**
+-   * Synchronous call to return whether the database is currently in a transaction.
+-   */ isInTransactionSync() {
++     * Synchronous call to return whether the database is currently in a transaction.
++     */
++    isInTransactionSync() {
+         return this.nativeDatabase.isInTransactionSync();
+     }
+     /**
+-   * Interrupt running async operations on this connection. Returns immediately; await the operations
+-   * to observe their errors before closing or reusing the connection.
+-   *
+-   * Affects all running statements on the connection, including shared cached handles. Interrupting
+-   * a write rolls back its entire explicit transaction. Has no effect when idle; an operation that
+-   * is nearly finished may still complete successfully.
+-   *
+-   * Throws if closing is already in progress. Interrupt and await pending operations before calling
+-   * `closeAsync()` or `closeSync()`. Closing does not automatically cancel operations.
+-   * For `withExclusiveTransactionAsync()`, call this on the callback's `txn` connection.
+-   *
+-   * @see https://www.sqlite.org/c3ref/interrupt.html
+-   * @platform android
+-   * @platform ios
+-   * @platform macos
+-   * @platform tvos
+-   */ interruptSync() {
++     * Interrupt running async operations on this connection. Returns immediately; await the operations
++     * to observe their errors before closing or reusing the connection.
++     *
++     * Affects all running statements on the connection, including shared cached handles. Interrupting
++     * a write rolls back its entire explicit transaction. Has no effect when idle; an operation that
++     * is nearly finished may still complete successfully.
++     *
++     * Throws if closing is already in progress. Interrupt and await pending operations before calling
++     * `closeAsync()` or `closeSync()`. Closing does not automatically cancel operations.
++     * For `withExclusiveTransactionAsync()`, call this on the callback's `txn` connection.
++     *
++     * @see https://www.sqlite.org/c3ref/interrupt.html
++     * @platform android
++     * @platform ios
++     * @platform macos
++     * @platform tvos
++     */
++    interruptSync() {
+         return this.nativeDatabase.interruptSync();
+     }
+     /**
+-   * Close the database.
+-   */ closeSync() {
+-        if (this.options.useNewConnection !== true) {
+-            unregisterDatabaseForDevToolsAsync(this);
++     * Close the database.
++     */
++    closeSync() {
++        if (this.pendingAsyncOperations > 0 || this.isClosing) {
++            throw new Error('Cannot synchronously close SQLite: async work is active, or the database is closing or closed');
++        }
++        this.isClosing = true;
++        try {
++            if (this.options.useNewConnection !== true) {
++                unregisterDatabaseForDevToolsAsync(this);
++            }
++            this.nativeDatabase.closeSync();
++        }
++        finally {
++            // Never release the same cached native reference twice, including after a close error.
++            this.closePromise = Promise.resolve();
+         }
+-        return this.nativeDatabase.closeSync();
+     }
+     /**
+-   * Execute all SQL queries in the supplied string.
+-   *
+-   * > **Note:** The queries are not escaped for you! Be careful when constructing your queries.
+-   *
+-   * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
+-   *
+-   * @param source A string containing all the SQL queries.
+-   */ execSync(source) {
++     * Execute all SQL queries in the supplied string.
++     *
++     * > **Note:** The queries are not escaped for you! Be careful when constructing your queries.
++     *
++     * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
++     *
++     * @param source A string containing all the SQL queries.
++     */
++    execSync(source) {
+         return this.nativeDatabase.execSync(source);
+     }
+     /**
+-   * [Serialize the database](https://sqlite.org/c3ref/serialize.html) as `Uint8Array`.
+-   *
+-   * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
+-   *
+-   * @param databaseName The name of the current attached databases. The default value is `main` which is the default database name.
+-   */ serializeSync(databaseName = 'main') {
++     * [Serialize the database](https://sqlite.org/c3ref/serialize.html) as `Uint8Array`.
++     *
++     * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
++     *
++     * @param databaseName The name of the current attached databases. The default value is `main` which is the default database name.
++     */
++    serializeSync(databaseName = 'main') {
+         return toUint8Array(this.nativeDatabase.serializeSync(databaseName));
+     }
+     /**
+-   * Create a [prepared SQLite statement](https://www.sqlite.org/c3ref/prepare.html).
+-   *
+-   * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
+-   *
+-   * @param source A string containing the SQL query.
+-   */ prepareSync(source) {
++     * Create a [prepared SQLite statement](https://www.sqlite.org/c3ref/prepare.html).
++     *
++     * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
++     *
++     * @param source A string containing the SQL query.
++     */
++    prepareSync(source) {
+         const nativeStatement = new ExpoSQLite.NativeStatement();
+         this.nativeDatabase.prepareSync(nativeStatement, source);
+         return new SQLiteStatement(this.nativeDatabase, nativeStatement);
+     }
+     /**
+-   * Create a new session for the database.
+-   *
+-   * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
+-   *
+-   * @see [`sqlite3session_create`](https://www.sqlite.org/session/sqlite3session_create.html)
+-   * @param dbName The name of the database to create a session for. The default value is `main`.
+-   */ createSessionSync(dbName = 'main') {
++     * Create a new session for the database.
++     *
++     * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
++     *
++     * @see [`sqlite3session_create`](https://www.sqlite.org/session/sqlite3session_create.html)
++     * @param dbName The name of the database to create a session for. The default value is `main`.
++     */
++    createSessionSync(dbName = 'main') {
+         const nativeSession = new ExpoSQLite.NativeSession();
+         this.nativeDatabase.createSessionSync(nativeSession, dbName);
+         return new SQLiteSession(this.nativeDatabase, nativeSession);
+     }
+     /**
+-   * Load a SQLite extension.
+-   * @param libPath The path to the extension library file.
+-   * @param entryPoint The entry point of the extension. If not provided, the default entry point is inferred by [`sqlite3_load_extension`](https://www.sqlite.org/c3ref/load_extension.html).
+-   *
+-   * @platform android
+-   * @platform ios
+-   * @platform macos
+-   * @platform tvos
+-   *
+-   * @example
+-   * ```ts
+-   * // Load `sqlite-vec` from `bundledExtensions`. You need to enable `withSQLiteVecExtension` to include `sqlite-vec`.
+-   * const extension = SQLite.bundledExtensions['sqlite-vec'];
+-   * db.loadExtensionSync(extension.libPath, extension.entryPoint);
+-   *
+-   * // You can also load a custom extension.
+-   * db.loadExtensionSync('/path/to/extension');
+-   * ```
+-
+-   */ loadExtensionSync(libPath, entryPoint) {
++     * Load a SQLite extension.
++     * @param libPath The path to the extension library file.
++     * @param entryPoint The entry point of the extension. If not provided, the default entry point is inferred by [`sqlite3_load_extension`](https://www.sqlite.org/c3ref/load_extension.html).
++     *
++     * @platform android
++     * @platform ios
++     * @platform macos
++     * @platform tvos
++     *
++     * @example
++     * ```ts
++     * // Load `sqlite-vec` from `bundledExtensions`. You need to enable `withSQLiteVecExtension` to include `sqlite-vec`.
++     * const extension = SQLite.bundledExtensions['sqlite-vec'];
++     * db.loadExtensionSync(extension.libPath, extension.entryPoint);
++     *
++     * // You can also load a custom extension.
++     * db.loadExtensionSync('/path/to/extension');
++     * ```
++  
++     */
++    loadExtensionSync(libPath, entryPoint) {
+         this.nativeDatabase.loadExtensionSync(libPath, entryPoint);
+     }
+     /**
+-   * Execute a transaction and automatically commit/rollback based on the `task` result.
+-   *
+-   * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
+-   *
+-   * @param task An async function to execute within a transaction.
+-   */ withTransactionSync(task) {
++     * Execute a transaction and automatically commit/rollback based on the `task` result.
++     *
++     * > **Note:** Running heavy tasks with this function can block the JavaScript thread and affect performance.
++     *
++     * @param task An async function to execute within a transaction.
++     */
++    withTransactionSync(task) {
+         try {
+             this.execSync('BEGIN');
+             task();
+             this.execSync('COMMIT');
+-        } catch (e) {
++        }
++        catch (e) {
+             try {
+                 this.execSync('ROLLBACK');
+-            } catch  {
+-            // SQLite may already have rolled back; preserve the original error.
++            }
++            catch {
++                // SQLite may already have rolled back; preserve the original error.
+             }
+             throw e;
+         }
+     }
+     /**
+-   * Execute SQL queries using tagged template literals (Bun-style API).
+-   * Queries are automatically protected against SQL injection using prepared statements.
+-   *
+-   * The query result is directly awaitable and returns an array of objects by default.
+-   * Use `.values()`, `.first()`, or `.each()` for different result formats.
+-   *
+-   * @example
+-   * ```ts
+-   * // Direct await - returns array of objects
+-   * const users = await sql<User>`SELECT * FROM users WHERE age > ${21}`;
+-   *
+-   * // Get first row only
+-   * const user = await sql<User>`SELECT * FROM users WHERE id = ${userId}`.first();
+-   *
+-   * // Get values as arrays
+-   * const rows = await sql`SELECT name, age FROM users`.values();
+-   * // Returns: [["Alice", 30], ["Bob", 25]]
+-   *
+-   * // INSERT/UPDATE/DELETE - returns SQLiteRunResult
+-   * const result = await sql`INSERT INTO users (name, age) VALUES (${name}, ${age})` as SQLiteRunResult;
+-   * console.log('Inserted row:', result.lastInsertRowId);
+-   *
+-   * // Iteration
+-   * for await (const user of db<User>`SELECT * FROM users`.each()) {
+-   *   console.log(user.name);
+-   * }
+-   *
+-   * // Synchronous API
+-   * const users = sql<User>`SELECT * FROM users WHERE age > ${21}`.allSync();
+-   * const user = sql<User>`SELECT * FROM users WHERE id = ${userId}`.firstSync();
+-   * ```
+-   */ sql = (strings, ...values)=>new SQLiteTaggedQuery(this, strings, values);
+-    async runAsync(source, ...params) {
+-        const statement = await this.prepareAsync(source);
+-        let result;
++     * Execute SQL queries using tagged template literals (Bun-style API).
++     * Queries are automatically protected against SQL injection using prepared statements.
++     *
++     * The query result is directly awaitable and returns an array of objects by default.
++     * Use `.values()`, `.first()`, or `.each()` for different result formats.
++     *
++     * @example
++     * ```ts
++     * // Direct await - returns array of objects
++     * const users = await sql<User>`SELECT * FROM users WHERE age > ${21}`;
++     *
++     * // Get first row only
++     * const user = await sql<User>`SELECT * FROM users WHERE id = ${userId}`.first();
++     *
++     * // Get values as arrays
++     * const rows = await sql`SELECT name, age FROM users`.values();
++     * // Returns: [["Alice", 30], ["Bob", 25]]
++     *
++     * // INSERT/UPDATE/DELETE - returns SQLiteRunResult
++     * const result = await sql`INSERT INTO users (name, age) VALUES (${name}, ${age})` as SQLiteRunResult;
++     * console.log('Inserted row:', result.lastInsertRowId);
++     *
++     * // Iteration
++     * for await (const user of db<User>`SELECT * FROM users`.each()) {
++     *   console.log(user.name);
++     * }
++     *
++     * // Synchronous API
++     * const users = sql<User>`SELECT * FROM users WHERE age > ${21}`.allSync();
++     * const user = sql<User>`SELECT * FROM users WHERE id = ${userId}`.firstSync();
++     * ```
++     */
++    sql = (strings, ...values) => new SQLiteTaggedQuery(this, strings, values);
++    // The barrier covers convenience helpers and transactions used by Boardsesh.
++    // Raw prepared statements/sessions remain caller-owned and must be finalized before close.
++    beginAsyncOperation() {
++        if (this.isClosing) {
++            throw new Error('Access to closed resource: SQLite database is closing or closed');
++        }
++        this.pendingAsyncOperations += 1;
++        return () => {
++            this.pendingAsyncOperations -= 1;
++            if (this.pendingAsyncOperations === 0) {
++                this.resolveAsyncDrain?.();
++                this.resolveAsyncDrain = null;
++            }
++        };
++    }
++    async runAsyncOperation(operation) {
++        const release = this.beginAsyncOperation();
+         try {
+-            result = await statement.executeAsync(...params);
+-        } finally{
++            return await operation();
++        }
++        finally {
++            release();
++        }
++    }
++    async closeAfterPendingOperationsAsync() {
++        // Publish closePromise before invoking the native close, including reentrant calls.
++        await Promise.resolve();
++        if (this.pendingAsyncOperations > 0) {
++            await new Promise((resolve) => {
++                this.resolveAsyncDrain = resolve;
++            });
++        }
++        if (this.options.useNewConnection !== true) {
++            unregisterDatabaseForDevToolsAsync(this);
++        }
++        await this.nativeDatabase.closeAsync();
++    }
++    async prepareStatementAsync(source) {
++        const nativeStatement = new ExpoSQLite.NativeStatement();
++        await this.nativeDatabase.prepareAsync(nativeStatement, source);
++        return new SQLiteStatement(this.nativeDatabase, nativeStatement);
++    }
++    withStatementAsync(source, task) {
++        return this.runAsyncOperation(async () => {
++            const statement = await this.prepareStatementAsync(source);
++            let operationFailed = false;
++            let operationError;
++            try {
++                return await task(statement);
++            }
++            catch (error) {
++                operationFailed = true;
++                operationError = error;
++                throw error;
++            }
++            finally {
++                await this.finalizeStatementWithErrorPreservation(statement, operationFailed, operationError);
++            }
++        });
++    }
++    async finalizeStatementWithErrorPreservation(statement, operationFailed, operationError) {
++        try {
++            // sqlite3_finalize destroys the statement even when it returns BUSY. Never retry it.
+             await statement.finalizeAsync();
+         }
+-        return result;
++        catch (cleanupError) {
++            // A successful getFirstAsync may only have reached ROW (UPDATE ... RETURNING).
++            // Cleanup failure is still a failed operation; JS success is not proof of commit.
++            if (!operationFailed)
++                throw cleanupError;
++            this.attachCleanupError(operationError, cleanupError);
++        }
++    }
++    attachCleanupError(operationError, cleanupError) {
++        if (typeof operationError !== 'object' || operationError === null)
++            return;
++        try {
++            if (!Object.isExtensible(operationError))
++                return;
++            const previous = operationError.sqliteCleanupErrors;
++            Object.defineProperty(operationError, 'sqliteCleanupErrors', {
++                value: [...(Array.isArray(previous) ? previous.slice(-3) : []), cleanupError],
++                enumerable: true,
++                configurable: true,
++            });
++        }
++        catch {
++            // Diagnostic attachment must never mask the original error or falsy thrown value.
++        }
++    }
++    async runAsync(source, ...params) {
++        return this.withStatementAsync(source, (statement) => statement.executeAsync(...params));
+     }
+     async getFirstAsync(source, ...params) {
+-        const statement = await this.prepareAsync(source);
+-        let firstRow;
+-        try {
++        return this.withStatementAsync(source, async (statement) => {
+             const result = await statement.executeAsync(...params);
+-            firstRow = await result.getFirstAsync();
+-        } finally{
+-            await statement.finalizeAsync();
+-        }
+-        return firstRow;
++            return result.getFirstAsync();
++        });
+     }
+     async *getEachAsync(source, ...params) {
+-        const statement = await this.prepareAsync(source);
++        const release = this.beginAsyncOperation();
+         try {
+-            const result = await statement.executeAsync(...params);
+-            for await (const row of result){
+-                yield row;
++            const statement = await this.prepareStatementAsync(source);
++            let operationFailed = false;
++            let operationError;
++            try {
++                const result = await statement.executeAsync(...params);
++                for await (const row of result) {
++                    yield row;
++                }
+             }
+-        } finally{
+-            await statement.finalizeAsync();
++            catch (error) {
++                operationFailed = true;
++                operationError = error;
++                throw error;
++            }
++            finally {
++                await this.finalizeStatementWithErrorPreservation(statement, operationFailed, operationError);
++            }
++        }
++        finally {
++            release();
+         }
+     }
+     async getAllAsync(source, ...params) {
+-        const statement = await this.prepareAsync(source);
+-        let allRows;
+-        try {
++        return this.withStatementAsync(source, async (statement) => {
+             const result = await statement.executeAsync(...params);
+-            allRows = await result.getAllAsync();
+-        } finally{
+-            await statement.finalizeAsync();
+-        }
+-        return allRows;
++            return result.getAllAsync();
++        });
+     }
+     runSync(source, ...params) {
+         const statement = this.prepareSync(source);
+         let result;
+         try {
+             result = statement.executeSync(...params);
+-        } finally{
++        }
++        finally {
+             statement.finalizeSync();
+         }
+         return result;
+@@ -380,7 +520,8 @@ import { createDatabasePath } from './pathUtils';
+         try {
+             const result = statement.executeSync(...params);
+             firstRow = result.getFirstSync();
+-        } finally{
++        }
++        finally {
+             statement.finalizeSync();
+         }
+         return firstRow;
+@@ -389,10 +530,11 @@ import { createDatabasePath } from './pathUtils';
+         const statement = this.prepareSync(source);
+         try {
+             const result = statement.executeSync(...params);
+-            for (const row of result){
++            for (const row of result) {
+                 yield row;
+             }
+-        } finally{
++        }
++        finally {
+             statement.finalizeSync();
+         }
+     }
+@@ -402,7 +544,8 @@ import { createDatabasePath } from './pathUtils';
+         try {
+             const result = statement.executeSync(...params);
+             allRows = result.getAllSync();
+-        } finally{
++        }
++        finally {
+             statement.finalizeSync();
+         }
+         return allRows;
+@@ -410,17 +553,20 @@ import { createDatabasePath } from './pathUtils';
+ }
+ /**
+  * The default directory for SQLite databases.
+- */ export const defaultDatabaseDirectory = ExpoSQLite.defaultDatabaseDirectory;
++ */
++export const defaultDatabaseDirectory = ExpoSQLite.defaultDatabaseDirectory;
+ /**
+  * The pre-bundled SQLite extensions.
+- */ export const bundledExtensions = ExpoSQLite.bundledExtensions;
++ */
++export const bundledExtensions = ExpoSQLite.bundledExtensions;
+ /**
+  * Open a database.
+  *
+  * @param databaseName The name of the database file to open.
+  * @param options Open options.
+  * @param directory The directory where the database file is located. The default value is `defaultDatabaseDirectory`. This parameter is not supported on web.
+- */ export async function openDatabaseAsync(databaseName, options, directory) {
++ */
++export async function openDatabaseAsync(databaseName, options, directory) {
+     const openOptions = options ?? {};
+     const databasePath = createDatabasePath(databaseName, directory);
+     await ExpoSQLite.ensureDatabasePathExistsAsync(databasePath);
+@@ -440,7 +586,8 @@ import { createDatabasePath } from './pathUtils';
+  * @param databaseName The name of the database file to open.
+  * @param options Open options.
+  * @param directory The directory where the database file is located. The default value is `defaultDatabaseDirectory`. This parameter is not supported on web.
+- */ export function openDatabaseSync(databaseName, options, directory) {
++ */
++export function openDatabaseSync(databaseName, options, directory) {
+     const openOptions = options ?? {};
+     const databasePath = createDatabasePath(databaseName, directory);
+     ExpoSQLite.ensureDatabasePathExistsSync(databasePath);
+@@ -457,7 +604,8 @@ import { createDatabasePath } from './pathUtils';
+  *
+  * @param serializedData The binary array to deserialize from [`SQLiteDatabase.serializeAsync()`](#serializeasyncdatabasename).
+  * @param options Open options.
+- */ export async function deserializeDatabaseAsync(serializedData, options) {
++ */
++export async function deserializeDatabaseAsync(serializedData, options) {
+     const openOptions = options ?? {};
+     const nativeDatabase = new ExpoSQLite.NativeDatabase(':memory:', openOptions, serializedData);
+     await nativeDatabase.initAsync();
+@@ -470,7 +618,8 @@ import { createDatabasePath } from './pathUtils';
+  *
+  * @param serializedData The binary array to deserialize from [`SQLiteDatabase.serializeSync()`](#serializesyncdatabasename)
+  * @param options Open options.
+- */ export function deserializeDatabaseSync(serializedData, options) {
++ */
++export function deserializeDatabaseSync(serializedData, options) {
+     const openOptions = options ?? {};
+     const nativeDatabase = new ExpoSQLite.NativeDatabase(':memory:', openOptions, serializedData);
+     nativeDatabase.initSync();
+@@ -481,7 +630,8 @@ import { createDatabasePath } from './pathUtils';
+  *
+  * @param databaseName The name of the database file to delete.
+  * @param directory The directory where the database file is located. The default value is `defaultDatabaseDirectory`.
+- */ export async function deleteDatabaseAsync(databaseName, directory) {
++ */
++export async function deleteDatabaseAsync(databaseName, directory) {
+     const databasePath = createDatabasePath(databaseName, directory);
+     return await ExpoSQLite.deleteDatabaseAsync(databasePath);
+ }
+@@ -492,7 +642,8 @@ import { createDatabasePath } from './pathUtils';
+  *
+  * @param databaseName The name of the database file to delete.
+  * @param directory The directory where the database file is located. The default value is `defaultDatabaseDirectory`.
+- */ export function deleteDatabaseSync(databaseName, directory) {
++ */
++export function deleteDatabaseSync(databaseName, directory) {
+     const databasePath = createDatabasePath(databaseName, directory);
+     return ExpoSQLite.deleteDatabaseSync(databasePath);
+ }
+@@ -506,7 +657,8 @@ import { createDatabasePath } from './pathUtils';
+  * @param options.sourceDatabaseName - The name of the source database. The default value is `main`
+  * @param options.destDatabase - The destination database to backup to
+  * @param options.destDatabaseName - The name of the destination database. The default value is `main`
+- */ export function backupDatabaseAsync({ sourceDatabase, sourceDatabaseName, destDatabase, destDatabaseName }) {
++ */
++export function backupDatabaseAsync({ sourceDatabase, sourceDatabaseName, destDatabase, destDatabaseName, }) {
+     return ExpoSQLite.backupDatabaseAsync(destDatabase.nativeDatabase, destDatabaseName ?? 'main', sourceDatabase.nativeDatabase, sourceDatabaseName ?? 'main');
+ }
+ /**
+@@ -521,7 +673,8 @@ import { createDatabasePath } from './pathUtils';
+  * @param options.sourceDatabaseName - The name of the source database. The default value is `main`
+  * @param options.destDatabase - The destination database to backup to
+  * @param options.destDatabaseName - The name of the destination database. The default value is `main`
+- */ export function backupDatabaseSync({ sourceDatabase, sourceDatabaseName, destDatabase, destDatabaseName }) {
++ */
++export function backupDatabaseSync({ sourceDatabase, sourceDatabaseName, destDatabase, destDatabaseName, }) {
+     return ExpoSQLite.backupDatabaseSync(destDatabase.nativeDatabase, destDatabaseName ?? 'main', sourceDatabase.nativeDatabase, sourceDatabaseName ?? 'main');
+ }
+ /**
+@@ -530,18 +683,17 @@ import { createDatabasePath } from './pathUtils';
+  *
+  * @param listener A function that receives the `databaseName`, `databaseFilePath`, `tableName` and `rowId` of the modified data.
+  * @returns A `Subscription` object that you can call `remove()` on when you would like to unsubscribe the listener.
+- */ export function addDatabaseChangeListener(listener) {
++ */
++export function addDatabaseChangeListener(listener) {
+     return ExpoSQLite.addListener('onDatabaseChange', listener);
+ }
+ /**
+  * A new connection specific used for [`withExclusiveTransactionAsync`](#withexclusivetransactionasynctask).
+  * @hidden not going to pull all the database methods to the document.
+- */ class Transaction extends SQLiteDatabase {
++ */
++class Transaction extends SQLiteDatabase {
+     static async createAsync(db) {
+-        const options = {
+-            ...db.options,
+-            useNewConnection: true
+-        };
++        const options = { ...db.options, useNewConnection: true };
+         const nativeDatabase = new ExpoSQLite.NativeDatabase(db.databasePath, options);
+         await nativeDatabase.initAsync();
+         return new Transaction(db.databasePath, options, nativeDatabase);
+@@ -550,8 +702,8 @@ import { createDatabasePath } from './pathUtils';
+ /**
+  * The native database hands serialized bytes over as a `Uint8Array` on iOS and as an `ArrayBuffer`
+  * on Android.
+- */ function toUint8Array(data) {
++ */
++function toUint8Array(data) {
+     return data instanceof Uint8Array ? data : new Uint8Array(data);
+ }
+-
+-//# sourceMappingURL=SQLiteDatabase.js.map
++//# sourceMappingURL=SQLiteDatabase.js.map
+\ No newline at end of file
+diff --git a/build/SQLiteDatabase.js.map b/build/SQLiteDatabase.js.map
+index 6a61588..89c5d9c 100644
+--- a/build/SQLiteDatabase.js.map
++++ b/build/SQLiteDatabase.js.map
+@@ -1 +1 @@
+-{"version":3,"sources":["SQLiteDatabase.ts"],"sourcesContent":[null],"names":["Platform","ExpoSQLite","registerDatabaseForDevToolsAsync","unregisterDatabaseForDevToolsAsync","SQLiteSession","SQLiteStatement","SQLiteTaggedQuery","createDatabasePath","SQLiteDatabase","databasePath","options","nativeDatabase","isInTransactionAsync","closeAsync","useNewConnection","execAsync","source","serializeAsync","databaseName","toUint8Array","prepareAsync","nativeStatement","NativeStatement","createSessionAsync","dbName","nativeSession","NativeSession","loadExtensionAsync","libPath","entryPoint","withTransactionAsync","task","e","withExclusiveTransactionAsync","OS","Error","transaction","Transaction","createAsync","error","isInTransactionSync","interruptSync","closeSync","execSync","serializeSync","prepareSync","createSessionSync","loadExtensionSync","withTransactionSync","sql","strings","values","runAsync","params","statement","result","executeAsync","finalizeAsync","getFirstAsync","firstRow","getEachAsync","row","getAllAsync","allRows","runSync","executeSync","finalizeSync","getFirstSync","getEachSync","getAllSync","defaultDatabaseDirectory","bundledExtensions","openDatabaseAsync","directory","openOptions","ensureDatabasePathExistsAsync","NativeDatabase","initAsync","database","openDatabaseSync","ensureDatabasePathExistsSync","initSync","deserializeDatabaseAsync","serializedData","deserializeDatabaseSync","deleteDatabaseAsync","deleteDatabaseSync","backupDatabaseAsync","sourceDatabase","sourceDatabaseName","destDatabase","destDatabaseName","backupDatabaseSync","addDatabaseChangeListener","listener","addListener","db","data","Uint8Array"],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"SQLiteDatabase.js","sourceRoot":"","sources":["SQLiteDatabase.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/ios/NativeDatabase.swift b/ios/NativeDatabase.swift
+index d413d74..a7d3b16 100644
+--- a/ios/NativeDatabase.swift
++++ b/ios/NativeDatabase.swift
+@@ -111,11 +111,17 @@ final class NativeDatabase: SharedObject, @unchecked Sendable {
+   // MARK: - Implementation shared by the sync and async members
+ 
+   private func isInTransaction() throws -> Bool {
++    // Serialize connection lifetime with close; the lock is recursive for cleanup.
++    statementLifecycleLock.lock()
++    defer { statementLifecycleLock.unlock() }
+     try ensureOpen()
+     return exsqlite3_get_autocommit(pointer) == 0
+   }
+ 
+   private func exec(source: String) throws {
++    // Serialize connection lifetime with close; the lock is recursive for cleanup.
++    statementLifecycleLock.lock()
++    defer { statementLifecycleLock.unlock() }
+     try ensureOpen()
+     var error: UnsafeMutablePointer<CChar>?
+     let ret = exsqlite3_exec(pointer, source, nil, nil, &error)
+@@ -127,6 +133,9 @@ final class NativeDatabase: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func serialize(databaseName: String) throws -> Data {
++    // Serialize connection lifetime with close; the lock is recursive for cleanup.
++    statementLifecycleLock.lock()
++    defer { statementLifecycleLock.unlock() }
+     try ensureOpen()
+     var size: sqlite3_int64 = 0
+     guard let bytes = exsqlite3_serialize(pointer, databaseName, &size, 0) else {
+@@ -155,6 +164,9 @@ final class NativeDatabase: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func createSession(session: NativeSession, dbName: String) throws {
++    // Serialize connection lifetime with close; the lock is recursive for cleanup.
++    statementLifecycleLock.lock()
++    defer { statementLifecycleLock.unlock() }
+     try ensureOpen()
+     let db = dbName.cString(using: .utf8)
+     if exsqlite3session_create(pointer, db, &session.pointer) != SQLITE_OK {
+@@ -163,6 +175,9 @@ final class NativeDatabase: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func loadExtension(libPath: String, entryPoint: String?) throws {
++    // Serialize connection lifetime with close; the lock is recursive for cleanup.
++    statementLifecycleLock.lock()
++    defer { statementLifecycleLock.unlock() }
+     try ensureOpen()
+     exsqlite3_enable_load_extension(pointer, 1)
+     var error: UnsafeMutablePointer<CChar>?
+diff --git a/ios/NativeSession.swift b/ios/NativeSession.swift
+index 5e26d7a..ef3afe3 100644
+--- a/ios/NativeSession.swift
++++ b/ios/NativeSession.swift
+@@ -88,6 +88,8 @@ final class NativeSession: SharedObject, @unchecked Sendable {
+   // MARK: - Implementation shared by the sync and async members
+ 
+   private func attach(database: NativeDatabase, table: String?) throws {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     let tableName = table?.cString(using: .utf8)
+     if exsqlite3session_attach(pointer, tableName) != SQLITE_OK {
+@@ -96,16 +98,22 @@ final class NativeSession: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func enable(database: NativeDatabase, enabled: Bool) throws {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     exsqlite3session_enable(pointer, enabled ? 1 : 0)
+   }
+ 
+   private func close(database: NativeDatabase) throws {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     exsqlite3session_delete(pointer)
+   }
+ 
+   private func createChangeset(database: NativeDatabase) throws -> ArrayBuffer {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     var size: Int32 = 0
+     var buffer: UnsafeMutableRawPointer?
+@@ -122,11 +130,15 @@ final class NativeSession: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func createInvertedChangeset(database: NativeDatabase) throws -> ArrayBuffer {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     let changeset = try createChangeset(database: database)
+     return try invertChangeset(database: database, changeset: changeset)
+   }
+ 
+   private func applyChangeset(database: NativeDatabase, changeset: some AnyArrayBuffer) throws {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     try changeset.withUnsafeBytes {
+       let buffer = UnsafeMutableRawPointer(mutating: $0.baseAddress)
+@@ -146,6 +158,8 @@ final class NativeSession: SharedObject, @unchecked Sendable {
+   }
+ 
+   private func invertChangeset(database: NativeDatabase, changeset: some AnyArrayBuffer) throws -> ArrayBuffer {
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try database.ensureOpen()
+     return try changeset.withUnsafeBytes {
+       let inBuffer = UnsafeMutableRawPointer(mutating: $0.baseAddress)
+diff --git a/ios/SQLiteModule.swift b/ios/SQLiteModule.swift
+index 1077f6d..266f28f 100644
+--- a/ios/SQLiteModule.swift
++++ b/ios/SQLiteModule.swift
+@@ -4,13 +4,20 @@ import ExpoModulesCore
+ 
+ private let MEMORY_DB_NAME = ":memory:"
+ 
+-private let moduleQueue = DispatchQueue(label: "expo.module.sqlite.AsyncQueue", qos: .userInitiated, attributes: .concurrent)
++nonisolated(unsafe) private let moduleQueueKey = DispatchSpecificKey<Void>()
+ 
+ // `@unchecked Sendable`: the `@JS(.concurrent)` members send the module off the JavaScript thread, which
+ // Swift 6 mode allows only for a `Sendable` module. The mutable state is either guarded by `cacheLock` or
+ // only read off the JavaScript thread (`hasListeners`).
+ @ExpoModule("ExpoSQLite", classes: [NativeStatement.self, NativeSession.self])
+ public final class SQLiteModule: Module, @unchecked Sendable {
++  // Keep queued init/close work scoped to its owning runtime.
++  private let moduleQueue: DispatchQueue = {
++    let queue = DispatchQueue(label: "expo.module.sqlite.AsyncQueue", qos: .userInitiated, attributes: .concurrent)
++    queue.setSpecific(key: moduleQueueKey, value: ())
++    return queue
++  }()
++
+   // Store unmanaged (SQLiteModule, Database) pairs for sqlite callbacks,
+   // will release the pair when `closeDatabase` is called.
+   private var contextPairs = [Unmanaged<AnyObject>]()
+@@ -53,11 +60,7 @@ public final class SQLiteModule: Module, @unchecked Sendable {
+   }
+ 
+   public override func willDestroy() {
+-    removeAllCachedDatabases().forEach {
+-      do {
+-        try closeDatabase($0)
+-      } catch {}
+-    }
++    closeAllDatabases()
+   }
+ 
+   // MARK: - Module functions
+@@ -118,6 +121,11 @@ public final class SQLiteModule: Module, @unchecked Sendable {
+   }
+ 
+   public func definition() -> ModuleDefinition {
++    // Runtime destruction may precede ARC deallocation while async work retains us.
++    OnAppContextDestroys {
++      closeAllDatabases()
++    }
++
+     // MARK: - NativeDatabase
+ 
+     // swiftlint:disable:next closure_body_length
+@@ -221,6 +229,11 @@ public final class SQLiteModule: Module, @unchecked Sendable {
+   }
+ 
+   private func initDb(database: NativeDatabase) throws {
++    // Match closeDatabase: callbacks take cacheLock while SQLite owns this connection.
++    Self.cacheLock.lock()
++    defer { Self.cacheLock.unlock() }
++    database.statementLifecycleLock.lock()
++    defer { database.statementLifecycleLock.unlock() }
+     try maybeThrowForClosedDatabase(database)
+     if database.openOptions.enableChangeListener {
+       addUpdateHook(database)
+@@ -291,6 +304,14 @@ public final class SQLiteModule: Module, @unchecked Sendable {
+   }
+ 
+   private func backupDatabase(destDatabase: NativeDatabase, destDatabaseName: String, sourceDatabase: NativeDatabase, sourceDatabaseName: String) throws {
++    // A backup owns two connections. Stable ordering avoids opposite-direction
++    // backups deadlocking while teardown waits to close either connection.
++    let databases = [destDatabase, sourceDatabase].sorted {
++      UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))
++    }
++    databases.forEach { $0.statementLifecycleLock.lock() }
++    defer { databases.reversed().forEach { $0.statementLifecycleLock.unlock() } }
++
+     try maybeThrowForClosedDatabase(destDatabase)
+     try maybeThrowForClosedDatabase(sourceDatabase)
+     guard let backup = exsqlite3_backup_init(destDatabase.pointer, destDatabaseName, sourceDatabase.pointer, sourceDatabaseName) else {
+@@ -336,6 +357,25 @@ public final class SQLiteModule: Module, @unchecked Sendable {
+ 
+   // MARK: - cachedDatabases managements
+ 
++  private func closeAllDatabases() {
++    let closeDatabases: @Sendable () -> Void = { [self] in
++      removeAllCachedDatabases().forEach {
++        do {
++          try closeDatabase($0)
++        } catch {
++          ExpoModulesCore.log.warn("Failed to close SQLite database during runtime teardown: \(error)")
++        }
++      }
++    }
++    // Legacy init/close functions still use this queue. New @JS concurrent
++    // operations rendezvous with closeDatabase through statementLifecycleLock.
++    if DispatchQueue.getSpecific(key: moduleQueueKey) != nil {
++      moduleQueue.async(flags: .barrier, execute: closeDatabases)
++    } else {
++      moduleQueue.sync(flags: .barrier, execute: closeDatabases)
++    }
++  }
++
+   private func addCachedDatabase(_ database: NativeDatabase) {
+     Self.cacheLock.withLock {
+       cachedDatabases.append(database)
+diff --git a/src/SQLiteDatabase.ts b/src/SQLiteDatabase.ts
+index 038939d..f3d8c30 100644
+--- a/src/SQLiteDatabase.ts
++++ b/src/SQLiteDatabase.ts
+@@ -25,6 +25,12 @@ export type { SQLiteOpenOptions } from './NativeDatabase';
+  * A SQLite database.
+  */
+ export class SQLiteDatabase {
++  // Boardsesh #5851: each admitted helper owns its native reference through cleanup.
++  private pendingAsyncOperations = 0;
++  private isClosing = false;
++  private closePromise: Promise<void> | null = null;
++  private resolveAsyncDrain: (() => void) | null = null;
++
+   constructor(
+     public readonly databasePath: string,
+     public readonly options: SQLiteOpenOptions,
+@@ -35,17 +41,18 @@ export class SQLiteDatabase {
+    * Asynchronous call to return whether the database is currently in a transaction.
+    */
+   public isInTransactionAsync(): Promise<boolean> {
+-    return this.nativeDatabase.isInTransactionAsync();
++    return this.runAsyncOperation(() => this.nativeDatabase.isInTransactionAsync());
+   }
+ 
+   /**
+    * Close the database.
+    */
+   public closeAsync(): Promise<void> {
+-    if (this.options.useNewConnection !== true) {
+-      unregisterDatabaseForDevToolsAsync(this);
++    if (this.closePromise === null) {
++      this.isClosing = true;
++      this.closePromise = this.closeAfterPendingOperationsAsync();
+     }
+-    return this.nativeDatabase.closeAsync();
++    return this.closePromise;
+   }
+ 
+   /**
+@@ -55,7 +62,7 @@ export class SQLiteDatabase {
+    * @param source A string containing all the SQL queries.
+    */
+   public execAsync(source: string): Promise<void> {
+-    return this.nativeDatabase.execAsync(source);
++    return this.runAsyncOperation(() => this.nativeDatabase.execAsync(source));
+   }
+ 
+   /**
+@@ -63,8 +70,8 @@ export class SQLiteDatabase {
+    *
+    * @param databaseName The name of the current attached databases. The default value is `main` which is the default database name.
+    */
+-  public async serializeAsync(databaseName: string = 'main'): Promise<Uint8Array> {
+-    return toUint8Array(await this.nativeDatabase.serializeAsync(databaseName));
++  public serializeAsync(databaseName: string = 'main'): Promise<Uint8Array> {
++    return this.runAsyncOperation(async () => toUint8Array(await this.nativeDatabase.serializeAsync(databaseName)));
+   }
+ 
+   /**
+@@ -73,9 +80,7 @@ export class SQLiteDatabase {
+    * @param source A string containing the SQL query.
+    */
+   public async prepareAsync(source: string): Promise<SQLiteStatement> {
+-    const nativeStatement = new ExpoSQLite.NativeStatement();
+-    await this.nativeDatabase.prepareAsync(nativeStatement, source);
+-    return new SQLiteStatement(this.nativeDatabase, nativeStatement);
++    return this.runAsyncOperation(() => this.prepareStatementAsync(source));
+   }
+ 
+   /**
+@@ -110,7 +115,7 @@ export class SQLiteDatabase {
+    * ```
+    */
+   public loadExtensionAsync(libPath: string, entryPoint?: string): Promise<void> {
+-    return this.nativeDatabase.loadExtensionAsync(libPath, entryPoint);
++    return this.runAsyncOperation(() => this.nativeDatabase.loadExtensionAsync(libPath, entryPoint));
+   }
+ 
+   /**
+@@ -138,19 +143,20 @@ export class SQLiteDatabase {
+    * @param task An async function to execute within a transaction.
+    */
+   public async withTransactionAsync(task: () => Promise<void>): Promise<void> {
+-    try {
+-      await this.execAsync('BEGIN');
+-      await task();
+-      await this.execAsync('COMMIT');
+-    } catch (e) {
++    return this.runAsyncOperation(async () => {
+       try {
+-        await this.execAsync('ROLLBACK');
+-      } catch {
+-        // SQLite may already have rolled back (for example, after an interrupted write).
+-        // Preserve the original error if rollback also fails.
++        await this.nativeDatabase.execAsync('BEGIN');
++        await task();
++        await this.nativeDatabase.execAsync('COMMIT');
++      } catch (error) {
++        try {
++          await this.nativeDatabase.execAsync('ROLLBACK');
++        } catch (cleanupError) {
++          this.attachCleanupError(error, cleanupError);
++        }
++        throw error;
+       }
+-      throw e;
+-    }
++    });
+   }
+ 
+   /**
+@@ -180,28 +186,35 @@ export class SQLiteDatabase {
+   public async withExclusiveTransactionAsync(
+     task: (txn: Transaction) => Promise<void>
+   ): Promise<void> {
+-    if (Platform.OS === 'web') {
+-      throw new Error('withExclusiveTransactionAsync is not supported on web');
+-    }
+-    const transaction = await Transaction.createAsync(this);
+-    let error;
+-    try {
+-      await transaction.execAsync('BEGIN');
+-      await task(transaction);
+-      await transaction.execAsync('COMMIT');
+-    } catch (e) {
+-      try {
+-        await transaction.execAsync('ROLLBACK');
+-      } catch {
+-        // SQLite may already have rolled back; preserve the original error.
++    return this.runAsyncOperation(async () => {
++      if (Platform.OS === 'web') {
++        throw new Error('withExclusiveTransactionAsync is not supported on web');
+       }
+-      error = e;
+-    } finally {
+-      await transaction.closeAsync();
+-    }
+-    if (error) {
+-      throw error;
+-    }
++      const transaction = await Transaction.createAsync(this);
++      let operationFailed = false;
++      let operationError: unknown;
++      try {
++        await transaction.execAsync('BEGIN');
++        await task(transaction);
++        await transaction.execAsync('COMMIT');
++      } catch (error) {
++        operationFailed = true;
++        operationError = error;
++        try {
++          await transaction.execAsync('ROLLBACK');
++        } catch (cleanupError) {
++          this.attachCleanupError(error, cleanupError);
++        }
++      } finally {
++        try {
++          await transaction.closeAsync();
++        } catch (cleanupError) {
++          if (!operationFailed) throw cleanupError;
++          this.attachCleanupError(operationError, cleanupError);
++        }
++      }
++      if (operationFailed) throw operationError;
++    });
+   }
+ 
+   /**
+@@ -237,10 +250,19 @@ export class SQLiteDatabase {
+    * Close the database.
+    */
+   public closeSync(): void {
+-    if (this.options.useNewConnection !== true) {
+-      unregisterDatabaseForDevToolsAsync(this);
++    if (this.pendingAsyncOperations > 0 || this.isClosing) {
++      throw new Error('Cannot synchronously close SQLite: async work is active, or the database is closing or closed');
++    }
++    this.isClosing = true;
++    try {
++      if (this.options.useNewConnection !== true) {
++        unregisterDatabaseForDevToolsAsync(this);
++      }
++      this.nativeDatabase.closeSync();
++    } finally {
++      // Never release the same cached native reference twice, including after a close error.
++      this.closePromise = Promise.resolve();
+     }
+-    return this.nativeDatabase.closeSync();
+   }
+ 
+   /**
+@@ -377,6 +399,95 @@ export class SQLiteDatabase {
+   public sql = <T = unknown>(strings: TemplateStringsArray, ...values: unknown[]) =>
+     new SQLiteTaggedQuery<T>(this, strings, values);
+ 
++  // The barrier covers convenience helpers and transactions used by Boardsesh.
++  // Raw prepared statements/sessions remain caller-owned and must be finalized before close.
++  private beginAsyncOperation(): () => void {
++    if (this.isClosing) {
++      throw new Error('Access to closed resource: SQLite database is closing or closed');
++    }
++    this.pendingAsyncOperations += 1;
++    return () => {
++      this.pendingAsyncOperations -= 1;
++      if (this.pendingAsyncOperations === 0) {
++        this.resolveAsyncDrain?.();
++        this.resolveAsyncDrain = null;
++      }
++    };
++  }
++
++  private async runAsyncOperation<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
++    const release = this.beginAsyncOperation();
++    try {
++      return await operation();
++    } finally {
++      release();
++    }
++  }
++
++  private async closeAfterPendingOperationsAsync(): Promise<void> {
++    // Publish closePromise before invoking the native close, including reentrant calls.
++    await Promise.resolve();
++    if (this.pendingAsyncOperations > 0) {
++      await new Promise<void>((resolve) => {
++        this.resolveAsyncDrain = resolve;
++      });
++    }
++    if (this.options.useNewConnection !== true) {
++      unregisterDatabaseForDevToolsAsync(this);
++    }
++    await this.nativeDatabase.closeAsync();
++  }
++
++  private async prepareStatementAsync(source: string): Promise<SQLiteStatement> {
++    const nativeStatement = new ExpoSQLite.NativeStatement();
++    await this.nativeDatabase.prepareAsync(nativeStatement, source);
++    return new SQLiteStatement(this.nativeDatabase, nativeStatement);
++  }
++
++  private withStatementAsync<TResult>(source: string, task: (statement: SQLiteStatement) => Promise<TResult>): Promise<TResult> {
++    return this.runAsyncOperation(async () => {
++      const statement = await this.prepareStatementAsync(source);
++      let operationFailed = false;
++      let operationError: unknown;
++      try {
++        return await task(statement);
++      } catch (error) {
++        operationFailed = true;
++        operationError = error;
++        throw error;
++      } finally {
++        await this.finalizeStatementWithErrorPreservation(statement, operationFailed, operationError);
++      }
++    });
++  }
++
++  private async finalizeStatementWithErrorPreservation(statement: SQLiteStatement, operationFailed: boolean, operationError: unknown): Promise<void> {
++    try {
++      // sqlite3_finalize destroys the statement even when it returns BUSY. Never retry it.
++      await statement.finalizeAsync();
++    } catch (cleanupError) {
++      // A successful getFirstAsync may only have reached ROW (UPDATE ... RETURNING).
++      // Cleanup failure is still a failed operation; JS success is not proof of commit.
++      if (!operationFailed) throw cleanupError;
++      this.attachCleanupError(operationError, cleanupError);
++    }
++  }
++
++  private attachCleanupError(operationError: unknown, cleanupError: unknown): void {
++    if (typeof operationError !== 'object' || operationError === null) return;
++    try {
++      if (!Object.isExtensible(operationError)) return;
++      const previous = (operationError as { sqliteCleanupErrors?: unknown[] }).sqliteCleanupErrors;
++      Object.defineProperty(operationError, 'sqliteCleanupErrors', {
++        value: [...(Array.isArray(previous) ? previous.slice(-3) : []), cleanupError],
++        enumerable: true,
++        configurable: true,
++      });
++    } catch {
++      // Diagnostic attachment must never mask the original error or falsy thrown value.
++    }
++  }
++
+   //#region Statement API shorthands
+ 
+   /**
+@@ -391,14 +502,7 @@ export class SQLiteDatabase {
+    */
+   public runAsync(source: string, ...params: SQLiteVariadicBindParams): Promise<SQLiteRunResult>;
+   public async runAsync(source: string, ...params: any[]): Promise<SQLiteRunResult> {
+-    const statement = await this.prepareAsync(source);
+-    let result: SQLiteExecuteAsyncResult<unknown>;
+-    try {
+-      result = await statement.executeAsync(...params);
+-    } finally {
+-      await statement.finalizeAsync();
+-    }
+-    return result;
++    return this.withStatementAsync(source, (statement) => statement.executeAsync(...params));
+   }
+ 
+   /**
+@@ -412,15 +516,10 @@ export class SQLiteDatabase {
+    */
+   public getFirstAsync<T>(source: string, ...params: SQLiteVariadicBindParams): Promise<T | null>;
+   public async getFirstAsync<T>(source: string, ...params: any[]): Promise<T | null> {
+-    const statement = await this.prepareAsync(source);
+-    let firstRow: T | null;
+-    try {
++    return this.withStatementAsync(source, async (statement) => {
+       const result = await statement.executeAsync<T>(...params);
+-      firstRow = await result.getFirstAsync();
+-    } finally {
+-      await statement.finalizeAsync();
+-    }
+-    return firstRow;
++      return result.getFirstAsync();
++    });
+   }
+ 
+   /**
+@@ -438,14 +537,25 @@ export class SQLiteDatabase {
+     ...params: SQLiteVariadicBindParams
+   ): AsyncIterableIterator<T>;
+   public async *getEachAsync<T>(source: string, ...params: any[]): AsyncIterableIterator<T> {
+-    const statement = await this.prepareAsync(source);
++    const release = this.beginAsyncOperation();
+     try {
+-      const result = await statement.executeAsync<T>(...params);
+-      for await (const row of result) {
+-        yield row;
++      const statement = await this.prepareStatementAsync(source);
++      let operationFailed = false;
++      let operationError: unknown;
++      try {
++        const result = await statement.executeAsync<T>(...params);
++        for await (const row of result) {
++          yield row;
++        }
++      } catch (error) {
++        operationFailed = true;
++        operationError = error;
++        throw error;
++      } finally {
++        await this.finalizeStatementWithErrorPreservation(statement, operationFailed, operationError);
+       }
+     } finally {
+-      await statement.finalizeAsync();
++      release();
+     }
+   }
+ 
+@@ -471,15 +581,10 @@ export class SQLiteDatabase {
+    */
+   public getAllAsync<T>(source: string, ...params: SQLiteVariadicBindParams): Promise<T[]>;
+   public async getAllAsync<T>(source: string, ...params: any[]): Promise<T[]> {
+-    const statement = await this.prepareAsync(source);
+-    let allRows;
+-    try {
++    return this.withStatementAsync(source, async (statement) => {
+       const result = await statement.executeAsync<T>(...params);
+-      allRows = await result.getAllAsync();
+-    } finally {
+-      await statement.finalizeAsync();
+-    }
+-    return allRows;
++      return result.getAllAsync();
++    });
+   }
+ 
+   /**

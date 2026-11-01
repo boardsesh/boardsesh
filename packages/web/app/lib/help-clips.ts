@@ -20,6 +20,7 @@ export type HelpClipName =
   | 'zone-filter-drag'
   | 'grade-range-tap'
   | 'preview-browsing'
+  | 'wall-swipe-to-drive'
   | 'start-playlist-queue';
 
 export type HelpClipSources = {

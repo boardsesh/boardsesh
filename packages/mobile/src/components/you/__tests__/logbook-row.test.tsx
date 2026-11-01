@@ -118,6 +118,35 @@ vi.mock('react-native-gesture-handler', () => {
     return builder;
   };
   return {
+    usePanGesture: (config: {
+      onActivate: () => void;
+      onDeactivate: (event: { translationX: number; canceled?: boolean }) => void;
+    }) => {
+      const builder = gestureChain(true);
+      builder.onStart(config.onActivate);
+      builder.onEnd((event: { translationX: number }, success?: boolean) =>
+        config.onDeactivate({ ...event, canceled: success === false }),
+      );
+      rowGestures.pan = builder;
+      return builder;
+    },
+    useTapGesture: gestureChain,
+    useLongPressGesture: gestureChain,
+    useManualGesture: () => {
+      rowGestures.manual = gestureChain();
+      return rowGestures.manual;
+    },
+    GestureStateManager: { fail: () => {}, deactivate: () => {} },
+    useExclusiveGestures: (...gestures: unknown[]) => {
+      const composition = {};
+      rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+      return composition;
+    },
+    useSimultaneousGestures: (...gestures: unknown[]) => {
+      const composition = {};
+      rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+      return composition;
+    },
     Gesture: {
       Tap: gestureChain,
       LongPress: gestureChain,
@@ -526,8 +555,8 @@ describe('LogbookRow — meta line', () => {
 describe('LogbookRow — swipe wiring', () => {
   it('mounts the swipe lock ahead of the full-swipe tracker in the row detector', () => {
     renderRow(ascent(), { onEdit: vi.fn(), onDeleteRequest: vi.fn(), onOpenActions: vi.fn() });
-    const lock = swipeable.props?.requireExternalGestureToFail;
-    const fullSwipe = swipeable.props?.simultaneousWithExternalGesture;
+    const lock = swipeable.props?.requireToFail;
+    const fullSwipe = swipeable.props?.simultaneousWith;
     expect(lock).toBe(rowGestures.manual);
     expect(fullSwipe).toBe(rowGestures.pan);
     const mountedRow = rowGestures.mounted.find(

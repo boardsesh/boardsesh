@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 // clean in every locale.
 
 const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'locales');
-const LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+const LOCALES = ['en-US', 'es', 'fr', 'de', 'it'] as const;
 const EM_DASH = '—';
 
 type Catalog = { [key: string]: string | Catalog };

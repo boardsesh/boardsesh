@@ -48,8 +48,14 @@ vi.mock('react-native-ble-plx', () => ({
 }));
 
 vi.mock('../ble-manager', () => ({
-  bleManager: mockBleManager,
+  getBleManager: () => mockBleManager,
 }));
+
+// bluetooth-authorization reads the iOS-only BoardBle module (and importing the
+// real module index loads expo-modules-core). Null is Android, web, or a binary
+// without the module: the paths this suite covers, unchanged by the
+// ask-at-first-scan work.
+vi.mock('../../../../modules/live-activity/src/index', () => ({ boardBleNative: null, sessionPresenceNative: null }));
 
 vi.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
@@ -130,6 +136,17 @@ const mockLastConnectedBoardStore = vi.hoisted(() => ({
   clearStoredLastConnectedBoard: vi.fn(async () => {}),
 }));
 vi.mock('../last-connected-board-store', () => mockLastConnectedBoardStore);
+// The per-board handles (#7076) persist through the same preference store.
+const mockKnownBoardDevicesStore = vi.hoisted(() => ({
+  getStoredKnownBoardDevices: vi.fn(
+    async (): Promise<Array<{ configKey: string; serial?: string; deviceId?: string }>> => [],
+  ),
+  setStoredKnownBoardDevices: vi.fn(async () => {}),
+}));
+vi.mock('../known-board-devices-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../known-board-devices-store')>()),
+  ...mockKnownBoardDevicesStore,
+}));
 
 // Spy on reportHandledError (keep the real noise-policy/other exports) so a
 // connect failure's Sentry tags can be asserted (#3480).
@@ -152,6 +169,7 @@ vi.mock('../adapter-factory', () => ({
   // The #3314 binary-capability probe. Default true = a binary whose Swift
   // layer drives every board; the old-binary tests flip it to false.
   nativeBleSupportsBoard: vi.fn(() => true),
+  nativeBleSupportsPreparedConnections: vi.fn(() => false),
 }));
 
 import {
@@ -159,6 +177,7 @@ import {
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
   nativeBleSupportsBoard,
+  nativeBleSupportsPreparedConnections,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
@@ -196,6 +215,7 @@ import { getHttpClient } from '../../graphql/client';
 // outermost beforeEach undoes that before the next test.
 beforeEach(() => {
   vi.mocked(nativeBleSupportsBoard).mockReturnValue(true);
+  vi.mocked(nativeBleSupportsPreparedConnections).mockReturnValue(false);
 });
 
 // ── Factory helpers ────────────────────────────────────────────────────────
@@ -217,6 +237,7 @@ function makeWriteSpy() {
 
 function makeFakeAdapter(overrides: FakeAdapterOverrides = {}) {
   return {
+    prepareBoardConnection: vi.fn().mockResolvedValue(undefined),
     isAvailable: vi.fn().mockResolvedValue(true),
     requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'device-1', deviceName: 'Kilter Board#123@3' }),
     disconnect: vi.fn().mockResolvedValue(undefined),
@@ -1700,21 +1721,16 @@ describe('useBoardBluetooth', () => {
         await result.current.connect();
       });
 
-      // The config is staged BEFORE the physical connect: native connection
-      // setup relights the shared queue with whatever config is persisted, so
-      // a stale previous-board config would encode the wrong protocol (an
-      // Aurora packet to a Woods wall). The pre-stage carries the board
-      // identity but no device-derived fields; the post-connect call re-stages
-      // with deviceName.
+      // Preparation invalidates the old pairing before connecting, and only
+      // the successful link receives the device-specific configuration.
       const requestAndConnectMock = fakeAdapter.requestAndConnect as ReturnType<typeof vi.fn>;
-      expect(fakeAdapter.configureBoard.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(fakeAdapter.prepareBoardConnection.mock.invocationCallOrder[0]).toBeLessThan(
         requestAndConnectMock.mock.invocationCallOrder[0],
       );
-      expect(fakeAdapter.configureBoard).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1 }),
+      expect(fakeAdapter.prepareBoardConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1, configKey: 'woods::1::1::' }),
       );
-      expect(fakeAdapter.configureBoard.mock.calls[0][0].deviceName).toBeUndefined();
+      expect(fakeAdapter.prepareBoardConnection.mock.calls[0][0].deviceName).toBeUndefined();
       expect(fakeAdapter.configureBoard).toHaveBeenLastCalledWith(
         expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1, deviceName: 'Kilter Board#123@3' }),
       );
@@ -3568,6 +3584,204 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
   });
 });
 
+// At a gym with a Kilter and a MoonBoard the single remembered-board record
+// flips on every walk between them. Each board keeps its own handle (#7076), so
+// walking back reconnects instead of opening the picker.
+describe('useBoardBluetooth per-board remembered devices (#7076)', () => {
+  type BluetoothProps = Parameters<typeof useBoardBluetooth>[0];
+  const kilterBoard: BluetoothProps = { boardName: 'kilter', layoutId: 1, sizeId: 1 };
+  const moonBoard: BluetoothProps = { boardName: 'moonboard', layoutId: 1, sizeId: 1 };
+  const kilterKey = 'kilter::1::1::';
+  const moonKey = 'moonboard::1::1::';
+
+  let requestAndConnect: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValue([]);
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockReset();
+    mockKnownBoardDevicesStore.setStoredKnownBoardDevices.mockResolvedValue(undefined);
+    requestAndConnect = vi.fn();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+  });
+
+  afterEach(() => {
+    vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  function renderBluetooth(initialProps: BluetoothProps) {
+    return renderHook((props: BluetoothProps) => useBoardBluetooth(props), { initialProps });
+  }
+
+  function nextConnectionIsKilter(serial: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId: `kilter-${serial}`, deviceName: `Kilter Board#${serial}@3` });
+  }
+
+  function nextConnectionIsMoonBoard(deviceId: string) {
+    requestAndConnect.mockResolvedValueOnce({ deviceId, deviceName: 'MoonBoard' });
+  }
+
+  it('reconnects to the first board after connecting to another one', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+
+    // The single record now points at the MoonBoard; the Kilter still has its own.
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+      { configKey: kilterKey, serial: 'AAA' },
+    ]);
+  });
+
+  it('forgets only the disconnected board on a deliberate disconnect', async () => {
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    nextConnectionIsMoonBoard('moon-b');
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      rerender(kilterBoard);
+    });
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect(undefined, undefined, 'AAA');
+    });
+    expect(result.current.isConnected).toBe(true);
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+
+  it('offers a board handle stored in an earlier session', async () => {
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockResolvedValueOnce([
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    const { result } = renderBluetooth(moonBoard);
+
+    await waitFor(() => expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b'));
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+  });
+
+  it('keeps a connect made during the stored read and the stored handles for other boards', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderBluetooth(kilterBoard);
+
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // The stored list still holds an older Kilter handle; the connect wins.
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'OLD' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('AAA');
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+    expect(mockKnownBoardDevicesStore.setStoredKnownBoardDevices).toHaveBeenLastCalledWith([
+      { configKey: kilterKey, serial: 'AAA' },
+      { configKey: moonKey, deviceId: 'moon-b' },
+    ]);
+
+    await act(async () => {
+      rerender(moonBoard);
+    });
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-b');
+  });
+
+  it('keeps a board released before the stored read lands released', async () => {
+    let resolveStored: (devices: Array<{ configKey: string; serial?: string; deviceId?: string }>) => void = () => {};
+    mockKnownBoardDevicesStore.getStoredKnownBoardDevices.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStored = resolve;
+      }),
+    );
+
+    const { result } = renderBluetooth(kilterBoard);
+    nextConnectionIsKilter('AAA');
+    await act(async () => {
+      await result.current.connect();
+    });
+    // Let go of it before the per-board list has even been read.
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    await act(async () => {
+      resolveStored([
+        { configKey: kilterKey, serial: 'AAA' },
+        { configKey: moonKey, deviceId: 'moon-b' },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.hasRememberedDeviceForConfigKey(kilterKey)).toBe(false);
+    expect(result.current.hasRememberedDeviceForConfigKey(moonKey)).toBe(true);
+  });
+});
+
 // connect() writes initialFrames before declaring success. That write can take
 // the link with it. These tests pin the boundary: a lost link fails the connect,
 // while a write the board merely refused does not.
@@ -4924,8 +5138,10 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
 
   // The Android session notification's bulb connects with the app in the
   // background. With the board off, nobody is there to close the picker, and the
-  // in-flight connect would swallow every later bulb tap.
-  it('ends a connect nobody is looking at when its scan finds nothing', async () => {
+  // in-flight connect would swallow every later bulb tap. It ends with the
+  // standard "board not found" alert, which Android holds until the app is back
+  // on screen (#7038).
+  it('ends a connect nobody is looking at with board not found when its scan finds nothing', async () => {
     mockAppState.currentState = 'background';
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
@@ -4938,14 +5154,12 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     await expect(connectPromise).resolves.toBe(false);
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
-    expect(Alert.alert).not.toHaveBeenCalled();
-    // A cancel is not a failure (#4547): it reports as 'Bluetooth Connection
-    // Cancelled', never as a 'Bluetooth Connection Failed' with a cancel reason.
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.boardNotFound');
     expect(mockTrack).toHaveBeenCalledWith(
-      'Bluetooth Connection Cancelled',
-      expect.objectContaining({ boardName: 'kilter' }),
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ boardName: 'kilter', failureReason: 'board_not_found' }),
     );
-    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
 
     // The next bulb tap scans again instead of being swallowed.
     await act(async () => {
@@ -4953,6 +5167,63 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(mockBleManager.startDeviceScan).toHaveBeenCalledTimes(2);
+  });
+
+  // The grace window would put the list up on a paused activity, where nobody
+  // can pick from it, and it would also turn a hidden search into a "seen" one.
+  it('keeps a background connect off screen for the whole scan (#7038)', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 1);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+    expect(result.current.loading).toBe(true);
+  });
+
+  // Opening the app mid-search shows the bulb spinner, not a sheet, and the
+  // search still ends with the alert when the scan does (#7038).
+  it('still ends a background connect with board not found when the app opens mid-search', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    mockAppState.currentState = 'active';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS - 15_000);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.boardNotFound');
+    expect(result.current.pickerState).toBeNull();
+    await expect(connectPromise).resolves.toBe(false);
+  });
+
+  // The gate is whether the climber ever saw the sheet, not where the app is
+  // when the scan ends: a sheet they saw waits for them with its empty state.
+  it('keeps a picker the climber saw when the app goes to the background before the scan ends', async () => {
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ presented: true });
+
+    mockAppState.currentState = 'background';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: false, presented: true });
+    expect(result.current.loading).toBe(true);
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it('keeps the empty picker up behind an iOS call banner, where the climber can still see it', async () => {
@@ -5020,8 +5291,8 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     vi.useRealTimers();
   });
 
-  function renderBluetooth() {
-    return renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+  function renderBluetooth(boardUuid?: string) {
+    return renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid }));
   }
 
   it('opens the sheet at the tap searching for the saved board, and lists nothing until the list starts', async () => {
@@ -5068,8 +5339,107 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
   });
 
-  it('keeps a background tap (Android notification bulb) silent until the list starts', async () => {
+  it('keeps the known-board filter through saved-search grace expiry, with an explicit escape', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      mode: 'list',
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeInstanceOf(Function);
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+  });
+
+  it('makes the saved-search escape reveal all boards as it ends auto-selection', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    expect(result.current.pickerState).toMatchObject({ mode: 'list', showAllBoards: true });
+    act(() => scanCallbacks[0](null, advert('NEEDLE', 'needle-device')));
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+  });
+
+  it('keeps first-connect raw results for resolution and preserves the escape on later scan updates', async () => {
+    const { result } = renderBluetooth('qa-kilter');
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      mode: 'list',
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    act(() => scanCallbacks[0](null, advert('OTHER', 'other-device')));
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual(['other-device']);
+    act(() => result.current.pickerState?.handleSearchAnyBoard?.());
+    act(() => scanCallbacks[0](null, advert('LATER', 'later-device')));
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    expect(result.current.pickerState?.devices.map((device) => device.deviceId)).toEqual([
+      'other-device',
+      'later-device',
+    ]);
+  });
+
+  it('snapshots the target and resets escape for a new session, ignoring an old escape callback', async () => {
+    const { result, rerender } = renderHook(
+      ({ boardUuid }) => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid }),
+      { initialProps: { boardUuid: 'first-board' } },
+    );
+    let firstConnect: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      firstConnect = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const oldEscape = result.current.pickerState?.handleSearchAnyBoard;
+    rerender({ boardUuid: 'second-board' });
+    expect(result.current.pickerState?.targetBoard?.boardUuid).toBe('first-board');
+    act(() => oldEscape?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(true);
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(firstConnect).resolves.toBe(false);
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({
+      targetBoard: { boardUuid: 'second-board', boardName: 'kilter' },
+      showAllBoards: false,
+    });
+    act(() => oldEscape?.());
+    expect(result.current.pickerState?.showAllBoards).toBe(false);
+  });
+
+  it('does not constrain an anonymous first connect', async () => {
+    const { result } = renderBluetooth('');
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState?.targetBoard).toBeUndefined();
+    expect(result.current.pickerState?.handleSearchAnyBoard).toBeUndefined();
+  });
+
+  // #7038: nobody can pick from a list in the background, so the grace window
+  // leaves a background tap searching off screen, and a board that turns up later
+  // in the scan still connects without the app being opened.
+  it('keeps a background tap (Android notification bulb) silent and auto-selecting for the whole scan', async () => {
     mockAppState.currentState = 'background';
+    // The link itself is out of scope here: hold it open so only the auto-select
+    // is under test.
+    mockBleManager.connectToDevice.mockImplementation(() => new Promise(() => {}));
     const { result } = renderBluetooth();
     await act(async () => {
       void result.current.connect(undefined, undefined, 'NEEDLE');
@@ -5079,9 +5449,78 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 10_000);
     });
-    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  // #7038 review: the background decision is made once, at the tap. Opening the
+  // app mid-search must not let the grace window end auto-select behind a list
+  // nobody can see, or a board that shows up at 12 s reads as "not found".
+  it('keeps auto-selecting a background tap after the app opens mid-search', async () => {
+    mockAppState.currentState = 'background';
+    mockBleManager.connectToDevice.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderBluetooth();
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'NEEDLE');
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    mockAppState.currentState = 'active';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_000);
+    });
+
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it('keeps a manually selected picker mounted until its dismissal settles', async () => {
+    let failConnection: (error: Error) => void = () => {};
+    mockBleManager.connectToDevice.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failConnection = reject;
+        }),
+    );
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => scanCallbacks[0](null, advert('CHOSEN', 'chosen-device')));
+    const picker = result.current.pickerState;
+    expect(picker).toMatchObject({ mode: 'list', closing: false });
+
+    await act(async () => {
+      picker?.handleSelect('chosen-device');
+      picker?.handleSelect('chosen-device');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ sessionId: picker?.sessionId, closing: true });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledExactlyOnceWith('chosen-device', { timeout: 12_000 });
+
+    // A connection failure must not interrupt the native dismissal either.
+    await act(async () => {
+      failConnection(new Error('Connection timed out — board may be powered off'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toMatchObject({ sessionId: picker?.sessionId, closing: true });
+    act(() => picker?.handleClosed());
+    expect(result.current.pickerState).toBeNull();
   });
 
   it('closes the sheet by dismissal, not by unmount, when the saved board is found', async () => {
@@ -5101,7 +5540,7 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     });
     await expect(connectPromise).resolves.toBe(false);
     expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
-    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
 
     // Still mounted and closing: the host clears it once the dismissal settled.
     expect(result.current.pickerState).toMatchObject({ closing: true, mode: 'searching' });
@@ -5158,7 +5597,7 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
       scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
     await expect(connectPromise).resolves.toBe(false);
   });
 
@@ -5203,8 +5642,9 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     const ownSessionId = result.current.pickerState?.sessionId;
+    const closeOwnPicker = result.current.pickerState?.handleClosed;
     act(() => result.current.pickerState?.handleSelect('device-1'));
-    expect(result.current.pickerState).toBeNull();
+    expect(result.current.pickerState).toMatchObject({ sessionId: ownSessionId, closing: true });
 
     // A newer picker opens while that connect is still unwinding. Connects can't
     // overlap today (connectInFlightRef), so it is opened through the same picker
@@ -5218,6 +5658,8 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     });
     const newerSessionId = result.current.pickerState?.sessionId;
     expect(newerSessionId).not.toBe(ownSessionId);
+    act(() => closeOwnPicker?.());
+    expect(result.current.pickerState).toMatchObject({ sessionId: newerSessionId, closing: false });
 
     await act(async () => {
       failConnect(new Error('Connection timed out — board may be powered off'));
@@ -5308,5 +5750,196 @@ describe('useBoardBluetooth serial recording', () => {
       serialNumber: '751945',
       boardUuid: '11111111-1111-4111-8111-111111111111',
     });
+  });
+});
+
+describe('useBoardBluetooth prepared native pairing (#7122)', () => {
+  const currentBoard = { boardName: 'kilter' as const, layoutId: 1, sizeId: 1, boardUuid: 'wall-b' };
+  const currentConfigKey = 'kilter::1::1::wall-b';
+  type NativeSnapshot = Awaited<ReturnType<typeof getNativeBleConnectedDevice>>;
+  let connectedListener: ((payload: { deviceId: string; deviceName?: string }) => void) | null;
+
+  function makePreparedAdapter() {
+    return {
+      ...makeFakeAdapter(),
+      adoptConnection: vi.fn(),
+      configureBoard: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockAppState.currentState = 'active';
+    connectedListener = null;
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    vi.mocked(nativeBleSupportsPreparedConnections).mockReturnValue(true);
+    vi.mocked(isNativeIosBleAdapter).mockReturnValue(true);
+    vi.mocked(getNativeBleConnectedDevice).mockReset();
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+    vi.mocked(subscribeNativeBleConnected).mockImplementation((listener) => {
+      connectedListener = listener;
+      return { remove: vi.fn() };
+    });
+    vi.mocked(parseBoardTypeFromDeviceName).mockImplementation((name?: string) =>
+      name?.startsWith('Kilter') ? 'kilter' : undefined,
+    );
+    vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+  });
+
+  afterEach(() => {
+    vi.mocked(nativeBleSupportsPreparedConnections).mockReturnValue(false);
+    vi.mocked(isNativeIosBleAdapter).mockReturnValue(false);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+    vi.mocked(subscribeNativeBleConnected).mockImplementation(() => null);
+    vi.mocked(parseBoardTypeFromDeviceName).mockReset();
+    vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  it('does not scan or connect when preparation fails', async () => {
+    const adapter = makePreparedAdapter();
+    adapter.prepareBoardConnection.mockRejectedValue(new Error('Native pairing invalidation failed'));
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+
+    await act(async () => {
+      expect(await result.current.connect()).toBe(false);
+    });
+
+    expect(adapter.requestAndConnect).not.toHaveBeenCalled();
+    expect(adapter.configureBoard).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+  });
+
+  it.each(['Device selection cancelled', 'Failed to connect to device'])(
+    'leaves a failed attempt disconnected despite a buffered old event: %s',
+    async (message) => {
+      const adapter = makePreparedAdapter();
+      adapter.requestAndConnect = vi.fn().mockRejectedValue(new Error(message));
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+      await act(async () => {});
+
+      await act(async () => {
+        expect(await result.current.connect()).toBe(false);
+        connectedListener?.({ deviceId: 'old-kilter', deviceName: 'Kilter Board' });
+      });
+
+      expect(adapter.prepareBoardConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ configKey: currentConfigKey }),
+      );
+      expect(adapter.adoptConnection).not.toHaveBeenCalled();
+      expect(adapter.configureBoard).not.toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(false);
+    },
+  );
+
+  it.each([undefined, 'kilter::1::1::wall-a'])(
+    'refuses a same-brand native snapshot with another or missing key: %s',
+    async (configKey) => {
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'old-kilter',
+        name: 'Kilter Board',
+        configKey,
+      });
+      const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+      await act(async () => {});
+
+      expect(createBluetoothAdapter).not.toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(false);
+    },
+  );
+
+  it.each(['Kilter Board', ''])('adopts the matching native pairing without a known serial: %s', async (name) => {
+    const adapter = makePreparedAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+      deviceId: 'board-b',
+      name,
+      configKey: currentConfigKey,
+    });
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+    await act(async () => {});
+
+    expect(adapter.adoptConnection).toHaveBeenCalledWith('board-b');
+    expect(adapter.configureBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ configKey: currentConfigKey, deviceId: 'board-b' }),
+    );
+    expect(result.current.isConnected).toBe(true);
+  });
+
+  it('uses the current native snapshot instead of the buffered event device', async () => {
+    const adapter = makePreparedAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+    await act(async () => {});
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+      deviceId: 'board-b',
+      name: 'Kilter Board',
+      configKey: currentConfigKey,
+    });
+
+    await act(async () => connectedListener?.({ deviceId: 'old-kilter', deviceName: 'Kilter Board' }));
+
+    expect(adapter.adoptConnection).toHaveBeenCalledWith('board-b');
+    expect(adapter.adoptConnection).not.toHaveBeenCalledWith('old-kilter');
+    expect(result.current.isConnected).toBe(true);
+  });
+
+  it('rejects a same-key snapshot requested before a failed connect', async () => {
+    let resolveSnapshot!: (snapshot: NativeSnapshot) => void;
+    const oldSnapshot = new Promise<NativeSnapshot>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+    vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(oldSnapshot);
+    const adapter = makePreparedAdapter();
+    adapter.requestAndConnect = vi.fn().mockRejectedValue(new Error('Device selection cancelled'));
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+    await act(async () => {});
+
+    await act(async () => {
+      expect(await result.current.connect()).toBe(false);
+      resolveSnapshot({ deviceId: 'old-kilter', name: 'Kilter Board', configKey: currentConfigKey });
+    });
+
+    expect(adapter.adoptConnection).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+  });
+
+  it('does not adopt an event snapshot started during a subsequently cancelled attempt', async () => {
+    let resolveSnapshot!: (snapshot: NativeSnapshot) => void;
+    const oldSnapshot = new Promise<NativeSnapshot>((resolve) => {
+      resolveSnapshot = resolve;
+    });
+    let finishAvailability!: (available: boolean) => void;
+    const availability = new Promise<boolean>((resolve) => {
+      finishAvailability = resolve;
+    });
+    const adapter = { ...makePreparedAdapter(), isAvailable: vi.fn().mockReturnValueOnce(availability) };
+    adapter.requestAndConnect = vi.fn().mockRejectedValue(new Error('Device selection cancelled'));
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+    await act(async () => {});
+    vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(oldSnapshot);
+
+    let connectResult!: Promise<boolean>;
+    await act(async () => {
+      connectResult = result.current.connect();
+    });
+    await act(async () => {
+      connectedListener?.({ deviceId: 'old-kilter', deviceName: 'Kilter Board' });
+      finishAvailability(true);
+    });
+    await act(async () => {
+      expect(await connectResult).toBe(false);
+      resolveSnapshot({ deviceId: 'old-kilter', name: 'Kilter Board', configKey: currentConfigKey });
+    });
+
+    expect(adapter.adoptConnection).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
   });
 });

@@ -1,11 +1,7 @@
 name: Mobile Store Draft Submission
 
-# The source branch in the title, because the runs list cannot tell: a
-# workflow_run run reports the default branch as its head_branch.
-# release-train-sync.yml waits for an in-progress run titled "(main)"
-# before it moves the train, so this must name the branch the draft pins. (A run
-# called by mobile-store-submit.yml has no title of its own; it pins a main commit,
-# so the train moving does not matter to it.)
+# Automatic drafts pin the triggering upload receipt's binary source;
+# workflow_run reports the current main tooling revision as its own head.
 run-name: Mobile Store Draft (${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }})
 
 # Best-effort preparation of a DRAFT store submission for the current marketing

@@ -12,6 +12,7 @@ const router = vi.hoisted(() => ({ dismiss: vi.fn() }));
 const navigation = vi.hoisted(() => ({
   setOptions: vi.fn(),
   isFocused: vi.fn(() => true),
+  removalListeners: new Map<string, () => void>(),
   beforeRemove: null as ((event: { defaultPrevented: boolean }) => void) | null,
   addListener: vi.fn<(event: string, listener: (event: { defaultPrevented: boolean }) => void) => () => void>(),
 }));
@@ -24,6 +25,9 @@ const player = vi.hoisted(() => ({
 }));
 const surface = vi.hoisted(() => ({ onLayout: null as ((event: LayoutChangeEvent) => void) | null }));
 const queueSheet = vi.hoisted(() => ({ mounted: 0, present: vi.fn(), dismiss: vi.fn(), dismissAndWait: vi.fn() }));
+// An iPhone by default; the iPad cases change it before rendering.
+const device = vi.hoisted(() => ({ isPad: false, width: 400, height: 900 }));
+const drawerProps = vi.hoisted(() => ({ fitBoardToHeight: undefined as boolean | undefined }));
 const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 };
 
 // The play route now asks which boards stand at this gym, to decide whether a
@@ -43,7 +47,13 @@ vi.mock('../../src/components/launch-update/hold-until-launch-ready', () => ({
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
-  useWindowDimensions: () => ({ height: 900, width: 400 }),
+  Platform: {
+    OS: 'ios',
+    get isPad() {
+      return device.isPad;
+    },
+  },
+  useWindowDimensions: () => ({ height: device.height, width: device.width }),
 }));
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
@@ -74,6 +84,7 @@ vi.mock('expo-router', () => ({
   useRouter: () => router,
   useNavigation: () => navigation,
   Link: { AppleZoomTarget: ({ children }: { children: ReactNode }) => children },
+  router: { push: vi.fn() },
 }));
 vi.mock('../../src/components/ScreenBackground', () => ({
   ScreenBackground: () => createElement('div', { 'data-testid': 'background' }),
@@ -84,22 +95,42 @@ vi.mock('../../src/components/play-drawer', () => ({
     onClose,
     onOpenQueue,
     dismissPlayerAndWait,
+    fitBoardToHeight,
+    renderSidePanel,
   }: {
     swipeDismiss: SwipeDismissAnimation;
     onClose: () => void;
     onOpenQueue: () => void;
     dismissPlayerAndWait: () => Promise<DismissAndWaitResult>;
+    fitBoardToHeight?: boolean;
+    renderSidePanel?: (displayed: null) => ReactNode;
   }) => {
     player.swipeDismiss = swipeDismiss;
     player.dismissAndWait = dismissPlayerAndWait;
+    drawerProps.fitBoardToHeight = fitBoardToHeight;
     return createElement(
       'div',
       null,
       createElement('button', { onClick: onClose }, 'Close player'),
       createElement('button', { onClick: onOpenQueue }, 'Open queue'),
+      renderSidePanel ? renderSidePanel(null) : null,
     );
   },
 }));
+vi.mock('../../src/components/play-drawer/PlayerSidePanel', async () => {
+  const { useImperativeHandle, useState } = await import('react');
+  return {
+    PlayerSidePanel: ({ ref }: { ref: Ref<{ showUpNext: () => void }> }) => {
+      const [segment, setSegment] = useState('upNext');
+      useImperativeHandle(ref, () => ({ showUpNext: () => setSegment('upNext') }));
+      return createElement(
+        'div',
+        { 'data-testid': 'side-panel', 'data-segment': segment },
+        createElement('button', { onClick: () => setSegment('logbook') }, 'Logbook segment'),
+      );
+    },
+  };
+});
 vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
   const { useImperativeHandle, useEffect } = await import('react');
   return {
@@ -117,6 +148,8 @@ vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
   };
 });
 vi.mock('../../src/components/ble/DevicePickerSheetHost', () => ({ DevicePickerSheetHost: () => null }));
+// The route reports its picker as busy for the phone split; no picker is up here.
+vi.mock('../../src/providers/ble-picker-host', () => ({ useBlePickerHost: () => ({ pickerState: null }) }));
 vi.mock('../../src/components/play-drawer/use-queue-sheet-handlers', () => ({ useQueueSheetHandlers: () => ({}) }));
 vi.mock('../../src/providers/drawer-host-provider', () => ({
   usePlayDrawerRoute: () => ({
@@ -159,13 +192,19 @@ function renderPlayer() {
 
 beforeEach(() => {
   queueSheet.mounted = 0;
+  Object.assign(device, { isPad: false, width: 400, height: 900 });
+  drawerProps.fitBoardToHeight = undefined;
   vi.clearAllMocks();
   navigation.isFocused.mockReturnValue(true);
   navigation.beforeRemove = null;
-  navigation.addListener.mockImplementation((_event, listener) => {
-    navigation.beforeRemove = listener;
+  navigation.removalListeners.clear();
+  navigation.beforeRemove = (event) =>
+    navigation.removalListeners.get(event.defaultPrevented ? 'removePrevented' : 'removed')?.();
+  navigation.addListener.mockImplementation((event, listener) => {
+    const callback = () => listener({ defaultPrevented: event === 'removePrevented' });
+    navigation.removalListeners.set(event, callback);
     return () => {
-      if (navigation.beforeRemove === listener) navigation.beforeRemove = null;
+      if (navigation.removalListeners.get(event) === callback) navigation.removalListeners.delete(event);
     };
   });
   frames.clear();
@@ -373,9 +412,7 @@ describe('player swipe dismissal', () => {
     routeTarget.current = { nonce: 1, climb: { uuid: 'first' } } as PlayDrawerOpenTarget;
     const { rerender } = renderPlayer();
     act(() => {
-      const event = { defaultPrevented: false };
-      navigation.beforeRemove?.(event);
-      event.defaultPrevented = true;
+      navigation.beforeRemove?.({ defaultPrevented: true });
     });
     routeTarget.current = { nonce: 2, climb: { uuid: 'fresh' } } as PlayDrawerOpenTarget;
     rerender(createElement(PlayScreen));
@@ -540,5 +577,53 @@ describe('player swipe dismissal', () => {
     flushFrame();
     flushFrame();
     expect(router.dismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('iPad player arrangement', () => {
+  it('puts Up next beside the board in landscape and selects it from the queue button', () => {
+    Object.assign(device, { isPad: true, width: 1376, height: 1032 });
+    renderPlayer();
+    const panel = screen.getByTestId('side-panel');
+    expect(panel.getAttribute('data-segment')).toBe('upNext');
+    expect(drawerProps.fitBoardToHeight).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Logbook segment' }));
+    expect(screen.getByTestId('side-panel').getAttribute('data-segment')).toBe('logbook');
+
+    // Up next is already on screen: no second queue stacks over the player.
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(screen.getByTestId('side-panel').getAttribute('data-segment')).toBe('upNext');
+    expect(queueSheet.mounted).toBe(0);
+    expect(queueSheet.present).not.toHaveBeenCalled();
+  });
+
+  it('folds an open queue sheet away when the iPad turns to landscape', () => {
+    Object.assign(device, { isPad: true, width: 1032, height: 1376 });
+    const { rerender } = renderPlayer();
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(queueSheet.present).toHaveBeenCalledTimes(1);
+    expect(queueSheet.dismiss).not.toHaveBeenCalled();
+
+    Object.assign(device, { width: 1376, height: 1032 });
+    rerender(createElement(PlayScreen));
+    expect(screen.getByTestId('side-panel')).toBeTruthy();
+    expect(queueSheet.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the board on top in portrait and presents the queue sheet', () => {
+    Object.assign(device, { isPad: true, width: 1032, height: 1376 });
+    renderPlayer();
+    expect(screen.queryByTestId('side-panel')).toBeNull();
+    expect(drawerProps.fitBoardToHeight).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(queueSheet.present).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows the panel on a phone held sideways', () => {
+    Object.assign(device, { isPad: false, width: 956, height: 440 });
+    renderPlayer();
+    expect(screen.queryByTestId('side-panel')).toBeNull();
+    expect(drawerProps.fitBoardToHeight).toBe(false);
   });
 });

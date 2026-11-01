@@ -324,6 +324,7 @@
       "title": "Optionen für die Boulderliste",
       "viewOptions": "Ansichtsoptionen",
       "history": "Board-Verlauf, {{board}}",
+      "historyTitle": "Board-Verlauf",
       "historyHint": "Sieh, welche Boulder an diesem Board beleuchtet wurden"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Aktive Filter: {{filters}}",
-        "removeHint": "Entferne einen Filter und versuche es erneut. Deine Suche und Einstellungen bleiben ausgewählt.",
+        "removeHint": "Entferne einen Filter und versuche es erneut. Alles andere bleibt ausgewählt.",
         "openFilters": "Filter anpassen"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "{{name}} oben in der Leiste anpinnen",
       "unpinChip": "{{name}} aus der oberen Leiste entfernen",
       "recentDescription": "Deine letzten 10 Suchen erscheinen hier.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Schnellfilter",
+      "quickFiltersFooter": "Wähle, welche Filter oben in der Leiste erscheinen und in welcher Reihenfolge.",
       "established2plus": "Etabliert 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",
@@ -607,7 +611,6 @@
     },
     "search": {
       "recentFilters": "Zuletzt",
-      "clearRecent": "Löschen",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",

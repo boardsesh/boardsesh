@@ -71,9 +71,9 @@ jobs:
   build-and-test:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
-    # macos-26 is GA on GitHub-hosted runners and matches the RN TestFlight
-    # workflow's Xcode line; the PR workflow has passed on this label.
-    runs-on: macos-26
+    # Exercise SDK 58's scene-based startup against the iOS 27 SDK/runtime.
+    # GitHub's xcode-27 image selects Xcode 27; macos-26 stays on Xcode 26.
+    runs-on: xcode-27
     # 90, not 60: this job now compiles the app scheme (every Pod) on top of the
     # Swift test target, and there's no DerivedData cache — only the Pods sources
     # are cached. Native-input PRs only; the gate skips JS-only ones entirely.
@@ -101,6 +101,7 @@ jobs:
           vp test run --project scripts
           scripts/__tests__/ios-release-launch-smoke.test.ts
           scripts/__tests__/ios-release-launch-smoke-workflow.test.ts
+          scripts/__tests__/expo-sqlite-runtime-teardown.test.ts
           --reporter=agent
 
       - name: Check widget Swift duplicate drift
@@ -239,15 +240,9 @@ jobs:
           check 'ExpoSQLite SQLiteModule.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-sqlite/ios/SQLiteModule\.swift'
           exit $status
 
-      # #5293: React Native core is the prebuilt React.xcframework here, so a
-      # react-native source patch never compiles (the first fix for this crash
-      # did exactly that and stayed green). The fix is a runtime flag override
-      # in modules/react-flag-overrides, called from AppDelegate.swift by
-      # plugins/with-scheduler-delegate-invalidation.js. Prove both halves made
-      # it into this build: a CompileC for the .mm, and the call sitting between
-      # the factory init and startReactNative.
-      - name: Assert the SchedulerDelegate flag override compiled (#5293)
-        run: node scripts/assert-ios-flag-override-compiled.mjs build.log packages/mobile/ios/Boardsesh/AppDelegate.swift
+      # #5293: source builds must compile the patched delegate lifetime guard.
+      - name: Assert the SchedulerDelegate lifetime guard compiled (#5293)
+        run: node scripts/assert-ios-scheduler-guard-compiled.mjs build.log packages/mobile/ios
 
       # Same species as the assertion above: a green build is not proof of a
       # correct binary. Expo's precompiled modules mean ExpoModulesCore ships as

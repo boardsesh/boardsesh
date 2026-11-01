@@ -29,7 +29,7 @@ permissions:
 concurrency:
   group: android-apk-rn
   cancel-in-progress: false
-  # Queue behind release-train builds instead of being replaced by the next
+  # Queue behind native tester builds instead of being replaced by the next
   # one; android-apk-rn.yml explains why the shared group queues.
   queue: max
 

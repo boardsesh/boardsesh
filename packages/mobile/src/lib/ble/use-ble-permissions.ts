@@ -1,16 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Platform, PermissionsAndroid } from 'react-native';
-import { State } from 'react-native-ble-plx';
-import { bleManager } from './ble-manager';
 import { androidApiLevel } from './android-location-permission';
 
 type AndroidPermission = (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
-
-type BlePermissionsResult = {
-  bleState: State;
-  isAvailable: boolean;
-  requestPermissions: () => Promise<boolean>;
-};
 
 type BleRuntimePermissionOptions = {
   requestNotificationPermission?: boolean;
@@ -23,8 +14,8 @@ type BleRuntimePermissionOptions = {
  *   option.
  * - 'blocked': Android answered `never_ask_again` without showing a dialog, so
  *   only the Settings app can grant it now. iOS never reports this here: its
- *   denial shows up as the `Unauthorized` radio state instead (see
- *   bluetooth-unavailable.ts).
+ *   denial reaches the scan and connect availability guards instead, read as
+ *   'unauthorized' by bluetooth-unavailable.ts.
  * - 'unsupported': web only, a browser with no Web Bluetooth (Safari, Firefox,
  *   every iOS browser). There is nothing for the climber to allow.
  */
@@ -73,9 +64,10 @@ export async function requestBleRuntimePermissionStatus({
   }
 
   if (Platform.OS === 'ios') {
-    // iOS handles BLE permissions via Info.plist entries; the system prompts
-    // automatically on first scan. No runtime permission request needed, and
-    // radio state is checked separately by scan/connect availability guards.
+    // iOS has no runtime permission API for Bluetooth: the system alert appears
+    // when the first Bluetooth manager is created, which waitForBlePoweredOn and
+    // the native adapter's isAvailable do at the scan or connect tap (see
+    // bluetooth-authorization.ts). Its answer surfaces from those guards.
     return 'granted';
   }
 
@@ -123,26 +115,4 @@ export async function requestBleRuntimePermissionStatus({
   } catch {
     return 'denied';
   }
-}
-
-export function useBlePermissions(): BlePermissionsResult {
-  const [bleState, setBleState] = useState<State>(State.Unknown);
-
-  useEffect(() => {
-    const subscription = bleManager.onStateChange((newState) => {
-      setBleState(newState);
-    }, true);
-
-    return () => subscription.remove();
-  }, []);
-
-  const requestPermissions = useCallback(async (): Promise<boolean> => {
-    return requestBleRuntimePermissions({ requestNotificationPermission: true });
-  }, []);
-
-  return {
-    bleState,
-    isAvailable: bleState === State.PoweredOn,
-    requestPermissions,
-  };
 }

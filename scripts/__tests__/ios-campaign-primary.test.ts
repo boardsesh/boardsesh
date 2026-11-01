@@ -256,7 +256,7 @@ describe('regular primary capture identity', () => {
       identity: { uuid: board.uuid, boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26, 27, 28, 29], angle: 35 },
       route: '/climbs?screenshotBoardIndex=0',
     });
-    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+    for (const locale of ['en-US', 'es', 'fr', 'de', 'it'] as const) {
       const variables = buildIosCampaignMaestroEnv(locale, undefined, primary);
       expect(variables).toContain(`SCREENSHOT_PRIMARY_WALL_PAINTED_ID=^${primary.paintedId}$`);
       expect(variables).toContain(`SCREENSHOT_PRIMARY_CLIMB_TITLE=${climb.name}`);
@@ -267,6 +267,21 @@ describe('regular primary capture identity', () => {
         .join('=');
       expect(new RegExp(row).test('Lightest Pair of Shorts, V4, 35°')).toBe(true);
       expect(new RegExp(row).test('Other Climb, V4, 35°')).toBe(false);
+      const namedClimb = { ...primary, climb: { ...primary.climb, name: "Sit [left]+? $& $' $`" } };
+      const more = buildIosCampaignMaestroEnv(locale, undefined, namedClimb)
+        .find((variable) => variable.startsWith('SCREENSHOT_MINI_PLAYER_MORE_LABEL='))!
+        .split('=')
+        .slice(1)
+        .join('=');
+      const catalog = JSON.parse(readFileSync(`packages/shared/i18n/locales/${locale}/session.json`, 'utf8')) as {
+        playView: { actionBar: { moreActionsForAria: string } };
+      };
+      const moreLabel = catalog.playView.actionBar.moreActionsForAria.split('{{name}}').join(namedClimb.climb.name);
+      expect(new RegExp(more).test(moreLabel)).toBe(true);
+      expect(
+        new RegExp(more).test(catalog.playView.actionBar.moreActionsForAria.replace('{{name}}', 'Other Climb')),
+      ).toBe(false);
+      expect(new RegExp(more).test(`${moreLabel} extra`)).toBe(false);
     }
   });
 });

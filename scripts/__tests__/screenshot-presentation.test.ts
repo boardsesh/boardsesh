@@ -22,6 +22,8 @@ import { decideProbeScope } from '../screenshot-probe-scope';
 import {
   PRESENTATION_MANIFEST,
   CAPTION_IDS,
+  CAPTION_LOCALES,
+  IOS_CAMPAIGN_CAPTURE_NAMES,
   STORE_CAPTION_LOCALES,
   captionLocaleForStore,
   readCaptionCatalog,
@@ -366,6 +368,45 @@ describe('store screenshot presentation', () => {
     expect(captionLocaleForStore('android', '')).toBe('en-US');
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
   });
+
+  it('maps Italian to Apple it and keeps its default campaign independent of physical fixtures', () => {
+    expect(captionLocaleForStore('ios', 'it')).toBe('it');
+    const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES, 'it');
+    expect(recipes).toHaveLength(9);
+    expect(recipes.every((recipe) => !recipe.liveActivity && recipe.sources.length > 0)).toBe(true);
+    expect(recipes[7]).toEqual({
+      output: '07-session-detail.png',
+      caption: 'session',
+      layout: 'screen',
+      sources: ['04-session-detail.png'],
+    });
+    expect(resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES)[7].liveActivity).toEqual({
+      boardFamily: 'kilter',
+    });
+  });
+
+  it('frames the Italian phone campaign with localized session pixels and provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const size = ACCEPTED_SIZES['iphone-16-pro'][0];
+    const pixels = Buffer.alloc(size.width * size.height * 3, 57);
+    randomBytes(size.width * 64 * 3).copy(pixels);
+    const raw = await sharp(pixels, { raw: { ...size, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (const name of IOS_CAMPAIGN_CAPTURE_NAMES) writeFileSync(join(input, name), raw);
+    const saved = await frameDirectory({ platform: 'ios', device: 'iphone-16-pro', locale: 'it', input, output });
+    expect(saved).toHaveLength(9);
+    const manifest = readPresentationManifest(output);
+    expect(manifest.locale).toBe('it');
+    const session = manifest.files['07-session-detail.png'];
+    expect(readFileSync(join(output, '07-session-detail.png'))).toEqual(
+      await frameComposition([raw], readCaptionCatalog('it').session, 'screen', true),
+    );
+    expect(session.rawSha256).toBe(sha256Screenshot(raw));
+    expect(Object.values(manifest.files).every((entry) => !entry.liveActivity)).toBe(true);
+    expect(readPngDimensions(readFileSync(join(output, '07-session-detail.png')))).toEqual(size);
+  }, 60_000);
 
   it('canonicalizes composite source names and field order without ignoring changed provenance', () => {
     const sources = {
@@ -842,11 +883,10 @@ describe('store screenshot presentation', () => {
     );
   }, 60_000);
 
-  // One test per locale and shape: a single test per locale framed every caption
-  // at every size and outgrew its 120 s budget on busy CI runners.
+  // One test per locale and shape keeps each case within the CI time budget.
   const captionShapes = [{ width: 1080, height: 1920 }, ...Object.values(ACCEPTED_SIZES).map((sizes) => sizes[0])];
   it.each(
-    (['en-US', 'es', 'fr', 'de'] as const).flatMap((locale) =>
+    CAPTION_LOCALES.flatMap((locale) =>
       captionShapes.map((size) => ({ locale, size, shape: `${size.width}x${size.height}` })),
     ),
   )(
@@ -857,11 +897,13 @@ describe('store screenshot presentation', () => {
       const raw = await sharp({ create: { ...size, channels: 3, background: '#164c39' } })
         .png()
         .toBuffer();
-      for (const caption of Object.values(catalog)) {
-        const framed = await frameScreenshot(raw, caption);
-        expect(readPngDimensions(framed)).toEqual(size);
-        expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
-      }
+      await Promise.all(
+        Object.values(catalog).map(async (caption) => {
+          const framed = await frameScreenshot(raw, caption);
+          expect(readPngDimensions(framed)).toEqual(size);
+          expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
+        }),
+      );
     },
     120_000,
   );
@@ -990,14 +1032,17 @@ describe('store screenshot presentation', () => {
       '04-workout-generator.png',
       '05-profile.png',
     ]);
-    // The browse capture carries the wall column; nothing else stands in for it,
-    // and it is the only capture that feeds two frames.
+    // The current landscape browse screen has no trailing wall column.
+    // Keep its full native capture and the established upload filename.
     expect(recipes[1]).toEqual({
       output: '01-wall-status.png',
-      caption: 'wallStatus',
-      layout: 'wall-column',
+      caption: 'climbs',
+      layout: 'screen',
       sources: ['02-climbs.png'],
     });
+    for (const locale of CAPTION_LOCALES) {
+      expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names, locale)).toEqual(recipes);
+    }
     expect(recipes.filter((recipe) => recipe.sources.includes('02-climbs.png'))).toHaveLength(1);
     for (const missing of names) {
       expect(() =>
@@ -1012,6 +1057,32 @@ describe('store screenshot presentation', () => {
       'Incomplete or unknown',
     );
   });
+
+  it('frames the complete Italian iPad browse screen with its own source provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const size = ACCEPTED_SIZES['ipad-pro-13-inch-m5'][0];
+    const pixels = Buffer.alloc(size.width * size.height * 3, 57);
+    randomBytes(size.width * 64 * 3).copy(pixels);
+    const raw = await sharp(pixels, { raw: { ...size, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (const name of Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'))) {
+      writeFileSync(join(input, name), raw);
+    }
+    const saved = await frameDirectory({ platform: 'ios', device: 'ipad-pro-13-inch-m5', locale: 'it', input, output });
+    expect(saved).toHaveLength(6);
+    const browse = readFileSync(join(output, '01-wall-status.png'));
+    expect(browse).toEqual(await frameComposition([raw], readCaptionCatalog('it').climbs, 'screen', true));
+    expect(readPngDimensions(browse)).toEqual(size);
+    const manifest = readPresentationManifest(output);
+    expect(manifest.locale).toBe('it');
+    expect(manifest.files['01-wall-status.png']).toEqual({
+      rawBytes: raw.length,
+      rawSha256: sha256Screenshot(raw),
+      framedSha256: sha256Screenshot(browse),
+    });
+  }, 60_000);
 
   it('leaves the iPhone and Android recipes untouched by the iPad campaign', () => {
     const phone = Object.keys(screenshotCaptions('ios', 'iphone-16-pro-max'));

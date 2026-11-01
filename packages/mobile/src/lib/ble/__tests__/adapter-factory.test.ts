@@ -18,6 +18,7 @@ const harness = vi.hoisted(() => ({
   // tested in native-ble-supports-board.test.ts; here it's a switch for the
   // factory's routing decision.
   nativeBleSupportsBoard: vi.fn(() => true),
+  nativeBleSupportsPreparedConnections: vi.fn(() => false),
 }));
 
 vi.mock('react-native', () => ({
@@ -36,6 +37,7 @@ vi.mock('../native-ios-adapter', () => ({
   NativeIosBleAdapter: harness.NativeIosBleAdapter,
   nativeBleSupportsConnectionAdoption: vi.fn(() => false),
   nativeBleSupportsBoard: harness.nativeBleSupportsBoard,
+  nativeBleSupportsPreparedConnections: harness.nativeBleSupportsPreparedConnections,
 }));
 vi.mock('../../../../modules/live-activity/src/index', () => ({
   get boardBleNative() {
@@ -51,6 +53,7 @@ import {
   createBluetoothAdapter,
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
+  nativeBleSupportsPreparedConnections,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
 import { ScreenshotFakeBleAdapter } from '../screenshot-fake-adapter';
@@ -148,6 +151,12 @@ describe('isNativeIosBleAdapter', () => {
     expect(isNativeIosBleAdapter(nativeInstance)).toBe(true);
     expect(isNativeIosBleAdapter(rnInstance)).toBe(false);
   });
+});
+
+it('exports the running binary prepared-connection capability', () => {
+  harness.nativeBleSupportsPreparedConnections.mockReturnValueOnce(true);
+  expect(nativeBleSupportsPreparedConnections()).toBe(true);
+  expect(nativeBleSupportsPreparedConnections()).toBe(false);
 });
 
 describe('screenshot fake-Bluetooth gate', () => {

@@ -1,7 +1,8 @@
 /**
  * The board switcher (`/boards`) is a modal opened from a tab. After activating a
  * board it dismisses back to the tab it was opened from, passed as a `returnTo`
- * route param. Allow-list the value so a malformed or deep-linked param can't
+ * route param. The landscape iPad player's Switch board passes `/play`, so the
+ * pick closes only the switcher and the climber lands back in the player. Allow-list the value so a malformed or deep-linked param can't
  * redirect the user to an unexpected screen, and default to Climbs (the screen
  * the switcher has always returned to, including the onboarding hand-off).
  */
@@ -10,6 +11,7 @@ export type BoardReturnTo =
   | '/(tabs)/discover'
   | '/(tabs)/record'
   | '/(tabs)/home'
+  | '/play'
   | `/(tabs)/${SetterPlaylistTab}/setter/${string}`;
 
 /** The tab stacks that hold a setter's list: Climbs, and Discover for a For You card. */
@@ -61,7 +63,7 @@ export function resolveBoardReturnTo(value: string | undefined): BoardReturnTo {
     const setterReturn = resolveSetterPlaylistReturnTo(value, setterTab);
     if (setterReturn) return setterReturn;
   }
-  return value === '/(tabs)/discover' || value === '/(tabs)/record' || value === '/(tabs)/home'
+  return value === '/(tabs)/discover' || value === '/(tabs)/record' || value === '/(tabs)/home' || value === '/play'
     ? value
     : '/(tabs)/climbs';
 }

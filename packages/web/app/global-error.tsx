@@ -33,6 +33,12 @@ const COPY = {
     subtitle: 'Lade neu und zurück an die Wand',
     reload: 'App neu laden',
   },
+  it: {
+    htmlLang: 'it',
+    title: 'Qualcosa è andato storto',
+    subtitle: 'Ricarica per tornare in parete',
+    reload: 'Ricarica app',
+  },
 } as const;
 
 type Locale = keyof typeof COPY;
@@ -43,6 +49,7 @@ function detectLocale(): Locale {
   if (pathname === '/es' || pathname.startsWith('/es/')) return 'es';
   if (pathname === '/fr' || pathname.startsWith('/fr/')) return 'fr';
   if (pathname === '/de' || pathname.startsWith('/de/')) return 'de';
+  if (pathname === '/it' || pathname.startsWith('/it/')) return 'it';
   return 'en-US';
 }
 

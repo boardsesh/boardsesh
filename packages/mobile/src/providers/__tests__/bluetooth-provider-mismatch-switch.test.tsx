@@ -80,6 +80,9 @@ const presence = vi.hoisted(() => ({
 type PickerSheetProps = {
   onSelect: (deviceId: string) => void;
   onScanAgain?: () => void;
+  targetBoard?: { boardUuid: string; boardName: string };
+  showAllBoards?: boolean;
+  onSearchAnyBoard?: () => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -314,6 +317,7 @@ function makeMismatchingPickerState(): PickerState {
     handleSelect: vi.fn(),
     handleCancel: vi.fn(),
     sessionId: 1,
+    showAllBoards: false,
     mode: 'list',
     presented: true,
     closing: false,
@@ -1117,6 +1121,35 @@ describe('BluetoothProvider external picker host stacking (#5868)', () => {
     rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
     expect(sheetCount(container)).toBe(1);
   });
+
+  it('keeps the session target and escape across root and route host handoffs (#7125)', () => {
+    const targetBoard = { boardUuid: 'qa-kilter', boardName: 'kilter' };
+    const handleSearchAnyBoard = vi.fn();
+    bluetooth.state.pickerState = {
+      ...makeMismatchingPickerState(),
+      targetBoard,
+      showAllBoards: true,
+      handleSearchAnyBoard,
+    };
+    const { rerender } = render(renderHosts([]));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
+    rerender(renderHosts(['play']));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
+    rerender(renderHosts([]));
+    expect(pickerSheet.props).toMatchObject({
+      targetBoard,
+      showAllBoards: true,
+      onSearchAnyBoard: handleSearchAnyBoard,
+    });
+  });
 });
 
 function makeBoardItem(uuid: string, boardType: string | undefined, layoutId: number | undefined): ClimbQueueItem {
@@ -1256,6 +1289,128 @@ describe('BluetoothProvider picker Scan again', () => {
       );
     },
   );
+});
+
+// #7001: a connect on a MoonBoard climb with the gym's Kilter selected moves to
+// the MoonBoard, then connects. The switch reaches this provider a render
+// later, so the connect has to wait for it.
+describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
+  const MOON_BOARD = makeBoard({
+    uuid: 'board-moon',
+    boardType: 'moonboard',
+    layoutId: 2,
+    sizeId: 1,
+    setIds: '1,2',
+    name: 'Gym MoonBoard',
+    serialNumber: null,
+  });
+  const MOON_PROPS: BoardProps = {
+    boardName: 'moonboard',
+    layoutId: 2,
+    sizeId: 1,
+    setIds: '1,2',
+    boardUuid: 'board-moon',
+  };
+
+  beforeEach(() => {
+    analytics.track.mockClear();
+    pickerSheet.props = null;
+    resolvedBoards.value = new Map();
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.pickerState = null;
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
+    bluetooth.state.connect.mockClear();
+    bluetooth.state.connect.mockResolvedValue(true);
+    presence.enabled = false;
+    presence.boardId = null;
+    presence.currentClimb = null;
+    queue.currentClimbQueueItem = null;
+    capturedBluetooth = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function rerenderOn(rerender: (ui: ReactNode) => void, props: BoardProps) {
+    rerender(createElement(BluetoothProvider, { ...props, children: createElement(BluetoothProbe) }));
+  }
+
+  it('waits for the switched board, then reconnects to the MoonBoard it remembers', async () => {
+    // Remembered for the Kilter being left. The MoonBoard must not use it.
+    bluetooth.state.reconnectSerialForCurrentBoard = 'SN-KILTER';
+    const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
+
+    let connected: Promise<boolean> | undefined;
+    act(() => {
+      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD);
+    });
+    await act(async () => {});
+    // Still on the Kilter: a connect now would scan for the Kilter family.
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+
+    // The switch lands, and the hook reports what it remembers for this board.
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = 'moon-device';
+    rerenderOn(rerender, MOON_PROPS);
+
+    await waitFor(() => {
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device');
+    });
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+    await expect(connected).resolves.toBe(true);
+
+    // One-shot: another render must not connect again.
+    rerenderOn(rerender, MOON_PROPS);
+    await act(async () => {});
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it('resolves with a failed connect, so the caller can offer Try again', async () => {
+    bluetooth.state.connect.mockResolvedValue(false);
+    const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
+
+    let connected: Promise<boolean> | undefined;
+    act(() => {
+      connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD);
+    });
+    rerenderOn(rerender, MOON_PROPS);
+
+    await expect(connected).resolves.toBe(false);
+    // Nothing remembered for the MoonBoard: the picker opens for it.
+    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+  });
+
+  it('resolves false and never connects when the switch never reaches the provider', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderProvider(KILTER_PROPS, createElement(BluetoothProbe));
+      let connected: Promise<boolean> | undefined;
+      act(() => {
+        connected = capturedBluetooth?.connectAfterBoardSwitch(MOON_BOARD);
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+      });
+      await expect(connected).resolves.toBe(false);
+      // Countable: a tap that never reached a scan otherwise leaves no outcome.
+      expect(analytics.track).toHaveBeenCalledWith('Bluetooth Connection Failed', {
+        boardName: 'moonboard',
+        layoutId: 2,
+        sizeId: 1,
+        failureReason: 'board_switch_timeout',
+      });
+
+      rerenderOn(rerender, MOON_PROPS);
+      await act(async () => {});
+      expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('BluetoothProvider spill skip', () => {

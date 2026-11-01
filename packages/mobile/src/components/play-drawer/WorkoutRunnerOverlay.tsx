@@ -124,12 +124,15 @@ function WorkoutRunnerOverlayContent({
   }, [onSeeWorkout]);
 
   const onTheWall = currentItem !== null && currentItem.uuid === displayedQueueItemUuid;
-  if (readout === null || !onTheWall || suppressed) return null;
+  const visible = readout !== null && onTheWall && !suppressed;
+  const showDoneCard = visible && doneCardOpen && phase === 'done';
+  const showRestCard = visible && !showDoneCard && restCard !== null && restCard.key !== hiddenRestKey;
+  if (readout === null || !visible) return null;
 
-  if (doneCardOpen && phase === 'done') {
+  if (showDoneCard) {
     return <WorkoutDoneCard totals={readout.totals} onSeeWorkout={handleSeeWorkout} onDismiss={closeWorkoutDoneCard} />;
   }
-  if (restCard === null || restCard.key === hiddenRestKey) return null;
+  if (!showRestCard || restCard === null) return null;
   return (
     <WorkoutRestCard
       model={restCard}

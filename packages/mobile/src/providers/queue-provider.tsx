@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { resolveCurrentClimbMoverFace } from '../lib/current-climb-mover';
 import {
   queueReducer,
   initialState,
@@ -44,6 +45,7 @@ import type {
   PlaylistTrackResume,
   QueueAddPlacement,
   QueueState,
+  QueueAction,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import {
@@ -122,6 +124,7 @@ import {
   QueueContext,
   QueueSessionControlContext,
   QueueSessionIdContext,
+  QueueSessionBoardPathContext,
   QueueLiveStatsContext,
   QueueSharedSessionContext,
   QueueActiveClimbContext,
@@ -3057,13 +3060,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       if (options?.playlistSuggestionSource !== undefined) {
         setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
       }
-      // A look that walked the queue went up on the wall (#6777). Read before the
-      // dispatch, against the climb still current: Up next on the held track
-      // keeps the list's place, as Next stepping into Up next does.
-      if (options?.keepTrackIfUpNext) {
+      // A look that walked from the current climb went up on the wall (#6777).
+      // Read before the dispatch, against the climb still current: Up next on
+      // the held track keeps the list's place, as Next stepping into Up next
+      // does, and the list's own next climb (the walk's peek) keeps the list.
+      if (options?.keepWalkedTrack) {
         const { queue, currentClimbQueueItem } = stateRef.current;
         const heldTrack = playlistSuggestionSourceRef.current;
-        const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item);
+        const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item, {
+          walkedPeek: options.walkedPeek === true,
+        });
         if (trackResume === undefined) setPlaylistSuggestionSourceState(null);
         else storeTrackResume(heldTrack, trackResume);
       }
@@ -3085,6 +3091,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         true,
         undefined,
         options?.placement,
+        options?.historyCopy,
       );
       // #4979: opening the climb that is already current (a re-tap, or a list
       // row for the same climb, which now-slot mode dedupes onto it) leaves the
@@ -3404,12 +3411,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    */
   const mirrorCurrentClimb = useCallback(
     async (mirrored: boolean, queueItemUuid: string) => {
-      if (
-        !sessionIdRef.current ||
-        stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid ||
-        mirrorRequestRef.current
-      )
-        return false;
+      if (stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid || mirrorRequestRef.current) return false;
+      if (sessionIdRef.current === null) {
+        const action: QueueAction = {
+          type: 'DELTA_MIRROR_CURRENT_CLIMB',
+          payload: { mirrored, mirroredUuid: queueItemUuid },
+        };
+        // Imperative Tick/navigation calls in the same event must see this tap.
+        stateRef.current = queueReducer(stateRef.current, action);
+        dispatch(action);
+        return true;
+      }
       mirrorRequestRef.current = true;
       try {
         await mutations.mirrorCurrentClimb(mirrored, queueItemUuid);
@@ -3627,14 +3639,32 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // pair. The reducer spreads state on every update, so these two references
   // survive session/wall-lit/roster bookkeeping — the play drawer and queue
   // sheets subscribe here and stop re-rendering on that unrelated churn.
+  // Project roster identity here: a stats push must not wake the player merely
+  // because it recreated the roster. Only the named mover's face can change it.
+  const currentMover = resolveCurrentClimbMoverFace({
+    currentChangedBy: state.currentChangedBy,
+    participantId: sessionRuntimeState.participantId,
+    sessionUsers,
+  });
+  const currentMoverName = currentMover?.username ?? null;
+  const currentMoverAvatarUrl = currentMover?.avatarUrl ?? null;
   const queueDataValue = useMemo<QueueDataContextValue>(
     () => ({
       queue: state.queue,
       currentClimbQueueItem: state.currentClimbQueueItem,
       currentChangedBy: state.currentChangedBy ?? null,
+      currentClimbMover:
+        currentMoverName === null ? null : { username: currentMoverName, avatarUrl: currentMoverAvatarUrl },
       historyCount: state.historyCount ?? null,
     }),
-    [state.queue, state.currentClimbQueueItem, state.currentChangedBy, state.historyCount],
+    [
+      state.queue,
+      state.currentClimbQueueItem,
+      state.currentChangedBy,
+      state.historyCount,
+      currentMoverName,
+      currentMoverAvatarUrl,
+    ],
   );
 
   // SessionId-only selector: identity changes only when a session starts/ends,
@@ -3755,21 +3785,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   return (
     <QueueSessionControlContext.Provider value={sessionControlValue}>
       <QueueSessionIdContext.Provider value={sessionIdValue}>
-        <QueueLiveStatsContext.Provider value={liveStatsValue}>
-          <QueueSharedSessionContext.Provider value={sharedSessionValue}>
-            <QueueActionsContext.Provider value={actionsValue}>
-              <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-                <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                  <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                    <QueueDataContext.Provider value={queueDataValue}>
-                      <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                    </QueueDataContext.Provider>
-                  </QueueHasActiveClimbContext.Provider>
-                </QueueActiveClimbContext.Provider>
-              </QueuePlaylistSuggestionContext.Provider>
-            </QueueActionsContext.Provider>
-          </QueueSharedSessionContext.Provider>
-        </QueueLiveStatsContext.Provider>
+        <QueueSessionBoardPathContext.Provider value={sessionId ? sessionRuntimeState.boardPath : ''}>
+          <QueueLiveStatsContext.Provider value={liveStatsValue}>
+            <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+              <QueueActionsContext.Provider value={actionsValue}>
+                <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                  <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                    <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                      <QueueDataContext.Provider value={queueDataValue}>
+                        <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                      </QueueDataContext.Provider>
+                    </QueueHasActiveClimbContext.Provider>
+                  </QueueActiveClimbContext.Provider>
+                </QueuePlaylistSuggestionContext.Provider>
+              </QueueActionsContext.Provider>
+            </QueueSharedSessionContext.Provider>
+          </QueueLiveStatsContext.Provider>
+        </QueueSessionBoardPathContext.Provider>
       </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>
   );

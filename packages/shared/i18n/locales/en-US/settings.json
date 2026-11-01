@@ -446,6 +446,7 @@
     "searchingForBoard": "Searching for your {{board}}…",
     "searchingForSavedBoard": "Searching for your board…",
     "searchAnyBoard": "Search for any board",
+    "selectedBoardNotFound": "Your selected board was not found",
     "writing": "Lighting the board…",
     "selectBoard": "Select Board",
     "devicesFound_one": "{{count}} board found",
@@ -494,7 +495,6 @@
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
       "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. With Light the board when I tap a climb off, use Play to load it."
     },
-    "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",
     "sendFailedTitle": "Couldn't light board",
@@ -516,13 +516,16 @@
     "releaseWall": "Release the wall",
     "barControl": {
       "connectedLabel": "Board connected, you have control",
-      "connectedHint": "Opens board controls",
+      "youHaveBoard": "You have the board",
+      "youHaveBoardWithClimb": "You have the board: {{name}}, {{grade}}",
+      "connectedHint": "Disconnects from the board",
       "peerLabel": "On {{name}}'s wall",
       "peerLabelAnonymous": "On the wall",
       "peerHint": "Opens the climb on the wall",
       "disconnectedLabel": "Board disconnected",
       "disconnectedHint": "Connect to the board",
       "wallHeldLabel": "You have the wall",
+      "wallHeldWithClimb": "You have the wall: {{name}}, {{grade}}",
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
       "wallOpenHint": "Takes the wall"

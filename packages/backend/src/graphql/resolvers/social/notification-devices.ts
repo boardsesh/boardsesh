@@ -16,7 +16,7 @@ const deviceSchema = z.object({
     .regex(/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/)
     .max(200),
   platform: z.enum(['ios', 'android']),
-  locale: z.enum(['en-US', 'es', 'fr', 'de']),
+  locale: z.enum(['en-US', 'es', 'fr', 'de', 'it']),
 });
 
 export const notificationDeviceMutations = {

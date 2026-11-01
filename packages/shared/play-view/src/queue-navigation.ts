@@ -816,6 +816,9 @@ function findUpNextBehind(
  * swipe off the committed climb is a look that walks the queue, and Put on the
  * wall commits the queued climb it landed on.
  *
+ * The walk's own peek of a list climb (`walkedPeek`, minted fresh on commit)
+ * returns null: it is the list going on, as Next stepping onto it.
+ *
  * An entry ahead of the current climb that the walk would play as Up next goes
  * up the way Next steps into it: the list climb the walk is at (the current
  * one, or the one it already left from) is where the list picks up. An entry
@@ -829,13 +832,27 @@ export function resolveUpNextCommitResume(
   currentItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   targetItem: ClimbQueueItem,
-  prepared?: PreparedQueueNavigation,
+  { walkedPeek = false, prepared }: { walkedPeek?: boolean; prepared?: PreparedQueueNavigation } = {},
 ): PlaylistTrackResume | null | undefined {
   if (!source || !currentItem) return undefined;
   const position = resolveTrackPosition(queue, currentItem, source, prepared);
   if (position.kind === 'off') return undefined;
+  // The walk's own peek of a list climb (#7113 QA): stopped driving, a swipe
+  // off the list climb on the wall lands on the list's next climb, and Put on
+  // board commits it as a fresh entry. That is the list going on, as Next
+  // stepping onto it would. Only the peek: any other fresh item on the list (a
+  // crew browse open of a peer's tick) never borrows the track (#5403).
+  const targetQueueIndex = findQueueIndexOfEntry(queue, targetItem.uuid, prepared);
+  if (
+    walkedPeek &&
+    targetQueueIndex < 0 &&
+    targetItem.climb?.uuid &&
+    findPlaylistClimbIndex(source, targetItem.climb.uuid) >= 0
+  ) {
+    return null;
+  }
   const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
-  if (currentIndex < 0 || findQueueIndexOfEntry(queue, targetItem.uuid, prepared) <= currentIndex) return undefined;
+  if (currentIndex < 0 || targetQueueIndex <= currentIndex) return undefined;
   const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
   const listSuccessorUuid = source.climbs[listIndex + 1]?.uuid;
   // A finished list has no place to keep: the end card's "Keep going with your

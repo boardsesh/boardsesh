@@ -1,7 +1,14 @@
 import { Pressable } from 'react-native';
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  type ColorValue,
+  type LayoutChangeEvent,
+  type ScrollViewInstance,
+} from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -247,7 +254,7 @@ function FrameStrip({
 }) {
   const { brandColors, systemColors } = useTheme();
   const { t } = useTranslation('session');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
 
   const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {

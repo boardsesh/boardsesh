@@ -1,6 +1,7 @@
 package com.boardsesh.liveactivity
 
 import androidx.annotation.VisibleForTesting
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
@@ -22,6 +23,7 @@ class AndroidNotificationStrings : Record {
     @Field var nextLabel: String = "Next"
     @Field var relightLabel: String = "Relight wall"
     @Field var reconnectLabel: String = "Connect to board"
+    @Field var connectingLabel: String = "Connecting…"
     @Field var onWallTemplate: String = "{{name}} is on the wall"
 }
 
@@ -55,8 +57,30 @@ class SessionUpdateOptions : Record {
     @Field var hasPrevious: Boolean = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String? = null
+    // The outline bulb opens the app instead of reconnecting in the background:
+    // there is no remembered board, so a reconnect would need the board list
+    // (#7087). False on an older JS bundle, which keeps the broadcast.
+    @Field var bulbOpensApp: Boolean = false
+    // A connect is running: the outline bulb reads "Connecting…" (#7087).
+    @Field var boardConnecting: Boolean = false
     @Field var androidThumbnailOverlayPath: String? = null
     @Field var androidThumbnailBackgroundPaths: List<String> = emptyList()
+}
+
+// Mirrors LiveActivityRestTimerOptions (modules/live-activity/src/index.ts). JS
+// numbers arrive as Doubles; every value is nullable so a partial payload can't
+// fail deserialization. `targetSeconds` is accepted but unused here: the
+// notification only needs the deadline / start and the frozen display value.
+class RestTimerOptions : Record {
+    @Field var sessionId: String = ""
+    @Field var status: String = ""
+    @Field var startMs: Double? = null
+    @Field var deadlineMs: Double? = null
+    @Field var periodSeconds: Double? = null
+    @Field var targetSeconds: Double? = null
+    @Field var frozenSignedSeconds: Double? = null
+    @Field var androidCaption: String? = null
+    @Field var androidOverCaption: String? = null
 }
 
 /**
@@ -95,7 +119,7 @@ class SessionPresenceModule : Module() {
         Name("SessionPresence")
 
         Events("queueNavigate", "boardControl", "queueMirror")
-        Constants("supportsMirrorControl" to true)
+        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true)
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -130,10 +154,20 @@ class SessionPresenceModule : Module() {
         AsyncFunction("updateActivity") { options: SessionUpdateOptions -> controller?.updateActivity(options) }
         AsyncFunction("updateActivityClimb") { options: SessionUpdateOptions -> controller?.updateActivity(options) }
 
+        // The rest countdown in the ongoing notification. `null` clears it. Like the
+        // climb updates, a no-op until a session has started.
+        AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
+
         // No-op (not a throw) when no session was ever started: there's nothing to
         // tear down, and the JS hook has already cleared its own state. Kept
         // deliberately lenient unlike startSession's error-surfacing contract.
         AsyncFunction("endSession") { controller?.endSession() }
+
+        // A timer that keeps running while the activity is paused, when React
+        // Native stops firing JS timers (#7038). The background connect's scan
+        // and power-on watchdogs race it against their JS timer. No session or
+        // controller needed, and no cancel: JS ignores a late resolution.
+        AsyncFunction("delay").Coroutine { ms: Double -> NativeDelay.await(ms) }
     }
 
     private fun emit(eventName: String, event: Map<String, Any?>) {

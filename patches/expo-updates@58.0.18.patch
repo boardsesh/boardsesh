@@ -1,0 +1,63 @@
+diff --git a/utils/build/createManifestForBuildAsync.d.ts b/utils/build/createManifestForBuildAsync.d.ts
+index d0bc958..cf6a18a 100644
+--- a/utils/build/createManifestForBuildAsync.d.ts
++++ b/utils/build/createManifestForBuildAsync.d.ts
+@@ -1 +1,7 @@
+ export declare function createManifestForBuildAsync(platform: 'ios' | 'android', projectRoot: string, destinationDir: string, entryFileArg?: string): Promise<void>;
++/**
++ * HEAD's committer date in epoch milliseconds, clamped to `now`, falling back to
++ * `now` outside a git checkout. See the implementation for why the embedded
++ * bundle must be ordered by commit time (boardsesh/boardsesh#5021).
++ */
++export declare function resolveEmbeddedCommitTime(projectRoot: string, now?: number): number;
+diff --git a/utils/build/createManifestForBuildAsync.js b/utils/build/createManifestForBuildAsync.js
+index 2eb3031..81d72eb 100644
+--- a/utils/build/createManifestForBuildAsync.js
++++ b/utils/build/createManifestForBuildAsync.js
+@@ -8,6 +8,11 @@ Object.defineProperty(exports, "createManifestForBuildAsync", {
+         return createManifestForBuildAsync;
+     }
+ });
++Object.defineProperty(exports, "resolveEmbeddedCommitTime", {
++    enumerable: true,
++    get: function() { return resolveEmbeddedCommitTime; }
++});
++const { execFileSync } = require("node:child_process");
+ function _assetutils() {
+     const data = require("@react-native/asset-utils");
+     _assetutils = function() {
+@@ -80,7 +85,7 @@ async function createManifestForBuildAsync(platform, projectRoot, destinationDir
+     }
+     const manifest = {
+         id: _crypto().default.randomUUID(),
+-        commitTime: new Date().getTime(),
++        commitTime: resolveEmbeddedCommitTime(projectRoot),
+         assets: []
+     };
+     assets.forEach(function(asset) {
+@@ -130,4 +135,25 @@ function getBasePath(asset) {
+     return basePath.startsWith('/') ? basePath.slice(1) : basePath;
+ }
+ 
++function resolveEmbeddedCommitTime(projectRoot, now = Date.now()) {
++    let committerDate;
++    try {
++        committerDate = execFileSync('git', ['log', '-1', '--format=%ct', 'HEAD'], {
++            cwd: projectRoot,
++            encoding: 'utf8',
++            stdio: ['ignore', 'pipe', 'ignore'],
++        }).trim();
++    }
++    catch {
++        console.warn(`[boardsesh] expo-updates: no readable git commit in ${projectRoot}; embedding BUILD time, which can outrank a newer OTA (boardsesh/boardsesh#5021).`);
++        return now;
++    }
++    const committerTime = Number(committerDate) * 1000;
++    if (!Number.isInteger(committerTime) || committerTime <= 0) {
++        console.warn(`[boardsesh] expo-updates: unusable committer date ${JSON.stringify(committerDate)}; embedding BUILD time, which can outrank a newer OTA (boardsesh/boardsesh#5021).`);
++        return now;
++    }
++    return Math.min(committerTime, now);
++}
++
+ //# sourceMappingURL=createManifestForBuildAsync.js.map

@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
+import { HIDDEN_HEADER_TITLE_STYLE } from '../../../src/components/chrome/hidden-header-title';
 import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -24,11 +25,14 @@ export default function ClimbsLayout() {
           <Stack.Screen
             name="index"
             options={{
+              // The tab already names the screen, so the header draws no title, large or
+              // inline, in any state (NativeRootHeader `titleHidden`). `title` stays for
+              // the back button's long-press menu. Set here too so nothing flashes
+              // before the chrome mounts. Material keeps its own app bar.
               title: t('mobile.nav.climbs'),
-              // UIKit owns the native large title, including empty/loading branches.
-              // ClimbTopChrome adds actions; Material keeps its own app bar.
               headerShown: nativeRootHeader,
-              headerLargeTitle: nativeRootHeader,
+              headerLargeTitle: false,
+              headerTitleStyle: nativeRootHeader ? HIDDEN_HEADER_TITLE_STYLE : undefined,
               headerTransparent: nativeRootHeader,
             }}
           />
@@ -99,6 +103,10 @@ export default function ClimbsLayout() {
               headerTransparent: false,
             }}
           />
+          {/* Settings › Climbs & grades › Quick filters, also pushed on this stack
+              so the filter sheet can open it over the list. The settings
+              page's own header: the stack defaults and its title. */}
+          <Stack.Screen name="quick-filters" options={{ title: t('mobile.settings.quickFilters.title') }} />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
         </Stack>
       </NativeTabletContent>

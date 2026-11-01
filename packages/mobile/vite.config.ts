@@ -123,7 +123,7 @@ export default defineConfig({
       // expo-haptics' `main` is src/Haptics.ts (TS source), throwing the same
       // node-env SyntaxError as expo-image/expo-file-system. A no-op stub keeps
       // any suite that transitively imports src/lib/haptics (e.g. via the climbs
-      // screen → FilterTokenRow / RecentFilterPills) from crashing.
+      // screen → FilterTokenRow) from crashing.
       { find: 'expo-haptics', replacement: fileURLToPath(new URL('./test/expo-haptics-stub.ts', import.meta.url)) },
       // modules/accessibility-ui touches expo-modules-core's native globals at
       // import, which don't exist here. The stub is the module as Android and

@@ -57,6 +57,7 @@ const appState = vi.hoisted(() => ({ current: 'active' as string }));
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
+  items: [] as ClimbQueueItem[],
   // The #4979 hold's clock (`useCurrentChangeClock` in the real provider). Null
   // here means "no clock", which never holds.
   lastCurrentChange: null as CurrentChangeClock | null,
@@ -115,6 +116,8 @@ const presence = vi.hoisted(() => ({
   resolveAndBindBoardByUuid: vi.fn(async (): Promise<TestResolvedBoard | null> => null),
   reportClimbForBoard: vi.fn(async () => true),
   reportDisconnectForBoard: vi.fn(async () => true),
+  reportClearForBoard: vi.fn(async () => true),
+  restampBoardMembershipByUuid: vi.fn(async () => true),
   showUndoWallChangeSnackbar: vi.fn(),
 }));
 
@@ -179,6 +182,8 @@ vi.mock('../board-presence-provider', () => ({
     resolveAndBindBoardByUuid: presence.resolveAndBindBoardByUuid,
     reportClimbForBoard: presence.reportClimbForBoard,
     reportDisconnectForBoard: presence.reportDisconnectForBoard,
+    reportClearForBoard: presence.reportClearForBoard,
+    restampBoardMembershipByUuid: presence.restampBoardMembershipByUuid,
   }),
 }));
 
@@ -259,12 +264,12 @@ vi.mock('../feature-flags-provider', async (importOriginal) => ({
 vi.mock('../queue-provider', () => ({
   useQueue: () => ({
     sessionId: queue.sessionId,
-    state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] },
+    state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items },
     lastCurrentChange: queue.lastCurrentChange,
   }),
   useQueueActions: () => ({
     setCurrentClimb: vi.fn(),
-    getQueueSnapshot: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] }),
+    getQueueSnapshot: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items }),
   }),
   useQueueSessionControls: () => {
     const activeSessionId = queue.sessionId;
@@ -344,6 +349,28 @@ function renderProvider(children?: ReactNode) {
   );
 }
 
+function rerenderProvider(rerender: (ui: ReturnType<typeof createElement>) => void): void {
+  act(() => {
+    rerender(
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        children: createElement(BluetoothProbe),
+      }),
+    );
+  });
+}
+
+function setCurrentOrientation(mirrored: boolean): void {
+  const current = queue.currentClimbQueueItem;
+  if (!current) throw new Error('Expected a current queue occurrence.');
+  const updatedCurrent = { ...current, climb: { ...current.climb, mirrored } };
+  queue.currentClimbQueueItem = updatedCurrent;
+  queue.items = queue.items.map((occurrence) => (occurrence.uuid === current.uuid ? updatedCurrent : occurrence));
+}
+
 function renderMoonboardProvider(children?: ReactNode) {
   return render(
     createElement(BluetoothProvider, {
@@ -382,6 +409,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   beforeEach(async () => {
     await setHoldColorOverridesPreference({});
     queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    queue.items = [];
     queue.lastCurrentChange = null;
     flags.staleCurrentHoldKill = false;
     queue.sessionId = 'session-1';
@@ -422,6 +450,10 @@ describe('BluetoothProvider wall-confirm integration', () => {
     presence.reportClimbForBoard.mockResolvedValue(true);
     presence.reportDisconnectForBoard.mockClear();
     presence.reportDisconnectForBoard.mockResolvedValue(true);
+    presence.reportClearForBoard.mockClear();
+    presence.reportClearForBoard.mockResolvedValue(true);
+    presence.restampBoardMembershipByUuid.mockClear();
+    presence.restampBoardMembershipByUuid.mockResolvedValue(true);
     presence.showUndoWallChangeSnackbar.mockClear();
     capturedBluetooth = null;
     appState.current = 'active';
@@ -1038,131 +1070,94 @@ describe('BluetoothProvider wall-confirm integration', () => {
     renderProvider(createElement(BluetoothProbe));
     await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
     expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
-    act(() => capturedBluetooth?.setMirrorIntent('climb-1', false));
     await act(async () => {
       await capturedBluetooth?.relightPresenceClimb(makePresenceClimb({ climbUuid: 'climb-1', frames: 'p1r12' }));
     });
     expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
-  // ── Mirror intent (#5217) ────────────────────────────────────────────────
-  // Solo climbs keep their local mirror intent; sessions use confirmed queue state.
-
-  it('re-pushes the current climb mirrored when the drawer flips it', async () => {
-    queue.sessionId = null;
+  it.each([null, 'session-1'])('re-pushes the committed orientation for session %s', async (sessionId) => {
+    queue.sessionId = sessionId;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(false);
 
-    renderProvider(createElement(BluetoothProbe));
+    setCurrentOrientation(true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+      'p1r12',
+      true,
+      expect.anything(),
+      expect.anything(),
+    );
 
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p1r12',
       false,
       expect.anything(),
       expect.anything(),
     );
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p1r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
   });
 
-  it('keeps the wall mirrored when the same climb is re-broadcast after a flip', async () => {
+  it('deduplicates a mirrored occurrence when the same state is broadcast again', async () => {
     queue.sessionId = null;
-    // The bug this guards: a direct sendFramesToBoard left the dedup record
-    // describing the un-mirrored orientation, so the next byte-identical
-    // re-broadcast re-pushed un-mirrored frames and silently un-flipped the wall.
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
     const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    setCurrentOrientation(true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
 
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
-
-    // A byte-identical re-broadcast of the same climb.
-    queue.currentClimbQueueItem = makeQueueItem('climb-1');
-    act(() => {
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-    });
-
-    // No third write, and nothing un-mirrored went out.
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledTimes(3));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p1r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
+    expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
-  it('falls back to the queue item once the current climb changes', async () => {
+  it('keeps same-climb occurrences independent and restores a history occurrence on replay', async () => {
     queue.sessionId = null;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
+    const mirroredOccurrence = makeQueueItem('climb-1', 'p1r12', true);
+    const originalOccurrence = { ...makeQueueItem('climb-1'), uuid: 'queue-climb-1-repeat' };
+    queue.items = [mirroredOccurrence, originalOccurrence];
+    queue.currentClimbQueueItem = mirroredOccurrence;
     const { rerender } = renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
 
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
+    queue.currentClimbQueueItem = originalOccurrence;
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[1]?.[1]).toBe(false);
 
-    // Navigating to another climb must not carry the previous climb's flip —
-    // through the real retain call the drawer makes, not a restatement.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-2');
-    });
+    queue.currentClimbQueueItem = mirroredOccurrence;
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[2]?.[1]).toBe(true);
+    expect(queue.items.map((occurrence) => occurrence.climb.mirrored)).toEqual([true, false]);
+  });
+
+  it('sends a new climb using its own original orientation', async () => {
+    queue.sessionId = null;
+    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
     queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
-    act(() => {
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3);
-    });
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p2r12',
       false,
@@ -1171,130 +1166,41 @@ describe('BluetoothProvider wall-confirm integration', () => {
     );
   });
 
-  it('does not re-light a stale flip when you navigate back to a climb you had mirrored', async () => {
+  it('restores the saved mirrored orientation after reconnecting', async () => {
     queue.sessionId = null;
-    // The drawer resets its mirror toggle on every navigation, so returning to a
-    // climb you had flipped must NOT light it mirrored under an un-mirrored
-    // screen. The drawer re-states the orientation on each climb change; this
-    // pins that the provider honours the re-statement rather than the old flip.
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
-    const rerenderProvider = (rerender: (ui: ReturnType<typeof createElement>) => void) =>
-      act(() => {
-        rerender(
-          createElement(BluetoothProvider, {
-            boardName: 'kilter',
-            layoutId: 1,
-            sizeId: 10,
-            setIds: '1,20',
-            children: createElement(BluetoothProbe),
-          }),
-        );
-      });
-
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
     const { rerender } = renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    // Flip climb-1.
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        true,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    // Navigate to climb-2. The drawer drops a flip parked on another climb —
-    // the real call, not a restatement it no longer makes.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-2');
-    });
-    queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
+    bluetooth.state.isConnected = false;
     rerenderProvider(rerender);
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p2r12',
-        false,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    // Back to climb-1 — the flip was dropped, so the wall must be un-mirrored.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-1');
-    });
-    queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    bluetooth.state.isConnected = true;
     rerenderProvider(rerender);
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        false,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
   it('does not write again when the orientation is restated unchanged', async () => {
     queue.sessionId = null;
-    // Restating the same orientation must not produce a write: the drain wakes,
-    // computes the same signature, and dedups.
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', false);
-      capturedBluetooth?.setMirrorIntent('climb-1', false);
-    });
-    await Promise.resolve();
-
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
   });
 
-  it('un-flips the wall when you turn off a climb that is mirrored by default', async () => {
+  it('un-flips a queue occurrence that was mirrored by default', async () => {
     queue.sessionId = null;
-    // A mirrored ascent (a logbook tick, or a crew member's item) is already lit
-    // mirrored off its own `climb.mirrored`. Turning the flip OFF records the
-    // first intent for that climb — so anything that decides "no write needed"
-    // by assuming nothing-recorded means un-mirrored leaves the wall mirrored
-    // under a toggle reading off, until some unrelated drain flips it later.
     queue.currentClimbQueueItem = makeQueueItem('tick-climb', 'p9r12', true);
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
 
-    renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
-    // Lit mirrored from the climb's own flag, with nothing recorded.
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p9r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('tick-climb', false);
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p9r12',
       false,
@@ -1632,6 +1538,20 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   describe('board-presence wiring (flag on)', () => {
+    async function settleReports() {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    }
+
+    function deferredBoolean() {
+      let resolve: (value: boolean) => void = () => {};
+      const promise = new Promise<boolean>((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      return { promise, resolve };
+    }
+
     it('resolves+binds the board on connect with the active board config', () => {
       presence.enabled = true;
       renderProvider();
@@ -1939,6 +1859,475 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
 
       expect(presence.showUndoWallChangeSnackbar).not.toHaveBeenCalled();
+    });
+
+    describe('Turn off all lights (#7015)', () => {
+      const litClimbOneEcho = () =>
+        makePresenceClimb({ climbUuid: 'climb-1', queueItemUuid: 'queue-climb-1', frames: 'p1r12', seq: 8 });
+
+      it('tells the feed the wall went dark once the LEDs are off, keeping the link', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        let cleared: boolean | undefined;
+        await act(async () => {
+          cleared = await capturedBluetooth?.turnOffAllLights();
+        });
+
+        expect(cleared).toBe(true);
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          '',
+          false,
+          undefined,
+          expect.objectContaining({ sendSource: 'clear' }),
+        );
+        expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99);
+        expect(presence.reportDisconnectForBoard).not.toHaveBeenCalled();
+        expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing when the clear never reached the board', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        bluetooth.state.sendFramesToBoard.mockResolvedValueOnce(false);
+
+        let cleared: boolean | undefined;
+        await act(async () => {
+          cleared = await capturedBluetooth?.turnOffAllLights();
+        });
+
+        expect(cleared).toBe(false);
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('reports the same climb again when it is put back on the wall', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        // The feed now reads the wall as dark.
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
+          40,
+        );
+      });
+
+      // Fable review, finding 1: the auto-sender's dedup still named the cleared
+      // climb, so a drain re-run that didn't write re-reported it as lit.
+      it('does not re-report the turned-off climb when the drain re-runs without writing', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const { rerender } = renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        presence.currentClimb = null;
+        wallConfirm.emitWallConfirm.mockClear();
+        queue.confirmClimbOnWall.mockClear();
+        const writesAfterClear = bluetooth.state.sendFramesToBoard.mock.calls.length;
+        // A crew FullSync hands the same occurrence back as a new object.
+        const current = queue.currentClimbQueueItem;
+        if (!current) throw new Error('Expected a current queue occurrence.');
+        queue.currentClimbQueueItem = { ...current, climb: { ...current.climb } };
+        rerenderProvider(rerender);
+        await settleReports();
+
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+        expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+        expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
+        // The wall stays dark: no write either.
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(writesAfterClear);
+      });
+
+      // Fable review, finding 2.
+      it('drops the clear report when the link changes while the clear is being written', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        const clearWrite = deferredBoolean();
+        bluetooth.state.sendFramesToBoard.mockImplementationOnce(() => clearWrite.promise);
+
+        let cleared: Promise<boolean> | undefined;
+        act(() => {
+          cleared = capturedBluetooth?.turnOffAllLights();
+        });
+        act(() => {
+          bluetooth.options?.onConnectSuccess?.('SN-2', makeConnectionHandle(2));
+        });
+        await act(async () => {
+          clearWrite.resolve(true);
+        });
+
+        await expect(cleared).resolves.toBe(false);
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      // Fable review, finding 3: an anonymous holder loses membership on a socket reconnect.
+      it('re-stamps membership once and retries a clear the server refused', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.reportClearForBoard.mockResolvedValueOnce(false);
+        render(
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            boardUuid: 'board-uuid-1',
+            children: createElement(BluetoothProbe),
+          }),
+        );
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.restampBoardMembershipByUuid).toHaveBeenCalledExactlyOnceWith({ boardUuid: 'board-uuid-1' });
+      });
+
+      // Backend review: seqs are numbered in allocation order, so a set and a
+      // clear must not be in flight together.
+      it('waits for a climb report in flight before reporting the clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const climbReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => climbReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        await act(async () => {
+          climbReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+      });
+
+      it('waits for the clear report in flight before reporting a re-light', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        const clearReport = deferredBoolean();
+        presence.reportClearForBoard.mockImplementationOnce(() => clearReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+        await waitFor(() =>
+          expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+            'p1r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ sendSource: 'auto' }),
+          ),
+        );
+        await settleReports();
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          clearReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+      });
+
+      // Fable re-review: a re-light report waiting on a clear can go stale.
+      it('drops a re-light report that went stale while it waited on a clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        const firstClearReport = deferredBoolean();
+        presence.reportClearForBoard.mockImplementationOnce(() => firstClearReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+        await waitFor(() =>
+          expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+            'p1r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ sendSource: 'auto' }),
+          ),
+        );
+        // The re-light report now waits on the first clear. A second Turn off all
+        // lights lands within that round trip and reports its own clear at once.
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(2));
+
+        await act(async () => {
+          firstClearReport.resolve(true);
+        });
+        await settleReports();
+        // Sent now, the re-light would be numbered after the second clear.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not let a report of the pre-clear wall settle after the clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        let acceptFirstReport: (accepted: boolean) => void = () => {};
+        presence.reportClimbForBoard.mockImplementationOnce(
+          () =>
+            new Promise<boolean>((resolve) => {
+              acceptFirstReport = resolve;
+            }),
+        );
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        // The report sent before the clear is accepted only now. Recording it as
+        // the wall's latest would make the re-light below look like a duplicate.
+        await act(async () => {
+          acceptFirstReport(true);
+        });
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+      });
+    });
+
+    // #7047: the spill skip blanks the wall when it can't light the current
+    // climb. Without a clear report, everyone watching the board kept the
+    // previous climb "On the wall" over a dark board.
+    describe('spill skip clear (#7047)', () => {
+      function makeSpillItem(uuid: string): ClimbQueueItem {
+        const item = makeQueueItem(uuid, `frames-${uuid}`);
+        return { ...item, climb: { ...item.climb, boardType: 'tension', layoutId: 1 } };
+      }
+
+      function makeKilterItem(uuid: string): ClimbQueueItem {
+        const item = makeQueueItem(uuid);
+        return { ...item, climb: { ...item.climb, boardType: 'kilter', layoutId: 1 } };
+      }
+
+      function renderSpillProvider(reachableBoardKeys?: ReadonlySet<string>) {
+        const providerElement = () =>
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            reachableBoardKeys,
+            children: createElement(BluetoothProbe),
+          });
+        const { rerender } = render(providerElement());
+        return () => {
+          act(() => {
+            rerender(providerElement());
+          });
+        };
+      }
+
+      function blankWrites() {
+        return bluetooth.state.sendFramesToBoard.mock.calls.filter(([frames]) => frames === '');
+      }
+
+      function taggedClearWrites() {
+        return bluetooth.state.sendFramesToBoard.mock.calls.filter(
+          ([, , , sendContext]) => (sendContext as { sendSource?: string } | undefined)?.sendSource === 'clear',
+        );
+      }
+
+      async function lightClimbOneThenMoveTo(spill: ClimbQueueItem, rest: ClimbQueueItem[] = [], reachable?: string) {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const rerender = renderSpillProvider(reachable ? new Set([reachable]) : undefined);
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        queue.currentClimbQueueItem = spill;
+        queue.items = [spill, ...rest];
+        rerender();
+        return rerender;
+      }
+
+      it('reports the clear in a party session, with an untagged write', async () => {
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        expect(blankWrites()).toHaveLength(1);
+        // Not a Clear Lights press: Board Lights Cleared must not count it.
+        expect(taggedClearWrites()).toHaveLength(0);
+        expect(bluetooth.state.sendFramesToBoard.mock.calls.some(([frames]) => frames === 'frames-spill')).toBe(false);
+      });
+
+      it('reports the clear when nothing compatible is left in a solo queue', async () => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), []);
+
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        expect(blankWrites()).toHaveLength(1);
+        expect(taggedClearWrites()).toHaveLength(0);
+      });
+
+      // #7076: the climber is on their way to the board that draws it. The wall
+      // keeps what it shows, so a board that doesn't answer leaves one lit wall,
+      // not two dark ones.
+      it('leaves the wall as it is for a climb on another board at this gym', async () => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [], 'tension:1');
+        await settleReports();
+
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+        expect(blankWrites()).toHaveLength(0);
+        expect(bluetooth.state.sendFramesToBoard.mock.calls.some(([frames]) => frames === 'frames-spill')).toBe(false);
+      });
+
+      it('reports no clear when a solo queue advances to a compatible climb', async () => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [makeKilterItem('next')]);
+        await settleReports();
+
+        expect(blankWrites()).toHaveLength(0);
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing when the blanking write fails', async () => {
+        bluetooth.state.sendFramesToBoard.mockImplementation(async (frames: string) => frames !== '');
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+      });
+
+      it('lights and reports the previous climb again when the crew goes back to it', async () => {
+        const previous = queue.currentClimbQueueItem;
+        if (!previous) throw new Error('Expected a current queue occurrence.');
+        presence.currentClimb = makePresenceClimb({
+          climbUuid: 'climb-1',
+          queueItemUuid: 'queue-climb-1',
+          frames: 'p1r12',
+          seq: 8,
+        });
+        const rerender = await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        // The feed now reads the wall as dark.
+        presence.currentClimb = null;
+
+        queue.currentClimbQueueItem = previous;
+        queue.items = [previous];
+        rerender();
+
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
+          40,
+        );
+        // The clear went out before the re-light, so the server numbers them in that order.
+        const clearOrder = presence.reportClearForBoard.mock.invocationCallOrder[0];
+        const relightOrder = presence.reportClimbForBoard.mock.invocationCallOrder[1];
+        expect(clearOrder).toBeLessThan(relightOrder);
+      });
+
+      // Fable re-review: "Light this" and Undo report directly, so they must sit
+      // behind the same set/clear fence as the auto-sender's reports.
+      const historyClimb = () =>
+        makePresenceClimb({ climbUuid: 'history-climb', queueItemUuid: 'queue-history-climb', frames: 'p2r12' });
+
+      it('holds a "Light this" report until the spill clear parked before it has gone', async () => {
+        // The first climb's report is still settling, so the clear waits behind it.
+        const firstReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => firstReport.promise);
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'));
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await settleReports();
+        // Sent now, the relight would be numbered before the clear, and every
+        // viewer would read "Not on the wall" over a lit wall.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          firstReport.resolve(true);
+        });
+        await expect(relit).resolves.toBe(true);
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
+        expect(presence.reportClearForBoard.mock.invocationCallOrder[0]).toBeLessThan(
+          presence.reportClimbForBoard.mock.invocationCallOrder[1],
+        );
+      });
+
+      it('holds the spill clear until a "Light this" report in flight has settled', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        const rerender = renderSpillProvider();
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+        const relightReport = deferredBoolean();
+        presence.reportClimbForBoard.mockImplementationOnce(() => relightReport.promise);
+        let relit: Promise<boolean> | undefined;
+        act(() => {
+          relit = capturedBluetooth?.relightPresenceClimb(historyClimb());
+        });
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
+
+        const spill = makeSpillItem('spill');
+        queue.currentClimbQueueItem = spill;
+        queue.items = [spill];
+        rerender();
+        await waitFor(() => expect(blankWrites()).toHaveLength(1));
+        await settleReports();
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+
+        await act(async () => {
+          relightReport.resolve(true);
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
+        // The spill clear bumped the wall-operation epoch, so the relight no longer owns the wall.
+        await expect(relit).resolves.toBe(false);
+      });
     });
 
     it('maps an unexpected hook end record to analytics and releases its snapshotted board', () => {
@@ -2572,25 +2961,19 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
-    it('relights a climb in the orientation it is still flipped to', async () => {
+    it('relights an older presence record using its unique queued occurrence', async () => {
       queue.sessionId = null;
-      // A flip belongs to the climb, so every write path honours it. Relighting
-      // it un-mirrored would leave the wall disagreeing with the toggle a drawer
-      // opening on that climb will show — reachable on iPhone, where the player
-      // is dismissed while the kiosk feed is up.
+      // An older presence record has no direction, but this queued occurrence does.
       presence.enabled = true;
       presence.boardId = 99;
       presence.currentClimb = makePresenceClimb();
       bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
         bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
+      queue.items = [makeQueueItem('relit-climb', 'relit-frames', true)];
       renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-      });
-
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('relit-climb', true);
       });
 
       await act(async () => {
@@ -2602,6 +2985,86 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
         'relit-frames',
         true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+    });
+
+    it.each([null, 'session-1'])(
+      'relights recorded original orientation despite a mirrored current occurrence in session %s',
+      async (sessionId) => {
+        queue.sessionId = sessionId;
+        queue.currentClimbQueueItem = makeQueueItem('relit-climb', 'relit-frames', true);
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.relightPresenceClimb(
+            makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames', mirrored: false }),
+          );
+        });
+
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          'relit-frames',
+          false,
+          undefined,
+          expect.objectContaining({ sendSource: 'wall-relight' }),
+        );
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          expect.objectContaining({ climb: expect.objectContaining({ mirrored: false }) }),
+          35,
+        );
+      },
+    );
+
+    it('prefers the current copy when an older presence record matches one queue occurrence', async () => {
+      queue.sessionId = null;
+      queue.currentClimbQueueItem = makeQueueItem('relit-climb', 'relit-frames', true);
+      queue.items = [makeQueueItem('relit-climb', 'relit-frames', false)];
+      presence.enabled = true;
+      presence.boardId = 99;
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames' }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+    });
+
+    it('does not infer a missing presence orientation from different occurrences of the same climb', async () => {
+      queue.sessionId = null;
+      const mirroredOccurrence = makeQueueItem('relit-climb', 'relit-frames', true);
+      queue.currentClimbQueueItem = mirroredOccurrence;
+      queue.items = [
+        mirroredOccurrence,
+        { ...makeQueueItem('relit-climb', 'relit-frames', false), uuid: 'queue-relit-climb-repeat' },
+      ];
+      presence.enabled = true;
+      presence.boardId = 99;
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames' }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        false,
         undefined,
         expect.objectContaining({ sendSource: 'wall-relight' }),
       );
@@ -2624,9 +3087,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
       await waitFor(() => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
       });
@@ -2637,7 +3099,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       const sendsAfterUndo = bluetooth.state.sendFramesToBoard.mock.calls.length;
 
       // Anything that re-drains the same climb must not write over the undo.
-      queue.currentClimbQueueItem = makeQueueItem('climb-1');
+      queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
       act(() => {
         rerender(
           createElement(BluetoothProvider, {
@@ -2707,14 +3169,13 @@ describe('BluetoothProvider wall-confirm integration', () => {
       bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
         bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
-      renderProvider(createElement(BluetoothProbe));
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
 
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
@@ -2730,7 +3191,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       queue.sessionId = null;
       presence.enabled = true;
       presence.boardId = 99;
-      // Another climber lit this mirrored; this phone holds no intent for it.
+      // Another climber lit this mirrored; no matching occurrence exists locally.
       presence.currentClimb = makePresenceClimb({ mirrored: true });
 
       renderProvider(createElement(BluetoothProbe));
@@ -2759,20 +3220,17 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
     });
 
-    it("undo falls back to this phone's flip when an older reporter left the orientation out", async () => {
+    it('undo falls back to a unique queued occurrence when its recorded orientation is missing', async () => {
       queue.sessionId = null;
       presence.enabled = true;
       presence.boardId = 99;
       // No `mirrored` on the feed climb: an older build reported it.
       presence.currentClimb = makePresenceClimb();
 
+      queue.items = [makeQueueItem('previous-climb', 'previous-frames', true)];
       renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
-      });
-
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('previous-climb', true);
       });
 
       const undoResult = await capturedBluetooth?.undoWallChange();
@@ -2781,6 +3239,27 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
         'previous-frames',
         true,
+        undefined,
+        expect.objectContaining({ sendSource: 'undo' }),
+      );
+    });
+
+    it('undo keeps recorded original orientation when its climb is now mirrored in the queue', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb({ mirrored: false });
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+      // The live snapshot may advance before React renders that queue change.
+      queue.currentClimbQueueItem = makeQueueItem('previous-climb', 'previous-frames', true);
+      const undoResult = await capturedBluetooth?.undoWallChange();
+
+      expect(undoResult).toBe(true);
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'previous-frames',
+        false,
         undefined,
         expect.objectContaining({ sendSource: 'undo' }),
       );
@@ -2851,9 +3330,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
         );
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
       });
@@ -2895,6 +3373,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       handleSelect,
       handleCancel: vi.fn(),
       sessionId: 1,
+      showAllBoards: false,
       mode: 'list',
       presented: true,
       closing: false,
@@ -2918,6 +3397,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       handleSelect,
       handleCancel: vi.fn(),
       sessionId: 1,
+      showAllBoards: false,
       mode: 'list',
       presented: true,
       closing: false,

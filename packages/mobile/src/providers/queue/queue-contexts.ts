@@ -314,6 +314,18 @@ type QueueSessionIdContextValue = {
 export const QueueSessionIdContext = createContext<QueueSessionIdContextValue | null>(null);
 
 /**
+ * The session's board path (`/b/{slug}` or the positional tuple), '' outside a
+ * session. Its own context, read by the player to tell when a crewmate moved
+ * the session to another board at the gym (#7076); it changes only when the
+ * session's board does.
+ */
+export const QueueSessionBoardPathContext = createContext<string>('');
+
+export function useSessionBoardPath(): string {
+  return useContext(QueueSessionBoardPathContext);
+}
+
+/**
  * Live session analytics + presence, split out of the main QueueContext so the
  * ≤1/2s `SessionStatsUpdated` party push (and roster deltas) re-renders only the
  * session screen — not every `useQueue()` consumer (climb list, persistent bar,
@@ -400,6 +412,8 @@ type QueueDataContextValue = {
   currentClimbQueueItem: ClimbQueueItem | null;
   /** Server-bound participant who last changed the current queue item. */
   currentChangedBy?: string | null;
+  /** Current mover projected through the session roster, excluding this participant. */
+  currentClimbMover?: { username: string; avatarUrl: string | null } | null;
   /**
    * F3 now-slot mode: the History / Up next line while nothing is current
    * (`upNextStart` reads it). Null or absent in legacy mode, which every reader

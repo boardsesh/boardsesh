@@ -84,6 +84,9 @@ function fileHookTransform(source, chunk) {
 }
 
 module.exports = {
+  // SDK 58 defaults to package-version hashing. Keep hashing native source
+  // and local config plugins so crash-fix edits require a matching binary.
+  preset: 'strict',
   // @expo/fingerprint discovers patches only below packages/mobile by default.
   // Patched dependencies live in the root pnpm workspace, so make their bodies a
   // first-class native input. Hash this config too: otherwise edits to the hook

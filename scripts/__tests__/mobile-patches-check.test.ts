@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RULES as REAL_RULES,
   UNGUARDED_PATCHES,
+  WEB_RULES,
   checkIosPatchesBuildFromSource,
   checkPatchInventory,
   checkPatchesApplied,
@@ -54,7 +55,7 @@ function makeEnv(opts: {
 }
 
 describe('the shipped expo-sqlite lifetime guards', () => {
-  const sqliteKey = 'expo-sqlite@57.0.4';
+  const sqliteKey = 'expo-sqlite@58.0.14';
   const sqliteRules = REAL_RULES.filter((rule) => rule.package === 'expo-sqlite');
   const helperSource = `
 beginAsyncOperation();
@@ -62,46 +63,83 @@ pendingAsyncOperations.add(operation);
 closePromise = closeWhenDrained();
 finalizeStatementWithErrorPreservation(statement, failure);
 `;
-  const nativeFixtures = [
+  const finalizationFixtures = [
     {
-      file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      file: 'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
       source: `
-  private fun finalize(statement: NativeStatement, database: NativeDatabase) {
-    synchronized(statement) {
-      val result = statement.ref.sqlite3_finalize()
-      statement.isFinalized = true
-      if (result != NativeDatabaseBinding.SQLITE_OK) {
-        throw SQLiteErrorException(database.ref.convertSqlLiteErrorToString())
-      }
+    synchronized(connection.statementLifecycleLock) {
+        val ret = ref.sqlite3_finalize()
+        val error = if (ret != NativeDatabaseBinding.SQLITE_OK) {
+          ref.getLastErrorMessage()
+        } else {
+          null
+        }
+        // SQLite destroys the statement even when returning an earlier execution error.
+        isFinalized = true
+        connection.statements.removeAll { it === this }
+        if (releasedByJavaScript) {
+          ref.close()
+        }
+        if (error != null) {
+          throw SQLiteErrorException(error)
+        }
     }
-  }
 `,
     },
     {
-      file: 'ios/SQLiteModule.swift',
+      file: 'ios/NativeStatement.swift',
       source: `
-  private let moduleQueue: DispatchQueue
-  OnAppContextDestroys {
-      closeAllDatabases()
-  }
-  OnDestroy {
-      closeAllDatabases()
-  }
-  DispatchQueue.getSpecific(key: moduleQueueKey)
-  moduleQueue.async(flags: .barrier, execute: closeDatabases)
-  moduleQueue.sync(flags: .barrier, execute: closeDatabases)
-  private func finalize(statement: NativeStatement, database: NativeDatabase) throws {
-    let result = exsqlite3_finalize(statement.pointer)
-    statement.isFinalized = true
-    if result != SQLITE_OK {
-      throw SQLiteErrorException(convertSqlLiteErrorToString(database))
-    }
-  }
+    database.statementLifecycleLock.lock()
+      let result = sqliteResult(for: database.pointer) { exsqlite3_finalize(pointer) }
+      // SQLite destroys the statement even when returning an earlier execution error.
+      isFinalized = true
+      pointer = nil
+      database.statements.removeAll { $0 === self }
+      if let message = result.message {
+        throw SQLiteErrorException(message)
+      }
 `,
     },
   ];
+  const lifetimeFixtures = [
+    {
+      file: 'ios/SQLiteModule.swift',
+      source: `
+private let moduleQueue: DispatchQueue
+OnAppContextDestroys {
+      closeAllDatabases()
+}
+public override func willDestroy() {
+    closeAllDatabases()
+}
+DispatchQueue.getSpecific(key: moduleQueueKey)
+moduleQueue.async(flags: .barrier, execute: closeDatabases)
+moduleQueue.sync(flags: .barrier, execute: closeDatabases)
+UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))
+databases.reversed().forEach { $0.statementLifecycleLock.unlock() }
+`,
+    },
+    {
+      file: 'ios/NativeDatabase.swift',
+      source: `private func exec(source: String) throws {
+    // Serialize connection lifetime with close;
+    statementLifecycleLock.lock()
+    defer { statementLifecycleLock.unlock() }
+}`,
+    },
+    {
+      file: 'ios/NativeSession.swift',
+      source: `private func attach(database: NativeDatabase, table: String?) throws {
+    database.statementLifecycleLock.lock()
+    defer { database.statementLifecycleLock.unlock() }
+}
+private func close(database: NativeDatabase) throws {
+    database.statementLifecycleLock.lock()
+}`,
+    },
+  ];
 
-  function checkSqliteSources(overrides: Record<string, string> = {}, version = '57.0.4') {
+  function checkSqliteSources(overrides: Record<string, string> = {}, version = '58.0.14') {
     return checkPatchesApplied(
       sqliteRules,
       makeEnv({
@@ -110,27 +148,31 @@ finalizeStatementWithErrorPreservation(statement, failure);
         files: {
           'expo-sqlite::src/SQLiteDatabase.ts': helperSource,
           'expo-sqlite::build/SQLiteDatabase.js': helperSource,
-          ...Object.fromEntries(nativeFixtures.map(({ file, source }) => [`expo-sqlite::${file}`, source])),
+          ...Object.fromEntries(
+            [...finalizationFixtures, ...lifetimeFixtures].map(({ file, source }) => [`expo-sqlite::${file}`, source]),
+          ),
           ...overrides,
         },
       }),
     );
   }
 
-  it('guards both JavaScript copies and both native platforms', () => {
+  it('guards both JavaScript copies and native finalization and runtime lifetime', () => {
     expect(sqliteRules.map(({ file }) => file)).toEqual([
       'src/SQLiteDatabase.ts',
       'build/SQLiteDatabase.js',
-      'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
+      'ios/NativeStatement.swift',
       'ios/SQLiteModule.swift',
+      'ios/NativeDatabase.swift',
+      'ios/NativeSession.swift',
     ]);
     expect(checkSqliteSources().errors).toEqual([]);
   });
 
   it('rejects a version bump even when the old patch symbols remain', () => {
-    const result = checkSqliteSources({}, '57.0.5');
-
-    expect(result.errors).toHaveLength(4);
+    const result = checkSqliteSources({}, '58.0.15');
+    expect(result.errors).toHaveLength(7);
     expect(result.errors.every((error) => error.includes('version drift'))).toBe(true);
   });
 
@@ -144,32 +186,29 @@ finalizeStatementWithErrorPreservation(statement, failure);
         'finalizeStatementWithErrorPreservation',
       ]) {
         const result = checkSqliteSources({ [`expo-sqlite::${file}`]: helperSource.replace(helper, 'removedHelper') });
-
         expect(result.errors).toEqual([expect.stringContaining(`is missing "${helper}"`)]);
       }
     },
   );
 
-  it.each(nativeFixtures)('rejects finalized state moved after an error in $file', ({ file, source }) => {
+  it.each(finalizationFixtures)('rejects finalized state moved after an error in $file', ({ file, source }) => {
     const lateFinalizedState = source
-      .replace('    statement.isFinalized = true\n', '')
-      .replace('    }\n  }', '    }\n    statement.isFinalized = true\n  }');
-
+      .replace('isFinalized = true', '')
+      .replace('throw SQLiteErrorException(', 'isFinalized = true\nthrow SQLiteErrorException(');
     expect(lateFinalizedState).not.toBe(source);
-    // An unrelated earlier state assignment cannot stand in for the finalize path.
-    const result = checkSqliteSources({
-      [`expo-sqlite::${file}`]: `statement.isFinalized = true\n${lateFinalizedState}`,
-    });
-
+    const result = checkSqliteSources({ [`expo-sqlite::${file}`]: `isFinalized = true\n${lateFinalizedState}` });
     expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
   });
 
-  it.each(nativeFixtures)('rejects a dropped finalized state in $file', ({ file, source }) => {
-    const result = checkSqliteSources({
-      [`expo-sqlite::${file}`]: source.replace('    statement.isFinalized = true\n', ''),
-    });
-
+  it.each(finalizationFixtures)('rejects a dropped finalized state in $file', ({ file, source }) => {
+    const result = checkSqliteSources({ [`expo-sqlite::${file}`]: source.replace('isFinalized = true', '') });
     expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
+  });
+
+  it.each(lifetimeFixtures)('rejects a missing runtime lifetime guarantee in $file', ({ file }) => {
+    expect(checkSqliteSources({ [`expo-sqlite::${file}`]: '' }).errors).toEqual([
+      expect.stringContaining(`${file} is missing`),
+    ]);
   });
 });
 
@@ -190,7 +229,7 @@ private func postAppContextDestroysOnce() {
 }
 `;
 
-  function checkSource(installedSource: string, version = '57.0.21') {
+  function checkSource(installedSource: string, version = '58.0.26') {
     return checkPatchesApplied(
       [coreRule],
       makeEnv({
@@ -203,7 +242,7 @@ private func postAppContextDestroysOnce() {
 
   it('pins the core version and delivery before runtime release', () => {
     expect(checkSource(source).errors).toEqual([]);
-    expect(checkSource(source, '57.0.22').errors).toEqual([expect.stringContaining('version drift')]);
+    expect(checkSource(source, '58.0.27').errors).toEqual([expect.stringContaining('version drift')]);
     expect(
       checkSource(source.replace('postAppContextDestroysOnce()\n    _runtime = nil', '_runtime = nil')).errors,
     ).toEqual([expect.stringContaining('is missing')]);
@@ -726,7 +765,7 @@ describe('versionFromKey', () => {
 // ---------------------------------------------------------------------------
 
 const TABS_FILE = 'ios/tabs/host/RNSTabsHostComponentView.mm';
-const TABS_KEY = 'react-native-screens@4.26.2';
+const TABS_KEY = 'react-native-screens@4.30.0';
 const TABS_RULES: PatchRule[] = [
   {
     package: PKG,
@@ -871,7 +910,7 @@ const TABS_SELF_ARMING_SOURCE = TABS_FIXED_SOURCE.replace(
 const tabsEnv = (source: string) =>
   makeEnv({
     patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-    versions: { [PKG]: '4.26.2' },
+    versions: { [PKG]: '4.30.0' },
     files: { [`${PKG}::${TABS_FILE}`]: source },
   });
 
@@ -1055,12 +1094,84 @@ describe('the shipped react-native-screens tab-host rule', () => {
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.26.2' },
+        versions: { [PKG]: '4.30.0' },
         files: { [`${PKG}::ios/tabs/host/RNSTabsHostComponentView.mm`]: TABS_ATTACH_ONLY_SOURCE },
       }),
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the shipped MiniPlayer width cap rule (#7083)', () => {
+  const ACCESSORY_FILE = 'ios/tabs/bottom-accessory/RNSTabsBottomAccessoryWrapperView.mm';
+  const shippedRule = REAL_RULES.find((rule) => rule.package === PKG && rule.file === ACCESSORY_FILE);
+
+  const wrap = (body: string, preamble = 'static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;') => `
+#import "RNSTabsBottomAccessoryWrapperView.h"
+
+${preamble}
+
+@implementation RNSTabsBottomAccessoryWrapperView
+
+- (CGSize)sizeThatFits:(CGSize)size
+{
+  // By returning the proposed size, we make sure that the accessory always
+  // takes full available width.
+${body}
+}
+
+@end
+`;
+
+  const CAPPED_SOURCE = wrap('  return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);');
+
+  const check = (source: string) =>
+    checkPatchesApplied(
+      [shippedRule as PatchRule],
+      makeEnv({
+        patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
+        versions: { [PKG]: '4.30.0' },
+        files: { [`${PKG}::${ACCESSORY_FILE}`]: source },
+      }),
+    );
+
+  it('is present', () => {
+    expect(shippedRule).toBeDefined();
+  });
+
+  it('passes the cap applied on every device', () => {
+    expect(check(CAPPED_SOURCE).errors).toEqual([]);
+  });
+
+  it('rejects the unpatched upstream full-width answer', () => {
+    const result = check(wrap('  return size;', ''));
+
+    expect(result.errors.join('\n')).toContain('RNSTabsBottomAccessoryMaxWidth');
+  });
+
+  it('rejects a pad-only gate that leaves the open iPhone Duo full width', () => {
+    const result = check(
+      wrap(
+        [
+          '  if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {',
+          '    return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);',
+          '  }',
+          '  return size;',
+        ].join('\n'),
+      ),
+    );
+
+    expect(result.errors.join('\n')).toContain('userInterfaceIdiom');
+    expect(result.errors.join('\n')).toContain('iPhone Duo');
+  });
+
+  it('rejects an answer read from the stale bounds (#4728)', () => {
+    const result = check(
+      wrap('  return CGSizeMake(MIN(self.bounds.size.width, RNSTabsBottomAccessoryMaxWidth), size.height);'),
+    );
+
+    expect(result.errors.join('\n')).toContain('self.bounds');
   });
 });
 
@@ -1094,36 +1205,52 @@ describe('checkPatchInventory', () => {
     expect(errors[0]).toContain('4.25.2');
   });
 
-  const serverKey = 'postgres@3.4.9';
-  const serverPath = 'packages/db/patches/postgres@3.4.9.patch';
+  describe.each([
+    ['postgres@3.4.9', 'packages/db/patches/postgres@3.4.9.patch'],
+    ['@mui/material@7.3.11', 'packages/web/patches/@mui__material@7.3.11.patch'],
+  ])('non-native patch %s', (patchKey, patchPath) => {
+    it('accepts the explicitly registered non-native patch outside native fingerprint inputs', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: patchPath },
+          nonNativePatchPaths: [patchPath],
+        }),
+      ).toEqual([]);
+    });
 
-  it('accepts the explicitly registered server patch outside native fingerprint inputs', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
-        serverPatchPaths: [serverPath],
-      }),
-    ).toEqual([]);
-  });
+    it('rejects a missing non-native patch', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: patchPath },
+        }),
+      ).toEqual([expect.stringContaining('non-native patch ' + patchPath + ' is missing')]);
+    });
 
-  it('rejects a missing server patch', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
-      }),
-    ).toEqual([expect.stringContaining('server patch ' + serverPath + ' is missing')]);
-  });
+    it('rejects a different path even when its file exists', () => {
+      const movedPath = `packages/other/patches/${patchKey.replaceAll('/', '__')}.patch`;
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: movedPath },
+          nonNativePatchPaths: [movedPath],
+        }),
+      ).toEqual([expect.stringContaining('non-native patch must stay at')]);
+    });
 
-  it('rejects moving a server patch into native fingerprint inputs', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: `patches/${serverKey}.patch` },
-        patchFilenames: [...base.patchFilenames, `${serverKey}.patch`],
-      }),
-    ).toEqual([expect.stringContaining('server patch must stay at'), expect.stringContaining('orphaned')]);
+    it('rejects moving a non-native patch into native fingerprint inputs', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: {
+            ...base.patchedDependencies,
+            [patchKey]: `patches/${patchKey.replaceAll('/', '__')}.patch`,
+          },
+          patchFilenames: [...base.patchFilenames, `${patchKey.replaceAll('/', '__')}.patch`],
+        }),
+      ).toEqual([expect.stringContaining('non-native patch must stay at'), expect.stringContaining('orphaned')]);
+    });
   });
 
   it('rejects moving a native patch outside the fingerprinted directory', () => {
@@ -1131,7 +1258,7 @@ describe('checkPatchInventory', () => {
       checkPatchInventory({
         ...base,
         patchedDependencies: { [TABS_KEY]: `packages/db/patches/${TABS_KEY}.patch` },
-        serverPatchPaths: [`packages/db/patches/${TABS_KEY}.patch`],
+        nonNativePatchPaths: [`packages/db/patches/${TABS_KEY}.patch`],
       }),
     ).toEqual([expect.stringContaining('not in patches/')]);
   });
@@ -1591,5 +1718,30 @@ describe('the shipped native privacy patches', () => {
     });
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
+  });
+});
+
+describe('the installed web declaration patch', () => {
+  const patchedDependencies = {
+    '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
+  };
+  const installed = createNodeEnv(
+    resolve(import.meta.dirname, '../../packages/web/package.json'),
+    patchedDependencies,
+    'packages/web',
+  );
+
+  it('guards both declaration variants resolved by the web workspace', () => {
+    expect(checkPatchesApplied(WEB_RULES, installed)).toEqual({ checked: 2, errors: [] });
+  });
+
+  it.each(WEB_RULES)('rejects a dropped React import in $file', (rule) => {
+    const result = checkPatchesApplied([rule], {
+      ...installed,
+      readInstalledFile(pkg, file) {
+        return installed.readInstalledFile(pkg, file).replace(/^import type \* as React from 'react';\r?\n/m, '');
+      },
+    });
+    expect(result.errors).toEqual([expect.stringContaining(`${rule.file} is missing`)]);
   });
 });

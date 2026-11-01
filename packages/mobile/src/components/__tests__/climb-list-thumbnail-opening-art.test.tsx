@@ -7,6 +7,7 @@ const native = vi.hoisted(() => ({ read: vi.fn(), displays: [] as Array<(loadKey
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
+  PixelRatio: { get: () => 3 },
 }));
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { fill: '#ddd' } }) }));
 vi.mock('../../theme/tokens', () => ({ borderRadius: { md: 12 } }));

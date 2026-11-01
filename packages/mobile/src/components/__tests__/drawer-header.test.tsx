@@ -104,6 +104,26 @@ describe('DrawerHeader', () => {
     expect(styles(container).filter((style) => style.includes('"width":48'))).toHaveLength(2);
   });
 
+  // #7000 QA: the wall pill goes away when the board disconnects. The width the
+  // trailing flank measured with the pill up is the grade's own (~30pt), while
+  // the bare trailing slot keeps its 48pt floor, so the spacer must too or the
+  // name sits left of centre.
+  it('keeps the name centred when the leading element goes away', () => {
+    const { container, rerender } = renderHeader(createElement('span', null, 'Live'));
+    act(() => layoutHandlers[1]({ nativeEvent: { layout: { width: 30 } } }));
+    rerender(
+      createElement(DrawerHeader, {
+        center: createElement('span', null, 'Climb name'),
+        trailing: createElement('span', null, 'V5'),
+        minRowHeight: ROW_HEIGHT,
+      }),
+    );
+
+    const spacer = styles(container).find((style) => style.includes('"flexShrink":0') && style.includes('"width"'));
+    expect(spacer).toContain('"width":48');
+    expect(styles(container).some((style) => style.includes('"minWidth":48'))).toBe(true);
+  });
+
   // Rounded up, never down. A flank that landed on a fraction would let the swipe
   // peek and the current header disagree by a subpixel — the exact drift the
   // reserved slot is there to prevent.

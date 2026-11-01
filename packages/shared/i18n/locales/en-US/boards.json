@@ -121,7 +121,6 @@
         "failed": "Not connected to {{board}} yet. Try again when you're ready.",
         "failedNoName": "Not connected to your board yet. Try again when you're ready."
       },
-      "pill": "Light it on the board",
       "confirm": {
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",
@@ -214,6 +213,7 @@
       "resolving": "Loading boards…",
       "noResults": "No boards in range",
       "unavailable": "Turn on Bluetooth to scan",
+      "notAsked": "Allow Bluetooth to look for boards near you.",
       "unknownSetupTitle": "Found a {{board}} board",
       "unknownSetupBody": "We don't know its setup yet.",
       "moonboardTitle": "Found a MoonBoard nearby",

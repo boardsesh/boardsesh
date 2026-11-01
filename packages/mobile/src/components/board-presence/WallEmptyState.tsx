@@ -13,7 +13,7 @@ import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { spacing } from '../../theme/tokens';
 
 /**
- * The "On the Wall" tab's empty state — a FALLBACK only. Board presence binds for
+ * The Wall display's empty state — a FALLBACK only. Board presence binds for
  * every climber with an active board, so `WallScreen`'s `isWallLive` gate is
  * normally already satisfied and the kiosk renders instead; this shows when the
  * board's render data can't be resolved or presence isn't bound.

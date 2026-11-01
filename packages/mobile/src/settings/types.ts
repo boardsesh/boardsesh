@@ -2,6 +2,7 @@ import type { StoredClimbRowDisplay } from '../lib/climb-row-display';
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { SectionLayoutRecord } from '../lib/section-layout';
 import type { PlayerButtonsPosition } from '../lib/player-buttons';
+import type { ClimbListLayoutPreference } from '../components/climb-list-thumbnail-metrics';
 import type { SupportCardRecord } from '../lib/support-asks';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -143,6 +144,12 @@ export type AppSettings = {
   restTimerAutoAdvance: boolean;
   /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
   restTimerMode: RestTimerMode;
+  /**
+   * Count the rest down on the Lock Screen, in the Dynamic Island and in the
+   * Android session notification (#6513). On by default: arming the timer is
+   * already the opt-in, and arming never survives a cold start.
+   */
+  restTimerShowOnLockScreen: boolean;
   theme: 'system' | 'light' | 'dark';
   /**
    * Which tab an ordinary launch opens on. Read synchronously by
@@ -249,13 +256,35 @@ export type AppSettings = {
    */
   climbRowDisplayV1: StoredClimbRowDisplay | null;
   /**
+   * One or two columns in the Climbs list where the list is wide enough for two
+   * (a regular-width iPad). Read through `useClimbListLayout`, which sanitises it.
+   * In this store, not AsyncStorage, so the choice is read synchronously on the
+   * list's first render. The list's width is measured after that render, and a
+   * first guess that turns out wrong changes the column count once.
+   */
+  climbListLayout: ClimbListLayoutPreference;
+  /**
    * The player's buttons (#6229): their order and switches, `null` while they
-   * match the defaults so a later release's defaults still apply. Read and
+   * match the defaults so a later release's defaults still apply. V2 since
+   * #7000, when the five became the first row's two end slots: the meaning
+   * changed, so everyone starts on the new defaults and a V1 record is never
+   * read. Read and
    * written ONLY through `playerButtonsStore` (`lib/player-buttons-preference.ts`),
    * which keeps its own snapshot; never `useSetting` this key. In this store, not
    * AsyncStorage, because the bar has to be right on the player's first frame.
+   *
+   * `boardControl` rides the same record (#7000): `'lightbulb'` for the bulb in
+   * the top row, absent (or anything else) for the wall button. The record
+   * stays non-null while it is set, even with the buttons on their defaults.
    */
-  playerButtonsV1: SectionLayoutRecord | null;
+  playerButtonsV2: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+  /**
+   * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
+   * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`
+   * (`lib/mini-player-buttons-preference.ts`); never `useSetting` this key. In
+   * this store, not AsyncStorage, because the bar has to be right on its first frame.
+   */
+  miniPlayerButtonsV1: SectionLayoutRecord | null;
   /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
   playerPreviousNext: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */

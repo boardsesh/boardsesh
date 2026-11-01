@@ -20,6 +20,7 @@ struct ble_gap_conn_desc {
 };
 namespace fixture_ble_host {
 inline bool synced = true;
+inline bool deferDisconnects = false;
 inline std::array<bool, 3> active{}, configured{};
 inline std::array<ble_addr_t, 3> addresses{};
 inline std::map<uint16_t, ble_gap_conn_desc> peers;
@@ -118,6 +119,8 @@ class NimBLEServer {
         return handles;
     }
     void disconnect(uint16_t handle) {
+        if (fixture_ble_host::deferDisconnects)
+            return;
         if (fixture_ble_host::peers.erase(handle)) {
             NimBLEConnInfo info{handle};
             callbacks->onDisconnect(this, info, 0);

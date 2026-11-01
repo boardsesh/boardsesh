@@ -124,7 +124,7 @@ const fireAction = (actionName: string) =>
 describe('PlayDrawerHeaderAccessibility', () => {
   beforeEach(() => {
     recorded.onAccessibilityAction = undefined;
-    recorded.pill = { label: 'playView.wallState.live', hint: 'hint' };
+    recorded.pill = { label: 'playView.wallState.backToCurrent', hint: 'hint' };
   });
 
   it('reads the whole header as one header-role label', () => {
@@ -178,22 +178,10 @@ describe('PlayDrawerHeaderAccessibility', () => {
     );
   });
 
-  it('says what the wall is doing, but not the browsing pill, whose words are its action', () => {
-    recorded.pill = { label: 'On the wall. Alex is lighting the wall.', hint: 'hint' };
-    const { getByTestId, rerender } = render(
-      createElement(PlayDrawerHeaderAccessibility, {
-        ...baseProps,
-        model: modelWith(),
-        pillState: 'onWall',
-        onPillPress: () => {},
-      }),
-    );
-    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
-      'Hueco Madness, V6, 12 sends, 2.5★, jwebxl, On the wall. Alex is lighting the wall.',
-    );
-
+  // The back chip's words are an instruction, not a state: they stay on the action.
+  it('reads the climb and not the back chip, whose words are its action', () => {
     recorded.pill = { label: 'Back to your climb' };
-    rerender(
+    const { getByTestId } = render(
       createElement(PlayDrawerHeaderAccessibility, {
         ...baseProps,
         model: modelWith(),
@@ -242,7 +230,7 @@ describe('PlayDrawerHeaderAccessibility', () => {
         model: modelWith({ setterUsername: '' }),
         onLongPressName: () => {},
         onPressSetter: () => {},
-        pillState: 'live',
+        pillState: 'browsing',
         onPillPress: () => {},
       }),
     );
@@ -265,7 +253,7 @@ describe('PlayDrawerHeaderAccessibility', () => {
     expect(actions).toEqual([
       { name: 'copyName', label: 'mobile.climbActions.copyName' },
       { name: 'openSetter', label: 'frontDoor.setterLink:jwebxl' },
-      { name: 'wallPill', label: 'playView.wallState.live' },
+      { name: 'wallPill', label: 'playView.wallState.backToCurrent' },
     ]);
   });
 
@@ -279,7 +267,7 @@ describe('PlayDrawerHeaderAccessibility', () => {
         model: modelWith(),
         onLongPressName,
         onPressSetter,
-        pillState: 'onWall',
+        pillState: 'browsing',
         onPillPress,
       }),
     );

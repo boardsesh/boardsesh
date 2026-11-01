@@ -13,6 +13,8 @@ import { isAccessoryHostRoute } from '../lib/route-segments';
  * the same failure `126538345` device-observed on the player route and fixed the same
  * way). The host now mounts exactly when the bar is up, and unmounts only when the
  * whole tab view controller leaves, where the accessory co-detaches with the bar.
+ * Climbs has been an ordinary tab since #6827, but the rule stands: any detach with
+ * the bar up still re-lays-out the bar under the items it holds.
  *
  * Mounted is not the same as presented, and on device they diverge: UIKit still stops
  * drawing the platter once you push (verified on the playlist route — visible at the

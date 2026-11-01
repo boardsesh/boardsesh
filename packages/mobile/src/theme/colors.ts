@@ -1,4 +1,5 @@
 import { DynamicColorIOS, Platform, PlatformColor, type OpaqueColorValue } from 'react-native';
+import { BOKEH_DARK_SURFACE, BOKEH_LIGHT_SURFACE } from '@boardsesh/frosted-bokeh';
 import {
   blendOpaque,
   brandColors,
@@ -63,7 +64,7 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
         // controls use (HIG Color: one tint for every interactive element).
         // DynamicColorIOS so it still follows dark mode AND Increase Contrast,
         // as Apple's link colour did.
-        accent: DynamicColorIOS(brandAccentDynamic),
+        accent: DynamicColorIOS(brandAccentDynamic) as OpaqueColorValue,
       }
     : null;
 
@@ -222,3 +223,15 @@ export function materialElevationLevels(scheme: 'light' | 'dark'): {
 }
 
 export type MaterialSurfaceContainers = typeof materialSurfaceContainers.light;
+
+/**
+ * The lit wall button's glow surfaces (#7000, look F1b): the pill the climb's
+ * hold colours glow on, the label over them, and a plain 1 pt hairline border.
+ * Dark: a near-black with an 8% frost, white label, white border at 20%. Light:
+ * a pale violet the blobs multiply into, dark label, black border at 12%.
+ * `wall-glow.ts` keeps the label at 4.5:1 over either.
+ */
+export const wallGlowSurfaces = {
+  dark: { ...BOKEH_DARK_SURFACE, label: '#FFFFFF', border: 'rgba(255, 255, 255, 0.2)' },
+  light: { ...BOKEH_LIGHT_SURFACE, label: '#16111F', border: 'rgba(0, 0, 0, 0.12)' },
+} as const;

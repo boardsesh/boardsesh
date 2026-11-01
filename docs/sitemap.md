@@ -26,7 +26,7 @@ no partial dynamic segments, so a `climbs-1.xml` shape would hardcode today's pa
 count into the directory tree.
 
 `setters` is paged for volume, not for locale expansion: ~108,000 distinct
-`(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 11,250, so
+`(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 9,000, so
 one file cannot hold them at any expansion.
 
 ## The climb sitemap switch
@@ -708,8 +708,9 @@ with no alternates block and costs ~250 B/URL, so fanning it out to locales — 
 change `entries.ts` warns against — would take a page from 2.5 MB to 8.7 MB. That
 is what the 5 MB page budget catches and a 45 MB one would not.
 
-One thing still follows, not urgent: at 866 B/URL, `MAX_ITEMS_PER_SHARD` (11,250
-items → 45,000 URLs) lets a fixed shard reach ~**39 MB**. That is legal and it
+One thing still follows, not urgent: at 866 B/URL, `MAX_ITEMS_PER_SHARD` (9,000
+items × 5 locales → 45,000 URLs) lets a fixed shard reach ~**39 MB**, a little
+more now that each URL carries a sixth `xhtml:link` for Italian. That is legal and it
 still serves, and it is a lot of file to hand a crawler. Paging `playlists` onto
 the `PagedSitemapShard` machinery — which would give it a page-sized budget the
 way climbs has one — is #5073.

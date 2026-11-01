@@ -469,7 +469,8 @@
         "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical.",
         "tabs": {
           "sections": "Sous le bloc",
-          "buttons": "Boutons"
+          "buttons": "Boutons",
+          "miniPlayer": "Mini-lecteur"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Sous le nom",
         "yourClimbing": "Ta grimpe",
         "actions": "Actions",
+        "layout": {
+          "title": "Colonnes",
+          "one": "Une colonne",
+          "two": "Deux colonnes",
+          "footer": "Les deux colonnes s'affichent quand la liste a assez de place, comme sur un iPad à l'horizontale."
+        },
         "gradesTitle": "Cotations",
         "previewFooter": "Exemple. Les croix, favoris et étiquettes apparaissent sur les blocs qui en ont.",
         "gradeFooter": "Choisis la cotation principale dans Réglages → Blocs et cotations.",
@@ -569,14 +576,31 @@
           "log": "Enregistrer",
           "boardLight": "Éclairage de la board"
         },
-        "footer": "Le premier entre File et Miroir prend le grand bouton. Un bouton masqué reste dans le menu ⋯. Sans petits boutons, la board prend leur rangée.",
+        "footer": "Le premier bouton activé prend l’extrémité gauche de la rangée du haut et le dernier l’extrémité droite. Les autres, et ceux que tu masques, sont dans le menu ⋯.",
         "settingsFooter": "Pour changer l’ordre, ouvre le menu ⋯ d’un bloc et choisis Options d’affichage.",
-        "previewLabel": "Aperçu, {{position}} : {{buttons}}"
+        "previewLabel": "Aperçu, {{position}} : {{buttons}}",
+        "boardControl": {
+          "label": "Commande de la board",
+          "wallButton": "Bouton du mur",
+          "lightbulb": "Ampoule",
+          "footer": "Les deux commandes connectent, allument le bloc et montrent qui tient la board. Quand la board est connectée, maintiens pour les options. Lis le libellé du bouton du mur : Tu pilotes la board signifie que chaque bloc choisi s’allume ; touche ce libellé pour arrêter de piloter en restant connecté. L’ampoule est en haut à droite."
+        }
       },
       "climbView": {
         "title": "Vue du bloc",
         "valueDefault": "Par défaut",
         "valueCustom": "Personnalisée"
+      },
+      "quickFilters": {
+        "title": "Filtres rapides",
+        "valueDefault": "Par défaut",
+        "valueCustom": "Personnalisés",
+        "climbsTitle": "Blocs",
+        "climbsFooter": "Ils s'affichent au-dessus de la liste des blocs, dans cet ordre. Un filtre que tu actives se place à la fin.",
+        "playlistsTitle": "Listes",
+        "playlistsFooter": "Ils s'affichent au-dessus de chaque playlist, playlist intelligente et page d'ouvreur, dans cet ordre.",
+        "restoreDefaults": "Rétablir les réglages par défaut",
+        "footer": "Les changements s'appliquent immédiatement, sur ce téléphone uniquement. Tous les filtres restent dans Filtres."
       },
       "timers": {
         "restTitle": "Repos",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Connexion…",
         "rogueUnreachable": "Introuvable. Vérifie qu’il est allumé et à proximité.",
         "rogueSaveFailed": "Impossible d’enregistrer le minuteur. Réessaie."
+      },
+      "miniPlayer": {
+        "title": "Mini-lecteur",
+        "description": "La barre au-dessus des onglets. Touche-la pour ouvrir le bloc.",
+        "buttons": {
+          "next": "Bloc suivant",
+          "previous": "Bloc précédent",
+          "wallDisplay": "Affichage mural"
+        },
+        "fixedNote": "Éclairage de la board est toujours là, à côté d'Enregistrer. Enregistrer reste en dernier, sous ton pouce.",
+        "footer": "Sur iPhone, la barre a de la place pour un seul de ces boutons à côté d'Éclairage de la board et d'Enregistrer : le premier qui est activé.",
+        "open": "Ouverte",
+        "collapsed": "Réduite",
+        "previewLabel": "Aperçu, barre {{shape}} : {{buttons}}",
+        "footerWide": "Sur un écran large, la barre garde autant de ces boutons qu'elle peut en contenir : les premiers de la liste passent d'abord.",
+        "shapeOpen": "ouverte",
+        "shapeCollapsed": "réduite",
+        "more": "Plus"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,7 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
-        "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
       },
       "link": {
         "title": "Emporte tes croix {{boardName}} avec toi",
@@ -727,7 +768,6 @@
       "home": "Accueil",
       "boards": "Boards",
       "climbs": "Blocs",
-      "wall": "Sur le mur",
       "profile": "Profil",
       "holdFilter": "Types de prise",
       "zoneFilter": "Zone du mur",

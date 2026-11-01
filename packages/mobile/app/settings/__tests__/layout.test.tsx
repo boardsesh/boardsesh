@@ -161,6 +161,7 @@ const SETTINGS_PAGES = [
   'developer',
   'climb-list',
   'climb-view',
+  'quick-filters',
   'storage',
   'privacy-access',
   'edit',

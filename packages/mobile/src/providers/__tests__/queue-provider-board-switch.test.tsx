@@ -1195,7 +1195,7 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
   it('keeps the list place when a looked-at Up next climb goes up on the wall', async () => {
     await renderOnTheTappedClimb();
 
-    act(() => latest().setCurrentClimb(queuedSecond, { keepTrackIfUpNext: true, trigger: 'put_on_wall' }));
+    act(() => latest().setCurrentClimb(queuedSecond, { keepWalkedTrack: true, trigger: 'put_on_wall' }));
     expect(latest().state.currentClimbQueueItem).toBe(queuedSecond);
     expect(latest().playlistSuggestionSource?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
     // The queued entry went up as it is: nothing was inserted or pruned.
@@ -1209,8 +1209,54 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     await renderOnTheTappedClimb();
     const elsewhere = makeItem('item-elsewhere', makeClimb('elsewhere', 'kilter', 1));
 
-    act(() => latest().setCurrentClimb(elsewhere, { keepTrackIfUpNext: true, trigger: 'put_on_wall' }));
+    act(() => latest().setCurrentClimb(elsewhere, { keepWalkedTrack: true, trigger: 'put_on_wall' }));
     expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-elsewhere');
+    expect(latest().playlistSuggestionSource).toBeNull();
+  });
+
+  // #7113 QA: stopped driving on Search results, a swipe off the list climb on
+  // the wall is a look at the list's next climb (a peek), and Put on board mints
+  // it fresh. The list stays the track, so the label and swipes carry on.
+  it('keeps the list when the list climb a look peeked at goes up on the wall', async () => {
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [tapped],
+      currentClimbQueueItem: tapped,
+      playlistSuggestionSource: results,
+      savedAt: '2026-10-25T00:00:00.000Z',
+    });
+    await renderOnTheTappedClimb();
+    const freshS3 = makeItem('fresh-s3', s3);
+
+    act(() =>
+      latest().setCurrentClimb(freshS3, {
+        keepWalkedTrack: true,
+        walkedPeek: true,
+        historyCopy: 'fresh',
+        trigger: 'put_on_wall',
+      }),
+    );
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('fresh-s3');
+    expect(latest().playlistSuggestionSource).toMatchObject({ playlistUuid: 'climblist', label: 'Search results' });
+
+    // Next walks on down the same list.
+    act(() => latest().nextClimb());
+    expect(currentClimbUuid()).toBe('s4');
+  });
+
+  // #5403: holding Search results, a crew browse open of a peer's tick for a
+  // list climb, then Put on board, must not borrow the list.
+  it('leaves the list when a peer tick for a list climb goes up on the wall', async () => {
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [tapped],
+      currentClimbQueueItem: tapped,
+      playlistSuggestionSource: results,
+      savedAt: '2026-10-25T00:00:00.000Z',
+    });
+    await renderOnTheTappedClimb();
+    const peerTickS1 = makeItem('tick-s1', s1);
+
+    act(() => latest().setCurrentClimb(peerTickS1, { keepWalkedTrack: true, trigger: 'put_on_wall' }));
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('tick-s1');
     expect(latest().playlistSuggestionSource).toBeNull();
   });
 

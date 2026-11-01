@@ -159,7 +159,13 @@ phones (`lineAfterDelta`, below), whoever sent it and whatever `QUEUE_NOW_SLOT_P
    Play next, workouts, Undo, playlist replace), a removal, or a step back on the queue walk
    (section 7). `replaceQueueItem` and `mirrorSessionClimb` rewrite one entry in place and keep
    its index, so they change no membership. The widget and Garmin navigate stops at the ends
-   instead of wrapping (section 3).
+   instead of wrapping (section 3). Driving the wall (#7113) adds no writer: every change of
+   climb it lights goes through `nextClimb`, `previousClimb` or `setCurrentClimb`, so through
+   `placeOnWall`. A step along a list from a preview goes through `setCurrentClimb` with
+   `trigger: next | previous` and `historyCopy: fresh`, so it is placed as `nextClimb` places a
+   step: the laundered climb (never a `playlist-peek:` uuid) goes up fresh at the Now slot, a
+   climb only History holds is not pulled out of History, and the climbs it walks past go to
+   History, not Up next.
 4. History holds at most 125 entries and is trimmed to 100. History + Up next hold at most
    `MAX_SYNCED_QUEUE_ITEMS` = 500 (`shared/queue/src/limits.ts:25`); the climb on the wall is
    extra, so the array holds at most 501 entries with a climb current and 500 with nothing
@@ -537,7 +543,7 @@ server runs `placeOnWall` for every request. Old clients never send `placement`.
 | Old JS, Next / Previous on the queue | `setCurrentClimb(neighbour's uuid)`. With nothing current, Next sends `queue[0]` and Previous sends nothing (`shared/play-view/src/queue-navigation.ts:53`, `:73`). | `next` / `step`: pointer only. With nothing current: `next-from-line` (S12, S15). |
 | Old JS, queue-row tap | `setCurrentClimb(that row's uuid, shouldAddToQueue: true)` (`queue-provider.tsx:2113`, via `use-queue-sheet-handlers.ts:65`) | `move-up-next`, or `step` for a History row. With nothing current, a History row is `move-history` (`step` for History's only entry); the `true` keeps a tap on `queue[0]` from being read as Next (S18). |
 | Old JS, Undo after a remove, playlist replace or clear, workout append, empty-room reseed after a failed seed | `setQueue(queue, current)`, no `historyCount` (`queue-provider.tsx:1677-1683` `setQueue`, `:1692` `restoreQueueItems`, `:1754` `appendQueueItems`; `reSeedQueueRef`, `:976`) | Line = index of current; with nothing current, derived from the stored History (below). Caps apply (section 5). |
-| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan, at every percent, with the trailing `CurrentClimbChanged` so the wall still repaints. With nothing current Swift's index depends on how the climb left the wall. After a `FullSync` with a null current it sits on index 0, so Next names `queue[1]` and Previous sends nothing. After `CurrentClimbChanged(null)` it keeps the cleared climb's index (`SessionQueueState.swift:119` ignores a nil item), so Next names Up next[0] and Previous names an older History entry, `queue[0]` included. It sends no `shouldAddToQueue`, so `queue[0]` is never read as an old Next: each press is a pointer `step` / `next` or a `move-history` / `move-up-next` that lights the climb named, never a spill. |
+| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan, at every percent, with the trailing `CurrentClimbChanged` so the wall still repaints. With nothing current Swift's index depends on how the climb left the wall. After a `FullSync` with a null current, a binary before PR 7 sits on index 0, so Next names `queue[1]` and Previous sends nothing. From PR 7 it sits on `queue[historyCount]`, so its Next names Up next[1] (`move-up-next`), and with Up next empty it sits one past the end, so its Previous names History's last entry (`step`). After `CurrentClimbChanged(null)` every binary keeps the cleared climb's index (`SessionQueueState.swift:173` ignores a nil item), so Next names Up next[0] and Previous names an older History entry, `queue[0]` included. It sends no `shouldAddToQueue`, so `queue[0]` is never read as an old Next: each press is a pointer `step` / `next` or a `move-history` / `move-up-next` that lights the climb named, never a spill. |
 | Widget, Garmin | REST navigate, server-side index ± 1 with wrap-around (`handlers/session-queue-actions.ts:50-59`; Garmin `handlers/session-actions.ts:125`, widget `handlers/widget-navigate.ts:230`) | Pointer only. Inside the percent it stops at the ends, as controller `navigateQueue` already does (`controller/mutations.ts:439-442`, `:451-454`): Next with Up next empty and Previous with History empty return the existing `out_of_bounds` result, which both routes already handle (`session-actions.ts:131`, `widget-navigate.ts:247`). Today Previous from index 0 wraps to the last climb and sends every Up next climb to History unclimbed, and Next from the end wraps to `queue[0]` and spills all of History. With nothing current, Next goes to `queue[historyCount]` and Previous to `queue[historyCount - 1]`. |
 | ESP32 LED detect | `setClimbFromLedPositions` (`controller/mutations.ts:233-262`) | Now goes through `placeOnWall` with a fresh uuid, so a queued climb is reused instead of copied |
 
@@ -695,7 +701,7 @@ the same-sequence acceptance (below), and the optional `release/next` slice that
 | `SessionQueueState.swift` `QueueStateReducer` (`:103-195`) | It always finds the current uuid, so its "append if missing" branch (`:183-193`) goes dead. `FullSync` reorders already apply (`:114-116`). |
 | `QueueEventRepaintPolicy` (`:32-41`) | The trailing same-sequence `CurrentClimbChanged` (section 2) keeps the wall lit for every move that today is a pointer event. |
 | `LiveActivityManager.buildContentState` | Its index is always in bounds while a climb is current. |
-| `ClimbNavigationIntent` | Steps the native index by ±1 and sends `setCurrentClimb(item)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`). The server reads an adjacent step as `next` / `step` (S9). |
+| `ClimbNavigationIntent` | Steps the native index by ±1 and sends `setCurrentClimb(item)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`). The server reads an adjacent step as `next` / `step` (S9). With nothing current it is off by one from PR 7 on, accepted: see the PR 7 paragraph below. |
 | Android `BoardSessionService.kt`, `SessionPresenceModule.kt` | Get `currentIndex` from JS, computed the same way as today. |
 | APNs `buildContentStateFromQueueState` | Unchanged and never sees an orphan. |
 
@@ -714,6 +720,31 @@ and both send paths fall back to `queue[0]` (`:461`, `:528`) and send its index.
 JS update overwrites it. Teaching Swift to read `historyCount` is PR 7 in the rollout table: a
 `release/next` PR, opened after the backend field is deployed and reviewed by Fable
 (section 10, decision 7).
+
+**What PR 7 does and doesn't fix.** With nothing current Swift lands on `queue[historyCount]`,
+and with Up next empty on `queue.count`, one past the end, so no frame is built and nothing
+reads as current, matching JS in now-slot mode. Three things stay as they are:
+
+1. The shared snapshot holds an index only, with no "nothing current" marker, so the
+   lock-screen Next steps from Up next[0] to Up next[1]. Over REST (`/api/widget/navigate`
+   ignores the client index) the server lights Up next[0] while the intent has already
+   BLE-written Up next[1]: one round trip of the wrong climb, then the trailing
+   `CurrentClimbChanged` repaints. On the socket fallback after a retryable REST failure, inside
+   the percent, Up next[1] is `move-up-next` and goes in front of Up next[0]. Before PR 7 the
+   same tap lit `queue[1]`, a History climb, so this is accepted rather than fixed. A real fix
+   needs JS to tell native that nothing is current over the bridge too, or the last writer
+   decides (point 2).
+2. JS writes the same snapshot at the same sequence. Until a phone runs in now-slot mode, its
+   JS falls back to `queue[0]` (`use-live-activity.ts:461`, `:528`), so the lock screen shows
+   History's oldest climb or Up next[0], whichever writer ran last, and every reconnect's
+   `FullSync` moves it back to Up next[0]. Turning `queue-now-slot` off doesn't restore index 0
+   on native.
+3. With an empty Up next both writers send no frame, so the last frame, the climb just taken
+   off, stays up until the next climb is current.
+
+PR 7 also falls back by itself on a backend without the field: a subscription validation error
+that names `historyCount` resubscribes on the same socket with the document minus that line,
+which reads as index 0. Each new connection tries the `historyCount` document first.
 
 **The Swift test on `main`.** The design rests on a trailing `CurrentClimbChanged` with the
 same sequence as its `FullSync` being applied, persisted and repainted natively (section 2).
@@ -988,13 +1019,10 @@ _plafón_ anywhere it is named. French lights with « allumer » only, German sa
 beleuchten_. PR 4 scope, behind the same `stale-current-hold-kill` flag: off, no hold and no
 line.
 
-As built: `{{time}}` is `hour: numeric, minute: 2-digit`, so it reads "9:30 AM" in en-US and
-"9:30" in es, fr and de (no leading zero). `{{weekday}}` is the long weekday and `{{date}}` is
-day plus short month ("15 oct.", "15. Okt."), with the year added once it is another year. The
-four bands are calendar days, not 24 h steps (`src/lib/last-on-wall.ts`). The player shows Put
-on the wall in the browse latch's slot of the second row while the held climb is the one on
-screen, and the line under the controls (`LastOnWallNote`); a pinned preview keeps its own
-commit.
+As built: the player shows Put on the wall in the browse latch's slot of the second row while
+the held climb is the one on screen; a pinned preview keeps its own commit. The "Last on the
+wall …" note (#7000) shipped and was then removed: climbers didn't find the date useful, so the
+player no longer says when the held climb was last lit.
 
 The gate lives in `bluetooth-provider.tsx`, which isn't on the CLAUDE.md Bluetooth list. It
 still gets a Fable review, because it decides what the wall lights.
@@ -1042,7 +1070,7 @@ mapping; the reducer decides what to do with it.
 | Subscription document (mobile) | `QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT` selects `historyCount` and `currentChangedAt` in `FullSync.state`; today's document stays for legacy mode | `src/lib/graphql/operations.ts:1229` |
 | Server probe | On every socket connect, before the join: the `__type(name: "QueueState")` probe, cached per connection, plus the narrow validation-error fallback (section 2). Injected into `create-queue-mutations.ts` as `useNowSlotDocuments()`. | `src/providers/queue/use-session-realtime.ts:884-908` |
 | Throttled open | A throttled `move-*` or `dedupe-*` reorders the array, so it can't use the "pointer self-heals" skip. It resyncs like any failed write. In now-slot mode a throttled `insert` resyncs too; `recoverThrottledQueueAdd` stays for the legacy branch only. | `queue-provider.tsx:1974-2000`, `:1844` |
-| `nextClimb` on a track | Sends `NOW`, resolved with `historyCopy: fresh`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. A peek whose climb only History holds is put up fresh and the History entry stays, unless that entry is History's last, right behind the current climb (section 1). Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
+| `nextClimb` on a track | Sends `NOW`, resolved with `historyCopy: fresh` (a caller stepping through `setCurrentClimb` passes the same `historyCopy: fresh` option, #7113). A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. A peek whose climb only History holds is put up fresh and the History entry stays, unless that entry is History's last, right behind the current climb (section 1). Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
 | `previousClimb` | On a track: `NOW` (the list's previous climb, from History or new). With no track, walking the queue (rule 4): `STEP`. | `queue-provider.tsx:2261-2281` |
 | BLE board-compatibility skip | Moves the target into Now, so the skipped climbs for a crewmate's other board stay in Up next. In a mixed-board crew they stay at the head of Up next until someone removes or reorders them, so every Next walks past the same climbs. The "skipped N climbs" notice is latched on the set of skipped entries (and the climb the swipe landed on), not on the current climb, so it shows once per set; a swipe back, a queue-sheet tap or a crewmate's open re-arms it. | `shared/board-config/src/board-compatibility.ts:256-273`, `reportClimbsSkippedOnBoardSwitch` in `queue-provider.tsx` |
 | Queue sheet row tap | Up next or History row: `NOW` | `src/components/play-drawer/use-queue-sheet-handlers.ts:65` |
@@ -1203,6 +1231,9 @@ was measured, so old and new clients can be compared.
   deploy drops every socket, the reconnect probe says legacy, and new phones run legacy mode
   with today's documents until the backend comes back. A request already in flight on the old
   socket can fail once with a validation error; the fallback retries it on the legacy document.
+- PR 7 binaries survive it too: their socket resubscribes without `historyCount` when the
+  server rejects the field (section 4), and land on index 0 with nothing current until the
+  backend comes back.
 - After PR 6 deletes the legacy documents and the probe, the old rule returns: don't roll the
   backend back past PR 2.
 
@@ -1227,7 +1258,7 @@ was measured, so old and new clients can be compared.
 | `backend/src/__tests__/board-queue-preview.test.ts`, `navigate-queue.test.ts`, `widget-navigate.test.ts`, `session-state.test.ts`, `apns.test.ts`, `controller.test.ts` | Nothing current with History: the kiosk's Up next starts at the line; widget next goes to `queue[historyCount]`. Inside the percent the widget and Garmin stop at both ends with `out_of_bounds` (the wrap case at `widget-navigate.test.ts:399` flips); at percent 0 they still wrap. The LED path reuses a queued climb and keeps its controller event. APNs never sees an orphan. |
 | `mobile/src/providers/__tests__/queue-provider-now-slot.test.tsx` (new), `queue-provider-play-next.test.tsx` | Logbook tap on a queued climb: no copy. Similar climbs leaves Up next alone. Track walk forward and back leaves Up next alone. Three fast swipes in a session leave Up next unchanged. Flag off, or probe `false`: no `placement`, today's documents. `Set Active Climb` carries `rewrite`, `placement` and `nowSlotMode`, solo and in a session. |
 | `mobile/src/components/play-drawer/__tests__/use-queue-sheet-handlers.test.tsx`, `climb-actions/__tests__/use-climb-actions.test.tsx` | Long-press a History row with a climb current: the menu shows Replay from here, and tapping it calls `setCurrentClimb` with that row's uuid and `placement: STEP`. A plain tap on the same row still sends `NOW`. The action is absent on Up next rows, on the current climb, with nothing current, and in legacy mode. |
-| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts` (the pure gate), the "stale-climb hold" block in `bluetooth-provider-wall-confirm.test.tsx` (the real `BluetoothProvider`: hold, releases, telemetry, kill switch), `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new), `mobile/src/lib/__tests__/last-on-wall.test.ts` (new, the four bands in four locales), the "stale-climb hold" block in `play-drawer-cross-board.test.tsx` (the player) | A snapshot whose `lastCurrentChangeAt` is 5 h old holds; 1 h lights. The app relaunched three times over five days with no queue change still holds (the save effect rewrites `savedAt` but not `lastCurrentChangeAt`). An add to Up next 10 min ago with the current climb set 5 h ago still holds, solo and in a session. A hydrate or regrade doesn't advance it. A snapshot without the field seeds from `savedAt`. In memory for 5 h holds. A session join with `currentChangedAt` 5 h ago holds; then a reconnect `FullSync`, a watchdog resync and a sequence-gap resync with the same `currentChangedAt` keep holding. Each release: a new current, a crewmate's pick, the lightbulb, a list pick of the held climb (the "#4979 hold" block in `use-play-selection-controller.test.tsx`); the accessory bar's reopen does not release it. The kill switch turns the hold off. While held, the player shows the last-on-the-wall line for each age band in section 6 (same day, yesterday, 2 to 6 days, 7 or more) in all four locales; it goes away on release and never shows with the kill switch on. |
+| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts` (the pure gate), the "stale-climb hold" block in `bluetooth-provider-wall-confirm.test.tsx` (the real `BluetoothProvider`: hold, releases, telemetry, kill switch), `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new), the "stale-climb hold" block in `play-drawer-cross-board.test.tsx` (the player) | A snapshot whose `lastCurrentChangeAt` is 5 h old holds; 1 h lights. The app relaunched three times over five days with no queue change still holds (the save effect rewrites `savedAt` but not `lastCurrentChangeAt`). An add to Up next 10 min ago with the current climb set 5 h ago still holds, solo and in a session. A hydrate or regrade doesn't advance it. A snapshot without the field seeds from `savedAt`. In memory for 5 h holds. A session join with `currentChangedAt` 5 h ago holds; then a reconnect `FullSync`, a watchdog resync and a sequence-gap resync with the same `currentChangedAt` keep holding. Each release: a new current, a crewmate's pick, the lightbulb, a list pick of the held climb (the "#4979 hold" block in `use-play-selection-controller.test.tsx`); the accessory bar's reopen does not release it. The kill switch turns the hold off. While held, the wall button reads dark and no last-on-the-wall line renders. |
 | `mobile/src/lib/live-activity/__tests__/use-live-activity.test.tsx` | Nothing current with History and Up next: the update names Up next[0], not `queue[0]`. Nothing current and Up next empty: no climb sent. Flag off: today's `queue[0]`. |
 | `mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` | Passes after re-recording, with both document sets validated against the schema. |
 | `mobile/ios-tests/LiveActivityWidgetTests.swift` | Three new assertions (section 4): `QueueSequencePolicy.decision` applies a `CurrentClimbChanged` at `received == lastKnown`; `SharedMirrorState.persist` returns `true` twice at the same sequence; `QueueEventRepaintPolicy.shouldRepaintBoard(for: .currentClimbChanged)` is `true`. Together they pin the trailing event where it lives, which the TS port can't (its reducer ignores sequences). They run in PR 2's CI through the new `mobile-native-gate` rule (section 4); check that the iOS job ran rather than skipped. |

@@ -160,9 +160,9 @@ describe('with-android-minify', () => {
       );
     });
 
-    it('keeps the two class names Sentry compares as strings', () => {
+    it('keeps the fragment class name Sentry compares as a string', () => {
       expect(plugin.KEEP_RULES).toContain('-keepnames class com.swmansion.rnscreens.ScreenStackFragment');
-      expect(plugin.KEEP_RULES).toContain('-keepnames class com.swmansion.rnscreens.events.ScreenAppearEvent');
+      expect(plugin.KEEP_RULES).not.toContain('-keepnames class com.swmansion.rnscreens.events.ScreenAppearEvent');
     });
 
     it('keeps line numbers so a retraced stack trace still points at a line', () => {
@@ -197,8 +197,8 @@ describe('with-android-minify', () => {
     });
 
     // Breaks on a @sentry/react-native bump — which is the point: that bump is
-    // exactly when these two -keepnames might need to change.
-    it('pins the class names @sentry/react-native still compares as strings', () => {
+    // exactly when the remaining -keepnames rule might need to change.
+    it('pins the fragment name and verifies Sentry matches the upstream appear event by name', () => {
       const tracer = readFileSync(
         join(
           MOBILE_ROOT,
@@ -208,7 +208,18 @@ describe('with-android-minify', () => {
       );
 
       expect(tracer).toContain('"com.swmansion.rnscreens.ScreenStackFragment"');
-      expect(tracer).toContain('"com.swmansion.rnscreens.events.ScreenAppearEvent"');
+      expect(tracer).not.toContain('"com.swmansion.rnscreens.events.ScreenAppearEvent"');
+      expect(tracer).toContain('SCREEN_APPEAR_EVENT_NAME.equals(event.getEventName())');
+      const eventName = tracer.match(/SCREEN_APPEAR_EVENT_NAME\s*=\s*"([^"]+)"/)?.[1];
+      expect(eventName).toBeDefined();
+      const screenEvent = readFileSync(
+        join(
+          MOBILE_ROOT,
+          'node_modules/react-native-screens/android/src/main/java/com/swmansion/rnscreens/events/ScreenAppearEvent.kt',
+        ),
+        'utf8',
+      );
+      expect(screenEvent).toContain(`const val EVENT_NAME = "${eventName}"`);
     });
   });
 });

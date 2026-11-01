@@ -98,10 +98,12 @@ import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceM
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { FirstConnectHost } from '../src/components/onboarding/FirstConnectHost';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
-import { ClimbsTabReturnTip } from '../src/components/onboarding/ClimbsTabReturnTip';
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
+import { CrewHolderSuspicionSync } from '../src/providers/crew-holder-suspicion';
+import { DriveModeWatcher } from '../src/components/play-drawer/DriveModeWatcher';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
+import { FoldHingeObserver } from '../src/components/navigation/FoldHingeObserver';
 import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
@@ -215,6 +217,9 @@ function OtaBranchSurfingInitializer() {
 
   return null;
 }
+
+// Router 58 anchors external modal links over index so Back has a home route.
+export const unstable_settings = { anchor: 'index' };
 
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   // A route chunk that failed to load (web only; the native predicate is
@@ -549,7 +554,6 @@ function RootLayout() {
                                                                               headerShown: false,
                                                                               contentStyle: undefined,
                                                                             }}
-                                                                            initialRouteName="index"
                                                                           >
                                                                             <Stack.Screen
                                                                               name="privacy-consent"
@@ -737,6 +741,24 @@ function RootLayout() {
                                                                                 animation: 'none',
                                                                               }}
                                                                             />
+                                                                            {/* The Wall display, the full-screen kiosk for an iPad
+                                                      mounted at the board (it replaced the iPad "On the Wall"
+                                                      tab). transparentModal like the player, NOT
+                                                      fullScreenModal (hard rule 2): it covers the sidebar, the
+                                                      tab bar and the bottom accessory while they stay live
+                                                      behind it, and paints its own opaque background. Its
+                                                      Settings and profile pages push inside its own Stack. */}
+                                                                            <Stack.Screen
+                                                                              name="wall-display"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                // Exit is the way out; a stray swipe at the wall
+                                                                                // must not close the kiosk.
+                                                                                gestureEnabled: false,
+                                                                                animation: 'fade',
+                                                                              }}
+                                                                            />
                                                                             <Stack.Screen
                                                                               name="play"
                                                                               options={{
@@ -768,16 +790,17 @@ function RootLayout() {
                                                                         {/* Workout stages (#5379): renders nothing; follows the session
                                                                             and drops the stage map when that session ends. */}
                                                                         <WorkoutRunSessionSync />
+                                                                        {/* A crewmate's hold presence hasn't confirmed yet (#7017): renders
+                                                                            nothing; asks the feed to confirm it, and lets it go in 10 s. */}
+                                                                        <CrewHolderSuspicionSync />
+                                                                        {/* Driving the wall (#7113): renders nothing; ends the drive
+                                                                            when the link drops, the session or board changes, or on sign-out. */}
+                                                                        <DriveModeWatcher />
                                                                         {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
                                                                         <AccessoryOnboardingTip />
-                                                                        {/* iOS 26 only: the one-time "tap the magnifier to get
-                                                            back to your climbs" tip for new accounts (#5654). A
-                                                            root sibling of the tip above, which it waits behind
-                                                            because both float in the same place. */}
-                                                                        <ClimbsTabReturnTip />
                                                                         {/* The rest-timer pill (#5378): a root overlay pinned at
                                                             bottomChrome.restTimerBottom, the anchor the bottom-chrome
                                                             reserve is computed against. A sibling of the tip above for
@@ -786,6 +809,9 @@ function RootLayout() {
                                                             play drawer mounts a second copy so that sheet can present
                                                             above the /play modal. */}
                                                                         <RootRestTimerPillHost />
+                                                                        {/* The one hinge observer (iPhone Duo): renders
+                                                            nothing off the Duo's inner display. */}
+                                                                        <FoldHingeObserver />
                                                                         {/* The one app-wide "we can't reach the server"
                                                             banner (#4862). A root sibling like the tip above so
                                                             it survives navigation and floats over every route;

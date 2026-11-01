@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewInstance } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -42,7 +42,7 @@ type WorkoutBlockListProps = {
   selection: GeneratorSelection;
   onChange: (selection: GeneratorSelection) => void;
   /** Scrolls a card that was just added or opened clear of the bottom chrome. */
-  onRevealBlock?: (cardView: View) => void;
+  onRevealBlock?: (cardView: ViewInstance) => void;
 };
 
 /**
@@ -114,7 +114,7 @@ export function WorkoutBlockList({
     setExpandedBlockId(blockId);
     onChange(next);
   }, [onChange]);
-  const handleCardLayout = useCallback((blockId: string, cardView: View) => {
+  const handleCardLayout = useCallback((blockId: string, cardView: ViewInstance) => {
     if (pendingRevealIdRef.current !== blockId) return;
     pendingRevealIdRef.current = null;
     onRevealBlockRef.current?.(cardView);

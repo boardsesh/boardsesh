@@ -111,6 +111,28 @@ export {
   type BoardQrScannedProps,
   type BoardQrPayload,
 } from './board-qr-events';
+// Queue navigation (#6940): Next / Previous and queue-sheet opens. Mobile-only
+// call sites today; `Queue Navigation` is the name www fired before W-16.
+export {
+  queueNavigation,
+  driveModeEnded,
+  type DriveModeEndReason,
+  type DriveModeStartedBy,
+  type DriveModeEndedInput,
+  type DriveModeEndedProps,
+  queueSheetOpened,
+  type QueueNavigationDirection,
+  type QueueNavigationMethod,
+  type QueueNavigationSurface,
+  type QueueNavigationOutcome,
+  type QueueNavigationBoard,
+  type QueueNavigationInput,
+  type QueueNavigationProps,
+  type QueueNavigationPayload,
+  type QueueSheetSurface,
+  type QueueSheetOpenedInput,
+  type QueueSheetOpenedProps,
+} from './queue-navigation-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,

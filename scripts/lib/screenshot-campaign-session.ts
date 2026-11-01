@@ -106,20 +106,46 @@ export function campaignNamedBoardJoinResponse(
   }
 }
 
-/** Project only present recorded fields. Missing fields fail, including nullable fields never recorded. */
-function projectRecorded(value: unknown, selection: SelectionSetNode): unknown {
+/**
+ * Native queue fields a recording may predate, by response path. The native document selects
+ * `QueueState.historyCount` (F3, #6666); the RN subscription a campaign records selects it only
+ * in now-slot mode. A recording without it projects null, which the native reducer reads the way
+ * it reads a pre-F3 server: index 0. Keyed by path, so a same-named leaf anywhere else (under
+ * `climb`, say) still fails the replay when it was never recorded.
+ */
+const NATIVE_QUEUE_PATHS_A_RECORDING_MAY_LACK: ReadonlySet<string> = new Set(['queueUpdates.state.historyCount']);
+const NO_PATHS_MAY_BE_MISSING: ReadonlySet<string> = new Set();
+
+/**
+ * Project only present recorded fields. Missing fields fail, including nullable fields never
+ * recorded, except leaf fields whose dotted response path is in `mayBeMissing`, which project null.
+ * Inline fragments and list items add nothing to the path.
+ */
+function projectRecorded(
+  value: unknown,
+  selection: SelectionSetNode,
+  mayBeMissing: ReadonlySet<string>,
+  path: string,
+): unknown {
   if (value === null) return null;
-  if (Array.isArray(value)) return value.map((item) => projectRecorded(item, selection));
+  if (Array.isArray(value)) return value.map((item) => projectRecorded(item, selection, mayBeMissing, path));
   if (!record(value)) throw new Error('Recorded selection is not an object');
   const projected: Record<string, unknown> = {};
   for (const selected of selection.selections) {
     if (selected.kind === Kind.INLINE_FRAGMENT) {
       if (selected.typeCondition?.name.value !== value.__typename) continue;
-      Object.assign(projected, projectRecorded(value, selected.selectionSet));
+      Object.assign(projected, projectRecorded(value, selected.selectionSet, mayBeMissing, path));
     } else if (selected.kind === Kind.FIELD) {
       const key = selected.alias?.value ?? selected.name.value;
-      if (!(key in value)) throw new Error('Selected field was not recorded');
-      projected[key] = selected.selectionSet ? projectRecorded(value[key], selected.selectionSet) : value[key];
+      const fieldPath = path ? `${path}.${key}` : key;
+      if (!(key in value)) {
+        if (selected.selectionSet || !mayBeMissing.has(fieldPath)) throw new Error('Selected field was not recorded');
+        projected[key] = null;
+        continue;
+      }
+      projected[key] = selected.selectionSet
+        ? projectRecorded(value[key], selected.selectionSet, mayBeMissing, fieldPath)
+        : value[key];
     } else throw new Error('Fragment spreads are not supported');
   }
   return projected;
@@ -158,7 +184,9 @@ export function replayCampaignSessionResponse(
     if (!record(fixture.response) || !record(fixture.response.data) || fixture.response.errors) return null;
     const operation = parse(query).definitions[0];
     if (operation?.kind !== Kind.OPERATION_DEFINITION) return null;
-    return { response: { data: projectRecorded(fixture.response.data, operation.selectionSet) } };
+    const mayBeMissing =
+      fixture.operationName === 'QueueUpdates' ? NATIVE_QUEUE_PATHS_A_RECORDING_MAY_LACK : NO_PATHS_MAY_BE_MISSING;
+    return { response: { data: projectRecorded(fixture.response.data, operation.selectionSet, mayBeMissing, '') } };
   } catch {
     return null;
   }

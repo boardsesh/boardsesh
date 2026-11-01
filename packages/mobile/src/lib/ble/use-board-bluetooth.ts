@@ -36,6 +36,7 @@ import {
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
   nativeBleSupportsBoard,
+  nativeBleSupportsPreparedConnections,
   subscribeNativeBleConnected,
 } from './adapter-factory';
 import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
@@ -61,8 +62,19 @@ import {
   setStoredLastConnectedBoard,
   type StoredLastConnectedBoard,
 } from './last-connected-board-store';
+import {
+  findKnownBoardDevice,
+  forgetKnownBoardDevice,
+  getStoredKnownBoardDevices,
+  mergeKnownBoardDevices,
+  rememberKnownBoardDevice,
+  setStoredKnownBoardDevices,
+  type KnownBoardDevices,
+} from './known-board-devices-store';
 import type { BleWriteActivityStore } from './write-activity-store';
 import { getBleEncodingSignature } from './encoding-signature';
+import type { PickerBoardTarget } from './picker-device-target';
+import { boardUuidOrNull } from '../boards/board-identity';
 
 // Exported for testing. Decides how a connect-failure category reaches error
 // tracking:
@@ -252,6 +264,11 @@ export type PickerState = {
   // New per picker session. Hosts key the sheet on it so a new connect never
   // reuses the previous session's sheet instance.
   sessionId: number;
+  // A first connect to a known board shows only devices resolving to that
+  // physical board. Keep this snapshot and the escape on the session so moving
+  // between root and route sheet hosts cannot reset the climber's choice.
+  targetBoard?: PickerBoardTarget;
+  showAllBoards: boolean;
   // Kept EMPTY while `searching`: boards only reach the sheet (and the serial
   // lookup behind it) once the list is on screen (#5658).
   devices: DiscoveredDevice[];
@@ -265,10 +282,10 @@ export type PickerState = {
   // app in the background (the Android notification bulb), and after another
   // sheet displaced a `searching` picker. Both come back when the list starts.
   presented: boolean;
-  // The saved board was auto-selected: the sheet dismisses itself, and only once
-  // that dismissal has settled does the host call `handleClosed`.
+  // A board was selected or the connect ended: the sheet dismisses itself, and
+  // only once that dismissal has settled does the host call `handleClosed`.
   closing: boolean;
-  // Set while `searching`: the sheet's "Search for any board" button.
+  // Stops a saved-device search and/or reveals devices outside targetBoard.
   handleSearchAnyBoard?: () => void;
   // Another root sheet displaced this one (sheet coordinator). A `searching`
   // picker hides and keeps scanning; a `list` picker cancels, as it always did.
@@ -652,18 +669,48 @@ export function useBoardBluetooth({
   // one-tap silent reconnect survives a cold start or provider remount, not just
   // the current session (#3609). Storage writes are fire-and-forget: a failure
   // just means the next launch falls back to the picker, never a thrown error.
-  const rememberConnectedBoard = useCallback((board: StoredLastConnectedBoard) => {
-    rememberedBoardIntentGenerationRef.current += 1;
-    lastConnectedBoardRef.current = board;
-    setRememberedBoardState((current) => ({ ...current, board }));
-    void setStoredLastConnectedBoard(board).catch(() => {});
+  // One handle per board as well (#7076), so walking back to a board this phone
+  // has already used at a gym reconnects instead of opening the picker. The
+  // single record above still decides native adoption; this only adds reconnect
+  // targets. Same intent-generation rule for the read on mount.
+  const [knownBoardDevices, setKnownBoardDevices] = useState<KnownBoardDevices>([]);
+  const knownBoardDevicesRef = useRef<KnownBoardDevices>([]);
+  const knownBoardDevicesIntentGenerationRef = useRef(0);
+  // Boards remembered or forgotten since mount: the read on mount never
+  // overrides them.
+  const knownBoardDevicesTouchedRef = useRef(new Set<string>());
+  const writeKnownBoardDevices = useCallback((devices: KnownBoardDevices) => {
+    if (devices === knownBoardDevicesRef.current) return;
+    knownBoardDevicesIntentGenerationRef.current += 1;
+    knownBoardDevicesRef.current = devices;
+    setKnownBoardDevices(devices);
+    void setStoredKnownBoardDevices(devices).catch(() => {});
   }, []);
+
+  const rememberConnectedBoard = useCallback(
+    (board: StoredLastConnectedBoard) => {
+      rememberedBoardIntentGenerationRef.current += 1;
+      lastConnectedBoardRef.current = board;
+      setRememberedBoardState((current) => ({ ...current, board }));
+      void setStoredLastConnectedBoard(board).catch(() => {});
+      knownBoardDevicesTouchedRef.current.add(board.configKey);
+      writeKnownBoardDevices(rememberKnownBoardDevice(knownBoardDevicesRef.current, board));
+    },
+    [writeKnownBoardDevices],
+  );
   const forgetConnectedBoard = useCallback(() => {
+    const forgotten = lastConnectedBoardRef.current;
     rememberedBoardIntentGenerationRef.current += 1;
     lastConnectedBoardRef.current = null;
     setRememberedBoardState((current) => ({ ...current, board: null }));
     void clearStoredLastConnectedBoard().catch(() => {});
-  }, []);
+    // A deliberate disconnect frees that board for the next climber, so its
+    // per-board handle goes too. Handles for the other boards stay.
+    if (forgotten) {
+      knownBoardDevicesTouchedRef.current.add(forgotten.configKey);
+      writeKnownBoardDevices(forgetKnownBoardDevice(knownBoardDevicesRef.current, forgotten.configKey));
+    }
+  }, [writeKnownBoardDevices]);
 
   const adapterRef = useRef<BluetoothAdapter | null>(null);
   const apiLevelRef = useRef<number>(3);
@@ -692,6 +739,9 @@ export function useBoardBluetooth({
   // the singleton BLE manager, and the first attempt's scan teardown kills
   // the second attempt's scan, stranding the picker.
   const connectInFlightRef = useRef(false);
+  // A native snapshot requested before a deliberate connect/disconnect must
+  // not be adopted after that attempt settles, even for the same board key.
+  const nativeReconciliationGenerationRef = useRef(0);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -724,6 +774,7 @@ export function useBoardBluetooth({
   // on screen.
   const backgroundAdoptSendGateRef = useRef(false);
   const configuredDeviceNameRef = useRef<string | undefined>(undefined);
+  const configuredDeviceIdRef = useRef<string | undefined>(undefined);
   // The physical-link lifetime belongs to the adapter generation, not React's
   // rendered `isConnected` edge. It begins as soon as the adapter identity and
   // disconnect subscription are installed, before native configuration or the
@@ -857,131 +908,159 @@ export function useBoardBluetooth({
   // The picker for one connect. With a saved board (`targetSearch`) it opens at
   // the tap in `searching` and moves to `list` or closes itself, as the adapter
   // reports (see RNBleAdapter.requestAndConnect for the state machine, #5658).
-  const devicePicker = useCallback<DevicePickerFn>((subscribe, targetSearch) => {
-    return new Promise<string>((resolve, reject) => {
-      pickerSessionCounterRef.current += 1;
-      const sessionId = pickerSessionCounterRef.current;
-      // The picker promise settles exactly once, whoever gets there first: a
-      // pick, a cancel, the auto-select, or connect()'s failure path.
-      let settled = false;
-      let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
-      // Boards heard while `searching`, held back until the list is on screen.
-      let latestDevices: DiscoveredDevice[] = [];
+  const devicePicker = useCallback<DevicePickerFn>(
+    (subscribe, targetSearch) => {
+      return new Promise<string>((resolve, reject) => {
+        pickerSessionCounterRef.current += 1;
+        const sessionId = pickerSessionCounterRef.current;
+        // The picker promise settles exactly once, whoever gets there first: a
+        // pick, a cancel, the auto-select, or connect()'s failure path.
+        let settled = false;
+        let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
+        const targetUuid = boardUuidOrNull(boardUuid);
+        const targetBoard = targetUuid && boardName ? { boardUuid: targetUuid, boardName } : undefined;
+        // Boards heard while `searching`, held back until the list is on screen.
+        let latestDevices: DiscoveredDevice[] = [];
+        // A connect started with the app in the background (the Android session
+        // notification's bulb) keeps the silent search: nothing on screen, ever.
+        // Whether the climber has seen this sheet decides how the scan ends
+        // (#7038): a sheet they saw waits with its empty state, one they never
+        // saw ends the connect with "board not found".
+        const presentedAtOpen = mode === 'list' || isAppActive();
 
-      // Every write is scoped to this session: a late callback from an earlier
-      // connect must never change, or clear, a newer picker.
-      const updateSession = (update: (current: PickerState) => PickerState | null) => {
-        setPickerState((prev) => (prev && prev.sessionId === sessionId ? update(prev) : prev));
-      };
+        // Every write is scoped to this session: a late callback from an earlier
+        // connect must never change, or clear, a newer picker.
+        const updateSession = (update: (current: PickerState) => PickerState | null) => {
+          setPickerState((prev) => (prev && prev.sessionId === sessionId ? update(prev) : prev));
+        };
 
-      const rejectPicker = (error: Error) => {
-        if (settled) return;
-        settled = true;
-        reject(error);
-      };
-      pickerRejectRef.current = { sessionId, reject: rejectPicker };
-      const releaseRejectRef = () => {
-        if (pickerRejectRef.current?.reject === rejectPicker) pickerRejectRef.current = null;
-      };
+        const rejectPicker = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
+        pickerRejectRef.current = { sessionId, reject: rejectPicker };
+        const releaseRejectRef = () => {
+          if (pickerRejectRef.current?.reject === rejectPicker) pickerRejectRef.current = null;
+        };
 
-      const cleanup = () => {
-        releaseRejectRef();
-        updateSession(() => null);
-      };
+        const cleanup = () => {
+          releaseRejectRef();
+          updateSession(() => null);
+        };
 
-      const handleSelect = (deviceId: string) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(deviceId);
-      };
+        const handleSelect = (deviceId: string) => {
+          if (settled) return;
+          settled = true;
+          releaseRejectRef();
+          // Keep the native sheet mounted through its dismissal, as for an
+          // auto-selected board. Tearing it down here can blank the player
+          // underneath while UIKit removes the sheet's presentation host.
+          updateSession((current) => ({ ...current, closing: true }));
+          resolve(deviceId);
+        };
 
-      const handleCancel = () => {
-        if (settled) return;
-        cleanup();
-        rejectPicker(new Error('Device selection cancelled'));
-      };
+        const handleCancel = () => {
+          if (settled) return;
+          cleanup();
+          rejectPicker(new Error('Device selection cancelled'));
+        };
 
-      const handleDisplaced = () => {
-        if (mode === 'searching') {
-          // Another root sheet (queue, board, filters) took the screen. Keep the
-          // connect alive and scanning out of sight, as it was before #5658: the
-          // saved board still connects if it shows up, and the list comes back
-          // on screen when the search ends.
-          updateSession((current) => ({ ...current, presented: false }));
-          return;
-        }
-        handleCancel();
-      };
-
-      const handleClosed = () => updateSession(() => null);
-
-      setPickerState({
-        sessionId,
-        devices: [],
-        isScanning: true,
-        handleSelect,
-        handleCancel,
-        mode,
-        // A connect started with the app in the background (the Android
-        // notification bulb) keeps the silent search: nothing on screen until
-        // the list.
-        presented: mode === 'list' || isAppActive(),
-        closing: false,
-        handleSearchAnyBoard: targetSearch?.searchAnyBoard,
-        handleDisplaced,
-        handleClosed,
-      });
-
-      subscribe(
-        (devices) => {
-          latestDevices = devices;
-          if (mode !== 'list') return;
-          updateSession((current) => ({ ...current, devices }));
-        },
-        () => {
-          // Nobody is looking at this picker: the Android session notification's
-          // bulb connects without bringing the app forward. Since the adapters
-          // stopped failing an empty scan, nothing else would end this connect,
-          // and connectInFlightRef would swallow every later bulb tap until the
-          // app is opened. End it with the silent cancel, as unmount does (#5654).
-          if (!isAppActive()) {
-            handleCancel();
+        const handleDisplaced = () => {
+          if (mode === 'searching') {
+            // Another root sheet (queue, board, filters) took the screen. Keep the
+            // connect alive and scanning out of sight, as it was before #5658: the
+            // saved board still connects if it shows up, and the list comes back
+            // on screen when the search ends.
+            updateSession((current) => ({ ...current, presented: false }));
             return;
           }
-          // Scan window closed — drop the spinner. The picker stays open (a
-          // device was found but not yet picked, or it shows the empty state).
-          updateSession((current) => ({ ...current, isScanning: false }));
-        },
-        targetSearch
-          ? {
-              onTargetSearchEnded: () => {
-                if (settled || mode !== 'searching') return;
-                mode = 'list';
-                updateSession((current) => ({
-                  ...current,
-                  mode: 'list',
-                  presented: true,
-                  devices: latestDevices,
-                  handleSearchAnyBoard: undefined,
-                }));
-              },
-              onTargetFound: () => {
-                if (settled) return;
-                // The adapter settled its own selection first, so this reject only
-                // retires the picker promise.
-                releaseRejectRef();
-                rejectPicker(new Error('Device selection cancelled'));
-                // Leave by DISMISS, never by unmounting: the match can land while
-                // the sheet is still presenting. The host calls handleClosed once
-                // the dismissal has settled (at once if it never presented).
-                updateSession((current) => ({ ...current, closing: true }));
-              },
+          handleCancel();
+        };
+
+        const handleClosed = () => updateSession(() => null);
+
+        const handleSearchAnyBoard = () => {
+          if (settled) return;
+          updateSession((current) => ({ ...current, showAllBoards: true }));
+          targetSearch?.searchAnyBoard();
+        };
+
+        setPickerState({
+          sessionId,
+          targetBoard,
+          showAllBoards: false,
+          devices: [],
+          isScanning: true,
+          handleSelect,
+          handleCancel,
+          mode,
+          presented: presentedAtOpen,
+          closing: false,
+          handleSearchAnyBoard: targetSearch || targetBoard ? handleSearchAnyBoard : undefined,
+          handleDisplaced,
+          handleClosed,
+        });
+
+        subscribe(
+          (devices) => {
+            latestDevices = devices;
+            if (mode !== 'list') return;
+            updateSession((current) => ({ ...current, devices }));
+          },
+          () => {
+            // Nobody ever saw this picker: the Android session notification's bulb
+            // connects without bringing the app forward. Since the adapters stopped
+            // failing an empty scan, nothing else would end this connect, and
+            // connectInFlightRef would swallow every later bulb tap until the app
+            // is opened. End it as "board not found" (classifyBleFailure reads the
+            // message): connect() shows the standard alert, which Android holds
+            // until the app is on screen again (#7038). Gated on whether the sheet
+            // was ever shown, not on where the app is now: a sheet the climber saw
+            // and then left in the background still waits for them.
+            if (!presentedAtOpen) {
+              if (settled) return;
+              cleanup();
+              rejectPicker(new Error('No boards found'));
+              return;
             }
-          : undefined,
-      );
-    });
-  }, []);
+            // Scan window closed — drop the spinner. The picker stays open (a
+            // device was found but not yet picked, or it shows the empty state).
+            updateSession((current) => ({ ...current, isScanning: false }));
+          },
+          targetSearch
+            ? {
+                onTargetSearchEnded: () => {
+                  if (settled || mode !== 'searching') return;
+                  mode = 'list';
+                  updateSession((current) => ({
+                    ...current,
+                    mode: 'list',
+                    // A sheet nobody has seen stays off screen: the list would land
+                    // on a paused activity, where nobody can pick from it (#7038).
+                    presented: presentedAtOpen,
+                    devices: latestDevices,
+                    handleSearchAnyBoard: targetBoard ? handleSearchAnyBoard : undefined,
+                  }));
+                },
+                onTargetFound: () => {
+                  if (settled) return;
+                  // The adapter settled its own selection first, so this reject only
+                  // retires the picker promise.
+                  releaseRejectRef();
+                  rejectPicker(new Error('Device selection cancelled'));
+                  // Leave by DISMISS, never by unmounting: the match can land while
+                  // the sheet is still presenting. The host calls handleClosed once
+                  // the dismissal has settled (at once if it never presented).
+                  updateSession((current) => ({ ...current, closing: true }));
+                },
+              }
+            : undefined,
+        );
+      });
+    },
+    [boardName, boardUuid],
+  );
 
   const clearConnectionAfterDrop = useCallback(
     (expectedAdapter: BluetoothAdapter) => {
@@ -991,6 +1070,7 @@ export function useBoardBluetooth({
       unsubDisconnectRef.current = null;
       adapterRef.current = null;
       configuredDeviceNameRef.current = undefined;
+      configuredDeviceIdRef.current = undefined;
       connectedConfigIdentityRef.current = null;
       backgroundAdoptSendGateRef.current = false;
       writeAbortRef.current?.abort();
@@ -1526,6 +1606,7 @@ export function useBoardBluetooth({
         return false;
       }
       connectInFlightRef.current = true;
+      nativeReconciliationGenerationRef.current += 1;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
@@ -1613,6 +1694,7 @@ export function useBoardBluetooth({
           adapterRef.current = null;
           connectedConfigIdentityRef.current = null;
           configuredDeviceNameRef.current = undefined;
+          configuredDeviceIdRef.current = undefined;
           try {
             await previousAdapter.disconnect();
           } catch {
@@ -1634,38 +1716,27 @@ export function useBoardBluetooth({
           reconnect: !!targetSerial || !!targetDeviceId,
         });
 
-        // Stage the board configuration into the native manager BEFORE the
-        // physical connect: native connection setup relights the shared queue
-        // with whatever configuration is currently persisted, so on a board
-        // switch the first native write after a fresh connect would otherwise
-        // be encoded for the PREVIOUS board — e.g. an Aurora packet to a Woods
-        // wall. configure() and connect() land on the same serial BLE queue,
-        // so this ordering is honoured natively. The device-derived fields
-        // (deviceName, apiLevel) are unknown until the link exists; the
-        // post-connect configureBoard below re-stages the full picture.
-        if (
-          isNativeIosBleAdapter(adapter) &&
-          typeof adapter.configureBoard === 'function' &&
-          layoutId !== undefined &&
-          sizeId !== undefined
-        ) {
-          try {
-            await adapter.configureBoard({
-              boardName,
-              layoutId,
-              sizeId,
-              colorOverrides: sanitizedColorOverrides,
-              numRows: moonboardNumRowsForNative(boardName, layoutId),
-              lightAdjacentHolds: moonboardLightAdjacentHolds,
-            });
-          } catch (error) {
-            console.warn('[BLE] Failed to pre-stage board configuration to native side:', error);
-          }
+        // Preparation forgets the old native pairing BEFORE staging the new
+        // encoder. A cancelled picker or failed connect must leave nothing a
+        // Live Activity bulb can reconnect under this configuration (#7122).
+        // A preparation failure aborts the attempt instead of connecting with
+        // the previous encoder still active.
+        if (isNativeIosBleAdapter(adapter) && layoutId !== undefined && sizeId !== undefined) {
+          await adapter.prepareBoardConnection({
+            boardName,
+            layoutId,
+            sizeId,
+            configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
+            colorOverrides: sanitizedColorOverrides,
+            numRows: moonboardNumRowsForNative(boardName, layoutId),
+            lightAdjacentHolds: moonboardLightAdjacentHolds,
+          });
         }
 
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
+        configuredDeviceIdRef.current = connection.deviceId;
 
         const connectionGeneration = nextConnectionGenerationRef.current + 1;
         nextConnectionGenerationRef.current = connectionGeneration;
@@ -1706,6 +1777,8 @@ export function useBoardBluetooth({
               boardName,
               layoutId,
               sizeId,
+              configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
+              deviceId: connection.deviceId,
               apiLevel: apiLevelRef.current,
               deviceName: connection.deviceName,
               colorOverrides: sanitizedColorOverrides,
@@ -2041,6 +2114,7 @@ export function useBoardBluetooth({
       // app could otherwise see getConnectedDevice still report the device this
       // teardown is closing and silently re-adopt it.
       adoptionSuppressedRef.current = true;
+      nativeReconciliationGenerationRef.current += 1;
       backgroundAdoptSendGateRef.current = false;
       unsubDisconnectRef.current?.();
       unsubDisconnectRef.current = null;
@@ -2051,6 +2125,7 @@ export function useBoardBluetooth({
       }
       adapterRef.current = null;
       configuredDeviceNameRef.current = undefined;
+      configuredDeviceIdRef.current = undefined;
       connectedConfigIdentityRef.current = null;
       // Cancel every in-flight and queued write of this connection generation,
       // and unblock the write chain for the next connect.
@@ -2123,7 +2198,8 @@ export function useBoardBluetooth({
     if (!getBoardCapabilities(boardName).nativeBoardControl || !nativeBleSupportsBoard(boardName)) return;
     if (!lastConnectedBoardHydrated) return;
     let cancelled = false;
-    const adopt = (deviceId: string, rawDeviceName?: string) => {
+    const supportsPreparedConnections = nativeBleSupportsPreparedConnections();
+    const adopt = (deviceId: string, rawDeviceName?: string, nativeConfigKey?: string) => {
       if (cancelled) return;
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.
@@ -2141,6 +2217,9 @@ export function useBoardBluetooth({
       // advertisement name.
       const adoptedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
       const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
+      // The native pairing is authoritative on newer binaries, including when
+      // both boards share a brand and neither has a known advertised serial.
+      if (supportsPreparedConnections && nativeConfigKey !== currentConfigKey) return;
       const currentConnectionConfig = { boardName, layoutId, sizeId, setIds, boardUuid };
       const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
       const rememberedBoard = lastConnectedBoardRef.current;
@@ -2159,7 +2238,8 @@ export function useBoardBluetooth({
       ) {
         return;
       }
-      const canAdoptNamelessRememberedBoard = !adoptedBoardType && rememberedForCurrentConfig !== null;
+      const canAdoptNamelessRememberedBoard =
+        !adoptedBoardType && (rememberedForCurrentConfig !== null || supportsPreparedConnections);
       if (
         (!adoptedBoardType && !canAdoptNamelessRememberedBoard) ||
         (adoptedBoardType && adoptedBoardType !== boardName)
@@ -2181,6 +2261,7 @@ export function useBoardBluetooth({
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);
       configuredDeviceNameRef.current = deviceName;
+      configuredDeviceIdRef.current = deviceId;
       const connectionGeneration = nextConnectionGenerationRef.current + 1;
       nextConnectionGenerationRef.current = connectionGeneration;
       adapterRef.current = adapter;
@@ -2201,6 +2282,8 @@ export function useBoardBluetooth({
           boardName,
           layoutId,
           sizeId,
+          configKey: currentConfigKey,
+          deviceId,
           apiLevel: apiLevelRef.current,
           deviceName,
           colorOverrides: sanitizedColorOverrides,
@@ -2252,22 +2335,25 @@ export function useBoardBluetooth({
         .catch(() => {});
     };
 
+    const checkNativeConnection = () => {
+      // A query begun during permission/availability awaits could capture the
+      // old pairing before preparation, then resolve after this attempt fails.
+      if (cancelled || connectInFlightRef.current || adoptionSuppressedRef.current) return;
+      const reconciliationGeneration = nativeReconciliationGenerationRef.current;
+      void getNativeBleConnectedDevice().then((device) => {
+        if (cancelled || reconciliationGeneration !== nativeReconciliationGenerationRef.current) return;
+        if (device) adopt(device.deviceId, device.name, device.configKey);
+      });
+    };
     const connectedSubscription = subscribeNativeBleConnected((payload) => {
-      adopt(payload.deviceId, payload.deviceName);
+      if (cancelled) return;
+      // Expo buffers events across JS suspension. The event can describe a
+      // pairing invalidated since it fired, so reconcile current native state.
+      if (supportsPreparedConnections) checkNativeConnection();
+      else adopt(payload.deviceId, payload.deviceName);
     });
     // null = platform/binary without the adoption surface — nothing to do.
     if (!connectedSubscription) return;
-
-    // The subscriptions are removed in the cleanup, but an in-flight
-    // getConnectedDevice promise can't be cancelled — without this flag it
-    // would adopt (create an adapter, setState) after the effect was torn
-    // down by an unmount or a config change.
-    const checkNativeConnection = () => {
-      void getNativeBleConnectedDevice().then((device) => {
-        if (cancelled) return;
-        if (device) adopt(device.deviceId, device.name);
-      });
-    };
 
     checkNativeConnection();
     const appStateSubscription = AppState.addEventListener('change', (appState) => {
@@ -2309,6 +2395,8 @@ export function useBoardBluetooth({
         boardName,
         layoutId,
         sizeId,
+        configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
+        deviceId: configuredDeviceIdRef.current,
         apiLevel: apiLevelRef.current,
         deviceName: configuredDeviceNameRef.current,
         colorOverrides: sanitizedColorOverrides,
@@ -2317,7 +2405,7 @@ export function useBoardBluetooth({
         appActive: isAppActive(),
       })
       .catch(() => {});
-  }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides, moonboardLightAdjacentHolds]);
+  }, [boardName, layoutId, sizeId, boardUuid, isConnected, sanitizedColorOverrides, moonboardLightAdjacentHolds]);
 
   // Serial to silently reconnect to for the board currently in view, or null
   // when nothing is remembered or the user switched boards (in which case the
@@ -2333,10 +2421,12 @@ export function useBoardBluetooth({
       : null;
   // The remembered board only counts while the route still points at the same
   // config; a stored handle for a different board is never offered as a target.
+  // The last board held wins; otherwise this board's own handle from an earlier
+  // visit (#7076), so a walk back to it at a gym reconnects.
   const rememberedForCurrentBoard =
     lastConnectedBoard && currentConfigKey && lastConnectedBoard.configKey === currentConfigKey
       ? lastConnectedBoard
-      : null;
+      : findKnownBoardDevice(knownBoardDevices, currentConfigKey);
   // Aurora reconnects by serial; MoonBoard (no serial) reconnects by BLE device
   // id. The lightbulb passes whichever is set so the tap reconnects to the same
   // board (the picker shows "searching" meanwhile) instead of the board list.
@@ -2367,6 +2457,45 @@ export function useBoardBluetooth({
       cancelled = true;
     };
   }, []);
+
+  // The per-board handles (#7076), read once on mount. A remember or forget
+  // made during the read wins for its board; the stored handles for every other
+  // board are kept, so an early connect can't erase them.
+  useEffect(() => {
+    let cancelled = false;
+    const intentGeneration = knownBoardDevicesIntentGenerationRef.current;
+    void getStoredKnownBoardDevices().then(
+      (stored) => {
+        if (cancelled) return;
+        // Plain read only if this session touched no board yet. A forget on an
+        // empty list changes nothing to bump the generation with, and the stored
+        // handle for the board just released must still stay gone.
+        if (
+          knownBoardDevicesIntentGenerationRef.current === intentGeneration &&
+          knownBoardDevicesTouchedRef.current.size === 0
+        ) {
+          knownBoardDevicesRef.current = stored;
+          setKnownBoardDevices(stored);
+          return;
+        }
+        writeKnownBoardDevices(
+          mergeKnownBoardDevices(knownBoardDevicesRef.current, stored, knownBoardDevicesTouchedRef.current),
+        );
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [writeKnownBoardDevices]);
+
+  // Whether this phone has a handle for a board, the one it holds now included.
+  const hasRememberedDeviceForConfigKey = useCallback(
+    (configKey: string) =>
+      lastConnectedBoardRef.current?.configKey === configKey ||
+      findKnownBoardDevice(knownBoardDevicesRef.current, configKey) !== null,
+    [],
+  );
 
   // Clean up on unmount
   useEffect(() => {
@@ -2422,6 +2551,7 @@ export function useBoardBluetooth({
     pickerState,
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
+    hasRememberedDeviceForConfigKey,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   };

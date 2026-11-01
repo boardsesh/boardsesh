@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../lib/schedule-idle-task';
 import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/operations/favorites';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
@@ -45,8 +45,8 @@ type UseClimbListFavoritesArgs = {
  * No-op while signed out (`favorites` returns an empty list for an anonymous
  * reader anyway). Dedupes via a ref so each climb is requested once; hands the
  * board/angle/auth context to the store, which clears itself when it flips so
- * one board's hearts can't paint another's rows. Deferred past the active fling
- * via `runAfterInteractions`, mirroring the logbook and playlist-tag fetches.
+ * one board's hearts can't paint another's rows. Deferred until the JS thread
+ * has idle time after a frame paints.
  */
 export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimbListFavoritesArgs): void {
   const { isAuthenticated } = useAuth();
@@ -94,7 +94,7 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
     const releaseUnmerged = () => {
       for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
     };
-    const handle = InteractionManager.runAfterInteractions(async () => {
+    const handle = scheduleIdleTask(async () => {
       // Mark up-front so an overlapping effect run doesn't double-request the
       // same uuids while this batch is in flight.
       for (const uuid of toFetch) fetchedForContext.add(uuid);

@@ -1,6 +1,6 @@
 import { AccessibleTextInput } from '../AccessibleTextInput';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { PointAnchoredPopover } from '../navigation/PointAnchoredPopover';
@@ -25,7 +25,7 @@ type AddToPlaylistPopoverProps = {
 export function AddToPlaylistPopover({ anchorPoint, ...props }: AddToPlaylistPopoverProps) {
   const { t } = useTranslation('climbs');
   const { height: windowHeight } = useWindowDimensions();
-  const rootRef = useRef<View>(null);
+  const rootRef = useRef<ViewInstance>(null);
   const sourceRef = useRef(anchorPoint);
   sourceRef.current = anchorPoint;
   const measurementRevision = useRef(0);

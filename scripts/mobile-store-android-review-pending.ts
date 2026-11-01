@@ -9,7 +9,7 @@
 //
 // Fails OPEN. A track it cannot read counts as "nothing pending": the upload keeps
 // its own review guard, so a wrong "no" costs one wasted build, while a wrong
-// "yes" would quietly hold every release-train build.
+// "yes" would quietly hold every native tester build.
 
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';

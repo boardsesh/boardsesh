@@ -16,6 +16,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
+import { RadioGroup } from './RadioGroup';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
@@ -35,12 +36,21 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
             {row.description}
           </Text>
           <View style={styles.control}>
-            <SegmentedControl
-              options={[...row.options]}
-              selectedKey={row.choice}
-              onSelect={(choice) => onSelect(row.key, choice)}
-              accessibilityLabel={row.label}
-            />
+            {/* Past three choices the segments get too narrow to read: a radio list instead. */}
+            {row.control === 'menu' ? (
+              <RadioGroup
+                options={row.options.map((option) => ({ value: option.key, label: option.label }))}
+                value={row.choice}
+                onChange={(choice) => onSelect(row.key, choice)}
+              />
+            ) : (
+              <SegmentedControl
+                options={[...row.options]}
+                selectedKey={row.choice}
+                onSelect={(choice) => onSelect(row.key, choice)}
+                accessibilityLabel={row.label}
+              />
+            )}
           </View>
           <Text variant="labelSmall" style={[styles.muted, { color: systemColors.secondaryLabel as string }]}>
             {row.effectiveLabel}

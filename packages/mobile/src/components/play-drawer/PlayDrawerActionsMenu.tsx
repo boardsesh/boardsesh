@@ -10,7 +10,11 @@ import {
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { useProfile } from '../../lib/graphql/hooks';
-import { buildPlayDrawerMenuRows, type PlayDrawerHiddenButtons } from './play-drawer-menu-rows';
+import {
+  buildPlayDrawerMenuRows,
+  type PlayDrawerHiddenButtons,
+  type PlayDrawerMenuItem,
+} from './play-drawer-menu-rows';
 import type { BoardConfig } from './play-drawer-types';
 
 /** Opens one of the player's own sheets, pinned to the climb ⋯ was opened on. */
@@ -65,6 +69,12 @@ export type PlayDrawerActionsMenuProps = {
   onOpenAngle?: () => void;
   /** Supplied only by the `/play` route; the persistent iPad pane has nothing to dismiss. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
+  /**
+   * The board sheet (Re-light, Turn off all lights, Disconnect). Supplied by
+   * the player (#7000) while this phone holds the link: its wall button never
+   * disconnects, so Disconnect needs a way in from here.
+   */
+  onOpenBoardControls?: () => void;
 };
 
 /**
@@ -96,8 +106,10 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   onOpenQueue,
   onOpenViewOptions,
   dismissPlayerAndWait,
+  onOpenBoardControls,
 }: PlayDrawerActionsMenuProps) {
   const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
   const activeClimbUuid = useActiveClimbUuid();
   // Who is looking decides Edit, Delete and Report. Read off the app-wide profile
   // cache, the same answer the long-press menu gets, rather than the player's
@@ -139,10 +151,19 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     analyticsSource: 'play_drawer_menu',
   });
 
+  const boardControlsTitle = tSettings('ble.boardControls');
+  const menuItems = useMemo<readonly PlayDrawerMenuItem[]>(
+    () =>
+      onOpenBoardControls
+        ? [...items, { id: 'boardControls', title: boardControlsTitle, icon: 'lightbulb', run: onOpenBoardControls }]
+        : items,
+    [items, onOpenBoardControls, boardControlsTitle],
+  );
+
   const isActiveClimb = climb.uuid === activeClimbUuid;
   const rows = useMemo(
-    () => buildPlayDrawerMenuRows(items, { hidden, boardMismatch, isActiveClimb }),
-    [items, hidden, boardMismatch, isActiveClimb],
+    () => buildPlayDrawerMenuRows(menuItems, { hidden, boardMismatch, isActiveClimb }),
+    [menuItems, hidden, boardMismatch, isActiveClimb],
   );
   // Disabled rows are refused here as well as by the platform menus: the row set
   // is data, and the next row added to it may not guard itself.

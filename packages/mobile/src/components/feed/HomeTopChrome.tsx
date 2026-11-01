@@ -12,13 +12,15 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 // controls and no create action, so the bar stays avatar · title · notifications ·
 // find-climbers.
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { Icon } from '../Icon';
@@ -36,6 +38,8 @@ import {
 import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
+import { barItemsFactory, symbolBarItem } from '../chrome/root-bar-items';
+import { useAccountRailItem, useBarItemsOnRail, useNotificationsBarItem } from '../chrome/use-root-bar-items';
 import { MaterialAppBarTitle } from '../chrome/MaterialAppBarTitle';
 import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
@@ -88,8 +92,10 @@ function HomeTopChromeGlass({
 }: HomeTopChromeProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const router = useRouter();
   const nativeHeader = useNativeRootHeader();
+  const nativeBarItems = useNativeRootBarItems();
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -97,6 +103,16 @@ function HomeTopChromeGlass({
   );
 
   const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
+
+  if (nativeHeader && nativeBarItems)
+    return (
+      <HomeNativeBarHeader
+        onOpenNotifications={handleOpenNotifications}
+        onOpenSearch={onOpenSearch}
+        searchAccessibilityLabel={searchAccessibilityLabel}
+        onHeightChange={onHeightChange}
+      />
+    );
 
   if (nativeHeader)
     return (
@@ -135,7 +151,14 @@ function HomeTopChromeGlass({
           RNGH's Android hit-test still targets them. */}
       <View
         pointerEvents="box-none"
-        style={[styles.headerChrome, { paddingTop: insets.top + spacing[1] }]}
+        style={[
+          styles.headerChrome,
+          {
+            paddingTop: insets.top + spacing[1],
+            paddingLeft: horizontalSafeArea.left,
+            paddingRight: horizontalSafeArea.right,
+          },
+        ]}
         onLayout={handleLayout}
       >
         <View pointerEvents="box-none" style={styles.headerRow}>
@@ -171,6 +194,55 @@ function HomeTopChromeGlass({
         </View>
       </View>
     </>
+  );
+}
+
+/**
+ * Home's header as native bar items, so iPhone Duo can put them on its side
+ * rail: the bell (badged, kept visible longest) and find-climbers trailing, in
+ * the glass capsules' order. The account leads as a native item on the rail
+ * only; a horizontal bar keeps the glass avatar (round photo, initials).
+ */
+function HomeNativeBarHeader({
+  onOpenNotifications,
+  onOpenSearch,
+  searchAccessibilityLabel,
+  onHeightChange,
+}: {
+  onOpenNotifications: () => void;
+  onOpenSearch: () => void;
+  searchAccessibilityLabel: string;
+  onHeightChange: (height: number) => void;
+}) {
+  const onRail = useBarItemsOnRail();
+  const accountItem = useAccountRailItem();
+  const notificationsItem = useNotificationsBarItem(onOpenNotifications);
+  const leftItems = useMemo(() => (onRail ? barItemsFactory([accountItem]) : undefined), [onRail, accountItem]);
+  const rightItems = useMemo(
+    () =>
+      barItemsFactory([
+        notificationsItem,
+        symbolBarItem({
+          label: searchAccessibilityLabel,
+          symbol: iconMap['person.badge.plus'].ios,
+          onPress: onOpenSearch,
+          identifier: 'root.findClimbers',
+        }),
+      ]),
+    [notificationsItem, searchAccessibilityLabel, onOpenSearch],
+  );
+  return (
+    <NativeRootHeader
+      onHeightChange={onHeightChange}
+      leftItems={leftItems}
+      leftActionsStandalone
+      leftActions={
+        <GlassActionToolbar actionCount={1}>
+          <UserAvatarToolbarAction variant="glass" />
+        </GlassActionToolbar>
+      }
+      rightItems={rightItems}
+    />
   );
 }
 

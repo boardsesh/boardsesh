@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { glassSize } from '../../theme/layout';
 
@@ -14,7 +15,8 @@ import {
   NativeHeaderOwnBackgroundContext,
   NativeTitleMaxWidthContext,
 } from './native-header-action-context';
-import { nativeTitleMaxWidth } from './native-title-bound';
+import { nativeItemsTitleMaxWidth, nativeTitleMaxWidth, type NativeBarSide } from './native-title-bound';
+import { HIDDEN_HEADER_TITLE_STYLE } from './hidden-header-title';
 
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
 export function NativeRootHeader({
@@ -22,9 +24,12 @@ export function NativeRootHeader({
   leftActions,
   leftActionsStandalone = false,
   rightActions,
+  leftItems,
   rightItems,
   centerContent,
   centerActionWidths,
+  centerItemSides,
+  titleHidden = false,
   children,
   opaqueControls = false,
   onHeightChange,
@@ -34,12 +39,28 @@ export function NativeRootHeader({
   /** A single avatar draws a circle instead of UIKit's wider shared capsule. */
   leftActionsStandalone?: boolean;
   rightActions?: ReactNode;
+  /**
+   * Native leading bar items (`root-bar-items.ts`). When set they replace
+   * `leftActions`: iPhone Duo moves native items onto its side rail.
+   */
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   /** Native bar items take precedence over the custom trailing group. */
   rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   /** Interactive content in the compact native bar, beside the action groups. */
   centerContent?: ReactNode;
   /** Content widths of the native action groups flanking the custom title. */
   centerActionWidths?: { leading: number; trailing: number };
+  /**
+   * What the native bar items on each side hold, for `leftItems`/`rightItems`:
+   * they take UIKit's measured widths, not the custom 38pt slots. Takes
+   * precedence over `centerActionWidths`.
+   */
+  centerItemSides?: { leading: NativeBarSide; trailing: NativeBarSide };
+  /**
+   * Draw no title, large or inline, for a screen whose tab already names it
+   * (Climbs). `centerContent` still shows when present.
+   */
+  titleHidden?: boolean;
   /** Supplementary controls pinned under the bar; see `HeaderControls`. */
   children?: ReactNode;
   /**
@@ -64,7 +85,11 @@ export function NativeRootHeader({
   const frameWidth = useFrameSize((frame) => frame.width);
   const insets = useSafeAreaInsets();
   // The title view gets the free space between the two groups (see nativeTitleMaxWidth).
-  const centerMaxWidth = centerActionWidths ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths) : undefined;
+  const centerMaxWidth = centerItemSides
+    ? nativeItemsTitleMaxWidth(frameWidth, insets, centerItemSides)
+    : centerActionWidths
+      ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths)
+      : undefined;
   // Stable renderer identity across re-renders that change neither input: one
   // fewer header option that changes on every render of the screen (#6619).
   const hasCenterContent = centerContent != null;
@@ -102,7 +127,7 @@ export function NativeRootHeader({
         options={{
           headerShown: true,
           // The current-climb pill replaces the root title while it is present.
-          headerLargeTitle: !hasCenterContent,
+          headerLargeTitle: !hasCenterContent && !titleHidden,
           headerTransparent: true,
           // iOS 26 owns the scroll-edge material; don't inherit the legacy blur.
           headerBlurEffect: glassCapability ? undefined : 'systemMaterial',
@@ -111,16 +136,17 @@ export function NativeRootHeader({
           // Route layouts own the title even while a root modal is focused.
           ...(title === undefined ? {} : { title }),
           headerTitle: hasCenterContent ? renderCenterContent : undefined,
-          headerTitleStyle: { color: systemColors.label },
+          headerTitleStyle: titleHidden ? HIDDEN_HEADER_TITLE_STYLE : { color: systemColors.label },
           headerLargeTitleStyle: { color: systemColors.label },
           headerLeft:
-            leftActions && !leftActionsStandalone
+            leftActions && !leftItems && !leftActionsStandalone
               ? () => (
                   <NativeHeaderActionContext.Provider value={true}>{leftActions}</NativeHeaderActionContext.Provider>
                 )
               : undefined,
           unstable_headerLeftItems:
-            leftActions && leftActionsStandalone
+            leftItems ??
+            (leftActions && leftActionsStandalone
               ? () => [
                   {
                     type: 'custom',
@@ -134,7 +160,7 @@ export function NativeRootHeader({
                     ),
                   },
                 ]
-              : undefined,
+              : undefined),
           headerRight: rightActions
             ? () => <NativeHeaderActionContext.Provider value={true}>{rightActions}</NativeHeaderActionContext.Provider>
             : undefined,
@@ -178,15 +204,22 @@ function HeaderControls({
   const { systemColors } = useTheme();
   const canFloat = useFloatingHeaderControls();
   const floating = canFloat && !opaque;
+  // Clear of iPhone Duo's side status bar and tab rail; 0 on a portrait iPhone.
+  const { left, right } = useHorizontalSafeArea();
   return (
     <View
       testID="header-controls"
       // Controls and their gaps own touches rather than opening a row underneath.
       pointerEvents="auto"
-      style={[styles.controls, { top: headerHeight }, floating ? null : { backgroundColor: systemColors.background }]}
+      style={[
+        styles.controls,
+        { top: headerHeight, left, right },
+        floating ? null : { backgroundColor: systemColors.background },
+      ]}
     >
       <View pointerEvents="box-none" onLayout={onLayout}>
-        {children}
+        {/* The frame above is already inset; a nested ReadableColumn must not pad again. */}
+        <HorizontalSafeAreaApplied>{children}</HorizontalSafeAreaApplied>
       </View>
     </View>
   );

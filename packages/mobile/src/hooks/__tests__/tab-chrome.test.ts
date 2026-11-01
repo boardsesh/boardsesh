@@ -6,7 +6,6 @@ const IOS_26_IPHONE: TabChromeInputs = {
   platformOS: 'ios',
   variant: 'liquidGlass',
   glassCapable: true,
-  isTablet: false,
   accessoryAvailable: true,
 };
 
@@ -63,14 +62,12 @@ describe('resolveTabChrome', () => {
     });
   });
 
-  it('uses native iPad tabs at every width without the iPhone accessory', () => {
-    for (const device of [IOS_26_IPHONE, IOS_18_IPHONE]) {
-      expect(resolveTabChrome({ ...device, isTablet: true })).toEqual({
-        nativeTabBar: true,
-        liquidGlassTabBar: device.glassCapable,
-        nativeAccessory: false,
-      });
-    }
+  it('gives an iPad the same answer as an iPhone: the accessory carries the current climb', () => {
+    // The iPad follows Apple Music: sidebar or top tab bar, one column, and the
+    // MiniPlayer (the bottom accessory) on iOS 26. The inputs carry no tablet
+    // flag at all, so a tablet can never fall off the accessory again.
+    expect(resolveTabChrome(IOS_26_IPHONE).nativeAccessory).toBe(true);
+    expect(resolveTabChrome(IOS_18_IPHONE).nativeAccessory).toBe(false);
   });
 
   it('never picks the native bar off iOS, even on the Liquid Glass variant', () => {
@@ -84,11 +81,10 @@ describe('resolveTabChrome', () => {
     for (const platformOS of ['ios', 'android'] as const)
       for (const variant of ['liquidGlass', 'material'] as const)
         for (const glassCapable of bools)
-          for (const isTablet of bools)
-            for (const accessoryAvailable of bools) {
-              const chrome = resolveTabChrome({ platformOS, variant, glassCapable, isTablet, accessoryAvailable });
-              if (chrome.nativeAccessory) expect(chrome.liquidGlassTabBar).toBe(true);
-              if (chrome.liquidGlassTabBar) expect(chrome.nativeTabBar).toBe(true);
-            }
+          for (const accessoryAvailable of bools) {
+            const chrome = resolveTabChrome({ platformOS, variant, glassCapable, accessoryAvailable });
+            if (chrome.nativeAccessory) expect(chrome.liquidGlassTabBar).toBe(true);
+            if (chrome.liquidGlassTabBar) expect(chrome.nativeTabBar).toBe(true);
+          }
   });
 });

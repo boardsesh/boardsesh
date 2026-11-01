@@ -1,0 +1,12 @@
+appId: ${APP_ID}
+name: Open the selected named wall's real board history
+---
+- openLink: ${BOARD_URL}
+- extendedWaitUntil:
+    visible: ${BOARD_HISTORY_LABEL}
+    timeout: 30000
+- tapOn: ${BOARD_HISTORY_LABEL}
+- extendedWaitUntil:
+    visible:
+      id: board-panel-${BOARD_UUID}
+    timeout: 30000

@@ -8,6 +8,7 @@ import {
   getQueueSnapshotGeneration,
 } from '../../lib/queue-snapshot-store';
 import { getStoredSessionId, clearStoredSessionId } from '../../lib/session-store';
+import { announceStoredSessionEnded } from '../../lib/ended-session-signal';
 import { getHttpClient } from '../../lib/graphql/client';
 import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
 import { reportError } from '../../lib/error-reporting';
@@ -225,6 +226,10 @@ export function useQueuePersistence({
             if (__DEV__) {
               console.info(`[session] stored session ${storedId} ended/missing; clearing`);
             }
+            // A workout run for it is over too (#6903): its last copy and recap
+            // would otherwise wait for a session id that never comes back.
+            // Announced before any await, still under the isCurrent() check above.
+            announceStoredSessionEnded(storedId);
             await clearStoredSessionId();
             await hydrateLocalSnapshot();
             return;

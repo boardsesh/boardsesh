@@ -298,6 +298,23 @@ class StoreReviewSubmissionTest < Minitest::Test
     assert_empty @client.writes
   end
 
+  def test_default_can_add_italian_without_expanding_cpp_campaigns
+    FileUtils.mkdir_p(File.join(@directory, "android", "it-IT"))
+    FileUtils.mkdir_p(File.join(@directory, "it"))
+    BoardseshStoreReview::METADATA_FILES.each { |field, filename| File.write(File.join(@directory, "it", filename), "it: #{field}\n") }
+    italian = Marshal.load(Marshal.dump(@report.fetch("localizations").first))
+    italian["locale"] = "it"
+    italian["id"] = "default-it"
+    italian["metadata"] = BoardseshStoreReview::METADATA_FILES.to_h { |field, _filename| [field, { "text" => "it: #{field}", "sha256" => Digest::SHA256.hexdigest("it: #{field}") }] }
+    @report.fetch("localizations") << italian
+    result = runner(["default", "kilter"]).run(action: "plan")
+    assert_equal 6, result.fetch("snapshot").fetch("surfaces").find { |surface| surface.fetch("target") == "default" }.fetch("localizations").length
+    assert_equal 5, result.fetch("snapshot").fetch("surfaces").find { |surface| surface.fetch("target") == "kilter" }.fetch("localizations").length
+    @report.fetch("localizations").pop
+    assert_raises(BoardseshStoreReview::Error) { runner.run(action: "plan") }
+    assert_empty @client.writes
+  end
+
   def test_incomplete_counts_and_duplicate_locales_prevent_writes
     @report.dig("localizations", 0, "screenshotSets", 0, "screenshots").pop
     assert_raises(BoardseshStoreReview::Error) { plan }

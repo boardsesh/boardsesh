@@ -662,7 +662,7 @@ export function InlinePlaylistPicker({
               <Text variant="footnote" color={systemColors.error} style={styles.errorText}>
                 {error}
               </Text>
-            ) : null
+            ) : undefined
           }
           ListEmptyComponent={
             <View style={styles.message}>

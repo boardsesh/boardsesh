@@ -105,7 +105,7 @@ type CrashScreenPalette = {
 // back on and paints black. The web shell and the native dark root are both
 // black, so those take the dark Velvet surface explicitly. Native light keeps
 // the system default (black on the light root).
-export function resolveCrashScreenPalette(os: typeof Platform.OS, scheme: ColorSchemeName): CrashScreenPalette {
+export function resolveCrashScreenPalette(os: typeof Platform.OS, scheme: ColorSchemeName | null): CrashScreenPalette {
   if (os === 'web' || scheme === 'dark') {
     const surface = materialSurfaces.dark;
     return {

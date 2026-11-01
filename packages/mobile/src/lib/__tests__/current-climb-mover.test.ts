@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { resolveCurrentClimbMoverName } from '../current-climb-mover';
+import { resolveCurrentClimbMoverFace } from '../current-climb-mover';
 
 describe('current climb mover', () => {
   const identity = {
     currentChangedBy: 'participant-sam',
     participantId: 'participant-self',
-    sessionUsers: [{ id: 'participant-sam', username: ' Sam ' }],
+    sessionUsers: [{ id: 'participant-sam', username: ' Sam ', avatarUrl: 'sam.png' }],
   };
 
   it('resolves the participant through the projected roster', () => {
-    expect(resolveCurrentClimbMoverName(identity)).toBe('Sam');
+    expect(resolveCurrentClimbMoverFace(identity)).toEqual({ username: 'Sam', avatarUrl: 'sam.png' });
+  });
+
+  it('keeps a named mover without an avatar available', () => {
+    expect(
+      resolveCurrentClimbMoverFace({
+        ...identity,
+        sessionUsers: [{ id: 'participant-sam', username: 'Sam' }],
+      }),
+    ).toEqual({ username: 'Sam', avatarUrl: null });
   });
 
   it.each([
@@ -20,6 +29,6 @@ describe('current climb mover', () => {
     { sessionUsers: [] },
     { sessionUsers: [{ id: 'participant-sam', username: '  ' }] },
   ])('keeps unavailable and self identities unnamed: %j', (overrides) => {
-    expect(resolveCurrentClimbMoverName({ ...identity, ...overrides })).toBeNull();
+    expect(resolveCurrentClimbMoverFace({ ...identity, ...overrides })).toBeNull();
   });
 });

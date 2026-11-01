@@ -58,13 +58,13 @@ function item(id: ClimbActionId): ClimbActionItem {
 const EVERY_ITEM = HOOK_ORDER.map(item);
 
 const NOTHING_HIDDEN: PlayDrawerMenuRowOptions = {
-  hidden: { favorite: false, share: false, queue: false, mirror: false, angle: false },
+  hidden: { tick: false, favorite: false, share: false, queue: false, mirror: false, angle: false },
   boardMismatch: false,
   isActiveClimb: false,
 };
 const EVERYTHING_HIDDEN: PlayDrawerMenuRowOptions = {
   ...NOTHING_HIDDEN,
-  hidden: { favorite: true, share: true, queue: true, mirror: true, angle: true },
+  hidden: { tick: false, favorite: true, share: true, queue: true, mirror: true, angle: true },
 };
 const hiding = (button: keyof PlayDrawerMenuRowOptions['hidden']): PlayDrawerMenuRowOptions => ({
   ...NOTHING_HIDDEN,
@@ -75,6 +75,34 @@ const rowIds = (options: PlayDrawerMenuRowOptions, items = EVERY_ITEM) =>
   buildPlayDrawerMenuRows(items, options).map((row) => row.id);
 
 describe('buildPlayDrawerMenuRows', () => {
+  // #7000: the wall button never disconnects, so the
+  // board sheet gets a row of its own beside Mirror and Change angle.
+  it('puts Board controls after Mirror and Change angle when the player hands it one', () => {
+    const boardControls = {
+      id: 'boardControls' as const,
+      title: 'Board controls',
+      icon: 'lightbulb' as const,
+      run: vi.fn(),
+    };
+    const rows = buildPlayDrawerMenuRows([...EVERY_ITEM, boardControls], EVERYTHING_HIDDEN);
+    const index = rows.findIndex((row) => row.id === 'boardControls');
+
+    expect(rows[index - 1]?.id).toBe('angle');
+    expect(rows[index]).toMatchObject({ label: 'Board controls', dividerBefore: false, disabled: false });
+    // It acts on the connected board, not this climb, so the switch-board scrim leaves it live.
+    const mismatched = buildPlayDrawerMenuRows([...EVERY_ITEM, boardControls], {
+      ...EVERYTHING_HIDDEN,
+      boardMismatch: true,
+    });
+    expect(mismatched.find((row) => row.id === 'boardControls')?.disabled).toBe(false);
+    rows[index]?.run();
+    expect(boardControls.run).toHaveBeenCalledOnce();
+  });
+
+  it('offers no Board controls row without one', () => {
+    expect(rowIds(EVERYTHING_HIDDEN)).not.toContain('boardControls');
+  });
+
   it('orders the rows in six groups and opens each group after the first with a divider', () => {
     const rows = buildPlayDrawerMenuRows(EVERY_ITEM, EVERYTHING_HIDDEN);
 
@@ -104,13 +132,15 @@ describe('buildPlayDrawerMenuRows', () => {
     ]);
   });
 
-  // Preview: already on that climb. Tick: the hero button is always there for a
-  // member. Edit entry: a logbook-only row.
-  it('never offers preview, tick or edit entry', () => {
+  // Preview: already on that climb. Edit entry: a logbook-only row. Tick: the
+  // hero button is in the bar for a member, except in a timed block with the
+  // wall button in the top row (#7000).
+  it('never offers preview or edit entry, and tick only while the bar puts Log away', () => {
     const ids = rowIds(EVERYTHING_HIDDEN);
     expect(ids).not.toContain('preview');
     expect(ids).not.toContain('tick');
     expect(ids).not.toContain('editEntry');
+    expect(rowIds(hiding('tick'))[0]).toBe('tick');
   });
 
   it('offers each bar button only while the bar has put it away', () => {

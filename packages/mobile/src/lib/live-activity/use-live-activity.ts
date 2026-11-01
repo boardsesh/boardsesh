@@ -29,7 +29,17 @@ type AndroidNotificationStrings = {
   unmirrorLabel?: string;
   relightLabel: string;
   reconnectLabel: string;
+  connectingLabel?: string;
   onWallTemplate: string;
+};
+
+export type UseLiveActivityResult = {
+  /**
+   * How many times the Live Activity / session notification has started in
+   * this mount. Rest-timer sync keys off it: native clears the rest snapshot
+   * when a session ends, so every start must re-send it.
+   */
+  activityStartCount: number;
 };
 
 type UseLiveActivityOptions = {
@@ -45,6 +55,13 @@ type UseLiveActivityOptions = {
   boardConnection: BoardConnection;
   /** Display name of the peer holding the board (heldByPeer only). */
   holderDisplayName?: string | null;
+  /**
+   * Android notification only: no remembered board, so the outline bulb opens
+   * the app rather than reconnecting in the background (#7087).
+   */
+  bulbOpensApp?: boolean;
+  /** Android notification only: a connect is running; the outline bulb says so (#7087). */
+  boardConnecting?: boolean;
   /**
    * The climber's saved board look, for the iOS server-rendered thumbnail.
    * Sent on start AND on every update so a settings change reaches a running
@@ -155,14 +172,19 @@ export function useLiveActivity({
   isPartySession,
   boardConnection,
   holderDisplayName,
+  bulbOpensApp = false,
+  boardConnecting = false,
   renderMode,
   androidNotification,
   androidThumbnailOverlayPath,
   androidThumbnailOverlayLoadKey,
   validateAndroidThumbnailOverlay,
   androidThumbnailBackgroundPaths,
-}: UseLiveActivityOptions): void {
+}: UseLiveActivityOptions): UseLiveActivityResult {
   const isActiveRef = useRef(false);
+  // Bumped after every successful start, so state that native drops between
+  // sessions (the rest timer, #6513) knows to send itself again.
+  const [activityStartCount, setActivityStartCount] = useState(0);
   const generationRef = useRef(0);
   const [available, setAvailable] = useState<boolean | null>(null);
   // The token is stored WITH the sessionId it was loaded for. Deriving
@@ -194,6 +216,10 @@ export function useLiveActivity({
   boardConnectionRef.current = boardConnection;
   const holderDisplayNameRef = useRef(holderDisplayName);
   holderDisplayNameRef.current = holderDisplayName;
+  const bulbOpensAppRef = useRef(bulbOpensApp);
+  bulbOpensAppRef.current = bulbOpensApp;
+  const boardConnectingRef = useRef(boardConnecting);
+  boardConnectingRef.current = boardConnecting;
   const renderModeRef = useRef(renderMode);
   renderModeRef.current = renderMode;
   const overlayPathRef = useRef(androidThumbnailOverlayPath);
@@ -368,6 +394,7 @@ export function useLiveActivity({
         .then(() => {
           if (!isActiveRef.current || generationRef.current !== startGeneration) return;
           startFailureCountRef.current = 0;
+          setActivityStartCount((count) => count + 1);
           // Send an initial update so the widget doesn't stay on "Loading...".
           const q = queueRef.current;
           const displayItem = currentClimbRef.current ?? (q.length > 0 ? q[0] : null);
@@ -395,6 +422,8 @@ export function useLiveActivity({
               isPartySession: isPartySessionRef.current,
               boardConnection: boardConnectionRef.current,
               holderDisplayName: holderDisplayNameRef.current,
+              bulbOpensApp: bulbOpensAppRef.current,
+              boardConnecting: boardConnectingRef.current,
               renderMode: renderModeRef.current,
               androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
               androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
@@ -502,6 +531,8 @@ export function useLiveActivity({
         isPartySession,
         boardConnection,
         holderDisplayName,
+        bulbOpensApp,
+        boardConnecting,
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
         androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
@@ -518,6 +549,8 @@ export function useLiveActivity({
     getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
+    bulbOpensApp,
+    boardConnecting,
     isPartySession,
     // A board-look change must push mid-session so the iOS widget re-fetches
     // its thumbnail in the new mode.
@@ -560,6 +593,8 @@ export function useLiveActivity({
         isPartySession,
         boardConnection,
         holderDisplayName,
+        bulbOpensApp,
+        boardConnecting,
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
         androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
@@ -576,6 +611,8 @@ export function useLiveActivity({
     getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
     holderDisplayName,
+    bulbOpensApp,
+    boardConnecting,
     isPartySession,
     queue,
     // See Effect 1: a board-look change must push mid-session.
@@ -583,4 +620,6 @@ export function useLiveActivity({
     stableBoard,
     widgetNavigationAllowed,
   ]);
+
+  return { activityStartCount };
 }

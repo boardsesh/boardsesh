@@ -132,3 +132,21 @@ describe('AppMenu (Android) dividers', () => {
     expect(onSelectIndex).toHaveBeenCalledWith(2);
   });
 });
+
+describe('AppMenu (Android) palette rows', () => {
+  it('ignores palette and draws normal rows in order', () => {
+    const onSelectIndex = vi.fn();
+    const { container } = render(
+      createElement(AppMenu, {
+        iconName: 'more',
+        accessibilityLabel: 'More',
+        actions: [{ label: 'Favourite', palette: true }, { label: 'Share', palette: true }, { label: 'Queue' }],
+        onSelectIndex,
+      }),
+    );
+    const items = container.querySelectorAll('[data-item]');
+    expect(items).toHaveLength(3);
+    fireEvent.click(items[1] as Element);
+    expect(onSelectIndex).toHaveBeenCalledWith(1);
+  });
+});

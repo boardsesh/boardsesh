@@ -114,14 +114,15 @@ export default function SettersFilterScreen() {
 
   // Only removing the picker hands its draft back. Pushing a setter playlist
   // must not re-present the underlying filter sheet over that playlist.
-  useEffect(
-    () =>
-      navigation.addListener('beforeRemove', () => {
-        if (appliedRef.current) return;
-        emitSetterFilterSelection({ handoffId, setters: selectedSettersRef.current });
-      }),
-    [navigation, handoffId],
-  );
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('removed', () => {
+      if (appliedRef.current) return;
+      emitSetterFilterSelection({ handoffId, setters: selectedSettersRef.current });
+    });
+    // `removed` arrives after unmount. Its callback only publishes to the
+    // handoff store; a mounted guard would discard the picks.
+    return () => queueMicrotask(unsubscribe);
+  }, [navigation, handoffId]);
 
   const baseCountInput = useMemo(() => parseCountInput(params.countInput), [params.countInput]);
 

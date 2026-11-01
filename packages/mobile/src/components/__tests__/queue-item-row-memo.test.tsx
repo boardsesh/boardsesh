@@ -254,7 +254,7 @@ vi.mock('../ClimbListItemContent', () => ({
   },
 }));
 
-vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 96 }));
+vi.mock('../ClimbListThumbnail', () => ({}));
 
 // Without this mock the new import drags PressableAvatar → expo-router's
 // useRouter and Avatar → Image/PixelRatio into a graph whose `react-native` mock

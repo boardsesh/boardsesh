@@ -72,49 +72,44 @@ function preview(overrides: Partial<Parameters<typeof PlayerButtonsPreview>[0]> 
 }
 
 describe('PlayerButtonsPreview', () => {
+  // #7000: [♡] [⏮] [✓] [⏭] [☰] over the full-width wall button.
   it("draws today's Kilter bar under the board, and says it in one sentence", () => {
     const screen = preview();
     expect(icons(screen.container)).toEqual([
-      'queue',
+      'favorite',
       'skip.previous',
       'tick.outline',
       'skip.next',
+      'queue',
       'lightbulb',
-      'favorite',
-      'share',
     ]);
-    expect(screen.getByText('40°')).toBeTruthy();
+    expect(screen.queryByText('40°')).toBeNull();
     expect(screen.getByTestId('player-buttons-preview').getAttribute('aria-label')).toBe(
       'mobile.settings.playerButtons.previewLabel ' +
         JSON.stringify({
           position: 'mobile.settings.playerButtons.position.below',
           buttons: [
-            'mobile.settings.playerButtons.buttons.queue',
+            'mobile.settings.playerButtons.buttons.favorite',
             'mobile.settings.playerButtons.fixed.previous',
             'mobile.settings.playerButtons.fixed.log',
             'mobile.settings.playerButtons.fixed.next',
+            'mobile.settings.playerButtons.buttons.queue',
             'mobile.settings.playerButtons.fixed.boardLight',
-            'mobile.settings.playerButtons.buttons.favorite',
-            'mobile.settings.playerButtons.buttons.angle',
-            'mobile.settings.playerButtons.buttons.share',
           ].join(', '),
         }),
     );
   });
 
-  it('draws the board it stands for: mirror leads on Tension, and no angle pill on a fixed board', () => {
+  it('draws the board it stands for: Mirror leads on Tension, and the heart is in ⋯', () => {
     const screen = preview({ board: { ...TENSION, angleAvailable: false } });
     expect(icons(screen.container)).toEqual([
       'mirror',
       'skip.previous',
       'tick.outline',
       'skip.next',
-      'lightbulb',
-      'favorite',
-      'share',
       'queue',
+      'lightbulb',
     ]);
-    expect(screen.queryByText('40°')).toBeNull();
   });
 
   it('puts the bar above the board when asked, and the board gets what the bar leaves', () => {
@@ -124,13 +119,12 @@ describe('PlayerButtonsPreview', () => {
     expect(board).toBe(frame.lastElementChild);
   });
 
-  it('draws no small row with every small button off, and empty ⏮ ⏭ slots with Previous and next off', () => {
+  it('leaves empty slots for buttons switched off, and for ⏮ ⏭ with Previous and next off, and keeps the wall button', () => {
     const allOff = {
       order: DEFAULT_PLAYER_BUTTONS.order,
       visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
     };
     const screen = preview({ buttons: allOff, previousNext: false });
     expect(icons(screen.container)).toEqual(['tick.outline', 'lightbulb']);
-    expect(screen.queryByText('40°')).toBeNull();
   });
 });

@@ -7,9 +7,10 @@ epic #6238.
 This page started as documentation only. The changes are the follow-ups at the bottom
 (F1 to F6), filed on 2026-10-23.
 
-Code references are to `main` at `1f9bc776a3` (2026-10-18). Mobile paths are under
-`packages/mobile/`, shared paths under `packages/shared/`. Line numbers drift; the function
-names next to them don't.
+The original audit's code references are to `main` at `1f9bc776a3` (2026-10-18).
+The driving and current player-state sections reflect `release/next` on 2026-10-31.
+Mobile paths are under `packages/mobile/`, shared paths under `packages/shared/`.
+Line numbers drift; the function names next to them don't.
 
 ## Why this exists
 
@@ -39,8 +40,9 @@ Three fixes have already shipped against this, and the model below builds on the
 - #4829 (closed 2026-09-06): swipes in the player walk the list you opened the climb from,
   not the queue.
 - #4281 (closed 2026-08-23): in a crew, looking at a climb opens a preview with a
-  back chip and a **Put on the wall** button instead of taking the wall. It ships
-  behind a flag that is still off, so climbers don't have it yet (item 4 below).
+  back chip and a **Put on board** button instead of taking the wall. Its
+  `shared-session-browse` flag is active at 100% (verified 2026-10-31); driving
+  explicitly overrides crew previews (#7113).
 - #4731 (merged 2026-10-04): a playlist can be added to the queue without clearing it.
 
 What is left is that each list still decides on its own what a tap means, and the queue
@@ -48,7 +50,8 @@ still collects climbs nobody chose to queue.
 
 ## Words we use
 
-Player wording is being agreed with #6229. Until then this page uses these words.
+The current player uses the wall button and a back chip; the older pill names
+remain internal state names for screen-reader announcements.
 
 | Word                         | Meaning                                                                                                                        | In code                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
@@ -57,10 +60,10 @@ Player wording is being agreed with #6229. Until then this page uses these words
 | Queue                        | Your climbs in order: **History** (climbs before the current one), **Now** (the current climb), **Up next**. In a crew, the room's queue. | `queue`, `currentClimbQueueItem`                     |
 | Preview                      | The player shows a climb without making it current.                                                                             | `previewQueueItem`                                   |
 | Browsing (back chip)         | A preview whose swipes are guaranteed not to touch the wall.                                                                    | `WallPillState 'browsing'`                           |
-| Live (pill)                  | Your next swipe changes the climb on the wall.                                                                                  | `WallPillState 'live'`                               |
-| On the wall (pill)           | The climb on screen is the one lit on the board.                                                                                | `WallPillState 'onWall'`                             |
-| Put on the wall / Set active | The commit button under a preview. It says Set active when no board is connected and nothing is lit.                            | `CommitButtonLabel`, `wall-state.ts:166`             |
-| Crew                         | A party session with at least one other person connected. A newly arrived peer counts after 3 s, and a peer whose phone drops stays counted while reconnecting. The crew rules only apply with the `shared-session-browse` flag on, and it is off (see below). | `shouldDefaultToBrowse`, `SHARED_SESSION_DWELL_MS`, `queue-provider.tsx:2538-2556` |
+| Live (internal status)      | Your next swipe changes the climb on the wall. No separate Live pill is drawn.                                                   | `WallPillState 'live'`                               |
+| On the wall (internal status) | The climb on screen is the one lit on the board. No separate status pill is drawn; the back chip can still say On the wall.    | `WallPillState 'onWall'`                             |
+| Put on board / Set active    | The commit button under a preview (#7113 relabelled Put on the wall). It says Set active on a board with no lights, or when nothing can be lit. | `CommitButtonLabel`, `wall-state.ts:166`             |
+| Crew                         | A party session with at least one other person connected. A newly arrived peer counts after 3 s, and a peer whose phone drops stays counted while reconnecting. With `shared-session-browse` active at 100%, ordinary crew browsing previews; driving explicitly overrides it. | `shouldDefaultToBrowse`, `SHARED_SESSION_DWELL_MS`, `queue-provider.tsx` |
 
 The two lighting settings, in Settings › Board: **Light the board when I tap a climb**
 (`lightOnClimbTap`) and, nested under it, **Light the board as I swipe** (`lightOnSwipe`).
@@ -86,9 +89,10 @@ Three terms keep the tables short.
 
 **The crew column has two halves.** Everything that makes a tap a private look in a crew
 (#4281) sits behind the PostHog flag `shared-session-browse`
-(`src/providers/feature-flags-provider.tsx:581-583`). On 2026-10-18 that flag was inactive at
-0%, unchanged since it was created on 2026-08-25. So today every tap and swipe in a crew still
-drives the wall, and the "flag on" behaviour below is built but nobody has it yet.
+(`src/providers/feature-flags-provider.tsx`). At the original audit on 2026-10-18 it was
+inactive at 0%; the off column retains that legacy fallback. It is now active at 100%
+(verified 2026-10-31), so ordinary crew taps and swipes preview. The separate driving
+column describes the explicit override that lights every supported climb change.
 
 ### What a row tap does
 
@@ -107,7 +111,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Queue sheet | The queue button in the player, the mini-player | Makes the row current, clears the track (`src/components/play-drawer/use-queue-sheet-handlers.ts:61-70`). A suggestion row commits with the suggestions as the track (`:90-99`). | The queue, or the suggestions | Stops at the end of the queue |
 | Similar climbs | The strip under the board in the player | Since F2: commits, flagged `suggested`, inserted after the current climb, with the strip as the track, named "Similar climbs" (`use-play-selection-controller.ts:373`). The strip is the climbs this wall fits, plus the one tapped. A preview with the same track with Light on tap off, or when the player shows a climb from another board. | Walks the strip | Track end |
 | Workout preview | Record tab before a session, workout on | A trackless preview (`src/components/session-screen/pre-session/PreSessionView.tsx:245-251`). **Start** appends the workout behind the queue (`:301`). | Nothing | — |
-| Wall tab kiosk | Wall tab on an iPad bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
+| Wall display kiosk | Wall display on a tablet bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
 
 Since #6777, every "Walks …" in the Next column plays Up next first: the queue after the
 climb on the wall, Play next climbs at the top of it, then Play last ones. The list picks up
@@ -116,165 +120,104 @@ A preview walks only its list.
 
 ### Crew, swipes and long-press
 
-| Surface | In a crew today (flag off) | In a crew, flag on | Row swipes | Long-press |
-| --- | --- | --- | --- | --- |
-| Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
-| Setter page, playlist, For You | Commits for the whole room (F4); with Light on tap off, a preview. With the playlist switch on, replaces the whole room's queue | Preview with the loaded rows as the track; Next stops at the last loaded row | As search; rows the board can't show still swipe | Climb menu |
-| Logbook | Commits for the whole room | Preview with the logbook as the track (F2) | Right: edit the tick. Left: delete it. Your own ticks only. | Climb menu, plus Edit |
-| Session detail, profile climbs, Home session card | Commits for the whole room | Preview with that list as the track (F2) | None | Climb menu |
-| Home new-climb card | Trackless preview | Trackless preview | None | None |
-| Board history sheet, iPad wall column | Commits for the whole room | Preview with the wall's history as the track (F2) | As search | Climb menu |
-| Record in-session history | Commits for the whole room | Preview with the session's ticks as the track (F2) | None | Climb menu |
-| Queue sheet | Commits for the whole room | Commits, on purpose: it is the room's queue | Left only: delete | Climb menu |
-| Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | None | None |
-| Workout preview | No session yet | No session yet | None | None |
-| Wall tab kiosk | Lights the board; the room's current climb doesn't move | Same | None | None |
+| Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
+| --- | --- | --- | --- | --- | --- |
+| Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Commits and lights it | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
+| Setter page, playlist, For You | Commits for the whole room (F4); with Light on tap off, a preview. With the playlist switch on, replaces the whole room's queue | Preview with the loaded rows as the track; Next stops at the last loaded row | Commits and lights it. In a crew the playlist switch never replaces the room's queue: the tap plays from the list | As search; rows the board can't show still swipe | Climb menu |
+| Logbook | Commits for the whole room | Preview with the logbook as the track (F2) | Commits and lights it; a tick on another board model stays a preview | Right: edit the tick. Left: delete it. Your own ticks only. | Climb menu, plus Edit |
+| Session detail, profile climbs, Home session card | Commits for the whole room | Preview with that list as the track (F2) | Commits and lights it | None | Climb menu |
+| Home new-climb card | Trackless preview | Trackless preview | Trackless preview | None | None |
+| Board history sheet, iPad wall column | Commits for the whole room | Preview with the wall's history as the track (F2) | Commits and lights it | As search | Climb menu |
+| Record in-session history | Commits for the whole room | Preview with the session's ticks as the track (F2) | Commits and lights it | None | Climb menu |
+| Queue sheet | Commits for the whole room | Commits, on purpose: it is the room's queue | Commits and lights it | Left only: delete | Climb menu |
+| Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | Commits and lights it; from a climb on another board, a preview | None | None |
+| Workout preview | No session yet | No session yet | Trackless preview | None | None |
+| Wall display kiosk | Lights the board; the room's current climb doesn't move | Same | Same | None | None |
 
-### Retrying playlist pages
+### Driving the wall (#7113)
 
-Each page gets one retry for a transient connection failure and one for a short rate limit
-(#4840). A connection failure does not spend the rate-limit retry, or the other way around.
-Repeating either failure stops the load, so a page makes at most three requests. A rate-limit
-wait longer than three seconds fails immediately, and cancelling a load stops its retry sleep.
-Both budgets reset for the next page. The queue-replacement drain still stops after 20 pages;
-with mixed failures that can mean 60 requests, so long smart logbooks have no guaranteed
-headroom in the shared 60-per-minute limit. Only recommendations stop after six pages.
+A swipe on the player's wall button (or its screen-reader action, "Light every climb")
+connects the board if needed, puts the climb on screen up, lights it, and starts **driving
+the wall**: from then on every change of climb lights it straight away, in a crew too. One
+rule decides, `climbChangeStaysViewOnly` (`play-drawer-navigation.ts`), and every entry point
+reads it: the player's swipes, Next and Previous, the end card's Keep going, similar climbs,
+a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every list tap
+(`readClimbChangeLights`, at the tap).
 
-### Sorting and filtering a playlist
-
-A playlist (#6651) has the Climbs chip row under its hero: Filters, Grade, Your progress and
-Sort by default, each pinnable from the filter sheet. Once the hero scrolls away, a ≡ button in
-the header opens the same sheet. With a filter on, a line under the chips reads "12 of 117
-climbs · Clear filters". Clear filters keeps the sort; the sheet's Reset clears the sort too.
-Smart lists and setter pages have the same chip row, sheet and ≡ button; see
-[Smart lists and setter pages](#smart-lists-and-setter-pages) for what differs.
-
-- **The request.** `usePlaylistClimbs` gets a `view` only when the sort is not the playlist's
-  own order or a filter is on. With neither, the request is the one sent before views existed.
-- **The rows on screen decide.** While a new sort or filter loads, the previous rows stay up.
-  The screen tracks the view those rows belong to (the settled view), and the play drawer's
-  track, the queue replace and Play next / Play last all use that view, so a swipe walks the order on
-  screen and skips filtered-out climbs.
-- **The source id carries the view.** It is `playlist:<uuid>` with no view and
-  `playlist:<uuid>|<view as JSON>` with one, so a sorted track is a different source from the
-  plain one and re-tapping after a change builds a fresh track.
-- **Play N next / Play N last.** With a filter on, the rows read "Play 12 next" and "Play 12 last"
-  and queue those climbs in the order shown, but only when the number is exact: with "Fits my board" on (the server's
-  count is then all on this board), or once every row is loaded (the climbs this board can show,
-  leaving out the dimmed ones the board-scoped add skips). Otherwise they stay "Play next" and
-  "Play last".
-- **Edit mode always shows the playlist's own order.** A reorder index is a place in that order
-  (#4012). Tapping Edit sets the sort aside and clears the filters. The plain order's cached
-  pages can be stale (an add or remove refetches only the view on screen), so they are marked
-  stale and refetched, and the editor opens only once those rows have landed, after loading as
-  many as the sorted list showed (200 at most). The chips grey out and the ≡ button goes away;
-  Done backs out while it waits. If the plain order fails to load or is waiting for a
-  connection, the view comes back with a message. Done brings the sort back; filters stay
-  cleared. Drag-to-reorder is off whenever a sort or filter is on.
-- **No active board.** Progress, your ratings, Liked, Following, beta videos, Tall / Wide and
-  "Fits my board" pass only climbs on the active board (`PLAYLIST_ACTIVE_BOARD_ONLY_FILTERS` in
-  `@boardsesh/climb-filters`, kept equal to the query's `PLAYLIST_FILTER_SCOPE` by a test). With
-  no board picked they would match nothing, so their rows and chips are hidden and a choice
-  kept from before stops filtering until a board is back.
-- **The list keeps its scroll offset on new rows.** FlashList's default keeps the first visible
-  row in place across data changes, which after a re-sort scrolled to wherever that row moved.
-  It is off here; instead, a new sort or filter scrolls back up to the filter bar only when the
-  climber was below it.
-
-### Smart lists and setter pages
-
-Both reuse the playlist's chip row, filter sheet and ≡ button. A plain request (no sort, no
-filter) is byte-identical to before.
-
-- **Smart lists** (Liked, Five Stars, Projects, Most repeated). Sorts: the list's own order,
-  Difficulty, Quality, Ascents, Name, Random. The own order is named "Recently liked" (Liked),
-  "Recently climbed" (Five Stars) or "Most tries" (Projects, Most repeated). There is no
-  "Recently added". The sort is remembered per list type (`smart:<TYPE>`); filters reset on each
-  visit. Liked hides the Liked collection option, Projects hides Your progress (row and chip),
-  Five Stars hides My rating. The recommended lists (Crowd favorites, Hidden gems, At your level,
-  Fresh) get no controls and never send a view.
-- **Setter pages** (`climbs/setter/[username]`). Sorts: Newest (the default), Difficulty,
-  Quality, Ascents, Name, Random. One remembered sort covers every setter page (`setter-pages`).
-  The subtitle names the sort in force ("All climbs on this board · Hardest first"). Setters,
-  Following, Other angles and "Fits my board" are not offered; Hold types and Board region are.
-- **What you see is what you swipe and queue**, on all three surfaces. The play drawer's
-  `fetchPage`, the activation `sourceId` and Play next / Play last follow the settled view (the view whose
-  rows are on screen). Source ids are `playlist:<uuid>`, `smart:<TYPE>:<userId>` and
-  `setter:<username>:<board JSON>`, each followed by `|<view key>` while a sort or filter is on
-  (`listSourceId` in `src/lib/playlists/playlist-view.ts`).
-
-The climb menu is the same everywhere (`src/components/climb-actions/use-climb-actions.ts`):
-Preview, Play next, Play last, Open queue, Add to playlist, Favorite and the rest. In a
-crew, swiping right, Play next and Play last all write to the room's queue, with or without
-the flag.
-
-### Play next and Play last (#6772)
-
-The two placements are named the way a music app names them, so a climber knows where a climb
-lands. Before, "Add to queue" put it at the bottom of Up next, behind everything already queued,
-and with a long queue the climber never reached it.
-
-- **Play next** puts the climb at the top of Up next, right behind the climb on the wall
-  (`playNext` in `src/providers/queue-provider.tsx`). A climb already queued moves there instead
-  of being copied. The menu hides it on the climb that is on the wall.
-- **Play last** puts it at the bottom of Up next (`addToQueue`), what "Add to queue" did.
-- **The row swipe right is Play next**, on every climb list that shares `ClimbListRow`: search,
-  playlists, For You and the smart lists, setter pages and the board sheet. Logbook rows keep
-  their own swipes. Swiping the climb that is on the wall queues it again, right behind itself:
-  a row names the climb, not its queue slot, so "next" can only mean a repeat.
-- **While a list is playing, the list comes first.** A Play next lands at the top of Up next, and
-  the player reaches it after the list's end card, as rule 2 below says.
-- **In a crew, a single Play next waits for a list still being sent.** A list's climbs go to the
-  server one at a time, and a positional add sent among them would land in the wrong slot, so it
-  queues behind them on the same serial lane. An append still goes at once.
-- **A playlist offers both for the whole list.** Play next inserts the list at the top of Up next
-  in list order, Play last appends it (`appendQueueItems` with `placement`). Both share the
-  500-climb cap and the queue-full toast. Unlike a single Play next, a list never moves climbs
-  that are already queued. A list Play next while you are walking that same list leaves the climb
-  on the wall out (no second copy right behind it) and drops the list's track, so swipes walk the
-  copies in Up next instead of peeking the list past them. The "Start playlist?" prompt keeps its
-  three answers; its middle one is now called Play last.
-- **The snackbar names where it went**: "Playing next" or "Playing last", with a count for a list.
-
-### Where it's saved
-
-| What | Where | Code |
-| --- | --- | --- |
-| The queue with no session | AsyncStorage key `boardsesh_local_queue_snapshot_v1`: the queue, the current climb and the track. It survives restarts. | `src/lib/queue-snapshot-store.ts:22-31` |
-| The queue in a session | The server. The track is never sent, so it lives on one phone only. | `queue-provider.tsx:1930-1932` |
-| Previews | Nowhere. | — |
-| Recently opened playlists | AsyncStorage key `boardsesh:recent-playlists`. | `src/lib/playlists/recents-store.ts:13` |
-| The sort picked inside each playlist | MMKV settings key `playlistSortsV1`, newest first, 100 playlists at most. A playlist on its own order has no entry, and Random is kept without its seed. Filters are never kept. Smart lists key theirs `smart:<TYPE>` and setter pages share `setter-pages`. | `src/lib/playlists/playlist-sort-memory.ts` |
-| Which chips a playlist shows | AsyncStorage key `pinnedPlaylistChips`, one set for every playlist on the phone. | `src/lib/playlist-pinned-chips-store.ts` |
-| Ticks, wall history, playlists | The server. The lists above only read them. | — |
-
-Pinned playlists and their recently opened fallback are scoped to the current account, board,
-layout and adapters in the shared `usePinnedPlaylists` hook (#6875). Switching that context hides
-the previous rows while its replacement loads. Only the latest request for each stream can update
-rows or loading; a late response, failed old request, or retained old refresh callback cannot restore
-a previous context. A current recents-storage failure settles loading and keeps any fetched pins.
-
-<img src="images/list-model/board-history-sheet-dark.png" alt="The board history sheet in dark mode" width="300">
-
-_The board history sheet (dark theme, screenshot mode's demo wall activity). (1) The climb lit on the wall now. (2) "Lit on this wall", the wall's history. Tapping any row puts that climb on the wall for everyone in the session._
+- **What stays a preview.** A climb from another board model (a wrong-board tick or
+  playlist row, a similar climb from a climb on another board): the wall this phone drives
+  can't light it. The trackless previews (Home's new-climb card, the long-press Preview
+  action, the workout preview) stay as they are. A swipe from a preview that walks a list
+  commits the next climb on that list, with the list as its track.
+- **The crew's browse latch** is ignored while driving and comes back when driving ends if
+  a crew is still there. The browse chrome ("Only you see this", the back chip) only shows
+  for what is still a preview, and `Queue Navigation` carries `driving: true` with the
+  outcome that happened.
+- **A crewmate puts a climb up.** This phone's auto-sender lights it like any current climb,
+  the player follows (it shows the current climb), and driving goes on. The top bar's second
+  line says "Your crew put up Crimp Ladder" for 4 s, with a light buzz and one screen-reader
+  announcement. It names nobody: the queue item says who added the climb, not who put it up,
+  and the event doesn't say who moved the wall. A crewmate's move that the driver's own swipe
+  overtakes is never said. The driver never sees the busy-wall question; crewmates still do.
+- **Going live and counting.** The drive goes live at the first wall confirm on this phone's
+  link (the auto-sender's write, read off the wall-confirm bus at the app root, so closing the
+  player mid-connect still goes live). `climbsLit` counts each new climb confirmed while
+  driving, the swipe's own first. A step along a list is placed as Next places one: a fresh
+  copy at the Now slot, never a climb pulled out of History.
+- **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
+  the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
+- **Stopping it.** A press on the button labelled "You are driving the wall" stops driving and keeps the link; solo, swipes
+  and taps then stay previews until the link drops or the climber presses to put a climb up
+  again (the settings never flip). Solo, every such press (Put on board, a re-light, a
+  connect) ends in driving: it drops the stop, and with Light on swipe off it starts a live
+  drive (`tapDrive`, docs/climb-view-options.md). In a crew a press stays a one-off put.
+- **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
+  started it (a swipe, a press, the action), goes on into the crew in the same session. Solo
+  driving by Light on swipe alone (no stop, a link up) turns into a live drive the moment the
+  crew forms (`shouldCarryDriveIntoCrew` in `DriveModeWatcher`, `startedBy: 'solo_carry'`), so
+  "You are driving the wall" stays and swipes, Next, list taps and the MiniPlayer keep lighting.
+  After a stop, or with no link, nothing carries and the crew's previews rule. "Forms" is the
+  roster's crew (`useIsCrewSession`) turning true after a newcomer's 3 s arrival dwell; until
+  then the climber is solo. Joining a different session still ends a drive (`session_changed`).
+- **Ending it.** A drive also ends when the link drops, the swipe's climb can't go up, its
+  connect fails or never comes (30 s), the session or the board changes, or the climber signs
+  out (`DriveModeWatcher`). Each end fires `Drive Mode Ended {reason, startedBy, durationSec,
+  climbsLit, inSession}` once; `startedBy` is `swipe`, `tap`, `action` or `solo_carry`.
+- **Not on a crewmate's board**, by design. Their phone holds it and Put on board relays the climb
+  to it, so the swipe refuses there and nothing changes.
 
 ## Player states today
 
-The player's header pill and the row under the board say what a swipe will do. They come from
-`src/components/play-drawer/wall-state.ts` (`resolveWallPillState`, `resolveCommitBarModel`).
+The wall button's label says what a press does and whether subsequent climb changes light the wall.
+Its model is `resolveWallControl` in `src/components/play-drawer/wall-control.ts`.
+The header retains only the back chip from `resolveHeaderPillState` in `wall-state.ts`;
+the old Live and On the wall status pills are no longer drawn.
 
-| State                     | What you see                                                                                                            | How you get there                                                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No pill                   | The plain player.                                                                                                       | Solo, no board connected and nothing lit (`wall-state.ts:82`); or a committed climb with Light on swipe off, where swipes don't commit. |
-| Live                      | A Live pill. Your next swipe changes the climb on the wall.                                                             | A committed climb while a board is connected or a climb is lit, and swipes commit (`wall-state.ts:81`).                                                                              |
-| On the wall               | The driver's avatar in the pill.                                                                                        | The climb on screen is the lit one (`wall-state.ts:79`). It outranks Browsing.                                                                                                       |
-| Browsing                  | A back chip (back glyph plus the face of whoever lit the wall) that returns to the climb on the wall, and **Put on the wall** (or **Set active**) in the middle of the action row. Swipes never touch the wall. The top bar's second line carries a caption: "Preview, not lit" solo while a board is connected or a climb is lit, "Only you see this · the wall is on Crimp Ladder" in a crew (`resolveBrowseCaption`). | Any preview or swipe while Light on swipe is off (`play-drawer-navigation.ts:67`); with the crew flag on, a list tap in a crew.                                                       |
-| Preview without Browsing  | The Put on the wall / Set active button, and the back chip whenever there's a committed climb to go back to (it stands in for the **Live** chip during a preview; `resolveHeaderPillState` in `wall-state.ts`), with the same "Preview, not lit" caption when a board is connected or a climb is lit. Swiping and Next do nothing: there is no list to walk. | A search tap with Light on tap off, the long-press **Preview** action, a deep link, the Home new-climb card or a workout preview row, while Light on swipe is on (`src/components/play-drawer/PlayCore.tsx:783-790`). |
-| Wrong-board preview       | A Switch board overlay over the action row. Swipes walk the playlist without touching the queue, and stop at its end.    | A playlist climb from a board you are not on (`use-playlist-activation.ts:846-878`).                                                                                                 |
+The full wall button uses the frosted look only while its model confirms physical driving:
+supported climb choices light the wall. Connecting, a private preview, a crew relay and a
+held link without driving stay plain. A peek, drag or committed swipe awaiting confirmation
+uses flat amber progress; bokeh appears only once driving is confirmed. The label says what
+a tap does. When hold colours are unavailable, driving uses the existing flat amber fallback;
+other states keep their tonal/outline treatment. Stopping or browsing removes frost immediately.
 
-<img src="images/list-model/player-browsing.png" alt="The player in a preview: the back chip with the face of whoever lit the wall at the top left, and Put on the wall between the heart and share" width="300">
+| State | What you see | What happens next |
+| --- | --- | --- |
+| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb. Solo, it starts driving; in a crew, it is a one-off put. |
+| Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
+| Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
+| Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
+| Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A long-press Preview, deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
+| A crewmate holds the board | **Put on board**, an outline bulb and their face | A tap relays the climb through their phone. There is no swipe-to-drive on that phone's connection. |
+| Another board | A switch-board overlay when it is unreachable, or **Put on {board}** for another reachable board at the gym | The reachable-board action moves to that board, connects and lights the climb. A crew already on that board relays through its holder instead. |
 
-_The player after the long-press Preview action with Light on swipe off. (1) The back chip with the face of whoever lit the wall; tapping it returns to the climb on the wall. (2) Put on the wall, between the heart and share. The face shows as a "?" here because the simulator's wall has no named driver._
+The default wall button sits full width under the board. View options can move it,
+or replace it with a lightbulb; that bulb has no swipe-to-drive gesture and its tap
+disconnects rather than stopping driving. See [the board-control rules](climb-view-options.md#the-board-control-7000).
+
+<img src="images/list-model/player-browsing.png" alt="The player in a preview, with a back chip above the climb and the full-width Put on board button below it" width="300">
+
+_Browsing without lighting: the back chip returns to the prior pick or the climb on the wall.
+The full-width Put on board button lights the displayed climb when the climber chooses._
 
 ## Eleven inconsistencies
 
@@ -370,15 +313,20 @@ The player doesn't say which list it is walking, and the walk ends silently.
   `boardsesh_local_queue_snapshot_v1` (`src/lib/queue-snapshot-store.ts:22`). Connecting a
   board days later lights the climb that was current when you left (#4979).
 
-### 4. The crew gate is switched off, and has holes
+### 4. Original audit: the crew gate was switched off and had holes
 
 The gate that makes a tap a private look in a crew (#4281) is behind the PostHog flag
 `shared-session-browse` (`src/providers/feature-flags-provider.tsx:581-583`, read at
 `queue-provider.tsx:2558`). On 2026-10-18 the flag was inactive at 0%, as it has been since
-2026-08-25. So in a crew today every tap commits for the whole room, and a playlist, For You
+2026-08-25. At that audit date, every crew tap committed for the whole room, and a playlist, For You
 or setter tap replaces the room's queue. The /help page already promises the gate: "With
 someone else in your session, swiping stops lighting the board. Tap Put on the wall when you want yours up, or tap the face at the top to go back to the climb on the wall"
 (`marketing.json` `help.sessions.crowd.p1`).
+
+**Release update, 2026-10-31:** `shared-session-browse` is active at 100%.
+Ordinary crew taps and swipes preview; a live drive explicitly overrides that rule.
+The release help now teaches both, using the current **Put on board** label.
+The gap descriptions below record the original audit and its follow-ups.
 
 With the flag on, search, playlists, For You, setter pages, the logbook, sessions, profile,
 Home cards and similar climbs open a private preview. Three places still didn't before F2
@@ -494,9 +442,9 @@ previews instead (`:325`).
 
 ### 10. Words
 
-- **"Set active" and "Put on the wall"** are the same button. It says Set active when no board
-  is connected and nothing is lit (`wall-state.ts:166`; strings in `session.json` `playView.setActive`
-  and `playView.wallState.putOnWall`).
+- **"Set active" and "Put on board"** are the preview's commit action. It says Set active
+  when no reachable wall can be lit; otherwise the wall button says Put on board and
+  connects if needed (`wall-state.ts` and `wall-control.ts`). Put on the wall is the retired label.
 - **"Projects" means three things.** The smart list: "Climbs you've worked the most without
   sending" (`playlists.json` `library.smart.projects.description`). The Progress filter: tried and not sent
   (`packages/shared/climb-filters/src/progress-filter.ts:64-65`). The chip on a climb card: a
@@ -544,7 +492,10 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    wall) starts the walk from there. With Light on swipe off, or in a crew, a swipe off the
    climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
    the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
-   would (`resolveUpNextCommitResume`), and leaves the list for anything else. The look itself
+   would (`resolveUpNextCommitResume`), keeps the list when the look landed on the list's own
+   next climb (the walk's peek, not queued yet: after a stop on this link a swipe off a Search
+   results climb lands there, and Put on board used to drop "Search results · 4 of 23" and
+   leave swipes nowhere to go, #7113 QA), and leaves the list for anything else. The look itself
    never borrows or captures this phone's list, even when it starts from a list climb: only Put
    on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
    climb's own queue entry is removed while Up next plays, Previous goes back to that list
@@ -569,12 +520,14 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    the room's list.
 5. **Playing a playlist never wipes your queue.** Play next and Play last copy the playlist in. The
    "Start playlist?" prompt goes away.
-6. **Looking never takes a crewmate's wall**, from any list. Solo, Light on tap and Light on
-   swipe decide whether looking also lights the board, as they do today. This needs the
-   `shared-session-browse` flag turned on, plus the three holes in item 4 closed.
+6. **Ordinary browsing never takes a crewmate's wall**, from any list. The
+   `shared-session-browse` flag is active at 100%. A climber driving the wall explicitly
+   chooses to light every supported climb change, including in a crew. Without driving,
+   Light on tap and Light on swipe decide solo; stopping driving keeps changes as previews
+   on that connection until a press puts a climb up again.
 7. **Closing the player puts you back on the same list, at the same scroll position.**
 
-![Lists feed the player as tracks; the queue only fills on purpose; Put on the wall lights the board](diagrams/climb-lists-model.svg)
+![Lists feed the player as tracks; the queue only fills on purpose; Put on board lights the board](diagrams/climb-lists-model.svg)
 
 Only rule 3 needs a sync design choice, because the current climb lives inside the queue
 today. Two ways to do it:
@@ -617,7 +570,7 @@ card once both are done. Every "walks … to the end card" under Today plays Up 
 | Queue sheet                              | Takes the wall (it is the room's queue); walks the queue.                                 | Unchanged: plays from the queue (rule 4). Sections get labels (F6).                                |
 | Similar climbs | Inserts the climb after the current one and plays from the strip; a preview in a crew or with Light on tap off (F2). | Plays from the similar list; nothing is added (F2, F3). |
 | Workout preview                          | Trackless preview: swipes do nothing.                                                     | Plays from the workout preview. Start still queues the workout until #5379.                        |
-| Wall tab kiosk                           | Steps through the wall's own history; Light this lights the board, not the room's climb.  | Unchanged. It is a view of one wall, not a list you play from.                                     |
+| Wall display kiosk                       | Steps through the wall's own history; Light this lights the board, not the room's climb.  | Unchanged. It is a view of one wall, not a list you play from.                                     |
 
 Closing the player returns you to the list you came from, at the same scroll position, on
 every row above (F5).
@@ -666,7 +619,7 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `src/lib/playlists/use-board-list-activation.ts`, `use-tick-list-activation.ts`, `loaded-list-pages.ts` | Lists whose rows carry their own board (logbook, sessions, profile climbs, session cards, Record history): the tapped row's board and angle, and paging a track through the screen's own query. |
 | `src/components/play-drawer/use-play-selection-controller.ts`          | Opens without a track (notifications, deep links, the climb route's hand-off) and the similar-climbs tap.    |
 | `src/components/play-drawer/play-drawer-navigation.ts`                 | Whether a swipe stays a preview or commits.                                                                    |
-| `src/components/play-drawer/wall-state.ts`                             | The header pill and the Put on the wall / Set active button.                                                 |
+| `src/components/play-drawer/wall-state.ts`, `wall-control.ts`            | The header's back chip, preview commit state and current wall-button model.                                 |
 | `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb` and `previousClimb` (which store the track's resume point, `storeTrackResume`), `setQueue`, `appendQueueItems`, and where the prune is switched on. |
 | `src/providers/queue/use-queue-persistence.ts`, `src/lib/queue-snapshot-store.ts` | The solo queue saved across restarts.                                                                |
 | `src/components/play-drawer/QueueList.tsx`, `use-queue-sheet-handlers.ts` | The queue sheet: sections, suggestions, row taps.                                                          |

@@ -38,7 +38,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbProgressProvider, type ClimbProgressTarget } from '../../providers/climb-progress-provider';
 import { ActiveAwareClimbListRow } from '../ActiveAwareClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
+import { useClimbListThumbnailSize } from '../climb-list-thumbnail-metrics';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
@@ -416,6 +416,10 @@ export function PlaylistDetailView({
       headerLargeTitle: false,
       headerTransparent: true,
       headerBlurEffect: 'none',
+      // iOS 26 dims the scroll view under a transparent bar. The hero runs up under
+      // it, so that dim reads as a dark band; the collapsed blur bar below is our
+      // own edge effect once the hero scrolls away.
+      scrollEdgeEffects: { top: 'hidden' },
       title: headerTitle,
       headerTitle: renderNoHeaderTitle,
       // Keyed on the memoised `actions`, `filterAction` and `collapsed`, never on
@@ -671,6 +675,12 @@ export function PlaylistDetailView({
     ) : null;
 
   const baseColor = normalizePlaylistColor(hero.color) ?? PLAYLIST_COLORS[0];
+  const islandFillStyle = useMemo(
+    () => ({
+      experimental_backgroundImage: `linear-gradient(to bottom, ${baseColor} ${insets.top}px, transparent ${insets.top}px)`,
+    }),
+    [baseColor, insets.top],
+  );
 
   // Shared list state visuals. The first-page load renders skeleton rows (a far
   // better "shape of what's coming" cue than a bare spinner). Empty + footer are
@@ -958,11 +968,13 @@ export function PlaylistDetailView({
   );
 
   return (
-    <View style={styles.container}>
-      {/* Paints the status-bar / dynamic-island strip in the playlist colour so it
-          is never the bare screen background — even on the first frame before the
-          list lays its full-bleed hero out behind the island. */}
-      <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
+    // The background paints the status-bar / dynamic-island strip in the playlist
+    // colour so it is never the bare screen background, even on the first frame
+    // before the list lays its full-bleed hero out behind the island. It is a
+    // background rather than a sibling view so the list stays the first child:
+    // react-native-screens finds the scroll view for `scrollEdgeEffects` by
+    // following first children only.
+    <View style={[styles.container, islandFillStyle]}>
       <ReadableColumn style={styles.container}>
         <ClimbProgressProvider targets={progressTargets} enabled={!editMode}>
           <FlashList
@@ -1128,6 +1140,8 @@ function UnrenderablePlaylistClimbRow({
   // thumbnails off it has no thumbnail-sized frame and its text starts at the
   // gutter, like theirs.
   const hasThumbnail = useClimbRowField('thumbnail');
+  // The cell its neighbours draw (one column here, so 76×96).
+  const thumbnailSize = useClimbListThumbnailSize();
   const subtitle = t('detail.unrenderableClimb.subtitle');
   const accessibilityLabel = `${climb.name}. ${subtitle}`;
 
@@ -1152,6 +1166,7 @@ function UnrenderablePlaylistClimbRow({
             <View
               style={[
                 styles.unrenderableThumbnail,
+                thumbnailSize,
                 { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
               ]}
             >
@@ -1182,7 +1197,10 @@ function UnrenderablePlaylistClimbRow({
       <View
         style={[
           styles.unrenderableSeparator,
-          { marginStart: climbRowSeparatorInset(hasThumbnail), backgroundColor: systemColors.separator },
+          {
+            marginStart: climbRowSeparatorInset(hasThumbnail, undefined, thumbnailSize.width),
+            backgroundColor: systemColors.separator,
+          },
         ]}
       />
     </View>
@@ -1203,12 +1221,6 @@ const createStyles = (textStyles: TypographyScale) =>
     container: {
       flex: 1,
       minHeight: 0,
-    },
-    islandFill: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
     },
     headerBar: {
       position: 'absolute',
@@ -1405,9 +1417,8 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       gap: spacing[3],
     },
+    // Sized at the call site from `useClimbListThumbnailSize`.
     unrenderableThumbnail: {
-      width: THUMBNAIL_WIDTH,
-      height: THUMBNAIL_HEIGHT,
       borderRadius: borderRadius.md,
       borderWidth: StyleSheet.hairlineWidth,
       alignItems: 'center',

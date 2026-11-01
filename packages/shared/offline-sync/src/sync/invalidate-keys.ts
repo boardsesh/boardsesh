@@ -41,6 +41,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   what the list filters and sorts by, so a pulled or drained tick moves
   //   climbs between grade bands. Without these keys the list keeps showing a
   //   re-graded climb in the band it just left.
+  // ['sessionWorkouts'] — a session's workout blocks (#6903) are tallied from
+  //   its ticks on read, so a tick landing, edited or deleted moves them.
   boardsesh_ticks: [
     ['logbook'],
     ['localTicks'],
@@ -51,7 +53,12 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['searchClimbs'],
     ['infiniteSearchClimbs'],
     ['searchClimbsCount'],
+    ['sessionWorkouts'],
   ],
+
+  // ['sessionWorkouts'] / ['sessionWorkoutHeadlines'] — the workout a session
+  //   was climbed to (#6903): its summary, detail and feed-card line.
+  session_workouts: [['sessionWorkouts'], ['sessionWorkoutHeadlines']],
 
   // ['userPlaylists'] — the owned-playlist list (use-mobile-climb-actions-data).
   // ['playlistClimbs'] — a playlist's climb rows (@boardsesh/playlists-react).

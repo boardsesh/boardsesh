@@ -3,9 +3,13 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
-import { Text } from '../Text';
-import { resolveActionBarLayout, type ActionBarSecondaryItem } from '../play-drawer/action-bar-layout';
-import type { PlayerButtonId, PlayerButtonsLayout, PlayerButtonsPosition } from '../../lib/player-buttons';
+import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
+import type {
+  PlayerBoardControl,
+  PlayerButtonId,
+  PlayerButtonsLayout,
+  PlayerButtonsPosition,
+} from '../../lib/player-buttons';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 
@@ -30,11 +34,12 @@ export const FALLBACK_PREVIEW_BOARD: PlayerButtonsPreviewBoard = Object.freeze({
 /** Fixed, so the native Settings form can host it (`MoreCustomRow` needs a height). */
 export const PLAYER_BUTTONS_PREVIEW_HEIGHT = 132;
 
-const BUTTON_ICONS: Record<Exclude<PlayerButtonId, 'angle'>, IconName> = {
+const BUTTON_ICONS: Record<PlayerButtonId, IconName> = {
   mirror: 'mirror',
   favorite: 'favorite',
-  share: 'share',
   queue: 'queue',
+  share: 'share',
+  angle: 'angle',
 };
 const BIG_ICON = 20;
 const SMALL_ICON = 16;
@@ -43,6 +48,8 @@ type PlayerButtonsPreviewProps = {
   buttons: PlayerButtonsLayout;
   previousNext: boolean;
   position: PlayerButtonsPosition;
+  /** The wall button under the top row, or the bulb in its last slot. */
+  boardControl?: PlayerBoardControl;
   board: PlayerButtonsPreviewBoard;
 };
 
@@ -57,6 +64,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
   buttons,
   previousNext,
   position,
+  boardControl = 'wallButton',
   board,
 }: PlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
@@ -66,19 +74,18 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
       resolveActionBarLayout({
         supportsMirroring: board.supportsMirroring,
         isAnonymous: false,
-        connectPill: false,
         commitButton: null,
         workoutOutcome: false,
         showLightbulb: board.showLightbulb,
+        hasWall: board.showLightbulb,
         hasShare: true,
         angleAvailable: board.angleAvailable,
         buttons,
         previousNext,
+        boardControl,
       }),
-    [board.supportsMirroring, board.showLightbulb, board.angleAvailable, buttons, previousNext],
+    [board.supportsMirroring, board.showLightbulb, board.angleAvailable, buttons, previousNext, boardControl],
   );
-  // The preview draws the climber's own buttons, never a session state's row.
-  const secondaryItems = typeof layout.secondaryRow === 'string' ? [] : layout.secondaryRow;
 
   const buttonLabel = (buttonId: PlayerButtonId): string => {
     switch (buttonId) {
@@ -86,23 +93,26 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
         return t('mobile.settings.playerButtons.buttons.mirror');
       case 'favorite':
         return t('mobile.settings.playerButtons.buttons.favorite');
-      case 'angle':
-        return t('mobile.settings.playerButtons.buttons.angle');
-      case 'share':
-        return t('mobile.settings.playerButtons.buttons.share');
       case 'queue':
         return t('mobile.settings.playerButtons.buttons.queue');
+      case 'share':
+        return t('mobile.settings.playerButtons.buttons.share');
+      case 'angle':
+        return t('mobile.settings.playerButtons.buttons.angle');
     }
   };
-  // Reading order: the big row left to right, then the small row.
+  // Reading order: the big row left to right, then the wall button under it.
   const spokenButtons: string[] = [];
   if (layout.leadingSlot) spokenButtons.push(buttonLabel(layout.leadingSlot));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.previous'));
   spokenButtons.push(t('mobile.settings.playerButtons.fixed.log'));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.next'));
-  if (layout.trailingSlot) spokenButtons.push(t('mobile.settings.playerButtons.fixed.boardLight'));
-  for (const item of secondaryItems) {
-    if (item !== 'spacer' && item !== 'connectPill' && item !== 'putOnWall') spokenButtons.push(buttonLabel(item));
+  if (layout.trailingSlot === 'lightbulb') spokenButtons.push(t('mobile.settings.playerButtons.fixed.boardLight'));
+  else if (layout.trailingSlot) spokenButtons.push(buttonLabel(layout.trailingSlot));
+  const smallRow = typeof layout.secondaryRow === 'string' ? [] : layout.secondaryRow;
+  for (const item of smallRow) {
+    if (item === 'wallControl') spokenButtons.push(t('mobile.settings.playerButtons.fixed.boardLight'));
+    else if (item !== 'spacer') spokenButtons.push(buttonLabel(item));
   }
   const summary = t('mobile.settings.playerButtons.previewLabel', {
     position:
@@ -126,39 +136,30 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
           <Icon maxFontSizeMultiplier={1} name="tick.outline" size={BIG_ICON + 4} color={brandColors.success} />
         </View>
         <View style={styles.bigSlot}>{layout.showPreviousNext ? glyph('skip.next', BIG_ICON) : null}</View>
-        <View style={styles.bigSlot}>{layout.trailingSlot ? glyph('lightbulb', BIG_ICON) : null}</View>
+        <View style={styles.bigSlot}>
+          {layout.trailingSlot === 'lightbulb' ? (
+            <Icon maxFontSizeMultiplier={1} name="lightbulb" size={BIG_ICON} color={brandColors.primary} />
+          ) : layout.trailingSlot ? (
+            glyph(BUTTON_ICONS[layout.trailingSlot], BIG_ICON)
+          ) : null}
+        </View>
       </View>
-      {secondaryItems.length > 0 ? (
+      {/* The second row: the wall button as the full-width capsule it is, or with
+          the bulb chosen, the other buttons small on either side. It folds away
+          with no wall to light. */}
+      {smallRow.length > 0 ? (
         <View style={styles.smallRow}>
-          {secondaryItems.map((item: ActionBarSecondaryItem) => {
-            switch (item) {
-              case 'spacer':
-                return <View key={item} style={styles.spacer} />;
-              case 'angle':
-                return (
-                  <View key={item} style={[styles.anglePill, { borderColor: systemColors.separator }]}>
-                    <Text
-                      variant="caption2"
-                      color={systemColors.secondaryLabel}
-                      maxFontSizeMultiplier={1}
-                      style={styles.angleText}
-                    >
-                      {board.angle}°
-                    </Text>
-                  </View>
-                );
-              // Neither shows in the preview: it has no browse latch and no connect test.
-              case 'connectPill':
-              case 'putOnWall':
-                return null;
-              default:
-                return (
-                  <View key={item} style={styles.smallSlot}>
-                    {glyph(BUTTON_ICONS[item], SMALL_ICON)}
-                  </View>
-                );
-            }
-          })}
+          {smallRow.map((item, index) =>
+            item === 'wallControl' ? (
+              <View key={item} style={[styles.wallControl, { backgroundColor: systemColors.tertiaryFill }]}>
+                <Icon maxFontSizeMultiplier={1} name="lightbulb" size={SMALL_ICON - 4} color={brandColors.primary} />
+              </View>
+            ) : item === 'spacer' ? (
+              <View key={`spacer-${index}`} style={styles.spacer} />
+            ) : (
+              <View key={item}>{glyph(BUTTON_ICONS[item], SMALL_ICON)}</View>
+            ),
+          )}
         </View>
       ) : null}
     </View>
@@ -212,24 +213,14 @@ const styles = StyleSheet.create({
     height: 24,
     paddingHorizontal: spacing[2],
   },
-  smallSlot: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   spacer: {
     flex: 1,
   },
-  anglePill: {
+  wallControl: {
+    flex: 1,
     height: 20,
     borderRadius: 10,
-    paddingHorizontal: spacing[2],
-    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  angleText: {
-    fontWeight: '600',
   },
 });

@@ -1,3 +1,4 @@
+import CoreBluetooth
 import ExpoModulesCore
 import Foundation
 import os.log
@@ -34,6 +35,10 @@ public class BoardBleModule: Module {
     /// queue; the serial FIFO still orders that stash before any
     /// `getLastWriteDiagnostics` read that follows the promise rejection.
     private var lastFailedWriteDiagnostics: [String: Any]?
+    /// Names this instance's event handlers on the shared manager. Each JS
+    /// runtime gets its own module, so after a reload the old instance's
+    /// `OnDestroy` must not clear the handlers the new one installed (#7023).
+    private let eventHandlerOwner = UUID()
 
     public func definition() -> ModuleDefinition {
         Name("BoardBle")
@@ -50,8 +55,14 @@ public class BoardBleModule: Module {
 
         Events("scanResult", "disconnected", "connected")
 
+        // Expo creates every module at app start, so this is the first touch of
+        // BoardBleManager.shared and decides whether CoreBluetooth starts now.
+        // It does only when the climber has already answered the Bluetooth
+        // question (state restoration needs it at launch); otherwise the first
+        // scan creates it. See BoardBleManager.shouldCreateCentralManagerAtLaunch.
         OnCreate {
             BoardBleManager.shared.setEventHandlers(
+                owner: self.eventHandlerOwner,
                 onScanResult: { [weak self] result in
                     var body: [String: Any] = [
                         "device": [
@@ -90,8 +101,11 @@ public class BoardBleModule: Module {
             )
         }
 
+        // A reload can destroy this module after the next runtime's module has
+        // installed its own handlers, so clear only the handlers this instance
+        // installed (#7023). See BoardBleManager.setEventHandlers.
         OnDestroy {
-            BoardBleManager.shared.setEventHandlers(onScanResult: nil, onDisconnect: nil, onConnected: nil)
+            BoardBleManager.shared.clearEventHandlers(owner: self.eventHandlerOwner)
         }
 
         OnStartObserving {
@@ -109,6 +123,26 @@ public class BoardBleModule: Module {
 
         AsyncFunction("isAvailable") { () -> [String: Any] in
             return ["available": BoardBleManager.shared.isAvailable]
+        }
+
+        // The app's Bluetooth authorization, read from the class property
+        // CoreBluetooth offers before any manager exists: no side effects, no
+        // alert. JS reads it at launch to tell "never asked" apart from an
+        // answer, and its presence is the JS feature gate for the deferred
+        // Bluetooth question (older binaries ask at launch). Synchronous so the
+        // provider can decide during its first render.
+        Function("getBluetoothAuthorization") { () -> String in
+            BoardBleManager.authorizationName(CBManager.authorization)
+        }
+
+        // Ask for Bluetooth at the climber's scan or connect tap: shows the
+        // system alert when the question is unanswered, and resolves with the
+        // answer (same names as getBluetoothAuthorization) once CoreBluetooth
+        // reports it. Resolves at once when it was already answered.
+        AsyncFunction("requestBluetoothAuthorization") { (promise: Promise) in
+            BoardBleManager.shared.requestAuthorization { authorization in
+                promise.resolve(BoardBleManager.authorizationName(authorization))
+            }
         }
 
         AsyncFunction("startScan") { (services: [String]?, promise: Promise) in
@@ -212,6 +246,7 @@ public class BoardBleModule: Module {
             return [
                 "deviceId": device.deviceId,
                 "name": device.name ?? "",
+                "configKey": device.configKey,
                 // Write diagnostics (additive; older JS bundles ignore them).
                 "characteristicProperties": diagnostics.characteristicProperties,
                 "supportsWriteWithoutResponse": diagnostics.supportsWriteWithoutResponse,
@@ -227,18 +262,32 @@ public class BoardBleModule: Module {
 
         AsyncFunction("configureBoard") { (options: ConfigureBoardOptions) -> Void in
             BoardBleManager.shared.configure(
-                BoardBleConfiguration(
-                    boardName: options.boardName,
-                    layoutId: options.layoutId,
-                    sizeId: options.sizeId,
-                    apiLevel: options.apiLevel,
-                    deviceName: options.deviceName,
-                    colorOverrides: options.colorOverrides ?? [:],
-                    numRows: options.numRows,
-                    lightAdjacentHolds: options.lightAdjacentHolds
-                ),
-                appActive: options.appActive
+                options.configuration,
+                appActive: options.appActive,
+                configKey: options.configKey,
+                deviceId: options.deviceId
             )
+        }
+
+        AsyncFunction("prepareBoardConnection") { (options: ConfigureBoardOptions, promise: Promise) in
+            BoardBleManager.shared.prepareBoardConnection(
+                options.configuration,
+                configKey: options.configKey ?? ""
+            ) { result in
+                switch result {
+                case .success(let token): promise.resolve(token)
+                case .failure(let error): promise.reject("BLE_PREPARE_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("connectPreparedBoard") { (deviceId: String, preparationToken: String, promise: Promise) in
+            BoardBleManager.shared.connectPreparedBoard(deviceId: deviceId, preparationToken: preparationToken) { result in
+                switch result {
+                case .success: promise.resolve(nil)
+                case .failure(let error): promise.reject("BLE_CONNECT_FAILED", error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -281,6 +330,8 @@ public class BoardBleModule: Module {
 /// Argument record for `configureBoard`. Keys mirror the Capacitor
 /// `BoardBlePlugin.configureBoard` shape one-for-one.
 struct ConfigureBoardOptions: Record {
+    @Field var configKey: String? = nil
+    @Field var deviceId: String? = nil
     @Field var boardName: String = ""
     @Field var layoutId: Int = 0
     @Field var sizeId: Int = 0
@@ -295,4 +346,14 @@ struct ConfigureBoardOptions: Record {
     @Field var appActive: Bool = true
     // MoonBoard "V2" additional-LED feature — see BoardBleConfiguration.
     @Field var lightAdjacentHolds: Bool?
+}
+
+private extension ConfigureBoardOptions {
+    var configuration: BoardBleConfiguration {
+        BoardBleConfiguration(
+            boardName: boardName, layoutId: layoutId, sizeId: sizeId,
+            apiLevel: apiLevel, deviceName: deviceName, colorOverrides: colorOverrides ?? [:],
+            numRows: numRows, lightAdjacentHolds: lightAdjacentHolds
+        )
+    }
 }

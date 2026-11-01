@@ -10,9 +10,8 @@
 // So the trigger set is deliberately three-legged:
 //
 //   launch      — reclaims whatever the last session left, deferred past the
-//                 opening animation, WITH a fallback timer because
-//                 `runAfterInteractions` can be starved indefinitely (the same
-//                 reason use-deferred-after-interactions pairs the two).
+//                 first frame, WITH a fallback timer in case the JS thread
+//                 stays too busy to run the idle callback.
 //   background  — the natural seam; costs the user nothing.
 //   writes      — the foreground leg the other two miss. The overlay index
 //                 counts writes and fires once per OVERLAY_WRITES_PER_SWEEP,
@@ -22,7 +21,7 @@
 // so nothing new appears mid-session.
 
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../lib/schedule-idle-task';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { OVERLAY_WRITES_PER_SWEEP } from '../lib/cache-sweep-plan';
 import { onOverlayWriteThreshold } from '../lib/overlay-index';
@@ -57,7 +56,7 @@ export function useDiskCacheSweep(): void {
       });
     };
 
-    const interaction = InteractionManager.runAfterInteractions(sweepOnce);
+    const interaction = scheduleIdleTask(sweepOnce);
     const fallback = setTimeout(sweepOnce, LAUNCH_DEFER_FALLBACK_MS);
     return () => {
       interaction.cancel();

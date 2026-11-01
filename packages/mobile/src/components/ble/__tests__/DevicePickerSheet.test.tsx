@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, useState, type ReactNode, type Ref } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
+import type { ResolvedBoardEntry } from '../../../lib/ble/resolve-serials';
 
 // Controllable return for the shared "no listed board matches the selected
 // type" rule so each test drives the hint / troubleshoot conditions directly,
@@ -47,10 +48,14 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-type FlatListMockProps = { data?: unknown[] };
+type FlatListMockProps = { data?: DiscoveredDevice[] };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetFlatList: ({ data }: FlatListMockProps) =>
-    createElement('div', { 'data-list': 'true', 'data-count': String(data?.length ?? 0) }),
+    createElement('div', {
+      'data-list': 'true',
+      'data-count': String(data?.length ?? 0),
+      'data-device-ids': JSON.stringify(data?.map((device) => device.deviceId) ?? []),
+    }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -63,12 +68,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@boardsesh/ble-protocol', () => ({
-  parseSerialNumber: (name: string) => name,
-}));
-
 vi.mock('@boardsesh/board-config', () => ({
   formatBoardDisplayName: (boardName: string) => boardName,
+  toBoardName: (boardName: string) => boardName,
 }));
 
 // The ModalSheet wrapper, recording what the sheet asks of the coordinator
@@ -176,6 +178,27 @@ function makeProps(over: Partial<Parameters<typeof DevicePickerSheet>[0]> = {}) 
 const device = (id: string): DiscoveredDevice => ({ deviceId: id, name: `Kilter Board#${id}@3`, rssi: -50 });
 
 const hasText = (root: HTMLElement, text: string) => root.textContent?.includes(text) ?? false;
+
+function recordedBoard(boardUuid: string, boardName = 'kilter'): ResolvedBoardEntry {
+  return {
+    kind: 'recorded',
+    config: {
+      serialNumber: 'SN-1',
+      boardName,
+      boardUuid,
+      boardSlug: null,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      apiLevel: 3,
+      updatedAt: '2026-10-30T00:00:00Z',
+    },
+  };
+}
+
+function listedIds(container: HTMLElement): string[] {
+  return JSON.parse(container.querySelector('[data-list]')?.getAttribute('data-device-ids') ?? '[]');
+}
 
 describe('DevicePickerSheet', () => {
   beforeEach(() => {
@@ -564,4 +587,114 @@ describe('DevicePickerSheet while searching for the saved board (#5658)', () => 
     // A close without a choice is not the climber cancelling.
     expect(onDismiss).not.toHaveBeenCalled();
   });
+});
+
+describe('DevicePickerSheet for a known gym board (#7125)', () => {
+  const targetBoard = { boardUuid: 'qa-kilter', boardName: 'kilter' };
+  const kilter = { deviceId: 'kilter', name: 'Kilter Board#K-1@3', rssi: -70 };
+  const tension = { deviceId: 'tension', name: 'Tension Board#T-1@3', rssi: -35 };
+  const otherKilter = { deviceId: 'other-kilter', name: 'Kilter Board#K-2@3', rssi: -25 };
+  const unknown = { deviceId: 'unknown', name: 'Kilter Board', rssi: -40 };
+  const resolutions = new Map([
+    ['K-1', recordedBoard('qa-kilter')],
+    ['K-2', recordedBoard('other-kilter')],
+    ['T-1', recordedBoard('qa-tension', 'tension')],
+  ]);
+
+  beforeEach(() => {
+    stats.noneMatchedSelectedType = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.wasGranted = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+  });
+
+  it('lists only the intended physical board even when other boards have stronger signals', () => {
+    const onSearchAnyBoard = vi.fn();
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({
+          devices: [tension, otherKilter, kilter, unknown],
+          resolvedBoards: resolutions,
+          targetBoard,
+          onSearchAnyBoard,
+        })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['kilter']);
+    expect(hasText(container, 'ble.devicesFound:1')).toBe(true);
+    act(() => (container.querySelector('[data-button="ble.searchAnyBoard"]') as HTMLButtonElement).click());
+    expect(onSearchAnyBoard).toHaveBeenCalledOnce();
+  });
+
+  it('reveals every device on the explicit escape and keeps RSSI ordering', () => {
+    const { container, rerender } = render(
+      <DevicePickerSheet
+        {...makeProps({ devices: [kilter, tension, unknown], resolvedBoards: resolutions, targetBoard })}
+      />,
+    );
+    rerender(
+      <DevicePickerSheet
+        {...makeProps({
+          devices: [kilter, tension, unknown],
+          resolvedBoards: resolutions,
+          targetBoard,
+          showAllBoards: true,
+        })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['tension', 'unknown', 'kilter']);
+    expect(container.querySelector('[data-button="ble.searchAnyBoard"]')).toBeNull();
+  });
+
+  it('updates matching rows when resolution arrives without selecting a device', () => {
+    const props = makeProps({ devices: [tension, kilter], targetBoard, isScanning: true, onSearchAnyBoard: vi.fn() });
+    const { container, rerender } = render(<DevicePickerSheet {...props} />);
+    expect(listedIds(container)).toEqual([]);
+    expect(hasText(container, 'ble.searchingForSavedBoard')).toBe(true);
+    rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
+    expect(listedIds(container)).toEqual(['kilter']);
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('keeps unresolved and serial-less devices available after escape despite later resolutions', () => {
+    const props = makeProps({ devices: [tension, unknown], targetBoard, showAllBoards: true });
+    const { container, rerender } = render(<DevicePickerSheet {...props} />);
+    expect(listedIds(container)).toEqual(['tension', 'unknown']);
+    rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
+    expect(listedIds(container)).toEqual(['tension', 'unknown']);
+  });
+
+  it('offers the escape without empty-scan advice when the intended board never resolves', () => {
+    const { container } = render(
+      <DevicePickerSheet {...makeProps({ devices: [tension], targetBoard, onSearchAnyBoard: vi.fn() })} />,
+    );
+    expect(listedIds(container)).toEqual([]);
+    expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(true);
+    expect(container.querySelector('[data-button="ble.searchAnyBoard"]')).not.toBeNull();
+    expect(hasText(container, 'ble.noDevicesFound')).toBe(false);
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
+    expect(locationHint.lastActive).toBe(false);
+    expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
+  });
+
+  it('retains genuine empty-scan troubleshooting for a known target', () => {
+    const { container } = render(
+      <DevicePickerSheet {...makeProps({ devices: [], targetBoard, onSearchAnyBoard: vi.fn(), onNoLeds: vi.fn() })} />,
+    );
+    expect(hasText(container, 'ble.noDevicesFound')).toBe(true);
+    expect(hasText(container, 'ble.troubleshootTitle')).toBe(true);
+    expect(locationHint.lastActive).toBe(true);
+    expect(container.querySelector('[data-button="ble.noLedsCta"]')).not.toBeNull();
+  });
+
+  it.each([undefined, { boardUuid: '', boardName: 'kilter' }])(
+    'keeps the broad list when intended identity is absent: %s',
+    (anonymousTarget) => {
+      const { container } = render(
+        <DevicePickerSheet {...makeProps({ devices: [kilter, tension], targetBoard: anonymousTarget })} />,
+      );
+      expect(listedIds(container)).toEqual(['tension', 'kilter']);
+    },
+  );
 });

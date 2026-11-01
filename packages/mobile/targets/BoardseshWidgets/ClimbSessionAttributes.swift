@@ -25,6 +25,11 @@ struct ClimbSessionAttributes: ActivityAttributes {
         /// `boardConnection == "heldByPeer"` (nil for anonymous holders and for
         /// the other states). Powers the "<name> is on the wall" affordance.
         var holderDisplayName: String?
+        /// Bumped by `updateRestTimer` so ActivityKit sees a changed state and
+        /// re-renders; the rest timer itself lives in the App Group
+        /// (`SharedConstants.restTimerKey`). Nil from server pushes and the
+        /// native builders, which is harmless: the widget reads the App Group.
+        var restRevision: Int? = nil
     }
 
     var boardName: String

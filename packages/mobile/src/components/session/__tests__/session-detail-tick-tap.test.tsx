@@ -75,6 +75,14 @@ vi.mock('../SessionTickRow', () => ({
     return null;
   },
 }));
+// The workout data has its own tests (use-session-workout-view, the view model).
+vi.mock('../workout/use-session-workout-view', () => ({ useSessionWorkoutView: () => undefined }));
+vi.mock('../workout/WorkoutClimbsListRows', () => ({
+  WorkoutBlockSectionRow: () => null,
+  WorkoutListSectionLabel: () => null,
+  WorkoutSetRow: () => null,
+  WorkoutPlannedClimbRow: () => null,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({ data: mocks.session, isPending: false }),
   useBulkVoteSummaries: (...args: unknown[]) => {

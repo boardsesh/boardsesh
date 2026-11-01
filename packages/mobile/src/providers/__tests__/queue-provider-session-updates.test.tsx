@@ -278,6 +278,7 @@ import {
   useIsSharedSession,
   usePlaylistSuggestionSource,
   useQueue,
+  useQueueData,
   useQueueLiveStats,
   useQueueSessionControls,
   useQueueSessionId,
@@ -476,6 +477,14 @@ function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot
   useEffect(() => {
     onSnapshot({ sessionIdValue, hasActiveClimb, isSharedSession, isCrewSession });
   }, [hasActiveClimb, isCrewSession, isSharedSession, onSnapshot, sessionIdValue]);
+  return null;
+}
+
+function QueueDataProbe({ onSnapshot }: { onSnapshot: (snapshot: ReturnType<typeof useQueueData>) => void }) {
+  const queueData = useQueueData();
+  useEffect(() => {
+    onSnapshot(queueData);
+  }, [onSnapshot, queueData]);
   return null;
 }
 
@@ -1277,6 +1286,81 @@ describe('QueueProvider session update subscription', () => {
     });
     expect(selectorSnapshots).toHaveLength(selectorSnapshotCount);
     expect(selectorSnapshots.at(-1)?.hasActiveClimb).toBe(true);
+  });
+
+  it('projects the current mover when their roster entry arrives without churning for other peers', async () => {
+    queueCapabilities.attribution = true;
+    const snapshots: Snapshot[] = [];
+    const queueDataSnapshots: ReturnType<typeof useQueueData>[] = [];
+    render(
+      withQueryClient(
+        createElement(
+          QueueProvider,
+          null,
+          createElement(Probe, { onSnapshot: (snapshot: Snapshot) => snapshots.push(snapshot) }),
+          createElement(QueueDataProbe, {
+            onSnapshot: (snapshot: ReturnType<typeof useQueueData>) => queueDataSnapshots.push(snapshot),
+          }),
+        ),
+      ),
+    );
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const queueSink = ws.getQueueUpdatesSink();
+    const sessionSink = ws.getSessionUpdatesSink();
+    if (!queueSink || !sessionSink) throw new Error('subscription sinks were not captured');
+    const item = makeQueueItem('queue-current');
+    const pushCurrent = (sequence: number, currentChangedBy: string) => {
+      queueSink.next({
+        data: {
+          queueUpdates: {
+            __typename: 'CurrentClimbChanged',
+            sequence,
+            stateHash: `hash-${sequence}`,
+            currentItem: item,
+            currentChangedBy,
+            clientId: 'client-peer',
+          },
+        },
+      });
+    };
+    act(() => pushCurrent(1, 'participant-sam'));
+    await waitFor(() => expect(queueDataSnapshots.at(-1)?.currentChangedBy).toBe('participant-sam'));
+    expect(queueDataSnapshots.at(-1)?.currentClimbMover).toBeNull();
+
+    act(() => {
+      sessionSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-sam', username: ' Sam ', avatarUrl: 'sam.png' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(queueDataSnapshots.at(-1)?.currentClimbMover).toEqual({ username: 'Sam', avatarUrl: 'sam.png' });
+    });
+    const settledValue = queueDataSnapshots.at(-1);
+    const settledCount = queueDataSnapshots.length;
+    act(() => {
+      sessionSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-other', username: 'Other' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.users).toHaveLength(3));
+    expect(queueDataSnapshots).toHaveLength(settledCount);
+    expect(queueDataSnapshots.at(-1)).toBe(settledValue);
+
+    act(() => pushCurrent(2, 'participant-self'));
+    await waitFor(() => expect(queueDataSnapshots.at(-1)?.currentClimbMover).toBeNull());
   });
 
   it('applies roster events to public context state (no driver mechanics)', async () => {

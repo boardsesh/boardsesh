@@ -78,7 +78,7 @@ public class LiveActivityModule: Module {
         Name("LiveActivity")
 
         Events("queueNavigate", "queueMirror")
-        Constants(["supportsMirrorControl": true])
+        Constants(["supportsMirrorControl": true, "supportsRestTimer": true])
 
         OnDestroy {
             self.stopDarwinObservation()
@@ -152,6 +152,13 @@ public class LiveActivityModule: Module {
 
         AsyncFunction("updateActivityClimb") { (options: UpdateActivityClimbOptions) -> Void in
             self.updateActivityClimb(options: options)
+        }
+
+        // Rest timer (#6513). Nil clears it. Kept out of updateActivity on
+        // purpose: acceptQueueUpdate can reject a stale queue sequence, which
+        // would silently drop a rest change riding along with it.
+        AsyncFunction("updateRestTimer") { (options: UpdateRestTimerOptions?) -> Void in
+            self.updateRestTimer(options: options)
         }
     }
 
@@ -720,6 +727,12 @@ public class LiveActivityModule: Module {
                 defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
                 defaults.removeObject(forKey: SharedConstants.queueSequenceKey)
             }
+            // A rest snapshot JS staged for THIS session just before the start
+            // survives; another session's (a killed app's leftover) goes. JS
+            // also re-sends its snapshot after every successful start.
+            if let rest = SharedRestTimerStore.load(from: defaults), rest.sessionId != sessionId {
+                SharedRestTimerStore.clear(in: defaults)
+            }
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
             defaults.set(widgetMirrorUrl, forKey: SharedConstants.widgetMirrorUrlKey)
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
@@ -891,6 +904,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.livePushTokenKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
             defaults.removeObject(forKey: SharedConstants.partySessionKey)
+            SharedRestTimerStore.clear(in: defaults)
         }
         SharedKeychain.remove(SharedKeychain.authTokenKey)
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
@@ -994,7 +1008,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = await activityManager.lastPushedState() == state
+            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1105,7 +1119,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = await activityManager.lastPushedState() == state
+            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1115,7 +1129,54 @@ public class LiveActivityModule: Module {
     }
 }
 
+// MARK: - Rest Timer
+
+extension LiveActivityModule {
+    /// Stage (or clear) the rest-timer snapshot in the App Group, then ask
+    /// the activity to re-render so the widget reads it. Ordered on the
+    /// lifecycle queue behind any start/update JS issued first.
+    fileprivate func updateRestTimer(options: UpdateRestTimerOptions?) {
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        if let options, !options.sessionId.isEmpty {
+            SharedRestTimerStore.save(
+                SharedRestTimerState(
+                    v: SharedRestTimerState.currentVersion,
+                    sessionId: options.sessionId,
+                    status: options.status,
+                    startMs: options.startMs,
+                    deadlineMs: options.deadlineMs,
+                    periodSeconds: options.periodSeconds,
+                    targetSeconds: options.targetSeconds,
+                    frozenSignedSeconds: options.frozenSignedSeconds
+                ),
+                to: defaults
+            )
+        } else if !SharedRestTimerStore.clear(in: defaults) {
+            // Nothing was on screen (JS sends this once after every start, and
+            // for every climber who never arms the timer): no redraw needed.
+            return
+        }
+
+        guard #available(iOS 17.0, *) else { return }
+        enqueueLifecycleWork {
+            await LiveActivityManager.shared.rerenderForRestTimer()
+        }
+    }
+}
+
 // MARK: - Argument Records
+
+/// Mirrors `LiveActivityRestTimerOptions` in modules/live-activity/src/index.ts.
+/// The Android-only `androidCaption` is simply not declared, so Expo drops it.
+struct UpdateRestTimerOptions: Record {
+    @Field var sessionId: String = ""
+    @Field var status: String = ""
+    @Field var startMs: Double?
+    @Field var deadlineMs: Double?
+    @Field var periodSeconds: Double?
+    @Field var targetSeconds: Double?
+    @Field var frozenSignedSeconds: Double?
+}
 
 struct StartSessionOptions: Record {
     @Field var sessionId: String = ""
@@ -1203,4 +1264,19 @@ struct UpdateActivityClimbOptions: Record {
     /// The climber's saved board look; nil (older JS) leaves the staged value
     /// untouched. See StartSessionOptions.renderMode.
     @Field var renderMode: String?
+}
+
+/// Dedup comparison for JS-driven updates. The rest-timer re-render bumps
+/// `restRevision` on the state it shows, while JS-built states always carry
+/// nil, so a plain `==` would never collapse the next same-climb update inside
+/// the dedup window. The revision is only a redraw trigger, so ignore it here.
+private func sameContentIgnoringRestRevision(
+    _ shown: ClimbSessionAttributes.ContentState?,
+    _ incoming: ClimbSessionAttributes.ContentState
+) -> Bool {
+    guard var shown else { return false }
+    var incoming = incoming
+    shown.restRevision = nil
+    incoming.restRevision = nil
+    return shown == incoming
 }

@@ -469,7 +469,8 @@
         "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen.",
         "tabs": {
           "sections": "Unter dem Boulder",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini-Player"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Unter dem Namen",
         "yourClimbing": "Dein Klettern",
         "actions": "Aktionen",
+        "layout": {
+          "title": "Spalten",
+          "one": "Eine Spalte",
+          "two": "Zwei Spalten",
+          "footer": "Zwei Spalten erscheinen, wenn die Liste Platz hat, etwa auf einem iPad im Querformat."
+        },
         "gradesTitle": "Schwierigkeitsgrade",
         "previewFooter": "Beispiel. Begehungen, Favoriten und Tags erscheinen bei Bouldern, die sie haben.",
         "gradeFooter": "Wähle den Hauptgrad unter Einstellungen → Boulder & Grade.",
@@ -569,14 +576,31 @@
           "log": "Eintragen",
           "boardLight": "Board beleuchten"
         },
-        "footer": "Was von Warteschlange und Spiegeln zuerst kommt, bekommt den großen Button. Ein ausgeblendeter Button bleibt im ⋯-Menü. Ohne kleine Buttons nimmt das Board ihre Reihe ein.",
+        "footer": "Der erste eingeschaltete Button kommt ans linke Ende der oberen Reihe, der letzte ans rechte. Die übrigen und alle, die du ausblendest, sind im ⋯-Menü.",
         "settingsFooter": "Die Reihenfolge änderst du im Menü ⋯ eines Boulders unter Ansichtsoptionen.",
-        "previewLabel": "Vorschau, {{position}}: {{buttons}}"
+        "previewLabel": "Vorschau, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Board-Steuerung",
+          "wallButton": "Wand-Button",
+          "lightbulb": "Glühbirne",
+          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Die Glühbirne sitzt oben rechts."
+        }
       },
       "climbView": {
         "title": "Boulder-Ansicht",
         "valueDefault": "Standard",
         "valueCustom": "Benutzerdefiniert"
+      },
+      "quickFilters": {
+        "title": "Schnellfilter",
+        "valueDefault": "Standard",
+        "valueCustom": "Benutzerdefiniert",
+        "climbsTitle": "Boulder",
+        "climbsFooter": "Sie stehen in dieser Reihenfolge über der Boulderliste. Ein Filter, den du einschaltest, kommt ans Ende.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "Sie stehen in dieser Reihenfolge über jeder Playlist, jeder Smart-Playlist und jeder Seite von Routenbauer*innen.",
+        "restoreDefaults": "Standard wiederherstellen",
+        "footer": "Änderungen gelten sofort und nur auf diesem Handy. Alle Filter bleiben unter Filter."
       },
       "timers": {
         "restTitle": "Pause",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Verbinde…",
         "rogueUnreachable": "Nicht erreichbar. Prüf, ob er an und in der Nähe ist.",
         "rogueSaveFailed": "Der Timer konnte nicht gespeichert werden. Versuch es noch mal."
+      },
+      "miniPlayer": {
+        "title": "Mini-Player",
+        "description": "Die Leiste über den Tabs. Tippe darauf, um den Boulder zu öffnen.",
+        "buttons": {
+          "next": "Nächster Boulder",
+          "previous": "Vorheriger Boulder",
+          "wallDisplay": "Wandanzeige"
+        },
+        "fixedNote": "Board beleuchten ist immer da, neben Eintragen. Eintragen steht immer ganz hinten, direkt unter deinem Daumen.",
+        "footer": "Auf dem iPhone hat die Leiste neben Board beleuchten und Eintragen Platz für einen dieser Buttons: den ersten, der aktiv ist.",
+        "open": "Geöffnet",
+        "collapsed": "Eingeklappt",
+        "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}",
+        "footerWide": "Auf einem breiten Bildschirm zeigt die Leiste so viele dieser Buttons, wie Platz haben: die ersten in der Liste zuerst.",
+        "shapeOpen": "geöffnet",
+        "shapeCollapsed": "eingeklappt",
+        "more": "Mehr"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,7 @@
         "workout": "Bau ein Workout: Volumen, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
-        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder.",
-        "climbsTab": "Um zu deinen Bouldern zurückzukommen, tipp in der Tab-Leiste auf die Lupe."
+        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder."
       },
       "link": {
         "title": "Nimm deine {{boardName}}-Begehungen mit",
@@ -727,7 +768,6 @@
       "home": "Start",
       "boards": "Boards",
       "climbs": "Boulder",
-      "wall": "An der Wand",
       "profile": "Profil",
       "holdFilter": "Grifftypen",
       "zoneFilter": "Board-Bereich",

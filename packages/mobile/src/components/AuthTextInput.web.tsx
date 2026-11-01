@@ -14,7 +14,7 @@
 // `computeMasked` is the only shared helper this file reuses.
 
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, View, type TextInput as RNTextInput } from 'react-native';
+import { StyleSheet, View, type TextInputInstance as RNTextInput } from 'react-native';
 import { HelperText, TextInput as PaperTextInput } from 'react-native-paper';
 import { computeMasked } from './AuthTextInput.logic';
 import type { AuthTextInputHandle, AuthTextInputProps } from './AuthTextInput.types';

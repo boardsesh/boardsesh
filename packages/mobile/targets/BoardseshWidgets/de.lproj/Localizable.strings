@@ -1,2 +1,32 @@
+/* Lock Screen and Dynamic Island controls */
+"Prev" = "Zurück";
+"Next" = "Weiter";
+"Previous climb" = "Vorheriger Boulder";
+"Next climb" = "Nächster Boulder";
 "Mirror climb" = "Boulder spiegeln";
 "Unmirror climb" = "Spiegelung aufheben";
+"Wall lit, you are driving" = "Wand leuchtet, du steuerst";
+"Wall control" = "Wandsteuerung";
+"Tap to reconnect" = "Zum Verbinden tippen";
+"Board disconnected. Tap to reconnect" = "Board getrennt. Zum Verbinden tippen";
+"On the wall" = "An der Wand";
+"%@ is on the wall" = "%@ ist an der Wand";
+"Wall held by another climber" = "Wand wird von jemand anderem gesteuert";
+
+/* Shown when the card has had no update for 10 minutes */
+"Open Boardsesh to refresh" = "Öffne Boardsesh zum Aktualisieren";
+
+/* Climb details: "3 of 12" is the queue position */
+"%lld of %lld" = "%lld von %lld";
+"Grade %@" = "Grad %@";
+
+/* Rest timer (#6513) */
+"Rest timer" = "Pausen-Timer";
+/* "Rest" is the rest period between attempts (noun); "Paused" is the stopped timer. Keep them distinct. */
+"Rest" = "Pause";
+"Over your rest" = "Pause überzogen";
+"Paused" = "Angehalten";
+"Every %@" = "Alle %@";
+"Queue's empty" = "Warteschlange leer";
+"Since your last climb" = "Seit deinem letzten Boulder";
+"Log a climb to start" = "Trag eine Begehung ein";

@@ -44,7 +44,8 @@ const widget = vi.hoisted(() => ({
   acknowledgeMirrorRequest: vi.fn(async () => {}),
   listener: null as null | ((event: QueueNavigateEvent) => void),
   boardControlListener: null as null | ((event: BoardControlEvent) => void),
-  useLiveActivity: vi.fn(),
+  useLiveActivity: vi.fn((_args: unknown) => ({ activityStartCount: 0 })),
+  updateRestTimer: vi.fn(async (_options: unknown) => {}),
 }));
 
 // Stand-in for the bluetooth context the lightbulb tap drives.
@@ -119,7 +120,7 @@ vi.mock('../../../components/ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: boardState.hasBluetooth ? bt : null,
     localConnected: boardState.boardConnection === 'connectedByMe',
-    pending: false,
+    pending: bt.loading,
     sessionId: queue.sessionId,
     boardConnection: boardState.boardConnection,
     // Deliberately divergent from `boardConnection`: on a wall with no LED light
@@ -155,6 +156,9 @@ vi.mock('../use-live-activity', () => ({
 }));
 
 vi.mock('../live-activity-plugin', () => ({
+  // The rest timer leaf has its own tests; keep it quiet here.
+  sessionPresenceSupportsRestTimer: false,
+  updateLiveActivityRestTimer: widget.updateRestTimer,
   getPendingWidgetMirror: widget.pendingMirror,
   acknowledgeWidgetMirror: widget.acknowledgeMirror,
   acknowledgeWidgetMirrorRequest: widget.acknowledgeMirrorRequest,
@@ -207,6 +211,8 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     bt.armUndoWallChangeToast.mockClear();
     bt.reassertWall.mockClear();
     bt.reconnectSerialForCurrentBoard = 'serial-123';
+    bt.reconnectDeviceIdForCurrentBoard = null;
+    bt.loading = false;
     bleProbe.nativeBleSupportsBoard.mockReturnValue(true);
     renderSettings.mode = 'aura';
   });
@@ -283,6 +289,55 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
         boardConnection: 'disconnected',
         widgetNavigationAllowed: false,
       }),
+    );
+  });
+
+  // #7087: with no remembered board, a background reconnect could only end in
+  // the board list on a paused activity, so the Android bulb opens the app.
+  it('tells the Android notification bulb to open the app when no board is remembered', () => {
+    boardState.boardConnection = 'disconnected';
+    bt.reconnectSerialForCurrentBoard = null;
+    bt.reconnectDeviceIdForCurrentBoard = null;
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ boardConnection: 'disconnected', bulbOpensApp: true, boardConnecting: false }),
+    );
+  });
+
+  it('keeps the background reconnect for a remembered Aurora serial or MoonBoard device id', () => {
+    boardState.boardConnection = 'disconnected';
+    renderBridge();
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(expect.objectContaining({ bulbOpensApp: false }));
+
+    bt.reconnectSerialForCurrentBoard = null;
+    bt.reconnectDeviceIdForCurrentBoard = 'moon-device';
+    renderBridge();
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(expect.objectContaining({ bulbOpensApp: false }));
+  });
+
+  it('marks the Android notification bulb as connecting while a connect runs', () => {
+    boardState.boardConnection = 'disconnected';
+    bt.loading = true;
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(expect.objectContaining({ boardConnecting: true }));
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        androidNotification: expect.objectContaining({ connectingLabel: 'mobile.session.notification.connecting' }),
+      }),
+    );
+  });
+
+  it('pins both bulb flags to false on iOS, where ActivityKit draws its own bulb', () => {
+    platform.android = false;
+    boardState.boardConnection = 'disconnected';
+    bt.reconnectSerialForCurrentBoard = null;
+    bt.loading = true;
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bulbOpensApp: false, boardConnecting: false }),
     );
   });
 

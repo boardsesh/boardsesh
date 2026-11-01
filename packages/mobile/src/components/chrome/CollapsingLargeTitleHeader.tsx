@@ -2,8 +2,10 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactNode, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import type { NativeStackNavigationOptions } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { spacing } from '../../theme/tokens';
 import { Text } from '../Text';
 import { ProgressiveBlur } from '../ProgressiveBlur';
@@ -29,6 +31,11 @@ type CollapsingLargeTitleHeaderProps = {
   leftActions?: ReactNode;
   /** Glass island(s) anchored to the right of the islands row. */
   rightActions?: ReactNode;
+  /**
+   * Under the UIKit header, native leading bar items that replace `leftActions`
+   * (see `NativeRootHeader`). Ignored by the floating islands.
+   */
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
@@ -44,9 +51,9 @@ type CollapsingLargeTitleHeaderProps = {
  * The board-agnostic floating glass chrome shared across tabs: an always-on
  * progressive blur and a left/right glass-island row. The screen renders its own
  * large in-body title at the top of its scroll content; it simply scrolls away
- * under the blur. Climbs additionally passes `centerTitle` (its filter summary),
- * which sits as a persistent plain title in the centre of the islands row — the
- * one surface that keeps a header title.
+ * under the blur. A screen can pass `centerTitle` (Climbs: an optional filter
+ * summary), which sits as a persistent plain title in the centre of the islands
+ * row.
  */
 export function CollapsingLargeTitleHeader({
   centerTitle,
@@ -54,12 +61,14 @@ export function CollapsingLargeTitleHeader({
   onHeightChange,
   leftActions,
   rightActions,
+  leftItems,
   children,
   opaqueControls,
   scrollEdge,
 }: CollapsingLargeTitleHeaderProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const nativeHeader = useNativeRootHeader();
 
   // Always-on progressive blur from the top of the screen to just below the
@@ -76,6 +85,7 @@ export function CollapsingLargeTitleHeader({
       <NativeRootHeader
         leftActions={leftActions}
         leftActionsStandalone={Boolean(leftActions)}
+        leftItems={leftItems}
         rightActions={rightActions}
         centerContent={centerContent}
         opaqueControls={opaqueControls}
@@ -92,7 +102,16 @@ export function CollapsingLargeTitleHeader({
           just below the islands, strongest up top and fading to clear, so content
           frosts out gradually and the status-bar strip reads as glass. */}
       <ProgressiveBlur style={[styles.blur, { height: blurHeight }]} />
-      <View pointerEvents="box-none" style={{ paddingTop: insets.top }} onLayout={handleLayout}>
+      {/* The blur stays full width; the islands and controls clear a side status bar. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          paddingTop: insets.top,
+          paddingLeft: horizontalSafeArea.left,
+          paddingRight: horizontalSafeArea.right,
+        }}
+        onLayout={handleLayout}
+      >
         {/* A standard three-section nav row: left island, a flexible centre that
           holds the optional persistent title, right island. The flex centre keeps
           a long title from sliding under the islands — it ellipsizes in the gap
@@ -125,7 +144,8 @@ export function CollapsingLargeTitleHeader({
           {rightActions}
         </View>
 
-        {children}
+        {/* Already clear of the side inset; nested columns must not pad again. */}
+        <HorizontalSafeAreaApplied>{children}</HorizontalSafeAreaApplied>
       </View>
     </View>
   );

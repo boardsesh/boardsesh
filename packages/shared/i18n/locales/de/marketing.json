@@ -577,15 +577,16 @@
       },
       "wall": {
         "title": "Wer die Wand beleuchtet",
-        "p1": "Ein Board nimmt immer nur eine Bluetooth-Verbindung. Auf jedem anderen Handy rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder für dich.",
-        "p2": "An einer Wand ohne Licht heißt die Glühbirne Wand übernehmen.",
+        "p1": "Ein Board nimmt nur eine Bluetooth-Verbindung gleichzeitig an. Auf jedem anderen Handy öffnest du die Vorschau und tippst auf Am Board beleuchten: Das verbundene Handy beleuchtet den Boulder für dich.",
+        "p2": "An einer Wand ohne Licht heißt der Button unter dem Board Wand übernehmen.",
         "bluetoothLink": "Mit einem Board verbinden"
       },
       "crowd": {
         "title": "Stöbern, ohne die Wand zu bewegen",
-        "p1": "Ist noch jemand in deiner Session, beleuchtet Wischen das Board nicht mehr. Tipp auf Am Board beleuchten, wenn du deinen willst, oder tipp oben aufs Profilbild, um zum Boulder an der Wand zurückzukehren.",
-        "p2": "Allein am Board? Halt die Glühbirne gedrückt und schalt „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ aus.",
-        "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen"
+        "p1": "Mit jemand anderem in deiner Session stöberst du per Wischen, ohne das Board zu verändern, außer du steuerst es. Tippe auf Am Board beleuchten für einen Boulder oder oben auf Am Board, um zum beleuchteten Boulder zurückzukehren.",
+        "p2": "Sagt der Player-Button Du steuerst das Board, tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Allein schaltest du unter Einstellungen, dann Board, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten aus, um ohne Beleuchten zu stöbern.",
+        "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen",
+        "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
       "history": {
         "title": "Die Sessions auf deinem Profil",
@@ -713,29 +714,28 @@
       "breadcrumb": "Board und Bluetooth",
       "hero": {
         "title": "Verbinde dein Handy mit dem Board",
-        "subtitle": "Tipp auf die Glühbirne, wähl dein Board, und dein Boulder leuchtet."
+        "subtitle": "Lies den mattierten Wand-Button: Am Board beleuchten beleuchtet diesen Boulder. Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird."
       },
       "connect": {
         "title": "Verbinden",
-        "p1": "Tipp auf die Glühbirne im Player oder in der oberen Leiste, dann in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
+        "p1": "Tippe in einem Boulder auf den großen Button Am Board beleuchten. Er verbindet sich bei Bedarf und beleuchtet den Boulder auf dem Bildschirm. Öffnet sich Board auswählen, wähle dein Board: Das stärkste Signal steht zuerst, jede Zeile hat eine Seriennummer. Auch die Glühbirne oben kann verbinden.",
         "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
-        "shotAlt": "Das Sheet Board auswählen",
-        "shotCaption": "Stärkstes Signal zuerst, mit Seriennummern.",
-        "litShotAlt": "Ein beleuchteter Boulder",
-        "litShotCaption": "Eine gefüllte Glühbirne heißt, die Wand leuchtet.",
-        "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar."
+        "litShotAlt": "Der Player mit seinem großen Wand-Button",
+        "litShotCaption": "Lies den Wand-Button: Du steuerst das Board bedeutet, dass auch dein nächster gewählter Boulder beleuchtet wird.",
+        "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar.",
+        "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Sie sitzt rechts außen in der oberen Reihe. Beide Bedienelemente verbinden und beleuchten Boulder; Halten öffnet bei bestehender Verbindung die Board-Optionen. Der Wand-Button bietet zusätzlich Wischen zum Steuern und Tippen zum Beenden."
       },
       "hidden": {
-        "title": "Halt die Glühbirne gedrückt",
-        "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
-        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board.",
-        "row2": "Griff darüber beleuchten. Nur MoonBoard.",
-        "row3": "Board beleuchten, wenn ich einen Boulder antippe.",
-        "row4": "Board beim Wischen beleuchten, sobald ein Boulder am Board leuchtet. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
-        "row5": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
-        "row6": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
-        "row7": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
-        "p2": "Ein kurzer Tipp verbindet wieder mit deinem letzten Board."
+        "title": "Board-Steuerung",
+        "p1": "Halte bei bestehender Verbindung den Wand-Button für die Board-Steuerung gedrückt. In einem Boulder öffnet sie auch ⋯, dann Board-Steuerung, oder Halten der oberen Glühbirne. Kurzes Tippen folgt der Beschriftung: Du steuerst das Board beendet das Steuern und hält die Verbindung; Board trennen trennt sie.",
+        "row1": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
+        "row2": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
+        "row3": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
+        "row4": "Griff darüber beleuchten. Nur MoonBoard.",
+        "p2": "Automatisch trennen, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten findest du unter Einstellungen, dann Board, und im Menü der oberen Glühbirne. Automatisch trennen gibt das Board nach 30 Sekunden Leerlauf frei. Beende zum Stöbern ohne Beleuchten zuerst das Steuern und schalte beide Beleuchtungsschalter aus. Solange du steuerst, wird jeder gewählte Boulder auch bei ausgeschalteten Schaltern beleuchtet.",
+        "p3": "Ohne Verbindung verbindet Am Board beleuchten und beleuchtet den Boulder auf dem Bildschirm. Allein beginnst du damit auch zu steuern. In einer Crew beleuchtet ein Tipp nur diesen Boulder. Die obere Glühbirne kann das zuletzt verwendete Board wieder verbinden.",
+        "shotAlt": "Die Steuerung eines verbundenen Boards",
+        "shotCaption": "Beleuchte erneut, schalte alle Lichter aus oder trenne die Verbindung. Jeden Boulder beleuchten startet das Steuern, wenn verfügbar."
       },
       "failed": {
         "title": "Wenn es nicht verbindet",
@@ -754,13 +754,13 @@
       },
       "duplicate": {
         "title": "Dasselbe Board zweimal in der Liste",
-        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle stehen als zwei Zeilen in der Liste. Die mit mehr Signalbalken ist meist die Wand, vor der du stehst. Leuchtet die falsche Wand, halt die Glühbirne gedrückt, tipp auf Board trennen und versuch es nochmal.",
+        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle stehen als zwei Zeilen in der Liste. Die mit mehr Signalbalken ist meist die Wand, vor der du stehst. Leuchtet die falsche Wand, öffne die Board-Steuerung, tipp auf Board trennen und versuch es nochmal.",
         "p2": "Eine Liste zum Vergessen von Geräten gibt es nicht. Die App merkt sich nur dein letztes Board.",
         "p3": "Ein Board, das doppelt unter Deine Boards steht, ist etwas anderes. Tipp neben Deine Boards auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
       },
       "control": {
         "title": "Wenn jemand anderes das Board hat",
-        "p1": "In einer Session hält ein Handy das Board. Auf den anderen rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder.",
+        "p1": "In einer Session hält ein Handy die Board-Verbindung. Auf den anderen öffnest du die Vorschau und tippst auf Am Board beleuchten: Das verbundene Handy beleuchtet den Boulder. Sein Avatar zeigt, wer die Verbindung hält. Dieser Weiterleitungsbutton bietet kein Wischen zum Steuern.",
         "p2": "An Wänden ohne Licht heißt der Button Wand übernehmen.",
         "sessionsLink": "Mehr zum Teilen einer Wand"
       },
@@ -775,6 +775,14 @@
         "title": "Weiterlesen",
         "findingClimbs": "Etwas für die Wand finden",
         "hub": "Alle Hilfethemen"
+      },
+      "driving": {
+        "title": "Erkenne, wann du das Board steuerst",
+        "p1": "Der mattierte Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm; Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, auch in einer Crew. Allein beginnt Am Board beleuchten das Steuern; in einer Crew beleuchtet ein Tipp einen Boulder.",
+        "p2": "Zeigt der Button ‹‹, wische den Wand-Button nach links, um zu steuern. Lass los, sobald Loslassen, um jeden Boulder zu beleuchten erscheint. Das verbindet bei Bedarf, beleuchtet den Boulder auf dem Bildschirm und die danach gewählten. Wischen über die Board-Zeichnung wechselt zwischen Bouldern.",
+        "p3": "Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden weiterzustöbern. Die Beschriftung wechselt zu Board trennen; ein Tipp darauf trennt die Verbindung. Du kannst auch mit Jeden Boulder beleuchten unter ⋯, dann Board-Steuerung, oder über die Screenreader-Aktionen des Buttons starten.",
+        "clipAlt": "Den Wand-Button nach links wischen, um zu steuern, dann zum Beenden antippen",
+        "clipCaption": "Wische den Button nach links und lass los, um jeden Boulder zu beleuchten. Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden zu bleiben."
       }
     },
     "climbActions": {
@@ -795,11 +803,12 @@
       "preview": {
         "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
         "intro": "Vorschau ist der erste Eintrag in der Liste.",
-        "p1": "Sie öffnet den Boulder im Player, ohne deine Warteschlange anzurühren. Dein nächster Wisch bringt dich zurück.",
-        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, erscheint die Anzeige Stöbern. Unter dem Namen steht dann in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, sobald ein Board verbunden oder ein Boulder beleuchtet ist. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
+        "p1": "Vorschau öffnet den Boulder im Player, ohne deine Warteschlange zu ändern. Hat die Vorschau eine Liste, folgen die Wischgesten dieser Liste. Eine einzelne Vorschau kann keinen nächsten Boulder zum Weiterwischen haben.",
+        "p2": "Beim Stöbern ohne Beleuchten bringt dich der obere Button zurück: Meine Wahl zu deinem Boulder, Am Board zum beleuchteten. Unter dem Namen steht in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, wenn ein Board verbunden oder ein Boulder beleuchtet ist. Tippe auf Am Board beleuchten (oder Aktiv setzen), wenn du den Boulder willst. Sagt der Player-Button Du steuerst das Board, beleuchten weitere Boulderwechsel das Board; tippe zuerst darauf, um das Steuern zu beenden.",
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
-        "clipAlt": "Die Anzeige Stöbern",
-        "clipCaption": "Die Anzeige kommt nach dem Wisch. Die Wand bleibt, wie sie war."
+        "clipAlt": "Eine Liste im Player durchsehen, ohne ihre Boulder zu beleuchten",
+        "clipCaption": "Stöbere durch die Liste, während das Board seinen Boulder behält. Am Board beleuchten beleuchtet ihn, wenn du es wählst.",
+        "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
       "quick": {
         "title": "Die drei Buttons oben",

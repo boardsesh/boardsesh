@@ -18,6 +18,12 @@ const runtimeModules = {
 };
 
 describe('resolveWebRuntimeModulePath', () => {
+  it('uses the browser image registry for SVG asset IDs', () => {
+    expect(resolveWebRuntimeModulePath(runtimeModules, '@react-native/assets-registry/registry')).toBe(
+      join('/runtime/react-native-web', 'dist/modules/AssetRegistry'),
+    );
+    expect(resolveWebRuntimeModulePath(runtimeModules, '@react-native/assets-registry/package.json')).toBeNull();
+  });
   it('redirects an exact package specifier to the isolated runtime', () => {
     expect(resolveWebRuntimeModulePath(runtimeModules, 'react-native-web')).toBe('/runtime/react-native-web');
   });
@@ -104,6 +110,9 @@ describe('Metro browser/native resolution boundary', () => {
 
   it.each(['ios', 'android'])('keeps %s resolving the native API', (platform) => {
     expect(resolveCommonJs(platform)).toBe('react-native');
+    expect(resolveCommonJs(platform, '@react-native/assets-registry/registry')).toBe(
+      '@react-native/assets-registry/registry',
+    );
   });
 
   it('omits only unused browser replay/widgets while retaining native SDK defaults', () => {

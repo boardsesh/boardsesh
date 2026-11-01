@@ -7,6 +7,7 @@ import {
 import {
   boardBleNative,
   type NativeBleConfigureBoardOptions,
+  type NativeBlePrepareBoardConnectionOptions,
   type NativeBleDisconnectEvent,
   type NativeBleScanEvent,
 } from '../../../modules/live-activity/src/index';
@@ -25,6 +26,11 @@ import type {
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { upsertDiscoveredDevice } from './scan-device-cache';
+import {
+  allowsBluetoothUse,
+  readBluetoothAuthorization,
+  requestBluetoothAuthorization,
+} from './bluetooth-authorization';
 
 /**
  * True when the running binary ships the newer BoardBle native surface
@@ -34,6 +40,14 @@ import { upsertDiscoveredDevice } from './scan-device-cache';
  */
 export function nativeBleSupportsConnectionAdoption(): boolean {
   return typeof boardBleNative?.getConnectedDevice === 'function';
+}
+
+/** Only a binary with both halves can bind configuration to one connection attempt. */
+export function nativeBleSupportsPreparedConnections(): boolean {
+  return (
+    typeof boardBleNative?.prepareBoardConnection === 'function' &&
+    typeof boardBleNative?.connectPreparedBoard === 'function'
+  );
 }
 
 /**
@@ -89,6 +103,9 @@ function nativeDisconnectInfo(payload: NativeBleDisconnectEvent): BleDisconnectI
 // has the board metadata it needs to encode without going through JS.
 export class NativeIosBleAdapter implements BluetoothAdapter {
   private connectedDeviceId: string | null = null;
+  private preparationToken: string | null = null;
+  private preparationGeneration = 0;
+  private preparationState: 'none' | 'pending' | 'ready' | 'failed' = 'none';
   private disconnectCallback: ((info?: BleDisconnectInfo) => void) | null = null;
   private disconnectSubscription: { remove: () => void } | null = null;
   // Transport diagnostics of the most recently settled write (#3230): the
@@ -121,8 +138,55 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
 
   async isAvailable(): Promise<boolean> {
     const native = this.requireNative();
+    // The connect tap is where an iOS phone that has never answered the
+    // Bluetooth question gets asked: this shows the alert and waits for the
+    // answer, so an Allow carries straight on into the scan below without a
+    // second tap. On a binary that asked at launch it just returns that answer.
+    // A no ends the connect here, and the caller reads why
+    // (bluetooth-unavailable.ts) to show the blocked copy. An older binary (no
+    // authorization surface) reads null and keeps its exact old path.
+    let authorization = readBluetoothAuthorization();
+    if (authorization === 'notDetermined') authorization = await requestBluetoothAuthorization();
+    if (!allowsBluetoothUse(authorization)) return false;
     const result = await native.isAvailable();
     return result.available;
+  }
+
+  /** Forget the old native pairing before a picker can fail or be cancelled. */
+  async prepareBoardConnection(options: NativeBlePrepareBoardConnectionOptions): Promise<void> {
+    const native = this.requireNative();
+    const preparationGeneration = ++this.preparationGeneration;
+    this.preparationToken = null;
+    this.preparationState = 'pending';
+    this.disconnectSubscription?.remove();
+    this.disconnectSubscription = null;
+    this.connectedDeviceId = null;
+    try {
+      if (typeof native.prepareBoardConnection === 'function' && typeof native.connectPreparedBoard === 'function') {
+        const preparationToken = await native.prepareBoardConnection(options);
+        if (!preparationToken) throw new Error('Native board connection preparation returned no token');
+        if (preparationGeneration !== this.preparationGeneration) {
+          throw new Error('Board connection preparation superseded');
+        }
+        this.preparationToken = preparationToken;
+      } else {
+        // This adapter may not own a JS handle to the old native link. Calling
+        // this.disconnect() would then skip the singleton's disconnect, leaving
+        // its old last-known UUID paired with the new encoder configuration.
+        await native.disconnect();
+        if (preparationGeneration !== this.preparationGeneration) {
+          throw new Error('Board connection preparation superseded');
+        }
+        await native.configureBoard(options);
+      }
+      if (preparationGeneration !== this.preparationGeneration) {
+        throw new Error('Board connection preparation superseded');
+      }
+      this.preparationState = 'ready';
+    } catch (error) {
+      if (preparationGeneration === this.preparationGeneration) this.preparationState = 'failed';
+      throw error;
+    }
   }
 
   // The scan/select flow mirrors RNBleAdapter.requestAndConnect. Kept in lockstep
@@ -140,6 +204,16 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   // scan stopped so it drops its spinner.
   async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     const native = this.requireNative();
+    const preparationToken = this.preparationToken;
+    const preparationGeneration = this.preparationGeneration;
+    const usesPreparedConnection = nativeBleSupportsPreparedConnections();
+    if (
+      this.preparationState === 'pending' ||
+      this.preparationState === 'failed' ||
+      (usesPreparedConnection && !preparationToken)
+    ) {
+      throw new Error('Board connection is not prepared');
+    }
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;
@@ -290,7 +364,20 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     // re-attribute a previous failure to this connect.
     this.lastConnectDiagnostics = null;
     try {
-      await native.connect(selectedDeviceId);
+      if (preparationGeneration !== this.preparationGeneration) {
+        throw new Error('Board connection preparation superseded');
+      }
+      if (usesPreparedConnection) {
+        if (!preparationToken || typeof native.connectPreparedBoard !== 'function') {
+          throw new Error('Board connection is not prepared');
+        }
+        await native.connectPreparedBoard(selectedDeviceId, preparationToken);
+      } else {
+        await native.connect(selectedDeviceId);
+      }
+      if (preparationGeneration !== this.preparationGeneration) {
+        throw new Error('Board connection preparation superseded');
+      }
     } catch (error) {
       // A rejected connect can't carry structured data (Expo), so on failure
       // fetch the services the board actually exposed from the module stash for
@@ -337,6 +424,9 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.preparationGeneration += 1;
+    this.preparationToken = null;
+    this.preparationState = 'none';
     // Belt-and-suspenders: drop the disconnect subscription regardless so an
     // abandoned adapter leaves no listener behind.
     this.disconnectSubscription?.remove();

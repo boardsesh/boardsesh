@@ -2,7 +2,7 @@ import type { AppStateStatus } from 'react-native';
 
 /** The slice of React Native's `AppState` the watchdog needs, injectable for tests. */
 export type AppStateSource = {
-  currentState: AppStateStatus | null | undefined;
+  currentState: string | null | undefined;
   addEventListener: (type: 'change', listener: (state: AppStateStatus) => void) => { remove: () => void };
 };
 

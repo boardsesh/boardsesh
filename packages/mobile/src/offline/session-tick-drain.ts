@@ -3,7 +3,7 @@ import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery } from './offline-sync-adapter';
-import { sessionSummaryQueryKey } from '../lib/graphql/query-keys';
+import { sessionSummaryQueryKey, sessionWorkoutsQueryKey } from '../lib/graphql/query-keys';
 import { hasQueuedTicksForSession } from './pending-tick';
 
 /** Longest "End session" waits for the session's queued ticks before ending anyway. */
@@ -111,6 +111,7 @@ export function refreshSessionWhenQueuedTicksLand(
           stop();
           void queryClient.invalidateQueries({ queryKey: sessionSummaryQueryKey(sessionId) });
           void queryClient.invalidateQueries({ queryKey: ['sessionDetail', sessionId] });
+          void queryClient.invalidateQueries({ queryKey: sessionWorkoutsQueryKey(sessionId) });
           return;
         }
       } while (recheck && !done);

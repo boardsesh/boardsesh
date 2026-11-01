@@ -79,6 +79,7 @@ function renderLink(zoomSourceRetained = true) {
   const onPrepare = vi.fn(() => true);
   render(
     <AccessoryPlayLink
+      testID="mini-player-current-pinned-climb"
       zoomSourceRetained={zoomSourceRetained}
       accessibilityLabel="My project"
       onOpen={onOpen}
@@ -91,6 +92,13 @@ function renderLink(zoomSourceRetained = true) {
 }
 
 describe('accessory player navigation', () => {
+  it.each([true, false])('keeps the current-climb selector on the actionable host (retained=%s)', (retained) => {
+    const callbacks = renderLink(retained);
+    const action = screen.getByTestId('mini-player-current-pinned-climb');
+    expect(action).toBe(screen.getByRole('button', { name: 'My project' }));
+    fireEvent.click(action);
+    expect(retained ? callbacks.onPrepare : callbacks.onOpen).toHaveBeenCalledOnce();
+  });
   it('uses the opener for floating hosts that unmount under the player', () => {
     const callbacks = renderLink(false);
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));
@@ -115,9 +123,17 @@ describe('accessory player navigation', () => {
     expect(screen.getByTestId('native-zoom-source')).toBeDefined();
   });
 
-  it.each(['android', 'web', 'ipad', 'older-ios', 'reduce-motion'])('uses the existing opener for %s', (mode) => {
+  it('zooms from the accessory on iPad too, like the MiniPlayer in Music', () => {
+    settings.platform.isPad = true;
+    const callbacks = renderLink();
+    fireEvent.click(screen.getByRole('button', { name: 'My project' }));
+    expect(callbacks.onPrepare).toHaveBeenCalledOnce();
+    expect(callbacks.onOpen).not.toHaveBeenCalled();
+    expect(screen.getByTestId('native-zoom-source')).toBeDefined();
+  });
+
+  it.each(['android', 'web', 'older-ios', 'reduce-motion'])('uses the existing opener for %s', (mode) => {
     if (mode === 'android' || mode === 'web') settings.platform.OS = mode;
-    if (mode === 'ipad') settings.platform.isPad = true;
     if (mode === 'older-ios') settings.platform.Version = 17;
     if (mode === 'reduce-motion') settings.reduceMotion = true;
     const callbacks = renderLink();

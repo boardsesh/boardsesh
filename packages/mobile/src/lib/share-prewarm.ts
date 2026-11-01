@@ -1,5 +1,6 @@
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { BACKEND_URL } from './env';
 import type { SprayWallVisibility } from './spray/spray-share';
@@ -7,10 +8,10 @@ import type { SprayWallVisibility } from './spray/spray-share';
 // Fallback builder for the backend og:image URL, used only when the page will
 // not tell us its own card (see `readAdvertisedCard`).
 //
-// Kept local rather than pulling in @boardsesh/board-render, whose graph drags
-// the WASM renderer + sharp into the mobile bundle — far heavier than assembling
-// a query string warrants. The backend canonicalises set_ids (sort + dedupe)
-// before keying its caches, so this URL and web's collapse to the same entry.
+// Only the generated /version leaf comes from @boardsesh/board-render. It has
+// no imports, keeping the board catalogue and server graph outside this builder.
+// The backend canonicalises set_ids (sort + dedupe) before keying its caches,
+// so this URL and web's collapse to the same entry.
 //
 // It carries NO climb identity (`n`/`g`/`s`/`angle`), because the app cannot
 // reproduce what www advertises: the angle there is `selectCanonicalClimbAngle`,
@@ -18,8 +19,8 @@ import type { SprayWallVisibility } from './spray/spray-share';
 // same climb served at /25/, /40/ and /50/ all advertise `angle=40` — so there
 // is no local arithmetic that arrives at it.
 //
-// So this warms the per-board `ogBase` (the backdrop with the board photos
-// composited, keyed on board config and render size, NOT on the climb) and not
+// So this warms the per-board `ogBase` (board photos and framing, keyed on
+// board config and render size, NOT on the climb) and not
 // the card an unfurler actually asks for. It is still issued first, because the
 // backdrop is shared and the real card's render turns from a `miss` into a
 // `base-hit` once it lands — but the page's own og:image is what actually gets
@@ -55,6 +56,7 @@ export function buildOgImageUrl(args: {
     // climber just looked at are quieted by the same wash.
     'render_mode=aura',
     `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
+    `v=${BOARD_RENDER_VERSION}`,
   ].join('&');
   return `${BACKEND_URL}/og/climb?${query}`;
 }
@@ -82,6 +84,7 @@ function buildSprayOgImageUrl(
     'set_ids=1',
     `frames=${encodeURIComponent(flatFrames)}`,
     'format=jpeg',
+    `v=${BOARD_RENDER_VERSION}`,
   ].join('&');
   return `${BACKEND_URL}/og/climb?${query}`;
 }
@@ -198,7 +201,7 @@ export async function prewarmShareCaches(pageUrl: string, fallbackOgImageUrl: st
   // warming on that would leave the backend idle for the whole download — and
   // the sheet is open the entire time, so the reader can send before any of it
   // lands. This request shares the per-board `ogBase` with the real card (the
-  // backdrop with the board photos composited, keyed on board config, not on
+  // board photos and framing, keyed on board config, not on
   // the climb), so it turns the real card's render from a `miss` into a
   // `base-hit` whoever asks for it first.
   const backdrop = fallbackOgImageUrl ? warm(fallbackOgImageUrl) : Promise.resolve();

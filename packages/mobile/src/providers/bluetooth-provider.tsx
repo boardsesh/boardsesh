@@ -29,7 +29,7 @@ import {
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
-import { resolveMirroredOrientation } from '../lib/ble/mirror-orientation';
+import { unambiguousQueueMirror } from '../lib/queue-mirror-orientation';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
 import {
   holdAgeHours,
@@ -91,9 +91,31 @@ type BluetoothContextValue = {
     targetSerial?: string,
     targetDeviceId?: string,
   ) => Promise<boolean>;
+  /**
+   * Connect to `board` once this provider has switched to it (#7001). Call it
+   * right after the board switch is accepted. The switch reaches this provider a
+   * render later, and a connect fired before that would scan for the board just
+   * left. Reconnects to whatever this device remembers for `board`, else opens
+   * the picker for it. Resolves with the connect's result, or false when the
+   * switch never arrives or a newer connect request replaces this one.
+   */
+  connectAfterBoardSwitch: (board: UserBoard) => Promise<boolean>;
+  /**
+   * This phone has connected to `board` before and still remembers it (#7076):
+   * a connect there reconnects instead of opening the picker. Forgotten by a
+   * deliberate disconnect from it.
+   */
+  hasRememberedDeviceForBoard: (board: UserBoard) => boolean;
   disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
+  /**
+   * "Turn off all lights" (#7015): blank the wall, keep the link, and tell every
+   * other viewer the climb is no longer lit. Resolves whether the LEDs went off.
+   * The spill skip reports its clear the same way, untagged (#7047). A bare
+   * `clearBoard` reports nothing.
+   */
+  turnOffAllLights: () => Promise<boolean>;
   /**
    * Force the auto-sender to re-push the current climb to the wall once, even
    * when the rendered pixels are byte-identical to the last send (which it
@@ -110,26 +132,6 @@ type BluetoothContextValue = {
    * wall that is actually showing whatever the creator last painted.
    */
   invalidateWallState: () => void;
-  /**
-   * Ask the wall for a given orientation of the climb it is currently showing.
-   * The mirror toggle lives in the play drawer's own state, so this is how that
-   * intent reaches the auto-sender — which then re-pushes through its normal
-   * write path, keeping the dedup signature and the wall-confirm honest. Falls
-   * back to the queue item's own `mirrored` as soon as the climb changes.
-   */
-  setMirrorIntent: (climbUuid: string, mirrored: boolean) => void;
-  /**
-   * The orientation currently asked for on `climbUuid`. A flip outlives the
-   * screen that made it, so a play drawer opening on that climb seeds its
-   * toggle from here rather than assuming un-mirrored.
-   */
-  getMirrorIntent: (climbUuid: string | undefined) => boolean | undefined;
-  /**
-   * Forget a flip recorded against any climb but this one. The surface owning
-   * the toggle calls this as it settles on a climb, so navigating away drops a
-   * flip while reopening on the same climb still finds it.
-   */
-  retainMirrorIntentFor: (climbUuid: string | undefined) => void;
   /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
@@ -357,10 +359,8 @@ function BluetoothAutoSender({
   sendFramesToBoard,
   onWallConfirmed,
   reassertNonce,
-  mirrorNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
-  mirrorIntentRef,
   colorSignature,
   encodingSignature,
   activeConfig,
@@ -378,14 +378,10 @@ function BluetoothAutoSender({
    * Fired once a climb is on the wall (a fresh write or a deduped re-broadcast).
    * Receives the full lit queue item so consumers can both emit the local
    * confirm (uuid only) and report the climb to the board-presence channel.
-   * `mirrored` is the orientation actually written to the wall, which a solo
-   * drawer flip can make differ from `item.climb.mirrored`.
+   * `mirrored` is the committed occurrence's orientation actually written to the wall.
    */
   onWallConfirmed: (item: ClimbQueueItem, mirrored: boolean) => void;
   reassertNonce: number;
-  // Changes when the mirror intent slot changes. Only a dep, so the drain
-  // re-runs and its own signature dedup decides whether a write is due.
-  mirrorNonce: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
   connectInitialSendRef: React.MutableRefObject<BleConnectInitialSend | null>;
@@ -395,10 +391,6 @@ function BluetoothAutoSender({
   // changed the wall out from under a byte-identical queue climb would make the
   // dedup path report the queue climb (a phantom, not on the wall).
   lastPhysicalFramesRef: React.MutableRefObject<string | null>;
-  // The orientation the play drawer's mirror toggle asked for, and the climb it
-  // asked for it on. Mobile's toggle never writes `climb.mirrored`, so this is
-  // the only way a flip reaches the send — see `setMirrorIntent`.
-  mirrorIntentRef: React.MutableRefObject<{ climbUuid: string; mirrored: boolean } | null>;
   colorSignature: string;
   // Semantic identity of packet-encoding preferences that affect the physical
   // MoonBoard output. Kept separate from colours so Aurora stays on `default`.
@@ -650,18 +642,8 @@ function BluetoothAutoSender({
             continue;
           }
 
-          // The orientation to put on the wall. The play drawer's mirror toggle
-          // is drawer-local and never reaches `climb.mirrored`, so a live intent
-          // for THIS climb wins; anything else (including after navigating away)
-          // falls back to the queue item's own flag. Everything below — the
-          // dedup signature, the physical-frames record and the write itself —
-          // reads this one value, so the wall and our record of it agree.
-          const intent = mirrorIntentRef.current;
-          const effectiveMirrored = resolveMirroredOrientation({
-            statedIntent:
-              !sessionId && intent != null && intent.climbUuid === item.climb.uuid ? intent.mirrored : undefined,
-            climbMirrored: item.climb.mirrored,
-          });
+          // The committed occurrence owns its orientation in solo and crew queues.
+          const effectiveMirrored = item.climb.mirrored === true;
 
           // connect() may have just written these exact frames as its
           // initialFrames (connect-and-light flows like the play drawer).
@@ -799,7 +781,6 @@ function BluetoothAutoSender({
     currentClimbQueueItem,
     sendFramesToBoard,
     reassertNonce,
-    mirrorNonce,
     colorSignature,
     encodingSignature,
     sessionId,
@@ -933,6 +914,7 @@ export function BluetoothProvider({
     resolveAndBindBoardByUuid,
     reportClimbForBoard,
     reportDisconnectForBoard,
+    reportClearForBoard,
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
   const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
@@ -1005,6 +987,8 @@ export function BluetoothProvider({
   reportClimbForBoardRef.current = reportClimbForBoard;
   const reportDisconnectForBoardRef = useRef(reportDisconnectForBoard);
   reportDisconnectForBoardRef.current = reportDisconnectForBoard;
+  const reportClearForBoardRef = useRef(reportClearForBoard);
+  reportClearForBoardRef.current = reportClearForBoard;
   const restampBoardMembershipByUuidRef = useRef(restampBoardMembershipByUuid);
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
@@ -1015,6 +999,29 @@ export function BluetoothProvider({
   // `conn:{connectionId}` and loses membership on every socket reconnect, so the
   // first rejection is worth one retry — a second would just hammer.
   const restampedReportSignatureRef = useRef<string | null>(null);
+  // Presence reports in flight, so a set and a clear never overlap (#7015). The
+  // server numbers them in allocation order, and `reportBoardClimb` does database
+  // reads before it allocates, so a set sent just before a clear can be numbered
+  // after it and leave every viewer "lit" over a dark wall. A clear waits for the
+  // set reports in flight; a set report waits for the clear in flight.
+  const climbReportsInFlightRef = useRef(new Set<Promise<boolean>>());
+  const clearReportInFlightRef = useRef<Promise<void> | null>(null);
+  // Every climb report goes through here: the auto-sender's, Undo's and the
+  // "Light this" relight's. It waits for a clear report in flight, drops the
+  // report when a clear, reconnect or board switch made it stale during that
+  // wait, and holds its place in `climbReportsInFlightRef` so a later clear
+  // waits for it in turn.
+  const sendFencedClimbReport = useCallback(
+    async (isCurrentOperation: () => boolean, send: () => Promise<boolean>): Promise<boolean> => {
+      await clearReportInFlightRef.current;
+      if (!isCurrentOperation()) return false;
+      const report = send();
+      climbReportsInFlightRef.current.add(report);
+      void report.finally(() => climbReportsInFlightRef.current.delete(report));
+      return report;
+    },
+    [],
+  );
   const wallCurrentClimbRef = useRef<BoardPresenceClimb | null>(wallCurrentClimb);
   wallCurrentClimbRef.current = wallCurrentClimb;
   const showUndoWallChangeSnackbarRef = useRef(showUndoWallChangeSnackbar);
@@ -1028,39 +1035,10 @@ export function BluetoothProvider({
   // write path (auto-sender, undo, kiosk relight). Shared with the AutoSender so
   // its dedup-report branch never confirms a queue climb the wall isn't showing.
   const lastPhysicalFramesRef = useRef<string | null>(null);
-  // The orientation asked for on a climb, and which climb it was asked for on.
-  // One slot: whichever climb was stated most recently owns it, which is why
-  // moving to another climb forgets the previous flip. Lives beside the physical
-  // record because every write path reads both.
-  const mirrorIntentRef = useRef<{ climbUuid: string; mirrored: boolean } | null>(null);
-  // `undefined` when nothing has been stated for this climb — distinct from a
-  // stated `false`. A climb can arrive already mirrored (activating a mirrored
-  // logbook tick carries `climb.mirrored` through `tickToClimb`), and only the
-  // caller knows what to fall back to; collapsing "unstated" into `false` would
-  // relight such an ascent un-mirrored.
-  const mirrorIntentFor = useCallback(
-    (climbUuid: string | undefined): boolean | undefined => {
-      const intent = mirrorIntentRef.current;
-      if (sessionIdRef.current) {
-        const { currentClimbQueueItem, queue } = getQueueSnapshot();
-        // Current slot wins when a climb is queued twice in different orientations.
-        if (currentClimbQueueItem && currentClimbQueueItem.climb.uuid === climbUuid)
-          return currentClimbQueueItem.climb.mirrored === true;
-        const matches = queue.filter((item) => item.climb.uuid === climbUuid);
-        // A non-current duplicate has no unambiguous orientation without a queue UUID.
-        return matches.length === 1 ? matches[0].climb.mirrored === true : undefined;
-      }
-      return intent != null && intent.climbUuid === climbUuid ? intent.mirrored : undefined;
-    },
+  const queueMirrorFor = useCallback(
+    (climbUuid: string | undefined) => unambiguousQueueMirror(getQueueSnapshot(), climbUuid),
     [getQueueSnapshot],
   );
-  // Drop a flip that belongs to some OTHER climb, keep one that belongs to this
-  // one. The slot holds explicit taps only, so this is how navigation forgets a
-  // flip while a dismiss-and-reopen still finds it.
-  const retainMirrorIntentFor = useCallback((climbUuid: string | undefined) => {
-    const intent = mirrorIntentRef.current;
-    if (intent != null && intent.climbUuid !== climbUuid) mirrorIntentRef.current = null;
-  }, []);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
@@ -1215,10 +1193,12 @@ export function BluetoothProvider({
       const climbInput = { uuid: item.uuid, climb: { ...toClimbInput(item.climb), mirrored } };
       const angle = item.climb.angle ?? null;
       const sendReport = () =>
-        reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
-          console.warn('[board-presence] reportBoardClimb failed', error);
-          return false;
-        });
+        sendFencedClimbReport(isCurrentOperation, () =>
+          reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
+            console.warn('[board-presence] reportBoardClimb failed', error);
+            return false;
+          }),
+        );
 
       pendingReportSignatureRef.current = reportSignature;
       let accepted = await sendReport();
@@ -1254,7 +1234,7 @@ export function BluetoothProvider({
       }
       return true;
     },
-    [consumeUndoWallChangeToastArm],
+    [consumeUndoWallChangeToastArm, sendFencedClimbReport],
   );
 
   const replayPendingWallReport = useCallback(
@@ -1304,6 +1284,8 @@ export function BluetoothProvider({
   const handleConnectSuccess = useCallback(
     (serial: string | null, connection: BleConnectionHandle) => {
       wallOperationEpochRef.current += 1;
+      // A new link must not wait up to a mutation timeout on the old link's clear.
+      clearReportInFlightRef.current = null;
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
@@ -1491,6 +1473,7 @@ export function BluetoothProvider({
     pickerState,
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
+    hasRememberedDeviceForConfigKey,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   } = useBoardBluetooth({
@@ -1860,7 +1843,22 @@ export function BluetoothProvider({
     /** Expected hold sets from the board snapshot selected by the switch. */
     setIds?: string;
     armUndoToast: boolean;
+    /**
+     * Reconnect to what this device remembers for the switched-to board, read
+     * when the request fires, once the provider is on that board (#7001).
+     */
+    useRememberedBoard?: boolean;
   } | null>(null);
+  // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
+  // promise. Kept beside the slot rather than in it, so a request that is
+  // replaced or expires can still be told "no" instead of hanging.
+  const pendingConnectWaiterRef = useRef<{ resolve: (connected: boolean) => void; board: UserBoard } | null>(null);
+  const settlePendingConnectWaiter = useCallback((connected: boolean) => {
+    const waiter = pendingConnectWaiterRef.current;
+    pendingConnectWaiterRef.current = null;
+    waiter?.resolve(connected);
+  }, []);
+  useEffect(() => () => settlePendingConnectWaiter(false), [settlePendingConnectWaiter]);
 
   // The switched config normally propagates within one re-render, so a request
   // still pending after this window means it can no longer complete (e.g. the
@@ -1877,9 +1875,23 @@ export function BluetoothProvider({
   const pendingConfigKey = pendingAutoConnect?.configKey;
   useEffect(() => {
     if (!pendingConfigKey) return;
-    const expiryTimeoutId = setTimeout(() => setPendingAutoConnect(null), PENDING_AUTO_CONNECT_TTL_MS);
+    const expiryTimeoutId = setTimeout(() => {
+      setPendingAutoConnect(null);
+      // A connect that followed the climb and never saw its board arrive. It
+      // never reached a scan, so without this it would leave no outcome at all.
+      const expiredTarget = pendingConnectWaiterRef.current?.board;
+      if (expiredTarget) {
+        track(SHARED_EVENTS.BluetoothConnectionFailed, {
+          boardName: expiredTarget.boardType,
+          layoutId: expiredTarget.layoutId,
+          sizeId: expiredTarget.sizeId,
+          failureReason: 'board_switch_timeout',
+        });
+      }
+      settlePendingConnectWaiter(false);
+    }, PENDING_AUTO_CONNECT_TTL_MS);
     return () => clearTimeout(expiryTimeoutId);
-  }, [pendingConfigKey]);
+  }, [pendingConfigKey, settlePendingConnectWaiter]);
 
   useEffect(() => {
     if (!pendingAutoConnect) return;
@@ -1897,15 +1909,69 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, armUndoToast } = pendingAutoConnect;
+    const { serial, armUndoToast, useRememberedBoard } = pendingAutoConnect;
     setPendingAutoConnect(null);
+    const waiter = pendingConnectWaiterRef.current;
+    pendingConnectWaiterRef.current = null;
     if (armUndoToast) {
       armUndoWallChangeToast();
     }
     // connect's third param auto-selects that serial while the picker shows
-    // "searching", falling back to the list only if it never advertises.
-    void connect(undefined, undefined, serial);
-  }, [pendingAutoConnect, boardName, layoutId, sizeId, setIds, boardUuid, loading, armUndoWallChangeToast, connect]);
+    // "searching", falling back to the list only if it never advertises. A
+    // remembered target is read now: the props describe the switched-to board,
+    // so it is that board's own, never the one just left. A MoonBoard is
+    // remembered by device id, not serial.
+    const connecting = useRememberedBoard
+      ? connect(
+          undefined,
+          undefined,
+          reconnectSerialForCurrentBoard ?? undefined,
+          reconnectDeviceIdForCurrentBoard ?? undefined,
+        )
+      : connect(undefined, undefined, serial);
+    if (waiter) {
+      connecting.then(waiter.resolve, () => waiter.resolve(false));
+    } else {
+      void connecting;
+    }
+  }, [
+    pendingAutoConnect,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    boardUuid,
+    loading,
+    armUndoWallChangeToast,
+    connect,
+    reconnectSerialForCurrentBoard,
+    reconnectDeviceIdForCurrentBoard,
+  ]);
+
+  // Connect follows the climb (#7001): the caller has just switched to `board`,
+  // a board at this gym that draws the current climb. Queue the connect in the
+  // slot above, which holds it until the switch reaches these props.
+  const connectAfterBoardSwitch = useCallback(
+    (board: UserBoard) =>
+      new Promise<boolean>((resolve) => {
+        settlePendingConnectWaiter(false);
+        pendingConnectWaiterRef.current = { resolve, board };
+        setPendingAutoConnect({
+          configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
+          setIds: board.setIds,
+          // The bulb tap that got here is a deliberate take of the wall.
+          armUndoToast: true,
+          useRememberedBoard: true,
+        });
+      }),
+    [settlePendingConnectWaiter],
+  );
+
+  const hasRememberedDeviceForBoard = useCallback(
+    (board: UserBoard) =>
+      hasRememberedDeviceForConfigKey(boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid)),
+    [hasRememberedDeviceForConfigKey],
+  );
 
   // "Scan again" in a picker whose scan found nothing (#5654). The adapter's
   // connect owns that scan, so instead of teaching both adapters to restart it
@@ -1929,12 +1995,13 @@ export function BluetoothProvider({
     const armUndoToastAfterRescan = undoWallChangeToastArmIdRef.current !== null;
     trackBoardConnectTapped({ surface: 'picker_scan_again', boardName, reconnect: false });
     activePickerState.handleCancel();
+    settlePendingConnectWaiter(false);
     setPendingAutoConnect({
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
       setIds,
       armUndoToast: armUndoToastAfterRescan,
     });
-  }, [boardName, layoutId, sizeId, setIds, boardUuid]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid, settlePendingConnectWaiter]);
 
   const handleMismatchSwitch = useCallback(
     async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>, intent: PickerSelectionIntent) => {
@@ -1970,6 +2037,7 @@ export function BluetoothProvider({
         // failed" alert), which clears `loading` and lets the auto-connect
         // effect fire against the switched config.
         pickerStateRef.current?.handleCancel();
+        settlePendingConnectWaiter(false);
         setPendingAutoConnect({
           serial: decision.serial,
           // A recorded serial can point at an alias or an older configuration.
@@ -1996,7 +2064,7 @@ export function BluetoothProvider({
         Alert.alert(t('boardConfigMismatch.title'), t('boardConfigMismatch.mobileSwitchFailed'));
       }
     },
-    [setActiveBoard, t],
+    [setActiveBoard, settlePendingConnectWaiter, t],
   );
 
   const handlePickerSelect = useCallback(
@@ -2171,9 +2239,9 @@ export function BluetoothProvider({
 
     lastAcceptedReportSignatureRef.current = null;
     // Undo restores what was lit, so the orientation the feed recorded wins
-    // (#5238). Our own intent only fills in for a climb reported by an older
-    // build, which carries no orientation.
-    const undoMirrored = undoTarget.mirrored ?? mirrorIntentFor(undoTarget.climbUuid) ?? false;
+    // (#5238). An unambiguous queue occurrence only fills in for an older
+    // build that reported no orientation.
+    const undoMirrored = undoTarget.mirrored ?? queueMirrorFor(undoTarget.climbUuid) ?? false;
     const writeSucceeded = await commitWallFrames(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
@@ -2186,12 +2254,14 @@ export function BluetoothProvider({
     }
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, undoMirrored);
 
-    const accepted = await reportClimbForBoardRef
-      .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
-      .catch((error: unknown) => {
-        console.warn('[board-presence] undo report failed', error);
-        return false;
-      });
+    const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+      reportClimbForBoardRef
+        .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
+        .catch((error: unknown) => {
+          console.warn('[board-presence] undo report failed', error);
+          return false;
+        }),
+    );
     if (!accepted || !isCurrentOperation()) {
       return false;
     }
@@ -2199,7 +2269,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget, undoMirrored);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [commitWallFrames]);
+  }, [commitWallFrames, queueMirrorFor, sendFencedClimbReport]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -2224,11 +2294,9 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = null;
-      // A standing flip on this phone wins, so the wall agrees with the toggle a
-      // drawer opening on it will show. Without one, relight the climb the way
-      // the feed recorded it (#5238); a climb from an older reporter or from
-      // durable history has no orientation and relights un-mirrored.
-      const relightMirrored = mirrorIntentFor(climb.climbUuid) ?? climb.mirrored ?? false;
+      // Restore the recorded orientation, including an explicit unmirror.
+      // Older records can borrow an unambiguous queue occurrence's orientation.
+      const relightMirrored = climb.mirrored ?? queueMirrorFor(climb.climbUuid) ?? false;
       const writeSucceeded = await commitWallFrames(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
@@ -2241,12 +2309,14 @@ export function BluetoothProvider({
       }
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, relightMirrored);
 
-      const accepted = await reportClimbForBoardRef
-        .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
-        .catch((error: unknown) => {
-          console.warn('[board-presence] kiosk relight report failed', error);
-          return false;
-        });
+      const accepted = await sendFencedClimbReport(isCurrentOperation, () =>
+        reportClimbForBoardRef
+          .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
+          .catch((error: unknown) => {
+            console.warn('[board-presence] kiosk relight report failed', error);
+            return false;
+          }),
+      );
       if (!accepted || !isCurrentOperation()) {
         return false;
       }
@@ -2254,12 +2324,82 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb, relightMirrored);
       return true;
     },
-    [commitWallFrames],
+    [commitWallFrames, queueMirrorFor, sendFencedClimbReport],
   );
 
   const clearBoard = useCallback(
     () => sendFramesToBoardWithActivityReset('', false, undefined, { sendSource: 'clear' }),
     [sendFramesToBoardWithActivityReset],
+  );
+
+  // Blank the wall, keep the link, and tell the feed (#7015, #7047). The link
+  // stays up and the holder slot doesn't move, so without a report every other
+  // phone keeps the last climb "On the wall". `write` is the blanking write: the
+  // tagged `clearBoard` for "Turn off all lights", an untagged one for the spill
+  // skip. Resolves whether the LEDs went off.
+  const blankWallAndReportClear = useCallback(async (write: () => Promise<boolean | undefined>): Promise<boolean> => {
+    // Before the write: a report of the pre-clear wall, or its membership-restamp
+    // retry, checks this epoch before sending again, and must not land after the
+    // clear and put the dark climb back on peers' walls.
+    wallOperationEpochRef.current += 1;
+    pendingWallReportRef.current = null;
+    const operationEpoch = wallOperationEpochRef.current;
+    const operationBoardUuid = boardUuidRef.current;
+    const isCurrentOperation = () =>
+      operationEpoch === wallOperationEpochRef.current && operationBoardUuid === boardUuidRef.current;
+    const cleared = await write();
+    if (cleared !== true) return false;
+    // A reconnect, board switch or virtual take during the write owns the refs
+    // now; resetting them or reporting would act on the wrong wall.
+    if (!isCurrentOperation()) return false;
+    // The auto-sender's dedup still names the cleared climb. Any drain re-run that
+    // doesn't write (a crew FullSync with a new item object, the clock moving)
+    // would confirm and re-report it as lit over a dark board. Same as
+    // `invalidateWallState`, which is declared further down.
+    lastPhysicalFramesRef.current = null;
+    // The feed now reads the wall as dark, which the report dedup takes as "no
+    // conflict". Forget the last accepted report so re-lighting the same climb
+    // reports it again.
+    lastAcceptedReportSignatureRef.current = null;
+    lastAcceptedWallSignatureRef.current = null;
+    pendingReportSignatureRef.current = null;
+    if (!presenceEnabledRef.current) return true;
+    const boardId = presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current;
+    if (boardId === null) return true;
+
+    const reportClear = async () => {
+      // Waits for any set report in flight (see `climbReportsInFlightRef`).
+      await Promise.all(climbReportsInFlightRef.current);
+      if (!isCurrentOperation()) return;
+      let accepted = await reportClearForBoardRef.current(boardId);
+      // Same one re-stamp and retry as a climb report: an anonymous holder loses
+      // membership on every socket reconnect.
+      if (!accepted && operationBoardUuid && isCurrentOperation()) {
+        const stillTheSameBoard = await restampBoardMembershipByUuidRef
+          .current({ boardUuid: operationBoardUuid })
+          .catch(() => false);
+        if (stillTheSameBoard && isCurrentOperation()) accepted = await reportClearForBoardRef.current(boardId);
+      }
+      // Refused: another emitter holds the board (a half-open old socket can still
+      // hold it), or the backend predates the mutation. Viewers keep the climb lit.
+      if (!accepted) console.warn('[board-presence] reportBoardClear was not accepted', { boardId });
+    };
+    // Registered as soon as the write lands. The next climb's write queues
+    // behind this clear in the hook's write chain, so its report always finds
+    // this one here and waits for it.
+    const clearReport = reportClear()
+      .catch((error: unknown) => console.warn('[board-presence] reportBoardClear failed', error))
+      .finally(() => {
+        if (clearReportInFlightRef.current === clearReport) clearReportInFlightRef.current = null;
+      });
+    clearReportInFlightRef.current = clearReport;
+    return true;
+  }, []);
+
+  // "Turn off all lights" (#7015).
+  const turnOffAllLights = useCallback(
+    (): Promise<boolean> => blankWallAndReportClear(clearBoard),
+    [blankWallAndReportClear, clearBoard],
   );
 
   // Advance the queue past a "spill" climb (one set for a different board/layout
@@ -2278,20 +2418,27 @@ export function BluetoothProvider({
       next: ClimbQueueItem | null;
       skippedCount: number;
     }) => {
-      // A climb on a board at this gym is not a spill. The climber swiped onto
-      // it deliberately — queue navigation treats it as a target rather than
-      // walking past it — and the drawer is already offering to move them to the
-      // board that draws it. Advancing here would snap them forward off the climb
-      // they just chose, with a toast calling their own navigation a skip.
+      // Every clear below reports to the feed (#7047), or everyone watching this
+      // board keeps the previous climb "On the wall" over a dark board. The write
+      // stays untagged (no sendSource): the user didn't press Clear Lights, so it
+      // must not count towards Board Lights Cleared.
+      const clearWall = () => {
+        blankWallAndReportClear(() => sendFramesToBoard('')).catch((error: unknown) =>
+          console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
+        );
+      };
+      // A climb on a board at this gym is not a spill. The climber moved onto
+      // it deliberately: queue navigation treats it as a target rather than
+      // walking past it. Advancing here would snap them forward off the climb
+      // they just chose, with a toast calling their own navigation a skip, and
+      // counting it would poison the spill metric with deliberate moves.
       //
-      // The write is still refused: this wall cannot draw it. Clear the wall so
-      // it stops showing the previous climb, and say nothing — the callout on
-      // screen is the explanation, and counting this as a skip would poison the
-      // spill metric with deliberate moves.
-      if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) {
-        void sendFramesToBoard('');
-        return;
-      }
+      // The write is still refused: this wall can't draw it. The wall keeps
+      // what it shows rather than going dark (#7076). The player offers Put on
+      // {board} for it; blanking first would leave two dark walls if that board
+      // doesn't answer, and the box keeps its LEDs after the move's disconnect
+      // anyway.
+      if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) return;
 
       // The wall is cleared (rather than advanced to a compatible climb) in a
       // party session — never hijack shared state — or when nothing compatible
@@ -2316,19 +2463,17 @@ export function BluetoothProvider({
       // Party: never advance — the current climb is shared session state, and a
       // member whose wall can't light it must not hijack the queue for everyone.
       // Just clear this wall so it doesn't keep showing the previous climb.
-      // Untagged internal clear (no sendSource): the user didn't press Clear
-      // Lights, so this must not count towards Board Lights Cleared.
       if (sessionIdRef.current != null) {
-        void sendFramesToBoard('');
+        clearWall();
         return;
       }
       if (next) {
         setCurrentClimb(next);
       } else {
-        void sendFramesToBoard('');
+        clearWall();
       }
     },
-    [setCurrentClimb, showToast, sendFramesToBoard, t],
+    [blankWallAndReportClear, setCurrentClimb, showToast, sendFramesToBoard, t],
   );
 
   // The auto-sender reached the current climb but it has no frames yet — a
@@ -2421,10 +2566,6 @@ export function BluetoothProvider({
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
   const [reassertNonce, setReassertNonce] = useState(0);
-  // Bumped whenever the mirror slot changes, to re-run the auto-sender's drain.
-  // Unlike `reassertNonce` it does NOT clear the dedup signature: it only gives
-  // the drain a chance to notice that `effectiveMirrored` moved.
-  const [mirrorNonce, setMirrorNonce] = useState(0);
   // A reassert is the climber asking for the climb on the wall, so it is also
   // what releases a #4979 hold: released here, before the nonce reaches the
   // auto-sender, whose pending reassert then lets the write through.
@@ -2444,45 +2585,6 @@ export function BluetoothProvider({
   const invalidateWallState = useCallback(() => {
     lastPhysicalFramesRef.current = null;
   }, []);
-
-  // The orientation the user has asked for on the climb currently on the wall.
-  // Mobile's mirror toggle is drawer-local — it never writes `climb.mirrored`
-  // (mobile doesn't call `mirrorCurrentClimb`, which needs a party session and
-  // only lands via a server delta) — so without this the auto-sender cannot see
-  // a flip: it would re-derive `mirrored: false` from the queue item and either
-  // skip (confirming the wrong orientation to board presence) or re-push the
-  // un-mirrored frames, silently un-flipping the wall under a button that still
-  // reads active. Keyed by uuid so moving to another climb falls back to that
-  // item's own flag, which is the drawer's reset-on-navigate behaviour.
-  const setMirrorIntent = useCallback((climbUuid: string, mirrored: boolean) => {
-    const previous = mirrorIntentRef.current;
-    const slotChanged = previous?.climbUuid !== climbUuid || previous.mirrored !== mirrored;
-    mirrorIntentRef.current = { climbUuid, mirrored };
-    if (!slotChanged) return;
-    // Wake the auto-sender so the flip rides its normal write — dedup,
-    // wall-confirm and haptics all stay in step with what the wall shows.
-    //
-    // A plain nonce, NOT `reassertWall()`: a reassert punches through the
-    // dedup, which forces a write even when none is due. Whether one IS due
-    // is a question the drain already answers, because `effectiveMirrored` is
-    // part of its send signature. Guessing it here got the interesting case
-    // backwards — with nothing recorded, "stating false needs no write"
-    // assumed the wall was un-mirrored, but a climb whose own `mirrored` is
-    // true (a mirrored tick, a crew member's item) is already lit mirrored,
-    // so turning the flip OFF never reached the wall.
-    setMirrorNonce((nonce) => nonce + 1);
-  }, []);
-
-  // The orientation currently asked for on a climb, or false if none is.
-  //
-  // A flip belongs to the climb, not to the screen that made it: on iPhone the
-  // play drawer is a route, and the climb keeps moving without it (Live Activity
-  // next/prev, the session screen, playlist activation, a party peer). So the
-  // intent outlives the drawer, and a drawer opening on that climb reads it back
-  // here to seed its toggle — otherwise the wall would sit mirrored under a
-  // button reading off, and reopening the player would either lie or silently
-  // un-flip a wall someone is climbing on.
-  const getMirrorIntent = mirrorIntentFor;
 
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
@@ -2577,14 +2679,14 @@ export function BluetoothProvider({
       lastLocalHolderUserId,
       loading,
       connect,
+      connectAfterBoardSwitch,
+      hasRememberedDeviceForBoard,
       disconnect: wrappedDisconnect,
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
-      setMirrorIntent,
-      getMirrorIntent,
-      retainMirrorIntentFor,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -2611,14 +2713,14 @@ export function BluetoothProvider({
       lastLocalHolderUserId,
       loading,
       connect,
+      connectAfterBoardSwitch,
+      hasRememberedDeviceForBoard,
       wrappedDisconnect,
       sendFramesToBoardWithActivityReset,
       clearBoard,
+      turnOffAllLights,
       reassertWall,
       invalidateWallState,
-      setMirrorIntent,
-      getMirrorIntent,
-      retainMirrorIntentFor,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -2679,10 +2781,8 @@ export function BluetoothProvider({
             sendFramesToBoard={commitWallFrames}
             onWallConfirmed={handleWallConfirmed}
             reassertNonce={reassertNonce}
-            mirrorNonce={mirrorNonce}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
-            mirrorIntentRef={mirrorIntentRef}
             consumeBackgroundAdoptSendGate={consumeBackgroundAdoptSendGate}
             onBackgroundAdoptSendSuppressed={handleBackgroundAdoptSendSuppressed}
             staleCurrentHoldEnabled={isConnected && staleCurrentHoldFlagEnabled}
@@ -2713,6 +2813,8 @@ export function BluetoothProvider({
             isScanning={pickerState.isScanning}
             resolvedBoards={resolvedPickerBoards}
             currentBoardConfig={currentBoardConfig}
+            targetBoard={pickerState.targetBoard}
+            showAllBoards={pickerState.showAllBoards}
             onNoLeds={takeVirtualWallAfterPickerDismiss}
             onScanAgain={handlePickerScanAgain}
             mode={pickerState.mode}

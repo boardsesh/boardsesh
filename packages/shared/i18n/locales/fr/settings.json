@@ -446,6 +446,7 @@
     "searchingForBoard": "Recherche de votre {{board}}…",
     "searchingForSavedBoard": "Recherche de votre board…",
     "searchAnyBoard": "Chercher n'importe quelle board",
+    "selectedBoardNotFound": "La board sélectionnée est introuvable",
     "writing": "Allumage de la board…",
     "selectBoard": "Sélectionner une board",
     "devicesFound_one": "{{count}} board trouvée",
@@ -494,7 +495,6 @@
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
       "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer la board quand je touche un bloc est désactivé, utilisez Lecture pour la charger."
     },
-    "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",
     "sendFailedTitle": "Impossible d'allumer la board",
@@ -516,13 +516,16 @@
     "releaseWall": "Libérer le mur",
     "barControl": {
       "connectedLabel": "Board connectée, vous avez le contrôle",
-      "connectedHint": "Ouvre les commandes de la board",
+      "youHaveBoard": "Vous avez la board",
+      "youHaveBoardWithClimb": "Vous avez la board : {{name}}, {{grade}}",
+      "connectedHint": "Déconnecte la board",
       "peerLabel": "Sur le mur de {{name}}",
       "peerLabelAnonymous": "Sur le mur",
       "peerHint": "Ouvre la voie sur le mur",
       "disconnectedLabel": "Board déconnectée",
       "disconnectedHint": "Se connecter à la board",
       "wallHeldLabel": "Vous avez le mur",
+      "wallHeldWithClimb": "Vous avez le mur : {{name}}, {{grade}}",
       "wallHeldHint": "Libère le mur",
       "wallOpenLabel": "Le mur est libre",
       "wallOpenHint": "Prend le mur"

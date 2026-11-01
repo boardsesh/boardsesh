@@ -48,6 +48,8 @@ export type NativeBleConnectedEvent = {
 export type NativeBleConnectedDevice = {
   deviceId: string;
   name?: string;
+  /** The configuration successfully paired with this exact peripheral (#7122). */
+  configKey?: string;
   /**
    * Connect-time BLE write diagnostics. Only present on binaries new enough to
    * report them (gate on a field being defined, not just on `getConnectedDevice`
@@ -128,6 +130,10 @@ export type NativeBleConfigureBoardOptions = {
   boardName: string;
   layoutId: number;
   sizeId: number;
+  /** Required by prepared-connection binaries for authorized updates (#7122). */
+  configKey?: string;
+  /** The bound peripheral expected to receive this configuration update. */
+  deviceId?: string;
   apiLevel?: number;
   deviceName?: string;
   colorOverrides?: Record<string, string>;
@@ -153,6 +159,14 @@ export type NativeBleConfigureBoardOptions = {
   appActive?: boolean;
 };
 
+export type NativeBlePrepareBoardConnectionOptions = NativeBleConfigureBoardOptions & { configKey: string };
+
+/**
+ * The app's Bluetooth authorization, as CoreBluetooth reports it before any
+ * manager exists. `notDetermined` means the climber has never been asked.
+ */
+export type NativeBluetoothAuthorization = 'notDetermined' | 'allowedAlways' | 'denied' | 'restricted';
+
 type BoardBleNativeModule = {
   /**
    * Boards this binary's Swift BLE layer can encode and drive natively.
@@ -164,10 +178,33 @@ type BoardBleNativeModule = {
    */
   nativeBoardControlBoards?: string[];
   isAvailable(): Promise<{ available: boolean }>;
+  /**
+   * Synchronous, side-effect free read of the app's Bluetooth authorization
+   * (`CBManager.authorization`). Only on binaries that ask for Bluetooth at the
+   * first scan instead of at launch: gate on
+   * `typeof getBluetoothAuthorization === 'function'` (an OTA JS update can run
+   * against an older binary). Any value outside `NativeBluetoothAuthorization`
+   * means "can't tell". Read it through src/lib/ble/bluetooth-authorization.ts.
+   */
+  getBluetoothAuthorization?(): string;
+  /**
+   * Show the system Bluetooth alert if the climber has never answered it, and
+   * resolve with their answer (same names as `getBluetoothAuthorization`).
+   * Resolves at once when the question was already answered. Same binary gate
+   * as `getBluetoothAuthorization`.
+   */
+  requestBluetoothAuthorization?(): Promise<string>;
   /** An empty `services` array means "scan unfiltered" on newer binaries. */
   startScan(services?: string[]): Promise<void>;
   stopScan(): Promise<void>;
   connect(deviceId: string): Promise<void>;
+  /**
+   * Invalidate the old native pairing before scanning, then stage a new one.
+   * Both prepared-connection methods must exist before using this surface.
+   */
+  prepareBoardConnection?(options: NativeBlePrepareBoardConnectionOptions): Promise<string>;
+  /** Connect only for the attempt returned by prepareBoardConnection (#7122). */
+  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<void>;
   disconnect(): Promise<void>;
   /**
    * Resolves the write's transport diagnostics on binaries new enough to
@@ -278,6 +315,11 @@ export type LiveActivityStartSessionOptions = {
     relightLabel: string;
     /** Lightbulb action label while a peer holds it / nobody is driving. */
     reconnectLabel: string;
+    /**
+     * That lightbulb's label while a connect is running (`boardConnecting`).
+     * An older binary ignores it.
+     */
+    connectingLabel?: string;
     /** "{{name}} is on the wall" template; Kotlin substitutes holderDisplayName. */
     onWallTemplate: string;
   };
@@ -325,6 +367,17 @@ export type LiveActivityUpdateOptions = {
   androidThumbnailOverlayPath?: string | null;
   androidThumbnailBackgroundPaths?: string[];
   /**
+   * Android-only: no board is remembered for the current config, so the
+   * notification's outline bulb opens the app instead of starting a background
+   * reconnect, which could only end in a board list nobody can see (#7087).
+   */
+  bulbOpensApp?: boolean;
+  /**
+   * Android-only: a connect is running, so the outline bulb reads
+   * `connectingLabel` and a repeat tap visibly isn't lost (#7087).
+   */
+  boardConnecting?: boolean;
+  /**
    * The climber's saved board look — refreshed on every update so a settings
    * change reaches a running activity (startSession is not re-called for it).
    * iOS only; see LiveActivityStartSessionOptions.renderMode.
@@ -333,6 +386,40 @@ export type LiveActivityUpdateOptions = {
 };
 
 export type LiveActivityClimbUpdateOptions = Omit<LiveActivityUpdateOptions, 'queue'>;
+
+/**
+ * What the rest timer is doing, as the Lock Screen / Dynamic Island / Android
+ * notification draws it (#6513). JS owns the state machine and reduces it to
+ * one of these; the native side only decides whether a `running` rest has
+ * passed its deadline, and rolls a fixed-window cadence on to its current
+ * window.
+ *
+ * `queueEnded` is a LIVE clock, exactly like the in-app pill: it carries the
+ * same timing fields as the `running` (or, with no rest length, `countUp`)
+ * snapshot it replaces and keeps counting, past zero too, but is drawn muted
+ * (never the over red) under a "Queue's empty" caption. Only `paused` and
+ * `waiting` are static.
+ */
+export type LiveActivityRestTimerStatus = 'running' | 'paused' | 'waiting' | 'queueEnded' | 'countUp';
+
+export type LiveActivityRestTimerOptions = {
+  sessionId: string;
+  status: LiveActivityRestTimerStatus;
+  /** Epoch ms the current countdown / count-up started from (cycle anchor; beat start for onTheMinute). null while paused or waiting. */
+  startMs: number | null;
+  /** Epoch ms the current rest or beat ends. null for countUp, a queueEnded with no rest length, paused and waiting. */
+  deadlineMs: number | null;
+  /** onTheMinute beat length in seconds; the widget rolls to the next beat at render. null for afterTick. */
+  periodSeconds: number | null;
+  /** The rest-length setting in seconds; null when the length is Off (count-up). */
+  targetSeconds: number | null;
+  /** Frozen display value for paused / waiting: seconds remaining (+) or over (−). null otherwise (queueEnded is live). */
+  frozenSignedSeconds: number | null;
+  /** Android only: localized one-line caption for the current status (Rest, Paused, Log a climb to start, Queue's empty, Since your last climb, Every 1:00). For a running after-tick rest it is the before-the-deadline caption. iOS ignores it. */
+  androidCaption?: string | null;
+  /** Android only: the caption once a running after-tick rest passes its deadline ("Over your rest"). The service swaps to it on its own deadline re-post, while JS is suspended. iOS ignores it. */
+  androidOverCaption?: string | null;
+};
 
 export type WidgetMirrorEvent = {
   sessionId: string;
@@ -419,6 +506,10 @@ type LiveActivityNativeModule = {
   markIntentReactRootMounted?(): Promise<void>;
   /** Optional for OTA compatibility with binaries predating #4077. */
   consumeInterruptedIntentRuns?(): Promise<InterruptedLiveActivityIntentDiagnostic[]>;
+  /** True on binaries that draw the rest timer (#6513). */
+  supportsRestTimer?: boolean;
+  /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
+  updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
@@ -441,6 +532,16 @@ type SessionPresenceNativeModule = {
   endSession(): Promise<void>;
   updateActivity(options: LiveActivityUpdateOptions): Promise<void>;
   updateActivityClimb(options: LiveActivityClimbUpdateOptions): Promise<void>;
+  /** True on binaries whose notification shows the rest timer (#6513). */
+  supportsRestTimer?: boolean;
+  /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
+  updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /**
+   * Resolves after `ms` on a native clock that keeps running while the activity
+   * is paused, when Android stops firing JS timers (#7038). Optional for OTA
+   * compatibility with binaries that predate it; callers fall back to setTimeout.
+   */
+  delay?(ms: number): Promise<void>;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
   // Android-only: lightbulb taps on the ongoing notification (reconnect/reassert).

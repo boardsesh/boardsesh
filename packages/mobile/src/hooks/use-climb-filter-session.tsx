@@ -9,8 +9,8 @@
 //   lives apart from the filters, so a list's own sorts never reach `SortOption`.
 // - Live sheet edits through useLiveClimbFilters: the query waits out a 250 ms
 //   debounce while the sheet is open, and a sheet from an old scope cannot write.
-// - The name search, debounced 300 ms like the Climbs search field. Clearing it
-//   applies at once.
+// - The name search, typed in the Filters sheet and debounced 300 ms like the
+//   Climbs list's. Clearing it applies at once.
 // - The grade rail's open state, held here and never in the global
 //   `gradeRowShown` setting, so opening it in a playlist leaves Climbs alone.
 //   A regular-width iPad shows it as a popover on the Grade chip.
@@ -60,7 +60,7 @@ import {
   type SessionSortModel,
 } from '../lib/climb-filter-session-reducer';
 import { getCollectionFilter, type ClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
-import { getActiveFilterTokens, type FilterToken } from '../lib/filter-tokens';
+import { buildNameFilterToken, getActiveFilterTokens, type FilterToken } from '../lib/filter-tokens';
 import { buildGradeRailStops } from '../lib/grade-stops';
 import { chipKindToTokenKeys, type FilterChipKind } from '../lib/pinnable-chips';
 import type { PinnedChipsStore } from '../lib/pinned-chips-store';
@@ -74,7 +74,7 @@ import { useGradeFormat } from './use-grade-format';
 import { useLastUsedGrade } from './use-last-used-grade';
 import { useLiveClimbFilters } from './use-live-climb-filters';
 
-/** Same wait as the Climbs search field before a typed name reaches the query. */
+/** Same wait as the Climbs list before a typed name reaches the query. */
 const NAME_DEBOUNCE_MS = 300;
 const NO_DIMENSION_CHIPS: DimensionChip[] = [];
 const NO_HIDDEN_CHIPS: readonly FilterChipKind[] = [];
@@ -521,13 +521,8 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   const tokens = useMemo(() => {
     const chipBackedTokenKeys = new Set<string>(pinned.flatMap((kind) => chipKindToTokenKeys(kind)));
     const receipt: FilterToken[] = [];
-    if (hasName) {
-      receipt.push({
-        key: 'name',
-        label: t('mobile.filter.nameToken', { name: session.name }),
-        clear: handleClearName,
-      });
-    }
+    const nameToken = buildNameFilterToken(session.name, t, handleClearName);
+    if (nameToken) receipt.push(nameToken);
     for (const filterToken of filterTokens) {
       if (!chipBackedTokenKeys.has(filterToken.key)) receipt.push(filterToken);
     }
@@ -540,7 +535,6 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     return receipt;
   }, [
     pinned,
-    hasName,
     t,
     session.name,
     handleClearName,

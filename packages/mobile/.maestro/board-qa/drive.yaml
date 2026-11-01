@@ -1,0 +1,17 @@
+appId: ${APP_ID}
+name: Start driving through the real board-controls sheet
+---
+- assertNotVisible:
+    id: busy-wall-question
+- longPressOn:
+    id: play-drawer-wall-control
+- extendedWaitUntil:
+    visible:
+      id: ble-control-drive
+    timeout: 10000
+- tapOn:
+    id: ble-control-drive
+- extendedWaitUntil:
+    visible:
+      id: wall-control-.*-self-driving
+    timeout: 30000

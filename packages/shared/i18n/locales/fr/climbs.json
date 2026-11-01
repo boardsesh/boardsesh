@@ -324,6 +324,7 @@
       "title": "Options de la liste de blocs",
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
+      "historyTitle": "Historique de la board",
       "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Filtres actifs : {{filters}}",
-        "removeHint": "Retire un filtre pour réessayer. Ta recherche et la configuration restent sélectionnées.",
+        "removeHint": "Retire un filtre pour réessayer. Tout le reste est conservé.",
         "openFilters": "Ajuster les filtres"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "Épingler {{name}} dans la rangée du haut",
       "unpinChip": "Retirer {{name}} de la rangée du haut",
       "recentDescription": "Tes 10 dernières recherches s'afficheront ici.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Filtres rapides",
+      "quickFiltersFooter": "Choisis les filtres affichés dans la rangée du haut, et leur ordre.",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
@@ -607,7 +611,6 @@
     },
     "search": {
       "recentFilters": "Récents",
-      "clearRecent": "Effacer",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",

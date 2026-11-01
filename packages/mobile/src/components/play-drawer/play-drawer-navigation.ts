@@ -33,15 +33,22 @@ export function getViewOnlyPreviewNavigationTarget({
 }
 
 /**
- * The wiring `handlePrev`/`handleNext` actually call: turns the `lightOnSwipe`
- * setting and the shared-session browse latch into `forceViewOnly` and delegates
- * to {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
+ * The wiring `handlePrev`/`handleNext` actually call: turns the climber's
+ * setting, the shared-session browse latch and driving the wall into
+ * `forceViewOnly` through {@link climbChangeStaysViewOnly} (the one rule every
+ * change of climb reads, #7113), then delegates to
+ * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
  * (rather than inlining the translation at each call site) so it is directly
  * unit-testable alongside the PlayDrawer render tests.
  *
- * The two reasons to stay view-only are independent and either one is enough:
- * the climber turned board lighting off for swipes, or someone else is in the
- * session and a swipe would move THEIR wall and THEIR next-up.
+ * Without driving, the two reasons to stay view-only are independent and either
+ * one is enough: the climber turned board lighting off for swipes, or someone
+ * else is in the session and a swipe would move THEIR wall and THEIR next-up.
+ *
+ * Driving the wall overrides both, and the preview's own track too: a swipe
+ * from a preview that walks a list commits the next climb on it. A preview of a
+ * climb from another board (`previewOnOtherBoard`) stays a preview: the wall
+ * this phone drives can't light it.
  */
 export function getSwipeNavigationTarget({
   previewItem,
@@ -49,6 +56,9 @@ export function getSwipeNavigationTarget({
   targetItem,
   lightOnSwipe,
   inSharedSession = false,
+  driving = false,
+  stoppedForLink = false,
+  previewOnOtherBoard = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
@@ -61,12 +71,25 @@ export function getSwipeNavigationTarget({
    * false so the solo call sites read unchanged.
    */
   inSharedSession?: boolean;
+  /** A live drive on this phone's link (#7113): every change lights the wall. */
+  driving?: boolean;
+  /** A press on the frosted button stopped driving on this link (#7113). */
+  stoppedForLink?: boolean;
+  /** The preview on screen is a climb from another board. Driving leaves it a preview. */
+  previewOnOtherBoard?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
+  const drives = driving && !(previewItem !== null && previewOnOtherBoard);
   return getViewOnlyPreviewNavigationTarget({
     previewItem,
-    previewSuggestionSource,
+    // Driving commits a tracked preview's next climb instead of looking at it.
+    previewSuggestionSource: drives ? null : previewSuggestionSource,
     targetItem,
-    forceViewOnly: !lightOnSwipe || inSharedSession,
+    forceViewOnly: climbChangeStaysViewOnly({
+      driving: drives,
+      inSharedSession,
+      lightSetting: lightOnSwipe,
+      stoppedForLink,
+    }),
   });
 }
 
@@ -92,11 +115,17 @@ export function swipeStaysViewOnly({
   previewSuggestionSource,
   lightOnSwipe,
   inSharedSession = false,
+  driving = false,
+  stoppedForLink = false,
+  previewOnOtherBoard = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   lightOnSwipe: boolean;
   inSharedSession?: boolean;
+  driving?: boolean;
+  stoppedForLink?: boolean;
+  previewOnOtherBoard?: boolean;
 }): boolean {
   return getSwipeNavigationTarget({
     previewItem,
@@ -104,6 +133,9 @@ export function swipeStaysViewOnly({
     targetItem: null,
     lightOnSwipe,
     inSharedSession,
+    driving,
+    stoppedForLink,
+    previewOnOtherBoard,
   }).viewOnly;
 }
 
@@ -135,11 +167,44 @@ export function swipeStaysViewOnly({
  * wall in one gesture — the loudest possible outcome for the most idle possible
  * intent. Browsing is what the tap means there; putting it up stays an explicit
  * act on the commit row.
+ *
+ * Unless the member is driving the wall (#7113): then every change of climb
+ * lights it, in a crew too, and a similar-climb tap is one. The signed-out
+ * reader never drives.
  */
 export function getSimilarClimbTapMode(
   viewer: 'member' | 'anonymous',
-  { inSharedSession = false }: { inSharedSession?: boolean } = {},
+  { inSharedSession = false, driving = false }: { inSharedSession?: boolean; driving?: boolean } = {},
 ): 'queue' | 'preview' {
   if (viewer === 'anonymous') return 'preview';
+  if (driving) return 'queue';
   return inSharedSession ? 'preview' : 'queue';
+}
+
+/**
+ * Whether a change of climb stays a preview instead of lighting the wall
+ * (#7113). Every change of climb reads it: the player's swipes, Next and Prev
+ * (`getSwipeNavigationTarget`), the end card's Keep going, similar climbs, a
+ * fresh open, the MiniPlayer's ⏮ and ⏭ (`useClimbChangeLights('swipe')`), and
+ * every list tap (`readClimbChangeLights('tap', …)`). The rule:
+ *
+ * - driving the wall (a live drive on this phone's link) always lights, in a
+ *   crew too;
+ * - otherwise the climber's own setting (Light the board as I swipe, or as I
+ *   tap a climb) decides solo, and in a crew a change is a preview (#4281);
+ * - a press on the frosted button stopped driving on this link: solo changes
+ *   stay previews too, until the link drops. The setting itself never flips.
+ */
+export function climbChangeStaysViewOnly({
+  driving,
+  inSharedSession,
+  lightSetting,
+  stoppedForLink = false,
+}: {
+  driving: boolean;
+  inSharedSession: boolean;
+  lightSetting: boolean;
+  stoppedForLink?: boolean;
+}): boolean {
+  return !driving && (!lightSetting || inSharedSession || stoppedForLink);
 }

@@ -40,11 +40,13 @@ const preferences = vi.hoisted(() => ({
 const accessibility = vi.hoisted(() => ({ announce: vi.fn() }));
 const playerButtons = vi.hoisted(() => ({
   buttons: {
-    order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
-    visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
   } as { order: string[]; visible: Record<string, boolean> },
   previousNext: true,
   position: 'below' as 'below' | 'above',
+  boardControl: 'wallButton' as 'wallButton' | 'lightbulb',
+  setBoardControl: vi.fn(),
   setVisible: vi.fn(),
   move: vi.fn(),
   setPreviousNext: vi.fn(),
@@ -57,15 +59,48 @@ vi.mock('../../../lib/player-buttons-preference', () => ({
     buttons,
     previousNext,
     position,
+    boardControl,
   }: {
     buttons: { order: string[]; visible: Record<string, boolean> };
     previousNext: boolean;
     position: string;
+    boardControl: string;
   }) =>
     previousNext &&
     position === 'below' &&
-    buttons.order.join() === 'mirror,favorite,angle,share,queue' &&
-    Object.values(buttons.visible).every(Boolean),
+    boardControl === 'wallButton' &&
+    buttons.order.join() === 'mirror,favorite,queue,share,angle' &&
+    buttons.visible.mirror &&
+    buttons.visible.favorite &&
+    buttons.visible.queue &&
+    !buttons.visible.share &&
+    !buttons.visible.angle,
+}));
+const miniPlayer = vi.hoisted(() => ({
+  buttons: {
+    order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { next: true, previous: true, mirror: true, favorite: false, queue: false, share: false, angle: false },
+  } as { order: string[]; visible: Record<string, boolean> },
+  isDefault: true,
+  setVisible: vi.fn(),
+  move: vi.fn(),
+  restoreDefaults: vi.fn(),
+}));
+vi.mock('../../../lib/mini-player-buttons-preference', () => ({
+  useMiniPlayerButtonsEditor: () => miniPlayer,
+}));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
+const deviceLayout = vi.hoisted(() => ({ isTablet: false, phoneSplit: false }));
+vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayout }));
+vi.mock('../../queue-control/MiniPlayerButtonsPreview', () => ({
+  MiniPlayerButtonsPreview: ({ wide, board }: { wide: boolean; board: { supportsMirroring: boolean } }) =>
+    createElement('figure', {
+      'data-testid': 'mini-player-buttons-preview',
+      'data-wide': String(wide),
+      'data-mirror': String(board.supportsMirroring),
+    }),
 }));
 vi.mock('../../player-buttons/PlayerButtonsPreview', () => ({
   PlayerButtonsPreview: ({ position, board }: { position: string; board: { supportsMirroring: boolean } }) =>
@@ -312,13 +347,24 @@ beforeEach(() => {
   preferences.restoreDefaults.mockClear();
   accessibility.announce.mockClear();
   playerButtons.buttons = {
-    order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
-    visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
   };
   playerButtons.previousNext = true;
   playerButtons.position = 'below';
+  playerButtons.boardControl = 'wallButton';
+  miniPlayer.buttons = {
+    order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { next: true, previous: true, mirror: true, favorite: false, queue: false, share: false, angle: false },
+  };
+  miniPlayer.isDefault = true;
+  deviceLayout.isTablet = false;
+  deviceLayout.phoneSplit = false;
+  tabChrome.nativeAccessory = true;
+  for (const action of [miniPlayer.setVisible, miniPlayer.move, miniPlayer.restoreDefaults]) action.mockClear();
   for (const action of [
     playerButtons.setVisible,
+    playerButtons.setBoardControl,
     playerButtons.move,
     playerButtons.setPreviousNext,
     playerButtons.setPosition,
@@ -525,11 +571,12 @@ describe('PlayDrawerSectionsSheet', () => {
     ).toEqual([
       ['mobile.settings.climbDrawer.tabs.sections', 'true'],
       ['mobile.settings.climbDrawer.tabs.buttons', 'false'],
+      ['mobile.settings.climbDrawer.tabs.miniPlayer', 'false'],
     ]);
     expect(screen.queryByTestId('player-buttons-preview')).toBeNull();
   });
 
-  it('shows the buttons tab: a pinned preview of this board, then position, Previous and next, and the five buttons', () => {
+  it('shows the buttons tab: a pinned preview, Board control, position, Previous and next, and the five buttons with arrows', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
 
@@ -544,11 +591,20 @@ describe('PlayDrawerSectionsSheet', () => {
       'mobile.settings.playerButtons.previousNext',
       'mobile.settings.playerButtons.buttons.mirror',
       'mobile.settings.playerButtons.buttons.favorite',
-      'mobile.settings.playerButtons.buttons.angle',
-      'mobile.settings.playerButtons.buttons.share',
       'mobile.settings.playerButtons.buttons.queue',
+      'mobile.settings.playerButtons.buttons.share',
+      'mobile.settings.playerButtons.buttons.angle',
     ]);
     expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(5);
+    // The board control is always there; the climber picks how it looks (#7000).
+    const boardControl = screen.getByRole('radiogroup', { name: 'mobile.settings.playerButtons.boardControl.label' });
+    expect(boardControl.closest('[data-list-header]')).not.toBeNull();
+    expect(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.boardControl.wallButton' })).toHaveProperty(
+      'ariaChecked',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.boardControl.lightbulb' }));
+    expect(playerButtons.setBoardControl).toHaveBeenCalledWith('lightbulb');
     expect(screen.getByText('mobile.settings.playerButtons.footer').closest('footer')).toBeTruthy();
   });
 
@@ -556,8 +612,8 @@ describe('PlayDrawerSectionsSheet', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
 
-    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.share' }));
-    expect(playerButtons.setVisible).toHaveBeenCalledWith('share', false);
+    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.favorite' }));
+    expect(playerButtons.setVisible).toHaveBeenCalledWith('favorite', false);
     fireEvent.click(screen.getByTestId('section-layout-move-up-queue'));
     expect(playerButtons.move).toHaveBeenCalledWith('queue', -1);
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.position.above' }));
@@ -567,7 +623,7 @@ describe('PlayDrawerSectionsSheet', () => {
   });
 
   it('lists the buttons in their saved order and draws the chosen position', () => {
-    playerButtons.buttons = { ...playerButtons.buttons, order: ['queue', 'mirror', 'favorite', 'angle', 'share'] };
+    playerButtons.buttons = { ...playerButtons.buttons, order: ['queue', 'mirror', 'favorite', 'share', 'angle'] };
     playerButtons.position = 'above';
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
@@ -588,6 +644,85 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(restore.disabled).toBe(false);
     fireEvent.click(restore);
     expect(playerButtons.restoreDefaults).toHaveBeenCalledTimes(1);
+    expect(preferences.restoreDefaults).not.toHaveBeenCalled();
+  });
+
+  it('shows the Mini player tab: a pinned preview, the seven buttons with arrows, the fixed pair in a note', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+
+    const preview = screen.getByTestId('mini-player-buttons-preview');
+    expect(preview.closest('[data-sheet-list]')).toBeNull();
+    expect(preview.getAttribute('data-mirror')).toBe('true');
+    expect(preview.getAttribute('data-wide')).toBe('false');
+    expect(screen.queryByTestId('player-buttons-preview')).toBeNull();
+    expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual([
+      'mobile.settings.miniPlayer.buttons.next',
+      'mobile.settings.miniPlayer.buttons.previous',
+      'mobile.settings.playerButtons.buttons.mirror',
+      'mobile.settings.playerButtons.buttons.favorite',
+      'mobile.settings.playerButtons.buttons.queue',
+      'mobile.settings.playerButtons.buttons.share',
+      'mobile.settings.playerButtons.buttons.angle',
+    ]);
+    expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(7);
+    expect(screen.getByText('mobile.settings.miniPlayer.description').closest('[data-list-header]')).not.toBeNull();
+    expect(screen.getByText('mobile.settings.miniPlayer.fixedNote').closest('footer')).toBeTruthy();
+    expect(screen.getByText('mobile.settings.miniPlayer.footer').closest('footer')).toBeTruthy();
+  });
+
+  it('has no Mini player tab where there is no native bottom accessory to draw it', () => {
+    tabChrome.nativeAccessory = false;
+    const screen = render(sheet());
+    expect(screen.queryByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' })).toBeNull();
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+  });
+
+  it('falls back to Below the climb when the accessory goes away under the Mini player tab', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    expect(screen.getByTestId('mini-player-buttons-preview')).toBeTruthy();
+    tabChrome.nativeAccessory = false;
+    screen.rerender(sheet());
+    expect(screen.queryByTestId('mini-player-buttons-preview')).toBeNull();
+    expect(screen.getByTestId('play-drawer-sections-show-all')).toBeTruthy();
+  });
+
+  it('draws the wide bar on an iPad and on the open Duo', () => {
+    deviceLayout.isTablet = true;
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-wide')).toBe('true');
+    expect(screen.getByText('mobile.settings.miniPlayer.footerWide')).toBeTruthy();
+    expect(screen.queryByText('mobile.settings.miniPlayer.footer')).toBeNull();
+    deviceLayout.isTablet = false;
+    deviceLayout.phoneSplit = true;
+    screen.rerender(sheet());
+    expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-wide')).toBe('true');
+  });
+
+  it('applies Mini player choices at once: switches and arrows', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.share' }));
+    expect(miniPlayer.setVisible).toHaveBeenCalledWith('share', true);
+    fireEvent.click(screen.getByTestId('section-layout-move-up-queue'));
+    expect(miniPlayer.move).toHaveBeenCalledWith('queue', -1);
+    expect(playerButtons.setVisible).not.toHaveBeenCalled();
+  });
+
+  it("offers the Mini player's Restore defaults once anything differs, and leaves the other tabs alone", () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    const restore = screen.getByTestId('mini-player-buttons-restore-defaults') as HTMLButtonElement;
+    expect(restore.disabled).toBe(true);
+
+    miniPlayer.isDefault = false;
+    screen.rerender(sheet());
+    expect(restore.disabled).toBe(false);
+    fireEvent.click(restore);
+    expect(miniPlayer.restoreDefaults).toHaveBeenCalledTimes(1);
+    expect(playerButtons.restoreDefaults).not.toHaveBeenCalled();
     expect(preferences.restoreDefaults).not.toHaveBeenCalled();
   });
 

@@ -33,12 +33,15 @@ export function useLiveClimbFilters<S extends ClimbFilterSelection>(options: Liv
   const selectionRef = useRef(options.selection);
   selectionRef.current = options.selection;
 
-  const openFilters = useCallback(() => {
+  // True when this call opened the sheet; false when there is no board or it is
+  // already open, so a caller can tell a real opening from a no-op.
+  const openFilters = useCallback((): boolean => {
     const { scopeKey } = optionsRef.current;
-    if (scopeKey === null || sessionRef.current?.scopeKey === scopeKey) return;
+    if (scopeKey === null || sessionRef.current?.scopeKey === scopeKey) return false;
     const nextSession = { id: ++nextSessionIdRef.current, scopeKey };
     sessionRef.current = nextSession;
     setSession(nextSession);
+    return true;
   }, []);
 
   // External navigation/search cancellation ends the presentation without

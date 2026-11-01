@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
@@ -76,6 +77,17 @@ export type PlayDrawerOpenTarget = {
   claimFirstApply?: () => boolean;
 };
 
+/** The climb on screen, handed to the landscape iPad player's side panel. */
+export type PlayerSidePanelClimb = {
+  climb: Climb;
+  /** The board the climb renders on (it can differ from the active board). */
+  boardName: string;
+  layoutId: number;
+  angle: number;
+  /** Opens the full logbook sheet the player hosts. */
+  onOpenFullLogbook: () => void;
+};
+
 export type PlayDrawerProps = {
   /** `/play` owns the transform so its backing and content travel together. */
   swipeDismiss?: SwipeDismissAnimation;
@@ -118,6 +130,25 @@ export type PlayDrawerProps = {
    *  when a WallStrip is docked above the pane and already owns that inset. Ignored
    *  in route mode (the modal always owns the top inset). */
   paneTopInset?: boolean;
+  /** Pane mode only: what the pane shows with no climb. Defaults to the "Pick a
+   *  climb" placeholder; the phone split passes the unlit board instead. */
+  paneEmptyState?: ReactNode;
+  /** Pane mode only: take the scroll position the full-screen player left behind
+   *  when the phone split replaced it (see route-player-handoff). Only the
+   *  focused tab's pane accepts, so a background tab never consumes it. */
+  acceptsScrollHandoff?: boolean;
+  /** Size the board from the viewport's height, with the sections below the
+   *  fold. The phone split's pane keeps every control row above its bottom
+   *  inset (the MiniPlayer capsule); the landscape iPad player hangs its
+   *  favourite / share row below the fold. Everywhere else keeps the usual
+   *  first screen. */
+  fitBoardToHeight?: boolean;
+  /**
+   * The landscape iPad player's side panel (see `resolvePlayerArrangement`).
+   * Rendered to the right of the board column, which narrows to make room; it
+   * receives the climb on screen, or null before one resolves.
+   */
+  renderSidePanel?: (displayed: PlayerSidePanelClimb | null) => ReactNode;
   /**
    * Who is looking. `'anonymous'` is the signed-out reader that
    * `AnonymousClimbView` renders on the web export's read-only climb URL: the

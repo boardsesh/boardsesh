@@ -121,7 +121,6 @@
         "failed": "Todavía no hay conexión con {{board}}. Inténtalo de nuevo cuando quieras.",
         "failedNoName": "Todavía no hay conexión con tu plafón. Inténtalo de nuevo cuando quieras."
       },
-      "pill": "Iluminar en el plafón",
       "confirm": {
         "title": "Conectado a {{board}}",
         "titleNoName": "Conectado a tu plafón",
@@ -214,6 +213,7 @@
       "resolving": "Cargando plafones…",
       "noResults": "Ningún plafón al alcance",
       "unavailable": "Activa el Bluetooth para buscar",
+      "notAsked": "Permite el Bluetooth para buscar plafones cerca de ti.",
       "unknownSetupTitle": "Encontramos un plafón {{board}}",
       "unknownSetupBody": "Aún no sabemos cómo está configurado.",
       "moonboardTitle": "Hay un MoonBoard cerca",

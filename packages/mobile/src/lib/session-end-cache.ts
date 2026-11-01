@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { SessionSummary } from '@boardsesh/shared-schema';
-import { sessionSummaryQueryKey } from './graphql/query-keys';
+import { sessionSummaryQueryKey, sessionWorkoutsQueryKey } from './graphql/query-keys';
 
 /**
  * Put END_SESSION's own summary into the cache the summary screen reads (#6903).
@@ -23,4 +23,6 @@ export async function seedEndedSessionCaches(queryClient: QueryClient, summary: 
   queryClient.setQueryData(summaryKey, { sessionSummary: summary });
   void queryClient.invalidateQueries({ queryKey: ['sessionDetail', summary.sessionId] });
   void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+  void queryClient.invalidateQueries({ queryKey: sessionWorkoutsQueryKey(summary.sessionId) });
+  void queryClient.invalidateQueries({ queryKey: ['sessionWorkoutHeadlines'] });
 }

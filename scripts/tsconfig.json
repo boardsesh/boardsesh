@@ -14,6 +14,10 @@
     "types": ["node"]
   },
   "include": [
+    "board-qa.ts",
+    "board-qa-ios-driver.ts",
+    "board-qa-simulator-peer.ts",
+    "board-qa/**/*.ts",
     "testflight-build.ts",
     "testflight-notes.ts",
     "testflight-distribution.ts",
@@ -123,6 +127,8 @@
     "dev-db-discover.ts",
     "__tests__/dev-db-discover-watchdog.test.ts",
     "check-pr-test-plan.ts",
+    "check-changelog-ownership.ts",
+    "check-changelog-ownership.test.ts",
     "lib/pr-labels.ts",
     "lib/pr-changed-paths.ts",
     "__tests__/pr-changed-paths.test.ts",

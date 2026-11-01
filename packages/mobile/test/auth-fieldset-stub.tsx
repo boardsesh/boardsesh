@@ -10,11 +10,11 @@
 // interactive detail of the real field, not modelled by this node-env stub.)
 
 import { useRef } from 'react';
-import { TextInput as RNTextInput, Text, View } from 'react-native';
+import { TextInput as RNTextInput, Text, View, type TextInputInstance } from 'react-native';
 import type { AuthFieldsetProps } from '../src/components/AuthFieldset.types';
 
 export function AuthFieldset({ fields, onSubmit }: AuthFieldsetProps) {
-  const refs = useRef<Array<RNTextInput | null>>([]);
+  const refs = useRef<Array<TextInputInstance | null>>([]);
   const lastIndex = fields.length - 1;
 
   return (

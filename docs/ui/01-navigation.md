@@ -47,8 +47,12 @@ There are **5 tabs** (the web has a 6th "Create" tab but it is between Discover 
 
 #### Mobile: library entry and tab variants
 
-The mobile tabs remain **Home, Climbs, Session, Discover, You**, in that order.
-Session keeps the `/record` route; only its visible navigation label changes.
+The mobile tabs are **Home, Session, Discover, You, Climbs**, in that order:
+Climbs is the rightmost tab, like Apple Music's Search tab (HIG Tab bars: the
+search tab sits "at the trailing end"). The native iPad bar and its sidebar follow
+the same order; the JS tablet rails list Climbs last among the primary rows, with
+You pinned at the bottom. Session keeps the `/record`
+route; only its visible navigation label changes.
 An ordinary launch and untargeted post-login entry select **Climbs**, using the
 stored active board, unless the climber chose **Home** under Settings › Home ›
 "Open the app on" (#6289; it moved from General to the Home page with #6546). Selecting the initial tab does not reorder the bar.
@@ -75,20 +79,98 @@ stored active board, unless the climber chose **Home** under Settings › Home �
 The bar itself depends on the device:
 
 - **Native iPhone:** Liquid Glass uses `NativeTabs` (the system UIKit tab bar) on
-  every iPhone, iOS 18 included. On iOS 26 Climbs keeps `role="search"` and its
-  native bottom search field, and the queue accessory and scroll minimization
-  ride the bar. On iOS 18 the bar has none of those: Climbs is an ordinary
-  labelled tab with its own search field, and the current climb rides the
-  floating JS queue bar just above the native bar.
+  every iPhone, iOS 18 included. Climbs is an ordinary labelled tab, like Apple
+  Music's Search tab, not `role="search"`: since SDK 58 that role is a
+  UISearchTab, which iOS 26 sets apart from the other tabs and which brings a
+  search field into the bar. The queue accessory and scroll minimization ride
+  the iOS 26 bar. On an iOS 27 iPhone Climbs is also the bar's prominent tab, so
+  it stays on screen at the right when the bar collapses, as Music's Search does;
+  the collapsed accessory fills the room left between it and the selected tab. On iOS 18 the bar has neither, and the current climb rides
+  the floating JS queue bar just above the native bar.
+- **Platter controls (iOS 26):** the open platter shows the lightbulb and the tick. The
+  collapsed platter has one 44pt slot: the bulb while a board is bound and nobody holds it,
+  otherwise the tick. A mark on the thumbnail's top-trailing corner shows who holds the board in
+  both placements: amber `lightbulb.fill` (LED board you hold), brand-tone `pin.fill` (board with
+  no lights you hold), `person.fill` (a teammate holds it), nothing when it is free. The collapsed
+  platter's climb link reads the connection aloud; the open one leaves that to its bulb. The
+  platter's bulb and tick send `placement` (`regular` / `inline`) on `Board Connect Tapped` and
+  `Quick Tick Opened`.
+- **Climbs header (iOS 26 Liquid Glass, where the accessory platter mounts):** while you hold the board and no other climb is lit on the
+  wall, the centre slot shows a "You have the board" capsule (brand-tone pin and "You have the
+  wall" for a board with no lights). The "On the wall" capsule keeps priority. The tap opens the
+  Bluetooth controls sheet when this device holds the radio link and logs `Board Controls Opened
+  {surface: 'header_pill'}`; otherwise it is plain text. Both capsules share the
+  `HeaderStatusCapsule` glass shell. Material and Android are unchanged: their bar never
+  collapses, so its bulb stays visible; neither does the iOS 18 floating bar.
+  The header hides the Climbs title by drawing it in a clear colour
+  (`HIDDEN_HEADER_TITLE_STYLE`), not with an empty title view: the native stack keeps one
+  centre view per screen, and a capsule swapped into an empty one kept its zero size and
+  stayed invisible until the tab was left and re-entered.
+- **Climbs search, every platform:** the Climbs screen has no search field and
+  its header draws no "Climbs" title (`NativeRootHeader` `titleHidden`; the tab
+  names the screen). The climb-name search is the first row of the Filters
+  sheet, as in the Logbook. A second tap on the Climbs tab with the list showing
+  opens Filters without the keyboard (`useTabReselect`, which listens for the tab
+  bar's re-press; the JS tablet rails navigate without one, so there the Filters
+  chip is the way in). On a collapsed bar that tap also expands the bar. That is UIKit, not
+  us: iOS expands a minimized bar on any tab tap, the prominent one included, and offers no API to
+  keep it minimized. Checked on iOS 27 with the Filters sheet off and with a programmatic scroll
+  after the tap; the bar expanded both times (#6885, closed as platform behaviour). A typed name shows as the first token under the chips and
+  counts in the Filters badge.
 - **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
   with `MaterialTabBar`.
-- **Tablets:** one JS `Tabs` navigator at every width (sidebar at regular width,
-  `MaterialTabBar` in a narrow split), so a Split View resize keeps each tab's
-  state. `NativeTabs` remounts when a tab's `hidden` flag flips, and the
-  iPad-only On the Wall tab would have to be hidden in a narrow split (a sixth
-  native tab spills into UIKit's More list), so the iPad shell stays JS. The
-  native `sidebarAdaptable` sidebar is not used for the same reason, and because
-  it cannot host the live wall cell or report its width to the pane budgets.
+- **iPad (Liquid Glass):** the Apple Music layout. `NativeTabs` with
+  `sidebarAdaptable`: a sidebar in landscape, a tab bar at the top in portrait,
+  the phone tab bar in a narrow Split View. Each tab is one content column, with
+  no player pane or wall column beside it. The current climb rides the bottom
+  accessory, as on iPhone (Music's MiniPlayer), and tapping it or any climb opens
+  the full-screen `/play` player (the accessory zooms into it). Five tabs, as
+  on iPhone (HIG Tab bars: "aim for a default list of five or fewer"): the
+  iPad-only On the Wall tab became the **Wall display**, below. One resolver,
+  `resolveCurrentClimbSurface`
+  (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
+  the floating JS bar never appears over the accessory; tab content clears the
+  accessory through the measured in-tab inset, as on the iPhone Duo. The rest
+  timer pill is a root overlay, so it centres on the content column the
+  accessory spans, using the in-tab side insets (the sidebar's 280pt in
+  landscape, the Duo rail's 84pt), not on the whole window. On every device the
+  pill stays off the Session tab's own page while the timer is idle (waiting
+  for the first climb), since that page shows the timer's settings inline, and
+  reserves no space there either. Once a rest is counting, the pill and its
+  space come back, because nothing inline shows the running time outside a
+  workout block. Lists pad for the
+  expanded tab bar even while it is minimized, so a bar that re-expands at the
+  end of a list never covers the last row. Root
+  headers use native bar items, as on iPhone, so UIKit places them beside the
+  sidebar button and the top tab bar (see "Root header actions are native bar
+  items" in `docs/ai-design-guidelines.md`).
+  In landscape the player puts the board on the left and Up next / Logbook /
+  Beta in a 400 pt panel on the right (`resolvePlayerArrangement`); in portrait
+  the board stays on top.
+- **Android tablets, Expo web, iPad on Material:** one JS `Tabs` navigator at
+  every width (rail at regular width, `MaterialTabBar` in a narrow split), so a
+  resize keeps each tab's state. At regular width the shell keeps its
+  persistent player pane (`IpadPlayPane`) and, in landscape, the live wall column.
+- **Wall display (tablets):** a full-screen kiosk for a tablet mounted at the
+  board, read from 3–5 m (`app/wall-display/`). It opens from the board sheet
+  and from ⛶ on the MiniPlayer (or the MiniPlayer's ⋯ when ⛶ is switched off),
+  on a tablet only; the old
+  `com.boardsesh.app://wall` link opens it too (`+native-intent.ts`). A root
+  `transparentModal` like `/play`, never `fullScreenModal`
+  (`docs/mobile-sheets-vs-routes.md` rule 2), so it covers the sidebar, the tab
+  bar and the bottom accessory while they stay live behind it. The screen stays
+  awake while the kiosk is the focused screen. Exit and Settings sit in the top
+  corner and fade 4 s after the last touch; any touch brings them back (HIG,
+  Going full screen). Faded, they stay in the accessibility tree and a press on
+  them only brings them back; with VoiceOver or an Android accessibility service
+  on they never fade. Esc and ⌘W exit from a hardware keyboard. The route hosts
+  its own Bluetooth device picker, as `/play` does, and marks itself in
+  `wall-display-presence.ts` so the shell behind it stays quiet even with a page
+  pushed over the kiosk. The kiosk shows the board, the
+  grade, the name and the "On the wall now" strip; the setter, the angle badge
+  and the Lit-by / Sent-by avatars were too small to read from the mat and are
+  not drawn. Its Settings and profile pages push inside its own stack
+  (`scoped-navigation.ts`).
 - **Session setup:** Browse climbs opens the selected board's library
   directly, without rewriting the board selection.
   Change board is a separate action; its picker returns to Session. First-time

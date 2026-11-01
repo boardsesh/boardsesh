@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../lib/schedule-idle-task';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   GET_PLAYLISTS_FOR_CLIMBS,
@@ -35,8 +35,8 @@ type UseClimbListPlaylistMembershipsArgs = {
  * No-op unless the user enabled the setting AND is signed in. Dedupes via a ref
  * so each climb is requested once; resets the ref and clears the store whenever
  * the board/layout/auth/enabled context flips, so a previous board's memberships
- * can't paint the new board's rows. Deferred past the active fling via
- * `runAfterInteractions`, mirroring the logbook fetch.
+ * can't paint the new board's rows. Deferred until the JS thread has idle time
+ * after a frame paints.
  */
 export function useClimbListPlaylistMemberships({
   boardName,
@@ -78,7 +78,7 @@ export function useClimbListPlaylistMemberships({
     const releaseUnmerged = () => {
       for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
     };
-    const handle = InteractionManager.runAfterInteractions(async () => {
+    const handle = scheduleIdleTask(async () => {
       // Mark up-front so an overlapping effect run doesn't double-request the
       // same uuids while this batch is in flight.
       for (const uuid of toFetch) fetchedForContext.add(uuid);

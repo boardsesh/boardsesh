@@ -29,6 +29,11 @@ const headerActions = vi.hoisted(() => ({
     trailing?: { label: string; onPress: () => void } | null;
   },
 }));
+// The workout data (#6903) has its own suites; these sessions carry no workout.
+vi.mock('../../../../src/components/session/workout/use-session-workout-view', () => ({
+  useSessionWorkoutView: () => undefined,
+  useSessionWorkoutHeadlines: () => new Map(),
+}));
 vi.mock('../../../../src/hooks/use-header-actions', () => ({
   useHeaderActions: (actions: typeof headerActions.current) => {
     headerActions.current = actions;
@@ -108,6 +113,11 @@ vi.mock('../../../../src/components/Text', () => ({
 vi.mock('../../../../src/components/Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../../../src/components/Avatar', () => ({ Avatar: () => createElement('div', null) }));
 vi.mock('../../../../src/components/SectionHeader', () => ({ SectionHeader: () => createElement('div', null) }));
+// The workout pieces (#6903) have their own suites; a plain session never draws them.
+vi.mock('../../../../src/components/session/workout/WorkoutSummarySection', () => ({
+  WorkoutSummarySection: () => null,
+}));
+vi.mock('../../../../src/components/session/workout/WorkoutSyncingNote', () => ({ WorkoutSyncingNote: () => null }));
 vi.mock('../../../../src/components/Separator', () => ({ Separator: () => createElement('div', null) }));
 vi.mock('../../../../src/components/Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

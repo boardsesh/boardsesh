@@ -28,9 +28,7 @@
     "open": "On the wall",
     "railDark": "Nothing lit right now",
     "openAria": "See what's on the wall",
-    "openAriaWithClimb": "See what's on the wall: {{name}}",
-    "litByLine": "Lit by {{name}}",
-    "sentByLabel": "Sent by"
+    "openAriaWithClimb": "See what's on the wall: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} send",
@@ -134,6 +132,10 @@
     "featuredSendsLabel_other": "sends",
     "featuredAttemptsLabel_one": "attempt",
     "featuredAttemptsLabel_other": "attempts",
+    "featuredPhoneSendsLabel_one": "send on this phone",
+    "featuredPhoneSendsLabel_other": "sends on this phone",
+    "featuredPhoneAttemptsLabel_one": "attempt on this phone",
+    "featuredPhoneAttemptsLabel_other": "attempts on this phone",
     "hardestSendTitle": "Hardest send",
     "effortTitle": "Worth coming back to",
     "effortBody": "That project's not going anywhere. You'll get it.",
@@ -486,7 +488,9 @@
       "autoAdvanceFootnote": "Only while Boardsesh is open.",
       "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
       "lengthPillAria": "Rest length, {{value}}",
-      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length."
+      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length.",
+      "showOnLockScreen": "Show on Lock Screen",
+      "showOnLockScreenHint": "See your rest count down without opening the app."
     },
     "sessionVisibility": {
       "title": "Show this session live",
@@ -527,7 +531,6 @@
       "close": "Close",
       "setByLine": "Set by {{setter}}",
       "drivenByA11y": "{{name}} is lighting the wall. Open profile.",
-      "drivenByAnonA11y": "Someone is lighting the wall.",
       "litAgoNow": "now",
       "litAgoMinutes": "{{count}}m",
       "litAgoHours": "{{count}}h",
@@ -606,7 +609,19 @@
         "headerSwitcherHintClose": "Hides the other boards"
       },
       "kilterHistorySource": "Displayed via Kilter",
-      "retryHistory": "Try loading history again"
+      "retryHistory": "Try loading history again",
+      "wallDisplay": {
+        "open": "Wall display",
+        "openHint": "Shows the climb on the wall full screen, big enough to read from the mat.",
+        "exit": "Exit",
+        "exitA11y": "Exit wall display"
+      },
+      "stripHistoryOverline": "Last on the wall · {{age}}",
+      "stripHistoryByline": "Last on the wall · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Last on the wall · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Last on the wall · {{age}}: {{name}}, {{grade}}, lit by {{sender}}",
+      "stripDismiss": "Dismiss",
+      "stripDismissHint": "Swipe left to dismiss. Opens the wall climb."
     },
     "toast": {
       "sessionEnded": "Session ended",
@@ -665,6 +680,21 @@
       "doneNothingLogged": "Nothing logged on this phone",
       "doneClose": "Done",
       "seeWorkout": "See your workout"
+    },
+    "workoutSummary": {
+      "repsBySetsSpoken_one": "{{reps}} reps by {{count}} set",
+      "repsBySetsSpoken_other": "{{reps}} reps by {{count}} sets",
+      "detailSpanClimbsSpoken_one": "{{span}}, {{count}} climb",
+      "detailSpanClimbsSpoken_other": "{{span}}, {{count}} climbs",
+      "repsSentOfTotalSpoken": "{{sent}} of {{total}} reps sent",
+      "blockExpandHint": "Shows the block's climbs",
+      "blockCollapseHint": "Hides the block's climbs",
+      "stillSaving_one": "Still saving {{count}} tick. Your totals catch up once it's in.",
+      "stillSaving_other": "Still saving {{count}} ticks. Your totals catch up once they're in.",
+      "stillSavingOffline_one": "You're offline, so {{count}} tick is waiting on this phone. Your totals catch up once you're back online.",
+      "stillSavingOffline_other": "You're offline, so {{count}} ticks are waiting on this phone. Your totals catch up once you're back online.",
+      "tickCount_one": "{{count}} tick",
+      "tickCount_other": "{{count}} ticks"
     },
     "session": {
       "headerStart": "Start a session",
@@ -850,6 +880,7 @@
         "unmirror": "Unmirror climb",
         "relight": "Relight wall",
         "reconnect": "Connect to board",
+        "connecting": "Connecting…",
         "onWall": "{{name}} is on the wall"
       },
       "inStatsFlashes": "Flashes",
@@ -873,40 +904,69 @@
   "playView": {
     "wallState": {
       "onWall": "On the wall",
-      "live": "Live",
-      "onWallHint": "This one's lit on the wall right now.",
-      "liveHint": "Your next climb goes up on the wall.",
       "browsingHint": "You're just looking. The wall stays where it is.",
-      "pillHint": "See wall options",
-      "backToLive": "Back to live",
       "backToWall": "Back to the climb on the wall",
-      "backToCurrent": "Back to your climb",
-      "putOnWall": "Put on the wall",
-      "lastOnWallTime": "Last on the wall at {{time}}",
-      "lastOnWallYesterday": "Last on the wall yesterday",
-      "lastOnWallWeekday": "Last on the wall {{weekday}}",
-      "lastOnWallDate": "Last on the wall {{date}}",
+      "backToCurrent": "Back to my pick",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
       "previewNotLit": "Preview, not lit",
       "onlyYouSeeThis": "Only you see this",
       "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
-        "body": "Someone just lit {{name}}. Put yours up instead?",
         "confirm": "Put mine up",
         "cancel": "Keep theirs",
-        "bodyNamed": "{{person}} just put up {{name}}. Put yours up instead?",
         "cancelNamed": "Keep {{person}}'s"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} just put up {{name}}",
+        "caption": "Someone just put up {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Browsing. The wall stays where it is.",
         "backToLive": "Back to live: {{name}}",
         "committed": "{{name}} is on the wall"
-      }
+      },
+      "backMyPick": "My pick",
+      "backOnWall": "On the wall",
+      "backToMyPickNamed": "Back to my pick: {{name}}",
+      "backToWallNamed": "Back to the climb on the wall: {{name}}"
+    },
+    "wallControl": {
+      "connectHint": "Connects your board and lights this climb",
+      "litHint": "Tap to disconnect. Hold for board controls.",
+      "stopDrivingHint": "Tap to stop driving. Hold for board controls.",
+      "onBoard": "On {{name}}'s board",
+      "onCrewBoard": "On your crew's board",
+      "onOtherPhone": "On your other phone",
+      "bulbAria": "Board lights",
+      "valueOff": "Off",
+      "valueOtherClimb": "Another climb is up",
+      "lightHint": "Lights this climb",
+      "relayHint": "Puts it on {{name}}'s board",
+      "relayHintCrew": "Puts it on your crew's board",
+      "relayHintOtherPhone": "Puts it on the board from your other phone",
+      "putOnBoard": "Put on board",
+      "disconnectBoard": "Disconnect board",
+      "youHaveBoard": "You have the board",
+      "youHaveBoardLit": "You have the board, lit on the wall",
+      "youAreDriving": "You are driving the wall",
+      "drivingEveryClimb": "every climb you pick lights up",
+      "stoppedDriving": "Stopped driving the wall",
+      "lightEveryClimb": "Light every climb",
+      "releaseToDrive": "Let go to light every climb",
+      "crewPutUp": "Your crew put up {{climb}}",
+      "holderHasBoard": "{{name}} has the board",
+      "crewHasBoard": "Your crew has the board",
+      "boardOptions": "Board options",
+      "onWall": "On the wall",
+      "lightAgainHint": "Lights it again on the board",
+      "putOnGymBoard": "Put on {{board}}",
+      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb"
     },
     "setActive": "Set active",
     "paneEmpty": {
       "title": "Pick a climb",
-      "subtitle": "Tap a climb to see it here."
+      "subtitle": "Tap a climb to see it here.",
+      "unlitHint": "Tap a climb to light it"
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",
@@ -922,6 +982,12 @@
     "shareError": "Couldn't share — try again",
     "favoriteError": "Couldn't update your favorites — try again",
     "closeAria": "Close",
+    "sidePanel": {
+      "upNext": "Up next",
+      "logbook": "Logbook",
+      "beta": "Beta",
+      "segmentsAria": "Side panel"
+    },
     "actionBar": {
       "previousAria": "Previous climb",
       "nextAria": "Next climb",
@@ -930,6 +996,7 @@
       "addFavoriteAria": "Add favorite",
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
+      "moreActionsForAria": "More actions for {{name}}",
       "queueCountAria": "Queue, {{count}} climbs",
       "queueUpNextAria_zero": "Queue, nothing up next",
       "queueUpNextAria_one": "Queue, {{count}} climb up next",

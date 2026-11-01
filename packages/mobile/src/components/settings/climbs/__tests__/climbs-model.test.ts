@@ -16,6 +16,8 @@ function makeInput(overrides: Partial<ClimbsModelInput> = {}): ClimbsModelInput 
     onOpenClimbList: vi.fn(),
     climbViewLabel: 'Default',
     onOpenClimbView: vi.fn(),
+    quickFiltersLabel: 'Default',
+    onOpenQuickFilters: vi.fn(),
     ...overrides,
   };
 }
@@ -29,12 +31,22 @@ function findRow(input: ClimbsModelInput, key: string): MoreRow {
 }
 
 describe('buildClimbsModel', () => {
-  it('runs grades, then the climb list and climb view rows', () => {
+  it('runs grades, then the climb list, climb view and quick filters rows', () => {
     // The Maestro tutorial finds the "Use my grades" switch by its neighbours:
     // the Climb view row has to stay below it.
     const sections = buildClimbsModel(makeInput()).sections;
     expect(sections.map((section) => section.key)).toEqual(['grades', 'climbList']);
-    expect(sections[1].rows.map((row) => row.key)).toEqual(['climbList', 'climbView']);
+    expect(sections[1].rows.map((row) => row.key)).toEqual(['climbList', 'climbView', 'quickFilters']);
+  });
+
+  it('shows whether the quick filters are customised, and opens their page', () => {
+    const onOpenQuickFilters = vi.fn();
+    const row = findRow(makeInput({ quickFiltersLabel: 'Custom', onOpenQuickFilters }), 'quickFilters');
+    if (row.kind !== 'nav') throw new Error('quickFilters is not a nav row');
+    expect(row.label).toBe('mobile.settings.quickFilters.title');
+    expect(row.value).toBe('Custom');
+    row.onPress();
+    expect(onOpenQuickFilters).toHaveBeenCalledTimes(1);
   });
 
   it('shows whether the climb view is customised, and opens its page', () => {

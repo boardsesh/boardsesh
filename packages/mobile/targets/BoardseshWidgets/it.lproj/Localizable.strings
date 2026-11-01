@@ -1,0 +1,32 @@
+/* Lock Screen and Dynamic Island controls */
+"Prev" = "Indietro";
+"Next" = "Avanti";
+"Previous climb" = "Blocco precedente";
+"Next climb" = "Blocco successivo";
+"Mirror climb" = "Specchia il blocco";
+"Unmirror climb" = "Annulla specchiatura";
+"Wall lit, you are driving" = "Pannello illuminato, controlli tu";
+"Wall control" = "Controllo del pannello";
+"Tap to reconnect" = "Tocca per riconnettere";
+"Board disconnected. Tap to reconnect" = "Pannello disconnesso. Tocca per riconnettere";
+"On the wall" = "In parete";
+"%@ is on the wall" = "%@ è in parete";
+"Wall held by another climber" = "Pannello controllato da un altro climber";
+
+/* Shown when the card has had no update for 10 minutes */
+"Open Boardsesh to refresh" = "Apri Boardsesh per aggiornare";
+
+/* Climb details: "3 of 12" is the queue position */
+"%lld of %lld" = "%lld di %lld";
+"Grade %@" = "Grado %@";
+
+/* Rest timer (#6513) */
+"Rest timer" = "Timer di recupero";
+/* "Rest" is the rest period between attempts (noun); "Paused" is the stopped timer. Keep them distinct. */
+"Rest" = "Recupero";
+"Over your rest" = "Recupero superato";
+"Paused" = "In pausa";
+"Every %@" = "Ogni %@";
+"Queue's empty" = "Coda vuota";
+"Since your last climb" = "Dal tuo ultimo blocco";
+"Log a climb to start" = "Registra una salita per iniziare";

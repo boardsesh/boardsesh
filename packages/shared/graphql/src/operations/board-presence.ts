@@ -50,8 +50,9 @@ const BOARD_PRESENCE_STATS_FIELDS = `
 
 // Subscription — the live "now on the wall" feed for a board. Emits a
 // BoardPresenceEvent union discriminated by __typename: a BoardClimbSet carries
-// the full climb, a BoardClimbCleared carries the clear timestamp + seq (the
-// newer `climbUuid` field is selected by the app once every backend serves it),
+// the full climb, a BoardClimbCleared carries the clear timestamp + seq and the
+// climb that went dark (#7015; selected only from release/next, after the backend
+// that serves the field was deployed from main),
 // a BoardStatsUpdated carries the recomputed stat tiles (pushed when a tick
 // lands on the wall) so the tiles update live instead of re-fetching, and a
 // BoardConnectionChanged carries the current connection holder (or null when the
@@ -72,6 +73,7 @@ export const BOARD_NOW_PLAYING = `
       ... on BoardClimbCleared {
         clearedAt
         seq
+        climbUuid
       }
       ... on BoardStatsUpdated {
         stats {

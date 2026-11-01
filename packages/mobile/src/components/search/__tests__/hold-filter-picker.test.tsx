@@ -27,7 +27,8 @@ type PressableMockProps = {
   accessibilityState?: { selected?: boolean; disabled?: boolean };
 };
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement('div', { 'data-style': JSON.stringify(style ?? null) }, children),
   Pressable: ({ children, onPress, disabled, accessibilityLabel, accessibilityState }: PressableMockProps) =>
     createElement(
       'button',
@@ -47,8 +48,13 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: rail.tabInsetBottom, left: 0 }),
 }));
+// iPhone Duo's vertical tab rail moves the controls' bottom floor to the tab's
+// own inset (the accessory stays up there).
+const rail = vi.hoisted(() => ({ vertical: false, tabInsetBottom: 0, windowInsetBottom: 0 }));
+vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => rail.vertical }));
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => rail.windowInsetBottom }));
 
 type SvgMockProps = {
   children?: ReactNode;
@@ -144,6 +150,33 @@ function chip(container: HTMLElement, typeKey: string): HTMLButtonElement | null
 describe('HoldFilterPicker', () => {
   beforeEach(() => {
     haptics.selection.mockClear();
+    rail.vertical = false;
+    rail.tabInsetBottom = 0;
+    rail.windowInsetBottom = 0;
+  });
+
+  // The controls' bottom padding is the inset floor plus the 12pt gap.
+  function controlsBottomPadding(container: HTMLElement): number | null {
+    for (const element of Array.from(container.querySelectorAll('[data-style]'))) {
+      const match = /"paddingBottom":(\d+)/.exec(element.getAttribute('data-style') ?? '');
+      if (match) return Number(match[1]);
+    }
+    return null;
+  }
+
+  it('keeps the window inset as its floor under a horizontal tab bar, where the accessory is hidden', () => {
+    rail.windowInsetBottom = 34;
+    rail.tabInsetBottom = 139;
+    const { container } = renderPicker();
+    expect(controlsBottomPadding(container)).toBe(34 + 12);
+  });
+
+  it("clears the accessory through the tab's inset while the tab bar is a vertical rail (iPhone Duo)", () => {
+    rail.vertical = true;
+    rail.windowInsetBottom = 21;
+    rail.tabInsetBottom = 77;
+    const { container } = renderPicker();
+    expect(controlsBottomPadding(container)).toBe(77 + 12);
   });
 
   it('renders one chip per board hold type plus ANY', () => {

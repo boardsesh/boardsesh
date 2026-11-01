@@ -17,14 +17,17 @@ const controls = vi.hoisted(() => ({ enabled: true, boardId: 7 as number | null 
 // non-throwing `useContext` read is half of what this file measures.
 vi.mock('@boardsesh/board-presence-react', async () => {
   const React = await import('react');
-  return { BoardPresenceWallClimbContext: React.createContext<unknown>(undefined) };
+  return {
+    BoardPresenceWallClimbContext: React.createContext<unknown>(undefined),
+    BoardPresenceClearedClimbContext: React.createContext<string | null | undefined>(undefined),
+  };
 });
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => controls,
 }));
 
-import { BoardPresenceWallClimbContext } from '@boardsesh/board-presence-react';
-import { useWallClimb } from '../use-wall-climb';
+import { BoardPresenceClearedClimbContext, BoardPresenceWallClimbContext } from '@boardsesh/board-presence-react';
+import { usePresenceClearedClimbUuid, useWallClimb } from '../use-wall-climb';
 
 const LIT = { climbUuid: 'climb-lit', name: 'Their Project', sentAt: '2026-08-21T10:00:00Z', seq: 4 };
 
@@ -93,5 +96,28 @@ describe('useWallClimb', () => {
     const { result } = renderWithWallClimb({ ...LIT, name: undefined });
 
     expect(result.current).toEqual({ uuid: 'climb-lit', name: null, sentAt: '2026-08-21T10:00:00Z' });
+  });
+});
+
+describe('usePresenceClearedClimbUuid (#7015)', () => {
+  function renderWithCleared(value: string | null | undefined) {
+    return renderHook(() => usePresenceClearedClimbUuid(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(BoardPresenceClearedClimbContext.Provider, { value }, children),
+    });
+  }
+
+  it('names the climb a crewmate turned off', () => {
+    controls.enabled = true;
+    controls.boardId = 7;
+    expect(renderWithCleared('angel-eyes').result.current).toBe('angel-eyes');
+  });
+
+  it('answers null with no board bound or outside the provider', () => {
+    controls.enabled = true;
+    controls.boardId = null;
+    expect(renderWithCleared('angel-eyes').result.current).toBeNull();
+    controls.boardId = 7;
+    expect(renderWithCleared(undefined).result.current).toBeNull();
   });
 });

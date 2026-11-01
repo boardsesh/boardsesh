@@ -741,7 +741,8 @@
         "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical.",
         "tabs": {
           "sections": "Debajo del bloque",
-          "buttons": "Botones"
+          "buttons": "Botones",
+          "miniPlayer": "Mini reproductor"
         }
       },
       "sectionLayout": {
@@ -785,6 +786,12 @@
         "underName": "Bajo el nombre",
         "yourClimbing": "Tu escalada",
         "actions": "Acciones",
+        "layout": {
+          "title": "Columnas",
+          "one": "Una columna",
+          "two": "Dos columnas",
+          "footer": "Las dos columnas aparecen cuando la lista tiene sitio, como en un iPad en horizontal."
+        },
         "gradesTitle": "Grados",
         "previewFooter": "Ejemplo. Los encadenes, guardados y etiquetas aparecen en los bloques que los tienen.",
         "gradeFooter": "Elige el grado principal en Ajustes → Bloques y grados.",
@@ -841,14 +848,31 @@
           "log": "Registrar",
           "boardLight": "Luz del plafón"
         },
-        "footer": "El primero entre Cola y Espejo se queda con el botón grande. Un botón oculto sigue en el menú ⋯. Sin botones pequeños, el plafón ocupa su fila.",
+        "footer": "El primer botón activo va en el extremo izquierdo de la fila de arriba y el último en el derecho. El resto, y los que ocultes, están en el menú ⋯.",
         "settingsFooter": "Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
-        "previewLabel": "Vista previa, {{position}}: {{buttons}}"
+        "previewLabel": "Vista previa, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Control del plafón",
+          "wallButton": "Botón del muro",
+          "lightbulb": "Bombilla",
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; toca esa etiqueta para dejar el mando sin desconectarte. La bombilla queda arriba a la derecha."
+        }
       },
       "climbView": {
         "title": "Vista del bloque",
         "valueDefault": "Predeterminada",
         "valueCustom": "Personalizada"
+      },
+      "quickFilters": {
+        "title": "Filtros rápidos",
+        "valueDefault": "Predeterminados",
+        "valueCustom": "Personalizados",
+        "climbsTitle": "Bloques",
+        "climbsFooter": "Aparecen sobre la lista de Bloques, en este orden. Un filtro que actives se añade al final.",
+        "playlistsTitle": "Listas",
+        "playlistsFooter": "Aparecen sobre cada playlist, playlist inteligente y página de un setter, en este orden.",
+        "restoreDefaults": "Restablecer valores predeterminados",
+        "footer": "Los cambios se aplican al momento y solo en este teléfono. Todos los filtros siguen en Filtros."
       },
       "timers": {
         "restTitle": "Descanso",
@@ -882,6 +906,24 @@
         "rogueConnecting": "Conectando…",
         "rogueUnreachable": "No se encuentra. Comprueba que esté encendido y cerca.",
         "rogueSaveFailed": "No se pudo guardar el temporizador. Inténtalo de nuevo."
+      },
+      "miniPlayer": {
+        "title": "Mini reproductor",
+        "description": "La barra sobre las pestañas. Tócala para abrir el bloque.",
+        "buttons": {
+          "next": "Bloque siguiente",
+          "previous": "Bloque anterior",
+          "wallDisplay": "Pantalla de muro"
+        },
+        "fixedNote": "Luz del plafón siempre está, junto a Registrar. Registrar va siempre al final, bajo tu pulgar.",
+        "footer": "En iPhone la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",
+        "open": "Abierta",
+        "collapsed": "Reducida",
+        "previewLabel": "Vista previa, barra {{shape}}: {{buttons}}",
+        "footerWide": "En una pantalla ancha la barra muestra tantos de estos como le caben: ganan los primeros de la lista.",
+        "shapeOpen": "abierta",
+        "shapeCollapsed": "reducida",
+        "more": "Más"
       }
     },
     "sendRecovery": {
@@ -983,8 +1025,7 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí.",
-        "climbsTab": "Para volver a tus bloques, toca la lupa de la barra de pestañas."
+        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
       },
       "link": {
         "title": "Trae contigo tus encadenes de {{boardName}}",
@@ -999,7 +1040,6 @@
       "home": "Inicio",
       "boards": "Plafones",
       "climbs": "Bloques",
-      "wall": "En el muro",
       "profile": "Perfil",
       "holdFilter": "Tipos de presa",
       "zoneFilter": "Zona del muro",

@@ -71,7 +71,7 @@ describe('Apple search video', () => {
     for (const locale of STORE_SEARCH_LOCALES)
       for (const variant of STORE_SEARCH_VARIANTS) {
         const target = storeSearchTarget(locale, variant);
-        expect(targetSeconds(target)).toBe(variant === 'default' ? 20 : 15);
+        expect(targetSeconds(target)).toBe(15);
         expect(targetOutputs(target)[0]).toContain(`/app-store-creatives/${variant}/${locale}/search-results.mp4`);
         expect(target.donationLine).toBe(false);
         expect(target.audio).toEqual({ kind: 'none' });
@@ -213,12 +213,18 @@ describe('Apple search video', () => {
   it('keeps every approved ending native and nonempty at the exact target duration', () => {
     for (const variant of ['default', 'kilter', 'tension', 'moonboard', 'spray'] as const) {
       const timeline = resolveTimeline(new Set(SHOWCASE_TAKE_IDS), storeSearchPlan(variant));
-      expect(timeline.totalFrames).toBe(variant === 'default' ? 600 : 450);
+      expect(timeline.totalFrames).toBe(450);
       expect(timeline.scenes.every((scene) => scene.takes.length > 0)).toBe(true);
       expect(timeline.scenes.some((scene) => scene.id === 'outro')).toBe(false);
     }
     expect(storeSearchPlan('kilter').map((scene) => scene.frames)).toEqual([68, 67, 68, 67, 180]);
-    expect(storeSearchPlan('default').map((scene) => scene.frames)).toEqual([140, 140, 140, 180]);
+    expect(storeSearchPlan('default').map((scene) => [scene.id, scene.caption, scene.frames])).toEqual([
+      ['boards', 'yourBoards', 120],
+      ['crew', 'crew', 135],
+      ['spray', 'spray', 105],
+      ['log', 'sends', 90],
+    ]);
+    expect(storeSearchTakeIds('default')).not.toContain('lock-screen');
     expect(storeSearchPlan('spray').at(-1)).toMatchObject({ id: 'spray', caption: 'sprayNext', frames: 90 });
     expect(storeSearchPlan('tension').at(-1)).toMatchObject({
       id: 'lock-screen',
@@ -284,9 +290,9 @@ describe('Apple search video', () => {
     expect(storeSearchRecordingProblems({ ...native, takeId: 'crew' }, 'crew', 'fr', 'default')).toContain(
       'recording variant kilter, expected default',
     );
-    expect(storeSearchRequiredFootageProblems('default', new Set(['boards-kilter', 'spray', 'crew']))).toContain(
-      'Missing required native take: lock-screen',
-    );
+    expect(storeSearchRequiredFootageProblems('default', new Set(['boards-kilter', 'spray', 'crew']))).toEqual([
+      'Missing required native take: log',
+    ]);
   });
 
   it('holds the original Spray photo then reserves the real second Next for its finale', () => {

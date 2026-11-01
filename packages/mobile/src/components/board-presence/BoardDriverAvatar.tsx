@@ -4,6 +4,7 @@ import { PressableAvatar } from '../PressableAvatar';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
+import { CornerStatusDisc } from './CornerStatusDisc';
 
 /**
  * Corner status badge content:
@@ -66,23 +67,8 @@ function BoardDriverAvatarComponent({
     <View style={styles.container}>
       <PressableAvatar userId={userId} uri={uri} name={name} size={size} accessibilityLabel={accessibilityLabel} />
       {showBadge ? (
-        <View
-          // Decorative: the avatar's own label already carries identity + driver context.
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={[
-            styles.badge,
-            {
-              height: badgeSize,
-              minWidth: badgeSize,
-              borderRadius: badgeSize / 2,
-              paddingHorizontal: hasLabel ? 4 : 0,
-              backgroundColor: systemColors.secondaryBackground,
-              borderColor: systemColors.background,
-            },
-          ]}
-        >
+        // Decorative: the avatar's own label already carries identity + driver context.
+        <CornerStatusDisc size={badgeSize} paddingHorizontal={hasLabel ? 4 : 0}>
           {hasLabel ? (
             <Text
               variant="caption2"
@@ -103,7 +89,7 @@ function BoardDriverAvatarComponent({
           ) : (
             <Icon name="bluetooth.connected" size={glyphSize} color={brandColors.warning} />
           )}
-        </View>
+        </CornerStatusDisc>
       ) : null}
     </View>
   );
@@ -114,14 +100,6 @@ export const BoardDriverAvatar = memo(BoardDriverAvatarComponent);
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
-  },
-  badge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
   },
   idleGlyph: {
     fontWeight: '700',

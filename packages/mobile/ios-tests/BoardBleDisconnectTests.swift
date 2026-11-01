@@ -75,6 +75,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: onDisconnect,
                 onConnected: nil
@@ -101,6 +102,71 @@ final class BoardBleDisconnectTests: XCTestCase {
             }
             timer.fire()
         }
+    }
+
+    // MARK: - Event handler ownership across a JS reload (#7023)
+
+    /// A reload creates the new runtime's BoardBleModule, which installs its
+    /// handlers, before the old runtime's module is destroyed. The old module's
+    /// destroy must leave the new module's handlers alone; when it cleared them,
+    /// scan results and connection events stopped reaching JS until a restart.
+    func testDestroyingOlderModuleKeepsNewerModuleHandlers() {
+        let peripheral = FakeWritablePeripheral()
+        let olderModuleOwner = UUID()
+        let newerModuleOwner = UUID()
+        var olderModuleDisconnects: [String] = []
+        var newerModuleDisconnects: [String] = []
+        manager.testHooks.sync {
+            manager.testHooks.setConfiguration(moonboardConfiguration())
+            manager.setEventHandlers(
+                owner: olderModuleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in olderModuleDisconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.setEventHandlers(
+                owner: newerModuleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in newerModuleDisconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.clearEventHandlers(owner: olderModuleOwner)
+            manager.testHooks.setConnection(
+                peripheral: peripheral,
+                characteristic: makeWriteCharacteristic()
+            )
+        }
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(newerModuleDisconnects, [peripheral.identifier.uuidString])
+        XCTAssertTrue(olderModuleDisconnects.isEmpty)
+    }
+
+    /// The module that installed the current handlers still clears them on its
+    /// own destroy, so a torn-down runtime never receives events.
+    func testDestroyingCurrentModuleClearsItsHandlers() {
+        let peripheral = FakeWritablePeripheral()
+        let moduleOwner = UUID()
+        var disconnects: [String] = []
+        manager.testHooks.sync {
+            manager.testHooks.setConfiguration(moonboardConfiguration())
+            manager.setEventHandlers(
+                owner: moduleOwner,
+                onScanResult: nil,
+                onDisconnect: { deviceId, _ in disconnects.append(deviceId) },
+                onConnected: nil
+            )
+            manager.clearEventHandlers(owner: moduleOwner)
+            manager.testHooks.setConnection(
+                peripheral: peripheral,
+                characteristic: makeWriteCharacteristic()
+            )
+        }
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertTrue(disconnects.isEmpty)
     }
 
     func testIntentionalDisconnectConsumesMarkerAndSuppressesEvent() {
@@ -273,7 +339,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect { disconnectCompletionCalled = true }
-            manager.connect(deviceId: peripheral.identifier.uuidString) { connectResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { connectResults.append($0) }
         }
 
         XCTAssertTrue(disconnectCompletionCalled)
@@ -313,11 +379,11 @@ final class BoardBleDisconnectTests: XCTestCase {
         var reconnectResults: [Result<Void, Error>] = []
         manager.testHooks.sync {
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
         }
 
         XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
@@ -344,7 +410,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.disconnect()
             manager.testHooks.setDiscoveredPeripheral(newPeripheral)
-            manager.connect(deviceId: newPeripheral.identifier.uuidString) { _ in }
+            manager.testHooks.connect(deviceId: newPeripheral.identifier.uuidString) { _ in }
         }
 
         XCTAssertEqual(connectedPeripheralIds, [newPeripheral.identifier])
@@ -368,10 +434,10 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstError = error }
             }
-            manager.connect(deviceId: peripheral.identifier.uuidString) { secondResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { secondResults.append($0) }
         }
 
         XCTAssertEqual(firstError?.localizedDescription, BoardBleError.superseded.localizedDescription)
@@ -391,7 +457,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { deferredError = error }
             }
             manager.disconnect()
@@ -416,7 +482,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { deferredError = error }
             }
         }
@@ -436,7 +502,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         // pending connect — never insta-fail — and displaces the expired
         // barrier (gone from the map, tombstoned for one late callback).
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
         XCTAssertTrue(retryResults.isEmpty)
         XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
@@ -472,12 +538,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -508,7 +575,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         // as a normal pending connect, not insta-fail for the rest of the app
         // session (the pre-fix wedge).
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
         XCTAssertTrue(retryResults.isEmpty)
         XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier, peripheral.identifier])
@@ -553,12 +620,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var connectedEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: { _, _ in connectedEventCount += 1 }
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -572,7 +640,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         )
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
 
         let retryGeneration = manager.testHooks.sync {
@@ -660,12 +728,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -677,7 +746,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         )
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
         XCTAssertEqual(
             manager.testHooks.sync { manager.testHooks.displacedCancellationPeripheralIds },
@@ -728,12 +797,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -747,7 +817,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         )
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
         XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier, peripheral.identifier])
 
@@ -794,12 +864,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -813,7 +884,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         )
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { retryResults.append($0) }
         }
 
         // A late didFailToConnect (the release-note scenario) is swallowed and
@@ -847,12 +918,13 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
             )
             manager.testHooks.setDiscoveredPeripheral(peripheral)
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { firstConnectError = error }
             }
         }
@@ -897,7 +969,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.disconnect()
             manager.testHooks.setDiscoveredPeripheral(otherPeripheral)
-            manager.connect(deviceId: otherPeripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: otherPeripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { otherConnectError = error }
             }
         }
@@ -906,7 +978,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         let otherConnectTimeout = scheduler.lastOneShot(label: "connectTimeout")
 
         manager.testHooks.sync {
-            manager.connect(deviceId: barrieredPeripheral.identifier.uuidString) { deferredResults.append($0) }
+            manager.testHooks.connect(deviceId: barrieredPeripheral.identifier.uuidString) { deferredResults.append($0) }
         }
 
         // Deferring behind the barrier must settle the in-flight different-board
@@ -948,7 +1020,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { deferredError = error }
             }
         }
@@ -977,7 +1049,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         manager.testHooks.sync {
             manager.disconnect()
-            manager.connect(deviceId: peripheral.identifier.uuidString) { deferredResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { deferredResults.append($0) }
         }
         let barrierWatchdog = scheduler.lastOneShot(label: "managerCancellationBarrierWatchdog")
         fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
@@ -1018,7 +1090,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         }
         fireLatestOneShot(label: "writeAckWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
         }
 
         XCTAssertEqual(writeError?.localizedDescription, BoardBleError.writeTimedOut.localizedDescription)
@@ -1094,11 +1166,11 @@ final class BoardBleDisconnectTests: XCTestCase {
         }
         fireLatestOneShot(label: "writeAckWatchdog")
         manager.testHooks.sync {
-            manager.connect(deviceId: recoveringPeripheral.identifier.uuidString) { result in
+            manager.testHooks.connect(deviceId: recoveringPeripheral.identifier.uuidString) { result in
                 if case .failure(let error) = result { recoveringWaiterError = error }
             }
             manager.testHooks.setDiscoveredPeripheral(winningPeripheral)
-            manager.connect(deviceId: winningPeripheral.identifier.uuidString) { _ in }
+            manager.testHooks.connect(deviceId: winningPeripheral.identifier.uuidString) { _ in }
         }
 
         XCTAssertEqual(
@@ -1179,7 +1251,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
         // The user taps the board in the picker while the stall is still parked.
         manager.testHooks.sync {
-            manager.connect(deviceId: peripheral.identifier.uuidString) { _ in }
+            manager.testHooks.connect(deviceId: peripheral.identifier.uuidString) { _ in }
         }
         XCTAssertEqual(
             manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId },

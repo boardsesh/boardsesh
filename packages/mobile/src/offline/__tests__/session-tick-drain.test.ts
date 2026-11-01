@@ -152,7 +152,9 @@ describe('refreshSessionWhenQueuedTicksLand', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sessionSummary', 'session-1'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sessionDetail', 'session-1'] });
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    // The workout's tallies come from the same ticks (#6903).
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['sessionWorkouts', 'session-1'] });
+    expect(invalidate).toHaveBeenCalledTimes(3);
     // Unsubscribed: later deliveries read nothing and refresh nothing.
     expect(mocks.deliveryListeners.size).toBe(0);
   });

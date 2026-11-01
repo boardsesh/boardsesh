@@ -28,9 +28,7 @@
     "open": "An der Wand",
     "railDark": "Gerade ist nichts beleuchtet",
     "openAria": "Zeigen, was an der Wand ist",
-    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}",
-    "litByLine": "Beleuchtet von {{name}}",
-    "sentByLabel": "Getoppt von"
+    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} Begehung",
@@ -134,6 +132,10 @@
     "featuredSendsLabel_other": "Begehungen",
     "featuredAttemptsLabel_one": "Versuch",
     "featuredAttemptsLabel_other": "Versuche",
+    "featuredPhoneSendsLabel_one": "Begehung auf diesem Handy",
+    "featuredPhoneSendsLabel_other": "Begehungen auf diesem Handy",
+    "featuredPhoneAttemptsLabel_one": "Versuch auf diesem Handy",
+    "featuredPhoneAttemptsLabel_other": "Versuche auf diesem Handy",
     "hardestSendTitle": "Schwerste Begehung",
     "effortTitle": "Lohnt einen zweiten Anlauf",
     "effortBody": "Das Projekt läuft dir nicht weg. Du holst es.",
@@ -486,7 +488,9 @@
       "autoAdvanceFootnote": "Nur solange Boardsesh offen ist.",
       "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
       "lengthPillAria": "Länge der Pause, {{value}}",
-      "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen."
+      "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen.",
+      "showOnLockScreen": "Auf dem Sperrbildschirm zeigen",
+      "showOnLockScreenHint": "Sieh deine Pause runterzählen, ohne die App zu öffnen."
     },
     "sessionVisibility": {
       "title": "Diese Session live zeigen",
@@ -527,7 +531,6 @@
       "close": "Schließen",
       "setByLine": "Gebaut von {{setter}}",
       "drivenByA11y": "{{name}} beleuchtet die Wand. Profil öffnen.",
-      "drivenByAnonA11y": "Jemand beleuchtet die Wand.",
       "litAgoNow": "jetzt",
       "litAgoMinutes": "{{count}} Min.",
       "litAgoHours": "{{count}} Std.",
@@ -606,7 +609,19 @@
         "headerSwitcherHintClose": "Blendet die anderen Boards aus"
       },
       "kilterHistorySource": "Über Kilter beleuchtet",
-      "retryHistory": "Verlauf erneut laden"
+      "retryHistory": "Verlauf erneut laden",
+      "wallDisplay": {
+        "open": "Wandanzeige",
+        "openHint": "Zeigt den Boulder an der Wand im Vollbild, lesbar von der Matte.",
+        "exit": "Beenden",
+        "exitA11y": "Wandanzeige beenden"
+      },
+      "stripHistoryOverline": "Zuletzt an der Wand · {{age}}",
+      "stripHistoryByline": "Zuletzt an der Wand · {{age}} · {{grade}}",
+      "stripHistoryA11yLabel": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}",
+      "stripHistoryA11yLabelWithSender": "Zuletzt an der Wand · {{age}}: {{name}}, {{grade}}, beleuchtet von {{sender}}",
+      "stripDismiss": "Ausblenden",
+      "stripDismissHint": "Zum Ausblenden nach links wischen. Öffnet den Boulder an der Wand."
     },
     "toast": {
       "sessionEnded": "Session beendet",
@@ -665,6 +680,21 @@
       "doneNothingLogged": "Auf diesem Handy nichts eingetragen",
       "doneClose": "Fertig",
       "seeWorkout": "Dein Workout ansehen"
+    },
+    "workoutSummary": {
+      "repsBySetsSpoken_one": "{{reps}} Wiederholungen mal {{count}} Satz",
+      "repsBySetsSpoken_other": "{{reps}} Wiederholungen mal {{count}} Sätze",
+      "detailSpanClimbsSpoken_one": "{{span}}, {{count}} Boulder",
+      "detailSpanClimbsSpoken_other": "{{span}}, {{count}} Boulder",
+      "repsSentOfTotalSpoken": "{{sent}} von {{total}} Wiederholungen getoppt",
+      "blockExpandHint": "Zeigt die Boulder des Blocks",
+      "blockCollapseHint": "Blendet die Boulder des Blocks aus",
+      "stillSaving_one": "{{count}} Eintrag wird noch gespeichert. Deine Summen ziehen nach, sobald er da ist.",
+      "stillSaving_other": "{{count}} Einträge werden noch gespeichert. Deine Summen ziehen nach, sobald sie da sind.",
+      "stillSavingOffline_one": "Du bist offline, darum wartet {{count}} Eintrag auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist.",
+      "stillSavingOffline_other": "Du bist offline, darum warten {{count}} Einträge auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist.",
+      "tickCount_one": "{{count}} Eintrag",
+      "tickCount_other": "{{count}} Einträge"
     },
     "session": {
       "headerStart": "Session starten",
@@ -850,6 +880,7 @@
         "unmirror": "Spiegelung aufheben",
         "relight": "Wand neu beleuchten",
         "reconnect": "Mit Board verbinden",
+        "connecting": "Verbinde…",
         "onWall": "{{name}} ist an der Wand"
       },
       "inStatsFlashes": "Flashes",
@@ -873,40 +904,69 @@
   "playView": {
     "wallState": {
       "onWall": "An der Wand",
-      "live": "Live",
-      "onWallHint": "Dieser Boulder ist gerade am Board beleuchtet.",
-      "liveHint": "Dein nächster Boulder wird direkt am Board beleuchtet.",
       "browsingHint": "Du schaust dich nur um. Die Wand bleibt, wie sie ist.",
-      "pillHint": "Wand-Optionen anzeigen",
-      "backToLive": "Zurück zu live",
       "backToWall": "Zurück zum Boulder an der Wand",
-      "backToCurrent": "Zurück zu deinem Boulder",
-      "putOnWall": "Am Board beleuchten",
-      "lastOnWallTime": "Zuletzt um {{time}} am Board beleuchtet",
-      "lastOnWallYesterday": "Zuletzt gestern am Board beleuchtet",
-      "lastOnWallWeekday": "Zuletzt am {{weekday}} am Board beleuchtet",
-      "lastOnWallDate": "Zuletzt am {{date}} am Board beleuchtet",
+      "backToCurrent": "Zurück zu meiner Wahl",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
       "previewNotLit": "Vorschau, nicht beleuchtet",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
-        "body": "Jemand hat gerade {{name}} beleuchtet. Trotzdem deinen beleuchten?",
         "confirm": "Meinen beleuchten",
         "cancel": "Wand so lassen",
-        "bodyNamed": "{{person}} hat gerade {{name}} beleuchtet. Trotzdem deinen beleuchten?",
         "cancelNamed": "Boulder von {{person}} lassen"
+      },
+      "busyWall": {
+        "captionNamed": "Gerade von {{person}} beleuchtet: {{name}}",
+        "caption": "Gerade beleuchtet: {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
         "backToLive": "Zurück zu live: {{name}}",
         "committed": "{{name}} ist an der Wand"
-      }
+      },
+      "backMyPick": "Meine Wahl",
+      "backOnWall": "Am Board",
+      "backToMyPickNamed": "Zurück zu meiner Wahl: {{name}}",
+      "backToWallNamed": "Zurück zum Boulder am Board: {{name}}"
+    },
+    "wallControl": {
+      "connectHint": "Verbindet dein Board und beleuchtet diesen Boulder",
+      "litHint": "Tippen zum Trennen. Halten für die Board-Steuerung.",
+      "stopDrivingHint": "Tippen, um das Steuern zu beenden. Halten für die Board-Steuerung.",
+      "onBoard": "Am Board von {{name}}",
+      "onCrewBoard": "Am Board deiner Crew",
+      "onOtherPhone": "Auf deinem anderen Handy",
+      "bulbAria": "Board-Beleuchtung",
+      "valueOff": "Aus",
+      "valueOtherClimb": "Ein anderer Boulder ist beleuchtet",
+      "lightHint": "Beleuchtet diesen Boulder",
+      "relayHint": "Beleuchtet ihn am Board von {{name}}",
+      "relayHintCrew": "Beleuchtet ihn am Board deiner Crew",
+      "relayHintOtherPhone": "Beleuchtet ihn am Board über dein anderes Handy",
+      "putOnBoard": "Am Board beleuchten",
+      "disconnectBoard": "Board trennen",
+      "youHaveBoard": "Du hast das Board",
+      "youHaveBoardLit": "Du hast das Board, der Boulder ist beleuchtet",
+      "youAreDriving": "Du steuerst das Board",
+      "drivingEveryClimb": "jeder Boulder, den du wählst, wird beleuchtet",
+      "stoppedDriving": "Du steuerst das Board nicht mehr",
+      "lightEveryClimb": "Jeden Boulder beleuchten",
+      "releaseToDrive": "Loslassen, um jeden Boulder zu beleuchten",
+      "crewPutUp": "Deine Crew hat {{climb}} beleuchtet",
+      "holderHasBoard": "{{name}} hat das Board",
+      "crewHasBoard": "Deine Crew hat das Board",
+      "boardOptions": "Board-Optionen",
+      "onWall": "Am Board",
+      "lightAgainHint": "Beleuchtet ihn noch mal am Board",
+      "putOnGymBoard": "Am {{board}} beleuchten",
+      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {
       "title": "Wähl einen Boulder",
-      "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen."
+      "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen.",
+      "unlitHint": "Tipp einen Boulder an, um ihn am Board zu beleuchten"
     },
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",
@@ -922,6 +982,12 @@
     "shareError": "Teilen hat nicht geklappt — versuch es nochmal",
     "favoriteError": "Deine Favoriten konnten nicht aktualisiert werden — versuch es nochmal",
     "closeAria": "Schließen",
+    "sidePanel": {
+      "upNext": "Als Nächstes",
+      "logbook": "Routenbuch",
+      "beta": "Beta",
+      "segmentsAria": "Seitenleiste"
+    },
     "actionBar": {
       "previousAria": "Vorheriger Boulder",
       "nextAria": "Nächster Boulder",
@@ -930,6 +996,7 @@
       "addFavoriteAria": "Zu Favoriten hinzufügen",
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
+      "moreActionsForAria": "Weitere Aktionen für {{name}}",
       "queueCountAria": "Warteschlange, {{count}} Boulder",
       "queueUpNextAria_zero": "Warteschlange, nichts als Nächstes",
       "queueUpNextAria_one": "Warteschlange, als Nächstes {{count}} Boulder",

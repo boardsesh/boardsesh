@@ -91,9 +91,9 @@ vi.mock('react-native-reanimated', () => {
     default: { View: passthrough },
     useAnimatedStyle: (fn: () => unknown) => fn(),
     useAnimatedReaction: () => undefined,
+    useSharedValue: (value: string) => ({ value }),
     interpolate: () => 0,
     Extrapolation: { CLAMP: 'clamp' },
-    useSharedValue: (initial: unknown) => ({ value: initial }),
     runOnJS:
       (fn: (...args: unknown[]) => unknown) =>
       (...args: unknown[]) =>
@@ -141,6 +141,42 @@ vi.mock('react-native-gesture-handler', () => {
       rowGestures.mounted.push(gesture);
       return createElement('div', null, children);
     },
+    usePanGesture: () => makeBuilder('pan'),
+    useManualGesture: () => makeBuilder('manual'),
+    GestureStateManager: { fail: () => {}, deactivate: () => {} },
+    useTapGesture: (config: { maxDuration?: number; onActivate?: () => void; block?: unknown[] }) => {
+      const gesture = makeBuilder('tap');
+      const capture = rowGestures.captures.get(gesture)!;
+      capture.maxDuration = config.maxDuration;
+      capture.onStart = config.onActivate;
+      capture.reference = gesture;
+      capture.blockedReferences = config.block;
+      return gesture;
+    },
+    useLongPressGesture: (config: { minDuration?: number; onActivate?: () => void }) => {
+      const gesture = makeBuilder('longPress');
+      const capture = rowGestures.captures.get(gesture)!;
+      capture.minDuration = config.minDuration;
+      capture.onStart = config.onActivate;
+      capture.reference = gesture;
+      return gesture;
+    },
+    useExclusiveGestures: (...gestures: unknown[]) => {
+      const captures = gestures.flatMap((gesture) => {
+        const capture = rowGestures.captures.get(gesture);
+        return capture ? [capture] : [];
+      });
+      if (captures.some((capture) => capture.kind === 'longPress')) rowGestures.exclusive = captures;
+      const composition = {};
+      rowGestures.compositions.set(composition, { kind: 'exclusive', gestures });
+      return composition;
+    },
+    useSimultaneousGestures: (...gestures: unknown[]) => {
+      const composition = {};
+      rowGestures.compositions.set(composition, { kind: 'simultaneous', gestures });
+      return composition;
+    },
+
     Gesture: {
       Pan: () => makeBuilder('pan'),
       Manual: () => makeBuilder('manual'),
@@ -211,6 +247,7 @@ vi.mock('../ClimbListItemContent', () => ({
 vi.mock('../climb-list-row-styles', () => ({
   CLIMB_ROW_GUTTER: 16,
   climbListRowStyles: { contentRow: {}, separator: {} },
+  climbRowSeparatorInsetStyle: () => ({}),
 }));
 
 vi.mock('../climb-list-row-colors', () => ({
@@ -282,8 +319,8 @@ describe('ClimbListRow swipe feedback lifetime', () => {
 
   it('mounts the swipe lock ahead of the full-swipe tracker in the row detector', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPlayNext={vi.fn()} onOpenPlaylist={vi.fn()} />);
-    const lock = panels.props?.requireExternalGestureToFail;
-    const fullSwipe = panels.props?.simultaneousWithExternalGesture;
+    const lock = panels.props?.requireToFail;
+    const fullSwipe = panels.props?.simultaneousWith;
     expect(rowGestures.captures.get(lock)?.kind).toBe('manual');
     expect(rowGestures.captures.get(fullSwipe)?.kind).toBe('pan');
     const mountedRow = rowGestures.mounted.find(
@@ -300,8 +337,9 @@ describe('ClimbListRow swipe feedback lifetime', () => {
 
   it('waits for a deliberate sideways drag so a vertical scroll never slides the row', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPlayNext={vi.fn()} onOpenPlaylist={vi.fn()} />);
-    expect(panels.props?.dragOffsetFromLeftEdge).toBe(30);
-    expect(panels.props?.dragOffsetFromRightEdge).toBe(30);
+    expect(panels.props?.dragOffsetFromLeft).toBe(30);
+    expect(panels.props?.dragOffsetFromRight).toBe(-30);
+    expect(panels.props?.requireToFail).toBeTruthy();
   });
 });
 
@@ -346,10 +384,14 @@ describe('ClimbListRow screen-reader activation', () => {
     );
 
     const [longPress, rowTap] = rowGestures.exclusive;
-    const moreTap = [...rowGestures.captures.values()].find((gesture) => gesture.kind === 'tap' && gesture !== rowTap);
+    const moreTap = [...rowGestures.captures.values()].find(
+      (gesture) => gesture.kind === 'tap' && gesture.blockedReferences?.includes(rowTap.reference),
+    );
     expect(moreTap).toBeDefined();
     expect(moreTap?.maxDuration).toBeGreaterThanOrEqual(rowTap.maxDuration ?? Infinity);
-    expect(moreTap?.blockedReferences).toEqual([rowTap.reference, longPress.reference]);
+    expect(moreTap?.blockedReferences).toHaveLength(2);
+    expect(moreTap?.blockedReferences?.[0]).toBe(rowTap.reference);
+    expect(moreTap?.blockedReferences?.[1]).toBe(longPress.reference);
     act(() => moreTap?.onStart?.());
     expect(onOpenActions).toHaveBeenCalledExactlyOnceWith(climb);
     expect(onPress).not.toHaveBeenCalled();

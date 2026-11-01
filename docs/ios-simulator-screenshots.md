@@ -24,6 +24,11 @@ screenshot-mode auto-login):
 - First run builds a Debug simulator `.app` (~30 min) unless you pass `--app-path`; it's cached
   at `packages/mobile/.app-cache/Boardsesh.app` and reused (only native changes force a rebuild).
 
+When creating a missing simulator, store capture selects the newest installed
+runtime that lists the requested device type as supported. A newer runtime can
+exclude older phone profiles; capture keeps the requested phone and its native
+screenshot size, using a compatible installed runtime instead.
+
 ## Take screenshots
 
 Preferred "boot once, shoot many" flow — boot in the background, then capture in the foreground:
@@ -176,9 +181,11 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   - `play-next`: the Play next row in the long-press climb menu.
   - `profile-board-filter`: the Progress tab's Filter button.
   - `board-history-button`: the clock-arrow glyph beside the ellipsis at the top right of the
-    Climbs list (liquid glass chrome only), which opens the board sheet.
+    Climbs list (liquid glass chrome only), which opens the board sheet. On iOS 26 it is a native
+    UIKit bar item that no view can measure, so the app logs a box drawn from the bar's geometry
+    (`NativeTrailingItemShowcaseAnchor`).
   - `now-on-wall`, `wall-history`: that sheet's lit-climb hero and its "Lit on this wall"
-    header. Only the sheet reports them, never the iPad column or the Wall tab.
+    header. Only the sheet reports them, never the iPad column or the Wall display.
   - `workout-type`: the selected type chip on the open workout block card in the Session tab.
   - `rest-timer`: the rest timer's on/off row.
   - `activity-calendar`: the Progress tab's activity calendar grid.
@@ -187,6 +194,18 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   widget, so the recorder authors those rects itself. The hook is
   `packages/mobile/src/lib/showcase-anchor.ts`; the contract it must match is
   `scripts/lib/showcase-video/contract.ts`.
+
+Store board heroes opt into `EXPO_PUBLIC_SCREENSHOT_DRIVING=1` as well as fake
+Bluetooth. Their routes carry `screenshotDrive=1`; after the exact real climb
+opens, the player runs the normal drive action once. Capture waits for a
+`store-driving-<board UUID>-<climb UUID>` marker backed by a live drive, a local
+connection, and the displayed climb being lit. A connection failure blocks the
+capture instead of substituting the label. The open Duo uses this same intent
+without taps. Tension keeps its normal solo Mirror action and mirrored paint gate.
+
+Only board-hero routes request driving. Wall-status, accessory, crew, editor,
+help, smoke and video flows do not. Spray and walls without LEDs keep their
+normal no-lights controls; they cannot truthfully show the LED driving state.
 
 Every gate inlines the raw `process.env` comparison, so both fold away in normal builds.
 
@@ -248,10 +267,15 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 (1320 × 2868), iPhone 16 Pro (1206 × 2622), both existing landscape iPads, and
 the iPhone Duo (inner display open at 2853 × 2007, outer display closed at
 1398 × 2034, one set). `--devices phones` selects both phones; `--devices duo`
-the Duo alone, which needs Xcode 27 with the iOS 27.1 runtime. The four app
-locales produce 20 capture shards and 25 storefront sets because Spanish targets
-both `es-ES` and `es-MX`. How the Duo is folded headlessly:
-[docs/mobile-store-release.md](mobile-store-release.md#the-iphone-duo-set).
+the Duo alone, which needs Xcode 27 with the iOS 27.1 runtime. The five
+default-listing app locales (`en-US`, `es`, `fr`, `de`, `it`) produce 25 capture
+shards and 30 storefront sets because Spanish targets both `es-ES` and `es-MX`;
+Italian targets `it`. The full default listing contains 228 screenshots: nine per
+phone, six per iPad and eight in the Duo set. Italian phone slot 07 shows the
+native session recap, `07-session-detail.png`, until a reviewed Italian physical
+Live Activity fixture exists. CPP/ad/video campaigns retain their four app
+locales and five Apple locales, and have no Duo set. How the Duo is folded
+headlessly: [docs/mobile-store-release.md](mobile-store-release.md#the-iphone-duo-set).
 The `smoke` flow keeps its single Pro Max / English default; pass an explicit
 `--device` to inspect another device. The ad-hoc `mobile:ios-shots` default is
 unchanged.
@@ -263,7 +287,7 @@ destination's selected state before continuing; screen-specific content checks
 still gate each capture. Before capturing, the flow collapses the floating sidebar
 so it cannot obscure content, then reopens it for the next destination. The UIKit
 controls (`Hide Sidebar` / `Toggle sidebar`) follow the simulator system language,
-not the app catalog locale: use English-system simulators for all four app locales.
+not the app catalog locale: use English-system simulators for all five app locales.
 Missing native controls fail the capture rather than leave the overlay visible.
 
 Store Home captures require a visible recent-session card as well as a settled
@@ -321,3 +345,16 @@ but with `xcrun simctl io <udid> recordVideo --codec h264 --force
 5–12 seconds, portrait, silent, named exactly as the clip table names it. The recording
 contract, the conversion command and the size budget are in
 [docs/help-clips.md](help-clips.md).
+
+### Bounded store capture processes
+
+Every iOS capture invokes Maestro through the existing subprocess supervisor,
+including each Duo inner-display pass. Default captures have a 45-minute ceiling;
+CPP captures retain their 30-minute ceiling. A JVM main-thread crash or a reached
+deadline stops that owned process group so the orchestrator can preserve its
+partial frames and logs. The wrapper accepts only a leading
+`--capture-timeout-ms` integer from 1 to 3,600,000; all Maestro arguments pass
+through unchanged. Android capture is unchanged.
+
+CI retains capture debug artifacts for cancelled default captures as well as
+failures, including the bounded device-log collection and Maestro evidence.

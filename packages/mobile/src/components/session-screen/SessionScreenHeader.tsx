@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { StyleSheet, View } from 'react-native';
-import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { LargeContentViewer } from '../LargeContentViewer';
@@ -92,6 +92,7 @@ export function SessionScreenHeader({
         <View style={styles.rightCluster}>
           {onShare ? (
             <PressableSurface
+              testID="session-invite"
               onPress={onShare}
               hitSlop={12}
               accessibilityRole="button"
@@ -117,6 +118,7 @@ export function SessionScreenHeader({
           {onEndSession ? (
             // Plain text matches the native session header's exit action.
             <PressableSurface
+              testID={`session-exit-${exitVariant}`}
               onPress={onEndSession}
               hitSlop={12}
               accessibilityRole="button"

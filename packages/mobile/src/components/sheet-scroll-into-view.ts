@@ -25,7 +25,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollView,
+  type ScrollViewInstance,
 } from 'react-native';
 import { spacing } from '../theme/tokens';
 
@@ -119,7 +119,7 @@ export function useSheetScrollIntoView(): SheetScrollIntoView | null {
 // Measuring against the content view gives content coordinates, independent of
 // the current scroll offset. `measureLayout` needs a host instance, not a node
 // handle (`src/private/webapis/dom/nodes/ReactNativeElement.js:177-203`).
-function contentViewOf(scrollView: ScrollView): HostInstance | null {
+function contentViewOf(scrollView: ScrollViewInstance): HostInstance | null {
   const { getInnerViewRef } = scrollView as unknown as { getInnerViewRef?: () => HostInstance | null };
   return typeof getInnerViewRef === 'function' ? getInnerViewRef.call(scrollView) : null;
 }
@@ -159,7 +159,7 @@ export function useSheetScrollIntoViewHost({
   activeIndex,
   snapToIndex,
 }: SheetScrollIntoViewHostOptions) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
   const offsetRef = useRef(0);

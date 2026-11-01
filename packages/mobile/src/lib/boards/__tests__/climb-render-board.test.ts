@@ -2,10 +2,11 @@
 // board the climber happens to have selected. Every case below is a state the
 // app reaches by ordinary use — switching boards mid-session, a party peer on
 // another wall, an older queue item with no board metadata at all.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
 import { getBoardConfigForPlaylist } from '../../playlists/board-details-for-playlist';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, type ClimbRenderBoardClimb } from '../climb-render-board';
+import { clearSprayWallRegistry, setSprayWallLoader } from '../../spray/spray-wall-registry';
 
 function knownBoard(boardType: string, layoutId: number, angle = 40): BoardConfig {
   const config = getBoardConfigForPlaylist(boardType, layoutId);
@@ -188,6 +189,26 @@ describe('resolveClimbRenderBoard', () => {
   it('keeps the active board when there is no climb to place', () => {
     const activeBoard = knownBoard('kilter', 1);
     expect(resolveClimbRenderBoard(null, activeBoard)?.boardConfig).toBe(activeBoard);
+  });
+
+  it('resolves a missing spray wall without requesting its data for a passive surface', () => {
+    clearSprayWallRegistry();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    try {
+      const sprayBoard: BoardConfig = { boardName: 'spray', layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+      const sprayClimb = { boardType: 'spray', layoutId: 4200, angle: 40, frames: 'p100r1' };
+      expect(resolveClimbRenderBoard(sprayClimb, sprayBoard, { loadMissingSpray: false })?.boardConfig.layoutId).toBe(
+        4200,
+      );
+      expect(resolveClimbRenderBoard(sprayClimb, null, { loadMissingSpray: false })?.boardConfig.layoutId).toBe(4200);
+      expect(loader).not.toHaveBeenCalled();
+      resolveClimbRenderBoard(sprayClimb, sprayBoard);
+      expect(loader).toHaveBeenCalledWith(4200);
+    } finally {
+      clearSprayWallRegistry();
+      setSprayWallLoader(null);
+    }
   });
 });
 

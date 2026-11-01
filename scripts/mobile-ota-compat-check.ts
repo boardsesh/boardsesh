@@ -9,7 +9,7 @@
  * (ships OTA in minutes) while a native change (deps, plugins, entitlements,
  * config) moves it (needs a new binary first).
  *
- * Verdict = DIFF vs the PR's BASE branch (origin/main, or origin/release/next
+ * Verdict = DIFF vs the PR's BASE branch (normally origin/main
  * for a native change joining the release train), resolved in ONE job under
  * identical env:
  *

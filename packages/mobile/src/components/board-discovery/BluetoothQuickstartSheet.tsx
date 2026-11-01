@@ -208,18 +208,21 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
           );
         }
         // An Android "Don't allow" isn't a radio problem either, and scanning
-        // again brings the system dialog back. No Scan again for a phone with no
-        // Bluetooth LE, or in any browser: the web BLE manager always reads the
-        // radio as off, even where Web Bluetooth works, so the next scan can only
-        // end here again.
+        // again brings the system dialog back. Nor is an iOS alert left
+        // unanswered ('not_asked'): scanning again asks. No Scan again for a
+        // phone with no Bluetooth LE, or in any browser: the web BLE manager
+        // always reads the radio as off, even where Web Bluetooth works, so the
+        // next scan can only end here again.
         const scanAgainCanHelp = unavailableReason !== 'unsupported' && Platform.OS !== 'web';
         return (
           <View style={styles.state}>
             <Icon name="warning" size={40} color={systemColors.tertiaryLabel} />
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
-              {unavailableReason === 'permission_denied'
-                ? tSettings('ble.errorPermissionDenied')
-                : t('mobile.bluetooth.unavailable')}
+              {unavailableReason === 'not_asked'
+                ? t('mobile.bluetooth.notAsked')
+                : unavailableReason === 'permission_denied'
+                  ? tSettings('ble.errorPermissionDenied')
+                  : t('mobile.bluetooth.unavailable')}
             </Text>
             {scanAgainCanHelp && scanAgainButton}
           </View>

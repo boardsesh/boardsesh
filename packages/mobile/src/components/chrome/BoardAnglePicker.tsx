@@ -18,12 +18,32 @@ import { SheetTopBar } from '../SheetTopBar';
 
 type AnglePresentation = { scope: string; popover: boolean; open: boolean };
 
+/**
+ * Whether the picker opens as a popover pointing at its trigger (a regular-width
+ * iPad) rather than a sheet. A popover needs a React view to point at, so a
+ * trigger that is a UIKit bar item, which is not one, must stay a custom view here.
+ */
+export function useAnglePickerPopover(): boolean {
+  const { isPad, widthClass } = useDeviceLayout();
+  return Platform.OS === 'ios' && isPad && widthClass === 'regular';
+}
+
 /** One angle picker shared by the toolbar angle buttons and the Climbs filter-row Angle chip. */
-export function BoardAnglePicker({ children }: { children: (open: () => void) => ReactElement }) {
+export function BoardAnglePicker({
+  children,
+  onOpenChange,
+}: {
+  children: (open: () => void) => ReactElement;
+  /**
+   * Whether the picker is on screen. A caller that swaps the trigger between a
+   * popover anchor and a sheet opener holds its choice while this is true, so
+   * the open picker closes itself instead of unmounting mid-presentation.
+   */
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { t: tSession } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { isPad, widthClass } = useDeviceLayout();
-  const usesPopover = Platform.OS === 'ios' && isPad && widthClass === 'regular';
+  const usesPopover = useAnglePickerPopover();
   const { data: activeBoard } = useActiveBoard();
   const setBoardAngle = useSetBoardAngle();
   const angles = useBoardAngleOptions(activeBoard?.boardType as BoardName | undefined);
@@ -45,9 +65,18 @@ export function BoardAnglePicker({ children }: { children: (open: () => void) =>
   currentScope.current = scope;
   const visible = presentation?.open === true && presentation.scope === scope && canAdjust;
 
+  // Close an open picker whose board changed, or whose presentation no longer
+  // fits the width (a Split View resize between popover and sheet).
   useEffect(() => {
-    if (presentation?.open && presentation.scope !== scope) setPresentation({ ...presentation, open: false });
-  }, [presentation, scope]);
+    if (presentation?.open && (presentation.scope !== scope || presentation.popover !== usesPopover))
+      setPresentation({ ...presentation, open: false });
+  }, [presentation, scope, usesPopover]);
+  // Reports closed when the picker closes or unmounts, so a caller never holds a stale "open".
+  useEffect(() => {
+    if (!visible || !onOpenChange) return undefined;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [onOpenChange, visible]);
 
   const open = useCallback(() => {
     if (!activeBoard || !canAdjust) return;

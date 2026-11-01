@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+
+const safeArea = vi.hoisted(() => ({ top: 24, bottom: 0, left: 0, right: 0 }));
 
 type ViewMockProps = {
   children?: ReactNode;
@@ -25,7 +27,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => safeArea,
 }));
 vi.mock('react-native-paper', () => ({
   Appbar: {
@@ -41,6 +43,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 import { MaterialTopAppBar } from '../MaterialTopAppBar';
+import { HorizontalSafeAreaApplied } from '../../../hooks/use-horizontal-safe-area';
 import { createScrollEdgeBackdrop, useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 
 const scrollTo = (y: number) =>
@@ -50,6 +53,30 @@ const bandStyle = (root: HTMLElement) =>
   JSON.parse(root.querySelector('[data-testid="bar"]')?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 
 describe('MaterialTopAppBar', () => {
+  beforeEach(() => {
+    safeArea.left = 0;
+    safeArea.right = 0;
+  });
+
+  it('keeps the band controls clear of the side safe area without doubling ancestor padding', () => {
+    safeArea.left = 12;
+    safeArea.right = 84;
+    const { container, rerender } = render(
+      <MaterialTopAppBar testID="bar" onHeightChange={vi.fn()}>
+        <span>Title</span>
+      </MaterialTopAppBar>,
+    );
+    expect(bandStyle(container)).toMatchObject({ paddingLeft: 12, paddingRight: 84 });
+    rerender(
+      <HorizontalSafeAreaApplied>
+        <MaterialTopAppBar testID="bar" onHeightChange={vi.fn()}>
+          <span>Title</span>
+        </MaterialTopAppBar>
+      </HorizontalSafeAreaApplied>,
+    );
+    expect(bandStyle(container)).toMatchObject({ paddingLeft: 0, paddingRight: 0 });
+  });
+
   it('is flat surface with no divider at rest, under the status bar', () => {
     const { container } = render(
       <MaterialTopAppBar testID="bar" onHeightChange={vi.fn()} scrollEdge={createScrollEdgeBackdrop()}>

@@ -2,7 +2,7 @@
 
 /**
  * Generate the committed `BOARD_RENDER_VERSION` constant that `buildBoardRenderUrl`
- * appends to every `/render/board` URL as `&v=` (issue #4773).
+ * appends to every `/render/board` and `/og/climb` URL as `&v=` (issue #4773).
  *
  * Usage:
  *   vp run generate:board-render-version            # write the constant
@@ -36,7 +36,8 @@
  *      `@boardsesh/board-render`'s `render-version-projection.ts`. See the long
  *      comment there for why a projection beats a hand-kept file list.
  *   2. File hashes for the parts no projection can see: the compiled WASM binary
- *      and its bindgen glue, and the two imperative sharp modules.
+ *      and its bindgen glue, the imperative Sharp modules, and the shared bokeh
+ *      geometry and texture used by climb share cards.
  * Plus the SHA-256 of every board photo the catalogue actually composites — resolved
  * from the projection, so an unreferenced image under `public/images/` does not churn
  * the version and a newly referenced one cannot be missed.
@@ -77,6 +78,13 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
   // file is the one deliberate overlap: a comment-only edit to it churns the version.
   // Worth it — the backdrop is drawn, not derived, and there is nothing to project.
   'packages/shared/board-render/src/background.ts',
+  // Per-climb bokeh geometry, native/server falloff stops and shared grain.
+  'packages/shared/frosted-bokeh/src/index.ts',
+  'packages/shared/frosted-bokeh/assets/grain.png',
+  // Server bokeh drawing, text styles and the photo-backed spray card path.
+  'packages/shared/board-render/src/frosted-bokeh.ts',
+  'packages/shared/board-render/src/og-card.ts',
+  'packages/backend/src/services/spray-og-card.ts',
 ];
 
 /**

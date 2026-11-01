@@ -1,14 +1,11 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
-import { AvatarGroup } from '../../you/AvatarGroup';
-import { BoardDriverAvatar } from '../BoardDriverAvatar';
 import { readableTextColor } from '../../grade/grade-chip-colors';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
-import { wallDriverForClimb } from '../../../lib/board-presence/presence-climb';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskTypeScale } from './wall-kiosk-type';
 
@@ -16,41 +13,29 @@ type WallIdentityBlockProps = {
   climb: BoardPresenceClimb | null;
   typeScale: WallKioskTypeScale;
   isPreviewing: boolean;
-  recentSenders: BoardClimbRecentSender[];
-  /** Bands can move the paired attribution rows into a sibling column so the
-   *  extra row does not make the board region smaller. */
-  showAttribution?: boolean;
-  /** Very wide, shallow bands move the setter into the attribution column. */
-  showSetter?: boolean;
   /** A three-column band uses a fitted single-line name to stay inside the
    *  dominance-capped chrome height. */
   nameLines?: 1 | 2;
-  driverSize?: number;
-  /** Extreme aspect ratio starved the chrome → show only grade + name (shed the
-   *  lower-priority setter + driver lines) so the controls still fit. */
-  compact?: boolean;
   /** The kiosk's board, so the grade reads on its scale (the wall payload names no board). */
   boardName?: string;
 };
 
 /**
- * The climb identity — all OFF the board, on the opaque chrome surface. Hierarchy
- * GRADE > NAME > meta. The grade is a SOLID `getGradeColor` fill chip with
- * contrast-picked on-color text (`readableTextColor`) — not colored foreground
- * text, which is invisible for the yellow/green bands on a light surface. In
- * preview a "PREVIEW" tag rides the grade row so the loudest lockup can't be
- * mistaken for what's live.
+ * The climb identity — all OFF the board, on the opaque chrome surface: the
+ * GRADE above the NAME, and nothing else. The kiosk is read from 3–5 m, where
+ * only these two carry; the setter byline, the angle badge and the Lit-by /
+ * Sent-by avatars were 13–24 pt and unreadable from the mat, so they are not
+ * drawn here. The grade is a SOLID `getGradeColor` fill chip with contrast-picked
+ * on-color text (`readableTextColor`) — not colored foreground text, which is
+ * invisible for the yellow/green bands on a light surface. In preview a
+ * "PREVIEW" tag rides the grade row for whoever is scrubbing at arm's length,
+ * so the loudest lockup can't be mistaken for what's live.
  */
 function WallIdentityBlockComponent({
   climb,
   typeScale,
   isPreviewing,
-  recentSenders,
-  showAttribution = true,
-  showSetter = true,
   nameLines = 2,
-  driverSize = 32,
-  compact = false,
   boardName,
 }: WallIdentityBlockProps) {
   const { t } = useTranslation('session');
@@ -67,8 +52,6 @@ function WallIdentityBlockComponent({
   const grade = climb.grade ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const gradeTextColor = readableTextColor(gradeColor);
-  const setter = climb.setter?.trim();
-  const angleLabel = climb.angle != null ? `${climb.angle}°` : null;
 
   return (
     <View style={styles.root}>
@@ -94,13 +77,6 @@ function WallIdentityBlockComponent({
             </Text>
           </View>
         ) : null}
-        {angleLabel ? (
-          <View style={[styles.anglePill, { backgroundColor: systemColors.fill }]}>
-            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.angleText}>
-              {angleLabel}
-            </Text>
-          </View>
-        ) : null}
       </View>
 
       <Text
@@ -113,94 +89,11 @@ function WallIdentityBlockComponent({
       >
         {name}
       </Text>
-
-      {setter && showSetter && !compact ? (
-        <Text
-          numberOfLines={1}
-          color={systemColors.secondaryLabel}
-          style={{ fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }}
-        >
-          {t('mobile.boardPresence.setByLine', { setter })}
-        </Text>
-      ) : null}
-
-      {showAttribution ? (
-        <WallAttributionBlock
-          climb={climb}
-          typeScale={typeScale}
-          recentSenders={recentSenders}
-          driverSize={driverSize}
-          compact={compact}
-        />
-      ) : null}
     </View>
   );
 }
 
 export const WallIdentityBlock = memo(WallIdentityBlockComponent);
-
-type WallAttributionBlockProps = {
-  climb: BoardPresenceClimb | null;
-  typeScale: WallKioskTypeScale;
-  recentSenders: BoardClimbRecentSender[];
-  driverSize?: number;
-  compact?: boolean;
-};
-
-/** The paired wall bylines. Keep them in one component so every placement
- * preserves the required Lit-by → Sent-by vertical order. */
-function WallAttributionBlockComponent({
-  climb,
-  typeScale,
-  recentSenders,
-  driverSize = 32,
-  compact = false,
-}: WallAttributionBlockProps) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
-  const driver = climb ? wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber')) : null;
-
-  if (!climb || compact || (!driver && recentSenders.length === 0)) return null;
-
-  return (
-    <View style={styles.attributionRoot}>
-      {driver ? (
-        <View style={styles.driverRow}>
-          <BoardDriverAvatar
-            size={driverSize}
-            userId={climb.sentByUserId}
-            uri={climb.sentByAvatarUrl}
-            name={driver.avatarName}
-            status="connected"
-            accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
-          />
-          <Text
-            numberOfLines={1}
-            color={systemColors.secondaryLabel}
-            style={[styles.driverName, { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }]}
-          >
-            {t('boardPresence.litByLine', { name: driver.label })}
-          </Text>
-        </View>
-      ) : null}
-
-      {recentSenders.length > 0 ? (
-        <View style={styles.senderRow}>
-          <Text
-            numberOfLines={1}
-            color={systemColors.secondaryLabel}
-            style={{ fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }}
-          >
-            {t('boardPresence.sentByLabel')}
-          </Text>
-          <AvatarGroup participants={recentSenders} size={driverSize} max={5} />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-export const WallAttributionBlock = memo(WallAttributionBlockComponent);
 
 const styles = StyleSheet.create({
   root: { gap: spacing[2] },
@@ -231,31 +124,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
-  anglePill: {
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing[2],
-    paddingVertical: 3,
-  },
-  angleText: {
-    fontWeight: '600',
-  },
   name: {
     fontWeight: '800',
-  },
-  driverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  driverName: {
-    flexShrink: 1,
-  },
-  attributionRoot: {
-    gap: spacing[2],
-  },
-  senderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
   },
 });

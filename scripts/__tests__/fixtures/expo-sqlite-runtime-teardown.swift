@@ -36,15 +36,44 @@ struct SQLiteErrorException: Error {
   let message: String
   init(_ message: String) { self.message = message }
 }
+struct AccessClosedResourceException: Error {}
+// Instrument only acquisition timing; production methods below own the lock order.
+final class LifecycleLock {
+  private let underlying = NSRecursiveLock()
+  var afterFirstLock: (() -> Void)?
+  func lock() {
+    underlying.lock()
+    let callback = afterFirstLock
+    afterFirstLock = nil
+    callback?()
+  }
+  func unlock() { underlying.unlock() }
+}
+final class StatementLock {
+  private let underlying = NSLock()
+  func withLock<Result>(_ body: (inout Void) throws -> Result) rethrows -> Result {
+    underlying.lock()
+    defer { underlying.unlock() }
+    var state: Void = ()
+    return try body(&state)
+  }
+}
+// INSERT_SQLITE_RESULTS
 enum ExpoModulesCore {
   struct Logger { func warn(_ message: String) { fatalError(message) } }
   static let log = Logger()
 }
 final class NativeDatabase {
-  struct OpenOptions { let finalizeUnusedStatementsBeforeClosing = true }
+  struct OpenOptions {
+    let finalizeUnusedStatementsBeforeClosing = true
+    let enableChangeListener = true
+  }
   let openOptions = OpenOptions()
-  let pointer: OpaquePointer
+  var pointer: OpaquePointer?
   var isClosed = false
+  let closeLock = NSLock()
+  let statementLifecycleLock = LifecycleLock()
+  var statements: [NativeStatement] = []
   let sharedObjectId: Int
   init(path: String, id: Int) {
     var connection: OpaquePointer?
@@ -52,19 +81,37 @@ final class NativeDatabase {
     pointer = connection!
     sharedObjectId = id
   }
+  // INSERT_DATABASE_METHODS
+  func prepareForShutdown(_ source: String) throws {
+    try prepare(statement: NativeStatement(), source: source)
+  }
+  func executeDuringShutdown(_ source: String) throws {
+    try exec(source: source)
+  }
+}
+final class NativeStatement {
+  var pointer: OpaquePointer?
+  var isFinalized = false
+  let lock = StatementLock()
+  // INSERT_STATEMENT_METHODS
 }
 private let moduleQueueKey = DispatchSpecificKey<Void>()
 final class SQLiteModule {
-  private static let lockQueue = DispatchQueue(label: "test.sqlite.cache")
+  private static let cacheLock = NSRecursiveLock()
   private var contextPairs = [Unmanaged<AnyObject>]()
   private var cachedDatabases = [NativeDatabase]()
   // INSERT_SQLITE_QUEUE
   // INSERT_SQLITE_METHODS
   func open(_ path: String, id: Int) -> NativeDatabase {
     let database = NativeDatabase(path: path, id: id)
-    cachedDatabases.append(database)
+    Self.cacheLock.withLock { cachedDatabases.append(database) }
     return database
   }
+  // Replace the JSI change event only; keep the actual cache-lock rendezvous.
+  private func addUpdateHook(_ database: NativeDatabase) {
+    Self.cacheLock.withLock {}
+  }
+  func initialize(_ database: NativeDatabase) throws { try initDb(database: database) }
   func destroy() { closeAllDatabases() }
   func submit(_ operation: @escaping () -> Void) { moduleQueue.async(execute: operation) }
   func drain() { moduleQueue.sync(flags: .barrier) {} }
@@ -138,8 +185,7 @@ if scenario == "lifecycle" {
       entered.signal()
       finishPrepare.wait()
       precondition(!oldWriter.isClosed, "cleanup overtook an admitted operation")
-      var statement: OpaquePointer?
-      precondition(exsqlite3_prepare_v2(oldWriter.pointer, "SELECT * FROM probe", -1, &statement, nil) == SQLITE_OK)
+      try! oldWriter.prepareForShutdown("SELECT * FROM probe")
       // Deliberately leave this admitted statement for shutdown to finalize.
     }
     entered.wait()
@@ -169,6 +215,58 @@ if scenario == "lifecycle" {
     precondition(submitted.wait(timeout: .now() + 5) == .success)
     oldModule.drain()
     newModule.drain()
+  } else if scenario == "init-close-lock-order" {
+    let acquiredLifetime = DispatchSemaphore(value: 0)
+    let finishInitialization = DispatchSemaphore(value: 0)
+    let initialized = DispatchSemaphore(value: 0)
+    let closeAttempted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    oldWriter.statementLifecycleLock.afterFirstLock = {
+      acquiredLifetime.signal()
+      finishInitialization.wait()
+    }
+    DispatchQueue.global().async {
+      try! oldModule.initialize(oldWriter)
+      initialized.signal()
+    }
+    precondition(acquiredLifetime.wait(timeout: .now() + 5) == .success)
+    DispatchQueue.global().async {
+      closeAttempted.signal()
+      oldModule.destroy()
+      closed.signal()
+    }
+    closeAttempted.wait()
+    precondition(closed.wait(timeout: .now() + 0.25) == .timedOut)
+    finishInitialization.signal()
+    precondition(initialized.wait(timeout: .now() + 5) == .success, "init and close acquired cache/lifetime locks in opposite order")
+    precondition(closed.wait(timeout: .now() + 5) == .success)
+  } else if scenario == "concurrent-exec" {
+    // SDK 58's @JS(.concurrent) operations bypass moduleQueue. Only the
+    // installed exec method's connection-lifetime lock makes teardown wait.
+    let acquiredLifetime = DispatchSemaphore(value: 0)
+    let finishExecution = DispatchSemaphore(value: 0)
+    let executed = DispatchSemaphore(value: 0)
+    let closeAttempted = DispatchSemaphore(value: 0)
+    let closed = DispatchSemaphore(value: 0)
+    oldWriter.statementLifecycleLock.afterFirstLock = {
+      acquiredLifetime.signal()
+      finishExecution.wait()
+    }
+    DispatchQueue.global().async {
+      try! oldWriter.executeDuringShutdown("INSERT INTO probe VALUES (3)")
+      executed.signal()
+    }
+    precondition(acquiredLifetime.wait(timeout: .now() + 5) == .success, "concurrent exec has no connection-lifetime guard")
+    DispatchQueue.global().async {
+      closeAttempted.signal()
+      oldModule.destroy()
+      closed.signal()
+    }
+    closeAttempted.wait()
+    precondition(closed.wait(timeout: .now() + 0.25) == .timedOut, "cleanup overtook a running concurrent exec")
+    finishExecution.signal()
+    precondition(executed.wait(timeout: .now() + 5) == .success)
+    precondition(closed.wait(timeout: .now() + 5) == .success)
   } else {
     fatalError("unknown scenario")
   }

@@ -239,7 +239,7 @@ vi.mock('expo-file-system', () => {
       writeFakeFile(this.uri, { bytes: new Uint8Array(), text: '' });
     }
 
-    write(content: string) {
+    writeSync(content: string) {
       writeFakeFile(this.uri, { bytes: new Uint8Array(), text: content });
     }
 

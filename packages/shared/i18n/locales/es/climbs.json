@@ -324,6 +324,7 @@
       "title": "Opciones de la lista de bloques",
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
+      "historyTitle": "Historial del plafón",
       "historyHint": "Mira los bloques que se han iluminado en este muro"
     },
     "moderation": {
@@ -422,7 +423,7 @@
       "recovery": {
         "scope": "{{board}} · {{angle}}°",
         "filters": "Filtros activos: {{filters}}",
-        "removeHint": "Quita un filtro para volver a intentarlo. Se mantienen la búsqueda y la configuración.",
+        "removeHint": "Quita un filtro para volver a intentarlo. Todo lo demás se mantiene.",
         "openFilters": "Ajustar filtros"
       }
     },
@@ -504,6 +505,9 @@
       "pinChip": "Fijar {{name}} en la fila superior",
       "unpinChip": "Quitar {{name}} de la fila superior",
       "recentDescription": "Tus últimas 10 búsquedas aparecerán aquí.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Filtros rápidos",
+      "quickFiltersFooter": "Elige qué filtros se muestran en la fila superior y en qué orden.",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",
@@ -607,7 +611,6 @@
     },
     "search": {
       "recentFilters": "Recientes",
-      "clearRecent": "Borrar",
       "gradeRange": "{{min}}–{{max}}",
       "gradeMin": "{{grade}}+",
       "gradeMax": "≤{{grade}}",

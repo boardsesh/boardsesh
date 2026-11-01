@@ -51,6 +51,61 @@ option field names, presence, and types; they exclude payload contents. This
 contains rejected updates without claiming to fix Android's unconfirmed native
 Record-decoding failure (#6595).
 
+### Background bulb reconnect and paused JS timers
+
+React Native's `JavaTimerManager` stops firing JS timers while the activity is
+paused, but the JS thread keeps running. The notification bulb's reconnect runs
+in exactly that state, so its watchdogs cannot rely on `setTimeout` alone (#7038):
+
+- **Scan timeout (30 s) and the Bluetooth power-on wait (2.5 s)** race their JS
+  timer against SessionPresence's native `delay` (`setBackgroundSafeTimeout` in
+  `packages/mobile/src/lib/ble/background-safe-timeout.ts`). A binary without
+  `delay` keeps the JS timer, so an OTA'd bundle on an older build behaves as
+  before. Cancelling is a JS flag; the native delay is never cancelled.
+- **Connect timeout (12 s)** also goes to ble-plx as `connectToDevice(id, { timeout })`,
+  which runs on an RxJava timer. The JS race stays.
+- **Grace window (10 s)** is never scheduled for a connect that started while the
+  app was not `active`. That is decided once, at the tap: such a connect never
+  shows a list, so the saved board keeps the whole scan to show up and
+  auto-connect, even if the climber opens the app part-way through.
+- **The picker** of a connect that started in the background is never shown. If
+  its scan ends without the saved board, it rejects with `No boards found`, so
+  `connect()` shows the standard "board not found" alert and clears its in-flight
+  guard; a later bulb tap scans again. Android holds that alert until the app is
+  on screen. A sheet the climber did see keeps its empty state instead, whatever
+  the app state when the scan ends.
+
+Two more rules keep the bulb honest (#7087):
+
+- **No remembered board, no background reconnect.** Without a remembered serial
+  or device id, a reconnect can only end in the board list. From the
+  notification that list would land on a paused activity, and the connect would
+  hold its in-flight guard until someone opened the app. So the bridge sends
+  `bulbOpensApp` on every update, and `BoardSessionService` makes the outline
+  bulb an activity PendingIntent (the launcher intent, the same as tapping the
+  card) instead of the `ACTION_BULB` broadcast. The climber lands in the app and
+  connects from the in-app bulb, with the list on screen. It has to be the
+  notification's own PendingIntent: Android 12+ does not let a broadcast
+  receiver started by a notification tap open an activity. The lit bulb
+  (`connectedByMe`) still re-lights the wall by broadcast.
+- **"Connecting…" while a connect runs.** `connect()` ignores a second tap while
+  one is in flight, so the bridge sends `boardConnecting` (the Bluetooth
+  context's `loading`) and the outline bulb reads `connectingLabel` until the
+  connect ends. The action stays a broadcast, so a repeat tap still lands on the
+  in-flight guard and does not cancel anything; the label is what tells the
+  climber the first tap landed.
+
+Both flags default to false when an older bundle leaves them out, and iOS pins
+them to false (ActivityKit draws its own bulb).
+
+Limits: the native clock stops in deep sleep, so with the screen locked the scan
+ends, and the alert is raised, after the phone wakes. Android keeps one pending
+alert, with no age limit. A process death loses it, and so does an activity that
+is gone (the app swiped away while the foreground service keeps the process):
+`DialogModule` then has no fragment manager and drops the alert. The other JS timers on
+this path (the queue's move re-send fallback, the presence update retry, the
+WebSocket's reconnect) still pause with the activity.
+
 ## Mirroring from the Lock Screen and Android notification
 
 On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holder
@@ -123,6 +178,26 @@ Three update paths set `boardConnection`:
 
 The widget resolves the effective state per render with `resolveBoardState(...)`: pushed `context.state.boardConnection` → App Group mirror → derive from `navigationAllowed` (true ⇒ connectedByMe).
 
+## Rest timer on the Lock Screen and in the Dynamic Island (#6513)
+
+The rest timer counts down on the Lock Screen card, in the Dynamic Island (compact, minimal and expanded) and in the Android session notification. JS owns the state machine (`src/lib/rest-timer-store.ts` plus the `restTimer*` settings); the native side only draws it.
+
+**Where the state lives.** `buildRestTimerLiveActivityPayload` (`src/lib/live-activity/rest-timer-payload.ts`) reduces the store and settings to a status (`running`, `paused`, `waiting`, `queueEnded`, `countUp`), the current window's start and end in epoch ms, the fixed-window length, and a frozen value for the two states that do not move (`paused`, `waiting`). `queueEnded` is a live clock like the in-app pill: it carries the same window as the `running` (or `countUp`) snapshot it replaces and is drawn muted, never red. `LiveActivityRestTimerSync` (mounted by `LiveActivityBridge`) sends it through the optional `updateRestTimer` native method, and `null` takes it off. On iOS that writes the App Group key `bs_rest_timer` (`SharedConstants.restTimerKey`, `SharedRestTimerState`), then re-renders the activity by bumping `ContentState.restRevision`.
+
+**Why not in `ContentState`.** The backend re-sends the whole content state on every queue change and every 90 s, and `LiveActivityManager.buildContentState`, `ClimbNavigationIntent` and `MirrorClimbIntent` all build fresh states. None of them know about the rest timer, so a pushed field would be wiped by the next of those updates. `restRevision` is only a change trigger, so `nil` from those paths is harmless. The backend is untouched.
+
+**When JS speaks.** Only on a change: a rest-timer store event, a rest setting, the climber's "Show on Lock Screen" switch (`restTimerShowOnLockScreen`, default on), each successful Live Activity start (native clears the key in `endSession`, and in `startSession` when it belongs to another session), an app-state change, and one timeout at each deadline. Never once a second: the countdown itself is `Text(timerInterval:)`, `Text(date, style: .timer)` and `ProgressView(timerInterval:)` on iOS, and a chronometer on Android.
+
+**What the widget cannot do.** It runs no code at a deadline; it only re-renders on an update. `ResolvedRestTimer.resolve` decides at render time whether a running rest is over and rolls a fixed window on to the current one, but between renders only the timer views move. So, while the app is in the background:
+
+- an after-tick rest holds at 0:00 until the next update turns it into the red overrun;
+- a fixed window holds at 0:00 until the next update rolls it on;
+- auto-advance never fires (JS timers are suspended), which is why the widget never shows it.
+
+**How soon that next update comes is only partly known.** The backend's heartbeat push arrives every 90 s while a push token is registered. The first push after the app's last local update always differs from what the app last drew (it carries `restRevision: nil` where the app wrote a number), so ActivityKit applies a new state and the widget redraws. Later heartbeats re-send a byte-identical content state; we expect ActivityKit to redraw on those too, but that is not verified on a device. If it does not, an after-tick rest can sit at 0:00 until the climber next opens the app or the queue changes, and a 60 s fixed window can sit through several beats. Verify on a phone before relying on the 90 s figure; tracked in #6538.
+
+Android does not share this gap: the foreground service keeps running and re-posts its own notification at the deadline (the digits turn red and the caption swaps to `androidOverCaption`) and at every fixed-window beat.
+
 ## Architecture Decision: Where Does BLE Live?
 
 The widget extension **cannot** hold a CoreBluetooth connection (extensions have strict memory/runtime limits and Apple kills them after ~30s). The main app process must own the BLE connection.
@@ -166,7 +241,9 @@ Two critical enablers in `mobile/ios/App/App.xcodeproj/project.pbxproj`:
 - `NextClimbIntent.swift`, `PreviousClimbIntent.swift`, and `WidgetNetworking.swift` are members of **both** the `App` and `BoardseshWidgets` targets. Without `App`-target membership the intent type is not registered in the main app's `AppIntents` package and iOS has no candidate process to background-launch.
 - The widget target sets `OTHER_SWIFT_FLAGS = "$(inherited) -D WIDGET_EXTENSION"`. The intent files gate the main-app-only paths (BLE writes, `UIApplication.beginBackgroundTask`) behind `#if !WIDGET_EXTENSION` so the widget-extension compile excludes symbols it cannot link.
 
-The main app process can maintain a CoreBluetooth connection in the background if it declares the `bluetooth-central` background mode (already done in `Info.plist`). State restoration via `CBCentralManagerOptionRestoreIdentifierKey` makes the peripheral connection survive a process restart — but for the restore callback to actually fire, `CBCentralManager` must be constructed **during launch**, before the run loop services other events. `AppDelegate.didFinishLaunchingWithOptions` eagerly accesses `BoardBleManager.shared` whenever there's a saved BLE board configuration in the App Group, gated to avoid an early Bluetooth permission prompt on fresh installs.
+The main app process can maintain a CoreBluetooth connection in the background if it declares the `bluetooth-central` background mode (already done in `Info.plist`). State restoration via `CBCentralManagerOptionRestoreIdentifierKey` makes the peripheral connection survive a process restart — but for the restore callback to actually fire, `CBCentralManager` must be constructed **during launch**, before the run loop services other events. In the Expo app, `BoardBleModule`'s `OnCreate` (Expo creates every module at app start) touches `BoardBleManager.shared`, which constructs the central there whenever `CBManager.authorization` is already answered. While it is still `.notDetermined` the central waits for the first scan, or for JS's `requestBluetoothAuthorization` at the scan or connect tap, so a fresh install sees the Bluetooth alert when the climber first looks for a board instead of at launch. Nothing can be restored without permission, so the deferral costs restoration nothing (see `BoardBleManager.shouldCreateCentralManagerAtLaunch`).
+
+`BoardBleManager.shared` lives as long as the process, but each JS runtime gets its own `BoardBleModule`. A JS reload (an OTA `reloadAsync`, a dev `r`) therefore leaves two module instances alive for a moment. React Native's `RCTHost` starts the new instance while the old runtime is still tearing down on its own JS thread. Expo creates the new module, whose `OnCreate` installs the scan, connect and disconnect handlers, as soon as the new runtime starts. The old module's `OnDestroy` runs only when the old runtime finalises, so it can land after that. The handlers are therefore registered with an owner token (`setEventHandlers(owner:)`), and `OnDestroy` calls `clearEventHandlers(owner:)`, which does nothing when a newer module owns them. Before #7023 the destroy cleared the handlers unconditionally. After an OTA reload the scan still ran, but no result reached JS, so the picker said "No boards found nearby" until the app was restarted. The ordering is read from the React Native and Expo sources (`RCTHost` reload, `RCTInstance invalidate`, `ExpoReactNativeFactory didInitializeRuntime`, and the `AppContext` native state that ties its lifetime to the runtime), not from a traced device run. Any other module that writes into a process-wide singleton needs the same owner rule.
 
 ## Phases
 
@@ -285,7 +362,7 @@ The web client now drives multi-frame Aurora climbs through a JS-side playback e
 When workouts land in Boardsesh, the Live Activity becomes the primary workout interface on the wall. The widget will need to display and control:
 
 - Current set and rep within the workout (e.g., "Set 2/4, Rep 3/6")
-- Rest timer countdown between sets (Live Activities support timer rendering natively via `Text.DateStyle.timer`)
+- Rest timer countdown between sets (the session rest timer already reaches the Live Activity; see "Rest timer on the Lock Screen and in the Dynamic Island" above for how a workout's rest could reuse it)
 - Start/complete rep buttons
 - Skip set or end workout early
 

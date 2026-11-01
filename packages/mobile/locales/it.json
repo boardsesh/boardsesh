@@ -1,0 +1,12 @@
+{
+  "ios": {
+    "NSHealthUpdateUsageDescription": "Boardsesh salva le tue session di arrampicata concluse in Apple Health come allenamenti.",
+    "NSHealthShareUsageDescription": "Boardsesh legge il tuo peso corporeo per stimare le calorie e i tuoi allenamenti Boardsesh salvati per evitare doppioni.",
+    "NSBluetoothAlwaysUsageDescription": "Boardsesh usa il Bluetooth per collegarsi a Kilter Board, Tension Board o MoonBoard e illuminare le prese. Nessun dato personale viene inviato tramite Bluetooth.",
+    "NSBluetoothPeripheralUsageDescription": "Boardsesh usa il Bluetooth per collegarsi al tuo pannello e controllare i LED delle prese.",
+    "NSLocationWhenInUseUsageDescription": "Boardsesh usa la tua posizione per mostrarti pannelli e palestre vicino a te e per mettere sulla mappa un pannello che aggiungi.",
+    "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa la tua posizione per mostrarti pannelli e palestre vicino a te e per mettere sulla mappa un pannello che aggiungi.",
+    "NSCameraUsageDescription": "Boardsesh usa la fotocamera per farti fotografare una Spraywall e tracciarci dei blocchi.",
+    "NSPhotoLibraryUsageDescription": "Boardsesh usa la tua libreria foto per farti scegliere un'immagine del profilo, una foto della tua Spraywall o uno screenshot da allegare al feedback."
+  }
+}

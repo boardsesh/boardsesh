@@ -6,7 +6,7 @@ import { useDeviceLayout } from '../hooks/use-device-layout';
 // The top-level tab names ((tabs)/<name>). Typing the `tab` prop as this union
 // (not a bare string) makes a typo in a layout's `tab="…"` a compile error rather
 // than a tab that silently reports hidden forever on iPad.
-export type BoardArtTab = 'climbs' | 'discover' | 'home' | 'profile' | 'record' | 'wall';
+export type BoardArtTab = 'climbs' | 'discover' | 'home' | 'profile' | 'record';
 
 /**
  * Releases board art in non-focused iPad tabs. The iPad shell keeps every tab

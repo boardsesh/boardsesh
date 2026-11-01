@@ -31,7 +31,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
   const removalRequestedRef = useRef(false);
   const nativeRemovalRevisionRef = useRef<number | null>(null);
   const nativeRemovalAttemptRef = useRef(0);
-  const requestedRemovalRef = useRef<{ attempt: number; beforeRemoveSeen: boolean } | null>(null);
+  const requestedRemovalRef = useRef<{ attempt: number; removalEventSeen: boolean } | null>(null);
   const [offscreenRevision, setOffscreenRevision] = useState<number | null>(null);
   const [restorationVersion, setRestorationVersion] = useState(0);
   const appliedRestorationRef = useRef(0);
@@ -43,44 +43,50 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     };
   }, []);
 
-  useEffect(
-    () =>
-      navigation.addListener('beforeRemove', (event) => {
-        if (!mountedRef.current) return;
-        const removingRevision = nativeRemovalRevisionRef.current ?? openingRef.current.revision;
-        nativeRemovalRevisionRef.current = removingRevision;
-        const requestedRemoval = requestedRemovalRef.current;
-        let removingAttempt: number;
-        if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.beforeRemoveSeen) {
-          // The first native event belongs to the close we just requested. Keep
-          // its waiter able to restore an aborted request after this event.
-          requestedRemoval.beforeRemoveSeen = true;
-          removingAttempt = requestedRemoval.attempt;
-        } else {
-          // Another event is a distinct removal, even for the same opener.
-          removingAttempt = ++nativeRemovalAttemptRef.current;
+  useEffect(() => {
+    const onRemoval = (event: { defaultPrevented: boolean }) => {
+      if (!mountedRef.current) return;
+      const removingRevision = nativeRemovalRevisionRef.current ?? openingRef.current.revision;
+      nativeRemovalRevisionRef.current = removingRevision;
+      const requestedRemoval = requestedRemovalRef.current;
+      let removingAttempt: number;
+      if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.removalEventSeen) {
+        // The first native event belongs to the close we just requested. Keep
+        // its waiter able to restore an aborted request after this event.
+        requestedRemoval.removalEventSeen = true;
+        removingAttempt = requestedRemoval.attempt;
+      } else {
+        // Another event is a distinct removal, even for the same opener.
+        removingAttempt = ++nativeRemovalAttemptRef.current;
+        requestedRemovalRef.current = null;
+      }
+      // A later listener can prevent this action (for example an unsaved draft).
+      // Wait until all synchronous listeners ran before restoring a blocked close.
+      queueMicrotask(() => {
+        if (
+          mountedRef.current &&
+          event.defaultPrevented &&
+          nativeRemovalRevisionRef.current === removingRevision &&
+          nativeRemovalAttemptRef.current === removingAttempt
+        ) {
+          nativeRemovalRevisionRef.current = null;
           requestedRemovalRef.current = null;
+          // Restoring this same opener begins a new motion lifetime too. An old
+          // completion already queued on JS must not close the restored surface.
+          openingRef.current = { ...openingRef.current, revision: openingRef.current.revision + 1 };
+          setRestorationVersion((version) => version + 1);
         }
-        // A later listener can prevent this action (for example an unsaved draft).
-        // Wait until all synchronous listeners ran before restoring a blocked close.
-        queueMicrotask(() => {
-          if (
-            mountedRef.current &&
-            event.defaultPrevented &&
-            nativeRemovalRevisionRef.current === removingRevision &&
-            nativeRemovalAttemptRef.current === removingAttempt
-          ) {
-            nativeRemovalRevisionRef.current = null;
-            requestedRemovalRef.current = null;
-            // Restoring this same opener begins a new motion lifetime too. An old
-            // completion already queued on JS must not close the restored surface.
-            openingRef.current = { ...openingRef.current, revision: openingRef.current.revision + 1 };
-            setRestorationVersion((version) => version + 1);
-          }
-        });
-      }),
-    [navigation],
-  );
+      });
+    };
+    const unsubscribeBlocked = navigation.addListener('removePrevented', () => onRemoval({ defaultPrevented: true }));
+    const unsubscribeRemoved = navigation.addListener('removed', () => onRemoval({ defaultPrevented: false }));
+    return () => {
+      // Blocked removal can restore state only while mounted. `removed` is
+      // delivered after unmount, so retain that observer through this task.
+      unsubscribeBlocked();
+      queueMicrotask(unsubscribeRemoved);
+    };
+  }, [navigation]);
 
   useLayoutEffect(() => {
     if (appliedRevisionRef.current === openingRevision && appliedRestorationRef.current === restorationVersion) return;
@@ -142,7 +148,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
           return;
         if (navigation.isFocused()) {
           nativeRemovalRevisionRef.current = offscreenRevision;
-          requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, beforeRemoveSeen: false };
+          requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, removalEventSeen: false };
           router.dismiss();
         } else {
           // A different modal covered /play while JS was busy. Restore this
@@ -168,7 +174,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         return;
       if (navigation.isFocused()) {
         nativeRemovalRevisionRef.current = requestedRevision;
-        requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, beforeRemoveSeen: false };
+        requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, removalEventSeen: false };
         router.dismiss();
       } else isDismissing.value = false;
     },
@@ -201,7 +207,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         return { status: 'aborted' };
       nativeRemovalRevisionRef.current = openingRevision;
       const removingAttempt = ++nativeRemovalAttemptRef.current;
-      requestedRemovalRef.current = { attempt: removingAttempt, beforeRemoveSeen: false };
+      requestedRemovalRef.current = { attempt: removingAttempt, removalEventSeen: false };
       const restoreAbortedClose = () => {
         if (
           !mountedRef.current ||

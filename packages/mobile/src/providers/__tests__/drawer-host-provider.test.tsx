@@ -131,13 +131,38 @@ vi.mock('react-native', () => ({
 // The host reads the device layout to decide sheet (compact) vs pane (regular).
 // Defaults to compact (the bottom-sheet path most tests exercise); the
 // regular-width pane describe flips it.
-const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular' }));
+// `nativeTabBar` models the native iPad (UIKit sidebar, no pane); off, a regular
+// width is the JS tablet shell, whose pane takes taps.
+const layoutCfg = vi.hoisted(() => ({
+  widthClass: 'compact' as 'compact' | 'regular',
+  nativeTabBar: false,
+  windowWidth: 1024,
+}));
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
-vi.mock('../../hooks/native-tablet-pane-width', () => ({
-  useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
+// The phone split (iPhone Duo in landscape). Off except in its own describe.
+const splitCfg = vi.hoisted(() => ({ phoneSplit: false }));
+vi.mock('../../hooks/use-phone-split', () => ({
+  usePhoneSplit: () => splitCfg.phoneSplit,
 }));
+// The real resolver, fed from the two configs above.
+vi.mock('../../hooks/use-current-climb-surface', async () => {
+  const { resolveCurrentClimbSurface } = await vi.importActual<typeof import('../../hooks/current-climb-surface')>(
+    '../../hooks/current-climb-surface',
+  );
+  return {
+    useCurrentClimbSurface: () =>
+      resolveCurrentClimbSurface({
+        isTablet: layoutCfg.widthClass === 'regular',
+        widthClass: layoutCfg.widthClass,
+        windowWidth: layoutCfg.windowWidth,
+        nativeTabBar: layoutCfg.nativeTabBar,
+        nativeAccessory: layoutCfg.nativeTabBar,
+        phoneSplit: splitCfg.phoneSplit,
+      }),
+  };
+});
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',
@@ -147,6 +172,23 @@ vi.mock('expo-crypto', () => ({
 // `app/play.tsx` route — so the host only needs the barrel to resolve (it imports
 // type-only symbols from it). A no-op keeps the real, native-heavy PlayDrawer out
 // of jsdom.
+// The MiniPlayer's angle sheet (#6940): the props the host hands it.
+type AngleSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  boardName: string;
+  layoutId: number;
+  climbUuid?: string;
+  currentAngle: number;
+  onAngleChange: (angle: number) => void;
+};
+const angleSheet = vi.hoisted(() => ({ props: null as null | AngleSheetProps }));
+vi.mock('../../components/play-drawer/AngleSelectorSheet', () => ({
+  AngleSelectorSheet: (props: AngleSheetProps) => {
+    angleSheet.props = props;
+    return null;
+  },
+}));
 vi.mock('../../components/play-drawer', () => ({
   PlayDrawer: () => null,
 }));
@@ -245,17 +287,33 @@ vi.mock('../../components/board-discovery/BoardShareSheet', () => ({
 const nativeNavigation = vi.hoisted(() => ({
   ready: false,
   routeNames: ['(tabs)', 'play'],
+  // The root stack's routes, top last (the phone-split close reads the top one).
+  stack: ['(tabs)'] as string[],
+  segments: ['(tabs)', 'climbs'] as string[],
+  // On a device the root state is expo-router's own stack (`ExpoRoot`'s
+  // `Content`), with one `__root` screen whose nested state is the app's Stack.
+  // False only where a test also covers the flat shape.
+  wrappedInExpoRoot: true,
   dispatch: vi.fn(),
 }));
 const nativeNavigationRef = {
   isReady: () => nativeNavigation.ready,
-  getRootState: () => ({ key: 'root-stack', routeNames: nativeNavigation.routeNames }),
+  getRootState: () => {
+    const appStack = {
+      key: 'root-stack',
+      routeNames: nativeNavigation.routeNames,
+      routes: nativeNavigation.stack.map((name) => ({ name })),
+      index: nativeNavigation.stack.length - 1,
+    };
+    if (!nativeNavigation.wrappedInExpoRoot) return appStack;
+    return { key: 'expo-root', routeNames: ['__root'], routes: [{ name: '__root', state: appStack }], index: 0 };
+  },
   dispatch: nativeNavigation.dispatch,
 };
 vi.mock('expo-router', () => ({
-  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
+  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn(), back: vi.fn() },
   useNavigationContainerRef: () => nativeNavigationRef,
-  useSegments: () => ['(tabs)', 'climbs'],
+  useSegments: () => nativeNavigation.segments,
 }));
 
 vi.mock('@boardsesh/board-presence-react', () => ({
@@ -289,6 +347,7 @@ vi.mock('../queue-provider', () => ({
     playNext: queue.playNext,
     setSessionBoardPath: queue.setSessionBoardPath,
     setCurrentClimb: queue.setCurrentClimb,
+    getQueueSnapshot: () => ({ currentClimbQueueItem: null }),
   }),
   useQueueSessionControls: () => ({
     sessionId: queue.sessionId,
@@ -378,6 +437,13 @@ import type { BoardSheetClimbAction } from '../../components/board-presence/Boar
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { setSetting } from '../../settings/hooks';
+import { enterDriveMode, markDriveLive, resetDriveModeForTests } from '../../components/play-drawer/drive-mode-store';
+import {
+  publishRoutePlayerBusy,
+  registerRoutePlayer,
+  resetRoutePlayerHandoffForTests,
+  takePlayerScrollHandoff,
+} from '../../components/play-drawer/route-player-handoff';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -473,11 +539,49 @@ describe('drawer copied content withdrawal', () => {
       await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('fresh'));
     },
   );
+
+  it('sends a native iPad tap to the full-screen player, never a pane', async () => {
+    // Like Apple Music: a regular-width native iPad has no pane, so a climb tap
+    // opens `/play` exactly as on iPhone.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.nativeTabBar = true;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('ipad-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('ipad-tap'));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget ?? null).toBeNull();
+  });
+
+  it('sends a tap to the full-screen player on a JS tablet shell too narrow for the pane', async () => {
+    // 744pt (an Android tablet or iPad mini width on the Material shell): the rail
+    // and a 320pt pane would leave the list under its floor, so there is no pane.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.windowWidth = 744;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('narrow-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('narrow-tap'));
+  });
 });
 
 beforeEach(() => {
   nativeNavigation.ready = false;
   nativeNavigation.routeNames = ['(tabs)', 'play'];
+  nativeNavigation.stack = ['(tabs)'];
+  nativeNavigation.segments = ['(tabs)', 'climbs'];
+  nativeNavigation.wrappedInExpoRoot = true;
+  splitCfg.phoneSplit = false;
+  resetRoutePlayerHandoffForTests();
   nativeNavigation.dispatch.mockClear();
   activeBoard.stored = { ...activeBoard.defaultStored };
   boardShareSheet.props = null;
@@ -500,6 +604,8 @@ beforeEach(() => {
   queue.activeClimbUuid = null;
   previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
+  layoutCfg.nativeTabBar = false;
+  layoutCfg.windowWidth = 1024;
 });
 
 describe('DrawerHostProvider board presence binding', () => {
@@ -857,6 +963,32 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       previewIsWallClimb: true,
       playlistSuggestionSource: wallTrack,
     });
+  });
+
+  // #7113: driving the wall lights a board-history tap too, in a crew included.
+  it.each([
+    ['in a crew', true, true],
+    ['with Light the board when I tap a climb off', false, false],
+  ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew, light) => {
+    queue.isSharedSession = crew;
+    setSetting('lightOnClimbTap', light);
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    markDriveLive();
+    try {
+      renderHost(() => {});
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
+
+      const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+      act(() => {
+        getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+      });
+
+      expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }), {
+        playlistSuggestionSource: wallTrack,
+      });
+    } finally {
+      resetDriveModeForTests();
+    }
   });
 
   it('reuses queue, playlist, and climb-actions handlers for board-sheet climbs', async () => {
@@ -2055,6 +2187,65 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     });
   });
 
+  describe("the MiniPlayer's angle sheet (#6940)", () => {
+    beforeEach(() => {
+      angleSheet.props = null;
+    });
+
+    it('mounts on the first open with the board the player shows, and closes again', async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      expect(angleSheet.props).toBeNull();
+
+      act(() => hosts.at(-1)?.openAnglePicker('climb-a'));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      expect(angleSheet.props).toMatchObject({
+        boardName: 'kilter',
+        layoutId: 1,
+        currentAngle: 40,
+        climbUuid: 'climb-a',
+      });
+
+      act(() => angleSheet.props?.onClose());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("changes the angle the way the player's pill does: crew path and AngleChanged", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      analytics.track.mockClear();
+
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      expect(queue.setSessionBoardPath).toHaveBeenCalledWith(expect.stringContaining('30'));
+      expect(analytics.track).toHaveBeenCalledWith('Angle Changed', expect.objectContaining({ angle: 30 }));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("follows a foreign-board climb's override, as the pane's pill does", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      const override: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 55 };
+      const climb = makeQueueItem('queue-x', 'pane-angle-bar').climb as unknown as Climb;
+      act(() => hosts.at(-1)?.openPlayDrawer(climb, { boardConfig: override }));
+      await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(override));
+
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props).toMatchObject({ boardName: 'tension', currentAngle: 55 }));
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      await waitFor(() => {
+        expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject({ ...override, angle: 30 });
+      });
+      expect(hosts.at(-1)?.boardPanelProps?.boardConfig).toMatchObject({ boardName: 'kilter', angle: 40 });
+    });
+  });
+
   it('bumps openTarget.nonce when the same climb is re-opened so the pane re-applies', async () => {
     const hosts: Array<HostValue> = [];
     renderHost((host) => hosts.push(host));
@@ -2082,9 +2273,19 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(routerNavigate).not.toHaveBeenCalled();
   });
 
-  it('dispatches the known native player route during the open batch', async () => {
+  // The player opens through `router.navigate('/play')` and nothing else. A
+  // direct `NAVIGATE play` dispatch would jump ahead of router calls a caller
+  // queued first (the deep-link hand-off leaves its screen, then opens), and
+  // that queued pop would land on the player it just opened (#7069). Both root
+  // shapes are covered: the flat one is the shape the deleted fast path read.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('opens the player through the router, never a direct dispatch ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
     const hosts: Array<HostValue> = [];
     const routes: RouteValue[] = [];
     renderHost(
@@ -2092,35 +2293,56 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
       (route) => routes.push(route),
     );
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    const climb = makeQueueItem('queue-native', 'native-open').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb);
-      expect(nativeNavigation.dispatch).toHaveBeenCalledWith({
-        type: 'NAVIGATE',
-        target: 'root-stack',
-        payload: { name: 'play' },
-      });
-      expect(routerNavigate).not.toHaveBeenCalled();
-    });
-    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
-    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('native-open');
+    const climb = makeQueueItem('queue-router', 'router-open').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('router-open');
     const firstNonce = routes.at(-1)?.playTarget?.nonce;
     act(() => hosts.at(-1)?.openPlayDrawer(climb));
     expect(routes.at(-1)?.playTarget?.nonce).not.toBe(firstNonce);
-    expect(nativeNavigation.dispatch).toHaveBeenCalledTimes(2);
-    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(routerNavigate).toHaveBeenCalledTimes(2);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('uses the router if the mounted navigator does not own the player', async () => {
+  // The deep-link hand-off (`use-board-route-target`) leaves its redirector with
+  // `router.back()` and THEN opens the player. expo-router queues both and runs
+  // them in order after the commit, so the pop takes the redirector and `/play`
+  // stays. Modelled here with a queue: a direct dispatch to the navigator runs
+  // at once, jumps the queued pop, and the pop then closes the player it just
+  // opened (#7069). Covers both root shapes so a fast path that learns to read
+  // through expo-router's `__root` wrapper is caught too.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('keeps the player open when a caller queued a pop before opening ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
-    nativeNavigation.routeNames = ['(tabs)'];
-    const hosts: Array<HostValue> = [];
-    renderHost((host) => hosts.push(host));
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-fallback').climb as unknown as Climb));
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
-    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
+    const routerBack = router.back as unknown as ReturnType<typeof vi.fn>;
+    const appStack = ['(tabs)', 'redirector'];
+    const routerQueue: Array<() => void> = [];
+    routerBack.mockImplementation(() => routerQueue.push(() => appStack.pop()));
+    routerNavigate.mockImplementation((href: string) => routerQueue.push(() => appStack.push(href)));
+    nativeNavigation.dispatch.mockImplementation((action: { type: string; payload?: { name?: string } }) => {
+      if (action.type === 'NAVIGATE' && action.payload?.name === 'play') appStack.push('/play');
+    });
+    try {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => {
+        router.back();
+        hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-handoff', 'handoff-open').climb as unknown as Climb);
+      });
+      for (const step of routerQueue.splice(0)) step();
+      expect(appStack).toEqual(['(tabs)', '/play']);
+    } finally {
+      routerBack.mockReset();
+      routerNavigate.mockReset();
+      nativeNavigation.dispatch.mockReset();
+    }
   });
 
   it('navigates to /play and leaves the pane open target null on compact width', async () => {
@@ -2166,5 +2388,206 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     await waitFor(() => {
       expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
     });
+  });
+});
+
+describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => {
+  const POP_PLAYER = { type: 'POP', target: 'root-stack', payload: { count: 1 } };
+
+  function renderSplitHost() {
+    const hosts: Array<HostValue> = [];
+    const onHost = (host: HostValue) => hosts.push(host);
+    const view = renderHost(onHost);
+    const rerenderHost = () =>
+      view.rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
+    return { hosts, rerenderHost };
+  }
+
+  it('drives the pane on a tap while the tabs are on screen', async () => {
+    splitCfg.phoneSplit = true;
+    const { hosts } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(true));
+
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-split', 'split-tap').climb as unknown as Climb));
+
+    await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.climb.uuid).toBe('split-tap'));
+    expect(routerNavigate).not.toHaveBeenCalled();
+  });
+
+  it('opens /play from a page pushed over the tabs, where the pane is hidden', async () => {
+    splitCfg.phoneSplit = true;
+    nativeNavigation.segments = ['users', '[userId]'];
+    const { hosts } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(false));
+
+    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-covered', 'covered-tap').climb as unknown as Climb));
+
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it('closes an idle /play when the split appears and carries its live preview and scroll', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    // The route swiped from the climb it was opened with onto this preview.
+    const livePreview = makeQueueItem('queue-swiped', 'swiped-preview');
+    registerRoutePlayer(() => ({
+      climbUuid: 'swiped-preview',
+      offsetY: 320,
+      preview: { item: livePreview, suggestionSource: null, isWallClimb: false },
+    }));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+    const carried = hosts.at(-1)?.playDrawerPaneProps?.openTarget;
+    expect(carried?.climb.uuid).toBe('swiped-preview');
+    expect(carried?.options?.previewQueueItem).toBe(livePreview);
+    // A look, never a fresh pick: nothing lights or commits on the carry.
+    expect(carried?.claimFirstApply?.()).toBe(false);
+    expect(takePlayerScrollHandoff('swiped-preview')).toBe(320);
+  });
+
+  it('waits for a busy /play (a tick being typed) and closes it once the climber is done', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('player', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    await act(async () => {});
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+
+    act(() => publishRoutePlayerBusy('player', false));
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+    // The route showed the queue's current climb: the pane shows it by itself.
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("waits while the route's own queue sheet or device picker is up, even with the player idle", async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'queue-open', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('route', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    act(() => publishRoutePlayerBusy('player', false));
+    await act(async () => {});
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+
+    act(() => publishRoutePlayerBusy('route', false));
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+  });
+
+  it('leaves /play up when it sits on a page pushed over the tabs', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'users/[userId]', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({
+      climbUuid: 'from-profile',
+      offsetY: 120,
+      preview: { item: makeQueueItem('queue-profile', 'from-profile'), suggestionSource: null, isWallClimb: false },
+    }));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("clears a foreign board on /play close when the open came from a page over the tabs, not the pane's", async () => {
+    splitCfg.phoneSplit = true;
+    nativeNavigation.segments = ['users', '[userId]'];
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-foreign', 'foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(foreignBoard));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(routes.at(-1)?.playTarget?.nonce ?? null));
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).not.toMatchObject(foreignBoard));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).not.toMatchObject(foreignBoard);
+  });
+
+  it('keeps a foreign board the pane opened with when a later /play closes', async () => {
+    splitCfg.phoneSplit = true;
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(true));
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-pane-foreign', 'pane-foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard));
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(null));
+    await act(async () => {});
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard);
+  });
+
+  it('drops a waiting close when the Duo is folded back before the route is idle', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('player', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    splitCfg.phoneSplit = false;
+    rerenderHost();
+    act(() => publishRoutePlayerBusy('player', false));
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('leaves /play alone on an iPad crossing into its pane', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    layoutCfg.widthClass = 'regular';
+    rerenderHost();
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 });

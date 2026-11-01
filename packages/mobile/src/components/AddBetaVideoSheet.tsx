@@ -14,7 +14,7 @@ import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 // Driven by a controlled `visible` prop (mirrors AddToPlaylistSheet): the
 // ModalSheet coordinator presents it above the play drawer's own native modal.
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type ViewInstance } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
@@ -254,7 +254,7 @@ type BetaUrlFieldProps = {
 function BetaUrlField({ value, invalid, onChangeText, onSubmit }: BetaUrlFieldProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  const fieldRef = useRef<View>(null);
+  const fieldRef = useRef<ViewInstance>(null);
   const scrollIntoView = useSheetScrollIntoView();
   const focusedRef = useRef(false);
   const handleFocus = useCallback(() => {

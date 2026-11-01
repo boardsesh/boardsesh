@@ -3,8 +3,10 @@
 // one filter back to its default. Labels reuse the same builders as the filter
 // summary string (filter-labels.ts) so a filter is never worded two ways.
 //
-// The typed name query is deliberately NOT a token — it lives in the search
-// field itself, where the field's own clear/cancel handles it.
+// The climb-name search is its own token (`buildNameFilterToken`): no list has a
+// search field, the name is typed in the Filters sheet, so the token is where the
+// list shows it and clears it. `getActiveFilterTokens` leaves it out so each
+// caller puts it first.
 //
 // Mobile-only for now: web has no removable-token row and its filter state is a
 // different (URL-param) shape. If web grows one, promote the {key,label,clear}
@@ -62,9 +64,17 @@ type GetActiveFilterTokensArgs = {
   defaults?: ClimbFilterState;
 };
 
+/** The climb-name search as a token, or null with no name. Leads the token row. */
+export function buildNameFilterToken(name: string, t: TFunction<'climbs'>, clear: () => void): FilterToken | null {
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0) return null;
+  return { key: 'name', label: t('mobile.filter.nameToken', { name: trimmedName }), clear };
+}
+
 /**
  * One token per active filter, in the same field order as the summary string.
- * Grade is a single token for the whole bound; the name query is excluded.
+ * Grade is a single token for the whole bound; the name query is excluded (see
+ * `buildNameFilterToken`).
  */
 export function getActiveFilterTokens({
   filters,

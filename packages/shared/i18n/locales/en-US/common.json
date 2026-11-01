@@ -469,7 +469,8 @@
         "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling.",
         "tabs": {
           "sections": "Below the climb",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini player"
         }
       },
       "sectionLayout": {
@@ -513,6 +514,12 @@
         "underName": "Under the name",
         "yourClimbing": "Your climbing",
         "actions": "Actions",
+        "layout": {
+          "title": "Columns",
+          "one": "One column",
+          "two": "Two columns",
+          "footer": "Two columns show when the list has room, like on an iPad in landscape."
+        },
         "gradesTitle": "Grades",
         "previewFooter": "Example. Sends, saves and tags show on climbs that have them.",
         "gradeFooter": "Choose which grade is big in Settings → Climbs & grades.",
@@ -569,14 +576,31 @@
           "log": "Log",
           "boardLight": "Board light"
         },
-        "footer": "Whichever of Queue and Mirror comes first gets the big button. A hidden button stays in the ⋯ menu. With every small button off, the board gets their row.",
+        "footer": "The first button on takes the top row's left end and the last one its right end. The rest, and any you hide, are in the ⋯ menu.",
         "settingsFooter": "To change the order, open the ⋯ menu on a climb and pick View options.",
-        "previewLabel": "Preview, {{position}}: {{buttons}}"
+        "previewLabel": "Preview, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Board control",
+          "wallButton": "Wall button",
+          "lightbulb": "Lightbulb",
+          "footer": "Both controls connect, light the climb and show who holds the board. Hold while connected for board options. Read the wall button’s label: You are driving the wall means each climb you pick lights up; tap that label to stop driving and stay connected. The lightbulb sits at the top right."
+        }
       },
       "climbView": {
         "title": "Climb view",
         "valueDefault": "Default",
         "valueCustom": "Custom"
+      },
+      "quickFilters": {
+        "title": "Quick filters",
+        "valueDefault": "Default",
+        "valueCustom": "Custom",
+        "climbsTitle": "Climbs",
+        "climbsFooter": "These show above the Climbs list, in this order. A filter you switch on joins the end.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "These show above every playlist, smart playlist and setter page, in this order.",
+        "restoreDefaults": "Restore defaults",
+        "footer": "Changes apply right away, on this phone only. Every filter stays in Filters either way."
       },
       "timers": {
         "restTitle": "Rest",
@@ -610,6 +634,24 @@
         "rogueConnecting": "Connecting…",
         "rogueUnreachable": "Can't reach it. Check it's on and close by.",
         "rogueSaveFailed": "Couldn't save the timer. Try again."
+      },
+      "miniPlayer": {
+        "title": "Mini player",
+        "description": "The bar above the tabs. Tap it to open the climb.",
+        "buttons": {
+          "next": "Next climb",
+          "previous": "Previous climb",
+          "wallDisplay": "Wall display"
+        },
+        "fixedNote": "Board light is always there, beside Log. Log is always last, under your thumb.",
+        "footer": "On iPhone the bar has room for one of these beside Board light and Log: the first one that's on.",
+        "open": "Open",
+        "collapsed": "Collapsed",
+        "previewLabel": "Preview, {{shape}} bar: {{buttons}}",
+        "footerWide": "On a wide screen the bar fits as many of these as it has room for: the first ones in the list win.",
+        "shapeOpen": "open",
+        "shapeCollapsed": "collapsed",
+        "more": "More"
       }
     },
     "sendRecovery": {
@@ -711,8 +753,7 @@
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there.",
-        "climbsTab": "To get back to your climbs, tap the magnifier in the tab bar."
+        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
       },
       "link": {
         "title": "Bring your {{boardName}} sends with you",
@@ -727,7 +768,6 @@
       "home": "Home",
       "boards": "Boards",
       "climbs": "Climbs",
-      "wall": "On the Wall",
       "profile": "Profile",
       "holdFilter": "Hold types",
       "zoneFilter": "Board region",

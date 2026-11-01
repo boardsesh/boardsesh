@@ -446,6 +446,7 @@
     "searchingForBoard": "Suche nach deinem {{board}}…",
     "searchingForSavedBoard": "Suche nach deinem Board…",
     "searchAnyBoard": "Nach allen Boards suchen",
+    "selectedBoardNotFound": "Dein ausgewähltes Board wurde nicht gefunden",
     "writing": "Board wird beleuchtet…",
     "selectBoard": "Board auswählen",
     "devicesFound_one": "{{count}} Board gefunden",
@@ -494,7 +495,6 @@
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
       "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange. Ist „Board beleuchten, wenn ich einen Boulder antippe“ aus, lädst du sie mit Abspielen."
     },
-    "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",
@@ -516,13 +516,16 @@
     "releaseWall": "Wand freigeben",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
-      "connectedHint": "Öffnet die Board-Steuerung",
+      "youHaveBoard": "Du hast das Board",
+      "youHaveBoardWithClimb": "Du hast das Board: {{name}}, {{grade}}",
+      "connectedHint": "Trennt das Board",
       "peerLabel": "An der Wand von {{name}}",
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
       "disconnectedHint": "Mit dem Board verbinden",
       "wallHeldLabel": "Du hast die Wand",
+      "wallHeldWithClimb": "Du hast die Wand: {{name}}, {{grade}}",
       "wallHeldHint": "Gibt die Wand frei",
       "wallOpenLabel": "Wand ist frei",
       "wallOpenHint": "Übernimmt die Wand"

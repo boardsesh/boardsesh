@@ -112,6 +112,8 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 
 ## Documentation
 
+- `docs/local-board-qa.md` — local-only connected-phone/ESP32 board driving, presence/history and shared-session QA, setup, recovery and evidence limits.
+
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
@@ -220,7 +222,7 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 
 ### Internationalisation
 
-Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
+Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`), `it` (`/it/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
 
 - **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace.
 - Server: `const { t } = await getServerTranslation('marketing')`.
@@ -239,6 +241,8 @@ Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/
 **French terminology:** French translations follow a fixed glossary too. Most importantly, a climbing send is never **« envoyer »** — French climbers don't "send" a climb. The send status/verb is **« Enchaîné » / enchaîner**, the noun send is **« la croix »** (invariable: _dix croix_; « faire la croix » = tick it in the logbook), and lighting a climb on the wall is **« allumer »**, not « envoyer ». Attempts on a climb are « essais », never « tentatives ». Full terminology and exceptions: **`docs/i18n-french-glossary.md`** — follow it for every French string you add.
 
 **German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (neuter — _das Board_). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
+
+**Italian terminology:** Italian translations follow a fixed glossary. Product UI uses informal **tu**. A climb is a **blocco**. A climbing send is never **inviare** — the status/button is **Chiuso** (masculine, verb _chiudere_), counts use **ripetizione/ripetizioni**, attempts are **tentativi**, and lighting a climb on the wall is **illuminare il blocco in parete**. The device is **il pannello** (masculine). Full terminology and exceptions: **`docs/i18n-italian-glossary.md`** — follow it for every Italian string you add.
 
 ### Copy & microcopy
 
@@ -271,7 +275,7 @@ For indexable pages:
 
 ## Mobile Development (packages/mobile/)
 
-React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
+React Native + Expo SDK 58, React Native 0.88, Expo Router 58, React 19.3.
 
 ### Stack
 
@@ -291,6 +295,7 @@ React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
 - **Dev mode**: `__DEV__` global, not `process.env.NODE_ENV`.
 - **Storage**: `expo-secure-store` for credentials, not IndexedDB.
 - **Navigation**: Expo Router, not Next.js App Router.
+- **Nothing over the climb.** Never draw status or decoration over the rendered climb. Put it beside the art: the header pill, the top bar's caption, or the action bar's row. The only exceptions (board-takeover cards, the pill's explainer, thumbnail corner badges, MoonBoard grid letters, reset zoom) are listed in "Nothing over the climb" in `docs/ai-design-guidelines.md`.
 
 ### Expo web
 
@@ -353,7 +358,7 @@ Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `e
 - The iPhone Duo shard (`--devices duo`) needs Xcode 27 with the iOS 27.1 runtime. It shoots closed on the outer display first (`app-store-duo.yaml`, 3 shots), then unfolds and shoots the inner display in landscape (`app-store-duo-inner.yaml`, 5 shots). Xcode only changes the Duo's pose from Device Hub, so `scripts/lib/ios-duo-hinge.ts` loads a small library into the simulator's SpringBoard and drives its display-swap test service; Maestro only sees the outer display, so inner shots are taken with `simctl io screenshot --display=primary-1`. Both displays go into the one `APP_IPHONE_DUO` set (fastlane 2.241.1+), inner first. Custom product pages have no Duo set.
 - Captures can run against RECORDED backend responses instead of live PROD, so the shots are deterministic: `vp run mobile:screenshot-backend` (record/replay proxy; ignored recordings under `packages/mobile/screenshot-fixtures`, verified replay cache under `.boardsesh/screenshot-fixtures`). Full contract, log grammar and keying rules: `docs/mobile-screenshot-fixtures.md`.
 - `--fixtures record|replay` (plus `--fixtures-dir`, `--fresh`, `--no-pseudonymise`) starts that backend for the run and points the JS bundle at it; `--backend local|prod` still only names the UPSTREAM a recording proxies. Any replay miss fails the capture, and `packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` checks the pinned snapshot on every PR (it also validates mobile's whole operation set against the schema). Recording happens in the two capture workflows (`fixtures = record`), then `vp run mobile:screenshot-fixtures-merge` folds the shard artifacts into one sanitized recording; `vp run mobile:screenshot-fixtures-publish` uploads it to the dev S3 bucket. Commit only `app-stores/screenshot-fixtures.json` — runbook in the doc above. **A recording replaces every climber but the recording account with a stable stand-in before writing** (names, handles, avatars, emails); `--no-pseudonymise` opts out and a set recorded with it must never be published. `vp run mobile:screenshot-fixtures-pseudonymise` applies the same rewrite to a set that already exists.
-- Both workflows run **automatically after each native deploy on `release/next` that shipped a binary** (the release train is where store candidates are built), and on a manual dispatch from any branch — nothing else, no cron. A green deploy run is not proof: a JS-only push completes it with the build job skipped, so each run first checks that a `fingerprint-<platform>-*` tag points at the triggering commit (`workflow_run.head_sha`) and skips with a step-summary line when none does. Every checkout pins that same commit. A forced rebuild of an already-shipped fingerprint keeps the old tag, so it reads as not-shipped — dispatch by hand for those pixels.
+- Both screenshot workflows follow real uploaded main binaries and explicit dispatches. Exact build receipts and immutable tags bind the captured source independently of workflow tooling. A skipped native build creates no upload receipt; an unchanged sibling fingerprint still gets screenshots for its new version.
 - The iOS workflow is **self-gating**. Automatic runs always probe; a `gate: probe` dispatch does the same. It captures ONE shard (en-US x iPhone 16 Pro Max) through the shared `.github/actions/ios-screenshot-shard` composite, compares it against the stored baseline with `vp run screenshot:compare` (`scripts/compare-screenshots.ts`; channel tolerance 8, max differing-pixel ratio 0.001, both overridable via `SCREENSHOT_CHANNEL_TOLERANCE` / `SCREENSHOT_MAX_DIFF_RATIO`), and fans out to the other 11 shards only when it changed — or when `scripts/screenshot-probe-scope.ts` (`vp run screenshot:probe-scope`) forces it anyway because a changed path falls in a locale/iPad scope the single probe shard can't see. On a dispatch, `gate: full` (the default) always captures everything, and a narrowed `locales`, the `onboarding` flow or `upload: true` force `full`. Only a run that captured the complete set uploads to App Store Connect or refreshes the baseline.
 - The baseline is a rolling GitHub prerelease tagged `screenshots-baseline` — one zip per (store locale, device) plus `ios-manifest.json` — managed by `vp run screenshot:baseline` (`pack` / `publish` / `fetch`, `scripts/screenshot-baseline.ts`). Captured PNGs stay gitignored (#2905). `fetch` only reports found when the manifest is present and every shard verifies against it (both directions), so a partial or corrupted baseline falls back to a full capture instead of being trusted. An automatic run publishes it after a green full capture; a dispatch asks with `publish_baseline: true` (`gate: full`, or `gate: probe` when no baseline exists yet). `mobile-store-draft.yml` fetches the whole set and attaches it to the App Store version it just created. Full runbook: `docs/mobile-store-release.md`.
 - `.github/workflows/mobile-screenshots-ios.yml` caches the `.app` (`actions/cache`) keyed on **native inputs only**: `packages/mobile/app.config.ts`, `packages/mobile/react-native.config.js` (optional, when present), `plugins/**`, `modules/**`, `locales/**` (the iOS `InfoPlist.strings` sources), `package.json`, `patches/**`, the root `package.json` (which pins `@expo/cli`), and `pnpm-workspace.yaml` (native overrides and patch mappings), plus `runner.os`/`runner.arch`. JS/TS-only and web-only changes (including `pnpm-lock.yaml` churn) are a cache hit and skip the ~30-min native build; any native-input change busts the key and rebuilds. Bump the `-v1-` salt to force a rebuild. A native-dep change must invalidate the key — when adding native config, confirm it's covered by one of those globs.

@@ -263,6 +263,76 @@ export async function hasPendingTicksForSession(db: SqlExecutor, sessionId: stri
   return row != null;
 }
 
+/** What this phone still has to send for one session. */
+export type PendingSessionWrites = {
+  /** Ticks logged in the session (`create`s; edits and deletes are not counted). */
+  ticks: number;
+  /** Workout writes for the session (`session_workouts`). */
+  workouts: number;
+};
+
+/**
+ * What this phone still has to send for `sessionId` (#6903): the session
+ * summary's "Still saving N ticks", and whether the workout it shows is newer
+ * than the server's copy. Same row rules as `hasPendingTicksForSession`: an
+ * in-flight send counts, a dead letter does not.
+ */
+export async function countPendingSessionWrites(db: SqlExecutor, sessionId: string): Promise<PendingSessionWrites> {
+  const row = await db.getFirstAsync<{ ticks: number | null; workouts: number | null }>(
+    `SELECT
+       SUM(CASE WHEN table_name = 'boardsesh_ticks' AND operation = 'create' THEN 1 ELSE 0 END) AS ticks,
+       SUM(CASE WHEN table_name = 'session_workouts' THEN 1 ELSE 0 END) AS workouts
+     FROM pending_mutations
+     WHERE status = 'pending' AND table_name IN ('boardsesh_ticks', 'session_workouts')
+       AND json_extract(payload, '$.sessionId') = ?`,
+    [sessionId],
+  );
+  return { ticks: row?.ticks ?? 0, workouts: row?.workouts ?? 0 };
+}
+
+/**
+ * Make room for a workout write for `sessionId` at `revision` (#6903): drop
+ * the session's writes with a LOWER revision, waiting or dead-lettered (each
+ * write carries the whole workout, so the newest is all the server needs, and
+ * an older copy left in Sync issues would only offer a Retry that does
+ * nothing), and say whether one at this revision or higher is still waiting,
+ * in which case the caller queues nothing. Two writes whose transactions run
+ * out of order therefore never leave the older one in the outbox last. A row
+ * being sent stays `pending` until it is marked completed; deleting it then
+ * only makes that DELETE a no-op.
+ */
+export async function supersedePendingSessionWorkouts(
+  db: SqlExecutor,
+  sessionId: string,
+  revision: number,
+): Promise<{ newerPending: boolean }> {
+  await db.runAsync(
+    `DELETE FROM pending_mutations
+     WHERE table_name = 'session_workouts' AND status IN ('pending', 'dead_letter')
+       AND json_extract(payload, '$.sessionId') = ?
+       AND CAST(json_extract(payload, '$.revision') AS INTEGER) < ?`,
+    [sessionId, revision],
+  );
+  const newer = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations
+     WHERE table_name = 'session_workouts' AND status = 'pending'
+       AND json_extract(payload, '$.sessionId') = ?
+       AND CAST(json_extract(payload, '$.revision') AS INTEGER) >= ?
+     LIMIT 1`,
+    [sessionId, revision],
+  );
+  return { newerPending: newer != null };
+}
+
+/** Whether the row with `idempotencyKey` is still waiting to be sent (in flight included). */
+export async function isMutationPending(db: SqlExecutor, idempotencyKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending' LIMIT 1`,
+    [idempotencyKey],
+  );
+  return row != null;
+}
+
 export async function getPendingCount(db: SqlExecutor): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count FROM pending_mutations WHERE status = 'pending'`,

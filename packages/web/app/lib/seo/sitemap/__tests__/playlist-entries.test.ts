@@ -55,6 +55,6 @@ describe('the playlists query', () => {
     expect(normalised).toMatch(/order by "playlists"\."updated_at" desc/);
     expect(normalised).toMatch(/limit \$\d+/);
     expect(params).toContain(MAX_ITEMS_PER_SHARD);
-    expect(MAX_ITEMS_PER_SHARD).toBe(11_250);
+    expect(MAX_ITEMS_PER_SHARD).toBe(9_000);
   });
 });

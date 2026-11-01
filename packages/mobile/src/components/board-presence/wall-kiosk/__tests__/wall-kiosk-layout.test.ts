@@ -28,7 +28,9 @@ const area = (rect: { width: number; height: number }) => rect.width * rect.heig
 const resolve = (w: number, h: number, ar: number, previous?: Pick<WallKioskLayout, 'region'>) =>
   resolveWallKioskLayout({ paneW: w, paneH: h, insets: NO_INSETS, boardAspectRatio: ar, previous }) as WallKioskLayout;
 
-function preSenderTwoColumnFloor(scale: WallKioskTypeScale): number {
+// The two-column floor from before the Wall display dropped the setter byline
+// and the Lit-by row: the baseline the board must never shrink below.
+function bylineTwoColumnFloor(scale: WallKioskTypeScale): number {
   const identityColumn =
     scale.stateLineHeight + 16 + scale.gradeLineHeight + 4 + 2 * scale.nameLineHeight + scale.metaLineHeight + 36;
   return Math.round(Math.max(identityColumn, 142) + 48 + 32);
@@ -140,8 +142,8 @@ describe('resolveWallKioskLayout — argmax axis crossovers', () => {
   });
 });
 
-describe('resolveWallKioskLayout — production attribution geometry', () => {
-  it('keeps both common 11-inch portrait ratios banded, noncompact, and never below their pre-sender board size', () => {
+describe('resolveWallKioskLayout — production geometry without bylines', () => {
+  it('keeps both common 11-inch portrait ratios banded, noncompact, and never below their byline-era board size', () => {
     for (const boardAspectRatio of [0.56, 1.81]) {
       const production = resolveProductionLayout({
         paneW: 738,
@@ -154,15 +156,15 @@ describe('resolveWallKioskLayout — production attribution geometry', () => {
         paneH: 1194,
         screenLongSide: 1194,
         boardAspectRatio,
-        contentFloorBand: preSenderTwoColumnFloor(production.typeScale),
+        contentFloorBand: bylineTwoColumnFloor(production.typeScale),
       });
 
       expect(production.layout.region).toBe('band');
       expect(baseline.layout.region).toBe('band');
-      expect(production.layout.compact).toBe(false); // Lit by + Sent by remain eligible.
-      // The board is aspect-constrained at this pane, so dropping the hoisted
-      // driver row from the two-column floor gives the height back to the band
-      // rather than growing the board — the board must simply never shrink.
+      expect(production.layout.compact).toBe(false);
+      // The board is aspect-constrained at this pane, so dropping the byline rows
+      // from the two-column floor gives the height back to the band rather than
+      // growing the board — the board must simply never shrink.
       expect(area(production.layout.boardRect)).toBeGreaterThanOrEqual(area(baseline.layout.boardRect));
       expect(production.layout.chromeRect.height).toBeLessThanOrEqual(baseline.layout.chromeRect.height);
     }
@@ -180,12 +182,12 @@ describe('resolveWallKioskLayout — production attribution geometry', () => {
       paneH: 1024,
       screenLongSide: 1366,
       boardAspectRatio: 1.81,
-      contentFloorBand: preSenderTwoColumnFloor(production.typeScale),
+      contentFloorBand: bylineTwoColumnFloor(production.typeScale),
     });
 
     expect(production.layout.region).toBe('band');
     expect(baseline.layout.region).toBe('band');
-    expect(production.layout.compact).toBe(false); // Lit by + Sent by remain eligible.
+    expect(production.layout.compact).toBe(false);
     expect(production.layout.boardAreaFraction).toBeGreaterThanOrEqual(baseline.layout.boardAreaFraction);
     expect(production.layout.boardAreaFraction).toBeGreaterThan(0.95);
   });
@@ -296,36 +298,24 @@ describe('wall-kiosk-type', () => {
     }
   });
 
-  it('uses band width to fund both attribution rows without inflating common two-column geometry', () => {
+  it('funds the state strip, grade, name and scrubber, and nothing for the dropped bylines', () => {
     const scale = resolveWallKioskTypeScale(738, 1);
-    const preSenderFloor = preSenderTwoColumnFloor(scale);
+    const identityColumn = scale.stateLineHeight + 16 + scale.gradeLineHeight + 4 + 2 * scale.nameLineHeight;
+    const twoColumnFloor = Math.round(Math.max(identityColumn, 142) + 48 + 32);
 
-    // A two-column band hoists attribution out of the identity column, so it no
-    // longer funds the 36pt Lit-by driver row the pre-sender formula charged for.
-    expect(bandContentFloor(scale, 738)).toBe(preSenderFloor - 36);
-    expect(bandContentFloor(scale, 1270)).toBeLessThan(preSenderFloor);
-    // The stacked band still renders attribution inline, so it keeps the driver
-    // row and adds a second one (36) plus the gap (8) for the sender line.
-    expect(bandContentFloor(scale, 500)).toBe(preSenderFloor + 44);
+    expect(bandContentFloor(scale, 738)).toBe(twoColumnFloor);
+    // The setter line and the 36pt Lit-by row no longer cost the board anything.
+    expect(bandContentFloor(scale, 738)).toBe(bylineTwoColumnFloor(scale) - scale.metaLineHeight - 36);
+    // A stacked band shows the same blocks, so it funds the same height.
+    expect(bandContentFloor(scale, 500)).toBe(twoColumnFloor);
   });
 
-  it('grows the stacked sender row when hero-scaled copy outgrows the avatar floor', () => {
-    // A large external display narrow enough to stack pushes the meta line past
-    // the 36pt driver-row height. The Sent-by row it funds has to follow, or the
-    // band clips the line it just made room for.
-    const scale = resolveWallKioskTypeScale(639, 1.8);
-    const senderRow = Math.max(28, scale.metaLineHeight) + 2;
-    expect(senderRow).toBeGreaterThan(36);
+  it('sizes a three-column band by its tallest column: identity, history state strip, or scrubber', () => {
+    const scale = resolveWallKioskTypeScale(1024, 1);
+    const primaryColumn = scale.gradeLineHeight + 4 + 8 + scale.nameLineHeight;
+    const historyStateStrip = scale.stateLineHeight + Math.round(scale.stateLineHeight * 0.7) + 2 + 16 + 8 + 24;
 
-    // Stacked funds both rows that the two-column band hoists away: the Lit-by
-    // driver row (36, inside the identity column) and the Sent-by row plus gap.
-    const stacked = bandContentFloor(scale, 500);
-    const twoColumn = bandContentFloor(scale, 738);
-    expect(stacked - twoColumn).toBe(36 + senderRow + 8);
-
-    // And at a scale whose copy fits inside the avatar floor, the row stays 36.
-    const smallScale = resolveWallKioskTypeScale(500, 1);
-    expect(Math.max(28, smallScale.metaLineHeight) + 2).toBeLessThan(36);
-    expect(bandContentFloor(smallScale, 500) - bandContentFloor(smallScale, 738)).toBe(36 + 36 + 8);
+    expect(bandContentFloor(scale, 1270)).toBe(Math.round(Math.max(primaryColumn, historyStateStrip, 142) + 32));
+    expect(bandContentFloor(scale, 1270)).toBeLessThan(bylineTwoColumnFloor(scale));
   });
 });

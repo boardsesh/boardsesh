@@ -8,6 +8,7 @@ import {
   type GestureResponderEvent,
   type StyleProp,
   type TextStyle,
+  type ViewInstance,
 } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
@@ -72,7 +73,7 @@ const ChannelSlider = memo(function ChannelSlider({
   const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   const gradientId = `okhsl-${useId().replace(/:/g, '_')}`;
-  const trackRef = useRef<View>(null);
+  const trackRef = useRef<ViewInstance>(null);
   const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
   const mountedRef = useRef(true);
   const gestureGenerationRef = useRef(0);

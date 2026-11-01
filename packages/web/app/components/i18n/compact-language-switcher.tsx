@@ -25,6 +25,7 @@ const FLAGS: Record<Locale, string> = {
   es: '🇪🇸',
   fr: '🇫🇷',
   de: '🇩🇪',
+  it: '🇮🇹',
 };
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 const flagSx = { fontSize: 20, lineHeight: 1 };

@@ -31,6 +31,11 @@ const settings = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
 }));
 
+// The workout data (#6903) has its own suites; these sessions carry no workout.
+vi.mock('../../../../src/components/session/workout/use-session-workout-view', () => ({
+  useSessionWorkoutView: () => undefined,
+  useSessionWorkoutHeadlines: () => new Map(),
+}));
 vi.mock('../../../../src/settings/hooks', () => ({
   subscribeSettings: (listener: (change: SettingsChange) => void) => {
     settings.listeners.add(listener);

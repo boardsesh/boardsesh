@@ -584,6 +584,14 @@ The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn`
 
 ### Live Activity goes stale after 10 minutes
 
+A stale card keeps the last climb, dimmed on the Lock Screen and in the expanded Dynamic Island, and swaps the Prev/Next/Mirror row for "Open Boardsesh to refresh". The rest clock keeps counting at full strength because the phone computes it. The card never says the session ended, because a stale card can't tell (#6529):
+
+- Usually the session is still on and the phone stopped hearing from the app or the backend.
+- A session the backend ended can also leave a stale card. The "end" push expires after 60 s, so an inactivity-sweep end sent to a phone that is offline for longer is dropped. `endLiveActivity` also skips the push when the session has no registered push token.
+- Opening the app clears that card when the app is still holding the session: the rejoin gets `SESSION_ENDED` and ends the activity. After a cold start it does not. The launch restore drops an ended session without touching ActivityKit, and `LiveActivityManager.cleanupOrphanedActivities()` has no caller, so the card stays until the next session starts or iOS ends the activity at its own time limit.
+
+When a live session goes stale, the updates stopped arriving:
+
 - APNs pushes are not reaching the device. Check backend logs for send failures.
 - The APNs rate limit may be exceeded (~4/hr for non-prominent activities). When the activity is on the lock screen, the limit is much higher.
 - Verify `APNS_PRODUCTION=true` — all builds (Debug + TestFlight + App Store) use `aps-environment=production`.

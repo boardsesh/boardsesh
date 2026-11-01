@@ -40,11 +40,13 @@ vi.mock('react-native', () => ({
   Pressable: ({
     children,
     accessibilityLabel,
+    testID,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
+    testID?: string;
     style?: unknown;
-  }) => createElement('button', { 'aria-label': accessibilityLabel }, children),
+  }) => createElement('button', { 'aria-label': accessibilityLabel, 'data-testid': testID }, children),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -161,6 +163,17 @@ function makeConfig(overrides: Partial<BoardSerialConfig> = {}): BoardSerialConf
 }
 
 describe('DeviceCard', () => {
+  it('targets the resolved saved wall even when the controller serial differs from its saved serial', () => {
+    const { getByTestId } = render(
+      <DeviceCard
+        device={{ deviceId: 'radio-device', name: 'Kilter Board#99000001@3', rssi: -45 }}
+        resolvedEntry={{ kind: 'saved', board: makeBoard({ uuid: 'qa-wall' }) }}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(getByTestId('ble-device-qa-wall')).not.toBeNull();
+  });
+
   it('uses the saved board name and preview when a serial resolves to a UserBoard', () => {
     const resolvedEntry: ResolvedBoardEntry = { kind: 'saved', board: makeBoard() };
 

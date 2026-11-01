@@ -16,29 +16,88 @@
 // All copy is hardcoded English with `i18n-ignore` — tester-only.
 
 import { ComposeHost } from './ComposeHost.android';
+import { useState } from 'react';
 import {
   LazyColumn,
   Card,
   Column,
+  Row,
   Text,
   Button,
   SingleChoiceSegmentedButtonRow,
   SegmentedButton,
+  DropdownMenu,
+  DropdownMenuItem,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, alpha } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { segmentedBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
+import { selectedFeatureFlagLabel } from './FeatureFlagsForm.logic';
+import type { FeatureFlagRow, FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 // The gap above every item after the title. A padding modifier rather than the
 // LazyColumn's `spacedBy` arrangement, which never reached the device (see
 // MoreForm.android.tsx).
 const ITEM_GAP = padding(0, spacing[3], 0, 0);
 
+const CHEVRON = '›';
+
+/**
+ * A row with more than three choices: the current one and a chevron, which
+ * opens a menu of all of them (the same pattern as MoreForm.android's select
+ * rows). `itemColor` is set on each item because the popup is a separate
+ * Compose composition the Host's colour scheme doesn't reach.
+ */
+function FlagMenu({
+  row,
+  itemColor,
+  onSelect,
+}: {
+  row: FeatureFlagRow;
+  itemColor: string;
+  onSelect: (key: string, choice: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
+      <DropdownMenu.Trigger>
+        <Row modifiers={[fillMaxWidth(), clickable(() => setExpanded(true))]} verticalAlignment="center">
+          <Column modifiers={[weight(1)]}>
+            {/* i18n-ignore-next-line — tester-only screen */}
+            <Text style={{ typography: 'bodyMedium' }}>Override</Text>
+          </Column>
+          <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
+            {selectedFeatureFlagLabel(row.options, row.choice)}
+          </Text>
+          <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.4)]}>
+            {CHEVRON}
+          </Text>
+        </Row>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Items>
+        {row.options.map((option) => (
+          <DropdownMenuItem
+            key={option.key}
+            elementColors={{ textColor: itemColor }}
+            onClick={() => {
+              onSelect(row.key, option.key);
+              setExpanded(false);
+            }}
+          >
+            <DropdownMenuItem.Text>
+              <Text color={itemColor}>{option.label}</Text>
+            </DropdownMenuItem.Text>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenu.Items>
+    </DropdownMenu>
+  );
+}
+
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const segmentColors = segmentedBrandColors(brandColors);
 
   return (
@@ -61,23 +120,27 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
                 <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
                   {row.description}
                 </Text>
-                <SingleChoiceSegmentedButtonRow modifiers={[fillMaxWidth()]}>
-                  {row.options.map((option) => (
-                    <SegmentedButton
-                      key={option.key}
-                      selected={option.key === row.choice}
-                      onClick={() => onSelect(row.key, option.key)}
-                      colors={segmentColors}
-                    >
-                      {/* The label slot is a native composable SLOT — its child must be
+                {row.control === 'menu' ? (
+                  <FlagMenu row={row} itemColor={systemColors.label as string} onSelect={onSelect} />
+                ) : (
+                  <SingleChoiceSegmentedButtonRow modifiers={[fillMaxWidth()]}>
+                    {row.options.map((option) => (
+                      <SegmentedButton
+                        key={option.key}
+                        selected={option.key === row.choice}
+                        onClick={() => onSelect(row.key, option.key)}
+                        colors={segmentColors}
+                      >
+                        {/* The label slot is a native composable SLOT — its child must be
                         a Compose `Text`, not a raw string, or it doesn't render and
                         isn't exposed to the a11y tree. */}
-                      <SegmentedButton.Label>
-                        <Text>{option.label}</Text>
-                      </SegmentedButton.Label>
-                    </SegmentedButton>
-                  ))}
-                </SingleChoiceSegmentedButtonRow>
+                        <SegmentedButton.Label>
+                          <Text>{option.label}</Text>
+                        </SegmentedButton.Label>
+                      </SegmentedButton>
+                    ))}
+                  </SingleChoiceSegmentedButtonRow>
+                )}
                 <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
                   {row.effectiveLabel}
                 </Text>

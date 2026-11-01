@@ -38,11 +38,13 @@ export type PlayCoreSheetHostsProps = {
   angleSelectorVisible: boolean;
   isTickBarActive: boolean;
   bleControlVisible: boolean;
+  /** The climb the board sheet's Turn off all lights marks dark: the one on the wall. */
+  wallClearedTarget: string | null;
   composerCredentialScope: number;
   betaVideoTarget: ComposerTarget;
   playlistTarget: ComposerTarget;
   reportTarget: ComposerTarget;
-  tickTarget: ComposerTarget;
+  tickTarget: (NonNullable<ComposerTarget> & { isMirror: boolean }) | null;
   isMirrored: boolean;
   boardseshActive: boolean;
   sessionId: string | null;
@@ -57,6 +59,8 @@ export type PlayCoreSheetHostsProps = {
   handleCloseReportClimb: () => void;
   handleTickBarDismiss: () => void;
   handleCloseBleControl: () => void;
+  /** The board sheet's Light every climb row (#7113), where the swipe is offered. */
+  onBoardSheetDrive?: () => void;
 };
 
 /**
@@ -85,6 +89,7 @@ export function PlayCoreSheetHosts({
   angleSelectorVisible,
   isTickBarActive,
   bleControlVisible,
+  wallClearedTarget,
   composerCredentialScope,
   betaVideoTarget,
   playlistTarget,
@@ -104,6 +109,7 @@ export function PlayCoreSheetHosts({
   handleCloseReportClimb,
   handleTickBarDismiss,
   handleCloseBleControl,
+  onBoardSheetDrive,
 }: PlayCoreSheetHostsProps) {
   const mountSectionsSettings = useMountedOnFirstOpen(sectionsSettingsOpen);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
@@ -239,7 +245,7 @@ export function PlayCoreSheetHosts({
           climbName={tickClimb.name}
           boardName={tickTarget?.boardConfig.boardName ?? boardName}
           angle={tickTarget?.boardConfig.angle ?? angle}
-          isMirror={isMirrored}
+          isMirror={tickTarget?.isMirror ?? isMirrored}
           isBenchmark={tickClimb.benchmark_difficulty != null}
           baseAscensionistCount={tickClimb.ascensionist_count ?? 0}
           layoutId={tickTarget?.boardConfig.layoutId ?? layoutId}
@@ -260,7 +266,17 @@ export function PlayCoreSheetHosts({
       {/* BLE controls (Re-light / Turn off all lights / Disconnect), opened by the
           lightbulb long-press. Hosted here so it presents ABOVE the player route
           (the app-root instance would land behind it). Mounted on first open. */}
-      {mountBleControl && <BleControlSheetHost visible={bleControlVisible} onClose={handleCloseBleControl} />}
+      {mountBleControl && (
+        <BleControlSheetHost
+          visible={bleControlVisible}
+          onClose={handleCloseBleControl}
+          // The player's sheet is the board's actions; the lighting switches
+          // live in Settings › Board (#7000).
+          showLightingSwitches={false}
+          clearedClimbUuid={wallClearedTarget}
+          onDrive={onBoardSheetDrive}
+        />
+      )}
     </>
   );
 }

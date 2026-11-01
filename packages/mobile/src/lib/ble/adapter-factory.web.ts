@@ -32,6 +32,10 @@ export function nativeBleSupportsBoard(_boardName: string | undefined): boolean 
   return false;
 }
 
+export function nativeBleSupportsPreparedConnections(): boolean {
+  return false;
+}
+
 export function subscribeNativeBleConnected(
   _listener: (payload: NativeBleConnectedEvent) => void,
 ): { remove: () => void } | null {

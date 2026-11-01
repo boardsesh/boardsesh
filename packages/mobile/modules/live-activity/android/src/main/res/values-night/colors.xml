@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-theme overrides. Only the rest digit colours need one: the light-theme
+     red and grey are too dark to read on the dark notification surface. Every
+     other colour falls back to values/ (or values-v31/ on Android 12+). -->
+<resources>
+    <color name="session_rest_over">#F28B82</color>
+    <color name="session_rest_muted">#9AA0A6</color>
+</resources>

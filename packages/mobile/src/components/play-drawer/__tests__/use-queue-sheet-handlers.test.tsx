@@ -4,6 +4,10 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import { describe, expect, it, vi } from 'vitest';
 import type { LogAscentInput } from '../../../providers/drawer-host-provider';
 
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueActions: () => ({ getQueueSnapshot: () => ({ currentClimbQueueItem: null, queue: [] }) }),
+}));
+
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: vi.fn() }));
 
 import { useQueueSheetHandlers } from '../use-queue-sheet-handlers';

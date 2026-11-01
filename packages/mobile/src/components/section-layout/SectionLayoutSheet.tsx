@@ -200,8 +200,8 @@ function SectionLayoutSheetListBase<Id extends string>({
       disabled={disabled}
       onVisibleChange={onVisibleChange}
       onMove={onMove}
-      ListHeaderComponent={ListHeaderComponent}
-      ListFooterComponent={ListFooterComponent}
+      ListHeaderComponent={ListHeaderComponent ?? undefined}
+      ListFooterComponent={ListFooterComponent ?? undefined}
     />
   );
 }

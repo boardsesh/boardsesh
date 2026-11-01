@@ -5,7 +5,7 @@ import { createElement } from 'react';
 
 // Controllable requestAnimationFrame: the test decides when the scheduled frame
 // runs, and tracks cancellations so unmount/inactive cleanup is observable. A
-// rAF can't be starved, so — unlike the InteractionManager gate — there's no
+// rAF can't be starved, so — unlike the idle scheduler gate — there's no
 // fallback timer to exercise.
 const rafTasks: Array<{ id: number; run: FrameRequestCallback }> = [];
 const cancelledIds = new Set<number>();

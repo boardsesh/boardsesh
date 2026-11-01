@@ -4,18 +4,14 @@ import {
   CONNECT_STEP_MIN_NATIVE_VERSION,
   EMPTY_FIRST_CONNECT_DEVICE_STATE,
   FIRST_CONNECT_CARD_MAX_LAUNCHES,
-  FIRST_CONNECT_PILL_MAX_DAYS,
   decideConnectStepEnrolment,
-  deriveFirstConnectPillWouldConnect,
   isConnectStepTreatmentLive,
   localDayKey,
   shouldConfirmFirstConnect,
   shouldShowFirstConnectCard,
-  shouldShowFirstConnectPill,
   type ConnectStepEnrolment,
   type ConnectStepEnrolmentInput,
   type FirstConnectDeviceState,
-  type FirstConnectPillWouldConnectInput,
 } from '../first-connect-decision';
 
 const NOW_MS = Date.parse('2026-09-21T12:00:00.000Z');
@@ -235,72 +231,6 @@ describe('shouldShowFirstConnectCard', () => {
     ['while someone else drives the wall', { wallFree: false }],
   ] as const)('hides %s', (_label, overrides) => {
     expect(shouldShowFirstConnectCard({ ...base, ...overrides })).toBe(false);
-  });
-});
-
-describe('deriveFirstConnectPillWouldConnect', () => {
-  // A signed-in climber alone with the wall, whose bulb tap would connect.
-  function wouldConnectInput(
-    overrides: Partial<FirstConnectPillWouldConnectInput> = {},
-  ): FirstConnectPillWouldConnectInput {
-    return {
-      isAnonymous: false,
-      hasBluetooth: true,
-      boardMismatch: false,
-      commitMode: false,
-      workoutOutcome: false,
-      sharedSession: false,
-      wallHeldByOtherUser: false,
-      tapConnects: true,
-      pending: false,
-      localConnected: false,
-      wallHeldLocally: false,
-      ...overrides,
-    };
-  }
-
-  it('offers the pill where a bulb tap would connect this phone', () => {
-    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput())).toBe(true);
-  });
-
-  it.each([
-    ['a signed-out reader', { isAnonymous: true }],
-    ['no board selected', { hasBluetooth: false }],
-    ['the switch-board scrim up', { boardMismatch: true }],
-    ['commit mode', { commitMode: true }],
-    ['a workout’s Fell / Sent in the row', { workoutOutcome: true }],
-    ['a workout’s Fell / Sent, even mid-connect', { tapConnects: false, pending: true, workoutOutcome: true }],
-    ['a party session with a crew', { sharedSession: true }],
-    ['another account holding the wall', { wallHeldByOtherUser: true }],
-    ['a bulb tap that would not connect', { tapConnects: false }],
-    ['a disconnect in flight', { tapConnects: false, pending: true, localConnected: true }],
-    ['a virtual hold being released', { tapConnects: false, pending: true, wallHeldLocally: true }],
-    ['a party session, even mid-connect', { tapConnects: false, pending: true, sharedSession: true }],
-  ] as const)('hides it for %s', (_label, overrides) => {
-    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput(overrides))).toBe(false);
-  });
-
-  it('keeps it while a connect is in flight, so it does not turn back into a bulb', () => {
-    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput({ tapConnects: false, pending: true }))).toBe(true);
-  });
-});
-
-describe('shouldShowFirstConnectPill', () => {
-  const base = { treatmentLive: true, today: '2026-09-21', pillDays: [] as string[], wouldConnect: true };
-
-  it(`shows on at most ${FIRST_CONNECT_PILL_MAX_DAYS} calendar days`, () => {
-    expect(shouldShowFirstConnectPill(base)).toBe(true);
-    expect(shouldShowFirstConnectPill({ ...base, pillDays: ['2026-09-18', '2026-09-19'] })).toBe(true);
-    expect(shouldShowFirstConnectPill({ ...base, pillDays: ['2026-09-17', '2026-09-18', '2026-09-19'] })).toBe(false);
-  });
-
-  it('keeps showing all day on a day already counted', () => {
-    expect(shouldShowFirstConnectPill({ ...base, pillDays: ['2026-09-19', '2026-09-20', '2026-09-21'] })).toBe(true);
-  });
-
-  it('hides outside the treatment, and wherever a tap would not connect', () => {
-    expect(shouldShowFirstConnectPill({ ...base, treatmentLive: false })).toBe(false);
-    expect(shouldShowFirstConnectPill({ ...base, wouldConnect: false })).toBe(false);
   });
 });
 

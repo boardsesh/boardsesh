@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, useWindowDimensions, type FlatList } from 'react-native';
+import { FlatList, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -70,6 +70,12 @@ type QueueListProps = {
   onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
+  /**
+   * `sheet` (default): inside QueueSheet, clearing the window's bottom inset.
+   * `panel`: the landscape iPad player's side panel, a plain list whose footer
+   * already sits above the home indicator.
+   */
+  presentation?: 'sheet' | 'panel';
 };
 
 function QueueListComponent({
@@ -93,6 +99,7 @@ function QueueListComponent({
   onSuggestionPress,
   reorderQueue,
   onDraggingChange,
+  presentation = 'sheet',
 }: QueueListProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors, textStyles } = useTheme();
@@ -102,9 +109,10 @@ function QueueListComponent({
   // that changes when a setting does, so it is safe among `renderRow`'s deps.
   const rowDisplay = useClimbRowDisplay();
   const hasThumbnail = rowDisplay.thumbnail;
-  // QueueList only renders inside QueueSheet (a native sheet), so it clears the
-  // WINDOW's bottom inset, never the mount point's (#3776).
+  // In QueueSheet (a native sheet) the list clears the WINDOW's bottom inset,
+  // never the mount point's (#3776). The side panel's footer clears it instead.
   const windowBottomInset = useWindowBottomInset();
+  const listBottomInset = presentation === 'sheet' ? windowBottomInset : 0;
   const flatListRef = useRef<FlatList<QueueListRow> | null>(null);
 
   // Attribution is a session artifact: faces appear while a party session is
@@ -130,8 +138,8 @@ function QueueListComponent({
   // bar when fully scrolled. withSheetBottomInset adds the window inset on top of the
   // toolbar padding (and returns the base unchanged when there's no inset).
   const listContentContainerStyle = useMemo(
-    () => withSheetBottomInset(styles.listContent, windowBottomInset),
-    [windowBottomInset],
+    () => withSheetBottomInset(styles.listContent, listBottomInset),
+    [listBottomInset],
   );
 
   const { flatRows, currentItemFlatIndex } = useMemo(
@@ -267,11 +275,19 @@ function QueueListComponent({
     onDraggingChange?.(isDragging);
   }, [isDragging, onDraggingChange]);
 
+  // The sheet re-centres whenever its rows move while open. The side panel stays
+  // up for the whole session, so it re-centres only when it comes forward or the
+  // current climb changes: a crew add or a suggestion page landing must not yank
+  // a climber who scrolled away back to the current row.
+  const currentRowIndexRef = useRef(currentRowIndex);
+  currentRowIndexRef.current = currentRowIndex;
+  const scrollTrigger = presentation === 'panel' ? currentItemUuid : `${currentRowIndex}:${rows.length}`;
   useEffect(() => {
-    if (autoScrollOnMount && currentRowIndex >= 0 && rows.length > 0) {
+    const index = currentRowIndexRef.current;
+    if (autoScrollOnMount && index >= 0) {
       const timer = setTimeout(() => {
         flatListRef.current?.scrollToIndex?.({
-          index: currentRowIndex,
+          index,
           animated: true,
           viewPosition: 0.3,
         });
@@ -279,7 +295,7 @@ function QueueListComponent({
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [autoScrollOnMount, currentRowIndex, rows.length]);
+  }, [autoScrollOnMount, scrollTrigger]);
 
   const keyExtractor = useCallback((row: QueueListRow, index: number): string => {
     switch (row.type) {
@@ -508,8 +524,11 @@ function QueueListComponent({
     );
   }
 
+  // The same list either way: BottomSheetFlatList is RN's FlatList on native,
+  // but the browser build swaps in a sheet-bound list that needs a sheet around it.
+  const ListComponent = presentation === 'sheet' ? BottomSheetFlatList : FlatList;
   return (
-    <BottomSheetFlatList
+    <ListComponent
       ref={flatListRef}
       data={rows}
       keyExtractor={keyExtractor}

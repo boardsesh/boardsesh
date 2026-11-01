@@ -14,17 +14,8 @@ vi.mock('expo-router/unstable-native-tabs', () => ({
   NativeTabs: { BottomAccessory: { usePlacement: () => cfg.placement } },
 }));
 
-vi.mock('react-native', () => ({
-  useWindowDimensions: () => ({ width: 402, height: 874, scale: 3, fontScale: 1 }),
-}));
-
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
-}));
-vi.mock('../../../theme/layout', () => ({
-  glassSize: { standard: 56, inline: 44, capsule: 52 },
-  NATIVE_BOTTOM_ACCESSORY_MAX_WIDTH: 420,
-  NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER: 32,
 }));
 // Stub the row so the test sees exactly what QueueBottomAccessory hands down, and
 // so the row stub is the only node under the accessory (no extra wrapper).
@@ -32,19 +23,16 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
   NativeAccessoryClimbRow: ({
     climb,
     placement,
-    width,
     testID,
   }: {
     climb: Climb;
     placement: 'regular' | 'inline';
-    width: number;
     testID?: string;
   }) =>
     createElement('div', {
       'data-native-row': 'true',
       'data-climb-name': climb.name,
       'data-placement': placement,
-      'data-row-width': String(width),
       'data-testid': testID,
     }),
 }));
@@ -102,19 +90,12 @@ describe('QueueBottomAccessory', () => {
     expect((container.firstChild as HTMLElement).getAttribute('data-native-row')).toBe('true');
   });
 
-  it('passes the inline placement through at the same width as regular', () => {
-    // max(56*2=112, min(420, 402-32=370)) = 370, independent of placement.
-    const regular = render(<QueueBottomAccessory />);
-    const regularRowWidth = regular.container.querySelector('[data-native-row]')?.getAttribute('data-row-width');
-    regular.unmount();
-
+  // The row fills the frame UIKit gives each placement; nothing here sizes it.
+  it('passes the inline placement through', () => {
     cfg.placement = 'inline';
-    const inline = render(<QueueBottomAccessory />);
-    const inlineRow = inline.container.querySelector('[data-native-row]');
+    const { container } = render(<QueueBottomAccessory />);
 
-    expect(inlineRow?.getAttribute('data-placement')).toBe('inline');
-    expect(inlineRow?.getAttribute('data-row-width')).toBe(regularRowWidth);
-    expect(inlineRow?.getAttribute('data-row-width')).toBe('370');
+    expect(container.querySelector('[data-native-row]')?.getAttribute('data-placement')).toBe('inline');
   });
 
   it('renders nothing without a current climb', () => {

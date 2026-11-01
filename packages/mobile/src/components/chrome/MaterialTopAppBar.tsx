@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { type ScrollEdgeBackdrop, useScrolledUnder } from '../../hooks/use-scroll-edge-backdrop';
@@ -33,6 +34,7 @@ type MaterialTopAppBarProps = {
 export function MaterialTopAppBar({ children, below, onHeightChange, scrollEdge, testID }: MaterialTopAppBarProps) {
   const { systemColors, m3SurfaceContainers } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const scrolledUnder = useScrolledUnder(scrollEdge);
   // `useScrolledUnder` answers yes when there is no store; a band never wired to
   // a list should read as at rest instead.
@@ -61,6 +63,8 @@ export function MaterialTopAppBar({ children, below, onHeightChange, scrollEdge,
         styles.band,
         {
           paddingTop: insets.top,
+          paddingLeft: horizontalSafeArea.left,
+          paddingRight: horizontalSafeArea.right,
           backgroundColor: tinted ? m3SurfaceContainers.base : systemColors.background,
         },
       ]}

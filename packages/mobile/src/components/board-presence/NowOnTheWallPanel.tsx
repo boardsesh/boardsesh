@@ -49,6 +49,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { GymWallSwitcher } from './GymWallSwitcher';
+import { SwitchBoardFooter } from './SwitchBoardFooter';
 import { SprayWallActions } from '../board-discovery/SprayWallActions';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
@@ -58,6 +59,7 @@ import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRo
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
 import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
+import { WallDisplayEntry } from './WallDisplayEntry';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -715,7 +717,7 @@ function NowOnTheWallPanelComponent(
     const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
     return (
-      <View>
+      <View testID={activeBoard ? `board-panel-${activeBoard.uuid}` : undefined}>
         {/* First in the header, above the hero: the disclosure opens directly
             under the title that opened it. */}
         {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
@@ -730,7 +732,7 @@ function NowOnTheWallPanelComponent(
           />
         ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
-            iPad kiosk column or the Wall tab, so one panel reports each name. */}
+            iPad kiosk column or the Wall display, so one panel reports each name. */}
         <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'} testID={cppWallHeroTestID}>
           {canUseInteractiveRows && rowBoard && currentClimb ? (
             <InteractiveHeroRow
@@ -762,6 +764,9 @@ function NowOnTheWallPanelComponent(
             />
           )}
         </ShowcaseAnchorView>
+        {/* Sheet only, and only on a tablet (the entry decides): the full-screen
+            Wall display for a tablet mounted at the board. */}
+        {variant === 'sheet' ? <WallDisplayEntry onBeforeNavigate={leaveSheet} /> : null}
         {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
             where a passer-by's "Join" or "Start" would act on the kiosk's
             account. */}
@@ -982,9 +987,9 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           // `loadOlder` already no-ops once `hasMore` is false, but skipping the
           // prop entirely once there's nothing left avoids FlatList re-evaluating
           // the end-reached threshold on every scroll frame for no reason. The
@@ -1001,9 +1006,9 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           onEndReached={hasMore ? handleEndReached : undefined}
           onEndReachedThreshold={0.6}
           onScrollBeginDrag={handleScrollBeginDrag}
@@ -1016,36 +1021,7 @@ function NowOnTheWallPanelComponent(
       )}
 
       {variant === 'column' ? (
-        <PressableSurface
-          onPress={handleSwitchBoard}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-          style={[
-            styles.footer,
-            {
-              borderTopColor: systemColors.separator,
-              paddingBottom: footerBottomPadding,
-              backgroundColor: systemColors.secondaryBackground,
-            },
-          ]}
-        >
-          <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Icon name="transfer" size={20} color={systemColors.label} />
-          </View>
-          <View style={styles.footerText}>
-            <Text variant="body" color={systemColors.label}>
-              {/* Stays "Switch board": the gym's own boards live behind the header
-                title now, so this is the way out to every board anywhere. */}
-              {t('mobile.boardPresence.switchBoard')}
-            </Text>
-            {boardLabel ? (
-              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                {boardLabel}
-              </Text>
-            ) : null}
-          </View>
-          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-        </PressableSurface>
+        <SwitchBoardFooter boardLabel={boardLabel} onPress={handleSwitchBoard} bottomPadding={footerBottomPadding} />
       ) : null}
     </>
   );
@@ -1108,7 +1084,13 @@ function NowOnTheWallHeroContent({
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} size={thumbnailSize} />
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
-          <Text variant="headline" color={labelColor} numberOfLines={1} style={styles.heroName}>
+          <Text
+            testID={`board-current-${climb.climbUuid}-${climb.sentByUserId ?? 'anonymous'}`}
+            variant="headline"
+            color={labelColor}
+            numberOfLines={1}
+            style={styles.heroName}
+          >
             {climb.name ?? ''}
           </Text>
           {formattedGrade ? (
@@ -1314,7 +1296,13 @@ function HistoryRowContent({
     <>
       <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} />
       <View style={styles.historyBody}>
-        <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
+        <Text
+          testID={`board-history-${climb.climbUuid}-${climb.seq}`}
+          variant="subheadline"
+          color={labelColor}
+          numberOfLines={1}
+          style={styles.historyName}
+        >
           {climb.name ?? ''}
         </Text>
         {sourceLine ? (
@@ -1723,24 +1711,5 @@ const styles = StyleSheet.create({
   historyFooter: {
     paddingVertical: spacing[5],
     alignItems: 'center',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  footerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footerText: {
-    flex: 1,
-    gap: 2,
   },
 });
