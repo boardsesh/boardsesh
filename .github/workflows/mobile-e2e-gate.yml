@@ -282,7 +282,7 @@ jobs:
       #   - a dispatch on a branch reads main's entry too, and only builds when
       #     the branch itself changed a native input.
       #   - the capture workflow's entries do not help here: its automatic runs
-      #     key on release/next's native inputs, which differ from main's exactly
+      #     key on main's native inputs, which differ from main's exactly
       #     when the train carries a native change.
       - name: Compute app cache key
         id: appkey
@@ -391,7 +391,7 @@ jobs:
   # Its own job because of where the webhook lives: DISCORD_DEPLOY_WEBHOOK is an
   # ENVIRONMENT secret (Production and Native Release), not a repository secret,
   # so a job without `environment:` reads it as empty. Production's branch policy
-  # admits main and release/next, and the schedule only ever runs on main. The
+  # admits main and main, and the schedule only ever runs on main. The
   # environment is on this one job so no test job ever holds its other secrets,
   # and so a future required reviewer on Production can only park the post,
   # never the gate.

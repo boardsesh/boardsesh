@@ -24,9 +24,7 @@ inputs:
   base-ref:
     description: >
       Branch the change will merge into, diffed against. Callers pass
-      github.base_ref so a PR into release/next is compared with the train it is
-      joining, not with main — otherwise every train PR reads as a native change
-      merely because the train already carries one.
+      github.base_ref to compare the candidate with its actual target branch.
     required: false
     default: main
   comparison-mode:

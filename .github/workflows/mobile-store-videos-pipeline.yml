@@ -85,7 +85,7 @@ jobs:
             exit 0
           fi
           if [ "${VARIANTS:-all}" != all ]; then
-            echo "::error::Recording source predates variant subsets; dispatch variants=all or record from a newer release/next."
+            echo "::error::Recording source predates variant subsets; dispatch variants=all or record from a newer main."
             exit 1
           fi
           node -e 'const fs=require("node:fs"); const manifest=JSON.parse(fs.readFileSync("app-stores/apple/live-activity-captures/manifest.json","utf8")); for(const target of ["kilter","tension"]) { const source=manifest.footage?.[target]; if(!source || source.boardFamily!==target || !/^[a-f0-9]{64}$/.test(source.sha256) || source.key!==`sources/live-activity/${source.sha256}.zip`) throw new Error(`Missing reviewed retained ${target} footage; import one physical take before recording.`); }'
@@ -323,7 +323,7 @@ jobs:
         with:
           node-version: '22.x'
           cache: false
-      - name: Recheck the open train immediately before publishing
+      - name: Recheck the open release immediately before publishing
         id: final-gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -341,7 +341,7 @@ jobs:
           version="$(sed -n 's/^version=//p' "$result")"
           if [ "$source_sha" != "$EXPECTED_SOURCE_SHA" ] || [ "$version" != "$EXPECTED_VERSION" ]; then
             echo 'open=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::The train moved while videos rendered; skipping superseded candidates.'
+            echo '::notice::The release moved while videos rendered; skipping superseded candidates.'
           fi
       - if: steps.final-gate.outputs.open == 'true'
         run: vp install --frozen-lockfile
@@ -394,7 +394,7 @@ jobs:
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - name: Refresh the train's review PR with public posters and video links
+      - name: Refresh the release's review PR with public posters and video links
         if: steps.final-gate.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}

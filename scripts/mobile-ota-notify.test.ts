@@ -25,9 +25,9 @@ describe('trusted deployment notification CLI', () => {
       '--events',
       path,
       '--kind',
-      'train-published',
+      'candidate-frozen',
       '--branch',
-      'release/next',
+      'main',
       '--commit',
       'a'.repeat(40),
       '--platform',
@@ -35,7 +35,7 @@ describe('trusted deployment notification CLI', () => {
       '--runtime',
       'b'.repeat(40),
       '--key',
-      'train-ios-123',
+      'main-ios-123',
     ];
     await notifyCommand(record, environment);
     await expect(notifyCommand(['deliver', '--events', path], environment)).rejects.toThrow('remain pending');

@@ -239,10 +239,9 @@ describe('caller discovery before dispatch', () => {
       .mockResolvedValueOnce({ total_count: 101, jobs: [{ ...fixture.job, id: 52 }] });
     await expect(fixture.discover()).rejects.toThrow('Multiple active jobs');
   });
-  it('preserves production main/release callers and both backport matrix job names', async () => {
+  it('preserves production main callers and both backport matrix job names', async () => {
     for (const [path, branch, jobKey] of [
       ['mobile-ota-production.yml', 'main', 'publish'],
-      ['mobile-ota-production.yml', 'release/next', 'publish'],
       ['mobile-ota-promote-staged.yml', 'main', 'promote'],
       ['mobile-ota-backport.yml', 'main', 'backport'],
     ]) {

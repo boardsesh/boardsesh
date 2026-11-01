@@ -318,14 +318,11 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
       const resolverCalls = source.match(/vp exec expo-updates runtimeversion:resolve/g) ?? [];
-      expect(resolverCalls, `${name} must resolve each explicit fingerprint`).toHaveLength(name === OTA ? 9 : 1);
+      expect(resolverCalls, `${name} must resolve each explicit fingerprint`).toHaveLength(name === OTA ? 7 : 1);
       expect(source).toContain(
         `cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ${platform}`,
       );
       if (name === OTA) {
-        // Both stability reads use one platform-aware resolver definition.
-        expect(source).toContain('runtime="$(resolve_train_runtime "$platform")"');
-        expect(source).toContain('confirmed="$(resolve_train_runtime "$platform")"');
         expect(source).toContain(
           'env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios',
         );
@@ -356,8 +353,8 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     for (const name of automaticFingerprintWorkflows) {
       const source = readWorkflow(name);
       if (name === OTA) {
-        // Every train push evaluates the version/runtime policy, including linker changes.
-        expect(parse(source).on.push.paths).toBeUndefined();
+        // Main production-deploy calls staging; direct push publication stays retired.
+        expect(parse(source).on.push).toBeUndefined();
       } else if (name === OTA_PREVIEW) {
         // Preview runs on every PR synchronization so it can delete a stale
         // branch when the last mobile diff disappears. Its in-job classifier,
@@ -743,18 +740,19 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(sweep).toMatch(/Could not list open PRs[^\n]*\n\s*exit 1/);
   });
 
-  it('pins both preview bases before executing candidate code and reports per-base runtimes', () => {
+  it('pins main before executing candidate code and reports per-platform runtimes', () => {
     const preview = readWorkflow(OTA_PREVIEW);
-    expect(preview).toContain('Pin both preview bases');
+    expect(preview).toContain('Pin the main preview base');
     expect(preview).toContain("core.setOutput('source_base_sha', bases.sourceBaseSha)");
     expect(preview).toContain("core.setOutput('main_sha', bases.mainSha)");
-    expect(preview).toContain("core.setOutput('train_sha', bases.trainSha)");
-    expect(preview).toContain('Rebase and compare both pinned preview candidates');
+    expect(preview).not.toContain('train_sha');
+    expect(preview).toContain('Rebase and compare the pinned main preview candidate');
     expect(preview).toContain('SUMMARY: ${{ needs.publish.outputs.summary }}');
     expect(preview).toContain('| Base | Platform | Status | Runtime |');
     const helper = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-preview-candidates.ts'), 'utf8');
     expect(helper.replace(/\s+/g, ' ')).toContain("'--pr-dir', directory, '--base-dir', baseline");
-    expect(helper).toContain('isReleaseTrainActive(');
+    expect(helper).not.toContain('isReleaseTrainActive(');
+    expect(helper).toContain("export type PreviewTarget = 'main'");
     expect(helper.replace(/\s+/g, ' ')).toContain("'commit-tree', sourceTree, '-p', mergeBase");
     expect(helper.replace(/\s+/g, ' ')).toContain("'cherry-pick', '--allow-empty', '--keep-redundant-commits'");
   });
@@ -855,7 +853,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
   it('passes maps only to Android publishers after comparing without secrets', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     const helper = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-preview-candidates.ts'), 'utf8');
-    expect(otaStep(preview, 'Rebase and compare both pinned preview candidates')).not.toContain('secrets.');
+    expect(otaStep(preview, 'Rebase and compare the pinned main preview candidate')).not.toContain('secrets.');
     expect(otaStep(preview, 'Publish compatible preview runtime variants')).toContain(
       'GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}',
     );

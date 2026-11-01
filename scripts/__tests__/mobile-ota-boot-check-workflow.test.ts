@@ -133,7 +133,9 @@ describe('mobile-ota-boot-check.yml', () => {
       jobs: { publish: Job };
     };
     const publishJob = preview.jobs.publish;
-    expect(stepNamed(publishJob, 'Rebase and compare both pinned preview candidates').env?.EOO_TOKEN).toBeUndefined();
+    expect(
+      stepNamed(publishJob, 'Rebase and compare the pinned main preview candidate').env?.EOO_TOKEN,
+    ).toBeUndefined();
     expect(stepNamed(publishJob, 'Publish compatible preview runtime variants').env?.EOO_TOKEN).toBe(
       '${{ secrets.EOO_TOKEN }}',
     );
@@ -154,7 +156,7 @@ describe('mobile-ota-boot-check.yml', () => {
   it('refreshes same-repository previews from base pushes without authorizing forks', () => {
     const refresh = readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview-refresh.yml'), 'utf8');
     const parsed = parse(refresh) as { on: { push: { branches: string[] } }; jobs: { plan: Job; dispatch: Job } };
-    expect(parsed.on.push.branches).toEqual(['main', 'release/next']);
+    expect(parsed.on.push.branches).toEqual(['main']);
     // The planner filters to same-repository heads; see mobile-ota-preview-refresh.ts.
     const planner = readFileSync(join(REPO_ROOT, 'scripts/mobile-ota-preview-refresh.ts'), 'utf8');
     expect(planner).toContain('pull.headRepository === repository');

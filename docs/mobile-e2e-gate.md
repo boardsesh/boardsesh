@@ -230,7 +230,7 @@ This is the likeliest cause, not a proven one:
 
 If it is what it looks like, it is a product bug with a known upstream fix, not
 a test flake. The fix is the `react-native-screens` bump or a backport of that
-PR, which is a native change and belongs on `release/next`. Until it ships, the
+PR, which is a native change and belongs on `main`. Until it ships, the
 gate treats the crash like this:
 
 - A native crash before the app signals home, with zero replay misses, is the
@@ -254,7 +254,7 @@ A job without `environment:` reads it as an empty string.
 
 That is why the post lives in its own `notify` job with
 `environment: Production`. Production's branch policy admits `main` and
-`release/next`; the nightly always runs on `main`. No test job carries the
+`main`; the nightly also runs on `main`. No test job carries the
 environment, so none of them ever holds its other secrets.
 
 `e2e-tests.yml` posts its own red nightly the same way, from a `notify-nightly`

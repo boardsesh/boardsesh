@@ -59,9 +59,7 @@ export function touchesRailwayApply(changedFiles) {
 
 /**
  * True when a Railway Config run should exist for this push. Only pushes to main
- * trigger one. A release/next sync merge carries main's Railway changes, but main's
- * own push already rolled the server, so no run ever starts for the train's commit
- * and waiting for one fails every train publish after such a sync.
+ * trigger one. Other refs never start infrastructure deployment workflows.
  */
 export function expectsRailwayRun({ ref, changedFiles }) {
   return ref === RAILWAY_APPLY_REF && touchesRailwayApply(changedFiles);

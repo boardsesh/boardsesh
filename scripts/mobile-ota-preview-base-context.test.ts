@@ -24,7 +24,7 @@ const trainSha = 'b'.repeat(40);
 const headSha = 'c'.repeat(40);
 const branch = 'pr-7';
 const task = 'ota-preview-pr-7';
-const baseContext = () => ({ version: 1, mainSha, trainSha, sourceBaseRef: 'main', sourceBaseSha: mainSha });
+const baseContext = () => ({ version: 2, mainSha, sourceBaseRef: 'main', sourceBaseSha: mainSha });
 const previousDeployment = () => ({
   id: 123,
   sha: headSha,
@@ -104,7 +104,7 @@ function fixture(
   const run = (eventName = 'pull_request') =>
     executeStep(
       'gate',
-      'Pin both preview bases',
+      'Pin the main preview base',
       { rest: { repos, pulls } },
       {
         PR_NUMBER: '7',
@@ -143,17 +143,15 @@ describe('preview base-context reconciliation', () => {
       expect((await run(eventName)).get('needs_reset')).toBe('true');
     },
   );
-  it.each([
-    { train: 'd'.repeat(40) },
-    { train: '' },
-    { sourceBaseRef: 'release/next' },
-    { sourceBaseSha: 'e'.repeat(40) },
-  ])('resets when a train or PR base changes: %j', async (change) => {
-    expect((await fixture(change).run()).get('needs_reset')).toBe('true');
-  });
-  it('resets when a release train appears after a main-only preview', async () => {
+  it.each([{ sourceBaseRef: 'release/next' }, { sourceBaseSha: 'e'.repeat(40) }])(
+    'resets when the PR base changes: %j',
+    async (change) => {
+      expect((await fixture(change).run()).get('needs_reset')).toBe('true');
+    },
+  );
+  it('resets a historical dual-base preview even when main did not move', async () => {
     const previous = previousDeployment();
-    previous.payload.otaPreviewBases.trainSha = '';
+    Object.assign(previous.payload.otaPreviewBases, { version: 1, trainSha });
     expect((await fixture({ previous }).run()).get('needs_reset')).toBe('true');
   });
   it('still resets native PR revisions even when base metadata matches', async () => {
@@ -169,7 +167,7 @@ describe('preview base-context reconciliation', () => {
     null,
     { ...previousDeployment(), payload: {} },
     { ...previousDeployment(), payload: '{malformed' },
-    { ...previousDeployment(), payload: { otaPreviewBases: { ...baseContext(), version: 2 } } },
+    { ...previousDeployment(), payload: { otaPreviewBases: { ...baseContext(), version: 1, trainSha } } },
     { ...previousDeployment(), description: 'OTA preview pr-8' },
     { ...previousDeployment(), task: 'ota-preview-pr-8' },
     { ...previousDeployment(), production_environment: true },
@@ -203,7 +201,6 @@ describe('preview base-context reconciliation', () => {
         BRANCH: branch,
         HEAD_SHA: headSha,
         MAIN_SHA: mainSha,
-        TRAIN_SHA: trainSha,
         SOURCE_BASE_REF: 'main',
         SOURCE_BASE_SHA: mainSha,
       },

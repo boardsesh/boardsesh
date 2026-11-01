@@ -5,7 +5,7 @@ on:
   workflow_run:
     workflows: [iOS TestFlight Deploy (React Native)]
     types: [completed]
-    branches: [main, release/next]
+    branches: [main]
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
