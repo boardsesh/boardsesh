@@ -30,6 +30,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
 import { useTheme } from '../providers/theme-provider';
+import { useVariantValue } from '../theme/variants';
 import { hapticSelection, hapticMedium } from '../lib/haptics';
 import type { QueueDragControls } from './play-drawer/use-queue-drag';
 import { rowReorderShift } from './play-drawer/queue-drag-math';
@@ -147,6 +148,7 @@ function QueueItemRowComponent({
   showcaseAvatarAnchor = false,
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
+  const tickColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   const { t } = useTranslation(['session', 'climbs']);
   // The climber's thumbnail switch moves two things in this row with it: where
   // the separator starts, and whether the trailing control may set the height.
@@ -575,7 +577,7 @@ function QueueItemRowComponent({
               onAccessibilityAction={handleTickAccessibilityAction}
               style={trailingButtonStyle}
             >
-              <Icon name="tick.fill" size={26} color={brandColors.success} />
+              <Icon name="tick.fill" size={26} color={tickColor} />
             </View>
           </GestureDetector>
         ) : showDragHandle && dragHandleGesture ? (

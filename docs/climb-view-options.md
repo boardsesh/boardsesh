@@ -26,6 +26,20 @@ The native symbol centres the check within its circle. Its ordinary row keeps it
 4 pt top padding plus the 56 pt control replaces 12 pt plus 48 pt. Neighbouring controls keep their sizes, and
 the rendered board keeps its allocation. The count badge, tap and hold behavior are unchanged.
 
+Queue history keeps its smaller 26 pt Tick, using the same neutral action colour rather than green.
+Tapping it opens the logging form above the Queue, retaining the Queue's detent and scroll position.
+Close or save dismisses Tick alone. A pending opening is cancelled if its Queue closes or credentials
+change; an old dismissal cannot close a later Tick. On iPad, a layout-only Queue fold waits for an
+open Tick to finish, so rotation does not discard its note.
+
+The `queue-sheet--history-tick` development story mounts the real QueueSheet with recorded climb data
+and two local queue occurrences. It exercises native child presentation without changing the saved queue.
+These iOS 27 simulator captures show the logging form and the retained Queue after closing it:
+
+| Tick above Queue | Queue after closing Tick |
+| --- | --- |
+| <img src="images/queue-tick-stacked.png" alt="Tick form presented above the native Queue" width="300" /> | <img src="images/queue-tick-return.png" alt="Queue history and scroll position retained after closing Tick" width="300" /> |
+
 Fixed, and why:
 
 | Control                                  | Why it doesn't move                                                         |

@@ -1,6 +1,6 @@
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
@@ -12,6 +12,9 @@ import { useTheme } from '../../providers/theme-provider';
 import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
 import { sanitizeQueueSnapshot } from '../../lib/queue-privacy';
 import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
+import { useLogAscentSheetHost } from '../tick/use-log-ascent-sheet-host';
+import type { QueueHistoryTickHandler } from './use-queue-sheet-handlers';
+import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 
 type QueueSheetProps = {
   board: QueueItemRowBoard;
@@ -25,7 +28,7 @@ type QueueSheetProps = {
   /** Long press a queue row → open the climb reaction menu. */
   onOpenActions?: (item: ClimbQueueItem) => void;
   onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
-  onTickHistory: (item: ClimbQueueItem) => void;
+  onTickHistory: QueueHistoryTickHandler;
 };
 
 /**
@@ -38,6 +41,9 @@ export type QueueSheetHandle = {
   dismiss: () => void;
   /** Dismiss and resolve only after the native animation settles. */
   dismissAndWait: () => Promise<DismissAndWaitResult>;
+  /** Layout-only close: keep an open Tick intact, then fold once it finishes.
+   * Passing false withdraws the request when the layout changes back. */
+  dismissWhenUncovered: (requested: boolean) => void;
 };
 
 export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function QueueSheet(
@@ -48,9 +54,18 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
   const bodyRef = useRef<QueueListBodyHandle>(null);
+  const resetTickRef = useRef<() => void>(() => {});
+  const tickOpenRequest = useRef(0);
+  useEffect(
+    () => () => {
+      tickOpenRequest.current += 1;
+    },
+    [],
+  );
   const liveQueueData = useQueueData();
 
   const [isDragging, setIsDragging] = useState(false);
+  const [dismissWhenUncovered, setDismissWhenUncovered] = useState(false);
   // Tracks whether the sheet is currently presented so the list only
   // auto-scrolls to the current item on a real open (not on background mounts).
   const [isPresented, setIsPresented] = useState(false);
@@ -79,6 +94,8 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // request, backdrop, or pan-down). Reset local UI state; the sheet stays
   // mounted (imperative model) and is re-presented on the next open.
   const handleFullyDismissed = useCallback(() => {
+    tickOpenRequest.current += 1;
+    resetTickRef.current();
     setIsActive(false);
     bodyRef.current?.reset();
     onDismissed?.();
@@ -86,7 +103,41 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   // Present/dismiss route through the coordinator so they never overlap another
   // sheet's transition (the iOS UIKit deadlock).
-  const managed = useManagedSheet({ sheetRef, onFullyDismissed: handleFullyDismissed });
+  const invalidateTickRequest = useCallback(() => {
+    tickOpenRequest.current += 1;
+  }, []);
+  const managed = useManagedSheet({
+    sheetRef,
+    onFullyDismissed: handleFullyDismissed,
+    onDisplaced: invalidateTickRequest,
+  });
+  const {
+    openLogAscent,
+    reset: resetTick,
+    sheet: tickSheet,
+    hasRequest: hasTickRequest,
+  } = useLogAscentSheetHost(`queue-tick:${managed.sheetId}`, managed.sheetId);
+  resetTickRef.current = resetTick;
+  useEffect(() => {
+    if (!dismissWhenUncovered || hasTickRequest) return;
+    invalidateTickRequest();
+    managed.handle.dismiss();
+  }, [dismissWhenUncovered, hasTickRequest, invalidateTickRequest, managed.handle]);
+  const handleTickHistory = useCallback(
+    async (item: ClimbQueueItem) => {
+      const request = ++tickOpenRequest.current;
+      const credentialGeneration = getCredentialGeneration();
+      const outcome = await managed.waitForPresentation();
+      if (
+        outcome.status !== 'presented' ||
+        request !== tickOpenRequest.current ||
+        credentialGeneration !== getCredentialGeneration()
+      )
+        return;
+      onTickHistory(item, openLogAscent);
+    },
+    [managed.waitForPresentation, onTickHistory, openLogAscent],
+  );
 
   // Track presented state off the native onChange (index >= 0 = a real snap) so
   // it stays correct even when the COORDINATOR re-presents this sheet after a
@@ -95,43 +146,55 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // (no auto-scroll to the current climb on a re-present).
   const handleSheetChange = useCallback(
     (index: number) => {
+      if (index < 0) invalidateTickRequest();
       managed.onChange(index);
       setIsPresented(index >= 0);
     },
-    [managed],
+    [managed, invalidateTickRequest],
   );
 
   useImperativeHandle(
     ref,
     () => ({
       present: () => {
+        setDismissWhenUncovered(false);
         setIsActive(true);
         managed.handle.present();
       },
       dismiss: () => {
+        invalidateTickRequest();
         managed.handle.dismiss();
       },
-      dismissAndWait: () => managed.handle.dismissAndWait(),
+      dismissAndWait: () => {
+        invalidateTickRequest();
+        return managed.handle.dismissAndWait();
+      },
+      dismissWhenUncovered: setDismissWhenUncovered,
     }),
-    [managed.handle],
+    [managed.handle, invalidateTickRequest],
   );
 
   const sheetContent = (
-    <QueueListBody
-      ref={bodyRef}
-      board={board}
-      queue={queue}
-      currentClimbQueueItem={currentClimbQueueItem}
-      historyCount={historyCount}
-      active={isPresented}
-      presentation="sheet"
-      onClose={onClose}
-      onClimbPress={onClimbPress}
-      onOpenActions={onOpenActions}
-      onSuggestionPress={onSuggestionPress}
-      onTickHistory={onTickHistory}
-      onDraggingChange={setIsDragging}
-    />
+    <View style={styles.content}>
+      <QueueListBody
+        ref={bodyRef}
+        board={board}
+        queue={queue}
+        currentClimbQueueItem={currentClimbQueueItem}
+        historyCount={historyCount}
+        active={isPresented}
+        presentation="sheet"
+        onClose={onClose}
+        onClimbPress={onClimbPress}
+        onOpenActions={onOpenActions}
+        onSuggestionPress={onSuggestionPress}
+        onTickHistory={handleTickHistory}
+        onDraggingChange={setIsDragging}
+      />
+      {/* This Host belongs to the queue's presented view controller. A sibling
+        beside QueueSheet would still present from under the player. */}
+      {tickSheet}
+    </View>
   );
 
   return (
@@ -163,6 +226,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 });
 
 const styles = StyleSheet.create({
+  content: { flex: 1 },
   gestureRoot: { flex: 1 },
   sheet: {
     ...Platform.select({

@@ -8,6 +8,7 @@ import { PlayDrawer } from '../src/components/play-drawer';
 import { QueueSheet, type QueueSheetHandle } from '../src/components/play-drawer/QueueSheet';
 import { DevicePickerSheetHost } from '../src/components/ble/DevicePickerSheetHost';
 import { useQueueSheetHandlers } from '../src/components/play-drawer/use-queue-sheet-handlers';
+import { useLogAscentSheetHost } from '../src/components/tick/use-log-ascent-sheet-host';
 import type { QueueItemRowBoard } from '../src/components/QueueItemRow';
 import {
   useDrawerHost,
@@ -63,7 +64,8 @@ function PlayScreen() {
     onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
-  const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions, openLogAscent } = useDrawerHost();
+  const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const { systemColors, colorScheme } = useTheme();
@@ -111,10 +113,11 @@ function PlayScreen() {
   }, [sideBySide, presentQueue]);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
   // Rotating into landscape with the queue sheet up would show the queue twice,
-  // the sheet over the panel's Up next. The panel takes over.
+  // the sheet over the panel's Up next. Let an open Tick finish before the
+  // panel takes over, preserving its fields and keyboard through rotation.
   useEffect(() => {
-    if (sideBySide) requestCloseQueue();
-  }, [sideBySide, requestCloseQueue]);
+    queueSheetRef.current?.dismissWhenUncovered(sideBySide);
+  }, [sideBySide]);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
@@ -268,6 +271,7 @@ function PlayScreen() {
             ) : null}
           </>
         ) : null}
+        {logAscentSheet}
         {/* Host the BLE device picker from inside this route so a connect from the
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
