@@ -33,11 +33,18 @@ update, or delete those tags.
 
 **Main Native Release** (`mobile-native-release.yml`) runs after main pushes, native
 workflow completions, hourly, and on demand. It compares both canonical platform
-fingerprints with the latest validated native release stamp. A changed pair produces
-one normal fast-forward bot commit changing only the marketing version. The commit
-records its parent source SHA, version, and full fingerprints. That stamped push starts
-both native workflows; the original unversioned merge does not start a store build.
-Version-only changes remain outside the fingerprint.
+fingerprints with the latest validated native release stamp. A changed pair uses the
+already-raised, unreleased marketing version when one was deliberately merged above
+the previous native version. For example, importing native work already at 2.7.0 from
+a 2.6.0 baseline adopts 2.7.0, including when 2.7.0 tester builds already exist.
+Otherwise the coordinator opens the next unused patch. Public release anchors and
+higher reserved versions still protect against reusing an unavailable version.
+
+The bot records the parent source SHA, version, and both full fingerprints. A normal
+stamp changes only the marketing version. An adoption stamp preserves the parent tree
+exactly and immediately dispatches both exact-source tester builds, since an empty
+commit does not match their push path filters. The original unversioned merge waits
+for this validated stamp. Version-only changes remain outside the fingerprint.
 
 The coordinator refetches and recomputes if main moves. Repeating a run never bumps an
 unchanged native pair. It does not hold its lock while native builds run. Failed or
@@ -62,8 +69,37 @@ gh workflow run mobile-native-release.yml --ref main \
 Use `action=plan` to inspect without writing. The repository App needs Contents write
 and bypass permission for the protected tags and main; a GITHUB_TOKEN push would not
 start the downstream native workflows. Major or minor version choices can still be
-committed deliberately; the next changed native snapshot opens a patch above the
-merged version and existing used versions.
+committed deliberately; the next changed native snapshot adopts that already-raised
+unreleased version. A later native change at the same marketing version opens the
+next unused patch.
+
+### Restore a mistaken extra version bump
+
+`restore-version` is an explicit manual recovery for a coordinator bump made after
+the source had already opened an unreleased native version. Plan with the exact
+target version and mistaken stamp, inspect the returned source/fingerprints, then
+repeat with `apply=true`:
+
+```sh
+gh workflow run mobile-native-release.yml --ref main \
+  -f action=restore-version -f target_version=<original-version> \
+  -f expected_stamp_sha=<exact-latest-bump-sha> -f apply=false
+```
+
+The target must equal the mistaken stamp's parent version and remain above the
+previous native version and every public release anchor. The expected stamp must
+still be latest, the current marketing version must match it, and both canonical
+native fingerprints must be unchanged. Apply makes one normal fast-forward bot
+commit changing only that version line and naming the exact superseded stamp.
+A changed main during the push requires a fresh plan. Repeating a confirmed recovery
+recognizes the existing restoration instead of creating another commit.
+
+Restoration preserves baseline, tag, and upload history. Only tester build tags whose
+source is the explicitly superseded stamp stop reserving future patch versions;
+public release anchors and all other higher versions keep their existing protection.
+Supersession carries through later stamps, and explicitly superseded sources cannot
+start new native builds. Store-side expiry is a separate operator action. Public
+store submission remains manual.
 
 ## 2. Automatic tester builds
 

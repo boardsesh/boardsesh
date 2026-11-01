@@ -759,6 +759,8 @@ describe('native build gates, executed', { timeout: 30_000 }, () => {
 if [ "\${STUB_GIT_FAIL:-}" = true ]; then exit 128; fi
 case "$1" in
   show) printf '%s\\n' 'ordinary main source' ;;
+  rev-parse) printf '%s\\n' "$NATIVE_SOURCE_SHA" ;;
+  log) : ;;
   tag) printf '%s\\n' "\${STUB_TAGS:-}" ;;
   for-each-ref)
     while IFS= read -r tag; do
@@ -829,6 +831,14 @@ printf '%s\\n' '[{"workflow_runs":[]}]'
     expect(
       runGate('android', { tags: [`release/ios-v${version}-${fingerprint.slice(0, 12)}`] }).outputs.should_build,
     ).toBe('true');
+  });
+  it('recognizes an exact historical upload after later public approval without rebuilding it', () => {
+    const tags = [
+      `release/ios-v${version}-${fingerprint.slice(0, 12)}`,
+      `build-ios-v${version}-8-${fingerprint.slice(0, 12)}`,
+    ];
+    expect(runGate('ios', { tags }).outputs.should_build).toBe('false');
+    expect(runGate('ios', { tags, forced: true }).status).not.toBe(0);
   });
 });
 
