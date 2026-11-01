@@ -565,16 +565,19 @@ describe('critical OTA production workflow', () => {
     expect(steps.findIndex((step) => step.id === 'critical-promote')).toBeLessThan(steps.indexOf(evidence!));
   });
 
-  it('requires production publication for critical merges while normal daily releases remain staged', () => {
+  it('requires publication for critical or admitted native merges while released candidates stay staged', () => {
     const verification = workflow.jobs['verify-mobile-ota'].steps?.find(
       (step) => step.name === 'Require both staging and promotion',
     );
     expect(verification?.env?.CRITICAL_OTA).toBe('${{ needs.detect-changes.outputs.critical_ota }}');
-    for (const [enabled, critical, promotion, passes] of [
-      ['true', 'false', 'skipped', true],
-      ['true', 'true', 'success', true],
-      ['true', 'true', 'skipped', false],
-      ['false', 'false', 'success', true],
+    for (const [enabled, critical, admission, unreleased, promotion, passes] of [
+      ['true', 'false', 'success', 'false', 'skipped', true],
+      ['true', 'false', 'success', 'true', 'success', true],
+      ['true', 'false', 'success', 'true', 'skipped', false],
+      ['true', 'false', 'failure', '', 'skipped', false],
+      ['true', 'true', 'skipped', '', 'success', true],
+      ['true', 'true', 'skipped', '', 'skipped', false],
+      ['false', 'false', 'skipped', '', 'success', true],
     ] as const) {
       const execution = spawnSync('bash', ['-e', '-c', verification?.run ?? 'exit 99'], {
         encoding: 'utf8',
@@ -585,6 +588,8 @@ describe('critical OTA production workflow', () => {
           PROMOTE_RESULT: promotion,
           DAILY_ENABLED: enabled,
           CRITICAL_OTA: critical,
+          NATIVE_ADMISSION_RESULT: admission,
+          UNRELEASED_NATIVE: unreleased,
         },
       });
       expect(execution.status === 0, `${enabled}/${critical}/${promotion}: ${execution.stdout}`).toBe(passes);
