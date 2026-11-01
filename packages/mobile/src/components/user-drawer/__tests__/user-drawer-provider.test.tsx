@@ -28,6 +28,7 @@ import type { RouterRegistryEntry } from 'expo-router/build/global-state/routerR
 
 const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
+const rowHandlers = vi.hoisted(() => new Map<string, () => void>());
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn(), navigate: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmSignOutMock = vi.hoisted(() => vi.fn(async (_signal?: AbortSignal) => {}));
@@ -300,8 +301,16 @@ vi.mock('../../ListRow', () => ({
     onPress?: () => void;
     title: string;
     trailing?: ReactNode;
-  }) =>
-    createElement('button', { 'data-row-title': title, onClick: onPress, type: 'button' }, leading, title, trailing),
+  }) => {
+    if (onPress) rowHandlers.set(title, onPress);
+    return createElement(
+      'button',
+      { 'data-row-title': title, onClick: onPress, type: 'button' },
+      leading,
+      title,
+      trailing,
+    );
+  },
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -360,7 +369,8 @@ beforeEach(() => {
   navigationMocks.indexListeners.clear();
   navigationMocks.accountListeners.clear();
   platform.OS = 'android';
-  browser.openBrowserAsync.mockClear();
+  browser.openBrowserAsync.mockReset().mockResolvedValue(undefined);
+  rowHandlers.clear();
   routerMock.push.mockReset();
   routerMock.dismissTo.mockReset();
   routerMock.navigate.mockReset();
@@ -997,7 +1007,8 @@ describe('user-drawer Support Boardsesh row', () => {
     expect(rowTitles(container).slice(0, 2)).toEqual(['Support Boardsesh', 'Change board']);
   });
 
-  it('counts the tap, then opens the support page tagged with Account once the route unmounts', () => {
+  it.each(['ios', 'android', 'web'])('opens support after the %s drawer unmounts', (platformName) => {
+    platform.OS = platformName;
     supportState.allowed = true;
     const { rerender } = render(<Harness showScreen />);
 
@@ -1008,6 +1019,81 @@ describe('user-drawer Support Boardsesh row', () => {
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
     expect(browser.openBrowserAsync).toHaveBeenCalledWith('https://www.boardsesh.com/support?src=app-account');
+  });
+
+  it('opens support above iOS Account without dismissing its native sheet', () => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(browser.openBrowserAsync).toHaveBeenCalledExactlyOnceWith(
+      'https://www.boardsesh.com/support?src=app-account',
+    );
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
+    expect(screen.getByText('Support Boardsesh')).toBeTruthy();
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledExactlyOnceWith('account');
+  });
+
+  it.each(['closed', 'failed'])('allows support retry after the iOS browser is %s', async (outcome) => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    let finishBrowser = () => {};
+    browser.openBrowserAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          finishBrowser = () => (outcome === 'closed' ? resolve() : reject(new Error('Browser unavailable')));
+        }),
+    );
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(1);
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishBrowser());
+    fireEvent.click(screen.getByText('Support Boardsesh'));
+
+    expect(browser.openBrowserAsync).toHaveBeenCalledTimes(2);
+    expect(supportAnalytics.trackSupportLinkTapped).toHaveBeenCalledTimes(2);
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+
+  it.each(['unmounted', 'closing', 'unfocused'])('ignores support presses from %s iOS Account', (boundary) => {
+    platform.OS = 'ios';
+    supportState.allowed = true;
+    const { unmount } = render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    const pressSupport = rowHandlers.get('Support Boardsesh');
+    expect(pressSupport).toBeDefined();
+
+    if (boundary === 'unmounted') unmount();
+    else if (boundary === 'unfocused') navigationMocks.focus.current = false;
+    else
+      act(() =>
+        navigationMocks.accountListeners
+          .get('transitionStart')
+          ?.forEach((listener) => listener({ data: { closing: true } })),
+      );
+    act(() => pressSupport?.());
+
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    expect(supportAnalytics.trackSupportLinkTapped).not.toHaveBeenCalled();
+    expect(routerMock.back).not.toHaveBeenCalled();
   });
 });
 
