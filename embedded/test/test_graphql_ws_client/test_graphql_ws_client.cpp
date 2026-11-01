@@ -67,6 +67,11 @@ void test_initial_display_hash_is_zero(void) {
     TEST_ASSERT_EQUAL_UINT32(0, client->getCurrentDisplayHash());
 }
 
+void test_queue_capacity_has_addressable_storage(void) {
+    const volatile int* capacity = &ControllerQueueSyncData::MAX_ITEMS;
+    TEST_ASSERT_EQUAL_INT(150, *capacity);
+}
+
 // =============================================================================
 // Begin/Connection Tests
 // =============================================================================
@@ -434,6 +439,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_initial_is_connected_returns_false);
     RUN_TEST(test_initial_is_subscribed_returns_false);
     RUN_TEST(test_initial_display_hash_is_zero);
+    RUN_TEST(test_queue_capacity_has_addressable_storage);
 
     // Begin/Connection tests
     RUN_TEST(test_begin_sets_state_to_connecting);

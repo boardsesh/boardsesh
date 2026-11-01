@@ -4,6 +4,9 @@
 #include <aurora_protocol.h>
 #include <nordic_uart_ble.h>
 
+// Queue limiting can bind this constant by reference, which requires storage.
+const int ControllerQueueSyncData::MAX_ITEMS;
+
 GraphQLWSClient GraphQL;
 
 const char* GraphQLWSClient::KEY_HOST = "gql_host";

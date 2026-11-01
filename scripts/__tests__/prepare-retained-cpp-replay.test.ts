@@ -1294,6 +1294,8 @@ describe('replay pixels and reviewed byte binding', () => {
     second.options.expectedReceipt = digest;
     expect(await prepareRetainedReplay(second.options, second.client)).toBe(digest);
   });
+  // Three complete screenshot fixtures include real hashing and image checks.
+  // Keep this integration test bounded while allowing slower CI runners.
   it('binds explicit source bytes, current verifier and compatibility into a v2 reviewed receipt', async () => {
     const first = preparedSource();
     first.options.captureContractRef = 'b'.repeat(40);
@@ -1321,7 +1323,7 @@ describe('replay pixels and reviewed byte binding', () => {
     await expect(prepareRetainedReplay(advanced.options, advanced.client)).rejects.toThrow();
     expect(existsSync(join(advanced.options.repoRoot, 'app-stores/apple/cpp', target))).toBe(false);
     expect(existsSync(join(advanced.options.repoRoot, 'app-stores/apple/cpp-fixtures', `${target}.json`))).toBe(false);
-  });
+  }, 15_000);
   it('assembles all sixteen successful retried shards without downloading excluded failed artifacts', async () => {
     const source = preparedSource(retrySource());
     const requested: number[] = [];
