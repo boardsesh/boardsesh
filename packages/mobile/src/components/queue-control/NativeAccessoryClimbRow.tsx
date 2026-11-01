@@ -423,6 +423,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
     >
       {wideLayout ? buttonCluster : null}
       <AccessoryPlayLink
+        testID={`mini-player-current-${climb.uuid}`}
         style={styles.tapClip}
         accessibilityLabel={climb.name}
         accessibilityValue={connectionValue}

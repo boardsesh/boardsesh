@@ -92,6 +92,7 @@ export function SessionScreenHeader({
         <View style={styles.rightCluster}>
           {onShare ? (
             <PressableSurface
+              testID="session-invite"
               onPress={onShare}
               hitSlop={12}
               accessibilityRole="button"
@@ -117,6 +118,7 @@ export function SessionScreenHeader({
           {onEndSession ? (
             // Plain text matches the native session header's exit action.
             <PressableSurface
+              testID={`session-exit-${exitVariant}`}
               onPress={onEndSession}
               hitSlop={12}
               accessibilityRole="button"

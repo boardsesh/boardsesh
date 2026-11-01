@@ -1,6 +1,7 @@
 #ifdef ENABLE_GYM_FIXTURE
 #include <Arduino.h>
 #include <esp_bt.h>
+#include <esp_random.h>
 
 // NimBLE-Arduino allocates the S3 controller for one advertiser. Reserve three
 // connectable sets plus three established connections in this executable only.
@@ -20,17 +21,21 @@ extern "C" esp_err_t __wrap_esp_bt_controller_init(esp_bt_controller_config_t* c
 #include "gym/buttons.h"
 #include "gym/cache.h"
 #include "gym/client.h"
+#include "gym/qa_output.h"
 
 #include <ArduinoJson.h>
 #include <esp_web_server.h>
 #include <wifi_utils.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <board_hold_data.h>
 #include <config_manager.h>
 #include <log_buffer.h>
 #include <mbedtls/sha256.h>
+#include <memory>
+#include <new>
 #include <utility>
 #include <vector>
 #include <waveshare_amoled_display.h>
@@ -64,6 +69,7 @@ bool rejectionHandled = false;
 size_t selectedBoard = 0;
 unsigned long lastRenderedAt = 0;
 unsigned long restartAt = 0;
+String qaBootId;
 
 String digestString(const String& input) {
     uint8_t digest[32];
@@ -169,6 +175,136 @@ void printStatus() {
     document["preview_jpeg_block_count"] = Display.getLastJpegBlockCount();
     serializeJson(document, Serial);
     Serial.println();
+}
+
+bool validQaRequestId(const String& requestId) {
+    if (requestId.length() == 0 || requestId.length() > 80)
+        return false;
+    for (const char character : requestId) {
+        if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.'))
+            return false;
+    }
+    return true;
+}
+
+// USB is the QA control plane; no network endpoint can acquire this temporary
+// radio policy, drop links, or read packet evidence. No command writes NVS.
+bool writeQaReply(JsonDocument& response) {
+    const size_t encodedLength = measureJson(response);
+    const size_t frameLength = gym_fixture::qaFrameLength(encodedLength);
+    std::unique_ptr<char[]> frame(frameLength ? new (std::nothrow) char[frameLength + 1] : nullptr);
+    if (frame &&
+        gym_fixture::buildQaFrame(frame.get(), frameLength + 1, encodedLength, [&](char* destination, size_t capacity) {
+            return serializeJson(response, destination, capacity);
+        }) == frameLength)
+        return gym_fixture::writeQaLine(Serial, frame.get(), frameLength);
+
+    // Allocation/serialization must finish before any tag reaches USB. Keep the
+    // fallback on the stack and retain the validated, ASCII-only request ID.
+    char failure[320];
+    const char* requestId = response["requestId"] | "";
+    const int length = snprintf(failure, sizeof(failure),
+                                "BOARDSESH_QA {\"schemaVersion\":1,\"requestId\":\"%s\",\"ok\":false,"
+                                "\"error\":\"Cannot allocate a complete QA response\"}\n",
+                                requestId);
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(failure))
+        return false;
+    return gym_fixture::writeQaLine(Serial, failure, static_cast<size_t>(length));
+}
+
+bool serialQa(const String& encoded) {
+    JsonDocument request;
+    JsonDocument response;
+    String error;
+    bool success = false;
+    if (deserializeJson(request, encoded)) {
+        error = "Invalid QA JSON";
+    } else {
+        const String requestId = request["requestId"] | "";
+        const String action = request["action"] | "";
+        const String runId = request["runId"] | "";
+        if (!validQaRequestId(requestId)) {
+            error = "Invalid QA request ID";
+        } else {
+            response["requestId"] = requestId;
+            if (action == "start")
+                success = fixtureBle.startQa(runId, error);
+            else if (action == "end")
+                success = fixtureBle.endQa(runId, error);
+            else if (action == "drop")
+                success = fixtureBle.dropQa(runId, request["boardUuid"] | "", error);
+            else if (action == "status") {
+                gym_fixture::QaSnapshot heartbeat;
+                success = fixtureBle.snapshotQa(runId, heartbeat, error);
+            } else
+                error = "Unknown QA action";
+        }
+    }
+    response["schemaVersion"] = 1;
+    response["ok"] = success;
+    if (!success)
+        response["error"] = error;
+    response["bootId"] = qaBootId;
+    response["firmware"] = FIRMWARE_BUILD_ENV;
+    response["firmwareBuild"] = __DATE__ " " __TIME__;
+    gym_fixture::QaSnapshot snapshot;
+    String snapshotError;
+    if (fixtureBle.snapshotQa("", snapshot, snapshotError)) {
+        response["ready"] = snapshot.ready;
+        response["runId"] = snapshot.runId;
+        response["policy"] = snapshot.runId.isEmpty() ? "concurrent" : "last-connection-wins";
+        response["leaseRemainingMs"] = snapshot.leaseRemainingMs;
+        JsonArray boards = response["boards"].to<JsonArray>();
+        for (gym_fixture::QaBoardSnapshot& board : snapshot.boards) {
+            JsonObject target = boards.add<JsonObject>();
+            target["uuid"] = board.uuid;
+            target["connections"] = board.handles.size();
+            JsonArray handles = target["handles"].to<JsonArray>();
+            for (const uint16_t handle : board.handles)
+                handles.add(handle);
+            target["writes"] = board.writes;
+            target["updates"] = board.updates;
+            target["rejected"] = board.rejected;
+            target["sequence"] = board.latest.sequence;
+            target["connectionHandle"] = board.latest.connectionHandle;
+            target["connectionGeneration"] = board.latest.connectionGeneration;
+            target["angle"] = board.latest.angle;
+            std::sort(board.latest.commands.begin(), board.latest.commands.end(),
+                      [](const LedCommand& left, const LedCommand& right) {
+                          if (left.position != right.position)
+                              return left.position < right.position;
+                          if (left.r != right.r)
+                              return left.r < right.r;
+                          if (left.g != right.g)
+                              return left.g < right.g;
+                          return left.b < right.b;
+                      });
+            JsonArray commands = target["commands"].to<JsonArray>();
+            for (const LedCommand& command : board.latest.commands) {
+                JsonObject decoded = commands.add<JsonObject>();
+                decoded["position"] = command.position;
+                decoded["r"] = command.r;
+                decoded["g"] = command.g;
+                decoded["b"] = command.b;
+            }
+        }
+    } else {
+        response["ready"] = false;
+        response["runId"] = "";
+        response["policy"] = "concurrent";
+        response["leaseRemainingMs"] = 0;
+        response["boards"].to<JsonArray>();
+    }
+    if (response.overflowed()) {
+        const String requestId = response["requestId"] | "";
+        response.clear();
+        response["schemaVersion"] = 1;
+        response["requestId"] = requestId;
+        response["ok"] = false;
+        response["error"] = "Insufficient memory for a complete QA snapshot";
+    }
+    return writeQaReply(response);
 }
 
 bool activate(JsonVariantConst manifest, String& error) {
@@ -372,6 +508,10 @@ void serviceSerial() {
                     rejectionHandled = false;
                 } else if (command.startsWith("fixture-config "))
                     serialConfigure(command.substring(15));
+                else if (command.startsWith("fixture-qa ")) {
+                    if (!serialQa(command.substring(11)))
+                        Logger.logln("Fixture QA USB reply was not written completely");
+                }
             }
             command = "";
             overflow = false;
@@ -385,6 +525,10 @@ void serviceSerial() {
 
 void setup() {
     Serial.begin(115200);
+    char bootId[17];
+    snprintf(bootId, sizeof(bootId), "%08lx%08lx", static_cast<unsigned long>(esp_random()),
+             static_cast<unsigned long>(esp_random()));
+    qaBootId = bootId;
     Config.begin();
     Logger.enableSerial(false);
     // One-time migration; clearing a fixture key never resurrects an old key.

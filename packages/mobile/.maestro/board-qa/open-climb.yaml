@@ -1,0 +1,11 @@
+appId: ${APP_ID}
+name: Open the exact QA climb through its normal named-wall route
+---
+- openLink: ${CLIMB_URL}
+- extendedWaitUntil:
+    visible:
+      id: play-drawer-header-accessibility
+      text: ${CLIMB_LABEL_PATTERN}
+    timeout: 30000
+- assertVisible:
+    id: play-drawer-wall-control

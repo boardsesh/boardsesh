@@ -1,0 +1,24 @@
+appId: ${APP_ID}
+name: End only the session created by this QA run
+---
+- openLink: ${RECORD_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-presence-${SESSION_ID}-[1-9][0-9]*
+    timeout: 30000
+- tapOn: ${SESSION_EXIT_LABEL}
+- extendedWaitUntil:
+    visible:
+      id: session-exit-sheet-end
+    timeout: 10000
+- tapOn:
+    id: sheet-top-bar-trailing
+- extendedWaitUntil:
+    notVisible:
+      id: session-presence-${SESSION_ID}-[1-9][0-9]*
+    timeout: 30000
+- openLink: ${RECORD_URL}
+- extendedWaitUntil:
+    visible:
+      id: session-start
+    timeout: 30000

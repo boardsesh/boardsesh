@@ -1,0 +1,9 @@
+appId: ${APP_ID}
+name: Select the fixture's exact resolved saved-board identity
+---
+- extendedWaitUntil:
+    visible:
+      id: ble-device-${BOARD_UUID}
+    timeout: 30000
+- tapOn:
+    id: ble-device-${BOARD_UUID}

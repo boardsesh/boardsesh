@@ -8,6 +8,7 @@ import { AvatarGroup } from '../../you/AvatarGroup';
 import { spacing, opacity } from '../../../theme/tokens';
 
 type SessionPresenceRowProps = {
+  sessionId: string | null;
   users: SessionUser[];
 };
 
@@ -16,7 +17,7 @@ type SessionPresenceRowProps = {
  * Connected climbers lead the avatar cluster; if everyone is mid-reconnect the
  * cluster dims to read as offline. Renders nothing when the roster is empty.
  */
-export function SessionPresenceRow({ users }: SessionPresenceRowProps) {
+export function SessionPresenceRow({ sessionId, users }: SessionPresenceRowProps) {
   const { t } = useTranslation('session');
 
   // Dedupe by stable identity first: the roster can briefly hold two entries for
@@ -43,6 +44,7 @@ export function SessionPresenceRow({ users }: SessionPresenceRowProps) {
         userId: user.userId,
         displayName: user.username,
         avatarUrl: user.avatarUrl,
+        testID: `session-user-${user.userId ?? user.id}-${user.connectionState}`,
       })),
     [ordered],
   );
@@ -52,12 +54,16 @@ export function SessionPresenceRow({ users }: SessionPresenceRowProps) {
   const allReconnecting = dedupedUsers.every((user) => user.connectionState !== 'CONNECTED');
 
   return (
-    <View style={styles.container}>
+    <View testID={`session-roster-${dedupedUsers.length}`} style={styles.container}>
       <View style={[styles.avatars, allReconnecting ? { opacity: opacity.subtle } : null]}>
         <AvatarGroup participants={participants} size={32} max={4} />
       </View>
       <View style={styles.text}>
-        <Text variant="subheadline" style={styles.count}>
+        <Text
+          testID={sessionId ? `session-presence-${sessionId}-${dedupedUsers.length}` : undefined}
+          variant="subheadline"
+          style={styles.count}
+        >
           {t('mobile.session.inPresenceCount', { count: dedupedUsers.length })}
         </Text>
       </View>

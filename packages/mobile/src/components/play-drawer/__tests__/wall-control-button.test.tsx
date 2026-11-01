@@ -79,7 +79,8 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children }: Children) => createElement('span', null, children),
+  LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
+    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -332,6 +333,18 @@ describe('WallControlButton', () => {
     expect(nobody.container.querySelector('[data-testid="play-drawer-wall-control-holder"]')).toBeNull();
   });
 
+  it('places the live wall-state identifier on the native viewer host and preserves the button identifier', () => {
+    const idle = { ...modelFor('lit', { holder: 'self' }), driving: false };
+    const { getByTestId, rerender } = renderButton(idle);
+    const state = getByTestId('wall-control-lit-self-idle');
+    expect(state.getAttribute('data-native-viewer')).toBe('true');
+    expect(getByTestId('play-drawer-wall-control').contains(state)).toBe(true);
+    rerender(
+      createElement(WallControlButton, { model: { ...idle, driving: true }, onPress: vi.fn(), onLongPress: vi.fn() }),
+    );
+    expect(getByTestId('wall-control-lit-self-driving').getAttribute('data-native-viewer')).toBe('true');
+  });
+
   // Marco's bug: after a tap-disconnect the face stayed, read from stale presence.
   it('draws no face once the model has no holder, whatever presence says', () => {
     const afterDisconnect: WallControlModel = {
@@ -504,7 +517,7 @@ describe('WallControlButton', () => {
     ).not.toContain('borderColor');
   });
 
-  // The two wall surfaces frost physical LED actions without changing their models.
+  // Frost appears only while driving; labels and controls retain their models.
   describe('the lit glow', () => {
     afterEach(() => {
       themeCtrl.scheme = 'light';
@@ -543,12 +556,12 @@ describe('WallControlButton', () => {
       expect(crew.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Sam');
     });
 
-    it('frosts the non-driving holder without changing Disconnect board, bulb or face', () => {
+    it('keeps the non-driving holder plain without changing Disconnect board, bulb or face', () => {
       const holder = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }), { glow: GLOW });
       measure();
-      expect(holder.queryByTestId('wall-glow')).not.toBeNull();
+      expect(holder.queryByTestId('wall-glow')).toBeNull();
       const style = holder.getByRole('button').getAttribute('data-style') ?? '';
-      expect(style).toContain('"backgroundColor":"#F6F3FB"');
+      expect(style).toContain('"backgroundColor":"#6D28D9"');
       expect(holder.getAllByText('playView.wallControl.disconnectBoard').length).toBeGreaterThan(0);
       expect(holder.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
       expect(holder.container.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Me');
@@ -571,7 +584,7 @@ describe('WallControlButton', () => {
     });
 
     it.each(['connect', 'put_on_wall', 'dark', 'crew'] as const)(
-      'frosts the physical %s action without claiming driving',
+      'keeps the physical %s action plain without driving',
       (state) => {
         const view = renderButton(
           modelFor(state, {
@@ -581,7 +594,7 @@ describe('WallControlButton', () => {
           { glow: GLOW },
         );
         measure();
-        expect(view.queryByTestId('wall-glow')).not.toBeNull();
+        expect(view.queryByTestId('wall-glow')).toBeNull();
         expect(view.queryByText('playView.wallControl.youAreDriving')).toBeNull();
       },
     );
@@ -690,12 +703,62 @@ describe('WallControlButton', () => {
       const solo = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(solo.getByText('playView.wallControl.releaseToDrive')).not.toBeNull();
-      expect(solo.queryByTestId('wall-swipe-wipe')).toBeNull();
-      expect(solo.queryByTestId('wall-glow')).not.toBeNull();
+      expect(solo.getByTestId('wall-swipe-wipe').dataset.frost).toBe('false');
+    });
+
+    describe.each([false, true])('bokeh requires confirmed driving (compact=%s)', (compact) => {
+      it.each(['peek', 'drag', 'committed-arming'] as const)(
+        'keeps %s progress flat while Put on board is shown',
+        (phase) => {
+          swipeCtrl.frostArmed = phase !== 'committed-arming';
+          swipeCtrl.committed = phase === 'committed-arming';
+          const model = {
+            ...putOnWall(),
+            drivePhase: phase === 'committed-arming' ? ('arming' as const) : ('off' as const),
+          };
+          const view = renderButton(model, { onSwipe, glow: GLOW, compact });
+          measure(compact ? 239 : 360, 44);
+          expect(view.getAllByText(PUT_ON_BOARD).length).toBeGreaterThan(0);
+          expect(view.queryByTestId('wall-glow')).toBeNull();
+          expect(view.getByTestId('wall-swipe-wipe').dataset).toMatchObject({ frost: 'false', fill: '#B45309' });
+          expect(view.getByTestId('play-drawer-wall-control')).toBeTruthy();
+        },
+      );
+
+      it.each(['browse', 'stop'] as const)(
+        'removes driving frost immediately on %s despite stale swipe progress',
+        (transition) => {
+          const driving = modelFor('lit', { holder: 'self' });
+          const view = renderButton(driving, { onSwipe, glow: GLOW, compact });
+          measure(compact ? 239 : 360, 44);
+          expect(view.queryByTestId('wall-glow')).not.toBeNull();
+          const button = view.getByTestId('play-drawer-wall-control');
+          swipeCtrl.frostArmed = true;
+          swipeCtrl.committed = true;
+          const next = modelFor(transition === 'browse' ? 'put_on_wall' : 'lit', {
+            holder: 'self',
+            navigationCommits: false,
+          });
+          view.rerender(
+            createElement(WallControlButton, {
+              model: next,
+              onPress: view.onPress,
+              onLongPress: view.onLongPress,
+              onSwipe,
+              glow: GLOW,
+              compact,
+            }),
+          );
+          expect(view.getByTestId('play-drawer-wall-control')).toBe(button);
+          expect(view.queryByTestId('wall-glow')).toBeNull();
+          expect(view.getByTestId('wall-swipe-wipe').dataset.frost).toBe('false');
+          expect(view.getByTestId(`wall-control-${next.state}-self-idle`)).toBeTruthy();
+        },
+      );
     });
 
     it.each(['peek', 'drag', 'committed'] as const)(
-      'keeps one full frost without a decorative wipe while %s, with the drive callback wired',
+      'keeps flat progress while %s, with the drive callback wired',
       (phase) => {
         swipeCtrl.frostArmed = phase !== 'committed';
         swipeCtrl.releaseArmed = phase === 'drag';
@@ -703,8 +766,8 @@ describe('WallControlButton', () => {
         const startDrive = vi.fn(() => 'started' as const);
         const view = renderButton(putOnWall(), { onSwipe: startDrive, glow: GLOW });
         measure();
-        expect(view.queryAllByTestId('wall-glow')).toHaveLength(1);
-        expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
+        expect(view.queryAllByTestId('wall-glow')).toHaveLength(0);
+        expect(view.getByTestId('wall-swipe-wipe').dataset.frost).toBe('false');
         expect(swipeCtrl.options.at(-1)?.enabled).toBe(true);
         expect(swipeCtrl.options.at(-1)?.onSwipe).toBe(startDrive);
         expect(startDrive).not.toHaveBeenCalled();
@@ -721,11 +784,11 @@ describe('WallControlButton', () => {
       expect(view.getByTestId('wall-swipe-wipe').dataset).toMatchObject({ frost: 'false', fill: '#B45309' });
     });
 
-    it('keeps its LED-action frost but mounts no wipe before a drag gets going', () => {
+    it('mounts no frost or wipe before a drag gets going', () => {
       const view = renderButton(putOnWall(), { onSwipe, glow: GLOW });
       measure();
       expect(view.queryByTestId('wall-swipe-wipe')).toBeNull();
-      expect(view.queryByTestId('wall-glow')).not.toBeNull();
+      expect(view.queryByTestId('wall-glow')).toBeNull();
     });
 
     it('drops the tap and the hold a pan ended in', () => {

@@ -1,0 +1,10 @@
+appId: ${APP_ID}
+name: Read signed-in identity and actual runtime provenance
+---
+- openLink: ${ACCOUNT_URL}
+- extendedWaitUntil:
+    visible:
+      id: account-user-${USER_ID}
+    timeout: 30000
+- assertVisible:
+    id: app-runtime-.+

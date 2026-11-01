@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { EMPTY_WALL_CONTROL } from '../wall-control';
 import { wallControlFrostHasLeds, wallControlUsesFrost } from '../wall-control-frost';
 
-describe('wall control frost is visual, not driving state', () => {
+describe('wall control frost requires physical driving', () => {
   it.each(['connect', 'relight', 'put_on_wall', 'relay', 'move_to_board', 'disconnect', 'stop_driving'] as const)(
-    'frosts the physical LED action %s without starting a drive',
+    'keeps the physical LED action %s plain without driving',
     (tapAction) => {
       const model = { ...EMPTY_WALL_CONTROL, state: 'lit' as const, tapAction };
-      expect(wallControlUsesFrost(model)).toBe(true);
+      expect(wallControlUsesFrost(model)).toBe(false);
       expect(model.driving).toBe(false);
     },
   );
@@ -21,12 +21,17 @@ describe('wall control frost is visual, not driving state', () => {
         state: 'put_on_wall',
         tapAction: 'put_on_wall',
         labelKey: 'setActive',
+        driving: true,
       }),
     ).toBe(false);
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'crew' })).toBe(false);
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'crew', pending: true })).toBe(false);
     expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', driving: true })).toBe(true);
-    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'connect', pending: true })).toBe(true);
+    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'connect', pending: true })).toBe(false);
+    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', writing: true })).toBe(false);
+    expect(
+      wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', driving: true, pending: true, writing: true }),
+    ).toBe(true);
   });
   it('uses the actual target board LED contract, including moves from a ledless board', () => {
     expect(wallControlFrostHasLeds({ boardType: 'kilter' })).toBe(true);

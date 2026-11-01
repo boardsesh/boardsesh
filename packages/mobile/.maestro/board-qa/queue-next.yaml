@@ -1,0 +1,13 @@
+appId: ${APP_ID}
+name: Queue the displayed pinned preview through the real climb menu
+---
+- assertNotVisible:
+    id: busy-wall-question
+- tapOn:
+    text: ${CLIMB_ACTIONS_LABEL}
+- extendedWaitUntil:
+    visible:
+      text: ${PLAY_NEXT_LABEL}
+    timeout: 10000
+- tapOn:
+    text: ${PLAY_NEXT_LABEL}

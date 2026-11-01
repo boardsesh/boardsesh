@@ -79,6 +79,7 @@ function renderLink(zoomSourceRetained = true) {
   const onPrepare = vi.fn(() => true);
   render(
     <AccessoryPlayLink
+      testID="mini-player-current-pinned-climb"
       zoomSourceRetained={zoomSourceRetained}
       accessibilityLabel="My project"
       onOpen={onOpen}
@@ -91,6 +92,13 @@ function renderLink(zoomSourceRetained = true) {
 }
 
 describe('accessory player navigation', () => {
+  it.each([true, false])('keeps the current-climb selector on the actionable host (retained=%s)', (retained) => {
+    const callbacks = renderLink(retained);
+    const action = screen.getByTestId('mini-player-current-pinned-climb');
+    expect(action).toBe(screen.getByRole('button', { name: 'My project' }));
+    fireEvent.click(action);
+    expect(retained ? callbacks.onPrepare : callbacks.onOpen).toHaveBeenCalledOnce();
+  });
   it('uses the opener for floating hosts that unmount under the player', () => {
     const callbacks = renderLink(false);
     fireEvent.click(screen.getByRole('button', { name: 'My project' }));

@@ -191,5 +191,112 @@ int main() {
     CHECK(fixture.connectionCount() == 0 && fixture_ble_host::peers.empty());
     fixture_ble_host::addresses[0] = valid;
     fixture.stop();
+
+    // Temporary QA policy starts only without existing clients. Default firmware
+    // keeps accepting concurrent centrals for the same board.
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(!fixture.startQa("", error));
+    CHECK(!fixture.startQa("bad run", error));
+    NimBLEDevice::server.connect(0, 60);
+    CHECK(!fixture.startQa("qa-run", error));
+    NimBLEDevice::server.disconnect(60);
+    CHECK(fixture.startQa("qa-run", error));
+    CHECK(!fixture.startQa("other-run", error));
+    gym_fixture::QaSnapshot snapshot;
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "qa-run" && snapshot.leaseRemainingMs == 30000 &&
+          snapshot.boards.size() == 3 && snapshot.ready);
+    for (const auto& board : snapshot.boards)
+        CHECK(board.latest.sequence == 0 && board.latest.commands.empty() && board.handles.empty());
+    CHECK(!fixture.snapshotQa("wrong-owner", snapshot, error));
+    CHECK(!fixture.endQa("wrong-owner", error));
+    CHECK(!fixture.dropQa("wrong-owner", "board-kilter", error));
+
+    // Coordinator-only saturation coverage: a takeover reuses the old slot,
+    // evicts only its own board, and invalidates the old pending update. The
+    // real radio has three connection slots and cannot admit a fourth central
+    // at saturation; the two-phone suite stays below that limit. Synchronous
+    // mock disconnects expose calls into NimBLE under the coordinator mutex.
+    NimBLEDevice::server.connect(0, 61);
+    NimBLEDevice::server.connect(1, 62);
+    NimBLEDevice::server.connect(2, 63);
+    write(61, frame('T', {201}));
+    CHECK(fixture.snapshotQa("qa-run", snapshot, error));
+    const auto oldGeneration = snapshot.boards[0].latest.connectionGeneration;
+    CHECK(oldGeneration != 0 && snapshot.boards[0].latest.connectionHandle == 61);
+    NimBLEDevice::server.connect(0, 64);
+    CHECK(fixture.connectionCount() == 3 && fixture_ble_host::peers.size() == 3 &&
+          fixture_ble_host::peers.count(61) == 0 && fixture_ble_host::peers.count(62) == 1 &&
+          fixture_ble_host::peers.count(63) == 1);
+    CHECK(!fixture.takeUpdate(update));
+    write(61, frame('T', {202}));
+    NimBLEConnInfo staleDisconnect{61};
+    NimBLEDevice::server.callbacks->onDisconnect(&NimBLEDevice::server, staleDisconnect, 0);
+    CHECK(fixture.connectionCount() == 3 && !fixture.takeUpdate(update));
+    write(64, frame('T', {203}));
+    CHECK(fixture.takeUpdate(update) && update.commands[0].position == 203 && update.connectionHandle == 64 &&
+          update.connectionGeneration > oldGeneration);
+    CHECK(fixture.snapshotQa("qa-run", snapshot, error) && snapshot.boards[0].writes == 2 &&
+          snapshot.boards[0].updates == 2 && snapshot.boards[0].latest.commands[0].position == 203 &&
+          snapshot.boards[0].handles.size() == 1 && snapshot.boards[0].handles[0] == 64);
+    write(62, frame('T', {301}));
+    CHECK(fixture.takeUpdate(update) && update.boardIndex == 1 && update.commands[0].position == 301);
+
+    // Partial packets and parsed-but-undrained updates cannot cross a dropped
+    // transport generation. Handle reuse receives a fresh decoder/generation.
+    auto partial = frame('T', {401});
+    write(64, {partial.begin(), partial.begin() + 3});
+    CHECK(!fixture.dropQa("qa-run", "missing-board", error));
+    CHECK(fixture.dropQa("qa-run", "board-kilter", error));
+    CHECK(fixture.connectionCount() == 2 && fixture_ble_host::peers.count(64) == 0);
+    write(64, {partial.begin() + 3, partial.end()});
+    CHECK(!fixture.takeUpdate(update));
+    NimBLEDevice::server.connect(0, 64);
+    write(64, {partial.begin() + 3, partial.end()});
+    CHECK(!fixture.takeUpdate(update));
+    write(64, frame('T', {402}));
+    CHECK(fixture.snapshotQa("qa-run", snapshot, error));
+    const auto reusedGeneration = snapshot.boards[0].latest.connectionGeneration;
+    CHECK(reusedGeneration > oldGeneration && snapshot.boards[0].latest.commands[0].position == 402);
+    CHECK(fixture.dropQa("qa-run", "board-kilter", error) && !fixture.takeUpdate(update));
+
+    // Read-only status and foreign heartbeats cannot prolong a dead run. Owner
+    // heartbeats renew it; expiration restores concurrent policy without drops.
+    fixtureBleTestMillis += 29000;
+    CHECK(fixture.snapshotQa("qa-run", snapshot, error) && snapshot.leaseRemainingMs == 30000);
+    fixtureBleTestMillis += 29000;
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.leaseRemainingMs == 1000);
+    CHECK(!fixture.snapshotQa("wrong-owner", snapshot, error));
+    fixtureBleTestMillis += 1000;
+    fixture.loop();
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "" && snapshot.leaseRemainingMs == 0);
+    CHECK(!fixture.endQa("qa-run", error) && !fixture.dropQa("qa-run", "board-tension", error));
+    CHECK(fixture.connectionCount() == 2);
+    NimBLEDevice::server.connect(1, 65);
+    CHECK(fixture.connectionCount() == 3 && fixture_ble_host::peers.count(62) == 1);
+    fixture.stop();
+
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(fixture.startQa("next-run", error));
+    NimBLEDevice::server.connect(0, 70);
+    CHECK(fixture.endQa("next-run", error));
+    NimBLEDevice::server.connect(0, 71);
+    CHECK(fixture.connectionCount() == 2);
+    fixture.stop();
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(fixture.startQa("reset-run", error));
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "");
+    fixture.stop();
+    CHECK(fixture.begin(JsonVariantConst(&manifest), error));
+    CHECK(fixture.startQa("pending-stop", error));
+    NimBLEDevice::server.connect(0, 80);
+    fixture_ble_host::deferDisconnects = true;
+    fixture.stop();
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "" && !snapshot.ready &&
+          fixture.connectionCount() == 1);
+    CHECK(!fixture.endQa("pending-stop", error));
+    fixture_ble_host::deferDisconnects = false;
+    NimBLEDevice::server.disconnect(80);
+    CHECK(fixture.connectionCount() == 0);
     std::printf("Fixture BLE: %u checks passed\n", checks);
 }

@@ -31,6 +31,8 @@ type SessionStartFabProps = {
   disabled?: boolean;
   loading?: boolean;
   testID?: string;
+  /** Identifier on the actionable native control, separate from its layout wrapper. */
+  actionTestID?: string;
   /** Bottom offset from the screen edge — the host computes the variant-correct value
    *  once (so the FAB and the host's list reservation can't drift) and passes it here. */
   bottomOffset: number;
@@ -68,6 +70,7 @@ export function SessionStartFab({
   disabled,
   loading,
   testID,
+  actionTestID,
   bottomOffset,
   onHeightChange,
 }: SessionStartFabProps) {
@@ -90,6 +93,7 @@ export function SessionStartFab({
       {selectByVariant(variant, {
         material: (
           <FAB
+            testID={actionTestID}
             icon={iconMap[icon].android}
             label={label}
             onPress={onPress}
@@ -100,7 +104,14 @@ export function SessionStartFab({
           />
         ),
         liquidGlass: (
-          <StartGlassCapsule label={label} icon={icon} onPress={onPress} disabled={disabled} loading={loading} />
+          <StartGlassCapsule
+            testID={actionTestID}
+            label={label}
+            icon={icon}
+            onPress={onPress}
+            disabled={disabled}
+            loading={loading}
+          />
         ),
       })}
     </View>
@@ -119,12 +130,14 @@ function StartGlassCapsule({
   onPress,
   disabled,
   loading,
+  testID,
 }: {
   label: string;
   icon: IconName;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
+  testID?: string;
 }) {
   const { brandColors, systemColors } = useTheme();
   const nativeGlass = useNativeGlass();
@@ -138,6 +151,7 @@ function StartGlassCapsule({
 
   return (
     <PressableSurface
+      testID={testID}
       onPress={handlePress}
       feedback="scale"
       scaleTo={0.96}

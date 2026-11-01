@@ -1,0 +1,6 @@
+appId: ${APP_ID}
+name: Dismiss the observed board picker without taking a connection
+---
+- assertVisible:
+    id: ble-device-${BOARD_UUID}
+- tapOn: Cancel

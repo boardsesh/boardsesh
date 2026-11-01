@@ -354,6 +354,7 @@ function JoinSessionScreen() {
 
         <View style={styles.buttonColumn}>
           <Button
+            testID="session-join-confirm"
             title={t('mobileJoin.join')}
             variant="filled"
             size="large"

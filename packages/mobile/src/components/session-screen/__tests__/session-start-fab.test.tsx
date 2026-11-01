@@ -64,10 +64,15 @@ vi.mock('../../GlassSurface', () => ({
   },
 }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: (props: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
+  PressableSurface: (props: { children?: ReactNode; onPress?: () => void; disabled?: boolean; testID?: string }) =>
     createElement(
       'button',
-      { 'data-pressable': 'true', 'data-disabled': props.disabled ? 'true' : 'false', onClick: props.onPress },
+      {
+        'data-testid': props.testID,
+        'data-pressable': 'true',
+        'data-disabled': props.disabled ? 'true' : 'false',
+        onClick: props.onPress,
+      },
       props.children,
     ),
 }));
@@ -118,6 +123,17 @@ beforeEach(() => {
 });
 
 describe('SessionStartFab', () => {
+  it.each(['liquidGlass', 'material'] as const)(
+    'identifies the %s action separately from its layout wrapper',
+    (variant) => {
+      ctrl.variant = variant;
+      const { getByTestId } = render(<SessionStartFab {...makeProps({ actionTestID: 'session-start' })} />);
+      expect(getByTestId('pre-session-footer').getAttribute('data-pointer-events')).toBe('box-none');
+      if (variant === 'material') expect(fab.props?.testID).toBe('session-start');
+      else expect(getByTestId('session-start').tagName).toBe('BUTTON');
+    },
+  );
+
   describe('glass variant', () => {
     it('renders a brand-tinted glass capsule (not a FAB) anchored to the safe-area inset, box-none', () => {
       const { getByTestId, container } = render(<SessionStartFab {...makeProps()} />);

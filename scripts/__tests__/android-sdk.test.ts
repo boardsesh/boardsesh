@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
-import { ensureAndroidSdk } from '../lib/android-sdk';
+import { cmdlineToolsDownload, ensureAndroidSdk } from '../lib/android-sdk';
 import { runCapture, runInherit } from '../lib/exec';
 
 vi.mock('../lib/exec', () => ({
@@ -35,6 +35,17 @@ afterEach(() => {
 });
 
 describe('Android SDK provisioning', () => {
+  it('uses the pinned official macOS artifact without sharing the Linux archive cache', () => {
+    expect(cmdlineToolsDownload('darwin')).toEqual({
+      url: 'https://dl.google.com/android/repository/commandlinetools-mac-16111833_latest.zip',
+      archiveName: 'cmdline-tools-mac-16111833.zip',
+    });
+    expect(cmdlineToolsDownload('linux')).toEqual({
+      url: 'https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip',
+      archiveName: 'cmdline-tools-16111833.zip',
+    });
+    expect(() => cmdlineToolsDownload('win32')).toThrow('macOS and Linux');
+  });
   it.each([
     '.github/actions/android-rn-setup/action.yml',
     '.github/actions/android-emulator-capture/action.yml',
@@ -94,10 +105,14 @@ describe('Android SDK provisioning', () => {
 
     ensureAndroidSdk({ buildOnly: true, includeBuildTools: true });
 
-    expect(runCapture).toHaveBeenCalledWith(
-      'curl',
-      expect.arrayContaining(['https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip']),
-    );
+    // A previously cached archive skips curl; extraction must still use this
+    // host's archive, regardless of what exists in the developer's shared cache.
+    expect(runCapture).toHaveBeenCalledWith('unzip', [
+      '-q',
+      expect.stringContaining(cmdlineToolsDownload().archiveName),
+      '-d',
+      expect.any(String),
+    ]);
     expect(runInherit).toHaveBeenCalledExactlyOnceWith(
       join(home, 'cmdline-tools/latest/bin/sdkmanager'),
       [`--sdk_root=${home}`, 'platforms;android-37.0', 'build-tools;37.0.0'],
