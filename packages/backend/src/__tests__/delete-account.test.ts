@@ -35,6 +35,23 @@ const { mockDb, txCalls } = vi.hoisted(() => {
 vi.mock('../db/client', () => ({
   db: mockDb,
 }));
+// The billing lease and Stripe cancellation are covered against real
+// PostgreSQL in delete-account-supporter.test.ts. Here the reservation sees an
+// account with no supporter row, and the finish runs in the mocked transaction.
+vi.mock('../services/stripe-support-operation', () => ({
+  withSupportOperation: async (
+    _userId: string,
+    _kind: string,
+    prepare: (transaction: unknown, intent: null) => Promise<unknown>,
+    perform: (prepared: unknown, operationId: string) => Promise<unknown>,
+    finish: (transaction: unknown, prepared: unknown, networkResult: unknown) => Promise<unknown>,
+  ) => {
+    const noSupporter = { select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }) };
+    const prepared = await prepare(noSupporter, null);
+    const networkResult = await perform(prepared, 'operation-1');
+    return mockDb.transaction(async (transaction: unknown) => finish(transaction, prepared, networkResult));
+  },
+}));
 // These existing tests isolate draft cleanup; the real spray/FK contract is in
 // delete-account-spray-walls.test.ts against rolled-back synthetic rows.
 vi.mock('../graphql/resolvers/users/delete-account-spray-walls', () => ({
@@ -199,17 +216,10 @@ describe('deleteAccount mutation', () => {
   it('locks and checks the favorites archive before deleting the user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // The three raw statements are transaction isolation, relation lock, and
-    // the fresh optional-archive check, in that order.
-    expect(txCalls.map((call) => call.method)).toEqual([
-      'execute',
-      'execute',
-      'execute',
-      'select',
-      'delete',
-      'update',
-      'delete',
-    ]);
+    // The two raw statements are the relation lock and the fresh
+    // optional-archive check, in that order. READ COMMITTED is set when
+    // withSupportOperation opens the transaction, not by a statement.
+    expect(txCalls.map((call) => call.method)).toEqual(['execute', 'execute', 'select', 'delete', 'update', 'delete']);
   });
 
   it('cleans up board_climb_stats/history/beta_links for a draft climb before deleting the drafts', async () => {
@@ -220,7 +230,6 @@ describe('deleteAccount mutation', () => {
     // select drafts, delete stats, delete history, delete beta links, delete drafts, delete user.
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
-      'execute',
       'execute',
       'execute',
       'select',

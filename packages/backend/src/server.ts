@@ -64,6 +64,7 @@ import {
   stopRefreshTokenCleanup,
 } from './handlers/native-auth';
 import { handleApnsStats } from './handlers/apns-stats';
+import { handleStripeWebhook } from './handlers/stripe-webhook';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -352,6 +353,13 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
     const pathname = url.pathname;
 
     try {
+      // Signature verification needs the untouched request body, so Stripe is
+      // routed before GraphQL or any JSON parser can consume it.
+      if (pathname === '/webhooks/stripe' && req.method === 'POST') {
+        await handleStripeWebhook(req, res);
+        return;
+      }
+
       // Health check endpoint
       if (pathname === '/health' && req.method === 'GET') {
         await handleHealthCheck(req, res);

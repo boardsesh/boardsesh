@@ -12,6 +12,11 @@ const climbMutationReceiptsSchema = readFileSync(
   new URL('../../../db/drizzle/0287_climb_mutation_receipts.sql', import.meta.url),
   'utf8',
 );
+// Account-linked supporters (docs/supporters.md): use the generated DDL.
+const stripeSupportersSchema = readFileSync(
+  new URL('../../../db/drizzle/0288_stripe_supporters.sql', import.meta.url),
+  'utf8',
+);
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
@@ -2216,4 +2221,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${sessionWorkoutsSchema}
   ${sharedSprayDraftsSchema}
   ${climbMutationReceiptsSchema}
+  DROP TABLE IF EXISTS stripe_support_operations, stripe_support_claims, stripe_supporters;
+  ${stripeSupportersSchema}
 `;

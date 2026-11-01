@@ -41,6 +41,7 @@ import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
+import { supportTypeDefs } from './support';
 
 export const typeDefs = [
   adminBoardsTypeDefs,
@@ -88,4 +89,5 @@ export const typeDefs = [
   boardPresenceTypeDefs,
   userDataExportTypeDefs,
   analyticsConsentTypeDefs,
+  supportTypeDefs,
 ];

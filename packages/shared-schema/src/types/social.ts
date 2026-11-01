@@ -10,6 +10,8 @@ export type PublicUserProfile = {
   followerCount: number;
   followingCount: number;
   isFollowedByMe: boolean;
+  /** Resolved only by publicProfile (docs/supporters.md). */
+  isSupporter?: boolean | null;
 };
 
 export type FollowConnection = {
