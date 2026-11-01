@@ -1805,6 +1805,7 @@ export function BluetoothProvider({
         pickerState.devices,
         resolvedPickerBoards,
         currentBoardConfig,
+        pickerState.targetBoard,
       );
       return;
     }

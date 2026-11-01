@@ -45,16 +45,27 @@ and configuration control the hop. Reconnect waits for that UUID, board type,
 layout, size and normalized hold sets to reach the provider, including a change
 that affects only the UUID or hold sets. The one-shot still expires and fires once.
 
-Connecting to a known board initially lists only controllers resolving to that
-exact board UUID. Each controller's advertised board type must agree too, since
-Kilter and Tension serial numbers can overlap. The broad scan continues to feed
-serial resolution; a delayed lookup can add a matching row but never selects it.
-"Search for any board" reveals the full scan, including unresolved controllers,
-and keeps that choice through sheet-host changes for this connect. A new connect
-starts with its own target again. Saved-device reconnects keep their existing
-search and auto-selection; using their search escape also reveals the full list.
-No matching target is distinct from an empty scan, so other boards being hidden
-does not trigger location-permission or no-lights advice.
+Connecting to a known board sorts each controller into one of three groups
+(`classifyPickerDevice`). **Target**: its serial resolves to that exact board
+UUID. **Other**: its serial resolves to a different board, or its advertised
+board type is not the target's, since Kilter and Tension serial numbers can
+overlap. **Unknown**: nothing says either way, which covers every stock
+MoonBoard and every bare-name Kilter or Tension box (they advertise no serial),
+a serial nobody has recorded, and a recording that names no board. The picker
+lists target rows first, then unknown rows, strongest signal first within each,
+and hides only other rows. #7125 first shipped hiding unknown rows too. In the
+30 days to 2026-10-31 nothing resolved in 2,521 of 2,522 MoonBoard pickers and
+1,265 of 2,512 Android Kilter pickers, so a gym connect there listed nothing but
+"Your selected board was not found". The broad scan keeps feeding serial
+resolution; a delayed lookup can move a row between groups but never selects it.
+"Search for any board" reveals the full scan and keeps that choice through
+sheet-host changes for this connect. A new connect starts with its own target
+again. Saved-device reconnects keep their existing search and auto-selection;
+using their search escape also reveals the full list. "Your selected board was
+not found" shows only when every controller heard is another board. That is
+distinct from an empty scan, so it does not trigger location-permission or
+no-lights advice. `BLE Picker Devices Resolved` counts the three groups as
+`targetMatchedDevices`, `targetUnknownDevices` and `targetOtherDevices`.
 
 The simulator comparison uses the same resolved QA gym fixtures with a stronger
 Tension signal. The [expanded list](../images/7125-picker-all.png) follows an
