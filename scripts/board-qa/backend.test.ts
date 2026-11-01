@@ -17,6 +17,10 @@ import {
 import { EXAMPLE_CONFIG, type Board, type QaConfig } from './config';
 import { Evidence, QaFailure } from './evidence';
 
+vi.mock('node:timers/promises', () => ({
+  setTimeout: (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}));
+
 const socketState = vi.hoisted(() => ({
   sent: [] as Record<string, unknown>[],
   listeners: new Map<string, Array<(...args: unknown[]) => void>>(),
@@ -575,6 +579,84 @@ describe('production observer contracts without network access', () => {
     await expect(backend.catalog()).rejects.toThrow('missing');
   });
 
+  it('blocks accounts without a real display name before roster assertions', async () => {
+    for (const displayName of [undefined, '', '   ']) {
+      const backend = new Backend(EXAMPLE_CONFIG, evidence());
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(new Response(JSON.stringify({ jwt: 'token', refreshToken: 'refresh' })))
+          .mockResolvedValueOnce(new Response(JSON.stringify({ data: { profile: { id: 'user', displayName } } }))),
+      );
+      await expect(backend.signIn('qa@example.com', 'password')).rejects.toMatchObject({
+        kind: 'blocked',
+        message: expect.stringContaining('display name'),
+      });
+      expect(backend.profiles.size).toBe(0);
+      backend.close();
+      expect(fetch).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('retains rate-limit details and blocks instead of reporting a product or schema failure', async () => {
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    const errors = [
+      {
+        message: 'Too many requests',
+        extensions: {
+          code: 'RATE_LIMITED',
+          operation: 'boardConnection',
+          retryAfterSeconds: 17,
+        },
+      },
+    ];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ errors }))));
+    await expect(backend.query(QA_QUERIES.profile)).rejects.toMatchObject({
+      kind: 'blocked',
+      message: expect.stringContaining('"retryAfterSeconds":17'),
+    });
+    await backend.observe([board]);
+    socketMessage({ type: 'error', payload: errors });
+    await expect(backend.snapshot(board)).rejects.toMatchObject({
+      kind: 'blocked',
+      message: expect.stringContaining('boardConnection'),
+    });
+    backend.close();
+  });
+
+  it('spaces concurrent cross-board presence reads and fetches fresh evidence each time', async () => {
+    vi.useFakeTimers();
+    const backend = new Backend(EXAMPLE_CONFIG, evidence());
+    const requests: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        requests.push(performance.now());
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...wall,
+              holder: { userId: `holder-${requests.length}` },
+            },
+          }),
+        );
+      }),
+    );
+    const reads = Promise.all([
+      backend.snapshot(board),
+      backend.snapshot({ ...board, boardId: 2 }),
+      backend.snapshot(board),
+    ]);
+    await vi.advanceTimersByTimeAsync(4_000);
+    const snapshots = await reads;
+    expect(requests).toHaveLength(3);
+    expect(requests[1] - requests[0]).toBeGreaterThanOrEqual(2_000);
+    expect(requests[2] - requests[1]).toBeGreaterThanOrEqual(2_000);
+    expect(snapshots.map((snapshot) => snapshot.holder?.userId)).toEqual(['holder-1', 'holder-2', 'holder-3']);
+    backend.close();
+  });
+
   it('validates every observer document against the repository schema', () => {
     const schema = buildSchema(typeDefs.join('\n'));
     for (const query of [...Object.values(QA_QUERIES), QA_SUBSCRIPTION])
@@ -603,7 +685,7 @@ describe('production observer contracts without network access', () => {
     expect(() => parseSnapshot({ ...wall, recent: null })).toThrow();
     expect(() => parseSnapshot({ ...wall, durable: {} })).toThrow();
   });
-  it('authenticates the observer using the backend authToken contract and redacts secrets', async () => {
+  it('authenticates HTTP reads but keeps the socket anonymous and redacts both tokens', async () => {
     const report = evidence();
     const requests: Array<{ url: string; body: Record<string, unknown>; authorization: string | undefined }> = [];
     vi.stubGlobal(
@@ -619,8 +701,8 @@ describe('production observer contracts without network access', () => {
         return new Response(
           JSON.stringify(
             String(url).endsWith('/auth/native/credentials')
-              ? { jwt: 'private-test-token' }
-              : { data: { profile: { id: 'user-id' } } },
+              ? { jwt: 'private-test-token', refreshToken: 'private-refresh-token' }
+              : { data: { profile: { id: 'user-id', displayName: 'QA Climber' } } },
           ),
           { status: 200 },
         );
@@ -636,17 +718,20 @@ describe('production observer contracts without network access', () => {
     expect(requests[1].authorization).toBe('Bearer private-test-token');
     expect(socketState.sent[0]).toMatchObject({
       type: 'connection_init',
-      payload: { authToken: 'private-test-token' },
+      payload: { clientIdentity: 'boardsesh-local-qa-observer' },
     });
     expect(socketState.sent[1]).toMatchObject({
       id: board.uuid,
       type: 'subscribe',
       payload: { query: QA_SUBSCRIPTION, variables: { boardId: board.boardId, boardUuid: board.uuid } },
     });
+    expect(socketState.sent[0].payload).not.toHaveProperty('authToken');
+    report.event('refresh-secret', { refreshToken: 'private-refresh-token' });
     report.event('secret-redaction-check', { token: 'private-test-token', password: 'private-test-password' });
     const saved = readFileSync(join(report.directory, 'events.jsonl'), 'utf8');
     expect(saved).not.toContain('private-test-token');
     expect(saved).not.toContain('private-test-password');
+    expect(saved).not.toContain('private-refresh-token');
     backend.close();
   });
 });

@@ -8,7 +8,7 @@ import { selectorPredicate, swipeActions, percentagePoint } from '../lib/mobile-
 import { record, string, type Phone, type QaConfig, type Role } from './config';
 import { Evidence, QaFailure, requireRunning, runFailure, runAbortSignal } from './evidence';
 
-class CommandExitFailure extends QaFailure {}
+export class CommandExitFailure extends QaFailure {}
 const ownedCommands = new Set<{ stop: () => void; stopped: Promise<void> }>();
 
 /** Cancel only subprocess groups created by this runner, with a bounded escalation. */
@@ -24,6 +24,7 @@ export async function command(
   timeoutMs = 30_000,
   env = process.env,
   diagnostic = false,
+  acceptedExitCodes: readonly number[] = [0],
 ): Promise<string> {
   if (!diagnostic) requireRunning();
   return await new Promise((resolveResult, reject) => {
@@ -50,6 +51,7 @@ export async function command(
       signal('SIGTERM');
       killTimer = setTimeout(() => {
         signal('SIGKILL');
+        clearTimeout(timer);
         ownedCommands.delete(owned);
         stopped();
         reject((!diagnostic && runFailure()) || new QaFailure(`${executable} ${reason}`, 'infrastructure'));
@@ -78,10 +80,21 @@ export async function command(
       clearTimers();
       if (!diagnostic && runFailure()) reject(runFailure());
       else if (stopping) reject(new QaFailure(`${executable} ${stopping}`, 'infrastructure'));
-      else if (code === 0) resolveResult(output);
+      else if (code !== null && acceptedExitCodes.includes(code)) resolveResult(output);
       else reject(new CommandExitFailure(`${executable} exited ${code}: ${output.slice(-2000)}`, 'infrastructure'));
     });
   });
+}
+export function phoneLabels(phone: Phone): Record<string, string> {
+  return {
+    HOME_LABEL: 'Home',
+    CLIMBS_LABEL: 'Climbs',
+    TAB_BAR_LABEL: 'Tab Bar',
+    CANCEL_LABEL: 'Cancel',
+    CLOSE_LABEL: 'Close',
+    SESSION_SUMMARY_LABEL: 'Session Summary',
+    ...phone.labels,
+  };
 }
 export function expand(candidate: unknown, variables: Record<string, string>): unknown {
   if (typeof candidate === 'string')
@@ -347,7 +360,12 @@ export class AndroidDriver implements Driver {
     const filename = flowFilename(name);
     // Expanded flow is owner-only, never carries credentials in process arguments.
     // Delete it even when Maestro dies. Console output is redacted before retention.
-    const expanded = readFlow(filename, { APP_ID: this.phone.appId, APP_SCHEME: this.phone.scheme, ...variables });
+    const expanded = readFlow(filename, {
+      APP_ID: this.phone.appId,
+      APP_SCHEME: this.phone.scheme,
+      ...phoneLabels(this.phone),
+      ...variables,
+    });
     assertRecordedAndroidFlow(expanded);
     if (diagnostic && expanded.some((step) => Object.keys(step).length !== 1 || !('takeScreenshot' in step)))
       throw new Error('Only screenshot capture may run as a diagnostic flow');
@@ -371,6 +389,8 @@ export class AndroidDriver implements Driver {
             '-p',
             androidShellArgument(this.phone.appId),
           ]);
+          if (/\bError:|unable to resolve Intent/i.test(logs))
+            throw new QaFailure('Android deep link did not open the configured app', 'infrastructure');
           this.evidence.event('android-open-link', { name, packageId: this.phone.appId, logs });
           continue;
         }
@@ -397,20 +417,30 @@ export class AndroidDriver implements Driver {
       }
     } catch (error) {
       if (!diagnostic) requireRunning();
-      const kind = error instanceof CommandExitFailure ? 'failed' : 'infrastructure';
+      const kind =
+        error instanceof CommandExitFailure &&
+        /Assertion (?:is false|failed)|assert(?:Visible|NotVisible).*failed/i.test(error.message) &&
+        !/\b(?:io\.)?grpc[.:]|\bStatus(?:Runtime)?Exception:\s*(?:UNAVAILABLE|DEADLINE_EXCEEDED)\b|\b(?:status|code)\s*[=:]\s*UNAVAILABLE\b|driver.*timeout|timed out/i.test(
+          error.message,
+        )
+          ? 'failed'
+          : 'infrastructure';
       throw new QaFailure(this.evidence.redact(error instanceof Error ? error.message : String(error)), kind);
     } finally {
       rmSync(privateDirectory, { recursive: true, force: true });
     }
   }
   async hierarchy(): Promise<string> {
-    return await this.runCommand(
+    const hierarchy = await this.runCommand(
       this.adb,
       ['-s', this.phone.id, 'exec-out', 'uiautomator', 'dump', '/dev/tty'],
       30_000,
       process.env,
       true,
     );
+    if (!/<hierarchy\b/.test(hierarchy) || !hierarchy.includes('</hierarchy>'))
+      throw new QaFailure('Android returned an invalid accessibility hierarchy', 'infrastructure');
+    return hierarchy;
   }
   async background(): Promise<void> {
     requireRunning();
@@ -645,7 +675,7 @@ export class IosDriver implements Driver {
   }
   private async freshElements(selector: unknown, deadline: number): Promise<string[]> {
     let stale: WdaRequestFailure | undefined;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; Date.now() < deadline; attempt++) {
       requireRunning();
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) break;
@@ -659,7 +689,7 @@ export class IosDriver implements Driver {
         // find result. Only repeat this read; never replay an interaction.
         if (!(error instanceof WdaRequestFailure) || error.webdriverError !== 'stale element reference') throw error;
         stale = error;
-        if (attempt === 3 || Date.now() >= deadline) break;
+        if (Date.now() >= deadline) break;
         this.evidence.event('ios-query-retry', {
           ...this.requestContext,
           reason: 'stale element reference',
@@ -678,16 +708,18 @@ export class IosDriver implements Driver {
     label: string,
   ): Promise<string[]> {
     const deadline = Date.now() + timeoutMs;
+    let answered = false;
     do {
       requireRunning();
       if (Date.now() >= deadline) break;
       let elements: string[];
       try {
         elements = await this.freshElements(selector, deadline);
+        answered = true;
       } catch (error) {
         // The final read can be shorter than the native query's normal cost.
-        // Expiring the original assertion budget is an assertion failure;
-        // a capped query timeout with budget left is still infrastructure.
+        // Expiry is an assertion failure only after an answered query;
+        // a transport that never answers remains infrastructure.
         if (error instanceof WdaRequestFailure && error.failureKind === 'timeout' && Date.now() >= deadline) break;
         throw error;
       }
@@ -698,7 +730,7 @@ export class IosDriver implements Driver {
       if (remainingMs <= 0) break;
       await new Promise((resume) => setTimeout(resume, Math.min(250, remainingMs)));
     } while (Date.now() < deadline);
-    throw new QaFailure(`Deadline exceeded: ${label}`);
+    throw new QaFailure(`Deadline exceeded: ${label}`, answered ? 'failed' : 'infrastructure');
   }
   private async element(selector: unknown): Promise<string> {
     const fields = typeof selector === 'string' ? {} : record(selector);
@@ -713,7 +745,12 @@ export class IosDriver implements Driver {
   async flow(name: string, variables: Record<string, string> = {}): Promise<void> {
     requireRunning();
     const filename = flowFilename(name);
-    const commands = readFlow(filename, { APP_ID: this.phone.appId, APP_SCHEME: this.phone.scheme, ...variables });
+    const commands = readFlow(filename, {
+      APP_ID: this.phone.appId,
+      APP_SCHEME: this.phone.scheme,
+      ...phoneLabels(this.phone),
+      ...variables,
+    });
     assertIosFlow(commands);
     try {
       await this.execute(commands, basename(filename));
@@ -845,6 +882,7 @@ export class IosDriver implements Driver {
   async restart(): Promise<void> {
     await this.request(this.path('/wda/apps/terminate'), 'POST', { bundleId: this.phone.appId });
     await this.foreground();
+    await this.flow('wait-ios-app-ready');
   }
   async screenshot(name: string): Promise<void> {
     const safeName = name.replace(/[^a-zA-Z0-9_.-]/g, '_');

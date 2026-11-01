@@ -8,8 +8,8 @@ import type { WallGlowInput } from './use-wall-glow';
 import { WallControlButton, type WallSwipePreview } from './WallControlButton';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from './wall-control';
 
-// Swipe left to drive (#7113): the wall button's hints (‹‹ chevrons, the frost
-// peek), the frost wiping in mid-drag, the driving look it lands on, and a
+// Swipe left to drive (#7113): the wall button's hints (‹‹ chevrons, the flat
+// peek), flat progress mid-drag, the driving frost it lands on, and a
 // crewmate's view of it. Pure inputs, like the wall button stories in
 // CrewBrowse.stories. `try-it` is live: swipe it left to drive, tap to stop.
 
@@ -18,7 +18,7 @@ const offered = (): DriveStartOutcome => 'unavailable';
 
 /**
  * A climb's lit holds in Kilter's role colours. The board's top lands at the
- * button's trailing edge, so the top holds mix colours for the peek.
+ * button's trailing edge, so the top holds mix colours while driving.
  */
 const GLOW: WallGlowInput = {
   key: 'drive-mode-story',
@@ -35,7 +35,7 @@ const GLOW: WallGlowInput = {
   boardWidth: 100,
   boardHeight: 150,
 };
-/** A climb with no holds to frost: the wipe is the flat live amber. */
+/** Driving without hold geometry falls back to flat live amber. */
 const NO_HOLDS: WallGlowInput = { ...GLOW, key: 'drive-mode-story-empty', holds: [] };
 
 /** The model the player would build for one state, with the crewmate named. */
@@ -93,9 +93,8 @@ const HINTS: readonly Variant[] = [
   { label: 'A on Disconnect board (you hold it, not driving)', model: DISCONNECT, preview: {} },
 ];
 
-// Physical LED controls frost even while swipes still browse. The no-lights
-// control supplies no glow, matching PlayCore's board LED eligibility gate.
-const FROST_ACTIONS: readonly Variant[] = [
+// Browsing and relay controls stay plain. The no-lights control supplies no glow.
+const BROWSING_ACTIONS: readonly Variant[] = [
   { label: 'Connect board, not driving', model: CONNECT, swipe: false },
   { label: 'Disconnect board, you hold it without driving', model: DISCONNECT, swipe: false },
   { label: 'Re-light board, connected but dark', model: storyModel('dark', 'self'), swipe: false },
@@ -109,18 +108,17 @@ const FROST_ACTIONS: readonly Variant[] = [
 ];
 
 const DRAG: readonly Variant[] = [
-  { label: 'Dragged 30%: the frost wipes in', model: PUT_ON_WALL, preview: { progress: 0.3 } },
+  { label: 'Dragged 30%: flat amber progress', model: PUT_ON_WALL, preview: { progress: 0.3 } },
   { label: 'Dragged 70%: let go lights every climb', model: PUT_ON_WALL, preview: { progress: 0.7 } },
-  {
-    label: 'No holds to frost, dragged 70%: the live amber',
-    model: PUT_ON_WALL,
-    preview: { progress: 0.7 },
-    glow: NO_HOLDS,
-  },
 ];
 
 const DRIVING: readonly Variant[] = [
   { label: 'You are driving: every climb lights', model: storyModel('lit', 'self', { driveMode: 'live' }) },
+  {
+    label: 'Driving without hold geometry: flat amber',
+    model: storyModel('lit', 'self', { driveMode: 'live' }),
+    glow: NO_HOLDS,
+  },
   { label: "Your crewmate's view while Liz drives", model: storyModel('crew', 'crew', { crewName: 'Liz' }) },
 ];
 
@@ -186,15 +184,15 @@ const stories: StoryModule = {
   title: 'Play drawer / Swipe to drive',
   stories: {
     frostActions: {
-      name: 'Physical LED actions, plus the unchanged no-lights control',
-      render: () => <VariantStack variants={FROST_ACTIONS} />,
+      name: 'Plain browsing, relay and no-lights controls',
+      render: () => <VariantStack variants={BROWSING_ACTIONS} />,
     },
     hints: {
-      name: 'Swipe hints: chevrons (A) and the frost peek (B)',
+      name: 'Swipe hints: chevrons (A) and the flat peek (B)',
       render: () => <VariantStack variants={HINTS} />,
     },
     drag: {
-      name: 'Mid-swipe: the frost wipes in from the trailing edge',
+      name: 'Mid-swipe: flat progress from the trailing edge',
       render: () => <VariantStack variants={DRAG} />,
     },
     driving: {

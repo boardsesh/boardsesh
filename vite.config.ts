@@ -231,6 +231,10 @@ export default defineConfig({
         command: 'tsx scripts/board-qa-simulator-peer.ts',
         cache: false,
       },
+      'qa:boards:test-usb': {
+        command: 'uv run --script scripts/board-qa/usb-serial.test.py',
+        cache: false,
+      },
       // --- Database ---
       'db:up': {
         command: 'bash scripts/dev-db-up.sh',

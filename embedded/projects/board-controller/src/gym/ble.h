@@ -278,6 +278,22 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         return true;
     }
 
+    // Renew without copying board payloads. Empty run IDs are read-only probes.
+    bool renewQa(const String& runId, String& error) {
+        if (!_mutex)
+            return fail(error, "Fixture is not ready");
+        Lock lock(_mutex);
+        expireQaLocked();
+        if (runId.length() != 0 && !ownsQaLocked(runId))
+            return fail(error, "QA run does not own the fixture");
+        if (runId.length() != 0)
+            _qaHeartbeatAt = millis();
+        error = "";
+        return true;
+    }
+
+    // BLE callbacks can wait for bounded vector/string copies under this lock.
+    // Sorting, JSON allocation and USB output happen after releasing it.
     bool snapshotQa(const String& runId, QaSnapshot& snapshot, String& error) {
         if (!_mutex)
             return fail(error, "Fixture is not ready");
@@ -351,8 +367,8 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
     void appendStatus(JsonArray boards) const {
         if (!_mutex)
             return;
-        // Serialize bounded snapshots outside the lock. BLE callbacks never
-        // wait on JSON allocation, network I/O or display work.
+        // Copy bounded snapshots under the lock (including String allocations).
+        // BLE callbacks may wait for copies, but not JSON serialization or I/O.
         std::array<Board, MAX_BOARDS> snapshot;
         std::array<unsigned, MAX_BOARDS> connections{}, writes{}, completed{}, rejected{};
         size_t boardCount;

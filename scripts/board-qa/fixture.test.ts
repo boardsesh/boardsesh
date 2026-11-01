@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { Evidence } from './evidence';
+import { Evidence, QaFailure } from './evidence';
+import * as evidenceModule from './evidence';
 import { Fixture, parseStatus, type FixtureRequest, type FixtureStatus, type FixtureTransport } from './fixture';
 
 const BOARD_UUID = 'cd558849-aaf1-4e24-bce5-4a6b22129d49';
@@ -271,5 +272,43 @@ describe('single-owner USB request coordination', () => {
     transport.autoReply = true;
     await fixture.close();
     expect(transport.writes.at(-1)?.action).toBe('end');
+  });
+});
+
+describe('fixture abort safety', () => {
+  it('blocks queued and new mutations but permits observation and owned cleanup', async () => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    await fixture.start();
+    transport.autoReply = false;
+    const pending = fixture.request('status');
+    await Promise.resolve();
+    const queued = fixture.request('drop', BOARD_UUID);
+    const cause = new QaFailure('observer stopped', 'infrastructure');
+    const guard = vi.spyOn(evidenceModule, 'requireRunning').mockImplementation(() => {
+      throw cause;
+    });
+    try {
+      await expect(fixture.request('start')).rejects.toBe(cause);
+      transport.respond();
+      await pending;
+      await expect(queued).rejects.toBe(cause);
+      expect(transport.writes.map((entry) => entry.action)).toEqual(['start', 'status']);
+      transport.autoReply = true;
+      await fixture.request('status', undefined, true);
+      await fixture.close();
+      expect(transport.writes.at(-1)?.action).toBe('end');
+    } finally {
+      guard.mockRestore();
+    }
+  });
+  it('preserves the first transport failure during cleanup noise', async () => {
+    const { fixture, transport } = harness();
+    await fixture.open();
+    const cause = new QaFailure('receiver stopped', 'infrastructure');
+    transport.failed(cause);
+    transport.failed(new Error('EPIPE'));
+    await expect(fixture.request('status')).rejects.toBe(cause);
+    await fixture.close();
   });
 });

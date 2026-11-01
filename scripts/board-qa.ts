@@ -77,8 +77,8 @@ export async function main(argv: string[]): Promise<number> {
   };
   try {
     release = lease([config.serialPort, config.phones.ios.id, config.phones.android.id]);
-    process.once('SIGINT', interrupted);
-    process.once('SIGTERM', interrupted);
+    process.on('SIGINT', interrupted);
+    process.on('SIGTERM', interrupted);
     evidence.save('run.json', {
       schemaVersion: 1,
       runId,

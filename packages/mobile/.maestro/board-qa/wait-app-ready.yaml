@@ -5,5 +5,5 @@ name: Wait for the normal app navigation after a native launch
     visible:
       id: (home-screen|climbs-screen)
     timeout: 30000
-- assertVisible: Home
-- assertVisible: Climbs
+- assertVisible: ${HOME_LABEL}
+- assertVisible: ${CLIMBS_LABEL}

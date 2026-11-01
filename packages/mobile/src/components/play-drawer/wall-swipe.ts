@@ -28,7 +28,7 @@ export const PEEK_HOLD_MS = 150;
 export const PEEK_FADE_MS = 200;
 export const PEEK_FADE_HOLD_MS = 300;
 
-/** How far a drag has wiped the frost in: 0 to 1 of the width, leftward only. */
+/** How far a drag has wiped flat progress in: 0 to 1 of the width, leftward only. */
 export function wallSwipeProgress(translationX: number, width: number): number {
   'worklet';
   if (width <= 0) return 0;

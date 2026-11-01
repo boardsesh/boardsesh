@@ -210,11 +210,10 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   state starts a 28 pt trailing-edge peek and spring-back (about 700 ms; a fade in place under Reduce Motion).
   The peek uses the same flat amber progress, with no bokeh before driving. At most 3 sessions, never again once a swipe has driven the wall, never in screenshot mode
   (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`). A session counts towards the three once the peek runs.
-- **Driving frost and flat swipe progress.** PlayCore can prepare memoised hold geometry while a swipe is offered
-  or a drive is arming. The button renders `WallGlow` only for confirmed physical driving; preparing the input
-  never shows bokeh by itself. Non-driving drags and peeks use the temporary flat `live` amber `WallSwipeWipe`,
+- **Driving frost and flat swipe progress.** PlayCore prepares hold geometry only for confirmed physical driving,
+  when the button renders `WallGlow`. Non-driving drags and peeks use the temporary flat `live` amber `WallSwipeWipe`,
   which unmounts when the gesture settles or driving is confirmed. Stopping or browsing removes driving frost
-  immediately, including in the compact workout button, even if swipe progress or prepared geometry remains.
+  immediately, including in the compact workout button, even if swipe progress remains.
 - **Without the swipe.** Screen readers get the named action "Light every climb" beside "Board options" (the rotor,
   or TalkBack's actions menu). The spoken hint stays the tap's: under VoiceOver and TalkBack a swipe moves focus. The board sheet's first row is **Light every climb** wherever the
   swipe is offered: the visible way in for the bulb view and for Put on board with no link, where a hold opens no

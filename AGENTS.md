@@ -180,6 +180,8 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 
 ## Documentation
 
+- `docs/local-board-qa.md` — local-only connected-phone/ESP32 board driving, presence/history and shared-session QA, setup, recovery and evidence limits.
+
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture

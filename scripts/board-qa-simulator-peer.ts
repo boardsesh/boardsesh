@@ -211,8 +211,8 @@ export async function main(argv: string[]): Promise<number> {
   };
   try {
     release = lease([config.serialPort, ...Object.values(phones).map((phone) => phone.phone.id)]);
-    process.once('SIGINT', interrupted);
-    process.once('SIGTERM', interrupted);
+    process.on('SIGINT', interrupted);
+    process.on('SIGTERM', interrupted);
     evidence.save('run.json', {
       schemaVersion: 1,
       runId,
@@ -257,7 +257,14 @@ export async function main(argv: string[]): Promise<number> {
         let androidMetadata: string | undefined;
         if (metro) {
           // Read privately, parse allowlisted fields, and never retain the process command/environment.
-          const listeners = await command('lsof', ['-nP', '-t', `-iTCP:${metro.port || '80'}`, '-sTCP:LISTEN']);
+          const listeners = await command(
+            'lsof',
+            ['-nP', '-t', `-iTCP:${metro.port || '80'}`, '-sTCP:LISTEN'],
+            30_000,
+            process.env,
+            false,
+            [0, 1],
+          );
           if (!listeners.trim().split(/\s+/).includes(String(metroPid)))
             throw new QaFailure('Selected PID does not own the peer Metro listener', 'blocked');
           requireNormalMetro(await command('ps', ['eww', '-p', String(metroPid), '-o', 'command=']));
@@ -275,14 +282,14 @@ export async function main(argv: string[]): Promise<number> {
             fakeBluetooth: false,
           });
           await command('maestro', ['--version']);
-          const androidApp = await command(config.adb, [
-            '-s',
-            config.phones.android.id,
-            'shell',
-            'pm',
-            'path',
-            config.phones.android.appId,
-          ]);
+          const androidApp = await command(
+            config.adb,
+            ['-s', config.phones.android.id, 'shell', 'pm', 'path', config.phones.android.appId],
+            30_000,
+            process.env,
+            false,
+            [0, 1],
+          );
           if (!androidApp.includes('package:')) throw new QaFailure('Normal emulator app is not installed', 'blocked');
           androidMetadata = await command(config.adb, [
             '-s',
