@@ -162,12 +162,13 @@ export default function RegisterScreen() {
           return;
         }
 
-        trackLoginSucceeded({
-          ...loginProviderProperties('credentials'),
-          flow: authFlow,
-          is_registration: true,
-          screen: 'register',
-        });
+        if (Platform.OS === 'web')
+          trackLoginSucceeded({
+            ...loginProviderProperties('credentials'),
+            flow: authFlow,
+            is_registration: true,
+            screen: 'register',
+          });
         if (useLegacyWebSignup)
           captureWhenReady(() =>
             track(

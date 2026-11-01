@@ -22,6 +22,11 @@ import { getFlagsInstallDistinctId } from './anonymous-install-id';
 import { applySessionReplayConsent } from './session-replay-consent';
 import { applyNativeReplayPrivacy } from './replay-privacy';
 import { isDevBuild } from './is-dev-build';
+import {
+  hasAuthAnalyticsHandoff,
+  retainAuthAnalyticsIdentity,
+  subscribeAuthAnalyticsHandoff,
+} from './auth-analytics-handoff';
 import { reregisterOtaSuperProperties } from './analytics-ota-context';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import {
@@ -323,7 +328,7 @@ export async function initializePosthogClient(): Promise<void> {
   if (initAttempted) return;
   initAttempted = true;
   const granted = isConsentAuthorityGranted();
-  const retainedGrant = isAnalyticsGranted(getConsentSnapshot().record);
+  const retainedGrant = isAnalyticsGranted(getConsentSnapshot().record) || hasAuthAnalyticsHandoff();
   const remembered = new Map<string, string>();
   if (retainedGrant && !granted) {
     // Retain a previously consented identity locally during auth resolution.
@@ -337,7 +342,8 @@ export async function initializePosthogClient(): Promise<void> {
   persistence = createConsentPosthogStorage(posthogStorageBackend, granted, remembered);
   if (!retainedGrant) await persistence.setGranted(false);
   await applyNativeReplayPrivacy(granted, apiKey);
-  if (!isAnalyticsGranted(getConsentSnapshot().record)) await persistence.setGranted(false);
+  if (!isAnalyticsGranted(getConsentSnapshot().record) && !hasAuthAnalyticsHandoff())
+    await persistence.setGranted(false);
   client = new ConsentPostHog(apiKey, { ...buildPostHogOptions(host), customStorage: persistence.storage });
   await client.ready();
   await applyPosthogConsent();
@@ -361,7 +367,9 @@ export async function applyPosthogConsent(): Promise<void> {
   const granted = isConsentAuthorityGranted();
   const epoch = getConsentSnapshot().authEpoch;
   const nativePrivacy = apiKey ? applyNativeReplayPrivacy(granted, apiKey) : Promise.resolve();
-  const retainsGrant = isAnalyticsGranted(getConsentSnapshot().record);
+  const retainsGrant =
+    isAnalyticsGranted(getConsentSnapshot().record) ||
+    (client !== null && retainAuthAnalyticsIdentity(client.getDistinctId(), client.getAnonymousId()));
   if (client && !granted) updateConsentState({ sdkReady: false });
   if (!granted && retainsGrant) {
     // Auth and account synchronization suspend capture; they are not a withdrawal.
@@ -412,3 +420,8 @@ export async function applyPosthogConsent(): Promise<void> {
   }
   await storageUpdate;
 }
+
+// Expiry/credential cancellation can happen without another consent decision.
+subscribeAuthAnalyticsHandoff(() => {
+  if (!isConsentAuthorityGranted()) void applyPosthogConsent().catch(() => {});
+});

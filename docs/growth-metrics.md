@@ -798,60 +798,68 @@ Withdrawal cancels outstanding work and clears campaign data, retaining only
 the ownership/deduplication marker. A late result can enrich an already-sent
 signup through person properties; it never sends that signup again.
 
-Use `attributed` people for a campaign conversion report. This HogQL example
-counts unique consenting production iOS people observed during the selected
-window, their verified signups in that window, and board activation within
-seven days of their first observed screen in that window. Replace both window
-bounds together. Include only the new binary's builds when comparing release
-cohorts; this query does not claim that its first observed screen is a new
-store install, nor that returning accounts are new users.
+The live [Apple Ads to Active Climbers dashboard](https://us.posthog.com/project/412845/dashboard/2192729)
+now has versioned definitions in `scripts/posthog/apple-ads-dashboard.ts` and
+`apple-ads-queries.ts`. Export them with
+`vp exec node --import tsx scripts/posthog/export-apple-ads-dashboard.ts`.
+The separate Apple Ads sections replace the old claim that campaign reporting
+is unavailable; the original all-source iOS charts remain a labelled baseline.
 
-```sql
-WITH campaign_people AS (
-  SELECT
-    person_id,
-    toString(person.properties.apple_ads_campaign_id) AS campaign_id,
-    minOrNullIf(timestamp, event = '$screen'
-      AND timestamp < '2026-11-01') AS first_open,
-    minOrNullIf(timestamp, event = 'Signup Completed'
-      AND timestamp < '2026-11-01') AS signup_at
-  FROM events
-  WHERE timestamp >= '2026-10-01' AND timestamp < '2026-11-08'
-    AND properties.$lib = 'posthog-react-native'
-    AND properties.environment = 'production'
-    AND properties.$os = 'iOS'
-    AND person.properties.attribution_provider = 'apple_ads'
-    AND person.properties.apple_ads_attribution_status = 'attributed'
-    AND person_id NOT IN COHORT 295337
-  GROUP BY person_id, campaign_id
-)
-SELECT
-  campaign_people.campaign_id,
-  uniqExactIf(campaign_people.person_id, first_open IS NOT NULL) AS observed_first_opens,
-  uniqExactIf(campaign_people.person_id, signup_at IS NOT NULL) AS verified_signups,
-  uniqExactIf(campaign_people.person_id,
-    activity.event = 'Climb Sent to Board Success'
-    AND activity.timestamp >= first_open
-    AND activity.timestamp < first_open + INTERVAL 7 DAY) AS board_active_in_7_days
-FROM campaign_people
-LEFT JOIN events AS activity ON activity.person_id = campaign_people.person_id
-WHERE activity.timestamp >= '2026-10-01' AND activity.timestamp < '2026-11-08'
-  AND activity.properties.$lib = 'posthog-react-native'
-  AND activity.properties.environment = 'production'
-  AND activity.properties.$os = 'iOS'
-GROUP BY campaign_people.campaign_id
-```
+The dashboard keeps three populations separate:
 
-For ad-group or keyword cuts, use the corresponding person properties. Keep
-absent keyword IDs in an unknown bucket rather than dropping those people.
-Use the separate spray-wall activation definition above for spray-wall crews.
+1. **Apple report delivery:** dated warehouse spend and impressions/taps,
+   tap/view installs, new downloads and redownloads. Group by currency. Read
+   `applesearchads.*` only; underscored tables are aliases, not extra traffic.
+   Exact duplicate report rows deduplicate. Conflicting daily versions suppress
+   totals. Missing metric fields stay unknown. A partial final reporting day is
+   included when selected, while an exact midnight remains exclusive; the
+   current incomplete UTC day is excluded by the observation cutoff. Apple
+   report timezone is unverified, so report dates are not native UTC cohorts.
+2. **Attributed people:** current `persons.properties` attribution joined onto
+   canonical native production iOS `person_id`, excluding internal cohort
+   295337. Include every attributed person active in the selected range;
+   unidentified people and those without a captured screen remain in coverage.
+   Split `Download`/`Redownload` and `Click`/`Impression`. Unknown keyword/country
+   stays unknown. Current person properties are necessary because this project
+   stores event-time person properties: late attribution must enrich earlier
+   activity without requiring the campaign to have existed on that event.
+3. **Clean newcomers:** the attributed subset with selected entry dates in
+   `growth_native_newcomers`. Reuse its first-ever checks and phantom exclusions,
+   without rewriting the global first-touch model. The first native screen is
+   the exact time anchor. Report verified signup evidence independently of
+   screen ordering: the backend creation timestamp can precede the first
+   captured screen, including across midnight. Registration evidence therefore
+   has its own bounded 365-day scan; it never infers signup from account age.
 
-Apple Ads reports spend, taps, downloads and acquisition cost for all eligible
-campaign traffic. PostHog reports only consenting people whose attribution
-was available, and can identify accounts across installs. Do not divide Apple
-spend by these signup counts and label it Apple's acquisition cost. Show the
-two populations and their date windows separately; App Store `ct` links below
-are yet another aggregate measurement.
+Outcome windows are exact elapsed intervals from that first screen: seven-day
+LED board activation and separate spray-wall activation, two distinct UTC board
+days within 28 days, return in days 7–13, and return in days 28–55. The denominator
+for each rate is every clean newcomer whose entire corresponding 7/14/28/56-day
+window is observed, independent of signup or earlier activation. Outcome
+observation is capped by the earlier of the UTC cutoff and the newcomer view's
+exclusive `computed_as_of`. Immature cohorts show a null rate and their eligible
+count, not zero percent. Spray saves and unrelated queue/navigation triggers do
+not activate; `Set Active Climb` requires an absent trigger or `put_on_wall`.
+
+`Install Attributed` is the attribution lookup/publication observation. Apple
+installation dates are not part of the normalized contract. It is neither a
+store-install timestamp nor proof of earliest paid first touch. A person can be
+identified across installations, so the three populations are not an install
+funnel. Do not divide store spend by these consenting-person signup or climber
+counts as campaign CPA, or label a keyword-report residual as Search Match.
+
+Measurement quality is part of the report. Show store/native/view freshness,
+unidentified and missing-screen people, unknown dimensions, and auth event
+counts by app version/provider/OTA. The native trends diagnostic limits its
+breakdown to 25 values plus Others. The separate SQL integrity check filters to
+auth/board evidence before grouping, shows the latest relevant event, puts the
+target 2.7.0 release first, then the newest remaining groups, and displays up to
+500 groups. Neither bounded diagnostic certifies complete event coverage. Historical 2.6.0 login/signup
+capture is known incomplete. Its raw observed signup counts are evidence only,
+not a reliable conversion rate. The 2.7.0 repair remains **awaiting verified
+release evidence** until an actual release-mode auth test supplies the release,
+OTA and timestamp in `apple-ads-deployment.json`; do not invent those values or
+backfill events. The repair is next-release-only, with no 2.6.0 backport.
 
 Before closing #6285, record evidence from a real campaign and the released
 2.6.0 binary: one fresh attributed download, fresh email/Apple/Google signup
@@ -1396,31 +1404,24 @@ not unique published climb or database-record counts. Tick events with
 submissions. Report draft creations separately; a creation event does not prove
 publication, and later draft publication cannot yet be counted reliably.
 
-The Apple Ads status card prepares the dashboard without fabricated metrics.
-The new 2.6.0 integration's property and report contract is documented in
-[Apple Ads (iOS)](#apple-ads-ios); it still requires real campaign evidence
-before these dashboard metrics can be populated.
-The proposed **A$500/month** is a budget, not observed spend. Keep actual AUD
-spend, store-reported installs, attributed first opens and product outcomes
-separate until reliable person-level attribution exists. Future costs divide
-matching campaign/cohort spend by attributed installs, registrations, first
-board-active people, people reaching 2+ board days, or retained board-active
-people in days 28–55. Retained-user costs use only mature acquisition cohorts.
-Campaign, keyword and country breakdowns require corresponding attribution and
-cost evidence; country on an activity event alone is not ad targeting evidence.
+The Apple Ads status card links to the separate campaign dashboard. Store
+reporting and current person attribution are available, but consent coverage,
+identity continuity and the historical 2.6.0 signup gap still limit product
+conversion interpretation. Keep Apple delivery, attributed people and validated
+newcomers separate, as specified in [Apple Ads (iOS)](#apple-ads-ios).
 
-Missing inputs and known limits:
+Known limits:
 
-1. Person-level Apple Ads attribution, campaign/keyword/country evidence, and
-   actual AUD spend and install reports are unavailable.
+1. Historical 2.6.0 auth success/signup telemetry is incomplete; 2.7.0 still
+   requires release evidence. Missing events cannot establish failed signup.
 2. iOS has no install referrer; reliable anonymous web-to-iOS acquisition joins
    and known organic App Store attribution are unavailable.
-3. Remaining unresolved registration evidence and historical phantom identities
-   can undercount registration or split people. Validate evidence coverage.
+3. Current Apple association does not prove earliest paid first touch.
+   Consent, missing screens and unresolved identities affect the observed subset.
 4. Unique published-climb identifiers and draft-to-publication evidence are
    missing. Creation-event counts must not be called unique published climbs.
-5. Completed 56-day clean newcomer cohorts do not yet exist. Older acquisition
-   regimes and incomplete windows must not fill the gap.
+5. Retention needs fully mature cohorts. Older acquisition regimes and partial
+   windows must not fill a pending 56-day cell.
 
 ### Versioning and validation
 
@@ -1448,3 +1449,21 @@ ordered registration-first funnel has 198 first senders, 119 two-day users and
 63 four-day users. Those smaller counts reflect its registration prerequisite.
 No one has a mature 56-day observation yet. Latest-period contribution totals
 reconcile to all 2,387 board-active people.
+
+
+### Apple Ads dashboard deployment and fixture validation
+
+`apple-ads-deployment.json` records stable dashboard/insight/tile IDs and the
+actual deployment time. Keep the existing all-source insight IDs; publishing
+adds the separate sections and moves the old charts into their labelled
+baseline section without deleting them. Update the baseline growth dashboard's
+status text from the versioned `paidAcquisitionBody` too.
+
+Export synthetic calculations with
+`vp exec node --import tsx scripts/posthog/export-apple-ads-dashboard.ts --fixtures`.
+Execute every exact query in PostHog and record its query SHA-256 and returned
+rows in `apple-ads-fixture-validation.json`. The adjacent test checks the hashes
+and edge-case results, so a calculation edit needs fresh execution evidence.
+Fixtures contain synthetic identities and synthetic spending only; do not put
+actual campaign finances in repository fixtures. Reconcile live campaign and
+ad-group delivery totals and inspect coverage before publishing the dashboard.

@@ -124,6 +124,72 @@ const grant = {
 };
 
 describe('enabled mobile SDK consent lifecycle', () => {
+  it('retains an anonymous identity through real unanswered account consent, then identifies its owner', async () => {
+    sdk.files.set(
+      '.posthog-rn.json',
+      JSON.stringify({
+        version: 'v1',
+        content: { distinct_id: 'anonymous', anonymous_id: 'anonymous', opted_out: false },
+      }),
+    );
+    const consent = await import('../consent-state');
+    consent.updateConsentState({
+      loaded: true,
+      settled: true,
+      flagsResolved: true,
+      record: grant,
+      authSettled: true,
+      accountResolved: true,
+      accountId: null,
+    });
+    const posthog = await import('../posthog-client');
+    await posthog.initializePosthogClient();
+    const { createAuthAnalyticsHandoff } = await import('../auth-analytics-handoff');
+    const handoff = createAuthAnalyticsHandoff({
+      credentialCurrent: () => true,
+      identity: { distinctId: 'anonymous', anonymousId: 'anonymous' },
+    });
+    consent.invalidateConsentAccount();
+    consent.updateConsentState({ authSettled: true, accountId: 'account-b', accountResolved: false });
+    handoff.bindAccount('account-b');
+    const { createConsentBoundAnalyticsRunner } = await import('../consent-bound-analytics');
+    const capture = vi.fn();
+    createConsentBoundAnalyticsRunner({ accountId: 'account-b', handoff })(capture);
+    const { createConsentSyncCoordinator } = await import('@boardsesh/consent');
+    const coordinator = createConsentSyncCoordinator({
+      initialRecord: grant,
+      readAccountConsent: async () => null,
+      writeAccountConsent: async (_accountId, input) => ({
+        analytics: input.analytics,
+        source: input.source,
+        version: input.version,
+        decidedAt: '2026-10-10T00:01:00.000Z',
+      }),
+      persistLocalConsent: () => {},
+    });
+    const unsubscribe = coordinator.subscribe(() =>
+      consent.updateConsentState({
+        record: coordinator.getSnapshot().record,
+        accountResolved: coordinator.getSnapshot().accountResolved && !coordinator.getSnapshot().syncing,
+      }),
+    );
+    coordinator.setAccount('account-b');
+    await coordinator.sync();
+    await posthog.applyPosthogConsent();
+    expect(consent.getConsentSnapshot().record).toBeNull();
+    expect(posthog.getPostHogClient()?.getDistinctId()).toBe('anonymous');
+    expect(consent.isProductAnalyticsGranted()).toBe(false);
+    expect(capture).not.toHaveBeenCalled();
+    expect(sdk.calls).not.toContain('reset');
+    await coordinator.decide('granted', 'ios');
+    consent.updateConsentState({ settled: true });
+    await posthog.applyPosthogConsent();
+    expect(posthog.getPostHogClient()?.getDistinctId()).toBe('account-b');
+    expect(capture).toHaveBeenCalledOnce();
+    expect(sdk.calls).not.toContain('reset');
+    unsubscribe();
+    handoff.dispose();
+  });
   it('releases a pending signup only after the SDK switches to the resolved account', async () => {
     const consent = await import('../consent-state');
     consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });
