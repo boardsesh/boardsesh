@@ -612,7 +612,7 @@ jobs:
             .github/actions/ios-store-video-tools/action.yml
       - name: Verify application and cache tooling identities
         env:
-          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
           CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
@@ -742,7 +742,7 @@ jobs:
             .github/actions/ios-store-video-tools/action.yml
       - name: Verify application and cache tooling identities
         env:
-          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
           CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
@@ -921,7 +921,7 @@ jobs:
             .github/actions/ios-store-video-tools/action.yml
       - name: Verify application and cache tooling identities
         env:
-          APP_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          APP_SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
           CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
