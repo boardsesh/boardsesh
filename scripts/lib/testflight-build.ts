@@ -87,12 +87,13 @@ export function previousNativeBuild(
   ancestorShas: readonly string[],
   version: string,
   buildNumber: string,
+  supersededSources: ReadonlySet<string> = new Set(),
 ): NativeBuildTag | null {
   const ancestorOrder = new Map(ancestorShas.map((sha, index) => [sha, index]));
   const candidates = tags.flatMap((tag) => {
     const parsed = parseBuildTag(tag.name);
     const order = ancestorOrder.get(tag.sha);
-    if (parsed?.platform !== 'ios' || order === undefined) return [];
+    if (parsed?.platform !== 'ios' || order === undefined || supersededSources.has(tag.sha)) return [];
     const versionOrder = compareVersions(parsed.version, version);
     if (versionOrder > 0 || (versionOrder === 0 && parsed.buildNumber >= Number(buildNumber))) return [];
     return [{ tag, parsed, order }];

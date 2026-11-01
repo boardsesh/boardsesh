@@ -97,7 +97,7 @@ jobs:
           vp exec tsx scripts/testflight-build.ts validate --run-id "$SOURCE_RUN_ID"
           --receipt "$RUNNER_TEMP/testflight-receipt/testflight-build.json"
       - name: Summarize native test plans
-        if: steps.source.outputs.should_distribute == 'true'
+        if: steps.build.outputs.should_distribute == 'true'
         run: >-
           vp exec tsx scripts/testflight-notes.ts
           --receipt "$RUNNER_TEMP/testflight-receipt/testflight-build.json"
@@ -106,24 +106,24 @@ jobs:
       - name: Require the live backend schema before tester distribution
         # Legacy train receipts remain recoverable under their existing policy.
         # Every new main binary must wait for its live backend schema.
-        if: steps.source.outputs.should_distribute == 'true' && steps.build.outputs.source_ref == 'main'
+        if: steps.build.outputs.should_distribute == 'true' && steps.build.outputs.source_ref == 'main'
         env:
           GITHUB_SHA: ${{ steps.build.outputs.source_sha }}
         run: node scripts/mobile-ota-schema-ready.mjs
       - uses: ruby/setup-ruby@v1
-        if: steps.source.outputs.should_distribute == 'true'
+        if: steps.build.outputs.should_distribute == 'true'
         with:
           ruby-version: '3.4'
           working-directory: fastlane
       - name: Install fastlane gems
-        if: steps.source.outputs.should_distribute == 'true'
+        if: steps.build.outputs.should_distribute == 'true'
         working-directory: fastlane
         run: |
           bundle config set --local path "$PWD/vendor/bundle"
           bundle config set --local deployment true
           bundle install --jobs 4
       - name: Set up App Store Connect API key
-        if: steps.source.outputs.should_distribute == 'true'
+        if: steps.build.outputs.should_distribute == 'true'
         env:
           ASC_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
         run: |
@@ -134,7 +134,7 @@ jobs:
           test -s "$key_path"
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
       - name: Submit exact build to Discord Users
-        if: steps.source.outputs.should_distribute == 'true'
+        if: steps.build.outputs.should_distribute == 'true'
         working-directory: fastlane
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -145,7 +145,7 @@ jobs:
           TESTFLIGHT_DISTRIBUTION_OUTPUT: ${{ runner.temp }}/testflight-lane-result.json
         run: bundle exec fastlane ios distribute_testflight
       - name: Record the exact delivery outcome, including terminal failures
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && steps.build.outputs.should_distribute == 'true'
         env:
           SOURCE_RUN_ATTEMPT: ${{ steps.source.outputs.source_run_attempt }}
           TESTFLIGHT_BUILD_RECEIPT: ${{ runner.temp }}/testflight-receipt/testflight-build.json

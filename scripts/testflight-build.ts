@@ -5,7 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { formatBuildTag, shortFingerprint } from './lib/release-tags';
 import { createTestflightCommandRunner } from './lib/testflight-github';
-import { validateNativeStampSource } from './mobile-native-release';
+import { readSupersededTestflightSources } from './lib/testflight-distribution';
+import { getSupersededNativeStampShas, validateNativeStampSource } from './mobile-native-release';
 import {
   objectFields,
   parseTestflightBuildReceipt,
@@ -90,7 +91,8 @@ export function main(argumentsList = process.argv.slice(2)): void {
         return { name, sha: peeledSha || directSha };
       });
     const ancestorShas = command('git', ['rev-list', '--topo-order', sourceSha]).split('\n');
-    const previous = previousNativeBuild(tags, ancestorShas, version, buildNumber);
+    const supersededSources = new Set(getSupersededNativeStampShas(process.cwd(), sourceSha));
+    const previous = previousNativeBuild(tags, ancestorShas, version, buildNumber, supersededSources);
     writeJson(
       option('--output'),
       parseTestflightBuildReceipt({
@@ -180,7 +182,13 @@ export function main(argumentsList = process.argv.slice(2)): void {
     if (resolveTag(receipt.previousBuildTag) !== receipt.previousBuildSha) throw new Error('Previous build tag moved.');
     command('git', ['merge-base', '--is-ancestor', receipt.previousBuildSha, receipt.sourceSha]);
   }
+  if (readSupersededTestflightSources(runCommand).has(receipt.sourceSha)) {
+    emit({ should_distribute: 'false' });
+    console.log('Native source was explicitly superseded by a version restoration; no build to distribute.');
+    return;
+  }
   emit({
+    should_distribute: 'true',
     version: receipt.version,
     build_number: receipt.buildNumber,
     source_sha: receipt.sourceSha,

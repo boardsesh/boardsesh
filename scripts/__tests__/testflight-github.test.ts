@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestflightCommandRunner, TESTFLIGHT_PREPARATION_MS } from '../lib/testflight-github';
 
+const { executeFile } = vi.hoisted(() => ({ executeFile: vi.fn(() => '') }));
+vi.mock('node:child_process', () => ({ execFileSync: executeFile }));
+
 const epoch = Date.parse('2026-10-26T06:00:00Z');
 const ghArguments = ['api', '--paginate', '--slurp', '/repos/boardsesh/boardsesh/issues/42/comments'];
 const http = (status: number, headers = '', body = '{}') => `HTTP/2.0 ${status} Response\n${headers}\r\n${body}`;
@@ -39,6 +42,39 @@ describe('TestFlight GitHub rate-limit retries', () => {
     execute.mockReturnValue('commit\n');
     expect(run('git', ['rev-list', 'HEAD'])).toBe('commit\n');
     expect(execute).toHaveBeenCalledWith('git', ['rev-list', 'HEAD']);
+  });
+
+  it('shares the preparation deadline with main refreshes without retrying git failures', () => {
+    const { execute, options, sleep } = fixture();
+    const argumentsList = ['-C', '/repo', '-c', 'credential.helper=', 'fetch', '--no-tags', 'origin'];
+    const expired = createTestflightCommandRunner({ ...options, deadline: epoch });
+    expect(() => expired('git', argumentsList)).toThrow('preparation exceeded 65 minutes');
+    expect(execute).not.toHaveBeenCalled();
+    const error = new Error('origin unavailable');
+    execute.mockImplementation(() => {
+      throw error;
+    });
+    expect(() => createTestflightCommandRunner(options)('git', argumentsList)).toThrow(error);
+    expect(execute).toHaveBeenCalledExactlyOnceWith('git', argumentsList);
+    expect(sleep).not.toHaveBeenCalled();
+    execute.mockReturnValue('fetch\n');
+    expect(expired('git', ['rev-list', 'fetch'])).toBe('fetch\n');
+  });
+
+  it('bounds the actual git fetch process with the remaining preparation time, leaving local git unchanged', () => {
+    const run = createTestflightCommandRunner({ now: () => epoch + 1000, deadline: epoch + 6000 });
+    const argumentsList = ['-C', '/repo', '-c', 'credential.helper=', 'fetch', '--no-tags', 'origin'];
+    run('git', argumentsList);
+    expect(executeFile).toHaveBeenLastCalledWith('git', argumentsList, {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 5000,
+    });
+    run('git', ['rev-list', 'HEAD']);
+    expect(executeFile).toHaveBeenLastCalledWith('git', ['rev-list', 'HEAD'], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
   });
 
   it('waits until the primary quota reset before repeating the same request', () => {

@@ -21,9 +21,11 @@ import {
   DISTRIBUTION_WORKFLOW,
   latestUploadedIosBuild,
   parseDistributionResult,
+  readSupersededTestflightSources,
   retryableDistribution,
   type DistributionResult,
 } from './lib/testflight-distribution';
+import { getSupersededNativeStampShas } from './mobile-native-release';
 
 function required(name: string): string {
   const contents = process.env[name];
@@ -50,6 +52,7 @@ function artifactFiles(directory: string, basename: string): string[] {
 export function main(
   argumentsList = process.argv.slice(2),
   execute: (binary: string, argumentsList: string[]) => string = createTestflightCommandRunner(),
+  readLineage = getSupersededNativeStampShas,
 ): void {
   const command = (binary: string, argumentsList: string[]) => execute(binary, argumentsList).trim();
   const json = (path: string): unknown => JSON.parse(command('gh', ['api', path]));
@@ -83,6 +86,7 @@ export function main(
   if (action !== 'select' || argumentsList.length !== 1) throw new Error('Expected select or record.');
   const repository = required('GITHUB_REPOSITORY');
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Invalid repository.');
+  const supersededSources = readSupersededTestflightSources(execute, readLineage);
   const latestBuild = latestUploadedIosBuild(
     command('git', ['for-each-ref', '--format=%(refname:short) %(objectname) %(*objectname)', 'refs/tags/build-ios-*'])
       .split('\n')
@@ -91,6 +95,7 @@ export function main(
         const [name, directSha, peeledSha] = line.split(/\s+/);
         return { name, sha: peeledSha || directSha };
       }),
+    supersededSources,
   );
   if (!latestBuild) {
     emit({ selected: 'false' });
