@@ -64,7 +64,7 @@ export function main(argumentsList = process.argv.slice(2)): void {
   if (action === 'capture') {
     const version = requiredEnvironment('BOARDSESH_MOBILE_VERSION');
     const buildNumber = requiredEnvironment('IOS_BUILD_NUMBER');
-    const sourceSha = requiredEnvironment('GITHUB_SHA');
+    const sourceSha = process.env.NATIVE_SOURCE_SHA || requiredEnvironment('GITHUB_SHA');
     const sourceRef = requiredEnvironment('GITHUB_REF_NAME');
     const tags = command('git', [
       'for-each-ref',
@@ -86,6 +86,7 @@ export function main(argumentsList = process.argv.slice(2)): void {
         version,
         buildNumber,
         sourceSha,
+        workflowSha: requiredEnvironment('GITHUB_SHA'),
         sourceRef,
         sourceRunId: requiredEnvironment('GITHUB_RUN_ID'),
         buildTag: formatBuildTag(
@@ -161,14 +162,21 @@ export function main(argumentsList = process.argv.slice(2)): void {
     return;
   }
   const receipt = parseTestflightBuildReceipt(JSON.parse(readFileSync(option('--receipt'), 'utf8')));
-  validateReceiptSource(receipt, run);
+  validateReceiptSource(receipt, run, process.env.NATIVE_SOURCE_VALIDATED_SHA);
+  if (receipt.sourceSha !== run.sha)
+    command('git', ['merge-base', '--is-ancestor', receipt.sourceSha, 'refs/remotes/origin/main']);
   const resolveTag = (tag: string) => command('git', ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]);
   if (resolveTag(receipt.buildTag) !== receipt.sourceSha) throw new Error('Uploaded build tag moved or is missing.');
   if (receipt.previousBuildTag && receipt.previousBuildSha) {
     if (resolveTag(receipt.previousBuildTag) !== receipt.previousBuildSha) throw new Error('Previous build tag moved.');
     command('git', ['merge-base', '--is-ancestor', receipt.previousBuildSha, receipt.sourceSha]);
   }
-  emit({ version: receipt.version, build_number: receipt.buildNumber });
+  emit({
+    version: receipt.version,
+    build_number: receipt.buildNumber,
+    source_sha: receipt.sourceSha,
+    source_ref: receipt.sourceRef,
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

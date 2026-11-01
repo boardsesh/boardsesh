@@ -115,6 +115,40 @@ describe('native PR selection', () => {
 });
 
 describe('iOS fingerprint evidence', () => {
+  it('recovers a historical synthetic merge only when its second parent is the final head', () => {
+    const comment = otaComment('⚠️ Native change', {
+      body: otaComment().body.replace('fix/connection', '42/merge').replace('ccccccc', 'ddddddd'),
+    });
+    expect(
+      hasIosNativeChange(pullRequest(), [comment], () => ({
+        sha: 'd'.repeat(40),
+        parents: ['e'.repeat(40), 'c'.repeat(40)],
+      })),
+    ).toBe(true);
+    for (const commit of [
+      { sha: 'd'.repeat(40), parents: ['c'.repeat(40), 'e'.repeat(40)] },
+      { sha: 'd'.repeat(40), parents: ['c'.repeat(40)] },
+      { sha: 'e'.repeat(40), parents: ['e'.repeat(40), 'c'.repeat(40)] },
+    ])
+      expect(() => hasIosNativeChange(pullRequest(), [comment], () => commit)).toThrow('final head');
+  });
+
+  it('does not resolve stale branch evidence, human comments, or another PR merge ref', () => {
+    for (const comment of [
+      otaComment('⚠️ Native change', { body: otaComment().body.replace('ccccccc', 'ddddddd') }),
+      otaComment('⚠️ Native change', {
+        body: otaComment().body.replace('fix/connection', '43/merge').replace('ccccccc', 'ddddddd'),
+      }),
+      otaComment('⚠️ Native change', { authorType: 'User' }),
+    ]) {
+      expect(() =>
+        hasIosNativeChange(pullRequest(), [comment], () => {
+          throw new Error('must not resolve');
+        }),
+      ).toThrow('PR #42');
+    }
+  });
+
   it('includes iOS-native changes but excludes Android-only changes', () => {
     expect(hasIosNativeChange(pullRequest(), [otaComment()])).toBe(true);
     expect(hasIosNativeChange(pullRequest(), [otaComment('✅ Compatible')])).toBe(false);

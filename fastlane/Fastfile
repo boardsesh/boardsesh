@@ -275,6 +275,7 @@ platform :ios do
 
   desc "Submit an exact uploaded build to the Discord Users TestFlight group with its test notes"
   lane :distribute_testflight do |options|
+    require "json"
     require File.join(REPO_ROOT, "fastlane", "lib", "testflight_distribution")
     require "spaceship"
     version = (options[:version] || ENV["RELEASE_VERSION"]).to_s
@@ -288,6 +289,8 @@ platform :ios do
       find_builds: -> { Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version, build_number: build_number, platform: "IOS") },
       distribute: ->(distribution_options) { upload_to_testflight(api_key: api_key, **distribution_options) }
     ).run
+    output_path = ENV["TESTFLIGHT_DISTRIBUTION_OUTPUT"]
+    File.write(output_path, JSON.pretty_generate(receipt) + "\n") if output_path && !output_path.empty?
     summary = BoardseshTestflightDistribution.summary(receipt)
     UI.success(summary)
     emit_step_summary(summary)

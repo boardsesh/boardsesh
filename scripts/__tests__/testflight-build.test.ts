@@ -98,10 +98,25 @@ describe('receipt and source provenance', () => {
     expect(() => validateReceiptSource(parsed, { ...run, sha: previousSha })).toThrow('does not belong');
   });
 
+  it('keeps the workflow SHA binding when a separately validated main stamp supplied the binary source', () => {
+    const run = trustedTestflightRun(
+      { ...sourceRun(), head_branch: 'main', head_sha: previousSha, event: 'workflow_dispatch' },
+      'boardsesh/boardsesh',
+    );
+    const parsed = parseTestflightBuildReceipt({ ...receipt(), sourceRef: 'main', workflowSha: previousSha });
+    expect(() => validateReceiptSource(parsed, run)).toThrow('validated native-release stamp');
+    expect(() => validateReceiptSource(parsed, run, 'c'.repeat(40))).toThrow('validated native-release stamp');
+    expect(() => validateReceiptSource(parsed, run, sourceSha)).not.toThrow();
+    expect(() => validateReceiptSource({ ...parsed, workflowSha: sourceSha }, run, sourceSha)).toThrow(
+      'does not belong',
+    );
+  });
+
   it.each([
     { version: '2.8.0' },
     { buildNumber: '3' },
     { sourceSha: 'main' },
+    { workflowSha: 'main' },
     { sourceRef: 'feature/untrusted' },
     { sourceRunId: '../123' },
     { previousBuildSha: null },
@@ -362,7 +377,9 @@ process.stdout.write(process.env.TESTFLIGHT_GH_FIXTURE);
   it('emits the exact uploaded version and build only after verifying both tags', () => {
     const fixture = validationFixture();
     fixture.execute();
-    expect(fixture.outputs()).toBe('version=2.7.0\nbuild_number=2\n');
+    expect(fixture.outputs()).toBe(
+      `version=2.7.0\nbuild_number=2\nsource_sha=${fixture.uploadedSha}\nsource_ref=release/next\n`,
+    );
   });
 
   it.each(['moved uploaded tag', 'deleted uploaded tag', 'moved baseline tag', 'non-ancestor baseline'])(
