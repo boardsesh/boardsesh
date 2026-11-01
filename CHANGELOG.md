@@ -10,6 +10,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 - The board button frosts only while your swipes light climbs. ([#7170](https://github.com/boardsesh/boardsesh/pull/7170))
 
+### Fixed
+
+- Support Boardsesh stays open when you tap it from Account on iPhone. ([#7199](https://github.com/boardsesh/boardsesh/pull/7199))
+
 ## 2026-10-31
 
 ### Improved
