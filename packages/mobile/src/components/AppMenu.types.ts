@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import type { IconName } from './icon-map';
 
 /** A single menu row, neutral across the native iOS `Menu` / Android `DropdownMenu` impls. */
@@ -94,6 +94,10 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
 type AppMenuLongPressAnchorProps = AppMenuSharedProps & {
   children: ReactElement;
   trigger: 'longPress';
+  /** Lift a list row as an opaque, rounded native preview on iOS. */
+  liftPreview?: boolean;
+  /** Preserve a selected row's translucent wash over the opaque preview surface. */
+  previewOverlayColor?: ColorValue;
   accessibilityLabel?: string;
   label?: never;
   iconName?: never;

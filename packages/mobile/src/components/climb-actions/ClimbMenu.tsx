@@ -1,5 +1,5 @@
 import { useCallback, type ReactElement } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { AppMenu } from '../AppMenu';
 import type { PlayDrawerMenuRow } from '../play-drawer/play-drawer-menu-rows';
@@ -12,6 +12,8 @@ export function ClimbMenu({
   style,
   accessibilityLabel,
   iconAppearance = 'filled',
+  liftPreview = false,
+  previewOverlayColor,
 }: {
   rows: PlayDrawerMenuRow[];
   menuKey: string;
@@ -19,6 +21,8 @@ export function ClimbMenu({
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
   iconAppearance?: 'filled' | 'plain';
+  liftPreview?: boolean;
+  previewOverlayColor?: ColorValue;
 }) {
   const { t } = useTranslation('climbs');
   const select = useCallback(
@@ -31,7 +35,15 @@ export function ClimbMenu({
   if (rows.length === 0) return children ?? null;
   const label = accessibilityLabel ?? t('mobile.climbRow.moreActions');
   return children ? (
-    <AppMenu key={menuKey} actions={rows} onSelectIndex={select} trigger="longPress" style={style}>
+    <AppMenu
+      key={menuKey}
+      actions={rows}
+      onSelectIndex={select}
+      trigger="longPress"
+      style={style}
+      liftPreview={liftPreview}
+      previewOverlayColor={previewOverlayColor}
+    >
       {children}
     </AppMenu>
   ) : (

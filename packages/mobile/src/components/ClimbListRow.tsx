@@ -582,7 +582,13 @@ const ClimbListRow = React.memo(function ClimbListRow({
           {selected ? (
             <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
           ) : null}
-          <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} style={styles.menuBody}>
+          <ClimbMenu
+            rows={menu.rows}
+            menuKey={menu.menuKey}
+            style={styles.menuBody}
+            liftPreview
+            previewOverlayColor={selected ? highlight.fill : undefined}
+          >
             <GestureDetector gesture={rowGestures} touchAction="pan-y">
               <View
                 testID={testID}

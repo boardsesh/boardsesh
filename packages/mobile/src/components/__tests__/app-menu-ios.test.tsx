@@ -60,7 +60,10 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => ({
       'accessibilityHint',
     ].map((kind) => [kind, (params: unknown) => ({ kind, params })]),
   ),
-  shapes: { rectangle: () => ({ shape: 'rectangle' }) },
+  shapes: {
+    rectangle: () => ({ shape: 'rectangle' }),
+    roundedRectangle: (params: unknown) => ({ shape: 'roundedRectangle', params }),
+  },
 }));
 vi.mock('react-native', () => ({
   View: ({
@@ -84,7 +87,9 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
 }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { fill: 'systemFill', label: 'label', secondaryLabel: 'secondaryLabel' } }),
+  useTheme: () => ({
+    systemColors: { background: 'background', fill: 'systemFill', label: 'label', secondaryLabel: 'secondaryLabel' },
+  }),
 }));
 
 import { AppMenu } from '../AppMenu.ios';
@@ -215,6 +220,8 @@ describe('AppMenu (iOS) hosting', () => {
     const { container, getByText } = render(
       createElement(AppMenu, {
         trigger: 'longPress',
+        liftPreview: true,
+        previewOverlayColor: 'selectedWash',
         children: createElement('button', { onClick: onRowPress }, 'Climb row'),
         actions,
         onSelectIndex,

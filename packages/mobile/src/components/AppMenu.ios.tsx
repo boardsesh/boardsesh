@@ -46,7 +46,7 @@ import { Fragment, useMemo, type ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import { useTheme } from '../providers/theme-provider';
-import { spacing } from '../theme/tokens';
+import { borderRadius, spacing } from '../theme/tokens';
 import { topBarByVariant } from '../theme/top-bar';
 import { isMenuActionSelectable, paletteRowCount, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
@@ -87,6 +87,13 @@ export function AppMenu(props: AppMenuProps) {
     ],
     [anchorSize],
   );
+
+  // The system lifts this trigger as the menu preview. Without an opaque
+  // surface, its thumbnail and text float over the dimmed rows underneath.
+  const rowPreviewModifiers = useMemo(() => {
+    const shape = shapes.roundedRectangle({ cornerRadius: borderRadius.lg, roundedCornerStyle: 'continuous' });
+    return [contentShape(shape, 'contextMenuPreview')];
+  }, []);
 
   // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
   // modifier array (avoids redundant SwiftUI diffs).
@@ -171,22 +178,44 @@ export function AppMenu(props: AppMenuProps) {
   if (props.trigger === 'longPress') {
     return (
       <MeasuredMenuAnchor style={style}>
-        {(width) =>
-          width === undefined ? (
-            props.children
-          ) : (
+        {(width) => {
+          if (width === undefined) return props.children;
+          const row = (
+            <RNHostView matchContents>
+              <View
+                style={{
+                  width,
+                  flexDirection: 'row',
+                  backgroundColor: props.liftPreview ? systemColors.background : undefined,
+                }}
+              >
+                {props.liftPreview && props.previewOverlayColor ? (
+                  <View
+                    pointerEvents="none"
+                    style={[StyleSheet.absoluteFill, { backgroundColor: props.previewOverlayColor }]}
+                  />
+                ) : null}
+                {props.children}
+              </View>
+            </RNHostView>
+          );
+          return (
             <Host key={width} matchContents={{ vertical: true }} ignoreSafeArea="all" style={{ width }}>
               <ContextMenu>
                 <ContextMenu.Trigger>
-                  <RNHostView matchContents>
-                    <View style={{ width, flexDirection: 'row' }}>{props.children}</View>
-                  </RNHostView>
+                  {props.liftPreview ? (
+                    <VStack spacing={0} modifiers={rowPreviewModifiers}>
+                      {row}
+                    </VStack>
+                  ) : (
+                    row
+                  )}
                 </ContextMenu.Trigger>
                 <ContextMenu.Items>{menuItems}</ContextMenu.Items>
               </ContextMenu>
             </Host>
-          )
-        }
+          );
+        }}
       </MeasuredMenuAnchor>
     );
   }

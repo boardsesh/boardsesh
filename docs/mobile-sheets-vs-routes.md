@@ -60,6 +60,8 @@ rendering for row long-press, list ellipsis and player ellipsis: SwiftUI Context
 on iOS, Compose dropdowns on Android, and Paper on Expo web. `getClimbActions` resolves a
 snapshot without opening anything. The custom `ClimbReactionMenu` overlay is removed;
 add-to-playlist uses the normal sheet with its correct presenter.
+On iOS, the held row lifts as an opaque, rounded native preview above the dimmed list,
+so the menu's climb stays identifiable without mounting a second row.
 
 A row's native long-press body excludes drag handles and sibling controls, preserving
 queue reorder and swipe actions. Screen readers get direct enabled commands and the
