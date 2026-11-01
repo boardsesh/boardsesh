@@ -62,6 +62,7 @@ snapshot without opening anything. The custom `ClimbReactionMenu` overlay is rem
 add-to-playlist uses the normal sheet with its correct presenter.
 On iOS, the held row lifts as an opaque, rounded native preview above the dimmed list,
 so the menu's climb stays identifiable without mounting a second row.
+Native iOS captures: [before](./images/climb-menu-before.png), [after](./images/climb-menu-after.png).
 
 A row's native long-press body excludes drag handles and sibling controls, preserving
 queue reorder and swipe actions. Screen readers get direct enabled commands and the
