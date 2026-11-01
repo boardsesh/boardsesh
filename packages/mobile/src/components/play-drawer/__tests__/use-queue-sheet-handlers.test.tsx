@@ -45,7 +45,7 @@ describe('useQueueSheetHandlers', () => {
       useQueueSheetHandlers({
         setCurrentClimb: vi.fn(),
         openPlayDrawer: vi.fn(),
-        openClimbActions: vi.fn(),
+        getClimbActions: vi.fn(),
         openLogAscent: rootOpen,
         storedBoardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
         sessionId: 'session-local',
