@@ -71,7 +71,7 @@ export function AppMenu(props: AppMenuProps) {
     // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
     <ComposeHost
-      matchContents
+      matchContents={hasLongPressAnchor ? { vertical: true } : true}
       accessible={hasLongPressAnchor ? false : undefined}
       accessibilityRole={hasLongPressAnchor ? undefined : 'button'}
       accessibilityLabel={
@@ -85,7 +85,7 @@ export function AppMenu(props: AppMenuProps) {
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
           {props.trigger === 'longPress' ? (
-            <RNHostView matchContents>
+            <RNHostView matchContents={{ vertical: true }}>
               <Pressable
                 onLongPress={resolved.length > 0 ? () => setExpanded(true) : undefined}
                 delayLongPress={400}

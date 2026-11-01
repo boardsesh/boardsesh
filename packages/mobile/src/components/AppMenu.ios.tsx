@@ -169,10 +169,10 @@ export function AppMenu(props: AppMenuProps) {
 
   if (props.trigger === 'longPress') {
     return (
-      <Host matchContents ignoreSafeArea="all" style={style}>
+      <Host matchContents={{ vertical: true }} ignoreSafeArea="all" style={style}>
         <ContextMenu>
           <ContextMenu.Trigger>
-            <RNHostView matchContents>{props.children}</RNHostView>
+            <RNHostView matchContents={{ vertical: true }}>{props.children}</RNHostView>
           </ContextMenu.Trigger>
           <ContextMenu.Items>{menuItems}</ContextMenu.Items>
         </ContextMenu>

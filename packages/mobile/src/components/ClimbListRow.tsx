@@ -46,6 +46,7 @@ import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
+import { spacing } from '../theme/tokens';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
@@ -627,7 +628,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 export { ClimbListRow };
 
 const styles = StyleSheet.create({
-  menuBody: { flex: 1 },
+  menuBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   outerContainer: {
     position: 'relative',
     overflow: 'hidden',
