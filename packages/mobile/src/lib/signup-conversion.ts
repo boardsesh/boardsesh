@@ -9,25 +9,23 @@ import { capture, getAnalyticsIdentity, setPersonProperties } from './analytics'
 import { createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
 import { getPreference, removePreference, setPreference } from './preference-store';
 import { getVerifiedAuthResult } from './verified-auth-result';
-import { getConsentSnapshot, subscribeConsent } from './consent-state';
-import { isAnalyticsGranted } from '@boardsesh/consent';
+import { createAuthAnalyticsHandoff, type AuthAnalyticsHandoff } from './auth-analytics-handoff';
+import { getConsentSnapshot } from './consent-state';
 
 const pending = new Set<string>();
 const published = new Set<string>();
 const forgotten = new Set<string>();
 const markerWrites = new Map<string, Promise<void>>();
 
-export type SignupConsentLease = { isCurrent: () => boolean; dispose: () => void };
+export type SignupConsentLease = AuthAnalyticsHandoff;
 
 /** Preserve the choice at auth success through the expected account-resolution hold. */
 export function createSignupConsentLease(): SignupConsentLease {
-  const origin = getConsentSnapshot();
-  let valid = origin.loaded && !origin.killed && isAnalyticsGranted(origin.record);
-  const unsubscribe = subscribeConsent(() => {
-    const current = getConsentSnapshot();
-    if (!current.loaded || current.killed || !isAnalyticsGranted(current.record)) valid = false;
+  const epoch = getConsentSnapshot().authEpoch;
+  return createAuthAnalyticsHandoff({
+    credentialCurrent: () => getConsentSnapshot().authEpoch === epoch,
+    identity: getAnalyticsIdentity(),
   });
-  return { isCurrent: () => valid, dispose: unsubscribe };
 }
 
 /** One genuine creation conversion; delayed attribution enriches the person separately. */
@@ -43,6 +41,7 @@ export function publishSignupConversion(receipt: AccountCreationReceipt, consent
     return;
   const captureWhenReady = createConsentBoundAnalyticsRunner({
     accountId: validated.userId,
+    handoff: consentLease,
     ready: () =>
       !forgotten.has(validated.userId) &&
       getVerifiedAuthResult()?.userId === validated.userId &&

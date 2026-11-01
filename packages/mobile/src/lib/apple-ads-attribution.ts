@@ -11,6 +11,7 @@ import { getConsentSnapshot, isAttributionAuthorityGranted, isAttributionPublica
 import { getHttpClient } from './graphql/client';
 import { getPreference, setPreference } from './preference-store';
 import { getVerifiedAuthResult } from './verified-auth-result';
+import { getAttributionAuthHandoff } from './auth-analytics-handoff';
 import {
   APPLE_ADS_ATTRIBUTION_STORAGE_KEY,
   createAppleAdsAttributionController,
@@ -132,6 +133,7 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 
 export function createNativeAppleAdsAttributionController() {
   return createAppleAdsAttributionController({
+    authHandoff: getAttributionAuthHandoff,
     snapshot: getConsentSnapshot,
     verifiedAccountId: () => {
       const verifiedUserId = getVerifiedAuthResult()?.userId;

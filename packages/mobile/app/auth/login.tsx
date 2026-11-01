@@ -106,8 +106,8 @@ export default function LoginScreen() {
           // still rides along to Sentry above as `server_error`.
           setError(t('login.toasts.authFailed'));
         }
-      } else {
-        trackLoginSucceeded({ ...loginProviderProperties('credentials'), flow: 'native', screen: 'login' });
+      } else if (Platform.OS === 'web') {
+        trackLoginSucceeded({ ...loginProviderProperties('credentials'), flow: 'web', screen: 'login' });
       }
       // On success, AuthProvider flips isAuthenticated and the redirect handles navigation.
     } catch (signInError) {

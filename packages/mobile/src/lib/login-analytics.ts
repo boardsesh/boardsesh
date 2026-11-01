@@ -4,6 +4,8 @@ import { SHARED_EVENTS, type AnalyticsEventProperties } from '@boardsesh/analyti
 import { accountAgeHours, accountAgeMs } from './account-age';
 import { track } from './analytics';
 import { createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
+import type { AuthAnalyticsHandoff } from './auth-analytics-handoff';
+import { getAnalyticsIdentity } from './analytics';
 import { getHttpClient } from './graphql/client';
 import { GET_PROFILE, type GetProfileQueryResponse } from './graphql/operations';
 
@@ -226,9 +228,18 @@ export function watchAccountCreatedAt(
  * Age Resolved after it when the account's age only became known later. Never
  * delays the caller.
  */
-export function trackLoginSucceeded(queryClient: QueryClient, properties: LoginSucceededProperties): void {
-  const signedInAt = new Date();
-  const captureWhenReady = createConsentBoundAnalyticsRunner();
+export function trackLoginSucceeded(
+  queryClient: QueryClient,
+  properties: LoginSucceededProperties,
+  handoff?: AuthAnalyticsHandoff,
+): void {
+  const signedInAt = handoff?.signedInAt ?? new Date();
+  const accountId = handoff?.accountId() ?? undefined;
+  const captureWhenReady = createConsentBoundAnalyticsRunner({
+    handoff,
+    accountId,
+    ready: handoff ? () => accountId !== undefined && getAnalyticsIdentity()?.distinctId === accountId : undefined,
+  });
   const watch = watchAccountCreatedAt(queryClient);
   void watch.quick.then(({ createdAt, read }) => {
     captureWhenReady(() =>

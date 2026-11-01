@@ -5,6 +5,7 @@ import {
 } from '@boardsesh/shared-schema/apple-ads-attribution';
 import type { AppleAdsTokenResult } from '../../modules/apple-ads-attribution/src';
 import type { MobileConsentSnapshot } from './consent-state';
+import type { AuthAnalyticsHandoff } from './auth-analytics-handoff';
 
 export const APPLE_ADS_ATTRIBUTION_STORAGE_KEY = 'appleAdsAttributionV1';
 export const APPLE_ADS_TOKEN_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -35,6 +36,7 @@ export type AppleAdsAttributionDependencies = {
   delay(milliseconds: number, signal: AbortSignal): Promise<void>;
   uuid(): string;
   now(): number;
+  authHandoff?(): AuthAnalyticsHandoff | null;
 };
 
 function nullableIdentifier(candidate: unknown): candidate is string | null {
@@ -141,7 +143,13 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
     }
     if (!authorityGranted()) cancel();
     if (!stored) return;
-    const denied = snapshot.loaded && (snapshot.killed || !isAnalyticsGranted(snapshot.record));
+    const handoff = dependencies.authHandoff?.();
+    const retainsHandoff = handoff?.isCurrent() === true;
+    const denied =
+      snapshot.loaded &&
+      (snapshot.killed ||
+        snapshot.record?.analytics === 'denied' ||
+        (!isAnalyticsGranted(snapshot.record) && !(snapshot.record === null && retainsHandoff)));
     const verifiedAccountId = dependencies.verifiedAccountId();
     const replaced = stored.ownerId !== null && verifiedAccountId !== null && stored.ownerId !== verifiedAccountId;
     const signedOut =
@@ -162,7 +170,12 @@ export function createAppleAdsAttributionController(dependencies: AppleAdsAttrib
     }
     // Seal the install as soon as auth proves its account, even while account
     // consent/SDK identity is resolving. A later account can never claim it.
-    if (!stored.ownerId && !stored.closed && verifiedAccountId && isAnalyticsGranted(snapshot.record)) {
+    if (
+      !stored.ownerId &&
+      !stored.closed &&
+      verifiedAccountId &&
+      (isAnalyticsGranted(snapshot.record) || (retainsHandoff && handoff?.accountId() === verifiedAccountId))
+    ) {
       stored = { ...stored, ownerId: verifiedAccountId };
       void persist().catch(() => {});
     }

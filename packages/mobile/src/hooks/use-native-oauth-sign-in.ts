@@ -134,13 +134,14 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (fallback.success) {
-          trackLoginSucceeded({
-            ...loginProviderProperties(provider),
-            flow: 'web_fallback',
-            fallback_mechanism: 'browser_deeplink',
-            screen: signInScreen,
-            ...registrationProps,
-          });
+          if (Platform.OS === 'web')
+            trackLoginSucceeded({
+              ...loginProviderProperties(provider),
+              flow: 'web_fallback',
+              fallback_mechanism: 'browser_deeplink',
+              screen: signInScreen,
+              ...registrationProps,
+            });
           setError(null);
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
@@ -199,12 +200,13 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (result.success) {
-          trackLoginSucceeded({
-            ...loginProviderProperties(provider),
-            flow: primaryFlow,
-            screen: signInScreen,
-            ...registrationProps,
-          });
+          if (Platform.OS === 'web')
+            trackLoginSucceeded({
+              ...loginProviderProperties(provider),
+              flow: primaryFlow,
+              screen: signInScreen,
+              ...registrationProps,
+            });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }

@@ -45,8 +45,7 @@ vi.mock('../../../src/lib/analytics', () => ({
   track: analytics.track,
   setPersonProperties: analytics.setPersonProperties,
 }));
-// The real hook waits for the profile before tracking (login-analytics.test.tsx
-// covers that). Tracking straight away keeps these assertions on one stream.
+// The browser keeps screen-owned success; native success belongs to AuthProvider.
 vi.mock('../../../src/lib/login-analytics', () => ({
   useTrackLoginSucceeded: () => (properties: Record<string, unknown>) => analytics.track('Login Succeeded', properties),
 }));
@@ -177,15 +176,9 @@ describe('RegisterScreen analytics', () => {
 
     await fillAndSubmit();
 
-    await waitFor(() =>
-      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, {
-        auth_method: 'credentials',
-        provider: 'email',
-        flow: 'native',
-        is_registration: true,
-        screen: 'register',
-      }),
-    );
+    expect(auth.register).toHaveBeenCalledOnce();
+    expect(auth.register).toHaveBeenCalledWith('new@example.com', 'supersecure1', undefined);
+    expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.LoginSucceeded)).toHaveLength(0);
     expect(analytics.track.mock.calls.filter(([event]) => event === SHARED_EVENTS.SignupCompleted)).toHaveLength(0);
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
@@ -222,6 +215,13 @@ describe('RegisterScreen analytics', () => {
     expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
       signup_at: expect.any(String),
       signup_auth_method: 'credentials',
+    });
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, {
+      auth_method: 'credentials',
+      provider: 'email',
+      flow: 'web',
+      is_registration: true,
+      screen: 'register',
     });
   });
 
