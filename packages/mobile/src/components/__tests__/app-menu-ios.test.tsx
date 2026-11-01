@@ -63,6 +63,21 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => ({
   shapes: { rectangle: () => ({ shape: 'rectangle' }) },
 }));
 vi.mock('react-native', () => ({
+  View: ({
+    children,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-measured-menu-anchor': onLayout ? true : undefined,
+        onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { width: 326 } } }) : undefined,
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
   PlatformColor: (name: string) => name,
@@ -205,14 +220,18 @@ describe('AppMenu (iOS) hosting', () => {
         onSelectIndex,
       }),
     );
+    // Never mount an unconstrained native bridge: it retains intrinsic widths.
+    expect(container.querySelector('[data-context-menu]')).toBeNull();
+    expect(getByText('Climb row')).toBeTruthy();
+    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
     expect(container.querySelector('[data-context-menu]')).not.toBeNull();
     expect(container.querySelector('[data-context-trigger] [data-rn-match-contents="true"]')?.textContent).toBe(
       'Climb row',
     );
     expect(container.querySelector('[data-menu-modifiers]')).toBeNull();
-    expect(JSON.parse(container.querySelector('[data-host-style]')?.getAttribute('data-host-style') ?? '{}')).toEqual(
-      {},
-    );
+    expect(JSON.parse(container.querySelector('[data-host-style]')?.getAttribute('data-host-style') ?? '{}')).toEqual({
+      width: 326,
+    });
     expect(container.querySelector('[data-host-ignore-safe-area]')?.getAttribute('data-host-ignore-safe-area')).toBe(
       'all',
     );

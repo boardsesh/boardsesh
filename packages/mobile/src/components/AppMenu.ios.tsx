@@ -43,7 +43,8 @@ import {
   accessibilityHint as a11yHint,
 } from '@expo/ui/swift-ui/modifiers';
 import { Fragment, useMemo, type ComponentProps } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { topBarByVariant } from '../theme/top-bar';
@@ -169,14 +170,24 @@ export function AppMenu(props: AppMenuProps) {
 
   if (props.trigger === 'longPress') {
     return (
-      <Host matchContents={{ vertical: true }} ignoreSafeArea="all" style={style}>
-        <ContextMenu>
-          <ContextMenu.Trigger>
-            <RNHostView matchContents={{ vertical: true }}>{props.children}</RNHostView>
-          </ContextMenu.Trigger>
-          <ContextMenu.Items>{menuItems}</ContextMenu.Items>
-        </ContextMenu>
-      </Host>
+      <MeasuredMenuAnchor style={style}>
+        {(width) =>
+          width === undefined ? (
+            props.children
+          ) : (
+            <Host key={width} matchContents={{ vertical: true }} ignoreSafeArea="all" style={{ width }}>
+              <ContextMenu>
+                <ContextMenu.Trigger>
+                  <RNHostView matchContents>
+                    <View style={{ width, flexDirection: 'row' }}>{props.children}</View>
+                  </RNHostView>
+                </ContextMenu.Trigger>
+                <ContextMenu.Items>{menuItems}</ContextMenu.Items>
+              </ContextMenu>
+            </Host>
+          )
+        }
+      </MeasuredMenuAnchor>
     );
   }
 

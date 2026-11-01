@@ -12,6 +12,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Pressable } from 'react-native';
 import { ComposeHost } from './ComposeHost.android';
+import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import {
   Column,
   DropdownMenu,
@@ -58,7 +59,7 @@ export function AppMenu(props: AppMenuProps) {
   const showCaret = props.iconName == null && props.showCaret !== false;
   const headline = props.iconName == null ? props.headline : undefined;
 
-  return (
+  const renderMenu = (anchorWidth?: number) => (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
     // sits leading in the app bar (the find-climbers action is held trailing by a flex
     // spacer). `maxWidth` caps the RN Host (the anchor) only — the `DropdownMenu.Items`
@@ -71,6 +72,7 @@ export function AppMenu(props: AppMenuProps) {
     // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
     <ComposeHost
+      key={anchorWidth}
       matchContents={hasLongPressAnchor ? { vertical: true } : true}
       accessible={hasLongPressAnchor ? false : undefined}
       accessibilityRole={hasLongPressAnchor ? undefined : 'button'}
@@ -80,13 +82,14 @@ export function AppMenu(props: AppMenuProps) {
           : (accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label))
       }
       accessibilityHint={hasLongPressAnchor ? undefined : accessibilityHint}
-      style={[maxWidth != null ? { maxWidth } : null, style]}
+      style={[maxWidth != null ? { maxWidth } : null, hasLongPressAnchor ? { width: anchorWidth } : style]}
     >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
           {props.trigger === 'longPress' ? (
-            <RNHostView matchContents={{ vertical: true }}>
+            <RNHostView matchContents>
               <Pressable
+                style={{ width: anchorWidth, flexDirection: 'row' }}
                 onLongPress={resolved.length > 0 ? () => setExpanded(true) : undefined}
                 delayLongPress={400}
                 accessible={false}
@@ -182,5 +185,12 @@ export function AppMenu(props: AppMenuProps) {
         </DropdownMenu.Items>
       </DropdownMenu>
     </ComposeHost>
+  );
+  return props.trigger === 'longPress' ? (
+    <MeasuredMenuAnchor style={style}>
+      {(width) => (width === undefined ? props.children : renderMenu(width))}
+    </MeasuredMenuAnchor>
+  ) : (
+    renderMenu()
   );
 }

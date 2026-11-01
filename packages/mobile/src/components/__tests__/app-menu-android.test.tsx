@@ -51,6 +51,22 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   padding: () => ({}),
 }));
 vi.mock('react-native', () => ({
+  StyleSheet: { create: (styles: unknown) => styles },
+  View: ({
+    children,
+    onLayout,
+  }: {
+    children?: ReactNode;
+    onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-measured-menu-anchor': onLayout ? true : undefined,
+        onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { width: 326 } } }) : undefined,
+      },
+      children,
+    ),
   Pressable: ({
     children,
     onLongPress,
@@ -158,6 +174,9 @@ describe('AppMenu (Android) dividers', () => {
         onSelectIndex,
       }),
     );
+    expect(container.querySelector('[data-host]')).toBeNull();
+    expect(getByText('Climb row')).toBeTruthy();
+    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
     const menu = () => container.querySelector('[data-expanded]')?.getAttribute('data-expanded');
     const anchor = container.querySelector('[data-long-press-anchor]') as Element;
     expect(anchor.getAttribute('data-accessible')).toBe('false');

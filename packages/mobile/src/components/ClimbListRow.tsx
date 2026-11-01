@@ -283,7 +283,7 @@ type ClimbListRowProps = {
    */
   showFavorite?: boolean;
   /**
-   * Let this surface show a trailing ⋮ button that opens the reaction menu on tap
+   * Let this surface show a trailing ⋮ button that opens the native menu on tap
    * — a visible, discoverable entry point beside the long-press. Only the climbs
    * list opts in; other surfaces keep long-press only. The button also needs the
    * climber's "Show quick-actions button" setting (on by default), which the row

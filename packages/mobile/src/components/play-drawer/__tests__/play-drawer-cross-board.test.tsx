@@ -1872,6 +1872,7 @@ describe('PlayDrawer wall button taps', () => {
     linkedTo(bluetooth, true);
     const view = renderDrawer();
     expect(recorded.actionBar.at(-1)?.wallControlState).toBe('lit');
+    expect(recorded.actionBar.at(-1)?.wallGlow).toBeNull();
 
     tap(prop);
 
@@ -1920,11 +1921,13 @@ describe('PlayDrawer wall button taps', () => {
     expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({ holder: null, holderFace: null });
   });
 
-  // F1b: the lit button glows with the climb's holds, in the player's role colours.
-  it('hands the lit wall button the climb’s holds, once per climb and frame', () => {
+  // F1b: confirmed driving glows with the climb's holds, in the player's role colours.
+  it('hands the driving wall button the climb’s holds, once per climb and frame', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     linkedTo(linkedBluetooth(), true);
+    act(() => startLiveDrive());
     const view = renderDrawer();
+    expect(recorded.actionBar.at(-1)?.wallControl).toMatchObject({ driving: true });
     const glow = recorded.actionBar.at(-1)?.wallGlow as {
       key: string;
       holds: { x: number; y: number; color: string }[];
