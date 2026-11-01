@@ -1242,7 +1242,9 @@ repository variable does not satisfy or bypass the controller's native and navig
 Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
-per-merge production promotion. Once enabled, production receives the daily qualified canary instead.
+per-merge production promotion. Once enabled, publicly released runtimes receive the daily qualified
+canary. A validated unreleased native line receives immediate per-merge production promotion after
+the same deployment and readiness checks, subject to the public-runtime admission checks above.
 The activation switch controls automatic production cadence, not explicit manual commands, staging or beta publication. Native builds,
 manual hotfixes and backports retain their existing publish routes, with the trusted unlock before a production write.
 
