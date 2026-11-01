@@ -743,15 +743,69 @@ jobs:
           fi
           exit 1
 
+  # Read-only admission: only a stamped, publicly unreleased native pair can
+  # bypass the daily stable schedule. Released runtimes keep their normal soak.
+  unreleased-native-ota:
+    needs: [detect-changes, stage-mobile-ota]
+    if: >-
+      needs.stage-mobile-ota.result == 'success'
+      && vars.OTA_STABLE_RELEASE_ENABLED == 'true'
+      && needs.detect-changes.outputs.critical_ota != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.admission.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mobile-ota-stage
+          path: ota-stage
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Read fresh public stores and protected native history
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
+          node --experimental-strip-types scripts/mobile-live-store-runtimes.ts --out "$RUNNER_TEMP/live-store-runtimes.json"
+      - name: Admit only an exact unreleased native candidate
+        id: admission
+        run: >-
+          node --experimental-strip-types scripts/mobile-ota-unreleased-native.ts
+          --stage ota-stage --source-sha "$GITHUB_SHA"
+          --live-store-runtimes "$RUNNER_TEMP/live-store-runtimes.json"
+
   # No polling runner: this starts only after staging and the backend deploy
   # have both finished. The live schema is checked again before any production
   # upload, including when backend_changed was false or deployment was held.
   promote-mobile-ota:
-    needs: [detect-changes, stage-mobile-ota, build-web, build-backend, migrate, deploy-production-backend]
+    needs:
+      [
+        detect-changes,
+        stage-mobile-ota,
+        build-web,
+        build-backend,
+        migrate,
+        deploy-production-backend,
+        unreleased-native-ota,
+      ]
     if: >-
       always()
       && needs.detect-changes.result == 'success'
-      && (vars.OTA_STABLE_RELEASE_ENABLED != 'true' || needs.detect-changes.outputs.critical_ota == 'true')
+      && (vars.OTA_STABLE_RELEASE_ENABLED != 'true' || needs.detect-changes.outputs.critical_ota == 'true' || needs.unreleased-native-ota.outputs.eligible == 'true')
       && needs.detect-changes.outputs.ota_changed == 'true'
       && needs.stage-mobile-ota.result == 'success'
       && (needs.build-web.result == 'success' || (needs.detect-changes.outputs.web_changed != 'true' && needs.build-web.result == 'skipped'))
@@ -857,6 +911,23 @@ jobs:
             ota-stage/critical-receipt.json
           retention-days: 30
           if-no-files-found: error
+
+      # Store status can change while backend readiness waits. Re-admit inside
+      # the production lock immediately before writing, never from a saved flag.
+      - name: Recheck unreleased native admission before publication
+        if: needs.unreleased-native-ota.outputs.eligible == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags origin '+refs/heads/main:refs/remotes/origin/main' '+refs/tags/*:refs/tags/*'
+          node --experimental-strip-types scripts/mobile-live-store-runtimes.ts --out "$RUNNER_TEMP/live-store-runtimes.json"
+          node --experimental-strip-types scripts/mobile-ota-unreleased-native.ts \
+            --stage ota-stage --source-sha "$GITHUB_SHA" \
+            --live-store-runtimes "$RUNNER_TEMP/live-store-runtimes.json" --require-eligible
 
       - name: Promote exact staged iOS and Android exports
         id: promote
@@ -964,7 +1035,7 @@ jobs:
           node --experimental-strip-types scripts/mobile-ota-promote-track.ts ota-stage --verify-empty-target
 
   verify-mobile-ota:
-    needs: [detect-changes, stage-mobile-ota, promote-mobile-ota, promote-early-mobile-ota]
+    needs: [detect-changes, stage-mobile-ota, promote-mobile-ota, promote-early-mobile-ota, unreleased-native-ota]
     if: always() && needs.detect-changes.outputs.ota_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -976,9 +1047,17 @@ jobs:
           EARLY_RESULT: ${{ needs.promote-early-mobile-ota.result }}
           DAILY_ENABLED: ${{ vars.OTA_STABLE_RELEASE_ENABLED }}
           CRITICAL_OTA: ${{ needs.detect-changes.outputs.critical_ota }}
+          NATIVE_ADMISSION_RESULT: ${{ needs.unreleased-native-ota.result }}
+          UNRELEASED_NATIVE: ${{ needs.unreleased-native-ota.outputs.eligible }}
         run: |
           expected_production=success
-          if [ "$DAILY_ENABLED" = true ] && [ "$CRITICAL_OTA" != true ]; then expected_production=skipped; fi
+          if [ "$DAILY_ENABLED" = true ] && [ "$CRITICAL_OTA" != true ]; then
+            if [ "$NATIVE_ADMISSION_RESULT" != success ]; then
+              echo "::error::Unreleased native OTA admission failed."
+              exit 1
+            fi
+            if [ "$UNRELEASED_NATIVE" != true ]; then expected_production=skipped; fi
+          fi
           if [ "$STAGE_RESULT" != success ] || [ "$EARLY_RESULT" != success ] || [ "$PROMOTE_RESULT" != "$expected_production" ]; then
             echo "::error::Main OTA not promoted (critical=$CRITICAL_OTA, stage=$STAGE_RESULT, early=$EARLY_RESULT, production=$PROMOTE_RESULT)."
             exit 1
@@ -987,7 +1066,7 @@ jobs:
   # Keeps main's committed What's New current. The native builds (TestFlight, Play
   # internal, store) embed main's copy of changelog.generated.json; an OTA carries its
   # own regenerated copy. This used to be a step in promote-mobile-ota, which skips
-  # every non-critical OTA since the daily stable release (#6267), so main's copy
+  # released-runtime non-critical OTAs under the daily stable policy, so main's copy
   # froze. It runs after verify-mobile-ota, so whichever promotion this run owed has
   # landed. No environment: OTA_PUSH_APP_PRIVATE_KEY is a repository secret, and a job
   # waiting at an environment gate holds this run's group for every later push.
@@ -1663,6 +1742,7 @@ jobs:
       [
         detect-changes,
         stage-mobile-ota,
+        unreleased-native-ota,
         promote-mobile-ota,
         promote-early-mobile-ota,
         verify-mobile-ota,
@@ -1730,6 +1810,7 @@ jobs:
       [
         detect-changes,
         stage-mobile-ota,
+        unreleased-native-ota,
         promote-mobile-ota,
         promote-early-mobile-ota,
         verify-mobile-ota,
@@ -1849,7 +1930,7 @@ jobs:
             if [ "$CRITICAL_OTA" = true ]; then
               OTA_LINE="$OTA_LINE; critical release promoted to 100% stable"
             else
-              OTA_LINE="$OTA_LINE; production promoted (before daily cutover)"
+              OTA_LINE="$OTA_LINE; production promoted"
             fi
           fi
 

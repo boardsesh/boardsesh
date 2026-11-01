@@ -499,12 +499,30 @@ accepts main-only calls from the production-deploy pipeline and explicit main di
 it has no direct push trigger. A native change moves main onto a new fingerprint,
 so older installed binaries retain their last compatible update until users install
 replacement binaries. Publishing never substitutes an older fingerprint to cross that boundary.
-The stable controller still waits until **both** public stores offer the candidate runtimes;
-early updates and native post-upload republishes continue through their existing guarded paths.
+When main is on a validated, publicly unreleased native version, its OTAs publish
+to that runtime immediately after the production backend and schema are ready.
+They use the same archived exports, captured production baselines and serialized
+production publisher; they do not wait for store review, the daily stable schedule,
+or a percentage rollout. Both live public store marketing versions must be lower,
+neither public fleet may use either platform's candidate runtime, and no same or
+higher release anchor may exist. Every historical public release anchor also
+protects its runtime: reverting to a previously public fingerprint cannot use this
+immediate route, because older installed binaries still accept that fingerprint.
+The exact source and archived marketing version
+and runtime pair must match main's latest validated native stamp. Later JS commits
+on that same native line remain eligible; an unstamped native change does not.
+Public-store status and protected native history are read again inside the
+production lock immediately before publication. Missing, malformed or stale
+evidence blocks this route. Existing public runtimes keep the daily stable policy
+and wait until **both** stores offer the candidate runtimes. Early updates and
+native post-upload republishes retain their existing guarded paths. Public store
+submission remains manual, and older runtimes retain their last compatible OTA.
 
 Native changes open one shared patch version on main through `mobile-native-release.yml`.
-The stamped commit starts both tester builds. JS-only pushes keep their version and
-use the ordinary staged OTA pipeline. Public App Store and Play production submission
+An already-raised unreleased version is adopted without another patch. The stamped
+commit starts both tester builds. JS-only pushes keep their version and use the
+staged OTA pipeline, with immediate delivery on an eligible unreleased native line.
+Public App Store and Play production submission
 requires an explicit manual workflow action; a merge never submits a public release.
 See [Native releases and build gating](#native-releases-and-build-gating).
 
@@ -1184,7 +1202,9 @@ unlock blocks the publish. Staging exports do not unlock or replace production.
 read the newest live iOS and Android store builds and verify both candidate
 fingerprints. If either differs, a new candidate waits without production
 writes. After a native change lands on main, staging and early updates continue
-while the stores review the new binaries; production soaks resume once both
+while the stores review the new binaries. Eligible unreleased native lines receive
+immediate staged production OTAs through the production-deploy pipeline described
+above; this controller continues to hold those candidates. Production soaks resume once both
 public stores offer the matching runtimes. There are no automatic backports.
 An urgent fix for the older fleet uses the existing explicit backport workflow.
 A public runtime change during a canary stops its progression and reconciles
@@ -1222,7 +1242,9 @@ repository variable does not satisfy or bypass the controller's native and navig
 Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
-per-merge production promotion. Once enabled, production receives the daily qualified canary instead.
+per-merge production promotion. Once enabled, publicly released runtimes receive the daily qualified
+canary. A validated unreleased native line receives immediate per-merge production promotion after
+the same deployment and readiness checks, subject to the public-runtime admission checks above.
 The activation switch controls automatic production cadence, not explicit manual commands, staging or beta publication. Native builds,
 manual hotfixes and backports retain their existing publish routes, with the trusted unlock before a production write.
 

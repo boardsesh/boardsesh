@@ -542,6 +542,9 @@ The daily stable OTA controller starts only when both candidate platform runtime
 match the newest live public store builds. An Android draft, approval awaiting
 publication, or tester-track release does not qualify. Release both store builds
 after QA of the main-built candidates so daily production soaks can resume.
+Main's validated unreleased native line receives per-merge OTAs after backend and schema readiness,
+without waiting for public store releases. This immediate route excludes public and historical
+store runtimes; older installed binaries retain their last compatible update.
 
 Before submission, dispatch **Mobile Store Audit** (`mobile-store-audit.yml`) on
 `main` with the exact marketing version and iOS build number. It reads App Store
