@@ -73,6 +73,7 @@ function harness(fault?: Fault) {
   const events: Backend['events'] = [];
   const selected: Record<Role, number> = { ios: 0, android: 0 };
   const timeline: string[] = [];
+  const historyOpen: Record<Role, boolean> = { ios: false, android: false };
   let serverSeq = 0,
     sessionActive = false,
     cleared = false,
@@ -134,8 +135,16 @@ function harness(fault?: Fault) {
       phone: EXAMPLE_CONFIG.phones[role],
       flow: vi.fn<Driver['flow']>().mockImplementation(async (name, variables) => {
         timeline.push(`${role}:${name}`);
-        if (name === 'open-climb')
+        if (name === 'open-climb') {
+          if (historyOpen[role]) throw new Error('History sheet still covers the new route');
           selected[role] = board.catalog.findIndex((climb) => variables?.CLIMB_URL.endsWith(`/play/${climb.uuid}`));
+        }
+        if (name === 'open-history') historyOpen[role] = true;
+        if (name === 'close-history') {
+          expect(historyOpen[role]).toBe(true);
+          expect(variables).toEqual({ BOARD_UUID: board.uuid });
+          historyOpen[role] = false;
+        }
         if (name === 'connect') deliver(selected[role]);
         if (name === 'put') {
           if (role !== 'android') throw new Error('Relight actor changed');
@@ -155,6 +164,7 @@ function harness(fault?: Fault) {
             events.push({ boardUuid: board.uuid, event: { __typename: 'BoardClimbCleared', seq: ++serverSeq } });
         }
         if (name === 'observe-clear-history') {
+          expect(historyOpen[role]).toBe(true);
           expect(variables).toEqual({
             BOARD_UUID: board.uuid,
             CLIMB_UUID: 'climb-1',
@@ -223,7 +233,17 @@ describe('shared clear observation without an impossible remote dark state', () 
       'assert-id',
       { EXPECTED_ID: 'wall-control-dark-self-idle' },
     ]);
+    const firstHistory = current.timeline.indexOf('android:open-history');
+    expect(current.timeline.slice(firstHistory, firstHistory + 4)).toEqual([
+      'android:open-history',
+      'android:assert-id',
+      'android:close-history',
+      'android:open-climb',
+    ]);
+    const secondHistory = current.timeline.indexOf('android:open-history', firstHistory + 1);
+    expect(current.timeline.slice(secondHistory, observed).includes('android:close-history')).toBe(false);
     const afterObservation = current.timeline.slice(observed + 1);
+    expect(afterObservation.slice(0, 2)).toEqual(['android:close-history', 'android:open-climb']);
     expect(afterObservation.indexOf('android:open-climb')).toBeLessThan(afterObservation.indexOf('android:put'));
     expect(roleFlows.some(([, variables]) => variables?.EXPECTED_ID === 'wall-control-dark-crew-idle')).toBe(false);
   });

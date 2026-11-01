@@ -51,9 +51,22 @@ ownership, renewal, memory handling and logging. Author validation covers the
 host suite, mocked USB transport, full mobile suite, types, lint and native
 bundles; precise results are included in the follow-up PR.
 
-No phone, real USB transport or firmware flash runs form part of this follow-up
-verification. Physical testing is paused until Marco reconnects the devices.
-Earlier evidence remains eight distinct complete hardware cases, with no
-complete collaboration case or full 18-case matrix pass. Simulator smoke and
+Initial follow-up verification used source, unit and build checks. The later
+device window is recorded below. Earlier evidence remains eight distinct
+complete hardware cases, with no complete collaboration case or full 18-case
+matrix pass. Simulator smoke and
 screenshot commands skip in the current environment; headless bundle checks
 are separate evidence and do not replace hardware coverage.
+
+Marco later reconnected the phones for a 20-minute attempt. The Kilter/iPhone
+session case passed physical Connect and Start/Join/rosters, then failed an
+Android history label missing the configured angle suffix. The exact board/angle
+matcher was corrected and proved on Android. Normal iPhone End, Summary dismissal,
+durable End and Disconnect passed; final fixture links were zero. A separate
+Android-host UI attempt stopped before Start because the history sheet still
+covered Record. Normal close restored inactive Record. The host now closes the
+observed sheet explicitly, preserving the open-sheet clear oracle; that final
+repair has source/unit review and awaits another physical run. Generic Maestro
+assertion help also no longer misclassifies a failed assertion as transport loss.
+These results add no complete hardware-case pass. Device work and owned processes
+were stopped at the end of the availability window.

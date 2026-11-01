@@ -38,11 +38,17 @@ For a physical Android build, use `vp run mobile:android-apk -- --require-fresh 
 
 Readiness, picker dismissal and the End recap use host-supplied labels. Override
 `phones.ios.labels` or `phones.android.labels` with `HOME_LABEL`, `CLIMBS_LABEL`,
-`TAB_BAR_LABEL`, `CANCEL_LABEL` and `SESSION_SUMMARY_LABEL` as needed (defaults:
-Home, Climbs, Tab Bar, Cancel and Session Summary). This supports a different
+`TAB_BAR_LABEL`, `CANCEL_LABEL`, `SESSION_SUMMARY_LABEL` and `CLOSE_LABEL` as needed (defaults:
+Home, Climbs, Tab Bar, Cancel, Session Summary and Close). This supports a different
 system tab-bar locale independently of the app. The complete suite still has
 an English app baseline for End/Leave, climb actions, history and notification
 controls; these overrides do not claim a fully localized matrix.
+
+Board history labels may include the configured angle. The runner matches the
+exact named fixture with its optional exact angle suffix. After observing its
+current/history row, it closes that same panel before route navigation. The
+clear test deliberately keeps it open until the current-to-history transition
+is verified, then closes it. A panel that does not dismiss remains a failure.
 
 Before every independent single-board, cross-board or shared-session case, the runner requires zero fixture links and a visibly inactive Record screen, then restarts the relevant app and verifies the same account/runtime. It rechecks zero links immediately before termination. This bounds accumulated native navigation without restarting within source → target → Previous continuity or an active session.
 

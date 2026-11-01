@@ -199,3 +199,59 @@ describe('visible session leaf flow contracts', () => {
     },
   );
 });
+
+it('closes only the observed named history panel and waits for its exact disappearance', () => {
+  const commands = readFlow(resolve('packages/mobile/.maestro/board-qa/close-history.yaml'), {
+    APP_ID: variables.APP_ID,
+    BOARD_UUID: 'expected-wall',
+    CLOSE_LABEL: 'Fermer',
+  });
+  expect(commands).toEqual([
+    { assertVisible: { id: 'board-panel-expected-wall' } },
+    { tapOn: 'Fermer' },
+    { extendedWaitUntil: { notVisible: { id: 'board-panel-expected-wall' }, timeout: 30000 } },
+  ]);
+});
+
+it('fails closed when Close leaves the exact history panel present', async () => {
+  vi.useFakeTimers();
+  const directory = mkdtempSync(join(tmpdir(), 'board-qa-close-history-'));
+  directories.push(directory);
+  const driver = new IosDriver(
+    {
+      id: 'owned',
+      appId: variables.APP_ID,
+      scheme: 'com.boardsesh.app',
+      email: 'qa@example.com',
+      wdaUrl: 'http://127.0.0.1:8211',
+      labels: { CLOSE_LABEL: 'Fermer' },
+    },
+    new Evidence(directory),
+  );
+  driver['session'] = 'history-close-test';
+  const clicked: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname.endsWith('/elements')) {
+        const requestBody = init?.body;
+        if (typeof requestBody !== 'string') throw new Error('Expected a JSON WDA request body');
+        const predicate = (JSON.parse(requestBody) as { value: string }).value;
+        if (predicate === selectorPredicate({ id: 'board-panel-expected-wall' }))
+          return Response.json({ value: [{ ELEMENT: 'panel' }] });
+        if (predicate === selectorPredicate('Fermer')) return Response.json({ value: [{ ELEMENT: 'close' }] });
+        throw new Error('Unexpected selector');
+      }
+      if (url.pathname.endsWith('/element/close/click')) {
+        clicked.push('close');
+        return Response.json({ value: null });
+      }
+      throw new Error('Unexpected native action');
+    }),
+  );
+  const completed = driver.flow('close-history', { BOARD_UUID: 'expected-wall' }).catch((error: unknown) => error);
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(await completed).toMatchObject({ kind: 'failed', message: 'Deadline exceeded: iPhone extendedWaitUntil' });
+  expect(clicked).toEqual(['close']);
+});

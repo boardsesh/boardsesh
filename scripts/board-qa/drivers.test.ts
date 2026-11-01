@@ -602,13 +602,18 @@ describe('Android transport evidence', () => {
       return '';
     });
     const driver = new AndroidDriver(
-      { ...phone, labels: { HOME_LABEL: 'Inicio', CLIMBS_LABEL: 'Bloques', CANCEL_LABEL: 'Cancelar' } },
+      {
+        ...phone,
+        labels: { HOME_LABEL: 'Inicio', CLIMBS_LABEL: 'Bloques', CANCEL_LABEL: 'Cancelar', CLOSE_LABEL: 'Cerrar' },
+      },
       '/unused/adb',
       new Evidence(root),
       run,
     );
     await driver.flow('wait-app-ready');
     await driver.flow('dismiss-picker', { BOARD_UUID: 'wall' });
+    await driver.flow('close-history', { BOARD_UUID: 'wall' });
+    expect(recorded[2]).toContainEqual({ tapOn: 'Cerrar' });
     expect(recorded[0]).toContainEqual({ assertVisible: 'Inicio' });
     expect(recorded[0]).toContainEqual({ assertVisible: 'Bloques' });
     expect(recorded[1]).toContainEqual({ tapOn: 'Cancelar' });
@@ -617,6 +622,12 @@ describe('Android transport evidence', () => {
 
 it.each([
   ['Assertion is false: id: actual-control', 'failed'],
+  ['Assertion is false: id: session-start\nElement may be temporarily unavailable due to loading state', 'failed'],
+  [
+    'Assertion is false: id: session-start\nCaused by: io.grpc.StatusRuntimeException: UNAVAILABLE: io exception',
+    'infrastructure',
+  ],
+  ['Assertion failed: session-start\ngRPC status=UNAVAILABLE', 'infrastructure'],
   ['io.grpc.StatusRuntimeException: DEADLINE_EXCEEDED', 'infrastructure'],
   ['Assertion failed after driver timed out', 'infrastructure'],
 ])('classifies Maestro evidence %s as %s', async (message, kind) => {

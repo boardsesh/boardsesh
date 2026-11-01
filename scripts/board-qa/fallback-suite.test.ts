@@ -206,7 +206,7 @@ function harness(fault?: Fault, peerEnabled = true) {
             variables?.CLIMB_URL.endsWith(`/play/${climb.uuid}`),
           );
           selected[role] = { board: boardIndex, climb: climbIndex };
-          historyPanel[role] = null;
+          if (historyPanel[role] !== null) throw new Error('Route navigation left the history sheet covering the app');
           if (
             fault === 'foreign-preview' &&
             role === 'ios' &&
@@ -222,6 +222,12 @@ function harness(fault?: Fault, peerEnabled = true) {
           deliver(role, current.board, current.climb);
         if (name === 'open-history')
           historyPanel[role] = boards.findIndex((board) => board.uuid === variables?.BOARD_UUID);
+        if (name === 'close-history') {
+          const panel = historyPanel[role];
+          if (panel === null || variables?.BOARD_UUID !== boards[panel].uuid)
+            throw new Error('Wrong history sheet close');
+          historyPanel[role] = null;
+        }
         if (name === 'assert-id' && variables?.EXPECTED_ID.startsWith('board-current-')) {
           const panel = historyPanel[role];
           if (
@@ -663,12 +669,14 @@ describe('physical iPhone with native emulator peer schedule', () => {
         'assert-id',
         { EXPECTED_ID: `board-current-${board.catalog[1].uuid}-physical-user` },
       ]);
-      expect(peerFlows.slice(observed + 1, observed + 4).map(([name]) => name)).toEqual([
+      expect(peerFlows.slice(observed + 1, observed + 5).map(([name]) => name)).toEqual([
+        'close-history',
         'open-climb',
         'assert-id',
         'put',
       ]);
-      expect(peerFlows[observed + 2]).toEqual(['assert-id', { EXPECTED_ID: 'wall-control-crew-crew-idle' }]);
+      expect(peerFlows[observed + 1]).toEqual(['close-history', { BOARD_UUID: board.uuid }]);
+      expect(peerFlows[observed + 3]).toEqual(['assert-id', { EXPECTED_ID: 'wall-control-crew-crew-idle' }]);
     }
     expect(peerFlows.some(([, variables]) => variables?.EXPECTED_ID === 'wall-control-dark-crew-idle')).toBe(false);
     const commands = readFlow('packages/mobile/.maestro/board-qa/observe-clear-history.yaml', {

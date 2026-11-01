@@ -91,6 +91,7 @@ export function phoneLabels(phone: Phone): Record<string, string> {
     CLIMBS_LABEL: 'Climbs',
     TAB_BAR_LABEL: 'Tab Bar',
     CANCEL_LABEL: 'Cancel',
+    CLOSE_LABEL: 'Close',
     SESSION_SUMMARY_LABEL: 'Session Summary',
     ...phone.labels,
   };
@@ -419,7 +420,9 @@ export class AndroidDriver implements Driver {
       const kind =
         error instanceof CommandExitFailure &&
         /Assertion (?:is false|failed)|assert(?:Visible|NotVisible).*failed/i.test(error.message) &&
-        !/grpc|driver.*timeout|timed out|UNAVAILABLE/i.test(error.message)
+        !/\b(?:io\.)?grpc[.:]|\bStatus(?:Runtime)?Exception:\s*(?:UNAVAILABLE|DEADLINE_EXCEEDED)\b|\b(?:status|code)\s*[=:]\s*UNAVAILABLE\b|driver.*timeout|timed out/i.test(
+          error.message,
+        )
           ? 'failed'
           : 'infrastructure';
       throw new QaFailure(this.evidence.redact(error instanceof Error ? error.message : String(error)), kind);

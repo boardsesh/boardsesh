@@ -40,6 +40,12 @@ export function previousQueueWitness(
   return { currentSlotUuid: current.uuid, previousSlotUuid: previous.uuid };
 }
 
+/** Native board labels append the selected angle for adjustable walls. */
+export function boardHistoryLabelPattern(boardName: string, angle: number): string {
+  const escape = (label: string) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return `^Board history, ${escape(boardName)}( • ${escape(String(angle))}°)?$`;
+}
+
 function climbLabelPattern(climb: CatalogClimb): string {
   return `.*${climb.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*`;
 }
@@ -613,7 +619,7 @@ export class Suite {
             await this.history(peer, board, board.catalog[0], this.user(holder));
             await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
-            await this.history(peer, board, board.catalog[0], this.user(holder));
+            await this.history(peer, board, board.catalog[0], this.user(holder), { keepOpen: true });
             const lit = (await this.backend.snapshot(board)).recent[0];
             if (!lit || lit.climbUuid !== board.catalog[1].uuid || lit.sentByUserId !== this.user(holder))
               throw new QaFailure('Clear requires the freshly confirmed shared climb');
@@ -674,6 +680,7 @@ export class Suite {
               WRITER_ID: this.user(holder),
               HISTORY_SEQ: String(lit.seq),
             });
+            await this.phones[peer].flow('close-history', { BOARD_UUID: board.uuid });
             await this.unchanged(board, () => this.open(peer, board, board.catalog[1]));
             await this.assertId(peer, 'wall-control-crew-crew-idle');
             await this.send(peer, board, board.catalog[1], 'put', { writer: holder });
@@ -784,7 +791,13 @@ export class Suite {
         );
       }
   }
-  private async history(role: Role, board: Board, climb: CatalogClimb, writer: string): Promise<void> {
+  private async history(
+    role: Role,
+    board: Board,
+    climb: CatalogClimb,
+    writer: string,
+    options: { keepOpen?: boolean } = {},
+  ): Promise<void> {
     const snapshot = await this.backend.snapshot(board);
     const entry = snapshot.history.find((entry) => entry.climbUuid === climb.uuid && entry.sentByUserId === writer);
     if (!entry) throw new QaFailure('Expected confirmed climb missing from saved wall history');
@@ -796,10 +809,11 @@ export class Suite {
     await this.phones[role].flow('open-history', {
       BOARD_URL: this.url(role, `/b/${board.slug}`),
       BOARD_UUID: board.uuid,
-      BOARD_HISTORY_LABEL: `Board history, ${boardName}`,
+      BOARD_HISTORY_LABEL: boardHistoryLabelPattern(boardName, board.angle),
     });
     if (snapshot.recent[0]?.seq === entry.seq) await this.assertId(role, `board-current-${climb.uuid}-${writer}`);
     else await this.assertId(role, `board-history-${climb.uuid}-${entry.seq}`);
+    if (!options.keepOpen) await this.phones[role].flow('close-history', { BOARD_UUID: board.uuid });
   }
   async failureArtifacts(): Promise<void> {
     for (const role of ROLES) {

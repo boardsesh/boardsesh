@@ -1,0 +1,10 @@
+appId: ${APP_ID}
+name: Close the observed named wall history before route navigation
+---
+- assertVisible:
+    id: board-panel-${BOARD_UUID}
+- tapOn: ${CLOSE_LABEL}
+- extendedWaitUntil:
+    notVisible:
+      id: board-panel-${BOARD_UUID}
+    timeout: 30000

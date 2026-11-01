@@ -10,7 +10,13 @@ import { EXAMPLE_CONFIG, type Board, type Phone, type Role } from './config';
 import type { Driver } from './drivers';
 import { Evidence, QaFailure } from './evidence';
 import { Fixture, type FixtureStatus } from './fixture';
-import { Suite, QA_SESSION_QUEUE_QUERY, previousQueueWitness, type QaQueueSnapshot } from './suite';
+import {
+  Suite,
+  boardHistoryLabelPattern,
+  QA_SESSION_QUEUE_QUERY,
+  previousQueueWitness,
+  type QaQueueSnapshot,
+} from './suite';
 
 const directories: string[] = [];
 const roles: Role[] = ['ios', 'android'];
@@ -340,5 +346,23 @@ describe('physical suite named-board climb routes', () => {
       expect(variables?.CLIMB_LABEL_PATTERN).toContain(climb.name);
     }
     expect(start).toHaveBeenCalledOnce();
+  });
+});
+
+describe('native named-fixture history label', () => {
+  it('accepts the captured adjustable-wall label and fixed-wall label only', () => {
+    const pattern = new RegExp(boardHistoryLabelPattern('Boardsesh QA Kilter Homewall Full', 40));
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full • 40°')).toBe(true);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full')).toBe(true);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full • 45°')).toBe(false);
+    expect(pattern.test('Board history, Boardsesh QA Tension 2 Mirror • 40°')).toBe(false);
+    expect(pattern.test('Board history, Boardsesh QA Kilter Homewall Full extra')).toBe(false);
+    expect(pattern.test('Other Board history, Boardsesh QA Kilter Homewall Full')).toBe(false);
+  });
+  it('escapes fixture names and fractional angles instead of interpreting regex syntax', () => {
+    const pattern = new RegExp(boardHistoryLabelPattern('Fixture (A) + [B].', 22.5));
+    expect(pattern.test('Board history, Fixture (A) + [B]. • 22.5°')).toBe(true);
+    expect(pattern.test('Board history, Fixture (A) + [B]. • 22x5°')).toBe(false);
+    expect(pattern.test('Board history, Fixture A + B. • 22.5°')).toBe(false);
   });
 });
