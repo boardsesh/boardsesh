@@ -1023,6 +1023,36 @@ describe('BluetoothProvider mismatch switch', () => {
     expect(analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved')).toHaveLength(1);
   });
 
+  it('flushes the picker groups for a picker opened for a known board (#7125)', () => {
+    bluetooth.state.pickerState = {
+      ...makeMismatchingPickerState(),
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      devices: [
+        { deviceId: 'device-2', name: 'Tension Board#SN-2@2', rssi: -50 },
+        { deviceId: 'bare-kilter', name: 'Kilter Board', rssi: -60 },
+      ],
+    };
+    resolvedBoards.value = new Map();
+    const { rerender } = renderProvider(KILTER_PROPS);
+
+    bluetooth.state.pickerState = null;
+    rerender(
+      createElement(BluetoothProvider, {
+        ...KILTER_PROPS,
+        children: createElement('div', null),
+      }),
+    );
+
+    const statsCalls = analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved');
+    expect(statsCalls).toHaveLength(1);
+    expect(statsCalls[0]?.[1]).toMatchObject({
+      devicesTotal: 2,
+      targetMatchedDevices: 0,
+      targetUnknownDevices: 1,
+      targetOtherDevices: 1,
+    });
+  });
+
   it('flushes no resolution-stats event for a picker that never left its searching state (#5658)', async () => {
     // The saved board was found (or the climber cancelled) while the sheet was
     // still "searching": it never listed anything, so there is nothing to summarise.

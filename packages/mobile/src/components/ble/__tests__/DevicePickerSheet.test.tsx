@@ -609,22 +609,73 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     locationHint.servicesWereEnabled = false;
   });
 
-  it('lists only the intended physical board even when other boards have stronger signals', () => {
+  it('lists the intended board first, then unidentified boxes, and hides boards that are elsewhere', () => {
+    // The gym's Tension (-35) and a stranger's Kilter (-25) out-shout both rows
+    // and stay hidden. The bare-name box (-40) is louder than the intended
+    // Kilter (-70) but still sorts after it.
     const onSearchAnyBoard = vi.fn();
     const { container } = render(
       <DevicePickerSheet
         {...makeProps({
-          devices: [tension, otherKilter, kilter, unknown],
+          devices: [tension, otherKilter, unknown, kilter],
           resolvedBoards: resolutions,
           targetBoard,
           onSearchAnyBoard,
         })}
       />,
     );
-    expect(listedIds(container)).toEqual(['kilter']);
-    expect(hasText(container, 'ble.devicesFound:1')).toBe(true);
+    expect(listedIds(container)).toEqual(['kilter', 'unknown']);
+    expect(hasText(container, 'ble.devicesFound:2')).toBe(true);
+    expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(false);
     act(() => (container.querySelector('[data-button="ble.searchAnyBoard"]') as HTMLButtonElement).click());
     expect(onSearchAnyBoard).toHaveBeenCalledOnce();
+  });
+
+  it('sorts unidentified boxes by signal among themselves', () => {
+    const quietBare = { deviceId: 'quiet-bare', name: 'Kilter Board', rssi: -80 };
+    const unrecorded = { deviceId: 'unrecorded', name: 'Kilter Board#K-9@3', rssi: -60 };
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({ devices: [quietBare, kilter, unknown, unrecorded], resolvedBoards: resolutions, targetBoard })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['kilter', 'unknown', 'unrecorded', 'quiet-bare']);
+  });
+
+  it('lists a bare-name Kilter box with no "not found" copy when the intended board never resolves', () => {
+    // Kilter-built boxes advertise no serial, so nothing can resolve them and
+    // nothing remembers them: hiding them meant "not found" on every connect.
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({
+          devices: [tension, unknown],
+          resolvedBoards: resolutions,
+          targetBoard,
+          onSearchAnyBoard: vi.fn(),
+        })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['unknown']);
+    expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(false);
+    expect(container.querySelector('[data-button="ble.searchAnyBoard"]')).not.toBeNull();
+  });
+
+  it('lists a stock MoonBoard, which advertises no serial, at a MoonBoard connect', () => {
+    const moonTarget = { boardUuid: 'qa-moon', boardName: 'moonboard' };
+    const moonboard = { deviceId: 'moon', name: 'MoonBoard', rssi: -60 };
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({
+          devices: [kilter, moonboard],
+          resolvedBoards: resolutions,
+          targetBoard: moonTarget,
+          currentBoardConfig: { boardName: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' },
+          onSearchAnyBoard: vi.fn(),
+        })}
+      />,
+    );
+    expect(listedIds(container)).toEqual(['moon']);
+    expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(false);
   });
 
   it('reveals every device on the explicit escape and keeps RSSI ordering', () => {
@@ -647,14 +698,26 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     expect(container.querySelector('[data-button="ble.searchAnyBoard"]')).toBeNull();
   });
 
-  it('updates matching rows when resolution arrives without selecting a device', () => {
-    const props = makeProps({ devices: [tension, kilter], targetBoard, isScanning: true, onSearchAnyBoard: vi.fn() });
+  it('regroups rows when resolution arrives without selecting a device', () => {
+    // Before the lookup lands both Kilters are unidentified, louder first. Once
+    // it lands the intended one is claimed and the stranger's is set apart.
+    const props = makeProps({ devices: [tension, otherKilter, kilter], targetBoard, isScanning: true });
     const { container, rerender } = render(<DevicePickerSheet {...props} />);
-    expect(listedIds(container)).toEqual([]);
-    expect(hasText(container, 'ble.searchingForSavedBoard')).toBe(true);
+    expect(listedIds(container)).toEqual(['other-kilter', 'kilter']);
     rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
     expect(listedIds(container)).toEqual(['kilter']);
     expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('keeps searching while every controller heard so far is another board', () => {
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({ devices: [tension], targetBoard, isScanning: true, onSearchAnyBoard: vi.fn() })}
+      />,
+    );
+    expect(listedIds(container)).toEqual([]);
+    expect(hasText(container, 'ble.searchingForSavedBoard')).toBe(true);
+    expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(false);
   });
 
   it('keeps unresolved and serial-less devices available after escape despite later resolutions', () => {
@@ -665,9 +728,16 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     expect(listedIds(container)).toEqual(['tension', 'unknown']);
   });
 
-  it('offers the escape without empty-scan advice when the intended board never resolves', () => {
+  it('says "not found" and offers the escape, without empty-scan advice, when every board heard is elsewhere', () => {
     const { container } = render(
-      <DevicePickerSheet {...makeProps({ devices: [tension], targetBoard, onSearchAnyBoard: vi.fn() })} />,
+      <DevicePickerSheet
+        {...makeProps({
+          devices: [tension, otherKilter],
+          resolvedBoards: resolutions,
+          targetBoard,
+          onSearchAnyBoard: vi.fn(),
+        })}
+      />,
     );
     expect(listedIds(container)).toEqual([]);
     expect(hasText(container, 'ble.selectedBoardNotFound')).toBe(true);

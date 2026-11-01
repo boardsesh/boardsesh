@@ -20,6 +20,8 @@ const DEVICES: DiscoveredDevice[] = [
   { deviceId: 'qa-tension', name: 'Tension Board#99000002@3', rssi: -40 },
   { deviceId: 'qa-kilter', name: 'Kilter Board#99000001@3', rssi: -70 },
 ];
+// A Kilter-built box advertises no serial, so nothing can say which board it is.
+const BARE_KILTER: DiscoveredDevice = { deviceId: 'qa-bare-kilter', name: 'Kilter Board', rssi: -55 };
 
 function fixtureBoard(boardUuid: string, boardType: string, name: string, serialNumber: string): UserBoard {
   return {
@@ -54,7 +56,7 @@ const RESOLVED_BOARDS = new Map<string, ResolvedBoardEntry>([
   ['99000002', { kind: 'saved', board: fixtureBoard(TENSION_UUID, 'tension', 'QA Tension 2 Mirror', '99000002') }],
 ]);
 
-function GymBoardPicker({ initiallyShowAll = false, targetMissing = false }) {
+function GymBoardPicker({ initiallyShowAll = false, targetMissing = false, withBareKilter = false }) {
   const [showAllBoards, setShowAllBoards] = useState(initiallyShowAll);
   const [open, setOpen] = useState(true);
   const handleSearchAnyBoard = useCallback(() => setShowAllBoards(true), []);
@@ -62,7 +64,7 @@ function GymBoardPicker({ initiallyShowAll = false, targetMissing = false }) {
 
   return (
     <DevicePickerSheet
-      devices={targetMissing ? DEVICES.slice(0, 1) : DEVICES}
+      devices={[...(targetMissing ? DEVICES.slice(0, 1) : DEVICES), ...(withBareKilter ? [BARE_KILTER] : [])]}
       resolvedBoards={RESOLVED_BOARDS}
       currentBoardConfig={KILTER_CONFIG}
       targetBoard={TARGET_BOARD}
@@ -93,6 +95,16 @@ const stories: StoryModule = {
       name: 'The intended Kilter is not advertising',
       layout: 'fullscreen',
       render: () => <GymBoardPicker targetMissing />,
+    },
+    bareKilter: {
+      name: 'A serial-less Kilter box lists under the intended Kilter',
+      layout: 'fullscreen',
+      render: () => <GymBoardPicker withBareKilter />,
+    },
+    bareKilterOnly: {
+      name: 'Only a serial-less Kilter box beside the Tension',
+      layout: 'fullscreen',
+      render: () => <GymBoardPicker targetMissing withBareKilter />,
     },
   },
 };
