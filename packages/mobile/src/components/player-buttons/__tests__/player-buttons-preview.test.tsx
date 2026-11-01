@@ -18,7 +18,13 @@ vi.mock('react-native', () => ({
     const flattened = Object.assign({}, ...[style].flat(10).filter(Boolean));
     return createElement(
       'div',
-      { 'data-testid': testID, 'aria-label': accessibilityLabel, 'data-flex': flattened.flex },
+      {
+        'data-testid': testID,
+        'aria-label': accessibilityLabel,
+        'data-flex': flattened.flex,
+        'data-width': flattened.width,
+        'data-background': flattened.backgroundColor,
+      },
       children,
     );
   },
@@ -33,7 +39,10 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
   }),
 }));
-vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -63,7 +72,7 @@ function preview(overrides: Partial<Parameters<typeof PlayerButtonsPreview>[0]> 
   return render(
     createElement(PlayerButtonsPreview, {
       buttons: DEFAULT_PLAYER_BUTTONS,
-      previousNext: true,
+      previousNext: false,
       position: 'below',
       board: FALLBACK_PREVIEW_BOARD,
       ...overrides,
@@ -75,24 +84,17 @@ describe('PlayerButtonsPreview', () => {
   // #7000: [♡] [⏮] [✓] [⏭] [☰] over the full-width wall button.
   it("draws today's Kilter bar under the board, and says it in one sentence", () => {
     const screen = preview();
-    expect(icons(screen.container)).toEqual([
-      'favorite',
-      'skip.previous',
-      'tick.outline',
-      'skip.next',
-      'queue',
-      'lightbulb',
-    ]);
+    expect(icons(screen.container)).toEqual(['angle', 'favorite', 'check.small', 'share', 'queue', 'lightbulb']);
     expect(screen.queryByText('40°')).toBeNull();
     expect(screen.getByTestId('player-buttons-preview').getAttribute('aria-label')).toBe(
       'mobile.settings.playerButtons.previewLabel ' +
         JSON.stringify({
           position: 'mobile.settings.playerButtons.position.below',
           buttons: [
+            'mobile.settings.playerButtons.buttons.angle',
             'mobile.settings.playerButtons.buttons.favorite',
-            'mobile.settings.playerButtons.fixed.previous',
             'mobile.settings.playerButtons.fixed.log',
-            'mobile.settings.playerButtons.fixed.next',
+            'mobile.settings.playerButtons.buttons.share',
             'mobile.settings.playerButtons.buttons.queue',
             'mobile.settings.playerButtons.fixed.boardLight',
           ].join(', '),
@@ -100,16 +102,33 @@ describe('PlayerButtonsPreview', () => {
     );
   });
 
-  it('draws the board it stands for: Mirror leads on Tension, and the heart is in ⋯', () => {
+  it('draws the board it stands for: Mirror replaces Angle on Tension', () => {
     const screen = preview({ board: { ...TENSION, angleAvailable: false } });
+    expect(icons(screen.container)).toEqual(['mirror', 'favorite', 'check.small', 'share', 'queue', 'lightbulb']);
+  });
+
+  it('shows the filled hero Tick in proportion to the neighboring icons', () => {
+    const screen = preview();
+    const tick = screen.container.querySelector('[data-icon="check.small"]');
+    expect(tick?.getAttribute('data-color')).toBe('#FFFFFF');
+    expect(tick?.parentElement?.getAttribute('data-width')).toBe('32');
+    expect(tick?.parentElement?.getAttribute('data-background')).toBe('#047857');
+  });
+
+  it('shows and announces navigation instead of the two inner actions when enabled', () => {
+    const screen = preview({ previousNext: true });
     expect(icons(screen.container)).toEqual([
-      'mirror',
+      'angle',
       'skip.previous',
-      'tick.outline',
+      'check.small',
       'skip.next',
       'queue',
       'lightbulb',
     ]);
+    const label = screen.getByTestId('player-buttons-preview').getAttribute('aria-label');
+    expect(label).toContain('mobile.settings.playerButtons.fixed.previous');
+    expect(label).toContain('mobile.settings.playerButtons.fixed.next');
+    expect(label).not.toContain('mobile.settings.playerButtons.buttons.share');
   });
 
   it('puts the bar above the board when asked, and the board gets what the bar leaves', () => {
@@ -125,6 +144,6 @@ describe('PlayerButtonsPreview', () => {
       visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
     };
     const screen = preview({ buttons: allOff, previousNext: false });
-    expect(icons(screen.container)).toEqual(['tick.outline', 'lightbulb']);
+    expect(icons(screen.container)).toEqual(['check.small', 'lightbulb']);
   });
 });

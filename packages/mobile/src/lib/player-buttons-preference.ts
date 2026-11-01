@@ -1,9 +1,12 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { getSetting, setSetting, subscribeSettings, useSetting } from '../settings/hooks';
+import { getSetting, hasSetting, setSetting, subscribeSettings, useSetting } from '../settings/hooks';
 import {
   isSameSectionLayout,
   sanitiseSectionLayout,
+  unknownSectionVisibility,
+  withUnknownSectionsKept,
   type SectionLayoutRecord,
+  type SectionLayoutSpec,
   type SectionMoveDirection,
 } from './section-layout';
 import { createSectionLayoutStore, useSectionLayout } from './section-layout-store';
@@ -26,18 +29,65 @@ import {
 // so the bar is drawn right on its first frame: no jump from today's bar to
 // theirs. Device-local, like the sections below the climb.
 //
-// Three keys: the buttons' order and switches (`playerButtonsV2`, `null` while
+// Three keys: the buttons' order and switches (`playerButtonsV3`, `null` while
 // they match the defaults, so a later release's defaults still reach a climber
 // who never changed them), the Previous and next switch, and the position.
-// `resetAllSettings` clears all three. #7000 moved the buttons to a new key:
-// they now fill the first row's two end slots, so a `playerButtonsV1` record
-// (round 2's two rows) would mean something else, and nothing reads it. The
-// round-2 `playerWallBadge` switch went too.
+// `resetAllSettings` clears them. V2's order, switches and board-control choice
+// are imported once before the first snapshot; V2 itself is kept for rollback.
+
+// Freeze the old defaults: filling an omitted switch with today's defaults
+// would turn a legacy hidden Share or Angle on during migration.
+const LEGACY_PLAYER_BUTTONS: PlayerButtonsLayout = {
+  order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+  visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+};
+const LEGACY_PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {
+  ids: LEGACY_PLAYER_BUTTONS.order,
+  defaults: LEGACY_PLAYER_BUTTONS,
+};
+
+type PlayerButtonsRecord = (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+
+function legacyPlayerButtonsRecord(): PlayerButtonsRecord {
+  const stored: unknown = getSetting('playerButtonsV2');
+  if (typeof stored !== 'object' || stored === null || !('version' in stored) || stored.version !== 1) return null;
+  const record = stored as { order?: unknown; visible?: unknown; boardControl?: unknown };
+  const boardControl = sanitisePlayerBoardControl(record.boardControl);
+  const buttons = sanitiseSectionLayout(LEGACY_PLAYER_BUTTONS_LAYOUT, record);
+  const order = withUnknownSectionsKept(LEGACY_PLAYER_BUTTONS_LAYOUT, buttons.order, record.order);
+  const unknownVisible = unknownSectionVisibility(LEGACY_PLAYER_BUTTONS_LAYOUT, record.visible);
+  const keepsUnknown = order.length > buttons.order.length || Object.keys(unknownVisible).length > 0;
+  const migrated =
+    !keepsUnknown && isSameSectionLayout(buttons, LEGACY_PLAYER_BUTTONS)
+      ? null
+      : { version: 1 as const, order, visible: { ...unknownVisible, ...buttons.visible } };
+  return withBoardControl(migrated, boardControl);
+}
+
+// This runs at store initialization, never from a React render or getSnapshot.
+// Keep the computed choice for this launch if a disk write fails.
+let unwrittenMigration: PlayerButtonsRecord | undefined;
+try {
+  if (!hasSetting('playerButtonsV3')) {
+    unwrittenMigration = legacyPlayerButtonsRecord();
+    setSetting('playerButtonsV3', unwrittenMigration);
+    unwrittenMigration = undefined;
+  }
+} catch {
+  // The new defaults remain usable if the old store cannot be read either.
+}
+subscribeSettings((change) => {
+  if (change.kind === 'reset' || change.key === 'playerButtonsV3') unwrittenMigration = undefined;
+});
+
+function readPlayerButtonsRecord(): unknown {
+  return unwrittenMigration === undefined ? getSetting('playerButtonsV3') : unwrittenMigration;
+}
 
 /** The stored choice. A record the section store would ignore (another version, not a record) reads as the default. */
 function readBoardControl(): PlayerBoardControl {
   try {
-    const record: unknown = getSetting('playerButtonsV2');
+    const record = readPlayerButtonsRecord();
     if (typeof record !== 'object' || record === null || !('version' in record) || record.version !== 1) {
       return DEFAULT_PLAYER_BOARD_CONTROL;
     }
@@ -52,8 +102,8 @@ function readBoardControl(): PlayerBoardControl {
 // back on its defaults stays a record while the bulb is chosen.
 export const playerButtonsStore = createSectionLayoutStore({
   spec: PLAYER_BUTTONS_LAYOUT,
-  read: () => getSetting('playerButtonsV2'),
-  write: (record) => setSetting('playerButtonsV2', withBoardControl(record, readBoardControl())),
+  read: readPlayerButtonsRecord,
+  write: (record) => setSetting('playerButtonsV3', withBoardControl(record, readBoardControl())),
 });
 
 function withBoardControl(
@@ -78,8 +128,16 @@ export function setPlayerBoardControl(boardControl: PlayerBoardControl): void {
   if (readBoardControl() === boardControl) return;
   let stored: SectionLayoutRecord | null = null;
   try {
-    const current = getSetting('playerButtonsV2');
-    if (current && current.version === 1) stored = current;
+    const current = readPlayerButtonsRecord();
+    if (typeof current === 'object' && current !== null && 'version' in current && current.version === 1) {
+      const layout = current as { order?: unknown; visible?: unknown };
+      const buttons = sanitiseSectionLayout(PLAYER_BUTTONS_LAYOUT, current);
+      stored = {
+        version: 1,
+        order: withUnknownSectionsKept(PLAYER_BUTTONS_LAYOUT, buttons.order, layout.order),
+        visible: { ...unknownSectionVisibility(PLAYER_BUTTONS_LAYOUT, layout.visible), ...buttons.visible },
+      };
+    }
   } catch {
     // An unreadable record reads as the defaults.
   }
@@ -89,11 +147,12 @@ export function setPlayerBoardControl(boardControl: PlayerBoardControl): void {
     boardControl === DEFAULT_PLAYER_BOARD_CONTROL &&
     stored !== null &&
     isSameSectionLayout(sanitiseSectionLayout(PLAYER_BUTTONS_LAYOUT, stored), DEFAULT_PLAYER_BUTTONS) &&
-    stored.order.length === DEFAULT_PLAYER_BUTTONS.order.length
+    stored.order.length === DEFAULT_PLAYER_BUTTONS.order.length &&
+    Object.keys(unknownSectionVisibility(PLAYER_BUTTONS_LAYOUT, stored.visible)).length === 0
   ) {
     stored = null;
   }
-  setSetting('playerButtonsV2', withBoardControl(stored, boardControl));
+  setSetting('playerButtonsV3', withBoardControl(stored, boardControl));
 }
 
 function subscribeBoardControl(listener: () => void): () => void {
@@ -126,7 +185,7 @@ export function isDefaultPlayerButtons({
   );
 }
 
-/** Restore defaults: today's bar, below the board, with Previous and next and the wall button. */
+/** Restore today's bar below the board, with the wall button and navigation arrows hidden. */
 export function restorePlayerButtonDefaults(): void {
   setPlayerBoardControl(DEFAULT_PLAYER_BOARD_CONTROL);
   playerButtonsStore.restoreDefaults();

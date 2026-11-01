@@ -69,6 +69,11 @@ export function getSetting<K extends SettingsKey>(key: K): AppSettings[K] {
   return readSetting(key);
 }
 
+/** Presence is distinct from a stored default such as `null`, including during migrations. */
+export function hasSetting(key: SettingsKey): boolean {
+  return storage.getString(key) !== undefined;
+}
+
 export function setSetting<K extends SettingsKey>(key: K, value: AppSettings[K]): void {
   writeSetting(key, value);
 }

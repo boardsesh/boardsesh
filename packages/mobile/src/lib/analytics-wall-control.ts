@@ -1,4 +1,9 @@
-import { driveModeEnded, SHARED_EVENTS, type DriveModeEndedInput } from '@boardsesh/analytics';
+import {
+  driveModeEnded,
+  SHARED_EVENTS,
+  type AnalyticsEventProperties,
+  type DriveModeEndedInput,
+} from '@boardsesh/analytics';
 import { track } from './analytics';
 import type { WallControlAction, WallControlState } from '../components/play-drawer/wall-control';
 
@@ -25,12 +30,14 @@ export function trackWallControlTapped({
   state,
   action,
   control,
+  analyticsContext,
 }: {
+  analyticsContext?: AnalyticsEventProperties;
   state: WallControlState;
   action: WallControlAction;
   control: WallControlSurface;
 }): void {
-  track(SHARED_EVENTS.WallControlTapped, { state: state ?? 'none', action, control });
+  track(SHARED_EVENTS.WallControlTapped, { ...analyticsContext, state: state ?? 'none', action, control });
 }
 
 /**

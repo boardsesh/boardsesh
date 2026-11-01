@@ -264,20 +264,19 @@ export type AppSettings = {
    */
   climbListLayout: ClimbListLayoutPreference;
   /**
-   * The player's buttons (#6229): their order and switches, `null` while they
-   * match the defaults so a later release's defaults still apply. V2 since
-   * #7000, when the five became the first row's two end slots: the meaning
-   * changed, so everyone starts on the new defaults and a V1 record is never
-   * read. Read and
-   * written ONLY through `playerButtonsStore` (`lib/player-buttons-preference.ts`),
-   * which keeps its own snapshot; never `useSetting` this key. In this store, not
-   * AsyncStorage, because the bar has to be right on the player's first frame.
-   *
-   * `boardControl` rides the same record (#7000): `'lightbulb'` for the bulb in
-   * the top row, absent (or anything else) for the wall button. The record
-   * stays non-null while it is set, even with the buttons on their defaults.
+   * Legacy first/last-only player buttons (#7000), retained for OTA rollback.
+   * Imported by the V3 preference store only while V3 is physically absent;
+   * newer bundles do not overwrite this record. `boardControl` carries the
+   * Lightbulb choice alongside the old order and switches.
    */
   playerButtonsV2: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
+  /**
+   * Four customizable positions around Log, or two ends when Previous and next
+   * is on. V2 is imported once and retained for rollback; an explicit V3 `null`
+   * means today's defaults and must never import V2 again. Only the player
+   * buttons preference store reads or writes this record.
+   */
+  playerButtonsV3: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
   /**
    * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
    * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`
@@ -285,7 +284,7 @@ export type AppSettings = {
    * this store, not AsyncStorage, because the bar has to be right on its first frame.
    */
   miniPlayerButtonsV1: SectionLayoutRecord | null;
-  /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
+  /** The player's ⏮ and ⏭. Off frees their slots for other actions; swiping still moves. */
   playerPreviousNext: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
   playerButtonsPosition: PlayerButtonsPosition;

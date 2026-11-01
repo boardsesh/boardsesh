@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { brandColors as staticBrandColors } from '@boardsesh/velvet-tokens';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
@@ -105,8 +106,10 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
   const spokenButtons: string[] = [];
   if (layout.leadingSlot) spokenButtons.push(buttonLabel(layout.leadingSlot));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.previous'));
+  else if (layout.innerLeadingSlot) spokenButtons.push(buttonLabel(layout.innerLeadingSlot));
   spokenButtons.push(t('mobile.settings.playerButtons.fixed.log'));
   if (layout.showPreviousNext) spokenButtons.push(t('mobile.settings.playerButtons.fixed.next'));
+  else if (layout.innerTrailingSlot) spokenButtons.push(buttonLabel(layout.innerTrailingSlot));
   if (layout.trailingSlot === 'lightbulb') spokenButtons.push(t('mobile.settings.playerButtons.fixed.boardLight'));
   else if (layout.trailingSlot) spokenButtons.push(buttonLabel(layout.trailingSlot));
   const smallRow = typeof layout.secondaryRow === 'string' ? [] : layout.secondaryRow;
@@ -131,11 +134,25 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
         <View style={styles.bigSlot}>
           {layout.leadingSlot ? glyph(BUTTON_ICONS[layout.leadingSlot], BIG_ICON) : null}
         </View>
-        <View style={styles.bigSlot}>{layout.showPreviousNext ? glyph('skip.previous', BIG_ICON) : null}</View>
         <View style={styles.bigSlot}>
-          <Icon maxFontSizeMultiplier={1} name="tick.outline" size={BIG_ICON + 4} color={brandColors.success} />
+          {layout.showPreviousNext
+            ? glyph('skip.previous', BIG_ICON)
+            : layout.innerLeadingSlot
+              ? glyph(BUTTON_ICONS[layout.innerLeadingSlot], BIG_ICON)
+              : null}
         </View>
-        <View style={styles.bigSlot}>{layout.showPreviousNext ? glyph('skip.next', BIG_ICON) : null}</View>
+        <View style={styles.bigSlot}>
+          <View style={styles.tick}>
+            <Icon maxFontSizeMultiplier={1} name="check.small" size={18} color={staticBrandColors.onPrimary} />
+          </View>
+        </View>
+        <View style={styles.bigSlot}>
+          {layout.showPreviousNext
+            ? glyph('skip.next', BIG_ICON)
+            : layout.innerTrailingSlot
+              ? glyph(BUTTON_ICONS[layout.innerTrailingSlot], BIG_ICON)
+              : null}
+        </View>
         <View style={styles.bigSlot}>
           {layout.trailingSlot === 'lightbulb' ? (
             <Icon maxFontSizeMultiplier={1} name="lightbulb" size={BIG_ICON} color={brandColors.primary} />
@@ -205,6 +222,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tick: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: staticBrandColors.success,
   },
   smallRow: {
     flexDirection: 'row',

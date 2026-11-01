@@ -37,7 +37,7 @@ describe('player buttons preference', () => {
     const { usePlayerButtonsPreference, DEFAULT_PLAYER_BUTTONS, isDefaultPlayerButtons } = await launchWith();
     const { result } = renderHook(() => usePlayerButtonsPreference());
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
-    expect(result.current.previousNext).toBe(true);
+    expect(result.current.previousNext).toBe(false);
     expect(result.current.position).toBe('below');
     expect(result.current.boardControl).toBe('wallButton');
     expect(isDefaultPlayerButtons(result.current)).toBe(true);
@@ -47,7 +47,7 @@ describe('player buttons preference', () => {
   // climber set up: no jump from the default bar to theirs.
   it('has the stored buttons, switch and position on the first read', async () => {
     const { usePlayerButtonsPreference } = await launchWith({
-      playerButtonsV2: {
+      playerButtonsV3: {
         version: 1,
         order: ['queue', 'mirror', 'favorite', 'angle', 'share'],
         visible: { share: true, favorite: false },
@@ -60,12 +60,100 @@ describe('player buttons preference', () => {
     expect(result.current.buttons.visible).toEqual({
       mirror: true,
       favorite: false,
-      angle: false,
+      angle: true,
       share: true,
       queue: true,
     });
     expect(result.current.previousNext).toBe(false);
     expect(result.current.position).toBe('above');
+  });
+
+  it.each([true, false])('preserves the stored navigation choice %s', async (previousNext) => {
+    const { usePlayerButtonsPreference } = await launchWith({ playerPreviousNext: previousNext });
+    expect(renderHook(() => usePlayerButtonsPreference()).result.current.previousNext).toBe(previousNext);
+  });
+
+  describe('V2 migration', () => {
+    const legacyDefaults = {
+      version: 1,
+      order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+      visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
+    };
+
+    it.each([null, legacyDefaults])('adopts the new defaults from an unchanged V2 layout', async (record) => {
+      const { usePlayerButtonsPreference, DEFAULT_PLAYER_BUTTONS } = await launchWith({ playerButtonsV2: record });
+      expect(renderHook(() => usePlayerButtonsPreference()).result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
+      expect(stored('playerButtonsV3')).toBeNull();
+      expect(stored('playerButtonsV2')).toEqual(record);
+    });
+
+    it('carries the bulb choice while adopting new button defaults', async () => {
+      const legacy = { ...legacyDefaults, boardControl: 'lightbulb' };
+      const { usePlayerButtonsPreference, DEFAULT_PLAYER_BUTTONS } = await launchWith({ playerButtonsV2: legacy });
+      const preference = renderHook(() => usePlayerButtonsPreference()).result.current;
+      expect(preference.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
+      expect(preference.boardControl).toBe('lightbulb');
+      expect(stored('playerButtonsV3')).toMatchObject({
+        order: DEFAULT_PLAYER_BUTTONS.order,
+        visible: DEFAULT_PLAYER_BUTTONS.visible,
+        boardControl: 'lightbulb',
+      });
+      expect(stored('playerButtonsV2')).toEqual(legacy);
+    });
+
+    it('materializes omitted V2 switches against the legacy defaults', async () => {
+      const legacy = { version: 1, order: ['queue', 'mirror', 'favorite', 'share', 'angle'], visible: {} };
+      const { usePlayerButtonsPreference } = await launchWith({ playerButtonsV2: legacy });
+      const preference = renderHook(() => usePlayerButtonsPreference()).result.current;
+      expect(preference.buttons.order).toEqual(legacy.order);
+      expect(preference.buttons.visible).toEqual(legacyDefaults.visible);
+      expect(stored('playerButtonsV3')).toMatchObject({ order: legacy.order, visible: legacyDefaults.visible });
+      expect(stored('playerButtonsV2')).toEqual(legacy);
+    });
+
+    it('keeps unknown V2 ids and boolean switches through migration and an edit', async () => {
+      const legacy = {
+        ...legacyDefaults,
+        order: ['mirror', 'futureButton', 'favorite', 'queue', 'share', 'angle'],
+        visible: { ...legacyDefaults.visible, futureButton: false, futureToggle: true },
+      };
+      const { playerButtonsStore } = await launchWith({ playerButtonsV2: legacy });
+      expect(stored('playerButtonsV3')).toMatchObject({ order: legacy.order, visible: legacy.visible });
+      playerButtonsStore.setVisible('favorite', false);
+      expect(stored('playerButtonsV3')).toMatchObject({
+        order: legacy.order,
+        visible: { futureButton: false, futureToggle: true, favorite: false },
+      });
+      expect(stored('playerButtonsV2')).toEqual(legacy);
+    });
+
+    it.each([null, 'broken', { version: 2, order: [], visible: {} }])(
+      'does not import V2 when V3 is already present',
+      async (record) => {
+        const { usePlayerButtonsPreference, DEFAULT_PLAYER_BUTTONS } = await launchWith({
+          playerButtonsV2: { ...legacyDefaults, boardControl: 'lightbulb' },
+          playerButtonsV3: record,
+        });
+        const preference = renderHook(() => usePlayerButtonsPreference()).result.current;
+        expect(preference.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
+        expect(preference.boardControl).toBe('wallButton');
+        expect(stored('playerButtonsV3')).toEqual(record);
+      },
+    );
+
+    it('keeps restored V3 defaults after a relaunch without importing V2 again', async () => {
+      const legacy = { ...legacyDefaults, order: ['queue', 'mirror', 'favorite', 'share', 'angle'] };
+      const { restorePlayerButtonDefaults } = await launchWith({ playerButtonsV2: legacy });
+      restorePlayerButtonDefaults();
+      expect(stored('playerButtonsV3')).toBeNull();
+      vi.resetModules();
+      const preference = await import('../player-buttons-preference');
+      const { DEFAULT_PLAYER_BUTTONS } = await import('../player-buttons');
+      expect(renderHook(() => preference.usePlayerButtonsPreference()).result.current.buttons).toEqual(
+        DEFAULT_PLAYER_BUTTONS,
+      );
+      expect(stored('playerButtonsV2')).toEqual(legacy);
+    });
   });
 
   // #7000: the buttons' meaning changed, so they moved to a new key. A round-2
@@ -75,16 +163,16 @@ describe('player buttons preference', () => {
       'a round-2 record under the old key',
       { playerButtonsV1: { version: 1, order: ['queue'], visible: { mirror: false } } },
     ],
-    ['garbage under the new key', { playerButtonsV2: 'not a layout' }],
-    ['a record from a future version', { playerButtonsV2: { version: 2, order: ['angle'], visible: {} } }],
+    ['garbage under the new key', { playerButtonsV3: 'not a layout' }],
+    ['a record from a future version', { playerButtonsV3: { version: 2, order: ['angle'], visible: {} } }],
     [
       'a record with unknown ids and bad switches',
-      { playerButtonsV2: { version: 1, order: ['wallControl', 7, 'angle'], visible: { angle: 'yes', queue: false } } },
+      { playerButtonsV3: { version: 1, order: ['wallControl', 7, 'angle'], visible: { angle: 'yes', queue: false } } },
     ],
   ])('starts everyone on the defaults with %s, without a crash', async (_case, storedValues) => {
     const { usePlayerButtonsPreference, DEFAULT_PLAYER_BUTTONS } = await launchWith(storedValues);
     const { result } = renderHook(() => usePlayerButtonsPreference());
-    if ('playerButtonsV2' in storedValues && typeof storedValues.playerButtonsV2 === 'object') {
+    if ('playerButtonsV3' in storedValues && typeof storedValues.playerButtonsV3 === 'object') {
       // A readable record keeps what it can: known ids, real booleans, defaults for the rest.
       expect(result.current.buttons.order).toEqual(expect.arrayContaining([...DEFAULT_PLAYER_BUTTONS.order]));
       expect(result.current.buttons.order).toHaveLength(DEFAULT_PLAYER_BUTTONS.order.length);
@@ -100,7 +188,7 @@ describe('player buttons preference', () => {
     });
     const { result } = renderHook(() => usePlayerButtonsPreference());
     expect(result.current.position).toBe('below');
-    expect(result.current.previousNext).toBe(true);
+    expect(result.current.previousNext).toBe(false);
   });
 
   it('stores a change, and Restore defaults clears every key back to the defaults', async () => {
@@ -108,22 +196,22 @@ describe('player buttons preference', () => {
     const { result } = renderHook(() => usePlayerButtonsEditor());
 
     act(() => result.current.move('queue', -1));
-    act(() => result.current.setVisible('share', true));
-    act(() => result.current.setPreviousNext(false));
+    act(() => result.current.setVisible('share', false));
+    act(() => result.current.setPreviousNext(true));
     act(() => result.current.setPosition('above'));
-    expect(stored('playerButtonsV2')).toMatchObject({
+    expect(stored('playerButtonsV3')).toMatchObject({
       version: 1,
-      order: ['mirror', 'queue', 'favorite', 'share', 'angle'],
-      visible: { share: true },
+      order: ['mirror', 'angle', 'favorite', 'queue', 'share'],
+      visible: { share: false },
     });
     expect(result.current.position).toBe('above');
     expect(isDefaultPlayerButtons(result.current)).toBe(false);
 
     act(() => result.current.restoreDefaults());
     // `null` rather than a copy of today's defaults, so a later release's defaults still apply.
-    expect(stored('playerButtonsV2')).toBeNull();
+    expect(stored('playerButtonsV3')).toBeNull();
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
-    expect(stored('playerPreviousNext')).toBe(true);
+    expect(stored('playerPreviousNext')).toBe(false);
     expect(stored('playerButtonsPosition')).toBe('below');
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
     expect(isDefaultPlayerButtons(result.current)).toBe(true);
@@ -159,13 +247,13 @@ describe('player buttons preference', () => {
       ['a record of another version', { version: 2, order: [], visible: {}, boardControl: 'lightbulb' }],
       ['garbage', 'lightbulb'],
     ])('reads %s as the wall button', async (_case, record) => {
-      const { usePlayerButtonsPreference } = await launchWith(record === undefined ? {} : { playerButtonsV2: record });
+      const { usePlayerButtonsPreference } = await launchWith(record === undefined ? {} : { playerButtonsV3: record });
       expect(renderHook(() => usePlayerButtonsPreference()).result.current.boardControl).toBe('wallButton');
     });
 
     it('reads a stored bulb on the first frame', async () => {
       const { usePlayerButtonsPreference } = await launchWith({
-        playerButtonsV2: { version: 1, order: ['mirror'], visible: {}, boardControl: 'lightbulb' },
+        playerButtonsV3: { version: 1, order: ['mirror'], visible: {}, boardControl: 'lightbulb' },
       });
       expect(renderHook(() => usePlayerButtonsPreference()).result.current.boardControl).toBe('lightbulb');
     });
@@ -176,22 +264,22 @@ describe('player buttons preference', () => {
 
       act(() => result.current.setBoardControl('lightbulb'));
       // A record even with the buttons on their defaults, so the choice is kept.
-      expect(stored('playerButtonsV2')).toMatchObject({ version: 1, boardControl: 'lightbulb' });
+      expect(stored('playerButtonsV3')).toMatchObject({ version: 1, boardControl: 'lightbulb' });
       expect(result.current.boardControl).toBe('lightbulb');
       expect(isDefaultPlayerButtons(result.current)).toBe(false);
 
       act(() => result.current.move('queue', -1));
-      expect(stored('playerButtonsV2')).toMatchObject({
-        order: ['mirror', 'queue', 'favorite', 'share', 'angle'],
+      expect(stored('playerButtonsV3')).toMatchObject({
+        order: ['mirror', 'angle', 'favorite', 'queue', 'share'],
         boardControl: 'lightbulb',
       });
       act(() => result.current.move('queue', 1));
       // Back on the default buttons: still a record, since the bulb is chosen.
-      expect(stored('playerButtonsV2')).toMatchObject({ boardControl: 'lightbulb' });
+      expect(stored('playerButtonsV3')).toMatchObject({ boardControl: 'lightbulb' });
 
       act(() => result.current.setBoardControl('wallButton'));
       // Back on every default: `null`, so a later release's defaults still apply.
-      expect(stored('playerButtonsV2')).toBeNull();
+      expect(stored('playerButtonsV3')).toBeNull();
       expect(isDefaultPlayerButtons(result.current)).toBe(true);
     });
 
@@ -199,23 +287,38 @@ describe('player buttons preference', () => {
       const { usePlayerButtonsEditor } = await launchWith();
       const { result } = renderHook(() => usePlayerButtonsEditor());
       act(() => result.current.setBoardControl('lightbulb'));
-      act(() => result.current.setVisible('share', true));
+      act(() => result.current.setVisible('share', false));
       act(() => result.current.setBoardControl('wallButton'));
-      expect(stored('playerButtonsV2')).toEqual({
+      expect(stored('playerButtonsV3')).toEqual({
         version: 1,
-        order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
-        visible: expect.objectContaining({ share: true }),
+        order: ['mirror', 'angle', 'favorite', 'share', 'queue'],
+        visible: expect.objectContaining({ share: false }),
       });
-      expect(result.current.buttons.visible.share).toBe(true);
+      expect(result.current.buttons.visible.share).toBe(false);
     });
 
     it('goes back to the wall button on Restore defaults', async () => {
       const { usePlayerButtonsEditor } = await launchWith();
       const { result } = renderHook(() => usePlayerButtonsEditor());
       act(() => result.current.setBoardControl('lightbulb'));
-      act(() => result.current.setVisible('share', true));
+      act(() => result.current.setVisible('share', false));
       act(() => result.current.restoreDefaults());
-      expect(stored('playerButtonsV2')).toBeNull();
+      expect(stored('playerButtonsV3')).toBeNull();
+      expect(result.current.boardControl).toBe('wallButton');
+    });
+
+    it('preserves unknown visibility-only switches when returning to the wall button', async () => {
+      const { usePlayerButtonsEditor } = await launchWith({
+        playerButtonsV3: {
+          version: 1,
+          order: ['mirror', 'angle', 'favorite', 'share', 'queue'],
+          visible: { mirror: true, angle: true, favorite: true, share: true, queue: true, futureButton: false },
+          boardControl: 'lightbulb',
+        },
+      });
+      const { result } = renderHook(() => usePlayerButtonsEditor());
+      act(() => result.current.setBoardControl('wallButton'));
+      expect(stored('playerButtonsV3')).toMatchObject({ visible: { futureButton: false } });
       expect(result.current.boardControl).toBe('wallButton');
     });
   });

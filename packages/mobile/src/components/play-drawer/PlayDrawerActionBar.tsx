@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, type ReactNode } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
@@ -16,6 +16,7 @@ import type { WallGlowInput } from './use-wall-glow';
 import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar-layout';
 import {
   DEFAULT_PLAYER_BUTTONS,
+  DEFAULT_PLAYER_PREVIOUS_NEXT,
   type PlayerBoardControl,
   type PlayerButtonId,
   type PlayerButtonsLayout,
@@ -25,11 +26,12 @@ import type { DriveStartOutcome } from './use-wall-control';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
-// `staticBrandColors` is the static set, used only for the count badge — a FILL
-// with white text that must stay legible in both schemes.
+// `staticBrandColors` supplies filled surfaces with white foregrounds, so they
+// stay legible in both schemes.
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+import { glassSize } from '../../theme/layout';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from '../count-badge-style';
@@ -40,6 +42,9 @@ import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountB
  * state, so the board never moves.
  */
 export const ACTION_BAR_SECONDARY_ROW_HEIGHT = spacing[2] + Math.max(SIZES.sm.dim, WALL_CONTROL_HEIGHT) + spacing[3];
+/** Tick gets the hero target inside the same 60pt row the 48pt buttons occupied. */
+export const PLAY_DRAWER_TICK_SIZE = glassSize.hero;
+export const ACTION_BAR_PRIMARY_ROW_HEIGHT = spacing[3] + SIZES.lg.dim;
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -160,13 +165,16 @@ type PlayDrawerActionBarProps = {
    * ignores them for an anonymous reader. Defaults to Marco's bar.
    */
   buttons?: PlayerButtonsLayout;
-  /** The Previous and next switch. Off leaves both slots empty, so Log stays centred. */
+  /** The Previous and next switch. Off gives their positions to the climber's actions. */
   previousNext?: boolean;
   /**
    * The edge that faces the board, where the hairline goes: `top` under the
    * board (where the bar has always been), `bottom` when the controls sit above it.
    */
   edge?: 'top' | 'bottom';
+  /** Measured rows let the host count only controls actually visible in the viewport. */
+  onPrimaryLayout?: (event: LayoutChangeEvent) => void;
+  onSecondaryLayout?: (event: LayoutChangeEvent) => void;
 };
 
 export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
@@ -209,8 +217,10 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onTickLongPress,
   onOpenAngleSelector,
   buttons = DEFAULT_PLAYER_BUTTONS,
-  previousNext = true,
+  previousNext = DEFAULT_PLAYER_PREVIOUS_NEXT,
   edge = 'top',
+  onPrimaryLayout,
+  onSecondaryLayout,
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -322,6 +332,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             angle={currentAngle}
             onPress={onOpenAngleSelector}
             accessibilityLabel={t('mobile.angleSelector.title')}
+            compact
           />
         ) : null;
     }
@@ -346,6 +357,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           key="confirm"
           style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-wall-row"
+          onLayout={onPrimaryLayout}
         >
           <BusyWallQuestionGroup model={busyWall} onKeep={onKeepTheirs} onPut={onCommit} />
         </View>
@@ -356,6 +368,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           key="wallControlFull"
           style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-wall-row"
+          onLayout={onPrimaryLayout}
         >
           {/* Beside a MiniPlayer (tablets, the open Duo) the pane sits away from
             the screen's edge, so this one keeps its width (no spansRow). */}
@@ -378,6 +391,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           key="wallControl"
           style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-workout-row"
+          onLayout={onPrimaryLayout}
         >
           <View style={styles.compactSlot}>
             {layout.showPreviousNext ? (
@@ -424,16 +438,17 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         // right of the wall button's centre, ☰ 53pt from ⏭ (#7017).
         <View
           key="tick"
-          style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}
+          style={[drawerActionBarStyles.rowPrimary, styles.rowTick, !hasSecondaryRow && styles.rowPrimaryAlone]}
           testID="play-drawer-action-bar-primary-row"
+          onLayout={onPrimaryLayout}
         >
           {/* The climber's first button on (Mirror or the heart by default).
             An empty slot keeps the row's five-slot spacing. */}
           <View style={drawerActionBarStyles.primarySlot}>
             {layout.leadingSlot ? slotButton(layout.leadingSlot) : null}
           </View>
-          {/* Previous and next switched off leaves both slots standing empty,
-            so Log keeps the middle. Swiping the board still moves. */}
+          {/* The optional arrows share their positions with the inner actions;
+            Log stays in the middle whichever pair the climber chooses. */}
           <View style={drawerActionBarStyles.primarySlot}>
             {layout.showPreviousNext ? (
               <ActionButton
@@ -444,6 +459,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 disabled={!canSwipePrevious}
                 accessibilityLabel={t('playView.actionBar.previousAria')}
               />
+            ) : layout.innerLeadingSlot ? (
+              slotButton(layout.innerLeadingSlot)
             ) : null}
           </View>
           <View style={drawerActionBarStyles.primarySlot}>
@@ -453,7 +470,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               instead of the tick sheet, and drops the ascent badge, which counts
               a logbook they do not have. */}
             <TickButton
-              size="lg"
               ascentCount={isAnonymous ? 0 : ascentCount}
               onPress={isAnonymous ? handleSignIn : onTickPress}
               onLongPress={isAnonymous ? undefined : onTickLongPress}
@@ -470,6 +486,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 disabled={!canSwipeNext}
                 accessibilityLabel={t('playView.actionBar.nextAria')}
               />
+            ) : layout.innerTrailingSlot ? (
+              slotButton(layout.innerTrailingSlot)
             ) : null}
           </View>
           <View style={drawerActionBarStyles.primarySlot}>
@@ -490,7 +508,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
       )}
 
       {hasSecondaryRow ? (
-        <View style={[drawerActionBarStyles.rowSecondary, styles.rowSecondaryHeight]}>
+        <View style={[drawerActionBarStyles.rowSecondary, styles.rowSecondaryHeight]} onLayout={onSecondaryLayout}>
           {layout.secondaryRow === 'confirm' && busyWall && onKeepTheirs && onCommit ? (
             <BusyWallQuestionGroup model={busyWall} onKeep={onKeepTheirs} onPut={onCommit} />
           ) : layout.secondaryRow === 'workoutOutcome' && workoutOutcome ? (
@@ -685,16 +703,13 @@ function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
 }
 
 type TickButtonProps = {
-  size: ButtonSize;
   ascentCount: number;
   onPress: () => void;
   onLongPress?: () => void;
   accessibilityLabel: string;
 };
 
-function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabel }: TickButtonProps) {
-  const { dim, icon } = SIZES[size];
-  const theme = useTheme();
+function TickButton({ ascentCount, onPress, onLongPress, accessibilityLabel }: TickButtonProps) {
   const handleLongPress = useCallback(() => {
     if (!onLongPress) return;
     hapticMedium();
@@ -703,19 +718,18 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 
   return (
     <PressableSurface
+      testID="play-drawer-tick"
       onPress={onPress}
       onLongPress={handleLongPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
         drawerActionBarStyles.actionButton,
-        { width: dim, height: dim, borderRadius: dim / 2 },
+        styles.tickButton,
         pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      {/* The primary log action: a green glyph on the glass sheet (colour on the
-          icon, not a fill) — its hue and the count badge mark it as the hero. */}
-      <Icon maxFontSizeMultiplier={1} name="tick.outline" size={icon} color={theme.brandColors.success} />
+      <Icon maxFontSizeMultiplier={1} name="check.small" size={32} color={iosSystemColors.white} />
       {ascentCount > 0 && (
         <View style={styles.countBadge}>
           <Text
@@ -734,6 +748,16 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 }
 
 const styles = StyleSheet.create({
+  rowTick: {
+    minHeight: ACTION_BAR_PRIMARY_ROW_HEIGHT,
+    paddingTop: ACTION_BAR_PRIMARY_ROW_HEIGHT - PLAY_DRAWER_TICK_SIZE,
+  },
+  tickButton: {
+    width: PLAY_DRAWER_TICK_SIZE,
+    height: PLAY_DRAWER_TICK_SIZE,
+    borderRadius: PLAY_DRAWER_TICK_SIZE / 2,
+    backgroundColor: staticBrandColors.success,
+  },
   // Above the board the hairline moves to the edge that faces it.
   containerAbove: {
     borderBottomWidth: StyleSheet.hairlineWidth,

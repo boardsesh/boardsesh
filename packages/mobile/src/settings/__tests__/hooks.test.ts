@@ -20,7 +20,7 @@ vi.mock('react-native-mmkv', () => {
   return { createMMKV: vi.fn(() => createMockInstance()) };
 });
 
-import { getSetting, setSetting, getAllSettings, resetAllSettings, subscribeSettings } from '../hooks';
+import { getSetting, hasSetting, setSetting, getAllSettings, resetAllSettings, subscribeSettings } from '../hooks';
 import { DEFAULT_SETTINGS } from '../defaults';
 
 describe('settings', () => {
@@ -29,6 +29,14 @@ describe('settings', () => {
     // getAllSettings() memoises its snapshot at module level; tests below poke
     // mockStorage directly (bypassing setSetting/emitChange), so bust the cache.
     resetAllSettings();
+  });
+
+  it('distinguishes an absent key from an explicit null or malformed stored record', () => {
+    expect(hasSetting('playerButtonsV3')).toBe(false);
+    setSetting('playerButtonsV3', null);
+    expect(hasSetting('playerButtonsV3')).toBe(true);
+    mockStorage.set('playerButtonsV3', 'broken');
+    expect(hasSetting('playerButtonsV3')).toBe(true);
   });
 
   describe('getSetting', () => {

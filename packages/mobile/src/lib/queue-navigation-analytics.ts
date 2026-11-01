@@ -2,6 +2,7 @@ import {
   queueNavigation,
   queueSheetOpened,
   type QueueNavigationInput,
+  type AnalyticsEventProperties,
   type QueueSheetOpenedInput,
 } from '@boardsesh/analytics';
 import { track } from './analytics';
@@ -12,13 +13,13 @@ import { track } from './analytics';
  * too, and they are not the climber navigating. Contract:
  * packages/shared/analytics/src/queue-navigation-events.ts.
  */
-export function trackQueueNavigation(input: QueueNavigationInput): void {
+export function trackQueueNavigation(input: QueueNavigationInput, context?: AnalyticsEventProperties): void {
   const { name, properties } = queueNavigation(input);
-  track(name, properties);
+  track(name, { ...context, ...properties });
 }
 
 /** The climber asked for the queue sheet (#6940). */
-export function trackQueueSheetOpened(input: QueueSheetOpenedInput): void {
+export function trackQueueSheetOpened(input: QueueSheetOpenedInput, context?: AnalyticsEventProperties): void {
   const { name, properties } = queueSheetOpened(input);
-  track(name, properties);
+  track(name, { ...context, ...properties });
 }

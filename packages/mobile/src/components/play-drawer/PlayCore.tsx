@@ -48,6 +48,12 @@ import { PlayCoreSheetHosts } from './PlayCoreSheetHosts';
 import { usePlayFavorite } from './use-play-favorite';
 import { usePlaySelectionController, type PlayNavigationStep } from './use-play-selection-controller';
 import { trackQueueNavigation, trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
+import { useAnySheetVisible } from '../../lib/sheet-visibility-store';
+import {
+  buildPlayDrawerActionsContext,
+  isPlayDrawerWallControlRendered,
+} from '../../lib/play-drawer-actions-analytics';
+import { usePlayDrawerActionsExposure, usePlayDrawerActionsVisibility } from './use-play-drawer-actions-exposure';
 import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
@@ -386,17 +392,20 @@ export function PlayCore({
   // top (<= 0) so mid-scroll downward drags still scroll. JS-thread set at 16ms
   // is plenty for a top-detection gate.
   const scrollYSV = useSharedValue(0);
+  const actionsVisibility = usePlayDrawerActionsVisibility();
+  const updateActionsScroll = actionsVisibility.onScroll;
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset.y;
       scrollYSV.value = offsetY;
+      updateActionsScroll(offsetY);
       // RN Web does not synthesize onScrollBeginDrag for a mouse wheel,
       // trackpad, scrollbar, or keyboard scroll. Open the same deferred-content
       // gate from real movement so the lower drawer sections cannot stay absent.
       requestBelowFoldContentFromScrollOffset(offsetY);
       if (offsetY > 0) pendingFirstSectionScrollRef.current = false;
     },
-    [requestBelowFoldContentFromScrollOffset, scrollYSV],
+    [requestBelowFoldContentFromScrollOffset, scrollYSV, updateActionsScroll],
   );
   const handleDismiss = useCallback(() => {
     // The pane is persistent — nothing to dismiss (and no modal to pop).
@@ -740,17 +749,7 @@ export function PlayCore({
       : null;
   const serverFavorited = matchingEnhancement?.serverFavorited;
   const toggleFavoriteMutate = matchingEnhancement?.toggleFavoriteMutate;
-  const { isFavorited, handleToggleFavorite, handleToggleFavoriteFromMenu } = usePlayFavorite({
-    displayedClimb,
-    boardName,
-    layoutId,
-    angle,
-    serverFavorited,
-    toggleFavoriteMutate,
-    bluetoothConnected: bluetooth?.isConnected ?? false,
-    showToast,
-    t,
-  });
+
   // Lit visual, pending pulse, and the connect/disconnect tap — shared with the
   // toolbar bulb via `useLightbulbControl`, so both light identically (this
   // device, or a session peer driving the wall) and run one connect path. The
@@ -1401,6 +1400,79 @@ export function PlayCore({
     ],
   );
   const wallControlState: WallControlState = wallControl.state;
+  const displayedClimbIsDraft = displayedClimb?.is_draft === true;
+  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
+  // The same layout the action bar resolves from the same inputs, read here for
+  // the buttons it has put away (⋯ carries a row for each) and for the opening
+  // layout's key (a second row that comes or goes moves the board).
+  const hasBluetooth = bluetooth !== null;
+  const angleAvailable = resolvePlayerAngle({ isAngleAdjustable, angle: activeAngle }) !== null;
+  // A wall with lights to put a climb on; without one the wall button's row folds.
+  const playerHasWall = hasBluetooth && !boardIsLedless && boardName !== 'spray';
+  const actionBarLayout = useMemo(
+    () =>
+      resolveActionBarLayout({
+        supportsMirroring,
+        isAnonymous,
+        commitButton,
+        workoutOutcome: workoutOutcome !== null,
+        showLightbulb: hasBluetooth,
+        hasWall: playerHasWall,
+        hasShare: !displayedClimbIsDraft,
+        angleAvailable,
+        buttons: playerButtons.buttons,
+        previousNext: playerButtons.previousNext,
+        boardControl: playerButtons.boardControl,
+        miniPlayerMirrors,
+      }),
+    [
+      supportsMirroring,
+      isAnonymous,
+      commitButton,
+      workoutOutcome,
+      hasBluetooth,
+      playerHasWall,
+      displayedClimbIsDraft,
+      angleAvailable,
+      playerButtons.buttons,
+      playerButtons.previousNext,
+      playerButtons.boardControl,
+      miniPlayerMirrors,
+    ],
+  );
+
+  const actionsAnalytics = useMemo(
+    () =>
+      buildPlayDrawerActionsContext({
+        layout: actionBarLayout,
+        boardControl: playerButtons.boardControl,
+        hasShare: !displayedClimbIsDraft,
+        wallControlVisible: isPlayDrawerWallControlRendered(actionBarLayout, wallControlState),
+        primaryVisible: actionsVisibility.visible.primary,
+        secondaryVisible: actionsVisibility.visible.secondary,
+      }),
+    [
+      actionBarLayout,
+      playerButtons.boardControl,
+      displayedClimbIsDraft,
+      wallControlState,
+      actionsVisibility.visible.primary,
+      actionsVisibility.visible.secondary,
+    ],
+  );
+  const { isFavorited, handleToggleFavorite, handleToggleFavoriteFromMenu } = usePlayFavorite({
+    analyticsContext: actionsAnalytics,
+    displayedClimb,
+    boardName,
+    layoutId,
+    angle,
+    serverFavorited,
+    toggleFavoriteMutate,
+    bluetoothConnected: bluetooth?.isConnected ?? false,
+    showToast,
+    t,
+  });
+
   const { markLatchExit, suppressBrowseAnnouncement } = useWallStateAnnouncer({
     pillState: wallPillState,
     climbName: displayedClimb?.name ?? null,
@@ -1573,11 +1645,11 @@ export function PlayCore({
     setIds,
     angle,
     source: 'play_drawer',
+    analyticsContext: actionsAnalytics,
   });
 
   // A draft is visible to its setter alone: a share link opens nowhere for
   // anyone else, and the only person who can report it is the setter (#5960).
-  const displayedClimbIsDraft = displayedClimb?.is_draft === true;
 
   // Long-press the climb name to copy it — handy for pasting into a chat when
   // sharing beta. Delegates to the unit-tested copyClimbName helper; haptic for
@@ -1631,27 +1703,30 @@ export function PlayCore({
   // roster: after a peer leaves mid-browse the latch still makes a step a preview.
   const handleNavigationStep = useCallback(
     (step: PlayNavigationStep) =>
-      trackQueueNavigation({
-        ...step,
-        surface: 'player',
-        inSharedSession: browseByDefault,
-        // The climber's setting, not a stop on this link.
-        lightOnSwipe,
-        driving: drivingLive,
-        boardType: navigationBoardType,
-        layoutId: navigationLayoutId,
-      }),
-    [browseByDefault, lightOnSwipe, drivingLive, navigationBoardType, navigationLayoutId],
+      trackQueueNavigation(
+        {
+          ...step,
+          surface: 'player',
+          inSharedSession: browseByDefault,
+          // The climber's setting, not a stop on this link.
+          lightOnSwipe,
+          driving: drivingLive,
+          boardType: navigationBoardType,
+          layoutId: navigationLayoutId,
+        },
+        actionsAnalytics,
+      ),
+    [browseByDefault, lightOnSwipe, drivingLive, navigationBoardType, navigationLayoutId, actionsAnalytics],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   const handleOpenQueueFromBar = useCallback(() => {
-    trackQueueSheetOpened({ surface: 'player', boardType: navigationBoardType });
+    trackQueueSheetOpened({ surface: 'player', boardType: navigationBoardType }, actionsAnalytics);
     onOpenQueue();
-  }, [onOpenQueue, navigationBoardType]);
+  }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
   const handleOpenQueueFromMenu = useCallback(() => {
-    trackQueueSheetOpened({ surface: 'player_menu', boardType: navigationBoardType });
+    trackQueueSheetOpened({ surface: 'player_menu', boardType: navigationBoardType }, actionsAnalytics);
     onOpenQueue();
-  }, [onOpenQueue, navigationBoardType]);
+  }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
 
   const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall, continueIntoQueue } =
     usePlaySelectionController({
@@ -1966,6 +2041,7 @@ export function PlayCore({
     )
       return;
     track(SHARED_EVENTS.MirrorClimb, {
+      ...actionsAnalytics,
       climbUuid: displayedClimbUuid,
       boardName,
       layoutId,
@@ -1981,6 +2057,7 @@ export function PlayCore({
       void mirrorCurrentClimb(!(headItem.climb.mirrored === true), headItem.uuid);
     }
   }, [
+    actionsAnalytics,
     displayedClimbUuid,
     isMirrored,
     isPreview,
@@ -2137,11 +2214,12 @@ export function PlayCore({
   const trackTickOpened = useCallback(() => {
     if (!displayedClimb) return;
     track(SHARED_EVENTS.QuickTickOpened, {
+      ...actionsAnalytics,
       climbUuid: displayedClimb.uuid,
       layoutId: layoutId ?? null,
       source: 'play_fab',
     });
-  }, [displayedClimb, layoutId]);
+  }, [displayedClimb, layoutId, actionsAnalytics]);
 
   const handleTickFabPress = useCallback(() => {
     resetZoomRef.current?.();
@@ -2202,45 +2280,6 @@ export function PlayCore({
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
   });
-  const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
-  // The same layout the action bar resolves from the same inputs, read here for
-  // the buttons it has put away (⋯ carries a row for each) and for the opening
-  // layout's key (a second row that comes or goes moves the board).
-  const hasBluetooth = bluetooth !== null;
-  const angleAvailable = resolvePlayerAngle({ isAngleAdjustable, angle: activeAngle }) !== null;
-  // A wall with lights to put a climb on; without one the wall button's row folds.
-  const playerHasWall = hasBluetooth && !boardIsLedless && boardName !== 'spray';
-  const actionBarLayout = useMemo(
-    () =>
-      resolveActionBarLayout({
-        supportsMirroring,
-        isAnonymous,
-        commitButton,
-        workoutOutcome: workoutOutcome !== null,
-        showLightbulb: hasBluetooth,
-        hasWall: playerHasWall,
-        hasShare: !displayedClimbIsDraft,
-        angleAvailable,
-        buttons: playerButtons.buttons,
-        previousNext: playerButtons.previousNext,
-        boardControl: playerButtons.boardControl,
-        miniPlayerMirrors,
-      }),
-    [
-      supportsMirroring,
-      isAnonymous,
-      commitButton,
-      workoutOutcome,
-      hasBluetooth,
-      playerHasWall,
-      displayedClimbIsDraft,
-      angleAvailable,
-      playerButtons.buttons,
-      playerButtons.previousNext,
-      playerButtons.boardControl,
-      miniPlayerMirrors,
-    ],
-  );
   // Wall Control Shown: only while the control that asks is drawn: the wall
   // button, or for a connect the bulb (the player's, or the MiniPlayer's
   // standing in for it).
@@ -2248,6 +2287,7 @@ export function PlayCore({
   // The one handler behind every view of the board control: the tap, the
   // hold, and the three events, once each whichever view was used.
   const wallControlHandlers = useWallControl({
+    analyticsContext: actionsAnalytics,
     model: wallControl,
     runners: wallControlRunners,
     climbUuid: displayedClimbUuid ?? null,
@@ -2468,6 +2508,7 @@ export function PlayCore({
   // same climb where the climber was, and waits while anything here is open (see
   // route-player-handoff).
   const readScrollOffset = useCallback(() => scrollYSV.value, [scrollYSV]);
+  const anySheetVisible = useAnySheetVisible();
   const routeHasOpenWork =
     isTickBarActive ||
     activeSubDrawer !== 'none' ||
@@ -2478,6 +2519,20 @@ export function PlayCore({
     climberLogsOpen ||
     fullLogbookClimbUuid !== null ||
     bleControlVisible;
+  usePlayDrawerActionsExposure({
+    context: actionsAnalytics,
+    climbUuid: displayedClimbUuid ?? null,
+    boardName,
+    layoutId,
+    visible:
+      !miniPlayerMirrors && !showBoardMismatch && !routeHasOpenWork && !anySheetVisible && boardRenderData !== null,
+  });
+  const handleDrawerAngleChange = useCallback(
+    (nextAngle: number) => {
+      onAngleChange?.(nextAngle, actionsAnalytics);
+    },
+    [onAngleChange, actionsAnalytics],
+  );
   const routePreview = useMemo(
     () =>
       drawerPreviewItem
@@ -2559,6 +2614,8 @@ export function PlayCore({
   ) : null;
   const actionBar = (
     <PlayDrawerActionBar
+      onPrimaryLayout={actionsVisibility.onPrimaryLayout}
+      onSecondaryLayout={actionsVisibility.onSecondaryLayout}
       canSwipePrevious={scenarioPlayer?.previousNextEnabled === true || navigationState.canPrevious}
       canSwipeNext={scenarioPlayer?.previousNextEnabled === true || canPressNext}
       isMirrored={isMirrored}
@@ -2622,9 +2679,15 @@ export function PlayCore({
       edge={controlsAbove ? 'bottom' : 'top'}
     />
   );
+  const measuredActionBar = (
+    <View ref={actionsVisibility.actionsRef} collapsable={false} onLayout={actionsVisibility.onLayout}>
+      {actionBar}
+    </View>
+  );
   const controlsRegion = (
     <View
       testID="play-drawer-controls-region"
+      onLayout={actionsVisibility.onLayout}
       style={[
         styles.controlsRegion,
         controlsAbove && styles.controlsRegionAbove,
@@ -2635,8 +2698,8 @@ export function PlayCore({
         accessibilityElementsHidden={showBoardMismatch}
         importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
       >
-        {controlsAbove ? actionBar : playbackControls}
-        {controlsAbove ? playbackControls : actionBar}
+        {controlsAbove ? measuredActionBar : playbackControls}
+        {controlsAbove ? playbackControls : measuredActionBar}
         {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
         process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' &&
         process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1' ? (
@@ -2668,7 +2731,12 @@ export function PlayCore({
     // The play route paints its background and this interactive core together.
     // The board column is always its own view, so a rotation that brings the
     // side panel in or out never remounts the board.
-    <View style={[styles.root, hasSidePanel ? styles.rootSideBySide : null]}>
+    <View
+      ref={actionsVisibility.viewportRef}
+      collapsable={false}
+      onLayout={actionsVisibility.onLayout}
+      style={[styles.root, hasSidePanel ? styles.rootSideBySide : null]}
+    >
       <View
         style={[styles.playerColumn, hasSidePanel ? styles.playerColumnSideBySide : null]}
         onLayout={hasSidePanel ? handlePlayerColumnLayout : undefined}
@@ -2800,6 +2868,7 @@ export function PlayCore({
                                       boardConfig={renderBoardConfig}
                                       queueItemUuid={displayedQueueSlotUuid}
                                       isAuthenticated={isAuthenticated}
+                                      analyticsContext={actionsAnalytics}
                                       hidden={actionBarLayout.hidden}
                                       boardMismatch={showBoardMismatch}
                                       isFavorited={isFavorited}
@@ -3106,7 +3175,7 @@ export function PlayCore({
           isMirrored={isMirrored}
           boardseshActive={boardseshActive}
           sessionId={sessionId}
-          onAngleChange={onAngleChange}
+          onAngleChange={handleDrawerAngleChange}
           handleCloseSectionsSettings={handleCloseSectionsSettings}
           handleCloseSubDrawer={handleCloseSubDrawer}
           handleCloseAddBetaVideo={handleCloseAddBetaVideo}

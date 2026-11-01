@@ -14,6 +14,9 @@ type ViewProps = {
   accessible?: boolean;
   importantForAccessibility?: string;
   pointerEvents?: string;
+  accessibilityRole?: string;
+  accessibilityActions?: { name: string; label: string }[];
+  onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
 
 const recorded = vi.hoisted(() => ({
@@ -23,6 +26,9 @@ const recorded = vi.hoisted(() => ({
   zoomOptions: vi.fn(),
   boardProps: vi.fn(),
   synchronousArtReadiness: undefined as BoardArtReadiness | undefined,
+  accessibility: undefined as
+    | Pick<ViewProps, 'accessibilityRole' | 'accessibilityActions' | 'onAccessibilityAction'>
+    | undefined,
 }));
 
 const sharedThreads = vi.hoisted(() => ({
@@ -38,8 +44,22 @@ vi.mock('react-native', () => {
     return style && typeof style === 'object' ? (style as Record<string, unknown>) : {};
   };
   return {
-    View: ({ children, onLayout, testID, style, accessible, importantForAccessibility, pointerEvents }: ViewProps) => {
+    View: ({
+      children,
+      onLayout,
+      testID,
+      style,
+      accessible,
+      importantForAccessibility,
+      pointerEvents,
+      accessibilityRole,
+      accessibilityActions,
+      onAccessibilityAction,
+    }: ViewProps) => {
       if (testID === 'play-drawer-board-container') recorded.onLayout = onLayout;
+      if (testID === 'play-drawer-board-accessibility') {
+        recorded.accessibility = { accessibilityRole, accessibilityActions, onAccessibilityAction };
+      }
       const dimensions = flattenStyle(style);
       return createElement(
         'div',
@@ -255,6 +275,7 @@ beforeEach(() => {
   recorded.zoomOptions.mockClear();
   recorded.boardProps.mockClear();
   recorded.synchronousArtReadiness = undefined;
+  recorded.accessibility = undefined;
   sharedThreads.asynchronous = false;
   sharedThreads.onUiThread = false;
   sharedThreads.uiJobs.length = 0;
@@ -670,6 +691,44 @@ describe('SwipeBoardCarousel pages', () => {
     // can change where it sits: a view that is put back into its parent loses
     // the touch that began on it.
     expect(standIn.parentElement?.firstElementChild).toBe(standIn);
+  });
+
+  it('offers and runs accessible Next and Previous independently of visible arrow buttons', () => {
+    const onSwipeNext = vi.fn();
+    const onSwipePrevious = vi.fn();
+    render(createElement(SwipeBoardCarousel, { ...baseProps, canSwipePrevious: true, onSwipeNext, onSwipePrevious }));
+    measure(350, 500);
+
+    expect(recorded.accessibility?.accessibilityRole).toBe('adjustable');
+    expect(recorded.accessibility?.accessibilityActions).toEqual([
+      { name: 'increment', label: 'mobile.boardAccessibility.next' },
+      { name: 'decrement', label: 'mobile.boardAccessibility.previous' },
+    ]);
+    act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'increment' } }));
+    act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'decrement' } }));
+    expect(onSwipeNext).toHaveBeenCalledOnce();
+    expect(onSwipePrevious).toHaveBeenCalledOnce();
+  });
+
+  it('does not expose or run accessible navigation while the board is disabled', () => {
+    const onSwipeNext = vi.fn();
+    const onSwipePrevious = vi.fn();
+    render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        enabled: false,
+        canSwipePrevious: true,
+        onSwipeNext,
+        onSwipePrevious,
+      }),
+    );
+    measure(350, 500);
+
+    expect(recorded.accessibility?.accessibilityActions).toEqual([]);
+    act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'increment' } }));
+    act(() => recorded.accessibility?.onAccessibilityAction?.({ nativeEvent: { actionName: 'decrement' } }));
+    expect(onSwipeNext).not.toHaveBeenCalled();
+    expect(onSwipePrevious).not.toHaveBeenCalled();
   });
 
   it('gives every board the zoom wrapper, so one that stops being current cannot keep a stale zoom', async () => {

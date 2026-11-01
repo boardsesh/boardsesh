@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/shared-schema';
 import { AppMenu } from '../AppMenu';
 import {
@@ -21,6 +22,7 @@ import type { BoardConfig } from './play-drawer-types';
 type PinnedSheetOpener = (climb: Climb, boardConfig: BoardConfig) => void;
 
 export type PlayDrawerActionsMenuProps = {
+  analyticsContext?: AnalyticsEventProperties;
   climb: Climb;
   /**
    * The board the climb is DRAWN on (PlayCore's `renderBoardConfig`), never the
@@ -89,6 +91,7 @@ export type PlayDrawerActionsMenuProps = {
  */
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
+  analyticsContext,
   boardConfig,
   queueItemUuid,
   isAuthenticated,
@@ -149,6 +152,7 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     dismissPlayerAndWait,
     favoriteControl,
     analyticsSource: 'play_drawer_menu',
+    analyticsContext,
   });
 
   const boardControlsTitle = tSettings('ble.boardControls');

@@ -473,6 +473,9 @@ export const SHARED_EVENTS = {
   // holds; no store build did. Before #7000 the player's sheet sent nothing, so
   // play_drawer has no history.
   BoardControlsOpened: 'Board Controls Opened',
+  // Mobile-only: actual drawer rows in the viewport, once per visible climb/layout
+  // transition. Primitives-only context serializes ordered slots/actions with commas.
+  PlayDrawerActionsShown: 'Play Drawer Actions Shown',
   // Mobile-only (#7000): the player's wall button asked the climber to act on
   // the climb on screen, only for the two states that ask: 'connect' (no board
   // linked; "Connect board", or the bulb while it is back in the first row),

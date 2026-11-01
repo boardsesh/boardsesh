@@ -86,8 +86,11 @@ export type ActionBarPrimaryCenter = 'tick' | 'wallControl' | 'wallControlFull' 
 export type ActionBarLayout = {
   primaryCenter: ActionBarPrimaryCenter;
   leadingSlot: ActionBarLeadingSlot;
+  /** The position beside Log, available to an action while navigation arrows are off. */
+  innerLeadingSlot: ActionBarLeadingSlot;
+  innerTrailingSlot: ActionBarLeadingSlot;
   trailingSlot: ActionBarTrailingSlot;
-  /** ⏮ and ⏭. Off leaves both slots empty, so Log stays in the middle. */
+  /** ⏮ and ⏭. Off makes their positions available to the climber's actions. */
   showPreviousNext: boolean;
   /** The busy-wall question, the workout's Fell / Sent, or the row's items left to right. Empty: no second row. */
   secondaryRow: ActionBarSecondaryRow;
@@ -105,68 +108,22 @@ const NOTHING_HIDDEN: PlayDrawerHiddenButtons = Object.freeze({
 });
 
 /**
- * Where each action-bar button sits, for one bar state (#7000).
+ * One placement rule for the bar, its overflow menu and the settings preview.
  *
- * ```
- * Mirror board (Tension, Decoy, Woods)   [⇄]  [⏮]  [✓]  [⏭]  [☰]      (♡ in ⋯)
- *                                        [ 💡    You are driving the wall   (S) ]
- * Other boards (Kilter, MoonBoard)       [♡]  [⏮]  [✓]  [⏭]  [☰]
- *                                        [ 💡        Put on board             ]
- * Fell / Sent                            [⏮]  [ 💡  Disconnect board ]  [⏭]    (♡ ✓ ☰ in ⋯)
- *                                        [ Fell              Sent             ]
- * The busy-wall question                 [♡]  [⏮]  [✓]  [⏭]  [☰]
- *                                        [ (T) Keep Test2's ] [ 💡 Put mine up ]
- * Anonymous                              [⇄ or  ]  [⏮]  [✓]  [⏭]  [ ]
- *                                        [40°] ···················· [⬆]
- * ```
+ * With navigation off the first row has four actions around Log. When too many
+ * apply, the first action and the final three take those positions. The default
+ * Mirror, Angle, Favorite, Share, Queue order gives Mirror / Favorite / Log /
+ * Share / Queue where mirroring applies, and Angle in Mirror's place elsewhere.
+ * Navigation on reserves the inner positions for Previous / Next and retains
+ * today's first / last action priority at the two ends.
  *
- * Those are the defaults (Mirror, Favourite, Queue on; Share and Angle off).
- * The climber's buttons (View options) move things inside the same frame:
+ * The wall button owns the second row. In Lightbulb mode its bulb owns the last
+ * primary position and remaining enabled actions share the secondary row. A
+ * busy wall or timed workout may take that row; their displaced actions remain
+ * in the overflow menu. Beside a MiniPlayer the player delegates the icon row.
  *
- * - The buttons that are on and apply here, in the climber's order, fill the
- *   first row's two ends: the first takes the leading slot, the last the
- *   trailing one, and any between them live in ⋯. One alone takes the leading
- *   slot. Mirror applies only on a board that mirrors, Angle only on a board
- *   whose angle can change, Favourite and Queue only for a member. Share
- *   applies everywhere and leaves its slot empty on a draft, so nothing jumps
- *   between climbs.
- * - The second row is the wall button alone, full width, in every wall state
- *   (`WallControlButton`), so nothing moves between states. With no wall to
- *   light (no Bluetooth, a spray wall, a board without lights) it folds away,
- *   except for a preview's Set active.
- * - Log, ⏮ ⏭ and the wall button never move. Previous and next off leaves both
- *   slots empty, so Log stays centred.
- * - A timed block's Fell / Sent takes the whole second row, and the board
- *   control keeps the climber's chosen look: with the wall button, the top row
- *   becomes `⏮ [wall button] ⏭` and ♡ / ⇄, ✓ and ☰ wait in ⋯ (Fell / Sent log
- *   each go); with the bulb, it stays in the trailing slot.
- * - The busy-wall question (#7017) is the wall button's row as two segments,
- *   Keep theirs and Put mine up, and the first row stays as it was. Put mine up
- *   carries the bulb, so the bulb doesn't come back. Beside a MiniPlayer the
- *   pair takes the full-width wall button's place in the first row.
- *
- * With the bulb chosen (View options › Buttons › Board control):
- *
- * ```
- * Mirror board                           [⇄]  [⏮]  [✓]  [⏭]  [💡]      (♡ ☰ in ⋯)
- * A preview, the busy wall, Fell / Sent  the same row, over the second row
- *                                        (the busy wall's is the same pair)
- * ```
- *
- * The bulb takes the trailing slot whenever there is a wall to light. The
- * second row stays on boards with lights, as the bar before #7000 did, so the
- * board never jumps mid-swipe: the climber's other buttons on, small, on its
- * two sides (the first half left, the rest right), and Put on the wall in the
- * gap for a preview, which pushes nothing into ⋯. Fell / Sent and the busy-wall
- * question still take the whole row. It folds only where there is no wall to
- * light, as with the wall button.
- *
- * - Every button that applies here and is not drawn is flagged in `hidden`, and
- *   ⋯ carries a row for it.
- * - An anonymous reader gets the read-only bar whatever is stored on the
- *   device: no account to favourite with, no queue that means anything, no wall
- *   to light, and no ⋯ to bring a hidden button back, so Angle and Share stay
- *   in the row and nothing is flagged.
+ * Draft Share keeps an empty position rather than moving the other buttons.
+ * Anonymous readers retain their read-only layout and have no overflow menu.
  */
 export function resolveActionBarLayout({
   supportsMirroring,
@@ -186,6 +143,8 @@ export function resolveActionBarLayout({
     return {
       primaryCenter: 'tick',
       leadingSlot: supportsMirroring ? 'mirror' : null,
+      innerLeadingSlot: null,
+      innerTrailingSlot: null,
       trailingSlot: null,
       showPreviousNext: true,
       secondaryRow: [...(angleAvailable ? ['angle' as const] : []), 'spacer', ...(hasShare ? ['share' as const] : [])],
@@ -212,6 +171,8 @@ export function resolveActionBarLayout({
     return {
       primaryCenter: confirmUp ? 'confirm' : wallButtonUp ? 'wallControlFull' : 'none',
       leadingSlot: null,
+      innerLeadingSlot: null,
+      innerTrailingSlot: null,
       trailingSlot: null,
       showPreviousNext: false,
       secondaryRow,
@@ -234,16 +195,30 @@ export function resolveActionBarLayout({
     return true;
   };
   const placed = visibleSectionIds(buttons, applies);
-  let leadingSlot: ActionBarLeadingSlot = placed[0] ?? null;
-  let trailingSlot: ActionBarTrailingSlot = placed.length > 1 ? (placed.at(-1) ?? null) : null;
+  // Preserve the first/last priority of the two-position bar. Without arrows,
+  // the extra room goes to the final three actions instead of only the last.
+  // The default Mirror, Angle, Favorite, Share, Queue order therefore uses
+  // Angle when Mirror does not apply, keeping Favorite, Share and Queue up.
+  const capacity = previousNext ? 2 : 4;
+  const selected = placed.length <= capacity ? placed : [placed[0], ...placed.slice(-(capacity - 1))];
+  let leadingSlot: ActionBarLeadingSlot = selected[0] ?? null;
+  let innerLeadingSlot: ActionBarLeadingSlot = !previousNext && selected.length > 2 ? (selected[1] ?? null) : null;
+  let innerTrailingSlot: ActionBarLeadingSlot = !previousNext && selected.length > 3 ? (selected[2] ?? null) : null;
+  let trailingSlot: ActionBarTrailingSlot = selected.length > 1 ? (selected.at(-1) ?? null) : null;
   let primaryCenter: ActionBarPrimaryCenter = 'tick';
   const bulbMode = boardControl === 'lightbulb';
   // A wall to light: the bulb or the wall button has something to say.
   const controlShown = showLightbulb && hasWall;
 
-  // The bulb's row: the buttons the leading slot leaves, half each side.
+  // The bulb takes the trailing position. Everything not already in the top
+  // row may use its second row, split evenly around the preview's wall button.
   const bulbRow = bulbMode && controlShown;
-  const sideButtons = bulbRow ? placed.slice(1) : [];
+  if (bulbRow) trailingSlot = 'lightbulb';
+  const sideButtons = bulbRow
+    ? placed.filter(
+        (buttonId) => buttonId !== leadingSlot && buttonId !== innerLeadingSlot && buttonId !== innerTrailingSlot,
+      )
+    : [];
   const leftSide = sideButtons.slice(0, Math.ceil(sideButtons.length / 2));
   const rightSide = sideButtons.slice(leftSide.length);
 
@@ -274,6 +249,8 @@ export function resolveActionBarLayout({
     // It never turns back into the bulb.
     primaryCenter = 'wallControl';
     leadingSlot = null;
+    innerLeadingSlot = null;
+    innerTrailingSlot = null;
     trailingSlot = null;
   } else if (bulbMode ? controlShown : secondaryRow === 'workoutOutcome' && showLightbulb) {
     // The bulb chosen; or Fell / Sent where the wall button has no wall to
@@ -283,10 +260,16 @@ export function resolveActionBarLayout({
 
   const inSecondRow = (buttonId: PlayerButtonId) => typeof secondaryRow !== 'string' && secondaryRow.includes(buttonId);
   const drawn = (buttonId: PlayerButtonId) =>
-    leadingSlot === buttonId || trailingSlot === buttonId || inSecondRow(buttonId);
+    leadingSlot === buttonId ||
+    innerLeadingSlot === buttonId ||
+    innerTrailingSlot === buttonId ||
+    trailingSlot === buttonId ||
+    inSecondRow(buttonId);
   return {
     primaryCenter,
     leadingSlot,
+    innerLeadingSlot,
+    innerTrailingSlot,
     trailingSlot,
     showPreviousNext: previousNext,
     secondaryRow,

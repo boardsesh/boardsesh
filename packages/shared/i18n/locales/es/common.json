@@ -824,7 +824,7 @@
       },
       "playerButtons": {
         "title": "Botones",
-        "description": "Elige los botones alrededor de Registrar, su orden y dónde van.",
+        "description": "Elige hasta cuatro botones alrededor de Registrar, su orden y dónde van.",
         "position": {
           "label": "Posición",
           "below": "Debajo del plafón",
@@ -832,7 +832,7 @@
           "footer": "Registrar y Luz del plafón siempre mantienen su sitio."
         },
         "previousNext": "Anterior y siguiente",
-        "previousNextDescription": "Deslizar el plafón sigue cambiando de bloque.",
+        "previousNextDescription": "Muestra flechas junto a Registrar en lugar de dos botones de acción. Deslizar el plafón sigue cambiando de bloque.",
         "buttons": {
           "mirror": "Espejo",
           "favorite": "Favorito",
@@ -848,7 +848,7 @@
           "log": "Registrar",
           "boardLight": "Luz del plafón"
         },
-        "footer": "El primer botón activo va en el extremo izquierdo de la fila de arriba y el último en el derecho. El resto, y los que ocultes, están en el menú ⋯.",
+        "footer": "Sin flechas, aparecen hasta cuatro botones activos alrededor de Registrar. Si hay más disponibles para este plafón, aparecen el primero y los tres últimos. Con flechas, solo aparecen el primero y el último. El resto, y los que ocultes, están en el menú ⋯.",
         "settingsFooter": "Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
         "previewLabel": "Vista previa, {{position}}: {{buttons}}",
         "boardControl": {

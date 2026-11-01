@@ -1211,6 +1211,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     // that decided it, not the roster that just emptied.
     expect(queueAnalytics.navigation).toHaveBeenLastCalledWith(
       expect.objectContaining({ direction: 'next', method: 'button', outcome: 'preview', inSharedSession: true }),
+      expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
     );
   });
 
@@ -1603,16 +1604,16 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(spoken.filter((sentence) => sentence.startsWith('playView.wallState.commitOverride'))).toEqual([]);
   });
 
-  // Put on the wall is a wall button state, so the queue keeps its slot (the
-  // heart, Angle and Share already wait in ⋯ on this mirror board). The
+  // Put on the wall is a wall button state, so the queue, heart and Share keep
+  // their default positions (Angle waits in ⋯ on this mirror board). The
   // question takes the whole row; with no Bluetooth here there is no bulb to
   // bring back, so the queue keeps its slot through it.
   it('keeps the queue through the question where there is no bulb to bring back', () => {
     browseThenLoseTheWall();
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: true,
+      favorite: false,
       queue: false,
-      share: true,
+      share: false,
       angle: true,
     });
 
@@ -1622,9 +1623,9 @@ describe('PlayDrawer — the busy-wall confirm', () => {
 
     expect(lastActionBarProps().commitButton).toBe('confirm');
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: true,
+      favorite: false,
       queue: false,
-      share: true,
+      share: false,
       angle: true,
     });
   });
@@ -2513,18 +2514,18 @@ describe('PlayDrawer — the anonymous joins', () => {
   });
 
   // Put on the wall is a wall button state, so browsing moves nothing: the
-  // queue keeps its slot, and the heart (this is a mirror board), the angle
-  // and share stay in ⋯.
+  // queue, heart and Share keep their positions; Angle stays in ⋯ on this
+  // mirror board.
   it('keeps the bar as it was while browsing', () => {
     setSetting('lightOnSwipe', false);
     renderDrawer('member');
 
     expect(lastActionBarProps().commitButton).toBe('putOnWall');
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: true,
+      favorite: false,
       queue: false,
       angle: true,
-      share: true,
+      share: false,
     });
   });
 

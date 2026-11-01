@@ -552,7 +552,7 @@
       },
       "playerButtons": {
         "title": "Boutons",
-        "description": "Choisis les boutons autour de Enregistrer, leur ordre et leur place.",
+        "description": "Choisis jusqu’à quatre boutons autour de Enregistrer, leur ordre et leur place.",
         "position": {
           "label": "Position",
           "below": "Sous la board",
@@ -560,7 +560,7 @@
           "footer": "Enregistrer et Éclairage de la board gardent toujours leur place."
         },
         "previousNext": "Précédent et suivant",
-        "previousNextDescription": "Glisser sur la board change toujours de bloc.",
+        "previousNextDescription": "Affiche des flèches à côté de Enregistrer à la place de deux boutons d’action. Glisser sur la board change toujours de bloc.",
         "buttons": {
           "mirror": "Miroir",
           "favorite": "Favori",
@@ -576,7 +576,7 @@
           "log": "Enregistrer",
           "boardLight": "Éclairage de la board"
         },
-        "footer": "Le premier bouton activé prend l’extrémité gauche de la rangée du haut et le dernier l’extrémité droite. Les autres, et ceux que tu masques, sont dans le menu ⋯.",
+        "footer": "Sans flèches, jusqu’à quatre boutons activés entourent Enregistrer. S’il y en a davantage pour cette board, le premier et les trois derniers prennent les places. Avec les flèches, seuls le premier et le dernier apparaissent. Les autres, et ceux que tu masques, sont dans le menu ⋯.",
         "settingsFooter": "Pour changer l’ordre, ouvre le menu ⋯ d’un bloc et choisis Options d’affichage.",
         "previewLabel": "Aperçu, {{position}} : {{buttons}}",
         "boardControl": {
