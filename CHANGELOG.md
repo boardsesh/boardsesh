@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Log your sends with a bigger Tick, and share climbs straight from the drawer. ([#7193](https://github.com/boardsesh/boardsesh/pull/7193))
+  Swipe between climbs, or bring Previous and Next back in View options.
+  Log earlier climbs from Queue without losing your place.
 - The board button frosts only while your swipes light climbs. ([#7170](https://github.com/boardsesh/boardsesh/pull/7170))
 
 ### Fixed
