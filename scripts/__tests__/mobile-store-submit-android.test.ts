@@ -74,7 +74,7 @@ describe('classifyAndroidSubmission', () => {
   it('leaves a rejected build to a person instead of resubmitting it every hour', () => {
     expect(classify([release(VERSION, 'NOT_APPROVED')])).toMatchObject({
       status: 'blocked',
-      reason: expect.stringContaining('merge back again'),
+      reason: expect.stringContaining('corrected tester build from main'),
     });
   });
 

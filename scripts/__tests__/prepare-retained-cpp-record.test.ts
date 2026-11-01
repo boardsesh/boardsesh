@@ -798,7 +798,13 @@ describe('retained CPP producer authorization', () => {
       const workflow = readFileSync('.github/workflows/mobile-screenshots-ios.yml', 'utf8');
       if (kind === 'setup-output')
         return workflow.replace('source_sha: ${{ steps.compute.outputs.source_sha }}', 'source_sha: unrelated');
-      if (kind === 'compute-output') return workflow.replace('source_sha=$SOURCE_SHA', 'source_sha=unrelated');
+      if (kind === 'compute-output') {
+        const computeStart = workflow.indexOf('      - name: Compute locales, matrix and gate');
+        return (
+          workflow.slice(0, computeStart) +
+          workflow.slice(computeStart).replace('source_sha=$SOURCE_SHA', 'source_sha=unrelated')
+        );
+      }
       return workflow.replace(
         'id: compute\n        env:',
         'id: compute\n        env:\n          SOURCE_SHA: unrelated',

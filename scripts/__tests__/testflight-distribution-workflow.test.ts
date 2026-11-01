@@ -32,7 +32,7 @@ describe('external TestFlight distribution workflow', () => {
     expect(followup.on.workflow_run).toEqual({
       workflows: [native.name],
       types: ['completed'],
-      branches: ['main', 'release/next'],
+      branches: ['main'],
     });
     expect(followup.concurrency).toMatchObject({ 'cancel-in-progress': false, queue: 'max' });
     expect(followup.concurrency.group).not.toBe(native.concurrency.group);
@@ -41,6 +41,31 @@ describe('external TestFlight distribution workflow', () => {
     expect(followup.jobs.distribute.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(followup.jobs.distribute.if).toContain("github.ref == 'refs/heads/main'");
     expect(nativeSteps.some((step) => step.run?.includes('distribute_testflight'))).toBe(false);
+  });
+
+  it('reconciles only deferred uploaded binaries and retains terminal outcomes', () => {
+    expect(followup.on.schedule).toEqual([{ cron: '23 * * * *' }]);
+    const selection = steps.find((step) => step.id === 'selection');
+    expect(selection).toMatchObject({
+      if: "github.event_name == 'schedule'",
+      run: 'vp exec tsx scripts/testflight-distribution.ts select',
+    });
+    expect(steps.find((step) => step.id === 'source')?.if).toContain("steps.selection.outputs.selected == 'true'");
+    const record = steps.find((step) => step.run === 'vp exec tsx scripts/testflight-distribution.ts record');
+    expect(record?.if).toBe("always() && steps.build.outcome == 'success'");
+    expect(record?.env?.SOURCE_RUN_ATTEMPT).toBe('${{ steps.source.outputs.source_run_attempt }}');
+    expect(steps.find((step) => step.uses === 'actions/upload-artifact@v4')?.with?.path).toContain(
+      'testflight-result/',
+    );
+  });
+
+  it('checks the binary source schema before tester distribution', () => {
+    const schema = steps.findIndex((step) => step.run === 'node scripts/mobile-ota-schema-ready.mjs');
+    const distribution = steps.findIndex((step) => step.run === 'bundle exec fastlane ios distribute_testflight');
+    expect(schema).toBeGreaterThan(-1);
+    expect(schema).toBeLessThan(distribution);
+    expect(steps[schema].env?.GITHUB_SHA).toBe('${{ steps.build.outputs.source_sha }}');
+    expect(steps[schema].if).toContain("steps.build.outputs.source_ref == 'main'");
   });
 
   it('reports a wrong-branch manual dispatch as an error without exposing store credentials', () => {

@@ -738,6 +738,7 @@ export type GetSessionQueueStateQueryResponse = {
       /** F3: selected only by GET_SESSION_QUEUE_STATE_NOW_SLOT. */
       historyCount?: number | null;
       currentChangedAt?: string | null;
+      currentChangedBy?: string | null;
     } | null;
   } | null;
 };

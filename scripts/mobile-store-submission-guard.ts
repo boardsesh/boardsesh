@@ -44,7 +44,7 @@ export function requireSubmissionMergedToMain(options: {
   try {
     git(['merge-base', '--is-ancestor', buildCommit, mainCommit]);
   } catch {
-    throw new Error(`${buildTag} has not merged into main. Merge release/next before submitting this build.`);
+    throw new Error(`${buildTag} has not merged into main. Merge the source into main before submitting this build.`);
   }
   return { buildTag, buildCommit, mainCommit };
 }

@@ -37,6 +37,7 @@ export type SyncQueueEvent =
         historyCount?: number | null;
         /** When the room's current climb last changed (ISO 8601). Absent or null like `historyCount`. */
         currentChangedAt?: string | null;
+        currentChangedBy?: string | null;
       };
     }
   | {
@@ -61,6 +62,7 @@ export type SyncQueueEvent =
       item?: ClimbQueueItem | null;
       clientId?: string | null;
       correlationId?: string | null;
+      currentChangedBy?: string | null;
     }
   | {
       __typename: 'ClimbMirrored';
@@ -108,6 +110,7 @@ export function mapQueueEventToAction<TSearchParams extends QueueSearchParams = 
             historyCount: event.state.historyCount ?? null,
             // Read by the mobile provider's #4979 hold clock, never by the reducer.
             currentChangedAt: event.state.currentChangedAt ?? null,
+            currentChangedBy: event.state.currentChangedBy ?? null,
           },
         },
       };
@@ -177,6 +180,7 @@ export function mapQueueEventToAction<TSearchParams extends QueueSearchParams = 
             eventClientId: event.clientId ?? undefined,
             myClientId: context?.myClientId ?? undefined,
             serverCorrelationId: event.correlationId ?? undefined,
+            currentChangedBy: event.currentChangedBy ?? null,
           },
         },
       };

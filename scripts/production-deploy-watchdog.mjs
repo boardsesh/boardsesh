@@ -50,8 +50,7 @@
 // keeps every pending run, so the queue drains by itself once the group frees.
 // What it does re-dispatch, once each, is the work nothing queued would redo
 // (see recoverStrandedOtaRuns): a native build's republish that was cancelled
-// or refused stale store evidence, and the release/next tip, whose older pushes
-// skip their publish as superseded. OTA_LANE_REDISPATCH=off turns those into
+// on main. OTA_LANE_REDISPATCH=off turns those into
 // posted commands.
 
 import { execFileSync } from 'node:child_process';
@@ -151,9 +150,8 @@ const PRODUCTION_DEPLOY_LANE = Object.freeze({
 const MOBILE_OTA_LANE = Object.freeze({
   name: 'mobile-ota-production',
   workflowFile: 'mobile-ota-production.yml',
-  // release/next pushes and dispatches on main or release/next all take the
-  // same `mobile-ota-production` group, so every branch is in scope.
-  branch: null,
+  // Only main can publish or request native post-upload republishes.
+  branch: 'main',
   // Only the environment gate. A job queued for a runner clears on its own, and
   // cancelling it throws away that run's publish — for a per-platform
   // "Republish … after native build" dispatch, nothing re-sends it.
@@ -183,7 +181,7 @@ const MOBILE_OTA_LANE = Object.freeze({
   // `queue: max` keeps every pending run, so the run this lane cancels is never
   // re-dispatched as such...
   redispatch: false,
-  // ...but a native republish or the release/next tip that nothing queued
+  // ...but a native republish that nothing queued
   // would redo is (recoverStrandedOtaRuns).
   recovery: true,
   // Jobs are created only once their `needs` finish, so a run parked at
@@ -479,22 +477,22 @@ function deliveryGuidance(entry, lane) {
   if (typeof entry.deliverySucceeded !== 'boolean') return null;
   return entry.deliverySucceeded
     ? `  \`${lane.deliveryJobName}\` had already succeeded; only the jobs after it were lost.`
-    : `  \`${lane.deliveryJobName}\` did not succeed. A native republish or the release/next tip is re-dispatched below; any other run is not retried: dispatch ${lane.workflowFile} again for this branch unless a later run there publishes the same platforms.`;
+    : `  \`${lane.deliveryJobName}\` did not succeed. A native republish is re-dispatched below; any other run is not retried: dispatch ${lane.workflowFile} again for this branch unless a later run there publishes the same platforms.`;
 }
 
 function shortSha(run) {
   return typeof run?.head_sha === 'string' ? run.head_sha.slice(0, 7) : 'unknown';
 }
 
-// A lane that spans branches names the branch, and the run title: on the OTA
-// lane that is what tells a train push from a "Republish ios after native
+// The OTA lane names its branch and run title to distinguish a normal manual
+// publish from a "Republish ios after native
 // build" dispatch, whose publish nothing else re-sends. Titles come from the
 // workflow's run-name; backticks and newlines are stripped so one cannot break
 // the Discord formatting.
 const RUN_TITLE_LIMIT = 80;
 
 function runContext(run, lane) {
-  if (lane.branch !== null) return '';
+  if (lane.name !== 'mobile-ota-production') return '';
   const branch = String(run?.head_branch ?? 'unknown branch');
   const title = String(run?.display_title ?? '')
     .replace(/[\r\n`]/g, ' ')
@@ -630,30 +628,12 @@ function republishCommand({ ref, platform, fingerprint }) {
 // cancelled run that no later tick would otherwise look at again.
 const RECOVERY_WINDOW_MINUTES = 24 * 60;
 
-// A republish can also strand its binary by FAILING: its store evidence was
-// resolved before it waited for the lane, and publish refuses evidence past
-// TRAIN_LIVE_STORE_MAX_AGE_MS in a step of its own. The name is the marker, and
-// mobile-ota-production.yml must keep it; a test pins the two together.
-const STALE_EVIDENCE_STEP = 'Refuse stale public store evidence';
-// Nobody else reports that failure as stranding, so it is reported (and fails
-// this job) on the ticks that first see it, not only when this tick acted.
-// Two ticks' worth, so a delayed schedule still catches it.
 const FRESH_FAILURE_MINUTES = 30;
-
-function refusedStaleEvidence(jobs, laneJob) {
-  return (jobs ?? []).some(
-    (job) =>
-      job?.name === laneJob &&
-      (job.steps ?? []).some((step) => step?.name === STALE_EVIDENCE_STEP && step?.conclusion === 'failure'),
-  );
-}
 
 const completedWithin = (run, minutes, nowMs) => {
   const age = minutesSince(run?.updated_at ?? run?.created_at, nowMs);
   return age !== null && age <= minutes;
 };
-const TRAIN_BRANCH = 'release/next';
-const TRAIN_DISPATCH_COMMAND = `gh workflow run mobile-ota-production.yml --ref ${TRAIN_BRANCH}`;
 
 const runName = (run) => run?.name ?? run?.display_title;
 const withinRecoveryWindow = (run, nowMs) => {
@@ -675,9 +655,10 @@ function decideRepublish({ run, laneJob, finalJobs, dispatchedRuns }) {
     runId: run.id,
     name: runName(run),
     ref,
-    command: republishCommand({ ref: ref || TRAIN_BRANCH, ...republish }),
+    command: republishCommand({ ref: ref || 'main', ...republish }),
   };
   if (ref === '') return { ...decision, action: 'unreadable', reason: 'the run has no branch' };
+  if (ref !== 'main') return { action: 'none' };
   if (finalJobs === null) return { ...decision, action: 'unreadable', reason: 'its job list could not be read' };
   if (finalJobs.some((job) => job?.name === laneJob && job?.conclusion === 'success')) {
     return { ...decision, action: 'already-published' };
@@ -697,42 +678,6 @@ function decideRepublish({ run, laneJob, finalJobs, dispatchedRuns }) {
   ) {
     return { ...decision, action: 'retry-spent' };
   }
-  return { ...decision, action: 'redispatch' };
-}
-
-// 2. The release/next tip. Older train pushes skip as superseded once the tip
-//    moves, so if the tip's own run is cancelled, or fails because its store
-//    evidence aged out while it waited last in a backlog, nothing publishes it.
-//    ("Re-run failed jobs" would reuse the same stale artifact.) A
-//    dispatch on the branch re-runs it: dispatches skip the push-only superseded
-//    step and still check the tip. Once per tip: any earlier dispatch for the tip
-//    (ours or an operator's) spends the retry. Republish runs are left to (1).
-function decideTipRecovery({ tip, branchRuns, finalJobs, laneJob, nowMs }) {
-  const base = {
-    kind: 'tip',
-    name: `the ${TRAIN_BRANCH} tip${typeof tip === 'string' ? ` (${tip.slice(0, 7)})` : ''}`,
-    ref: TRAIN_BRANCH,
-    command: TRAIN_DISPATCH_COMMAND,
-  };
-  if (tip === null) return { ...base, action: 'unreadable', reason: `the ${TRAIN_BRANCH} head could not be read` };
-  if (branchRuns === null) return { ...base, action: 'unreadable', reason: 'the run history could not be read' };
-  const tipRuns = branchRuns.filter((run) => run?.head_sha === tip && parseRepublishRunName(runName(run)) === null);
-  if (tipRuns.length === 0) return { ...base, action: 'none', reason: 'the tip has no run' };
-  if (tipRuns.some((run) => run?.status !== 'completed'))
-    return { ...base, action: 'none', reason: 'a tip run is live' };
-  if (tipRuns.some((run) => run?.conclusion === 'success')) return { ...base, action: 'none', reason: 'the tip ran' };
-  const latest = tipRuns.reduce((newest, run) => (Number(run.id) > Number(newest.id) ? run : newest));
-  if (!withinRecoveryWindow(latest, nowMs)) return { ...base, action: 'none', reason: 'the tip run is old' };
-  const staleFailure = latest.conclusion === 'failure' && refusedStaleEvidence(finalJobs, laneJob);
-  if (latest.conclusion !== 'cancelled' && !staleFailure) {
-    return { ...base, action: 'none', reason: 'the tip run was not cancelled or refused stale evidence' };
-  }
-  const decision = { ...base, runId: latest.id, staleFailure };
-  if (finalJobs === null) return { ...decision, action: 'unreadable', reason: 'its job list could not be read' };
-  if (finalJobs.some((job) => job?.name === laneJob && job?.conclusion === 'success')) {
-    return { ...decision, action: 'already-published' };
-  }
-  if (tipRuns.some((run) => run?.event === 'workflow_dispatch')) return { ...decision, action: 'retry-spent' };
   return { ...decision, action: 'redispatch' };
 }
 
@@ -802,7 +747,6 @@ function recoverStrandedOtaRuns({
   stoppedRuns = [],
   unconfirmedRuns = [],
   // Stopped runs whose publish had already succeeded: nothing to recover.
-  deliveredRunIds = new Set(),
   nowMs,
   dryRun = false,
   redispatchEnabled = true,
@@ -817,7 +761,8 @@ function recoverStrandedOtaRuns({
   for (const run of unconfirmedRuns) {
     const republish = parseRepublishRunName(runName(run));
     if (republish === null) continue;
-    const ref = run.head_branch || TRAIN_BRANCH;
+    if (run.head_branch !== 'main') continue;
+    const ref = 'main';
     recoveries.push({
       decision: {
         kind: 'republish',
@@ -872,7 +817,7 @@ function recoverStrandedOtaRuns({
   }
   const republishRuns = new Map(
     [...touched.values()]
-      .filter((run) => parseRepublishRunName(runName(run)) !== null)
+      .filter((run) => run.head_branch === 'main' && parseRepublishRunName(runName(run)) !== null)
       .map((run) => [String(run.id), run]),
   );
   // The runs this tick stopped count as history too, in case the listing
@@ -891,64 +836,24 @@ function recoverStrandedOtaRuns({
     if (!jobsByRunId.has(String(run.id))) jobsByRunId.set(String(run.id), github.listJobs(run.id));
     return jobsByRunId.get(String(run.id));
   };
-  const freshFailureIds = new Set();
   for (const run of knownRuns ?? []) {
     const isRecent =
       run?.status === 'completed' &&
+      run.head_branch === 'main' &&
       parseRepublishRunName(runName(run)) !== null &&
       withinRecoveryWindow(run, nowMs) &&
       !knownRuns.some((other) => runName(other) === runName(run) && Number(other.id) > Number(run.id));
     if (!isRecent || republishRuns.has(String(run.id))) continue;
     if (run.conclusion === 'cancelled') republishRuns.set(String(run.id), run);
-    if (run.conclusion !== 'failure') continue;
-    // Only an age refusal: any other failure is the run's own to report.
-    if (!refusedStaleEvidence(jobsOf(run), laneJob)) continue;
-    republishRuns.set(String(run.id), run);
-    if (completedWithin(run, FRESH_FAILURE_MINUTES, nowMs)) freshFailureIds.add(String(run.id));
   }
   for (const run of republishRuns.values()) {
     decide(
       decideRepublish({ run, laneJob, finalJobs: jobsOf(run), dispatchedRuns: knownRuns }),
-      touched.has(String(run.id)) || freshFailureIds.has(String(run.id)),
+      touched.has(String(run.id)),
       touched.has(String(run.id)) || completedWithin(run, FRESH_FAILURE_MINUTES, nowMs),
     );
   }
 
-  let tip = null;
-  let branchRuns = null;
-  try {
-    tip = github.getBranchHead(TRAIN_BRANCH);
-    branchRuns = github.listBranchRuns(TRAIN_BRANCH);
-  } catch (error) {
-    console.error(`${logPrefix} could not read the ${TRAIN_BRANCH} tip or its runs: ${error.message}`);
-  }
-  const tipRuns = (branchRuns ?? []).filter(
-    (run) => run?.head_sha === tip && parseRepublishRunName(runName(run)) === null,
-  );
-  const latestTipRun = tipRuns.reduce(
-    (newest, run) => (newest === null || Number(run.id) > Number(newest.id) ? run : newest),
-    null,
-  );
-  const tipDecision = decideTipRecovery({
-    tip,
-    branchRuns,
-    // Only a cancelled or failed latest tip run needs its jobs read.
-    finalJobs: ['cancelled', 'failure'].includes(latestTipRun?.conclusion) ? github.listJobs(latestTipRun.id) : [],
-    laneJob,
-    nowMs,
-  });
-  // A tip run this tick stopped is the one case worth a ping even when the
-  // tip cannot be read: the push may never publish otherwise. A fresh
-  // stale-evidence failure is too, as for republishes.
-  const tipTouched = [...touched.values()].some(
-    (run) =>
-      run.event === 'push' &&
-      run.head_branch === TRAIN_BRANCH &&
-      !deliveredRunIds.has(String(run.id)) &&
-      (tip === null || run.head_sha === tip),
-  );
-  const tipFresh = latestTipRun !== null && completedWithin(latestTipRun, FRESH_FAILURE_MINUTES, nowMs);
-  decide(tipDecision, tipTouched || (tipDecision.staleFailure === true && tipFresh), tipTouched || tipFresh);
   return recoveries;
 }
 
@@ -1482,12 +1387,10 @@ export {
   LANES,
   MOBILE_OTA_LANE,
   PRODUCTION_DEPLOY_LANE,
-  STALE_EVIDENCE_STEP,
   cancelAndConfirm,
   classifyRun,
   createCliGitHub,
   decideRepublish,
-  decideTipRecovery,
   formatDiscordContent,
   formatDuration,
   formatSummary,

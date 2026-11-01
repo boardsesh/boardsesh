@@ -16,6 +16,7 @@ import { roomManager, VersionConflictError } from '../../../services/room-manage
 import { pubsub } from '../../../pubsub/index';
 import { mirrorSessionClimb } from '../../../services/queue-mirror';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
+import { resolveQueueMoverParticipantId } from '../../../services/queue-mover';
 import {
   requireSessionWithReconnectGrace,
   applyRateLimit,
@@ -232,6 +233,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -256,6 +258,7 @@ export const queueMutations = {
           normalised.currentClimbQueueItem,
           currentState.version,
           normalised.historyCount,
+          currentChangedBy,
         );
         return { write: updated, state: normalised, orphanNormalised: normalised.normalised };
       },
@@ -440,6 +443,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     if (item !== null) {
@@ -479,6 +483,7 @@ export const queueMutations = {
       ctx.connectionId || null,
       correlationId || null,
       placement ?? null,
+      currentChangedBy,
     );
 
     logMutationMetrics('setCurrentClimb', performance.now() - startTime, sessionId, {
@@ -521,6 +526,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
@@ -551,6 +557,7 @@ export const queueMutations = {
           normalised.currentClimbQueueItem,
           currentState.version,
           normalised.historyCount,
+          currentChangedBy,
         );
         return { write: updated, queue: normalised.queue, currentClimb: normalised.currentClimbQueueItem };
       },
@@ -585,6 +592,7 @@ export const queueMutations = {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SET_QUEUE, RATE_LIMIT_SET_QUEUE_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const currentChangedBy = await resolveQueueMoverParticipantId(ctx, sessionId);
 
     // F3 (docs/current-climb-outside-queue.md, sections 2, 3 and 5): a
     // client-sent line goes through `QueueIndexSchema` first, then
@@ -738,6 +746,7 @@ export const queueMutations = {
             composed.currentClimbQueueItem,
             currentState.version,
             composed.historyCount,
+            currentChangedBy,
           );
           if (outcome.survivors.length > 0) {
             logger.info(
@@ -773,6 +782,7 @@ export const queueMutations = {
             composed.currentClimbQueueItem,
             currentState.version,
             composed.historyCount,
+            currentChangedBy,
           );
           return { write, composed };
         });
@@ -794,6 +804,7 @@ export const queueMutations = {
         composed.currentClimbQueueItem,
         undefined,
         composed.historyCount,
+        currentChangedBy,
       );
       finalState = composed;
     }

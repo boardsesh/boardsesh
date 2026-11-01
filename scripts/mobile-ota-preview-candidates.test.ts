@@ -61,7 +61,7 @@ function commitPr(fixture: ReturnType<typeof graph>, base: string) {
   return fixture.git('rev-parse', 'HEAD');
 }
 const fingerprint = 'c'.repeat(40);
-const candidate = (targetRef: 'main' | 'release/next', runtime = fingerprint): PreviewCandidate => ({
+const candidate = (targetRef: 'main', runtime = fingerprint): PreviewCandidate => ({
   targetRef,
   targetSha: 'b'.repeat(40),
   status: 'ready',
@@ -74,25 +74,20 @@ const candidate = (targetRef: 'main' | 'release/next', runtime = fingerprint): P
     android: { status: 'native-change-required' },
   },
 });
-describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
-  it.each(['main', 'release/next'])('replays only PR commits from %s onto both latest bases', (baseRef) => {
+describe('main-only PR preview replay', { timeout: 30_000 }, () => {
+  it.each(['main', 'release/next'])('replays only PR commits from %s onto latest main', (baseRef) => {
     const fixture = graph();
     const baseSha = baseRef === 'main' ? fixture.main : fixture.train;
     const headSha = commitPr(fixture, baseSha);
     const candidates = preparePreviewCandidates(
       fixture.repository,
-      { headSha, baseSha, baseRef, mainSha: fixture.main, trainSha: fixture.train },
+      { headSha, baseSha, baseRef, mainSha: fixture.main },
       join(fixture.directory, 'candidates'),
     );
-    expect(candidates.map((entry) => entry.status)).toEqual(['ready', 'ready']);
+    expect(candidates.map((entry) => entry.status)).toEqual(['ready']);
     const main = candidates[0]!;
-    const train = candidates[1]!;
     expect(readFileSync(join(main.directory!, 'packages/mobile/app.config.ts'), 'utf8')).toContain('1.0.0');
-    expect(readFileSync(join(train.directory!, 'packages/mobile/app.config.ts'), 'utf8')).toContain('1.0.1');
     expect(fixture.git('log', '--format=%s', `${main.targetSha}..${main.commitHash}`)).toBe(
-      `OTA preview of PR ${headSha}`,
-    );
-    expect(fixture.git('log', '--format=%s', `${train.targetSha}..${train.commitHash}`)).toBe(
       `OTA preview of PR ${headSha}`,
     );
     expect(fixture.git('rev-parse', 'feature')).toBe(headSha);
@@ -113,7 +108,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     const headSha = fixture.git('rev-parse', 'HEAD');
     const results = preparePreviewCandidates(
       fixture.repository,
-      { headSha, baseSha: latestMain, baseRef: 'main', mainSha: latestMain, trainSha: fixture.train },
+      { headSha, baseSha: latestMain, baseRef: 'main', mainSha: latestMain },
       join(fixture.directory, 'candidates'),
     );
     for (const result of results) {
@@ -122,7 +117,6 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
       expect(readFileSync(join(result.directory!, 'feature.txt'), 'utf8')).toBe('PR change\n');
     }
     expect(readFileSync(join(results[0]!.directory!, 'new-main-only.txt'), 'utf8')).toBe('latest base content');
-    expect(() => readFileSync(join(results[1]!.directory!, 'new-main-only.txt'))).toThrow();
   });
   it('keeps new base files when replaying a PR behind latest main', () => {
     const fixture = graph();
@@ -191,45 +185,40 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     expect(runner).toHaveBeenCalledTimes(2);
     expect(overlapped).toBe(false);
   });
-  it('prepares only main when marketing versions match', () => {
+  it('prepares only main despite a separate historical branch', () => {
     const fixture = graph();
     const headSha = commitPr(fixture, fixture.main);
     const candidates = preparePreviewCandidates(
       fixture.repository,
-      { headSha, baseSha: fixture.main, baseRef: 'main', mainSha: fixture.main, trainSha: fixture.main },
+      { headSha, baseSha: fixture.main, baseRef: 'main', mainSha: fixture.main },
       join(fixture.directory, 'candidates'),
     );
     expect(candidates.map((entry) => entry.targetRef)).toEqual(['main']);
   });
-  it('skips a conflict on one target without publishing the original head there', () => {
+  it('does not publish the original head when its patch conflicts with latest main', () => {
     const fixture = graph();
-    fixture.git('checkout', 'release/next');
-    writeFileSync(join(fixture.repository, 'climb.txt'), 'train conflict\n');
-    fixture.git('commit', '-am', 'conflict');
-    const trainSha = fixture.git('rev-parse', 'HEAD');
     const headSha = commitPr(fixture, fixture.main);
-    writeFileSync(join(fixture.repository, 'climb.txt'), 'PR conflict\n');
-    fixture.git('commit', '-am', 'PR conflict');
+    writeFileSync(join(fixture.repository, 'climb.txt'), 'PR change\n');
+    fixture.git('commit', '-am', 'PR conflicting edit');
+    const sourceSha = fixture.git('rev-parse', 'HEAD');
+    fixture.git('checkout', 'main');
+    writeFileSync(join(fixture.repository, 'climb.txt'), 'main change\n');
+    fixture.git('commit', '-am', 'main conflicting edit');
+    const latestMain = fixture.git('rev-parse', 'HEAD');
     const candidates = preparePreviewCandidates(
       fixture.repository,
-      {
-        headSha: fixture.git('rev-parse', 'HEAD'),
-        baseSha: fixture.main,
-        baseRef: 'main',
-        mainSha: fixture.main,
-        trainSha,
-      },
+      { headSha: sourceSha, baseSha: fixture.main, baseRef: 'main', mainSha: latestMain },
       join(fixture.directory, 'candidates'),
     );
     expect(headSha).toMatch(/^[a-f0-9]{40}$/);
-    expect(candidates[0]!.status).toBe('ready');
-    expect(candidates[1]).toMatchObject({ status: 'conflict', platforms: {} });
-    expect(candidates[1]!.commitHash).toBeUndefined();
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ status: 'conflict', platforms: {} });
+    expect(candidates[0]!.commitHash).toBeUndefined();
   });
-  it('continues independent target preparation after install failure and retains empty replay sources', async () => {
+  it('reports main preparation failure and retains empty replay sources', async () => {
     const fixture = graph();
     const headSha = commitPr(fixture, fixture.main);
-    const source = { headSha, baseSha: fixture.main, baseRef: 'main', mainSha: fixture.main, trainSha: fixture.train };
+    const source = { headSha, baseSha: fixture.main, baseRef: 'main', mainSha: fixture.main };
     const scratch = join(fixture.directory, 'scratch');
     const out = join(fixture.directory, 'artifacts');
     vi.stubEnv('BRANCH', 'pr-7');
@@ -246,13 +235,12 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     await runPreviewCandidates(fixture.repository, source, scratch, out, 'prepare', fakeCommand);
     const results = JSON.parse(readFileSync(join(scratch, 'candidates.json'), 'utf8')) as PreviewCandidate[];
     expect(results[0]!.status).toBe('failed');
-    expect(results[1]!.status).toBe('ready');
-    expect(results[1]!.sourceBundleSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(results).toHaveLength(1);
     // A target containing all PR commits creates an empty replay, which still
     // has a compact retained source instead of an empty-bundle failure.
     await runPreviewCandidates(
       fixture.repository,
-      { ...source, mainSha: headSha, trainSha: undefined },
+      { ...source, mainSha: headSha },
       join(fixture.directory, 'empty-scratch'),
       join(fixture.directory, 'empty-out'),
       'prepare',
@@ -270,10 +258,10 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
       sourceBundle: 'main.bundle',
     });
   });
-  it.each(['main', 'release/next'])('prefers actual base %s when platform runtimes collide', (baseRef) => {
-    const result = choosePreviewCandidates([candidate('main'), candidate('release/next')], baseRef);
+  it('deduplicates an identical runtime on pinned main', () => {
+    const result = choosePreviewCandidates([candidate('main'), candidate('main')]);
     expect(result.selections).toHaveLength(1);
-    expect(result.selections[0]!.candidate.targetRef).toBe(baseRef);
+    expect(result.selections[0]!.candidate.targetRef).toBe('main');
     expect(result.selections[0]!.platform).toBe('ios');
   });
   it('retains the successful platform receipt when its sibling publish fails', async () => {
@@ -339,25 +327,14 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     mkdirSync(scratch);
     const main = { ...candidate('main'), directory: 'main', baselineDirectory: 'baseline-main' };
     main.platforms.android = { status: 'ota-compatible' };
-    const train = {
-      ...candidate('release/next'),
-      targetSha: 'c'.repeat(40),
-      directory: 'train',
-      baselineDirectory: 'baseline-train',
-    };
-    train.platforms.android = { status: 'ota-compatible' };
     const skipped = { ...candidate('main'), status: 'conflict' as const, directory: 'conflict' };
-    for (const prepared of [main, train]) delete prepared.platforms.ios!.runtimeVersion;
-    writeFileSync(join(scratch, 'candidates.json'), JSON.stringify([main, train, skipped]));
+    for (const prepared of [main]) delete prepared.platforms.ios!.runtimeVersion;
+    writeFileSync(join(scratch, 'candidates.json'), JSON.stringify([main, skipped]));
     const runtimes: Record<string, string | null> = {
       'main:ios': fingerprint,
       'baseline-main:ios': fingerprint,
       'main:android': fingerprint,
       'baseline-main:android': 'd'.repeat(40),
-      'train:ios': 'e'.repeat(40),
-      'baseline-train:ios': 'e'.repeat(40),
-      'train:android': null,
-      'baseline-train:android': fingerprint,
     };
     const expected = Object.keys(runtimes).length;
     const called: string[] = [];
@@ -409,18 +386,16 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
       expect(called.slice(0, expected).sort()).toEqual(Object.keys(runtimes).sort());
       // Only the mismatch is re-checked, one tree after the other.
       expect(called.slice(expected)).toEqual(['main:android', 'baseline-main:android']);
-      expect(published).toEqual(['main:ios', 'train:ios']);
+      expect(published).toEqual(['main:ios']);
       const receipt = JSON.parse(readFileSync(join(out, 'receipt.json'), 'utf8')) as {
         candidates: PreviewCandidate[];
       };
-      const [mainResult, trainResult] = receipt.candidates;
+      const [mainResult] = receipt.candidates;
       expect(mainResult!.platforms.ios).toMatchObject({ status: 'published', runtimeVersion: fingerprint });
       expect(mainResult!.platforms.android!.status).toBe('native-change-required');
       expect(mainResult!.platforms.android!.runtimeVersion).toBeUndefined();
-      expect(trainResult!.platforms.ios).toMatchObject({ status: 'published', runtimeVersion: 'e'.repeat(40) });
-      expect(trainResult!.platforms.android!.status).toBe('runtime-unresolved');
-      expect(readFileSync(join(directory, 'outputs'), 'utf8')).toContain('published=true\nfailed=true');
-      expect(process.exitCode).toBe(1);
+      expect(readFileSync(join(directory, 'outputs'), 'utf8')).toContain('published=true\nfailed=false');
+      expect(process.exitCode).toBe(originalExitCode);
     } finally {
       process.exitCode = originalExitCode;
     }
@@ -503,16 +478,16 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
   );
   it('never deduplicates different full runtimes sharing the same display hash', () => {
     const main = candidate('main', 'a'.repeat(12) + 'b'.repeat(28));
-    const train = candidate('release/next', 'a'.repeat(12) + 'c'.repeat(28));
+    const train = candidate('main', 'a'.repeat(12) + 'c'.repeat(28));
     expect(main.platforms.ios!.fingerprint).toBe(train.platforms.ios!.fingerprint);
-    expect(choosePreviewCandidates([main, train], 'main').selections).toHaveLength(2);
+    expect(choosePreviewCandidates([main, train]).selections).toHaveLength(2);
     delete main.platforms.ios!.runtimeVersion;
-    expect(choosePreviewCandidates([main], 'main').selections).toHaveLength(0);
+    expect(choosePreviewCandidates([main]).selections).toHaveLength(0);
   });
   it('retains both runtime variants and skips native/unknown platforms', () => {
-    const train = candidate('release/next', 'e'.repeat(40));
+    const train = candidate('main', 'e'.repeat(40));
     train.platforms.android = { status: 'unknown' };
-    expect(choosePreviewCandidates([candidate('main'), train], 'main').selections).toHaveLength(2);
+    expect(choosePreviewCandidates([candidate('main'), train]).selections).toHaveLength(2);
   });
   it('restores exact generated source from compact bundle and detects substituted bytes', () => {
     const fixture = graph();

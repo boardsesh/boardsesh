@@ -78,6 +78,53 @@ describe('relay receipt (#7014)', () => {
     expect(takeRelayReceipt('queue-b')).toMatchObject({ queueItemUuid: 'queue-b' });
   });
 
+  it('suppresses a server-stamped self move without needing correlation or UUID history', () => {
+    noteRelayReceipt({
+      eventType: 'FullSync',
+      incomingQueueItemUuid: 'queue-b',
+      localQueueItemUuid: 'queue-c',
+      currentChangedBy: 'self',
+      participantId: 'self',
+    });
+    expect(takeRelayReceipt('queue-b')).toBeNull();
+  });
+
+  it('records a known crewmate returning to an item this phone recently selected', () => {
+    noteOwnMove('queue-b');
+    noteRelayReceipt({
+      eventType: 'FullSync',
+      incomingQueueItemUuid: 'queue-b',
+      localQueueItemUuid: 'queue-c',
+      currentChangedBy: 'sam',
+      participantId: 'self',
+    });
+    expect(takeRelayReceipt('queue-b')).toMatchObject({ currentChangedBy: 'sam', queueItemUuid: 'queue-b' });
+  });
+
+  it('retains legacy own-move suppression when the viewer participant is unknown', () => {
+    noteOwnMove('queue-b');
+    noteRelayReceipt({
+      eventType: 'FullSync',
+      incomingQueueItemUuid: 'queue-b',
+      localQueueItemUuid: 'queue-c',
+      currentChangedBy: 'sam',
+      participantId: null,
+    });
+    expect(takeRelayReceipt('queue-b')).toBeNull();
+  });
+
+  it('suppresses a proven own echo even when a same-item reassert preserved a peer actor', () => {
+    noteRelayReceipt({
+      eventType: 'CurrentClimbChanged',
+      incomingQueueItemUuid: 'queue-b',
+      localQueueItemUuid: 'queue-c',
+      ownEcho: true,
+      currentChangedBy: 'sam',
+      participantId: 'self',
+    });
+    expect(takeRelayReceipt('queue-b')).toBeNull();
+  });
+
   it('drops a pending crewmate receipt when this phone picks that item itself', () => {
     noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: 'queue-b', localQueueItemUuid: 'queue-a' });
 

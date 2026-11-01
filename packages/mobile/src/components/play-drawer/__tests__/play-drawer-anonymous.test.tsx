@@ -108,7 +108,12 @@ const session = vi.hoisted(() => ({
   nextItem: null as { uuid: string; climb: unknown } | null,
   // The committed queue head. Null in the preview-only cases (the drawer renders
   // the pinned preview); set where a case needs a live climb to fall back to.
-  currentItem: null as { uuid: string; climb: unknown } | null,
+  currentItem: null as {
+    uuid: string;
+    climb: unknown;
+    addedByUser?: { id: string; username: string };
+  } | null,
+  currentClimbMover: null as { username: string; avatarUrl: string | null } | null,
   // The real queue, read by `computeNavigationStateWithSuggestions` when
   // `useRealNavigation` is on. Empty by default: most cases here drive
   // navigation through the canned `nextItem` above instead.
@@ -448,7 +453,11 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueData: () => ({ queue: session.queue, currentClimbQueueItem: session.currentItem }),
+  useQueueData: () => ({
+    queue: session.queue,
+    currentClimbQueueItem: session.currentItem,
+    currentClimbMover: session.currentClimbMover,
+  }),
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
   useIsSharedSession: () => session.isShared,
@@ -681,6 +690,7 @@ beforeEach(() => {
   session.sessionId = null;
   session.nextItem = null;
   session.currentItem = null;
+  session.currentClimbMover = null;
   session.queue = [];
   wall.uuid = null;
   lightbulb.lit = false;
@@ -1566,6 +1576,43 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
   });
 
+  it('names the current mover rather than the person who added the climb', () => {
+    session.currentItem = {
+      uuid: 'queue-wall-b',
+      climb: { ...CLIMB, uuid: 'wall-climb-b' },
+      addedByUser: { id: 'user-alex', username: 'Alex' },
+    };
+    session.currentClimbMover = { username: 'Sam', avatarUrl: 'sam.png' };
+    browseThenLoseTheWall();
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+
+    expect(lastActionBarProps().busyWall).toMatchObject({
+      holderName: 'Sam',
+      holderFace: { name: 'Sam', avatarUrl: 'sam.png' },
+    });
+    expect(recorded.listContext.at(-1)?.caption).toBe('playView.wallState.busyWall.captionNamed');
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unknown mover unnamed even when the queue author is known', () => {
+    session.currentItem = {
+      uuid: 'queue-wall-b',
+      climb: { ...CLIMB, uuid: 'wall-climb-b' },
+      addedByUser: { id: 'user-alex', username: 'Alex' },
+    };
+    browseThenLoseTheWall();
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+
+    expect(lastActionBarProps().busyWall).toMatchObject({ holderName: null, holderFace: null });
+    expect(recorded.listContext.at(-1)?.caption).toBe('playView.wallState.busyWall.caption');
+  });
+
   // "Someone just lit X" needs a someone. A solo climber with `lightOnSwipe` off
   // is latched too, and the one way their wall moves under a preview is their own
   // lightbulb tap — so the question is never asked of them.
@@ -1589,7 +1636,7 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
   });
 
-  // The question row speaks when it mounts (PlayDrawerCommitBar, stubbed here);
+  // The question row speaks when it mounts (WallControlButton, stubbed here);
   // saying it from the commit tap too would read the question twice.
   it('leaves speaking the question to the question row', () => {
     browseThenLoseTheWall();
@@ -1639,7 +1686,7 @@ describe('PlayDrawer — the busy-wall confirm', () => {
       (lastActionBarProps().onCommit as () => void)();
     });
 
-    // Unnamed here: the viewer's profile isn't known, so nobody is named as the holder.
+    // Unnamed here: no server-recorded mover is available.
     expect(recorded.listContext.at(-1)?.caption).toBe('playView.wallState.busyWall.caption');
     const spoken = vi.mocked(AccessibilityInfo.announceForAccessibility).mock.calls.map(([sentence]) => sentence);
     expect(spoken.filter((sentence) => sentence.startsWith('playView.wallState.busyWall'))).toEqual([

@@ -22,8 +22,7 @@ name: Production Deploy Watchdog
 # gate, nothing executing, and 45 minutes without job progress. No age ceiling
 # (an executing publish is never killed). A cancelled run is not re-dispatched
 # (`queue: max` keeps every pending run), except the work nothing queued would
-# redo, once each: a native build's republish that was cancelled or refused
-# stale store evidence, and the release/next tip. OTA_LANE_REDISPATCH=off posts
+# redo, once each: a native build's republish that was cancelled on main. OTA_LANE_REDISPATCH=off posts
 # those as commands instead.
 # Both: give ordinary cancellation five minutes, then force-cancel and verify
 # completion before reporting recovery. See scripts/production-deploy-watchdog.mjs

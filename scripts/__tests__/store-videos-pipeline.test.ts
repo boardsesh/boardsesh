@@ -8,7 +8,7 @@ import {
   missingLiveActivityFootage,
   parseVariantSelection,
   parseVideoSource,
-  sourceStillOnTrain,
+  sourceStillOnMain,
   storeVideoSelection,
 } from '../store-videos-gate';
 import {
@@ -41,18 +41,23 @@ function renderedManifest(): CreativeManifest {
   return manifest;
 }
 
-describe('store video train gate', () => {
-  it('keeps the pinned source through ordinary syncs while rejecting another train or rewritten history', () => {
-    expect(sourceStillOnTrain('2.6.0', '2.6.0', 'ahead')).toBe(true);
-    expect(sourceStillOnTrain('2.6.0', '2.6.0', 'identical')).toBe(true);
-    expect(sourceStillOnTrain('2.6.0', '2.7.0', 'ahead')).toBe(false);
-    expect(sourceStillOnTrain('2.6.0', '2.6.0', 'diverged')).toBe(false);
-    expect(sourceStillOnTrain('2.6.0', '2.6.0', 'behind')).toBe(false);
+describe('store video release gate', () => {
+  it('keeps the pinned source through ordinary syncs while rejecting another release or rewritten history', () => {
+    expect(sourceStillOnMain('2.6.0', '2.6.0', 'ahead')).toBe(true);
+    expect(sourceStillOnMain('2.6.0', '2.6.0', 'identical')).toBe(true);
+    expect(sourceStillOnMain('2.6.0', '2.7.0', 'ahead')).toBe(false);
+    expect(sourceStillOnMain('2.6.0', '2.6.0', 'diverged')).toBe(false);
+    expect(sourceStillOnMain('2.6.0', '2.6.0', 'behind')).toBe(false);
   });
-  it('requires an uploaded iOS build from a pinned release/next source', () => {
-    const source = { sourceSha: 'a'.repeat(40), sourceBranch: 'release/next', version: '2.6.0', iosBuild: '123' };
+  it('requires an uploaded iOS build from a pinned main source', () => {
+    const source = { sourceSha: 'a'.repeat(40), sourceBranch: 'main', version: '2.6.0', iosBuild: '123' };
     expect(parseVideoSource(source)).toEqual(source);
-    for (const changed of [{ sourceBranch: 'main' }, { sourceSha: 'HEAD' }, { iosBuild: '' }, { version: 'next' }]) {
+    for (const changed of [
+      { sourceBranch: 'feature/test' },
+      { sourceSha: 'HEAD' },
+      { iosBuild: '' },
+      { version: 'next' },
+    ]) {
       expect(() => parseVideoSource({ ...source, ...changed })).toThrow();
     }
   });
@@ -314,7 +319,7 @@ describe('subset video review manifest', () => {
       carriedFrom: { default: 'e'.repeat(40) },
       places: ['kilter'],
     });
-    expect(body).toContain('Review 8 Search Results videos (default, kilter) for train v2.7.0.');
+    expect(body).toContain('Review 8 Search Results videos (default, kilter) for release v2.7.0.');
     expect(body).toContain('Merging places search videos for exactly: kilter.');
     expect(body).toContain(
       `- default: carried from earlier review commit ${'e'.repeat(40)}; recorded from ${'a'.repeat(40)}.`,

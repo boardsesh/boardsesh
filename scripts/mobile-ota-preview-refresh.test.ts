@@ -62,34 +62,47 @@ const TRAIN_NEW = sha('4');
 
 const baseInputs = (): Record<string, string> =>
   Object.fromEntries(RUNTIME_INPUTS.map(({ path }, index) => [path, `oid-${index}`]));
-const snap = (commit: string, version = '2.6.0', overrides: Record<string, string> = {}): BaseSnapshot => ({
+const snap = (commit: string, _version = '2.6.0', overrides: Record<string, string> = {}): BaseSnapshot => ({
   sha: commit,
   readable: true,
   inputs: { ...baseInputs(), ...overrides },
-  marketingVersion: version,
 });
 const HEAD = sha('a');
 const NOW = Date.parse('2026-10-26T12:00:00Z');
 const hoursBefore = (hours: number) => new Date(NOW - hours * 60 * 60 * 1000).toISOString();
 const found = (
   status = 'success',
-  trainSha = TRAIN_OLD,
+  _legacyTrainSha = TRAIN_OLD,
   extra: { statusAt?: string; statusDescription?: string; recent?: PreviewAttempt[] } = {},
 ): PreviewRecord => ({
   kind: 'found',
   status,
   statusDescription: extra.statusDescription ?? '',
   statusAt: extra.statusAt ?? new Date().toISOString(),
-  bases: { version: 1, mainSha: MAIN_OLD, trainSha, sourceBaseRef: 'main', sourceBaseSha: MAIN_OLD },
+  bases: { version: 2, mainSha: MAIN_OLD, sourceBaseRef: 'main', sourceBaseSha: MAIN_OLD },
   recent: extra.recent ?? [{ sha: HEAD, status }],
 });
-/** Recorded and current heads with an active train (main 2.6.0, train 2.7.0) and identical inputs. */
+/** Recorded and current main snapshots with identical native inputs. */
 const heads = (): { recorded: BaseHeads; current: BaseHeads } => ({
-  recorded: { main: snap(MAIN_OLD), train: snap(TRAIN_OLD, '2.7.0') },
-  current: { main: snap(MAIN_NEW), train: snap(TRAIN_NEW, '2.7.0') },
+  recorded: { main: snap(MAIN_OLD) },
+  current: { main: snap(MAIN_NEW) },
 });
 
 describe('decidePreviewRefresh', () => {
+  it('refreshes historical dual-base records once before serving main-only previews', () => {
+    const { recorded, current } = heads();
+    const legacy = found();
+    if (legacy.kind !== 'found') throw new Error('Expected a preview record');
+    legacy.bases = { ...legacy.bases, version: 1, trainSha: TRAIN_OLD };
+    expect(decidePreviewRefresh(legacy, current, recorded)).toEqual({
+      dispatch: true,
+      reason: 'legacy preview bases retired, refreshing',
+    });
+    legacy.status = 'error';
+    legacy.statusDescription = 'Reset, republish pending';
+    legacy.statusAt = hoursBefore(1);
+    expect(decidePreviewRefresh(legacy, current, recorded, { now: NOW }).dispatch).toBe(false);
+  });
   it('skips a preview whose base runtime inputs did not change across new SHAs', () => {
     const { recorded, current } = heads();
     expect(decidePreviewRefresh(found(), current, recorded)).toEqual({
@@ -105,29 +118,6 @@ describe('decidePreviewRefresh', () => {
       dispatch: true,
       reason: 'runtime inputs changed on main ios',
     });
-  });
-
-  it('names the train and both platforms for a shared native input', () => {
-    const { recorded, current } = heads();
-    current.train = snap(TRAIN_NEW, '2.7.0', { 'pnpm-lock.yaml': 'lock-v2' });
-    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe(
-      'runtime inputs changed on release/next ios+android',
-    );
-  });
-
-  it('dispatches when the release train becomes active', () => {
-    const { current } = heads();
-    const recorded: BaseHeads = { main: snap(MAIN_OLD), train: null };
-    expect(decidePreviewRefresh(found('success', ''), current, recorded)).toEqual({
-      dispatch: true,
-      reason: 'release train activated',
-    });
-  });
-
-  it('dispatches when a merge-back levels the versions and the train stops being a target', () => {
-    const { recorded } = heads();
-    const current: BaseHeads = { main: snap(MAIN_NEW, '2.7.0'), train: snap(TRAIN_NEW, '2.7.0') };
-    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe('release train deactivated');
   });
 
   it('dispatches when the PR has no preview record', () => {
@@ -163,20 +153,8 @@ describe('decidePreviewRefresh', () => {
     },
   );
 
-  it('ignores native changes on an inactive train', () => {
-    const recorded: BaseHeads = { main: snap(MAIN_OLD), train: snap(TRAIN_OLD) };
-    const current: BaseHeads = {
-      main: snap(MAIN_NEW),
-      train: snap(TRAIN_NEW, '2.6.0', { 'packages/mobile/modules': 'changed' }),
-    };
-    expect(decidePreviewRefresh(found(), current, recorded).dispatch).toBe(false);
-  });
-
   it('counts the publisher workflow on main only, since dispatches run main’s copy', () => {
     const workflow = '.github/workflows/mobile-ota-preview.yml';
-    const onTrain = heads();
-    onTrain.current.train = snap(TRAIN_NEW, '2.7.0', { [workflow]: 'edited' });
-    expect(decidePreviewRefresh(found(), onTrain.current, onTrain.recorded).dispatch).toBe(false);
     const onMain = heads();
     onMain.current.main = snap(MAIN_NEW, '2.6.0', { [workflow]: 'edited' });
     expect(decidePreviewRefresh(found(), onMain.current, onMain.recorded).reason).toBe(
@@ -186,16 +164,8 @@ describe('decidePreviewRefresh', () => {
 
   it('refreshes when a recorded base can no longer be read', () => {
     const { current } = heads();
-    const recorded: BaseHeads = { main: unreadableSnapshot(MAIN_OLD), train: snap(TRAIN_OLD, '2.7.0') };
+    const recorded: BaseHeads = { main: unreadableSnapshot(MAIN_OLD) };
     expect(decidePreviewRefresh(found(), current, recorded).dispatch).toBe(true);
-  });
-
-  it('refreshes when a marketing version cannot be read', () => {
-    const { recorded, current } = heads();
-    current.train = { ...snap(TRAIN_NEW), marketingVersion: null };
-    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe(
-      'release train version unreadable, refreshing',
-    );
   });
 
   it('treats a deployment stuck without a terminal status for over 6 hours as failed', () => {
@@ -255,7 +225,7 @@ describe('decidePreviewRefresh', () => {
     expect(decidePreviewRefresh(resetPending, current, recorded, { headSha: HEAD }).dispatch).toBe(true);
   });
 
-  it('still dispatches a twice-failed head when the runtime changed or the train flipped', () => {
+  it('still dispatches a twice-failed head when main native inputs changed', () => {
     const twice = found('failure', TRAIN_OLD, {
       recent: [
         { sha: HEAD, status: 'failure' },
@@ -268,9 +238,9 @@ describe('decidePreviewRefresh', () => {
       'runtime inputs changed on main ios+android',
     );
     const flipped = heads();
-    flipped.current.train = snap(TRAIN_NEW, '2.6.0');
+    flipped.current.main = snap(MAIN_NEW, '2.6.0', { 'packages/mobile/modules': 'changed' });
     expect(decidePreviewRefresh(twice, flipped.current, flipped.recorded, { headSha: HEAD }).reason).toBe(
-      'release train deactivated',
+      'runtime inputs changed on main ios+android',
     );
   });
 
@@ -532,7 +502,7 @@ describe('planPreviewRefresh', () => {
     });
     // One batched snapshot read for the current heads and every recorded base.
     expect(api.snapshots).toHaveBeenCalledTimes(1);
-    expect(new Set(api.snapshots.mock.calls[0][0])).toEqual(new Set([MAIN_NEW, TRAIN_NEW, MAIN_OLD, TRAIN_OLD]));
+    expect(new Set(api.snapshots.mock.calls[0][0])).toEqual(new Set([MAIN_NEW, MAIN_OLD]));
   });
 
   it('keeps forks, train merge-backs and unsupported bases outside the dispatcher', async () => {
@@ -602,10 +572,11 @@ describe('planPreviewRefresh', () => {
     await expect(planPreviewRefresh(api, 'boardsesh/boardsesh')).rejects.toThrow('current bases');
   });
 
-  it('treats a deleted release/next as a deactivated train', async () => {
+  it('does not discover the retired release branch', async () => {
     const api = fakeApi({ trainHead: null });
     const plan = await planPreviewRefresh(api, 'boardsesh/boardsesh');
-    expect(plan.lines).toEqual(['PR #7: release train deactivated']);
+    expect(plan.lines).toEqual(['PR #7: unchanged runtime, skipped']);
+    expect(api.branchHead).toHaveBeenCalledExactlyOnceWith('main');
   });
 });
 
@@ -634,7 +605,6 @@ describe('createGitHubRefreshApi', () => {
     const snapshots = await api.snapshots([MAIN_NEW, MAIN_OLD]);
     const current = snapshots.get(MAIN_NEW);
     expect(current?.readable).toBe(true);
-    expect(current?.marketingVersion).toBe('2.7.0');
     expect(current?.inputs['packages/mobile/app.config.ts']).toBe(appConfigDigest(config));
     expect(current?.inputs['packages/mobile/ios']).toBe('');
     expect(snapshots.get(MAIN_OLD)?.readable).toBe(false);

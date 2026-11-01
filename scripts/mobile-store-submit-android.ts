@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
-// The Android half of the automatic merge-back submission (mobile-store-submit.yml)
-// and of its readiness check on merge-back PRs: where one release version stands on
+// The Android half of the manual build-pair submission (mobile-store-submit.yml)
+// and of its readiness check on selected releases: where one release version stands on
 // Google Play, and, with --apply, releasing its exact build to production at 100%.
 // The release itself is Android Production Release's own code
 // (promoteAndroidProduction in mobile-store-android-production.ts), which commits
@@ -70,14 +70,14 @@ export function classifyAndroidSubmission(input: {
   if (productionOurs.some((release) => release.releaseLifecycleState === NOT_APPROVED)) {
     return {
       status: 'blocked',
-      reason: `Play rejected versionCode ${codes} on production. Fix it on the train and merge back again, or resolve it in Play Console.`,
+      reason: `Play rejected versionCode ${codes} on production. Select a corrected tester build from main, or resolve it in Play Console.`,
     };
   }
   if (input.versionCodes.length === 0) {
     return {
       status: 'blocked',
       reason:
-        'No Android build is tagged for this version, so there is nothing to release. The train has to build it first.',
+        'No Android build is tagged for this version, so there is nothing to release. A tester build must be uploaded first.',
     };
   }
   const highest = Math.max(...input.versionCodes);
@@ -93,7 +93,7 @@ export function classifyAndroidSubmission(input: {
   if (!input.internal.some((release) => release.releaseLifecycleState === PUBLISHED && carriesOurs(release))) {
     return {
       status: 'blocked',
-      reason: `Play's internal track no longer serves versionCode ${codes} (a newer build replaced it), and Android Production Release only releases what internal holds. Release it by hand in Play Console, or merge back the next version.`,
+      reason: `Play's internal track no longer serves versionCode ${codes} (a newer build replaced it), and Android Production Release only releases what internal holds. Release it by hand in Play Console, or select the latest tester version.`,
     };
   }
   const inReview = [
@@ -110,7 +110,7 @@ export function classifyAndroidSubmission(input: {
 }
 
 async function readDecision(accessToken: string, versionCodes: readonly number[]) {
-  const request = createPlayRequest(accessToken, 'merge-back submission');
+  const request = createPlayRequest(accessToken, 'manual store submission');
   const production = trackSummaries(await request('/tracks/production/releases'), 'production');
   const beta = trackSummaries(await request('/tracks/beta/releases'), 'beta');
   const internal = trackSummaries(await request('/tracks/internal/releases'), 'internal');

@@ -433,7 +433,7 @@ export function PlayCore({
     transform: [{ translateY: dismissTranslateY.value }],
   }));
 
-  const { queue, currentClimbQueueItem, historyCount } = useQueueData();
+  const { queue, currentClimbQueueItem, currentClimbMover, historyCount } = useQueueData();
   const {
     setCurrentClimb,
     nextClimb,
@@ -1846,13 +1846,12 @@ export function PlayCore({
         ? { name: scenarioBusyWall.holderName, avatarUrl: null }
         : busyWallUp
           ? resolveBusyWallHolder({
-              picker: currentClimbQueueItem?.addedByUser ?? null,
-              viewerUserId,
+              mover: currentClimbMover ?? null,
               wallClimbUuid,
               currentClimbUuid: currentClimbQueueItem?.climb.uuid ?? null,
             })
           : null,
-    [scenarioBusyWall, busyWallUp, currentClimbQueueItem, viewerUserId, wallClimbUuid],
+    [scenarioBusyWall, busyWallUp, currentClimbQueueItem, currentClimbMover, wallClimbUuid],
   );
   const busyWall = useBusyWallQuestion({
     armed: busyWallUp,

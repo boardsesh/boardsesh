@@ -10,12 +10,14 @@ import type { QueueMutationsDeps } from '@boardsesh/queue-react';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { getRestTimerState, resetRestTimerStoreForTests } from '../../lib/rest-timer-store';
 import { resetCrewCadenceForTests } from '../../lib/crew-rest-cadence';
+import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
 
 // The preview-first gate is flagged. Default it ON here so these tests exercise
 // the roster logic rather than the rollout switch; one test below flips it off
 // and asserts the switch itself, because a flag wired to nothing would leave the
 // whole feature inert with every other case in this file still green.
 const browseFlag = vi.hoisted(() => ({ enabled: true }));
+const queueCapabilities = vi.hoisted(() => ({ attribution: false }));
 vi.mock('../feature-flags-provider', () => ({
   useSharedSessionBrowseEnabled: () => browseFlag.enabled,
   useQueueNowSlotEnabled: () => false,
@@ -181,7 +183,19 @@ vi.mock('expo-crypto', () => ({
 
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
-  execute: graph.execute,
+  // Capability reads must not consume a deferred JOIN or its one-shot failure.
+  execute: (...args: Parameters<typeof import('@boardsesh/graphql-client').execute>) => {
+    if (args[1].query.includes('query QueueCapabilitiesProbe')) {
+      if (queueCapabilities.attribution) {
+        return Promise.resolve({
+          queueState: { fields: [{ name: 'currentChangedBy' }] },
+          currentClimbChanged: { fields: [{ name: 'currentChangedBy' }] },
+        });
+      }
+      return Promise.resolve({ queueState: { fields: [] }, currentClimbChanged: { fields: [] } });
+    }
+    return graph.execute(...args);
+  },
 }));
 
 // The deps the provider hands the shared mutations hook, so a test can play the
@@ -264,6 +278,7 @@ import {
   useIsSharedSession,
   usePlaylistSuggestionSource,
   useQueue,
+  useQueueData,
   useQueueLiveStats,
   useQueueSessionControls,
   useQueueSessionId,
@@ -465,6 +480,14 @@ function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot
   return null;
 }
 
+function QueueDataProbe({ onSnapshot }: { onSnapshot: (snapshot: ReturnType<typeof useQueueData>) => void }) {
+  const queueData = useQueueData();
+  useEffect(() => {
+    onSnapshot(queueData);
+  }, [onSnapshot, queueData]);
+  return null;
+}
+
 // useSessionRealtime reads useContext(QueryClientContext) (to invalidate the session-detail
 // cache on SessionNameChanged), so every render needs a QueryClient in context.
 const testQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -508,6 +531,7 @@ function executeVariablesFor(marker: string): Record<string, unknown> | undefine
 describe('QueueProvider session update subscription', () => {
   beforeEach(() => {
     browseFlag.enabled = true;
+    queueCapabilities.attribution = false;
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -571,6 +595,89 @@ describe('QueueProvider session update subscription', () => {
     );
     graph.execute.mockResolvedValue(createJoinSessionResponse());
   });
+
+  it.each(['CurrentClimbChanged', 'FullSync'] as const)(
+    'ignores an old-room %s after joining another room before subscription cleanup',
+    async (eventType) => {
+      queueCapabilities.attribution = true;
+      const snapshots: Snapshot[] = [];
+      const original = makeQueueItem('original-room-current');
+      const stale = makeQueueItem('stale-room-current');
+      clearRelayReceipt();
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+        expect(ws.getQueueUpdatesSink()).not.toBeNull();
+      });
+      const oldRoomSink = ws.getQueueUpdatesSink();
+      if (!oldRoomSink) throw new Error('queueUpdates subscription was not opened');
+      const oldRoomCleanups = [...ws.getSubscriptionCleanups()];
+      act(() => {
+        oldRoomSink.next({
+          data: {
+            queueUpdates: {
+              __typename: 'FullSync',
+              sequence: 1,
+              state: {
+                sequence: 1,
+                stateHash: 'original-room-hash',
+                queue: [original],
+                currentClimbQueueItem: original,
+                currentChangedBy: 'original-room-participant',
+              },
+            },
+          },
+        });
+      });
+      expect(snapshots.at(-1)?.state.currentChangedBy).toBe('original-room-participant');
+
+      await act(async () => {
+        const joined = await snapshots.at(-1)?.joinSession('session-2', {
+          boardPath: '/kilter/1/10/1,2/40/list',
+          userBoard: activeBoard.stored,
+        });
+        expect(joined).toBe(true);
+        expect(sessionStore.setStoredSessionId).toHaveBeenLastCalledWith('session-2');
+        // The command has switched its imperative room ref, but this act batch
+        // has not committed the render that disposes session-1's callbacks.
+        expect(ws.getQueueUpdatesSink()).toBe(oldRoomSink);
+        expect(oldRoomCleanups).toHaveLength(2);
+        for (const cleanup of oldRoomCleanups) expect(cleanup).not.toHaveBeenCalled();
+
+        const event =
+          eventType === 'FullSync'
+            ? {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'stale-room-hash',
+                  queue: [stale],
+                  currentClimbQueueItem: stale,
+                  currentChangedBy: 'stale-room-participant',
+                },
+              }
+            : {
+                __typename: 'CurrentClimbChanged',
+                sequence: 2,
+                stateHash: 'stale-room-hash',
+                currentItem: stale,
+                currentChangedBy: 'stale-room-participant',
+                clientId: 'old-room-peer',
+                correlationId: null,
+              };
+        oldRoomSink.next({ data: { queueUpdates: event } });
+        // Check before React's cleanup clears receipts, so that cleanup cannot
+        // conceal a relay mistakenly accepted from the room just left.
+        expect(takeRelayReceipt(stale.uuid)).toBeNull();
+      });
+
+      await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-2'));
+      expect(snapshots.at(-1)?.state.queue.map(({ uuid }) => uuid)).toEqual([original.uuid]);
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(original.uuid);
+      expect(snapshots.at(-1)?.state.currentChangedBy).toBe('original-room-participant');
+    },
+  );
 
   it('publishes Android absolute navigation with its native ID and survives echo/full sync', async () => {
     const snapshots: Snapshot[] = [];
@@ -1179,6 +1286,81 @@ describe('QueueProvider session update subscription', () => {
     });
     expect(selectorSnapshots).toHaveLength(selectorSnapshotCount);
     expect(selectorSnapshots.at(-1)?.hasActiveClimb).toBe(true);
+  });
+
+  it('projects the current mover when their roster entry arrives without churning for other peers', async () => {
+    queueCapabilities.attribution = true;
+    const snapshots: Snapshot[] = [];
+    const queueDataSnapshots: ReturnType<typeof useQueueData>[] = [];
+    render(
+      withQueryClient(
+        createElement(
+          QueueProvider,
+          null,
+          createElement(Probe, { onSnapshot: (snapshot: Snapshot) => snapshots.push(snapshot) }),
+          createElement(QueueDataProbe, {
+            onSnapshot: (snapshot: ReturnType<typeof useQueueData>) => queueDataSnapshots.push(snapshot),
+          }),
+        ),
+      ),
+    );
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const queueSink = ws.getQueueUpdatesSink();
+    const sessionSink = ws.getSessionUpdatesSink();
+    if (!queueSink || !sessionSink) throw new Error('subscription sinks were not captured');
+    const item = makeQueueItem('queue-current');
+    const pushCurrent = (sequence: number, currentChangedBy: string) => {
+      queueSink.next({
+        data: {
+          queueUpdates: {
+            __typename: 'CurrentClimbChanged',
+            sequence,
+            stateHash: `hash-${sequence}`,
+            currentItem: item,
+            currentChangedBy,
+            clientId: 'client-peer',
+          },
+        },
+      });
+    };
+    act(() => pushCurrent(1, 'participant-sam'));
+    await waitFor(() => expect(queueDataSnapshots.at(-1)?.currentChangedBy).toBe('participant-sam'));
+    expect(queueDataSnapshots.at(-1)?.currentClimbMover).toBeNull();
+
+    act(() => {
+      sessionSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-sam', username: ' Sam ', avatarUrl: 'sam.png' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(queueDataSnapshots.at(-1)?.currentClimbMover).toEqual({ username: 'Sam', avatarUrl: 'sam.png' });
+    });
+    const settledValue = queueDataSnapshots.at(-1);
+    const settledCount = queueDataSnapshots.length;
+    act(() => {
+      sessionSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-other', username: 'Other' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.users).toHaveLength(3));
+    expect(queueDataSnapshots).toHaveLength(settledCount);
+    expect(queueDataSnapshots.at(-1)).toBe(settledValue);
+
+    act(() => pushCurrent(2, 'participant-self'));
+    await waitFor(() => expect(queueDataSnapshots.at(-1)?.currentClimbMover).toBeNull());
   });
 
   it('applies roster events to public context state (no driver mechanics)', async () => {

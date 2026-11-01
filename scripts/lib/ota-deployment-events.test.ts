@@ -72,8 +72,9 @@ describe('durable deployment notifications', () => {
   it('keeps queued events when the webhook is missing and never messages scratch proofs', async () => {
     const outbox = emptyDeploymentOutbox();
     queueDeploymentEvent(outbox, { kind: 'rollout-finished', branch: 'pr-rollout-proof', percentage: 100 }, 'proof');
+    queueDeploymentEvent(outbox, { kind: 'train-cut', branch: 'release/next', version: '1.4.0' }, 'retired');
     expect(outbox.pending).toEqual([]);
-    queueDeploymentEvent(outbox, { kind: 'train-cut', branch: 'release/next', version: '1.4.0' }, 'cut');
+    queueDeploymentEvent(outbox, { kind: 'candidate-frozen', branch: 'main', version: '1.4.0' }, 'candidate');
     await expect(deliverDeploymentEvents({ outbox, webhook: undefined, save: vi.fn() })).rejects.toThrow(
       'remain pending',
     );

@@ -110,8 +110,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'ProfilePrivacy',
   'ProposalReportReleaseContexts', // Only expanded report reasons for scoped admins.
   'QaPreviews',
-  // F3 server probe (#6666): runs only with queue-now-slot on. Screenshot mode runs no PostHog and pins no env value for it.
-  'QueueStateFieldsProbe',
   'ResourceAccessRequests',
   'ResourcePrivacy',
   'SavedClimbDocuments',

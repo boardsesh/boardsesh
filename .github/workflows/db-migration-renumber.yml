@@ -100,8 +100,8 @@ jobs:
             if (pr.head.repo?.full_name !== repoFull) reasons.push('fork PR — cannot push to a fork');
             if (pr.base.ref !== defaultBranch) reasons.push(`PR targets ${pr.base.ref}, not ${defaultBranch}`);
             if (pr.head.ref === defaultBranch) reasons.push('head ref is the default branch');
-            // The push App bypasses the release-train ruleset, so never point it at a
-            // release branch (the release/next merge-back PR) or any ruleset-protected
+            // The push App bypasses branch protection, so never point it at a
+            // protected integration branch or any ruleset-protected
             // head. An unreadable answer stops the run rather than guessing.
             if (pr.head.ref.startsWith('release/')) reasons.push('head ref is a release branch');
             let headRules;

@@ -5,7 +5,7 @@ on:
     workflows: [Mobile Store Draft Submission]
     types: [completed]
     # Draft runs report main as head_branch. Their title and source artifact
-    # identify release/next; a branches filter would drop version-only releases.
+    # identify main; a branches filter would drop version-only releases.
   workflow_dispatch:
     inputs:
       variants:
@@ -19,19 +19,19 @@ permissions:
   pull-requests: read
 
 jobs:
-  train:
+  source:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (vars.STORE_VIDEOS_ENABLED == 'true' &&
        github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.display_title == 'Mobile Store Draft (release/next)' &&
+       github.event.workflow_run.display_title == 'Mobile Store Draft (main)' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
-      open: ${{ steps.train.outputs.open }}
-      version: ${{ steps.train.outputs.version }}
-      source_sha: ${{ steps.train.outputs.source_sha }}
+      open: ${{ steps.source_gate.outputs.open }}
+      version: ${{ steps.source_gate.outputs.version }}
+      source_sha: ${{ steps.source_gate.outputs.source_sha }}
     steps:
       - name: Checkout trusted workflow tooling
         uses: actions/checkout@v4
@@ -40,7 +40,9 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             scripts/store-videos-gate.ts
-            scripts/release-train-sync.ts
+            scripts/lib/mobile-release-version.ts
+            scripts/lib/mobile-release-policy.ts
+            scripts/lib/release-tags.ts
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -68,9 +70,9 @@ jobs:
           path: ${{ runner.temp }}/store-video-source
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
-      - name: Skip a closed or superseded train before dependencies or environment approval
+      - name: Skip a closed or superseded release before dependencies or environment approval
         if: github.event_name == 'workflow_dispatch' || steps.source.outputs.found == 'true'
-        id: train
+        id: source_gate
         env:
           GH_TOKEN: ${{ github.token }}
           HAS_DRAFT_SOURCE: ${{ steps.source.outputs.found }}
@@ -78,11 +80,11 @@ jobs:
           set -euo pipefail
           args=()
           if [ "$HAS_DRAFT_SOURCE" = true ]; then args+=("$RUNNER_TEMP/store-video-source/source.json"); fi
-          node --experimental-strip-types scripts/store-videos-gate.ts gate "${args[@]}" --train-only
+          node --experimental-strip-types scripts/store-videos-gate.ts gate "${args[@]}" --source-only
 
   editable:
-    needs: train
-    if: needs.train.outputs.open == 'true'
+    needs: source
+    if: needs.source.outputs.open == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     environment: Production
@@ -97,7 +99,9 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             scripts/store-videos-gate.ts
-            scripts/release-train-sync.ts
+            scripts/lib/mobile-release-version.ts
+            scripts/lib/mobile-release-policy.ts
+            scripts/lib/release-tags.ts
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -111,7 +115,7 @@ jobs:
           path: ${{ runner.temp }}/store-video-source
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
-      - name: Require an editable App Store version and recheck the train
+      - name: Require an editable App Store version and recheck the release
         id: draft
         env:
           GH_TOKEN: ${{ github.token }}

@@ -164,7 +164,6 @@ jobs:
           mkdir -p "$tooling_root/scripts/lib"
           for source_path in \
             scripts/mobile-publish.ts \
-            scripts/mobile-release-train-policy.ts \
             scripts/lib/mobile-release-policy.ts \
             scripts/lib/release-tags.ts \
             scripts/lib/ota-preview-boot-receipt.ts \
@@ -265,7 +264,6 @@ jobs:
           tooling_root="$RUNNER_TEMP/ota-publish-tooling"
           mkdir -p scripts/lib
           cp "$tooling_root/scripts/mobile-publish.ts" scripts/mobile-publish.ts
-          cp "$tooling_root/scripts/mobile-release-train-policy.ts" scripts/mobile-release-train-policy.ts
           cp "$tooling_root/scripts/lib/mobile-release-policy.ts" scripts/lib/mobile-release-policy.ts
           cp "$tooling_root/scripts/lib/release-tags.ts" scripts/lib/release-tags.ts
           cp "$tooling_root/scripts/lib/ota-preview-boot-receipt.ts" scripts/lib/ota-preview-boot-receipt.ts
@@ -275,7 +273,7 @@ jobs:
           cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts
           cp "$tooling_root/scripts/lib/ota-branch-probe.ts" scripts/lib/ota-branch-probe.ts
           cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
-          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts scripts/mobile-release-train-policy.ts scripts/lib/mobile-release-policy.ts scripts/lib/release-tags.ts scripts/lib/ota-preview-boot-receipt.ts scripts/lib/ota-publish-protocol.ts scripts/lib/ota-boot-check.ts
+          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts scripts/lib/mobile-release-policy.ts scripts/lib/release-tags.ts scripts/lib/ota-preview-boot-receipt.ts scripts/lib/ota-publish-protocol.ts scripts/lib/ota-boot-check.ts
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -6,7 +6,7 @@ name: Mobile Screenshots (Android)
 # cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an Android Play internal deploy on release/next
+#   * automatically, after an Android Play internal deploy on main
 #     that actually SHIPPED a binary. Every checkout pins the deploy's head_sha;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
@@ -20,7 +20,7 @@ name: Mobile Screenshots (Android)
 # `$GITHUB_SHA`, and its `record-candidate` job still runs only when
 # `build-and-release` succeeded with `candidate_ready == 'true'` (i.e. the Play
 # upload landed). That job hangs off `build-and-release`, whose gate now admits
-# BOTH a `release/next` push AND a `workflow_dispatch` from main (the
+# BOTH a `main` push AND a `workflow_dispatch` from main (the
 # post-merge-back hotfix rebuild) — so a dispatched rebuild tags its own commit
 # exactly the same way, and this gate reads it the same way. The `gate` job asks
 # the API whether such a tag points at the triggering commit; `android` needs it.
@@ -89,7 +89,7 @@ on:
     types: [completed]
     # The deploy workflow's push branches; only the release train builds on push.
     # A hand-dispatched main build gets its screenshots by dispatch too.
-    branches: [release/next]
+    branches: [main]
   workflow_dispatch:
     inputs:
       flow:
@@ -194,6 +194,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       shipped: ${{ steps.shipped.outputs.shipped }}
+      source_sha: ${{ steps.shipped.outputs.source_sha }}
     env:
       # The commit the captured pixels belong to: the deploy run's head commit on
       # an automatic run, this run's own SHA on a dispatch. The capture job's
@@ -214,55 +215,32 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout trusted binary-source tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
       - name: Check that a binary shipped at this commit
         id: shipped
         env:
           GH_TOKEN: ${{ github.token }}
+          NATIVE_SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "workflow_run" ]; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+          if [ "$EVENT_NAME" != workflow_run ]; then
+            echo 'shipped=true' >> "$GITHUB_OUTPUT"
+            echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # android-apk-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e. a
-          # LIGHTWEIGHT tag, so its ref's object.sha is normally already the commit.
-          # But a lightweight-only assumption is fragile — an annotated tag (made by
-          # hand, or by a future change to the deploy workflow) points at a TAG
-          # object instead, whose own sha is not a commit sha, and would read as
-          # "never shipped" even when it names the right commit. So read each ref's
-          # object type alongside its sha, and peel any "tag"-typed object through
-          # the Git Data API to the commit sha it points at before comparing. Read
-          # over the API: this job has no checkout. Assignment before use (no
-          # `local`) so `set -e` aborts the job on any API failure here — fail
-          # closed rather than mis-reading a real shipped commit as unshipped.
-          tagged_refs="$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-android-" \
-            --jq '.[] | "\(.object.type) \(.object.sha)"')"
-          shipped_commit_shas=""
-          while IFS=' ' read -r object_type object_sha; do
-            [ -n "$object_sha" ] || continue
-            if [ "$object_type" = "tag" ]; then
-              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
-            else
-              commit_sha="$object_sha"
-            fi
-            shipped_commit_shas="$shipped_commit_shas
-          $commit_sha"
-          done <<<"$tagged_refs"
-          # Assign first, grep second, and via a herestring rather than a pipe:
-          # piping straight into `grep -q` lets grep close the pipe on its first
-          # match, and the SIGPIPE that then kills the producer would read as "not
-          # shipped" under `pipefail` — inverting the gate on exactly the runs that
-          # should capture.
-          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Android binary shipped at $SOURCE_SHA — capturing."
-          else
-            echo "shipped=false" >> "$GITHUB_OUTPUT"
-            echo "No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
-            echo "::notice::No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture."
-          fi
+          source_file="$RUNNER_TEMP/native-source-output"
+          GITHUB_OUTPUT="$source_file" node --experimental-strip-types scripts/mobile-native-build-source.ts --run-id "$NATIVE_SOURCE_RUN_ID"
+          cat "$source_file" >> "$GITHUB_OUTPUT"
+          source_sha="$(sed -n 's/^source_sha=//p' "$source_file")"
+          if [ -n "$source_sha" ]; then echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"; fi
 
   android:
     needs: gate
@@ -271,7 +249,7 @@ jobs:
     if: needs.gate.outputs.shipped == 'true'
     # Gate the crown-jewel secret (OTA_PUSH_APP_PRIVATE_KEY — a GitHub App key on
     # main's PR-bypass allowlist) behind the Production environment, whose branch
-    # policy (main and release/next) fences it off from any other pushed branch.
+    # policy (main and main) fences it off from any other pushed branch.
     # Only a commit_to_main dispatch mints/uses the token, so an automatic run and
     # a capture-only dispatch both resolve to '' (no environment) and never wait on
     # a future required reviewer — see the
@@ -338,7 +316,7 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.gate.outputs.source_sha }}
           # Full history so the screenshot push-back can reset onto the latest main.
           fetch-depth: 0
           # Persist the app token (when configured) so the push-back authenticates
@@ -456,7 +434,7 @@ jobs:
           # capture ran against — it never names the commit that actually shipped.
           # Name the captured commit instead on that trigger; keep the branch name
           # (a human's own choice) for a dispatch.
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
         run: |
           set -uo pipefail
           if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then

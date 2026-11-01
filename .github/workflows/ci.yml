@@ -753,8 +753,8 @@ jobs:
       # The Mobile OTA Production workflow is the SOLE writer of
       # changelog.generated.json: it regenerates and pushes it on every publish.
       # A PR must never hand-edit it (that would fight the OTA bot and could
-      # revert shipped entries). Only a train import carrying exact trusted main
-      # files may pass; importing generated files does not make the PR a writer.
+      # revert shipped entries). The checker rejects edits on every PR target;
+      # there is no special import exception.
       - name: changelog-owned (no manual changelog edits)
         id: changelog-owned
         if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true' }}
@@ -763,12 +763,11 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$PR_BASE_BRANCH" != "release/next" ] || ! [[ "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ && "$PR_HEAD_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo '::error::Generated changelogs require a release/next import with exact PR commit SHAs.'
+          if ! [[ "$PR_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ && "$PR_HEAD_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo '::error::Generated changelog verification requires exact PR commit SHAs.'
             exit 1
           fi
-          # Trust only configured origin's main history, never a PR-provided ref.
-          # Complete ancestry is needed to distinguish a new import from a copy.
+          # Fetch exact commit identities before the read-only generated-file diff.
           if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
             git fetch --no-tags --unshallow origin "$PR_BASE_SHA" "$PR_HEAD_SHA" '+refs/heads/main:refs/remotes/origin/main'
           else
@@ -933,35 +932,6 @@ jobs:
           if [ "$EVENT_NAME" = "pull_request" ] && [ "$SCHEMA_BREAKING_OK" != "true" ]; then
             node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref "origin/$BASE_REF"
           fi
-
-      # A PR into `release/next` must not send a query `main`'s schema cannot
-      # answer. Train tester builds and train OTAs talk to ws.boardsesh.com,
-      # which deploys from `main`; #5973 put `climbRevisions` and the query that
-      # selected it on the train together and testers got GRAPHQL_VALIDATION_FAILED
-      # for 2.5 days until #6119 landed the server half on main (#6111). The
-      # breaking-change check above compares against the PR's own base
-      # (`release/next`) and treats an addition as safe, so it cannot see this.
-      # This validates mobile's operations against origin/main's committed
-      # schema, so an addition no client queries stays green, and so does a
-      # `main` that is ahead of the train. No path filter: it takes seconds, and
-      # a mobile-only PR can hit a train whose schema had already drifted. The
-      # contract spec also runs when ci.yml itself changes, so a PR that narrows
-      # this gate cannot go green. Land the server half on `main` first, then
-      # merge `main` into the train.
-      - name: train-schema-on-main (a release/next PR's mobile queries are valid against main's schema)
-        id: train-schema-on-main
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && ((github.event_name == 'pull_request' && github.base_ref == 'release/next') || needs.changes.outputs.rootCi == 'true') }}
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ "$BASE_REF" = "release/next" ]; then
-            git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-            git show origin/main:packages/shared-schema/src/generated/schema.graphql > "$RUNNER_TEMP/main-schema.graphql"
-            PRODUCTION_SCHEMA_SDL="$RUNNER_TEMP/main-schema.graphql" \
-              vp test run --project mobile -t 'production \(main\) schema' \
-              packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts
-          fi
-          vp test run --project scripts scripts/__tests__/ci-train-schema-workflow.test.ts
 
       # Every step with an `id:` above is setup or a guard; the advisory
       # commit-lint steps have none, so their allowed failures never land here.

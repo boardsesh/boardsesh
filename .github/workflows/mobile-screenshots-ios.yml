@@ -5,7 +5,7 @@ name: Mobile Screenshots (iOS)
 # gates PRs. There is no cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an iOS TestFlight deploy on release/next
+#   * automatically, after an iOS TestFlight deploy on main
 #     that actually SHIPPED a binary. Every checkout pins the deploy's head_sha;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
@@ -144,7 +144,7 @@ on:
     types: [completed]
     # The deploy workflow's push branches; only the release train builds on push.
     # A hand-dispatched main build gets its screenshots by dispatch too.
-    branches: [release/next]
+    branches: [main]
   workflow_dispatch:
     inputs:
       flow:
@@ -263,6 +263,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   # The branch that carries the store candidate, mirroring mobile-store-draft.yml.
@@ -400,55 +401,32 @@ jobs:
       # JS-only push does that with its build job skipped. The proof that a
       # binary shipped is the fingerprint tag, so look for it before spending a
       # macOS runner. See the SHIPPED GATE note in the header.
+      - name: Checkout trusted binary-source tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
       - name: Check that a binary shipped at this commit
         id: shipped
         env:
           GH_TOKEN: ${{ github.token }}
+          NATIVE_SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "workflow_run" ]; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+          if [ "$EVENT_NAME" != workflow_run ]; then
+            echo 'shipped=true' >> "$GITHUB_OUTPUT"
+            echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # ios-testflight-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e.
-          # a LIGHTWEIGHT tag, so its ref's object.sha is normally already the
-          # commit. But a lightweight-only assumption is fragile — an annotated tag
-          # (made by hand, or by a future change to the deploy workflow) points at a
-          # TAG object instead, whose own sha is not a commit sha, and would read as
-          # "never shipped" even when it names the right commit. So read each ref's
-          # object type alongside its sha, and peel any "tag"-typed object through
-          # the Git Data API to the commit sha it points at before comparing. Read
-          # over the API: setup has no checkout. Assignment before use (no `local`)
-          # so `set -e` aborts the job on any API failure here — fail closed rather
-          # than mis-reading a real shipped commit as unshipped.
-          tagged_refs="$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-ios-" \
-            --jq '.[] | "\(.object.type) \(.object.sha)"')"
-          shipped_commit_shas=""
-          while IFS=' ' read -r object_type object_sha; do
-            [ -n "$object_sha" ] || continue
-            if [ "$object_type" = "tag" ]; then
-              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
-            else
-              commit_sha="$object_sha"
-            fi
-            shipped_commit_shas="$shipped_commit_shas
-          $commit_sha"
-          done <<<"$tagged_refs"
-          # Assign first, grep second, and via a herestring rather than a pipe:
-          # piping straight into `grep -q` lets grep close the pipe on its first
-          # match, and the SIGPIPE that then kills the producer would read as "not
-          # shipped" under `pipefail` — inverting the gate on exactly the runs that
-          # should capture.
-          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
-            echo "shipped=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::iOS binary shipped at $SOURCE_SHA — capturing."
-          else
-            echo "shipped=false" >> "$GITHUB_OUTPUT"
-            echo "No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
-            echo "::notice::No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture."
-          fi
+          source_file="$RUNNER_TEMP/native-source-output"
+          GITHUB_OUTPUT="$source_file" node --experimental-strip-types scripts/mobile-native-build-source.ts --run-id "$NATIVE_SOURCE_RUN_ID"
+          cat "$source_file" >> "$GITHUB_OUTPUT"
+          source_sha="$(sed -n 's/^source_sha=//p' "$source_file")"
+          if [ -n "$source_sha" ]; then echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"; fi
 
       - name: Compute locales, matrix and gate
         id: compute
@@ -612,7 +590,7 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -703,7 +681,7 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Capture the probe shard
@@ -856,7 +834,7 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
 
       - name: Capture shard
         uses: ./.github/actions/ios-screenshot-shard
@@ -886,14 +864,14 @@ jobs:
     # and red the dimension gate after every JS-only push.
     if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none') }}
     # Gate the App Store Connect secrets behind the Production environment — its
-    # branch policy (main and release/next) fences them off from anyone who can push
+    # branch policy (main and main) fences them off from anyone who can push
     # another branch and workflow_dispatch it. The APP_STORE_CONNECT_* secrets are
     # only referenced in the upload steps below, so every other run resolves to ''
     # (no environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job). The workflow_run arm
     # covers the automatic trigger; it is deliberately narrowed to a run that
     # actually captured, so an unchanged probe needs no environment. A
-    # train-triggered run resolves Production because #5477 added release/next to
+    # train-triggered run resolves Production because #5477 added main to
     # that environment's deployment-branch policy (a one-time owner action, noted
     # in docs/mobile-store-release.md); without it every automatic upload would
     # fail with a branch-policy rejection instead of a missing secret.
@@ -942,7 +920,7 @@ jobs:
         with:
           # Capture the commit that shipped the binary, not whatever the release
           # train has moved on to since the deploy finished.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.setup.outputs.source_sha }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:

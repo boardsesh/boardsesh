@@ -280,6 +280,7 @@ platform :ios do
 
   desc "Submit an exact uploaded build to the Discord Users TestFlight group with its test notes"
   lane :distribute_testflight do |options|
+    require "json"
     require File.join(REPO_ROOT, "fastlane", "lib", "testflight_distribution")
     require "spaceship"
     version = (options[:version] || ENV["RELEASE_VERSION"]).to_s
@@ -293,6 +294,8 @@ platform :ios do
       find_builds: -> { Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version, build_number: build_number, platform: "IOS") },
       distribute: ->(distribution_options) { upload_to_testflight(api_key: api_key, **distribution_options) }
     ).run
+    output_path = ENV["TESTFLIGHT_DISTRIBUTION_OUTPUT"]
+    File.write(output_path, JSON.pretty_generate(receipt) + "\n") if output_path && !output_path.empty?
     summary = BoardseshTestflightDistribution.summary(receipt)
     UI.success(summary)
     emit_step_summary(summary)
@@ -365,7 +368,31 @@ platform :ios do
     app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
     UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") unless app
     client = BoardseshASC::Client.new(token: -> { Spaceship::ConnectAPI.token.refresh! if Spaceship::ConnectAPI.token.expired?; Spaceship::ConnectAPI.token.text })
-    status = BoardseshStoreSubmissionStatus.ios(client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200"), version)
+    versions = client.list("/v1/apps/#{app.id}/appStoreVersions?filter[platform]=IOS&limit=200")
+    current = BoardseshStoreSubmissionStatus.ios(versions, version)
+    expected_build = ENV["IOS_BUILD_NUMBER"]
+    attached_build = nil
+    if expected_build && BoardseshStoreSubmissionStatus::BUILD_BOUND_STATES.include?(current.fetch("state"))
+      version_id = current.fetch("versionId")
+      unless version_id.is_a?(String) && version_id.match?(/\A[A-Za-z0-9-]{1,128}\z/)
+        raise BoardseshStoreSubmissionStatus::Error, "Attached iOS version has no valid identity"
+      end
+      build = client.request("GET", "/v1/appStoreVersions/#{version_id}/build").fetch("data")
+      if build
+        unless build.is_a?(Hash) && build["type"] == "builds" && build["id"].is_a?(String) && build["id"].match?(/\A[A-Za-z0-9-]{1,128}\z/)
+          raise BoardseshStoreSubmissionStatus::Error, "Attached iOS build has no valid identity"
+        end
+        prerelease = client.request("GET", "/v1/builds/#{build.fetch('id')}/preReleaseVersion").fetch("data")
+        unless prerelease.is_a?(Hash) && prerelease["type"] == "preReleaseVersions"
+          raise BoardseshStoreSubmissionStatus::Error, "Attached iOS build has no prerelease identity"
+        end
+        attached_build = {
+          "versionId" => version_id, "buildNumber" => build.dig("attributes", "version"),
+          "marketingVersion" => prerelease.dig("attributes", "version"), "platform" => prerelease.dig("attributes", "platform")
+        }
+      end
+    end
+    status = BoardseshStoreSubmissionStatus.ios(versions, version, expected_build: expected_build, attached_build: attached_build)
     File.write(ENV.fetch("STORE_SUBMISSION_STATUS_OUTPUT"), JSON.pretty_generate(status) + "\n")
     UI.message("iOS #{version}: #{status.fetch('status')}. #{status.fetch('reason')}")
   rescue BoardseshStoreSubmissionStatus::Error, BoardseshASC::Error => error

@@ -54,7 +54,7 @@ jobs:
     # Production environment vars. Without `environment: Production` the alert
     # silently no-ops and the monitor becomes the thing it was built to replace.
     #
-    # The Production environment's branch policy admits `main` and `release/next`
+    # The Production environment's branch policy admits `main`
     # alone. That is fine on both triggers here, but for different reasons, and the
     # difference matters:
     #

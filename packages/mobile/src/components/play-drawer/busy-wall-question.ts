@@ -12,7 +12,7 @@
 // This file is the rule: who to name, the labels, when a tap counts, and when the pair stacks. The view (`BusyWallQuestionGroup`)
 // only draws it; the handler (`use-busy-wall-question`) runs the taps.
 
-import type { QueueItemUser } from '@boardsesh/queue';
+import type { CurrentClimbMoverFace } from '../../lib/current-climb-mover';
 import type { WallControlFace } from './wall-control';
 
 export type BusyWallSegmentId = 'keep' | 'put';
@@ -25,26 +25,22 @@ export type BusyWallSegmentId = 'keep' | 'put';
 export const BUSY_WALL_TAP_DEBOUNCE_MS = 500;
 
 /**
- * Who put the lit climb up: the crew's current climb records who picked it.
- * Not the board-presence driver, which is whoever's phone holds Bluetooth (in a
- * crew, often you). Unknown, you, or a current climb that isn't the lit one:
- * null, which reads "Someone".
+ * Who put the lit climb up: the provider resolves the server-stamped mover
+ * through the roster, excluding this participant. Queue authorship and the
+ * phone holding Bluetooth do not identify that person.
  */
 export function resolveBusyWallHolder({
-  picker,
-  viewerUserId,
+  mover,
   wallClimbUuid,
   currentClimbUuid,
 }: {
-  picker: QueueItemUser | null;
-  /** Null while signed out or the profile loads: never read as somebody else, it could be you. */
-  viewerUserId: string | null;
+  mover: CurrentClimbMoverFace | null;
   wallClimbUuid: string | null;
   currentClimbUuid: string | null;
 }): WallControlFace | null {
-  if (picker === null || viewerUserId === null || picker.id === viewerUserId) return null;
+  if (mover === null) return null;
   if (wallClimbUuid === null || currentClimbUuid !== wallClimbUuid) return null;
-  return { name: picker.username, avatarUrl: picker.avatarUrl ?? null };
+  return { name: mover.username, avatarUrl: mover.avatarUrl };
 }
 
 export type BusyWallQuestionInput = {

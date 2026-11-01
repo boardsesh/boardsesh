@@ -6,7 +6,7 @@ name: Mobile OTA Compatibility (PR Signal)
 # its PR's BASE branch (in one job, under identical env), then compares per
 # platform — equal = JS-only (ships OTA), different = native change (needs a new
 # binary). Informational: the verdict lands as a sticky PR comment and an
-# "OTA compatibility" check-run. Both main and release/next automatically build
+# "OTA compatibility" check-run. Version-stamped main commits automatically build
 # replacement binaries, so native changes need no waiver. See docs/mobile-ota-updates.md.
 #
 # Push-on-branch (not pull_request) so it has the token to comment + post a check
@@ -15,9 +15,9 @@ name: Mobile OTA Compatibility (PR Signal)
 
 on:
   push:
-    # release/next is excluded alongside main: it is a merge target, not a PR
+    # main is excluded: it is the merge target, not a PR
     # branch, and the native build workflows already own every push to it.
-    branches-ignore: [main, release/next]
+    branches-ignore: [main]
     # Mirror the native build / OTA-publish triggers (ios-testflight-rn.yml /
     # android-apk-rn.yml / mobile-ota-production.yml) so the signal reacts to
     # exactly what moves the fingerprint. packages/shared/** already covers

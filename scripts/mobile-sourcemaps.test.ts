@@ -798,15 +798,14 @@ describe('source-map CLI arguments', () => {
 });
 
 describe('self-hosted OTA publisher and workflow contracts', () => {
-  it('blocks both publishes on failed preflight and skips preflight when no platform is eligible', () => {
+  it('blocks both publishes on failed preflight and limits preflight to supported platforms', () => {
     const workflow = parse(readRepositoryFile('.github/workflows/mobile-ota-production.yml')) as {
       jobs: { publish: { steps: { id?: string; if?: string }[] } };
     };
     const evaluateCondition = (
       stepId: string,
       preflightOutcome: string,
-      publishIos = 'true',
-      publishAndroid = 'true',
+      inputPlatform = 'all',
       publishContext: {
         unlockOutcome?: string;
         stageForProductionDeploy?: boolean;
@@ -825,11 +824,10 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
             baseline: { outcome: publishContext.baselineOutcome ?? 'success' },
             unlock: { outcome: publishContext.unlockOutcome ?? 'success' },
             expect: { outputs: { mismatch: 'false' } },
-            train_guard: { outputs: { publish_ios: publishIos, publish_android: publishAndroid } },
             sentry_uploader: { outcome: preflightOutcome },
           },
           inputs: { stage_for_production_deploy: publishContext.stageForProductionDeploy ?? false },
-          env: { INPUT_PLATFORM: 'all' },
+          env: { INPUT_PLATFORM: inputPlatform },
         },
         { timeout: 100 },
       ) as boolean;
@@ -840,25 +838,25 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     }
     expect(evaluateCondition('publish_ios', 'success')).toBe(true);
     expect(evaluateCondition('publish_android', 'success')).toBe(true);
-    expect(evaluateCondition('sentry_uploader', 'skipped', 'false', 'false')).toBe(false);
-    expect(evaluateCondition('sentry_uploader', 'skipped', 'true', 'false')).toBe(true);
-    expect(evaluateCondition('sentry_uploader', 'skipped', 'false', 'true')).toBe(true);
+    expect(evaluateCondition('sentry_uploader', 'skipped', 'invalid')).toBe(false);
+    expect(evaluateCondition('sentry_uploader', 'skipped', 'ios')).toBe(true);
+    expect(evaluateCondition('sentry_uploader', 'skipped', 'android')).toBe(true);
     for (const stepId of ['sentry_uploader', 'publish_ios', 'publish_android']) {
       for (const unlockOutcome of ['failure', 'skipped', 'cancelled', '']) {
         expect(
-          evaluateCondition(stepId, 'success', 'true', 'true', { unlockOutcome }),
+          evaluateCondition(stepId, 'success', 'all', { unlockOutcome }),
           `${stepId} must refuse direct publication after unlock ${unlockOutcome || 'missing'}`,
         ).toBe(false);
       }
       expect(
-        evaluateCondition(stepId, 'success', 'true', 'true', {
+        evaluateCondition(stepId, 'success', 'all', {
           stageForProductionDeploy: true,
           unlockOutcome: 'skipped',
         }),
         `${stepId} must allow staging without production unlock`,
       ).toBe(true);
       expect(
-        evaluateCondition(stepId, 'success', 'true', 'true', {
+        evaluateCondition(stepId, 'success', 'all', {
           stageForProductionDeploy: true,
           unlockOutcome: 'skipped',
           baselineOutcome: 'failure',
@@ -908,7 +906,7 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(preflight).not.toContain('SENTRY_AUTH_TOKEN');
     expect(preflight).not.toContain('continue-on-error');
     for (const platform of ['ios', 'android']) {
-      expect(preflight).toContain(`steps.train_guard.outputs.publish_${platform} != 'false'`);
+      expect(preflight).not.toContain('train_guard');
       expect(preflight).toContain(`env.INPUT_PLATFORM == '${platform}'`);
       expect(workflowStep(workflow, `Publish ${platform === 'ios' ? 'iOS' : 'Android'} OTA`)).toContain(
         "steps.sentry_uploader.outcome == 'success'",

@@ -7,15 +7,13 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { parsePreviewPlatform, type PreviewPlatformReceipt } from './lib/ota-preview-boot-receipt.ts';
-import { isReleaseTrainActive } from './lib/mobile-release-policy.ts';
 
-export type PreviewTarget = 'main' | 'release/next';
+export type PreviewTarget = 'main';
 export interface PreviewSource {
   headSha: string;
   baseSha: string;
   baseRef: string;
   mainSha: string;
-  trainSha?: string;
 }
 export interface PreviewCandidate {
   targetRef: PreviewTarget;
@@ -46,23 +44,14 @@ const sha = (input: string) => {
   return input;
 };
 
-/** Replay the source PR's unique commits only; the source base itself never rides onto the other train. */
+/** Replay only the source PR's delta onto the pinned main snapshot. */
 export function preparePreviewCandidates(
   repository: string,
   source: PreviewSource,
   scratch: string,
 ): PreviewCandidate[] {
-  for (const commit of [source.headSha, source.baseSha, source.mainSha, ...(source.trainSha ? [source.trainSha] : [])])
-    sha(commit);
+  for (const commit of [source.headSha, source.baseSha, source.mainSha]) sha(commit);
   const targets: Array<{ ref: PreviewTarget; commit: string }> = [{ ref: 'main', commit: source.mainSha }];
-  if (
-    source.trainSha &&
-    isReleaseTrainActive(
-      git(repository, ['show', `${source.mainSha}:packages/mobile/app.config.ts`]),
-      git(repository, ['show', `${source.trainSha}:packages/mobile/app.config.ts`]),
-    )
-  )
-    targets.push({ ref: 'release/next', commit: source.trainSha });
   const mergeBase = git(repository, ['merge-base', source.baseSha, source.headSha]);
   const sourceTree = git(repository, ['rev-parse', `${source.headSha}^{tree}`]);
   // One synthetic commit expresses the cumulative PR delta, including adjustments
@@ -81,7 +70,7 @@ export function preparePreviewCandidates(
   ]);
   mkdirSync(scratch, { recursive: true });
   return targets.map(({ ref, commit }) => {
-    const directory = join(scratch, ref === 'main' ? 'main' : 'train');
+    const directory = join(scratch, 'main');
     git(repository, ['worktree', 'add', '--detach', directory, commit]);
     try {
       git(directory, [
@@ -119,15 +108,12 @@ export function preparePreviewCandidates(
   });
 }
 
-/** A platform/runtime can serve only one candidate. The actual PR base wins ties. */
-export function choosePreviewCandidates(candidates: PreviewCandidate[], baseRef: string) {
-  const preferred = baseRef === 'release/next' ? 'release/next' : 'main';
+/** A platform/runtime can serve only one candidate from the pinned main snapshot. */
+export function choosePreviewCandidates(candidates: PreviewCandidate[]) {
   const chosen: Partial<Record<'ios' | 'android', PreviewCandidate>> = {};
   const claimed = new Set<string>();
   const selections: Array<{ candidate: PreviewCandidate; platform: 'ios' | 'android' }> = [];
-  for (const candidate of [...candidates].sort(
-    (left, right) => Number(right.targetRef === preferred) - Number(left.targetRef === preferred),
-  )) {
+  for (const candidate of candidates) {
     for (const platform of ['ios', 'android'] as const) {
       const result = candidate.platforms[platform];
       if (
@@ -139,7 +125,7 @@ export function choosePreviewCandidates(candidates: PreviewCandidate[], baseRef:
         continue;
       const identity = `${platform}:${result.runtimeVersion}`;
       if (claimed.has(identity)) {
-        result.status = `shared-runtime:${preferred}`;
+        result.status = 'shared-runtime:main';
         continue;
       }
       claimed.add(identity);
@@ -159,11 +145,8 @@ export function collectCandidateReceipt(
     deploymentId: number;
   },
 ) {
-  const preferred = source.baseRef === 'release/next' ? 'release/next' : 'main';
   const platforms: Record<string, unknown> = {};
-  for (const candidate of [...candidates].sort(
-    (left, right) => Number(left.targetRef === preferred) - Number(right.targetRef === preferred),
-  )) {
+  for (const candidate of candidates) {
     for (const platform of ['ios', 'android'] as const) {
       const receipt = candidate.platforms[platform]?.receipt;
       if (!receipt) continue;
@@ -283,6 +266,8 @@ export async function runPreviewCandidates(
     phase === 'prepare'
       ? preparePreviewCandidates(repository, source, join(scratch, 'candidates'))
       : (JSON.parse(readFileSync(planPath, 'utf8')) as PreviewCandidate[]);
+  if (candidates.some((candidate) => candidate.targetRef !== 'main'))
+    throw new Error('Only a pinned main preview candidate may publish.');
   const branch = process.env.BRANCH ?? '';
   if (!/^pr-[1-9][0-9]*$/.test(branch)) throw new Error('Refusing non-preview branch.');
   mkdirSync(out, { recursive: true });
@@ -291,12 +276,12 @@ export async function runPreviewCandidates(
     if (!candidate.directory) continue;
     const directory = candidate.directory;
     try {
-      const baseline = join(scratch, candidate.targetRef === 'main' ? 'baseline-main' : 'baseline-train');
+      const baseline = join(scratch, 'baseline-main');
       git(repository, ['worktree', 'add', '--detach', baseline, candidate.targetSha]);
       candidate.baselineDirectory = baseline;
       runCommand(directory, 'vp', ['install', '--frozen-lockfile']);
       runCommand(baseline, 'vp', ['install', '--frozen-lockfile']);
-      const comparison = join(scratch, `${candidate.targetRef === 'main' ? 'main' : 'train'}-compat.txt`);
+      const comparison = join(scratch, 'main-compat.txt');
       const compatibilityEnv: NodeJS.ProcessEnv = { ...process.env, GITHUB_OUTPUT: comparison };
       // Do not feed the maps key into the relative comparison; each side is resolved
       // with identical public env. The actual Android publisher alone gets its key.
@@ -321,7 +306,7 @@ export async function runPreviewCandidates(
       const comparisonOutputs = outputs(comparison);
       const pin = (path: string) =>
         readFileSync(join(path, 'scripts/lib/eoas.ts'), 'utf8').match(/EOAS_PACKAGE_SPEC\s*=\s*['"]([^'"]+)['"]/)?.[1];
-      // The production server follows MAIN, even when a candidate targets the train.
+      // The production server and preview baseline both follow main.
       const serverPin = git(repository, ['show', `${source.mainSha}:scripts/lib/eoas.ts`]).match(
         /EOAS_PACKAGE_SPEC\s*=\s*['"]([^'"]+)['"]/,
       )?.[1];
@@ -334,7 +319,7 @@ export async function runPreviewCandidates(
           fingerprint: comparisonOutputs[`fingerprint_${platform}`],
         };
       }
-      const sourceBundle = `${candidate.targetRef === 'main' ? 'main' : 'train'}.bundle`;
+      const sourceBundle = 'main.bundle';
       const exclusions =
         candidate.commitHash !== candidate.targetSha
           ? [candidate.targetSha]
@@ -351,7 +336,9 @@ export async function runPreviewCandidates(
         .update(readFileSync(join(out, sourceBundle)))
         .digest('hex');
     } catch {
-      console.error(`::error::${candidate.targetRef} preview preparation failed; continuing the other target.`);
+      console.error(
+        `::error::${candidate.targetRef} preview preparation failed; nothing can publish from this candidate.`,
+      );
       candidate.status = 'failed';
     }
   }
@@ -396,9 +383,9 @@ export async function runPreviewCandidates(
     const serialBaseline = await runtimeResolver(check.trees[1], check.platform, process.env);
     verdict(check, serialRuntime, serialBaseline);
   }
-  const { selections } = choosePreviewCandidates(candidates, source.baseRef);
+  const { selections } = choosePreviewCandidates(candidates);
   for (const { candidate, platform } of selections) {
-    const receiptPath = join(scratch, `${candidate.targetRef === 'main' ? 'main' : 'train'}-${platform}.json`);
+    const receiptPath = join(scratch, `main-${platform}.json`);
     const publishEnv: NodeJS.ProcessEnv = {
       ...process.env,
       OTA_PREVIEW_RECEIPT_PATH: receiptPath,
@@ -448,7 +435,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     baseSha: process.env.SOURCE_BASE_SHA ?? '',
     baseRef: process.env.SOURCE_BASE_REF ?? 'main',
     mainSha: process.env.MAIN_SHA ?? '',
-    trainSha: process.env.TRAIN_SHA || undefined,
   };
   if (existsSync(join(out, 'receipt.json'))) throw new Error('Refusing to reuse a previous preview receipt.');
   await runPreviewCandidates(repository, source, scratch, out, phase);

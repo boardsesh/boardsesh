@@ -79,6 +79,7 @@ export async function joinSession(
   stateHashOrdered: string;
   historyCount: number;
   currentChangedAt: string | null;
+  currentChangedBy?: string | null;
   isLeader: boolean;
   sessionName: string | null;
   participantId: string;
@@ -298,6 +299,7 @@ export async function joinSession(
     stateHashOrdered: queueState.stateHashOrdered,
     historyCount: queueState.historyCount,
     currentChangedAt: queueState.currentChangedAt,
+    currentChangedBy: queueState.currentChangedBy ?? null,
     isLeader,
     sessionName: resolvedSessionName,
     participantId: resolvedParticipantId,

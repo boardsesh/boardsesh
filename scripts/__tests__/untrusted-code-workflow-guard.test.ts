@@ -66,22 +66,30 @@ const ALLOWED: Record<string, string> = {
     'Only mobile-e2e-gate.yml passes a ref, after its resolve job checked it; a dispatch leaves it empty (the run ref).',
   'mobile-ota-boot-check.yml ${{ needs.resolve.outputs.commit }}':
     "On main or release/*, a dispatch's commit must be an ancestor of the run commit; the daily stable call passes a staged main commit.",
-  'mobile-screenshots-ios.yml ${{ github.event.workflow_run.head_sha || github.sha }}':
-    'workflow_run is filtered to deploy runs on release/next (the release train); a dispatch checks out its own ref.',
   'mobile-screenshots-ios.yml ${{ needs.setup.outputs.source_sha }}':
-    'source_sha is the workflow_run head on release/next, or the dispatch run commit.',
-  'mobile-screenshots-android.yml ${{ github.event.workflow_run.head_sha || github.sha }}':
-    'workflow_run is filtered to deploy runs on release/next (the release train); a dispatch checks out its own ref.',
+    'An exact immutable uploaded-build receipt binds the source to a trusted main native workflow and main ancestry; a dispatch uses its own run commit.',
+  'mobile-screenshots-android.yml ${{ needs.gate.outputs.source_sha }}':
+    'An exact immutable uploaded-build receipt binds the source to a trusted main native workflow and main ancestry; a dispatch uses its own run commit.',
   'mobile-store-videos-pipeline.yml ${{ inputs.source_sha }}':
-    'Its one caller, mobile-store-videos.yml, passes the source_sha that scripts/store-videos-gate.ts (checked out at github.sha) prints: the release/next head, or a pinned commit the compare API reports release/next is ahead of or identical to, on the same marketing version (sourceStillOnTrain).',
+    'Its one caller, mobile-store-videos.yml, passes the source_sha that scripts/store-videos-gate.ts (checked out at github.sha) prints: the main head, or a pinned main ancestor on the same marketing version (sourceStillOnMain).',
   'mobile-store-draft.yml ${{ steps.ref.outputs.sha }}':
-    'The live head of main or release/next, or a release_sha proven to be in main history.',
+    'An immutable uploaded-build source verified in main history, or an explicit release_sha proven to be in main history.',
   'mobile-store-draft.yml ${{ steps.candidate.outputs.ios_build_sha }}':
     'The commit behind a build-ios-* tag, which only the release App may create (tag ruleset).',
   'mobile-store-draft.yml ${{ steps.candidate.outputs.android_build_sha }}':
     'The commit behind a build-android-* tag, which only the release App may create (tag ruleset).',
-  'mobile-store-draft.yml ${{ needs.release-candidate.outputs.sha }}':
-    'The release-candidate job output: the pinned main/release/next head checked above.',
+  'ios-testflight-rn.yml ${{ steps.source.outputs.source_sha }}':
+    'Trusted current-main release tooling validates stamped source ancestry and version-only provenance before a source checkout; a forced dispatch is the trusted run commit.',
+  'ios-testflight-rn.yml ${{ needs.gate.outputs.source_sha }}':
+    'The main-only gate validated the native stamp and source ancestry using trusted control tooling before providing this binary source.',
+  'android-apk-rn.yml ${{ steps.source.outputs.source_sha }}':
+    'Trusted current-main release tooling validates stamped source ancestry and version-only provenance before a source checkout; a forced dispatch is the trusted run commit.',
+  'android-apk-rn.yml ${{ needs.gate.outputs.source_sha }}':
+    'The main-only gate validated the native stamp and source ancestry using trusted control tooling before providing this binary source.',
+  'mobile-store-draft.yml::ios::Take listing text from the selected binary source':
+    'Copies only fastlane/metadata text from the exact uploaded source already verified in main history; trusted current workflow tooling remains in place.',
+  'mobile-store-draft.yml::android::Take listing text from the selected binary source':
+    'Copies only fastlane/metadata text from the exact uploaded source already verified in main history; trusted current workflow tooling remains in place.',
   'postgres-image-publisher.yml ${{ inputs.expected_main_sha }}':
     'validate-main fails unless expected_main_sha equals github.sha and the live main head.',
   // Run steps whose git checkout arguments come from a variable (`file::job::step`).
@@ -89,7 +97,7 @@ const ALLOWED: Record<string, string> = {
     'Checks out a release/* anchor tag (only the release App may create one), then cherry-picks fix_commits only after each resolves to a single commit that is an ancestor of origin/main (mobile-ota-backport-fix-commits.test.ts).',
   'mobile-ota-check.yml::ota-check::Materialize the base-branch baseline':
     "BASE_REF is the PR's base branch on a pull_request run (PR scope) and main on a push run; the variable path is RUNNER_TEMP.",
-  'mobile-store-submit.yml::submit-ios::Take the listing text from the merge commit':
+  'mobile-store-submit.yml::submit-ios::Take the listing text from the selected release commit':
     'Copies only fastlane/metadata text from the release merge commit on main; nothing from it is executed.',
   'ota-image-bump.yml::bump::Open or update the bump PRs':
     'Creates the bump branch from origin/main; the variable is the new branch name, not the source.',

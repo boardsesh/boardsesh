@@ -30,6 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { navigateToQueueItem, setCurrentClimbAndPublish } from '../services/queue-navigation';
 import type { RoomManager } from '../services/room-manager/room-manager';
+import { VersionConflictError } from '../services/room-manager/types';
 import type { pubsub as PubSubInstance } from '../pubsub/index';
 // The mocked room manager + pubsub satisfy only the slice of the interfaces
 // that `setCurrentClimbAndPublish` touches; the casts at call sites narrow
@@ -120,7 +121,7 @@ describe('setCurrentClimbAndPublish — null-item path', () => {
     expect(pubsub.publishQueueEvent).toHaveBeenCalledTimes(1);
     expect(pubsub.publishQueueEvent.mock.calls[0][1].__typename).toBe('CurrentClimbChanged');
     // updateQueueState gets the original (empty) queue — no append happened.
-    expect(roomManager.updateQueueState).toHaveBeenCalledWith('session-1', [], null, 0, 0);
+    expect(roomManager.updateQueueState).toHaveBeenCalledWith('session-1', [], null, 0, 0, undefined);
   });
 
   it('does not call pushRecentClimb when item is null (ring buffer skipped)', async () => {
@@ -205,6 +206,7 @@ describe('setCurrentClimbAndPublish — non-null item', () => {
       newClimb,
       0,
       1,
+      undefined,
     );
   });
 
@@ -228,7 +230,14 @@ describe('setCurrentClimbAndPublish — non-null item', () => {
     // The persisted queue matches the published order (append fallback).
     // Outside QUEUE_NOW_SLOT_PERCENT this is today's append, so A and B are
     // filed under History (the line is the new climb's index).
-    expect(roomManager.updateQueueState).toHaveBeenCalledWith('session-1', [climbA, climbB, newClimb], newClimb, 0, 2);
+    expect(roomManager.updateQueueState).toHaveBeenCalledWith(
+      'session-1',
+      [climbA, climbB, newClimb],
+      newClimb,
+      0,
+      2,
+      undefined,
+    );
   });
 
   it('inserts after current regardless of the suggested flag (web peek-promotion shape)', async () => {
@@ -285,6 +294,7 @@ type StoredRoom = {
   historyCount: number;
   version: number;
   sequence: number;
+  currentChangedBy: string | null;
 };
 
 function makeRoom(initial: { queue: ClimbQueueItem[]; current: ClimbQueueItem | null; historyCount?: number }) {
@@ -294,6 +304,7 @@ function makeRoom(initial: { queue: ClimbQueueItem[]; current: ClimbQueueItem | 
     historyCount: initial.historyCount ?? 0,
     version: 7,
     sequence: 40,
+    currentChangedBy: null,
   };
   const roomManager = {
     getQueueState: vi.fn(async () => ({
@@ -309,7 +320,9 @@ function makeRoom(initial: { queue: ClimbQueueItem[]; current: ClimbQueueItem | 
         current: ClimbQueueItem | null,
         _expectedVersion: number | undefined,
         historyCount: number,
+        currentChangedBy?: string | null,
       ) => {
+        if (room.currentClimbQueueItem?.uuid !== current?.uuid) room.currentChangedBy = currentChangedBy ?? null;
         room.queue = queue;
         room.currentClimbQueueItem = current;
         room.historyCount = historyCount;
@@ -322,6 +335,7 @@ function makeRoom(initial: { queue: ClimbQueueItem[]; current: ClimbQueueItem | 
           stateHashOrdered: `ordered-${room.sequence}`,
           historyCount,
           currentChangedAt: '2026-10-24T10:00:00.000Z',
+          currentChangedBy: room.currentChangedBy,
           previousStateHash: null,
           previousStateHashOrdered: null,
         };
@@ -361,6 +375,7 @@ async function placeClimb(
     placement?: 'NOW' | 'STEP' | null;
     clientId?: string;
     correlationId?: string;
+    currentChangedBy?: string | null;
   } = {},
 ) {
   const pubsubMock = makePubsub();
@@ -373,6 +388,7 @@ async function placeClimb(
     options.clientId ?? 'client-old',
     options.correlationId ?? 'corr-1',
     options.placement ?? null,
+    options.currentChangedBy,
   );
   return { outcome, events: publishedEvents(pubsubMock) };
 }
@@ -784,5 +800,90 @@ describe('QUEUE_NOW_SLOT_PERCENT parser', () => {
       if (previous === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
       else process.env.QUEUE_NOW_SLOT_PERCENT = previous;
     }
+  });
+});
+
+describe('current-climb mover attribution (#7135)', () => {
+  it.each([
+    { label: 'pointer', mode: 'STEP' as const, insert: false, expectedEvents: ['CurrentClimbChanged'] },
+    { label: 'new-item FullSync', mode: 'NOW' as const, insert: true, expectedEvents: ['FullSync'] },
+    {
+      label: 'reshaped FullSync',
+      mode: 'NOW' as const,
+      insert: false,
+      expectedEvents: ['FullSync', 'CurrentClimbChanged'],
+    },
+  ])('names the mover rather than the queue author on $label', async ({ mode, insert, expectedEvents }) => {
+    const current = wallItem('a');
+    const intervening = wallItem('b');
+    const target = { ...wallItem('c'), addedByUser: { id: 'alice-account', username: 'Alice' } };
+    const queue = insert
+      ? [current, intervening]
+      : mode === 'STEP'
+        ? [current, target, intervening]
+        : [current, intervening, target];
+    const room = makeRoom({ queue, current });
+    const { events } = await placeClimb(room, target, {
+      shouldAddToQueue: insert,
+      placement: mode,
+      currentChangedBy: 'sam-participant',
+    });
+    expect(events.map(({ event }) => event.__typename)).toEqual(expectedEvents);
+    expect(room.room.currentChangedBy).toBe('sam-participant');
+    for (const { event } of events) {
+      if (event.__typename === 'FullSync') {
+        expect(event.state).toMatchObject({ currentChangedBy: 'sam-participant' });
+      } else {
+        expect(event.currentChangedBy).toBe('sam-participant');
+        expect(event.clientId).toBe('client-old');
+      }
+    }
+    expect(target.addedByUser.username).toBe('Alice');
+  });
+
+  it('publishes the successful retry actor and does not publish a failed write', async () => {
+    const current = wallItem('a');
+    const target = wallItem('b');
+    const room = makeRoom({ queue: [current, target], current });
+    room.roomManager.updateQueueState.mockRejectedValueOnce(new VersionConflictError('session-f3', 7));
+    const { events } = await placeClimb(room, target, { placement: 'STEP', currentChangedBy: 'sam-participant' });
+    expect(room.roomManager.updateQueueState).toHaveBeenCalledTimes(2);
+    expect(events).toHaveLength(1);
+    expect(events[0].event.currentChangedBy).toBe('sam-participant');
+  });
+
+  it('an unattributed controller move clears the preceding mover', async () => {
+    const current = wallItem('a');
+    const target = wallItem('b');
+    const room = makeRoom({ queue: [current, target], current });
+    room.room.currentChangedBy = 'alice-participant';
+    const { events } = await placeClimb(room, target, { placement: 'STEP' });
+    expect(room.room.currentChangedBy).toBeNull();
+    expect(events[0].event.currentChangedBy).toBeNull();
+  });
+
+  it('queue navigation carries a verified participant independently of its connection', async () => {
+    const current = wallItem('a');
+    const target = wallItem('b');
+    const room = makeRoom({ queue: [current, target], current });
+    const pubsub = makePubsub();
+    await navigateToQueueItem(
+      'session-f3',
+      1,
+      room.roomManager as unknown as RoomManager,
+      pubsub as unknown as typeof PubSubInstance,
+      'socket-123',
+      'corr-123',
+      'sam-participant',
+    );
+    expect(pubsub.publishQueueEvent).toHaveBeenCalledWith(
+      'session-f3',
+      expect.objectContaining({
+        __typename: 'CurrentClimbChanged',
+        currentChangedBy: 'sam-participant',
+        clientId: 'socket-123',
+        correlationId: 'corr-123',
+      }),
+    );
   });
 });

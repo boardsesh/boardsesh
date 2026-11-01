@@ -8,13 +8,12 @@ name: Android Play Internal Deploy (React Native)
 # prebuild`. Android builds fine on a free Linux runner, so no macOS needed (cf.
 # the iOS RN workflow ios-testflight-rn.yml, which mirrors this prebuild flow).
 
+run-name: ${{ format('android:{0}', inputs.source_sha || github.sha) }}
+
 on:
   push:
-    # Only the release train builds on push. release-train-sync.yml keeps it level
-    # with main and bumps its version once a version is released, so a native
-    # change or a new version on main reaches Play through the train. main keeps
-    # manual dispatch for hotfix builds. JS-only pushes skip the native build.
-    branches: [release/next]
+    # Raw main changes wait for the coordinator's validated version-bump stamp.
+    branches: [main]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -27,6 +26,10 @@ on:
       - '.github/workflows/android-apk-rn.yml'
   workflow_dispatch:
     inputs:
+      source_sha:
+        description: 'Exact native release stamp on main to recover; blank builds the selected main commit'
+        type: string
+        required: false
       version_code_offset:
         description: 'Added to GH run_number for versionCode (raise to clear collisions / stay above the retired Capacitor app version codes)'
         required: false
@@ -38,7 +41,7 @@ on:
       # Dispatching this workflow with force_native on rebuilds the native app so
       # those installs get the fix via a store update. Defaults on, so a manual
       # dispatch keeps building as before; uncheck to honour the same gate as a
-      # push. release-train-sync.yml dispatches it unchecked to retry a version
+      # push. the main coordinator dispatches it unchecked to retry a version
       # that has no build yet (for example one deferred by a Play review).
       force_native:
         description: 'Force a native build even if this fingerprint and version already shipped (push an urgent JS-only fix to orphaned binaries). Uncheck to honour the gate.'
@@ -54,8 +57,8 @@ concurrency:
   cancel-in-progress: false
   # QUEUE, never supersede. cancel-in-progress governs only the RUNNING run; by
   # default GitHub still replaces a *pending* run when a newer one queues. With
-  # release-train-sync.yml pushing the train after every main merge, that would
-  # silently drop whatever was waiting in this shared group behind the next train
+  # frequent main native snapshots, that would
+  # silently drop whatever was waiting in this shared group behind the next native
   # push: a main hotfix dispatch, a beta or production promotion, or the sync
   # bot's retry for a version that has no build yet. Queued push runs cost
   # little: the gate skips one whose commit a later push has superseded.
@@ -126,8 +129,8 @@ jobs:
   # binary via EXPO_UPDATES_FINGERPRINT_OVERRIDE and tags it, so binary-rv == tag
   # == the OTA-published rv by construction. See docs/mobile-ota-updates.md.
   gate:
-    # Only main and release/next may use Production signing credentials.
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next'
+    # Only main may use Production signing credentials.
+    if: github.ref == 'refs/heads/main'
     # The maps key affects the fingerprint, so both gate and build use the same
     # Production environment.
     environment: Production
@@ -135,12 +138,18 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read # inspect prior upload attempts before rebuilding an untagged source
     outputs:
-      should_build: ${{ steps.fp.outputs.should_build }}
+      should_build: ${{ steps.fp.outputs.should_build || 'false' }}
       fingerprint: ${{ steps.fp.outputs.fingerprint }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
-      - name: Checkout repository
+      - name: Checkout trusted native release tooling
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Require Play upload credentials
         env:
@@ -148,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || {
-            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a release-train build must reach Play internal before it can be tagged."
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON; a native build must reach Play internal before it can be tagged."
             exit 1
           }
 
@@ -157,13 +166,37 @@ jobs:
           node-version: '22.x'
           cache: false
 
+      - name: Resolve the exact main native release source
+        id: source
+        env:
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          FORCE_NATIVE: ${{ inputs.force_native }}
+        run: node --experimental-strip-types scripts/mobile-native-release.ts source
+
+      - name: Preserve trusted release guards before pinning native source
+        if: steps.source.outputs.eligible == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-release-tools/scripts/lib"
+          cp scripts/mobile-native-release.ts "$RUNNER_TEMP/native-release-tools/scripts/"
+          cp scripts/lib/native-release.ts scripts/lib/mobile-release-version.ts scripts/lib/mobile-release-policy.ts scripts/lib/release-tags.ts "$RUNNER_TEMP/native-release-tools/scripts/lib/"
+
+      - name: Checkout exact native source
+        if: steps.source.outputs.eligible == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Install Node.js dependencies (workspace root)
+        if: steps.source.outputs.eligible == 'true'
         run: vp install --frozen-lockfile
 
       # The .env is hashed into the fingerprint, so it must be byte-identical to
       # the build job's (same heredoc + same workflow env) or the gate would
       # resolve a different fingerprint than the build bakes.
       - name: Write .env for Expo build-time inlining
+        if: steps.source.outputs.eligible == 'true'
         working-directory: packages/mobile
         run: |
           cat > .env <<EOF
@@ -180,160 +213,53 @@ jobs:
           EOF
 
       - name: Resolve fingerprint and check for an existing native build
+        if: steps.source.outputs.eligible == 'true'
         id: fp
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          # Empty on a push; a dispatch carries the checkbox.
+          NATIVE_PLATFORM: android
+          NATIVE_SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          NATIVE_RELEASE_ROOT: ${{ github.workspace }}
           FORCE_NATIVE: ${{ inputs.force_native }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -uo pipefail
-          fail() { echo "::error::$1"; exit 1; }
-          build() { echo "should_build=true" >> "$GITHUB_OUTPUT"; echo "::notice::$1"; exit 0; }
-          skip() { echo "should_build=false" >> "$GITHUB_OUTPUT"; echo "::notice::$1"; exit 0; }
+          set -euo pipefail
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform android)"
+          export RESOLVED_FINGERPRINT="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty')"
+          node --experimental-strip-types "$RUNNER_TEMP/native-release-tools/scripts/mobile-native-release.ts" gate
 
-          # GOOGLE_MAPS_API_KEY is inherited from the workflow env (it changes the
-          # Android fingerprint, so the resolve must match the build's prebuild).
-          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
-          fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
-          if printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
-            echo "fingerprint=$fp" >> "$GITHUB_OUTPUT"
-          else
-            fp=''
-          fi
-
-          # The marketing version, read with the regex the build job's "Resolve
-          # mobile app version" step uses, so the gate decides for the version the
-          # binary will carry.
-          # (Through a file: a heredoc inside $(...) trips older bash parsers.)
-          version_file="$(mktemp)"
-          node > "$version_file" <<'NODE'
-          const appConfig = require('node:fs').readFileSync('packages/mobile/app.config.ts', 'utf8');
-          const versionMatch = appConfig.match(/\bversion:\s*['"]([^'"]+)['"]/);
-          if (versionMatch) process.stdout.write(versionMatch[1]);
-          NODE
-          version="$(cat "$version_file")"
-          printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            || fail "Could not read a MAJOR.MINOR.PATCH version from packages/mobile/app.config.ts (got \"$version\")."
-
-          # Runs queue behind a running build (queue: max), so the branch may have
-          # moved on by now. Skip only when a later push changed this workflow's
-          # paths: that push has its own run, which decides for the newer commit.
-          # A tip that moved only outside those paths starts no run, so this one
-          # must still decide.
-          if [ "$EVENT_NAME" = push ]; then
-            superseded="$(node --experimental-strip-types scripts/push-run-superseded.ts --workflow .github/workflows/android-apk-rn.yml)" \
-              || fail "Could not tell whether $GITHUB_SHA is still the newest Android build input on ${GITHUB_REF#refs/heads/}."
-            if [ "$superseded" = true ]; then
-              skip "Superseded: ${GITHUB_REF#refs/heads/} has moved past $GITHUB_SHA; the run for the newer commit decides."
-            fi
-          fi
-
-          # A manual dispatch with force_native on (the default) builds regardless
-          # of the fingerprint — the escape hatch for shipping an urgent JS-only
-          # fix to OTA-orphaned binaries (issue #3098). With force_native off it
-          # falls through to the same checks as a push, so a dispatch can also be
-          # a no-op when this fingerprint and version already shipped.
-          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$FORCE_NATIVE" = true ]; then
-            build "Manual dispatch with force_native — building Android $version regardless of fingerprint ${fp:-<unresolved>}."
-          fi
-
-          if [ -z "$fp" ]; then
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Could not resolve the Android fingerprint — building Android $version to be safe."
-            exit 0
-          fi
-
-          fingerprint_tag="fingerprint-android-$fp"
-          fingerprint_tags="$(git ls-remote --tags origin "refs/tags/$fingerprint_tag")" \
-            || fail "Could not look up $fingerprint_tag on origin."
-          if [ -z "$fingerprint_tags" ]; then
-            build "Android fingerprint $fp is new — running the native build."
-          fi
-
-          # The marketing version and build numbers are not part of the fingerprint
-          # (fingerprint.config.js sourceSkips), so a push that only bumps
-          # `version` keeps an already-built fingerprint. The versionCode tag is
-          # what records that a version reached Play, so a version without one
-          # still builds: this is how release-train-sync.yml's version bump
-          # becomes a Play build.
-          version_builds="$(git ls-remote --tags origin "refs/tags/build-android-v${version}-*")" \
-            || fail "Could not list Android $version builds on origin."
-          if [ -z "$version_builds" ]; then
-            build "Android fingerprint $fp already built (tag $fingerprint_tag), but no build of version $version exists yet (no build-android-v${version}-* tag) — building so Play gets $version."
-          fi
-
-          skip "Android fingerprint $fp and version $version both already built (tag $fingerprint_tag and a build-android-v${version}-* tag) — skipping the native build; the OTA delivers the JS."
-
-  # Play's review lock is package-wide, and `fastlane android upload_beta` commits
-  # with ERROR_IF_IN_REVIEW, so while any production or open-testing release waits
-  # for review the ~30-minute build below would end in an upload Play refuses.
-  # Without this check every train push in that window would burn one. GET-only,
-  # and it fails open (the upload keeps its own guard). A deferred version still
-  # has no build-android-v<version>-* tag, so release-train-sync.yml's hourly
-  # retry dispatches this workflow again once the review clears.
-  #
-  # The second check holds a train build of the next version while the last
-  # merge-back's Android build has not reached Play production yet. This build's
-  # upload replaces Play internal, and the merge-back submission
-  # (mobile-store-submit.yml) can only release what internal still serves
-  # (scripts/mobile-store-android-merge-back-hold.ts). Same deferral, same retry,
-  # same fail-open policy.
+  # Play's package-wide review lock can defer a tester upload. The main native
+  # coordinator retries the newest stamp after one hour, without another bump.
   play-review:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
-    # Fail open at the job level too. The script never fails, but checkout or
-    # install can, and a red pre-check must not red the run: the store-draft and
-    # screenshot workflows only follow a run that concluded success. A failed
-    # check leaves `pending` empty, so the build below still runs.
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: Production
     permissions:
       contents: read
-      pull-requests: read # gh pr list: the last merge-back
     outputs:
-      # Either check holds the build. Each fails open: one that errored leaves its
-      # output empty or false, which never holds.
-      pending: ${{ steps.review.outputs.pending == 'true' && 'true' || steps.merge_back.outputs.pending }}
+      pending: ${{ steps.review.outputs.pending }}
     steps:
-      - name: Checkout repository
+      - name: Checkout exact native source
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.gate.outputs.source_sha }}
           persist-credentials: false
-
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
           cache: false
-
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
-
       - name: Check whether a Play review is pending
         id: review
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: vp exec node --import tsx scripts/mobile-store-android-review-pending.ts
-
-      - name: Defer the build while Play reviews another release
+      - name: Report deferred tester build
         if: steps.review.outputs.pending == 'true'
-        run: |
-          echo "::notice::Android build deferred: Play is reviewing another release, and the upload cannot commit until that review finishes. release-train-sync.yml's hourly retry dispatches this workflow again once the review clears, or dispatch it by hand with force_native off."
-
-      - name: Check whether the last merge-back still needs Play internal
-        id: merge_back
-        if: steps.review.outputs.pending != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-          STORE_AUTO_SUBMIT: ${{ vars.STORE_AUTO_SUBMIT }}
-        run: vp exec node --import tsx scripts/mobile-store-android-merge-back-hold.ts
-
-      - name: Defer the build while the last merge-back waits for Play production
-        if: steps.merge_back.outputs.pending == 'true'
-        run: |
-          echo "::notice::Android build deferred: the last merge-back's Android build has not reached Play production yet, and this upload would replace it on Play internal, which the merge-back submission releases from. release-train-sync.yml's hourly retry dispatches this workflow again once production carries it, or dispatch it by hand with force_native off."
+        run: echo '::notice::Play review deferred this native stamp. The coordinator retries it without another version bump.'
 
   build-and-release:
     needs: [gate, play-review]
@@ -360,6 +286,7 @@ jobs:
     # workflow level (above) so the gate and build jobs resolve a byte-identical
     # fingerprint.
     env:
+      NATIVE_SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
       # Pin the binary's runtimeVersion to the gate's canonical fingerprint.
       # app.config.ts emits this as a LITERAL runtimeVersion, so `expo prebuild`
       # bakes this exact value into the binary and the build never resolves its
@@ -372,6 +299,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -787,6 +718,11 @@ jobs:
 
       # Fastlane owns tester tracks, localized notes, and strict review behavior.
       # One edit assigns both tracks; candidate tags follow only after commit.
+      - name: Require the live backend schema before tester upload
+        run: |
+          git fetch --no-tags origin main
+          GITHUB_SHA="$NATIVE_SOURCE_SHA" node scripts/mobile-ota-schema-ready.mjs
+
       - name: Upload AAB to Play internal and open beta tracks
         id: play_upload
         working-directory: fastlane
@@ -820,8 +756,8 @@ jobs:
               awk -v direct="refs/tags/$build_tag" -v peeled="refs/tags/$build_tag^{}" \
                 '$2 == direct { direct_sha = $1 } $2 == peeled { peeled_sha = $1 } END { print peeled_sha ? peeled_sha : direct_sha }'
           )"
-          if [ -n "$existing_target" ] && [ "$existing_target" != "$GITHUB_SHA" ]; then
-            echo "::error::$build_tag already points to $existing_target, expected $GITHUB_SHA."
+          if [ -n "$existing_target" ] && [ "$existing_target" != "$NATIVE_SOURCE_SHA" ]; then
+            echo "::error::$build_tag already points to $existing_target, expected $NATIVE_SOURCE_SHA."
             exit 1
           fi
 
@@ -843,7 +779,7 @@ jobs:
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.gate.outputs.source_sha }}
           VERSION_CODE: ${{ steps.version_code.outputs.value }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
@@ -861,7 +797,7 @@ jobs:
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.gate.outputs.source_sha }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
@@ -878,7 +814,7 @@ jobs:
         run: rm -f packages/mobile/android/app/release.keystore
 
   record-candidate:
-    needs: build-and-release
+    needs: [gate, build-and-release]
     # `!cancelled()` replaces the implicit success(), which also looks at
     # build-and-release's own needs: a failed play-review pre-check (which the
     # build deliberately ignores) would otherwise skip this job after the upload
@@ -898,6 +834,7 @@ jobs:
       # Actions:write to every token minted from that App.
       actions: write
     env:
+      NATIVE_SOURCE_SHA: ${{ needs.gate.outputs.source_sha }}
       ANDROID_APK_SHA256: ${{ needs.build-and-release.outputs.apk_sha256 }}
       ANDROID_APK_SIZE: ${{ needs.build-and-release.outputs.apk_size }}
       ANDROID_BUILD_TAG: ${{ needs.build-and-release.outputs.build_tag }}
@@ -909,7 +846,7 @@ jobs:
       - name: Checkout exact candidate commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.gate.outputs.source_sha }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -973,8 +910,8 @@ jobs:
           assert_missing_or_exact() {
             local tag="$1"
             local target="$2"
-            if [ -n "$target" ] && [ "$target" != "$GITHUB_SHA" ]; then
-              echo "::error::$tag already points to $target, expected $GITHUB_SHA."
+            if [ -n "$target" ] && [ "$target" != "$NATIVE_SOURCE_SHA" ]; then
+              echo "::error::$tag already points to $target, expected $NATIVE_SOURCE_SHA."
               exit 1
             fi
           }
@@ -996,18 +933,18 @@ jobs:
             local target
             target="$(remote_target "$build_tag")"
             assert_missing_or_exact "$build_tag" "$target"
-            if [ "$target" = "$GITHUB_SHA" ]; then
+            if [ "$target" = "$NATIVE_SOURCE_SHA" ]; then
               echo "::notice::$build_tag already points to this build."
               return 0
             fi
-            git tag --force "$build_tag" "$GITHUB_SHA"
+            git tag --force "$build_tag" "$NATIVE_SOURCE_SHA"
             if authenticated_push "$remote" "refs/tags/$build_tag"; then
               echo "::notice::Tagged exact uploaded build $build_tag."
               return 0
             fi
             target="$(remote_target "$build_tag")"
             assert_missing_or_exact "$build_tag" "$target"
-            [ "$target" = "$GITHUB_SHA" ] || {
+            [ "$target" = "$NATIVE_SOURCE_SHA" ] || {
               echo "::error::Failed to publish exact uploaded build tag $build_tag."
               return 1
             }
@@ -1022,8 +959,8 @@ jobs:
             publish_build_tag
             echo "::notice::Preserved immutable $fingerprint_tag at $fingerprint_target."
           else
-            git tag --force "$build_tag" "$GITHUB_SHA"
-            git tag --force "$fingerprint_tag" "$GITHUB_SHA"
+            git tag --force "$build_tag" "$NATIVE_SOURCE_SHA"
+            git tag --force "$fingerprint_tag" "$NATIVE_SOURCE_SHA"
             if authenticated_push --atomic "$remote" "refs/tags/$build_tag" "refs/tags/$fingerprint_tag"; then
               echo "::notice::Atomically tagged $build_tag and $fingerprint_tag."
             else
@@ -1038,6 +975,31 @@ jobs:
           fi
           unset git_auth
 
+      - name: Record exact uploaded native source
+        id: native_source
+        env:
+          SOURCE_WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          node <<'NODE'
+          const { writeFileSync } = require('node:fs');
+          const { join } = require('node:path');
+          const { NATIVE_SOURCE_SHA, SOURCE_WORKFLOW_SHA, GITHUB_RUN_ID, BOARDSESH_MOBILE_VERSION, VERSION_CODE, ANDROID_BUILD_TAG, RUNNER_TEMP } = process.env;
+          writeFileSync(join(RUNNER_TEMP, 'native-build-source.json'), JSON.stringify({
+            schemaVersion: 1, platform: 'android', sourceSha: NATIVE_SOURCE_SHA,
+            workflowSha: SOURCE_WORKFLOW_SHA, sourceRunId: GITHUB_RUN_ID,
+            version: BOARDSESH_MOBILE_VERSION, buildNumber: VERSION_CODE, buildTag: ANDROID_BUILD_TAG,
+          }) + '\n');
+          NODE
+
+      - name: Retain exact uploaded native source
+        if: steps.native_source.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-build-source-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-build-source.json
+          retention-days: 90
+          if-no-files-found: error
+
       # Un-strand the binary we just uploaded — see the matching step in
       # ios-testflight-rn.yml for the full reasoning. Short version: expo-updates
       # launches whichever update has the newest commitTime, and this binary stamped
@@ -1045,9 +1007,7 @@ jobs:
       # while we were building is already older than it and would never apply.
       # Dispatched per-platform: iOS and Android resolve different fingerprints, so
       # one republish cannot cover the other. Non-blocking — the Play upload has
-      # already succeeded. Dispatched against the branch that BUILT
-      # (github.ref_name): a train binary's fingerprint only exists on
-      # release/next, so a `--ref main` dispatch could never reach it.
+      # already succeeded. Main rechecks expect_fingerprint before publication.
       - name: Republish the production OTA so it outranks this build
         if: env.FINGERPRINT_ANDROID != ''
         continue-on-error: true
@@ -1056,7 +1016,7 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run mobile-ota-production.yml \
-            --ref "${{ github.ref_name }}" \
+            --ref main \
             -f platform=android \
             -f expect_fingerprint="$FINGERPRINT_ANDROID"
           echo "::notice::Dispatched a production OTA republish for Android fingerprint $FINGERPRINT_ANDROID."
@@ -1067,17 +1027,15 @@ jobs:
           GH_TOKEN: ${{ steps.tag_token.outputs.token }}
         run: |
           set -euo pipefail
-          # Both trusted release branches publish the exact accepted beta APK.
-          if [ "$GITHUB_REF" != 'refs/heads/main' ] && \
-             [ "$GITHUB_REF" != 'refs/heads/release/next' ]; then
+          if [ "$GITHUB_REF" != 'refs/heads/main' ]; then
             echo 'publish=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::Only main and release/next builds publish the Android beta prerelease.'
+            echo '::notice::Only main builds publish the Android beta prerelease.'
             exit 0
           fi
 
           build_target="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$ANDROID_BUILD_TAG" --jq '.object.sha')"
-          [ "$build_target" = "$GITHUB_SHA" ] || {
-            echo "::error::$ANDROID_BUILD_TAG points to $build_target, expected $GITHUB_SHA."
+          [ "$build_target" = "$NATIVE_SOURCE_SHA" ] || {
+            echo "::error::$ANDROID_BUILD_TAG points to $build_target, expected $NATIVE_SOURCE_SHA."
             exit 1
           }
           fingerprint_tag="fingerprint-android-${FINGERPRINT_ANDROID}"
@@ -1098,10 +1056,10 @@ jobs:
         with:
           token: ${{ steps.tag_token.outputs.token }}
           tag_name: ${{ env.ANDROID_BUILD_TAG }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.gate.outputs.source_sha }}
           name: Boardsesh Android Beta v${{ env.BOARDSESH_MOBILE_VERSION }} (${{ env.VERSION_CODE }})
           body: |
-            Signed Android beta from `${{ github.ref_name }}` at commit `${{ github.sha }}`.
+            Signed Android beta from `${{ github.ref_name }}` at commit `${{ needs.gate.outputs.source_sha }}`.
 
             - Package: `com.boardsesh.app`
             - Architecture: arm64-v8a (modern physical Android devices)
@@ -1164,7 +1122,7 @@ jobs:
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.gate.outputs.source_sha }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"

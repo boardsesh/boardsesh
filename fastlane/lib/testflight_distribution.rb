@@ -36,6 +36,10 @@ module BoardseshTestflightDistribution
       "#{identity} is assigned to #{receipt.fetch('groupName')}; Apple beta review is pending."
     when "approved-awaiting-availability"
       "#{identity} is assigned to #{receipt.fetch('groupName')}; Apple approved beta review and availability is pending."
+    when "deferred-beta-review"
+      "#{identity} is deferred because another build is in Apple beta review; the hourly retry will recheck."
+    when "deferred-processing"
+      "#{identity} is still processing at Apple; the hourly retry will recheck."
     else
       raise Error, "Unknown TestFlight distribution summary status: #{receipt.fetch('status').inspect}"
     end
@@ -71,7 +75,8 @@ module BoardseshTestflightDistribution
         return receipt(before, group, "already-assigned", notification_requested: false)
       end
 
-      @distribute.call(
+      begin
+        @distribute.call(
         app_identifier: APP_IDENTIFIER,
         app_platform: "ios",
         app_version: @version,
@@ -88,7 +93,33 @@ module BoardseshTestflightDistribution
         wait_processing_timeout_duration: 45 * 60,
         expire_previous_builds: false,
         reject_build_waiting_for_review: false
-      )
+        )
+      rescue => error
+        # Re-read through authenticated ASC before classifying these specific
+        # temporary failures. Auth, identity and rejected-build errors stay red.
+        beta_busy = error.message.to_s.match?(/another build in the same train is already in beta review/i)
+        processing_timeout = error.message.to_s == "FastlaneCore::BuildWatcher exceeded the '2700' seconds, Stopping now!"
+        raise unless beta_busy || processing_timeout
+        current = exact_build(allow_missing: true)
+        if before && current && before.id != current.id
+          raise Error, "TestFlight build identity changed during distribution; inspect the exact build before retrying"
+        end
+        if current && current.processing_state == "VALID" && assigned?(group, current.id) && completed_state?(external_state(current))
+          return receipt(current, group, "already-assigned", notification_requested: false)
+        end
+        status = if beta_busy
+          "deferred-beta-review"
+        elsif current.nil? || current.processing_state == "PROCESSING"
+          "deferred-processing"
+        end
+        raise unless status
+        return {
+          "version" => @version, "buildNumber" => @build_number, "buildId" => current&.id,
+          "groupId" => group.id, "groupName" => group.name, "action" => "deferred",
+          "status" => status, "externalBuildState" => current && external_state(current),
+          "notificationRequested" => false
+        }
+      end
 
       # Pilot returns a log message, not a build. It also silently ignores an
       # unknown group, so independently verify both identity and assignment.

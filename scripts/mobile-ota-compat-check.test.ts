@@ -355,20 +355,10 @@ describe('deriveCheckConclusion (informational compatibility)', () => {
 });
 
 describe('enforcementNote', () => {
-  it('tells a main-targeting native PR that its builds come from the synced release train', () => {
+  it('tells a main-targeting native PR that it opens an automatic patch', () => {
     const note = enforcementNote({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false });
-    expect(note).toContain('starts fingerprint-gated TestFlight and Play builds once the sync lands');
-    expect(note).toContain('Store builds come from `release/next`, which is synced from `main` automatically');
-  });
-
-  it('tells a train PR that this is where the store builds come from', () => {
-    const note = enforcementNote({
-      overall: 'native-change-required',
-      baseBranch: 'release/next',
-      allowNativeOnMain: false,
-    });
-    expect(note).toContain('release/next');
-    expect(note).not.toContain('retarget');
+    expect(note).toContain('starts TestFlight and Play tester builds');
+    expect(note).toContain('Merging into `main` automatically opens a patch version');
   });
 
   it('says nothing at all for an OTA-compatible PR', () => {
