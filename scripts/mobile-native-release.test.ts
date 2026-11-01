@@ -294,7 +294,11 @@ describe('native release workflow boundaries', () => {
   it('allows only main, pins native sources, and keeps public submission outside the coordinator', () => {
     expect(coordinator.on.push.branches).toEqual(['main']);
     expect(coordinator.on.workflow_run.branches).toEqual(['main']);
-    expect(coordinator.concurrency).toEqual({ group: 'mobile-native-release', 'cancel-in-progress': false });
+    expect(coordinator.concurrency).toEqual({
+      group: 'mobile-native-release',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
     for (const workflow of [ios, android]) {
       expect(workflow.on.push.branches).toEqual(['main']);
       expect(workflow.on.workflow_dispatch.inputs.source_sha.type).toBe('string');

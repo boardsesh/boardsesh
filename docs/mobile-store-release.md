@@ -45,6 +45,10 @@ deferred newest builds can be recovered from the same stamp without another vers
 An upload that may have reached a store but lacks its immutable tag requires readback
 before a rebuild; the coordinator does not guess that it failed.
 
+All coordinator requests queue, including manual baseline and recovery dispatches,
+so automatic workflow completions cannot replace a pending operator request. Each
+run reads the newest main snapshot; queued events do not open duplicate versions.
+
 **One-time baseline.** Before importing native development, initialize the protected
 annotated `release/native-baseline` tag from the exact pre-cutover main SHA. Its full
 fingerprints are resolved using the same Production environment as the binaries. The

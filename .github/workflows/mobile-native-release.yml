@@ -1,7 +1,7 @@
 name: Main Native Release
 
 # Native source changes are versioned once here before either signing workflow
-# starts. Coalesce pending main changes; never hold this lock waiting for builds.
+# starts. Each run coalesces current main changes; never wait here for builds.
 on:
   push:
     branches: [main]
@@ -32,6 +32,7 @@ on:
 concurrency:
   group: mobile-native-release
   cancel-in-progress: false
+  queue: max # preserve manual baseline/recovery requests between automatic events
 
 permissions:
   contents: read
