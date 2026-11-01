@@ -22,7 +22,7 @@ screenshot-mode auto-login):
 - **Maestro** for navigation, `--to <screen>`, and `--flow`
   (`curl -Ls "https://get.maestro.mobile.dev" | bash`). A plain `home` capture doesn't need it.
 - First run builds a Debug simulator `.app` (~30 min) unless you pass `--app-path`; it's cached
-  at `packages/mobile/.app-cache/Boardsesh.app` and reused (only native changes force a rebuild).
+  at `packages/mobile/.app-cache/Boardsesh.app` and reused when native inputs and toolchain match.
 
 When creating a missing simulator, store capture selects the newest installed
 runtime that lists the requested device type as supported. A newer runtime can
@@ -260,6 +260,50 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 - The `screenshot` / `navigate` / `shutdown` subcommands attach to the **already-booted**
   simulator from a background `run`; they don't restart Metro. "No booted simulator" means you
   haven't started `run` yet (or it died — check its output).
+
+## CI simulator app identity
+
+The shared Debug dev-client cache uses a v2 key containing native source inputs,
+runner architecture, the selected Xcode build, and the simulator SDK version and
+build. The screenshot producer selects release Xcode27.1+ **before** looking up
+that key. Selection resolves each installed app alias to its physical directory
+before rejecting beta/RC names, reading its version or exporting
+`DEVELOPER_DIR`. Accepted alias, canonical path and version are logged; a
+release-candidate alias cannot enter the build through a stable-looking name. Other video and smoke producers record their actual selected toolchain;
+they can share a product only when those identities match.
+
+Cache helpers and the two capture/record actions come from a separate sparse
+checkout of the immutable workflow commit at `.boardsesh/cache-tooling`. The
+application stays at the requested captured source at workspace root, including
+for older supported commits that do not contain those helpers. Both checkout
+SHAs are verified and printed. Native application inputs, builds and Metro
+capture continue to use that requested source; reviewed cache tooling is never
+overlaid onto application files. The tooling copy has its own paths in the shared
+native-hash recipe.
+
+Retained CPP recording imports recognize two explicit producer layouts: the
+legacy root checkout/action, and the independent-tooling layout above. The latter
+requires a single root application checkout, immutable tooling checkout and the
+actual identity check in order before its one capture action. Conditional or
+conflicting checkouts, foreign repositories and changed identity bindings stop
+before archive reads. This equivalence of workflow and producer SHA applies only
+to the retained path's verified direct `workflow_dispatch` run; it is not assumed
+for reusable workflows or `workflow_run`. Existing native-source, fixture and
+artifact checks still apply to both layouts.
+
+Every new product is checked before it is saved. Screenshot and video consumers
+check restored product metadata, ARM64 slices and Debug Metro identity before
+installation. The check uses the producer's identity from the key, rather than
+requiring the consumer's default compiler to match. Duo additionally requires a
+product built with simulator SDK27.1+. An older SDK26.5 cached product reproduced
+the narrow375×667 app window on the open Duo in a matched local comparison, while
+the SDK27.1 control used951×669 and retained its board pane. These results justify
+rejecting the incompatible cached product; they do not attribute the difference
+to one compiler or SDK component in isolation. A cache mismatch stops the shard
+without silently building a replacement there.
+The shard passes the optional SDK minimum through explicit shell branches: Duo
+adds `--minimum-sdk 27.1`; phones and iPads omit it. This keeps the preflight
+compatible with macOS Bash3.2 under `set -euo pipefail`, including helper failures.
 
 ## Store capture device coverage
 

@@ -154,6 +154,42 @@ describe('Duo Maestro flows', () => {
     expect(outerFlow).not.toMatch(/swipe|point:/);
   });
 
+  it('keeps stale-geometry scroll calculations out of the closed Duo capture', () => {
+    const commands = parseAllDocuments(outerFlow)[1].toJS() as Record<string, unknown>[];
+    for (const command of commands) {
+      expect(command).not.toHaveProperty('scrollUntilVisible');
+      expect(command).not.toHaveProperty('scroll');
+      expect(command).not.toHaveProperty('swipe');
+    }
+  });
+
+  it('waits for loaded profile content and the workout board before closed screenshots', () => {
+    const commands = parseAllDocuments(outerFlow)[1].toJS() as Record<string, unknown>[];
+    const profileRouteIndex = commands.findIndex((command) => command.openLink === 'com.boardsesh.app://profile');
+    const profileCaptureIndex = commands.findIndex((command) => command.takeScreenshot === '05-profile');
+    expect(profileRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(profileCaptureIndex).toBeGreaterThan(profileRouteIndex);
+    const profileCommands = commands.slice(profileRouteIndex + 1, profileCaptureIndex);
+    expect(profileCommands).toContainEqual({
+      extendedWaitUntil: { notVisible: { id: 'horizontal-scroll-section-loading' }, timeout: 60000 },
+    });
+    for (const id of ['progress-tab-loaded', 'profile-board-overview', '^profile-board-row-.+$']) {
+      expect(profileCommands).toContainEqual({ extendedWaitUntil: { visible: { id }, timeout: 60000 } });
+    }
+
+    const workoutRouteIndex = commands.findIndex((command) => command.openLink === 'com.boardsesh.app://record');
+    const workoutCaptureIndex = commands.findIndex((command) => command.takeScreenshot === '07-workout-generator');
+    expect(workoutRouteIndex).toBeGreaterThan(profileCaptureIndex);
+    expect(workoutCaptureIndex).toBeGreaterThan(workoutRouteIndex);
+    const workoutCommands = commands.slice(workoutRouteIndex + 1, workoutCaptureIndex);
+    expect(workoutCommands).toContainEqual({
+      extendedWaitUntil: { visible: { id: 'pre-session-footer' }, timeout: 90000 },
+    });
+    expect(workoutCommands).toContainEqual({
+      extendedWaitUntil: { visible: { id: 'pre-session-board-summary' }, timeout: 60000 },
+    });
+  });
+
   it('rejects a flow with commands after its last screenshot', () => {
     expect(() =>
       splitDuoInnerFlow('appId: x\n---\n- openLink: a://b\n- takeScreenshot: one\n- openLink: a://c\n'),

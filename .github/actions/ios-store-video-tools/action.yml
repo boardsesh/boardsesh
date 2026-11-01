@@ -18,6 +18,12 @@ runs:
         path: packages/mobile/.app-cache
         key: ${{ inputs.app-cache-key }}
         fail-on-cache-miss: true
+    - name: Verify prebuilt simulator app identity
+      shell: bash
+      env:
+        APP_CACHE_KEY: ${{ inputs.app-cache-key }}
+        CACHE_TOOLING_ROOT: ${{ github.action_path }}/../../..
+      run: node --experimental-strip-types "$CACHE_TOOLING_ROOT/scripts/ios-screenshot-app-cache.ts" validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
     - uses: actions/setup-java@v4
       with:
         distribution: temurin

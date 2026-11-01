@@ -44,6 +44,10 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 24, bottom: 20, left: 0, right: 0 }),
 }));
 vi.mock('../WallScreen', () => ({ WallScreen: () => createElement('div', { 'data-kiosk': true }) }));
+vi.mock('../../play-drawer/ScreenshotCurrentDriveReadiness', () => ({
+  ScreenshotCurrentDriveReadiness: ({ surface }: { surface?: string }) =>
+    createElement('div', { 'data-testid': 'kiosk-drive-observer', 'data-surface': surface }),
+}));
 vi.mock('../../Button', () => ({
   Button: ({
     title,
@@ -89,7 +93,40 @@ describe('WallDisplayScreen', () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
+
+  it('keeps the real kiosk observer in the visible subtree after controls fade', () => {
+    for (const flag of [
+      'EXPO_PUBLIC_SCREENSHOT_MODE',
+      'EXPO_PUBLIC_SCREENSHOT_DRIVING',
+      'EXPO_PUBLIC_SCREENSHOT_FAKE_BLE',
+    ])
+      vi.stubEnv(flag, '1');
+    const view = render(<WallDisplayScreen />);
+    const observer = view.getByTestId('kiosk-drive-observer');
+    expect(observer.getAttribute('data-surface')).toBe('kiosk');
+    expect(observer.parentElement).toBe(view.getByTestId('wall-display-controls'));
+    act(() => {
+      vi.advanceTimersByTime(WALL_DISPLAY_CONTROLS_VISIBLE_MS);
+    });
+    expect(observer.parentElement).toBe(view.getByTestId('wall-display-controls-faded'));
+  });
+
+  it.each(['EXPO_PUBLIC_SCREENSHOT_MODE', 'EXPO_PUBLIC_SCREENSHOT_DRIVING', 'EXPO_PUBLIC_SCREENSHOT_FAKE_BLE'])(
+    'omits the kiosk observer when %s is disabled',
+    (flag) => {
+      for (const name of [
+        'EXPO_PUBLIC_SCREENSHOT_MODE',
+        'EXPO_PUBLIC_SCREENSHOT_DRIVING',
+        'EXPO_PUBLIC_SCREENSHOT_FAKE_BLE',
+      ])
+        vi.stubEnv(name, '1');
+      vi.stubEnv(flag, '0');
+      const view = render(<WallDisplayScreen />);
+      expect(view.queryByTestId('kiosk-drive-observer')).toBeNull();
+    },
+  );
 
   it('shows the kiosk and keeps the screen awake while the kiosk is focused', () => {
     const { container } = render(<WallDisplayScreen />);

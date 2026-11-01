@@ -33,6 +33,33 @@ jobs:
       MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
     steps:
       - uses: actions/checkout@v4
+      # Cache policy belongs to this immutable workflow, independently of the
+      # historical application commit being built or photographed at workspace root.
+      - name: Checkout cache tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .boardsesh/cache-tooling
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ios-screenshot-app-cache.ts
+            scripts/select-screenshot-xcode.sh
+            .github/actions/ios-screenshot-shard/action.yml
+            .github/actions/ios-store-video-tools/action.yml
+      - name: Verify application and cache tooling identities
+        env:
+          APP_SOURCE_SHA: ${{ github.sha }}
+          CACHE_TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$APP_SOURCE_SHA" ] ||
+             [ "$(git -C .boardsesh/cache-tooling rev-parse HEAD)" != "$CACHE_TOOLING_SHA" ]; then
+            echo "::error::Application or cache tooling checkout does not match its immutable source."
+            exit 1
+          fi
+          printf 'Application source: %s\nCache tooling source: %s\n' "$APP_SOURCE_SHA" "$CACHE_TOOLING_SHA"
+
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
@@ -41,7 +68,9 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Compute screenshot app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        env:
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH"
       - name: Restore screenshot dev-client
         id: app-cache
         uses: actions/cache/restore@v4
@@ -51,6 +80,11 @@ jobs:
       - name: Build dev-client on cache miss
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: vp exec tsx scripts/store-video-measure.ts build metrics/build.json -- vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+      - name: Verify simulator app identity
+        env:
+          APP_CACHE_KEY: ${{ steps.appkey.outputs.key }}
+        run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts validate --key "$APP_CACHE_KEY" --app packages/mobile/.app-cache/Boardsesh.app
+
       - name: Save screenshot dev-client
         if: steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

@@ -102,6 +102,7 @@ import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRunti
 import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
 import { CrewHolderSuspicionSync } from '../src/providers/crew-holder-suspicion';
 import { DriveModeWatcher } from '../src/components/play-drawer/DriveModeWatcher';
+import { ScreenshotCurrentDriveReadiness } from '../src/components/play-drawer/ScreenshotCurrentDriveReadiness';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { FoldHingeObserver } from '../src/components/navigation/FoldHingeObserver';
 import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
@@ -796,6 +797,14 @@ function RootLayout() {
                                                                         {/* Driving the wall (#7113): renders nothing; ends the drive
                                                                             when the link drops, the session or board changes, or on sign-out. */}
                                                                         <DriveModeWatcher />
+                                                                        {process.env.EXPO_PUBLIC_SCREENSHOT_MODE ===
+                                                                          '1' &&
+                                                                        process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING ===
+                                                                          '1' &&
+                                                                        process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE ===
+                                                                          '1' ? (
+                                                                          <ScreenshotCurrentDriveReadiness />
+                                                                        ) : null}
                                                                         {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and
