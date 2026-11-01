@@ -908,7 +908,6 @@
       "backToWall": "Torna al blocco in parete",
       "backToCurrent": "Torna alla mia scelta",
       "joinedBrowseNotice": "Stai sfogliando. La parete resta ferma finché non metti in parete un blocco.",
-      "previewNotLit": "Anteprima, non illuminato",
       "onlyYouSeeThis": "Lo vedi solo tu",
       "onlyYouSeeThisWallOn": "Lo vedi solo tu · la parete è su {{name}}",
       "commitOverride": {
@@ -966,7 +965,7 @@
     "paneEmpty": {
       "title": "Scegli un blocco",
       "subtitle": "Tocca un blocco per vederlo qui.",
-      "unlitHint": "Tocca un blocco per illuminarlo"
+      "unlitHint": "Tocca un blocco per vederne l’anteprima"
     },
     "previousFrame": "Frame precedente",
     "nextFrame": "Frame successivo",

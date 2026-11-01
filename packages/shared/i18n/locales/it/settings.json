@@ -491,9 +491,9 @@
       "onSwipeLabel": "Illumina il pannello mentre scorro",
       "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",
       "onTapLabel": "Illumina il pannello quando tocco un blocco",
-      "onTapDescription": "Un tocco in qualsiasi lista mette il blocco in parete. Se è disattivato, il tocco apre un'anteprima.",
+      "onTapDescription": "Ogni tocco in una lista illumina il blocco, senza limite di tempo. Se è disattivato, il tocco apre un'anteprima.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
-      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore sostituisce la tua coda con quella lista. Solo con Illumina il pannello quando tocco un blocco attivato. Altrimenti il tocco e Avvia aprono un'anteprima."
+      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista nella tua coda e mostra in anteprima il blocco toccato. Il pannello tiene il suo blocco finché non scegli Illumina il pannello."
     },
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",

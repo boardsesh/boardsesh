@@ -170,7 +170,7 @@ export function noteDriveClimbLit(): void {
 /**
  * Whether a crew forming carries driving into it (#7113 QA, Marco: keep
  * driving). A climber who drives solo keeps driving when a crew forms: a live
- * drive (from a swipe, a press or the action) simply goes on, since only a
+ * drive (from a swipe, Put on board or the action) simply goes on, since only a
  * change of session ends one. The other way to drive solo, Light the board as
  * I swipe with no stop, is a setting that a crew doesn't honour (swipes there
  * open previews), so it turns into a live drive the moment the crew forms. Not

@@ -126,12 +126,22 @@ flat amber fallback; the label still says what the next press does.
   relay, so a press on You are driving the wall never disconnects. Solo with
   Light the board as I swipe on, the stop holds until the link drops, or until the climber presses to put a climb
   up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
-- **A tap puts one climb up.** Connect, Put on board and re-light use the existing one-climb
-  runner. They never promote a tap to a live drive. Solo with **Light the board as I swipe**
-  explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved opt-in
-  applies again. With it off, later selections stay previews. Swipe or the accessible
-  **Light every climb** command starts the live drive.
-- **A MoonBoard press still drives.** Most MoonBoard controllers don't like phones switching,
+- **A tap opens a keep-lighting window (2.7).** Connect, Put on board and re-light put the
+  climb up with the existing one-climb runner. Put on board then lights every climb you pick
+  until the window ends: 45 s after the last lit climb by default, renewed by each lit climb
+  (Settings › Board: Off, 30 s, 45 s, 1 min or Until I stop). The window starts on the wall's
+  lit confirm, not on the press, and its shown end is clamped to the auto-disconnect deadline.
+  A rest or a long look drops back to previews. In a crew the window needs **In a session too**
+  (on by default). A swipe or the accessible **Light every climb** command starts open-ended
+  Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
+  swipe** explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved
+  opt-in applies again.
+- **The three looks of the wall button.** Plain tonal: a preview, or a single lit climb.
+  Plain with a violet drain bar and an m:ss clock ("Each pick lights · 0:38"): the window.
+  A tap on it stops the window and keeps the link. Frost: open-ended driving only, "You are
+  driving the wall". A window never frosts. The top bar's second line says "Preview · not on
+  the wall" for a preview while this phone holds the board.
+- **A MoonBoard press always drives (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop).** Most MoonBoard controllers don't like phones switching,
   so on a MoonBoard (`tapStartsDrive`, set from `isMoonboardBoardName`) a solo press that puts
   a climb up keeps the #7113 rule: with Light the board as I swipe off and no drive on, the
   model's `tapDrive` is `start`, and the press starts a live drive through the swipe's runner

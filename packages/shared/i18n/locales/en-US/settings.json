@@ -491,9 +491,9 @@
       "onSwipeLabel": "Light the board as I swipe",
       "onSwipeDescription": "Only once a climb is on the wall. A preview never lights the board as you swipe.",
       "onTapLabel": "Light the board when I tap a climb",
-      "onTapDescription": "A tap in any list puts the climb on the wall. Off, the tap opens a preview.",
+      "onTapDescription": "Every tap in a list lights the climb, with no time limit. Off, a tap opens a preview.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
-      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. Only while Light the board when I tap a climb is on. Otherwise the tap and Play open a preview."
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list into Up next and previews the climb you tapped. The wall keeps its climb until you Put on board."
     },
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",

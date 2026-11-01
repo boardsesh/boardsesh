@@ -908,7 +908,6 @@
       "backToWall": "Zurück zum Boulder an der Wand",
       "backToCurrent": "Zurück zu meiner Wahl",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
-      "previewNotLit": "Vorschau, nicht beleuchtet",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
@@ -966,7 +965,7 @@
     "paneEmpty": {
       "title": "Wähl einen Boulder",
       "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen.",
-      "unlitHint": "Tipp einen Boulder an, um ihn am Board zu beleuchten"
+      "unlitHint": "Tipp einen Boulder an für die Vorschau"
     },
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",

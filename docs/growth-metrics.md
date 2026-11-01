@@ -443,7 +443,10 @@ with no light kit.
 Saving a climb also fires `Set Active Climb`, because the create screen puts
 the saved climb on the queue. Those carry `trigger = 'climb_saved'` and are
 left out of step 2. A commit from the Put on the wall button carries
-`trigger = 'put_on_wall'`; it is a real pick and stays in step 2. Every spray wall starts empty and the first thing anyone
+`trigger = 'put_on_wall'`; it is a real pick and stays in step 2. From 2.7
+a tap opens a preview, so `put_on_wall` is the main path by which a climber
+commits a climb (before 2.7 a tap committed it with no trigger); a step 2
+count across the 2.7 line mixes the two, so split it by app version. Every spray wall starts empty and the first thing anyone
 does on one is set a climb, so with saves counted step 2 would read "saved a
 climb" for nearly everyone and could not tell a climber who came back from one
 who did not. Next and Previous steps also fire it, with `trigger` `next`,
@@ -451,7 +454,7 @@ who did not. Next and Previous steps also fire it, with `trigger` `next`,
 In HogQL the filter is
 `coalesce(toString(properties.trigger), '') IN ('', 'put_on_wall')`: `trigger`
 is null on most climbs the climber chose and `put_on_wall` on one put up from a
-browse preview, so the filter keeps both and nothing else.
+browse preview (from 2.7, most of them), so the filter keeps both and nothing else.
 
 `boardType` on both step 2 events is the climb's own board, not the board the
 app has active. A spray climb opened from a shared link by someone whose active
@@ -1214,6 +1217,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
 | community-monthly-stats first run (fill in the date when it ships) | `Community Monthly Summary` and `Community Monthly Rank` start. The first Monday run sends the 12 months before it as well, so those months appear on one day; read them by their own `month`, not by when they arrived |
 | 2026-10-19 (crew browse UI, #4281) | `Set Active Climb` gains `trigger = 'put_on_wall'` when a climber commits a pinned preview on purpose: the Put on the wall (or Set active) button, or the lightbulb relaying it. It is a real pick: filters on `trigger != 'climb_saved'` count it unchanged. Crew commits are the ones with `participantCount >= 2` |
+| 2.7 preview-first (fill in the date when it ships) | A tap on a climb opens a preview instead of lighting it, so `Set Active Climb` with `trigger = 'put_on_wall'` becomes the main commit path (Put on board, then the climbs picked in its 45 s window or a MoonBoard drive). Before 2.7 most picks carried a null `trigger`. Counts of climbs picked that keep null and `put_on_wall` stay comparable; a `put_on_wall`-only count jumps and must not be read as growth. Split by app version |
 | Next / Previous telemetry OTA (fill in the date when it ships) | `Set Active Climb` starts firing on every Next and Previous, with `trigger` `next`, `previous` or `rest_timer`. Its volume jumps by about one event per step. A count of climbs picked must keep only `trigger` null or `put_on_wall`; a filter on `trigger != 'climb_saved'` alone counts the steps too from this date |
 | #4415 web deploy (fill in the date when it ships) | `Board QR Scanned` starts on `/b/{slug}/{angle}/list`: kiosk and board-poster scans had no count before it. `Gym QR Scanned` starts waiting for consent to settle; before this it fired too early and was dropped, so its earlier counts are near zero for that reason, not for lack of scans. Store buttons on a Spraywall page start sending `placement: 'spray-wall'`, and a `/b` list page reached by a scan adds the medium to the link id (`spray-wall.board`, `climb-list.kiosk`) |
 | #6940 OTA (fill in the date when it ships) | Mobile starts firing `Queue Navigation` (Next and Previous in the player and the MiniPlayer, with `method`, `surface` and `outcome`) and `Queue Sheet Opened`. www's `Queue Navigation` stopped with W-16; read mobile's on `surface`, which www never sent |

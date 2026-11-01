@@ -19,8 +19,9 @@ name: help clip - browse climbs in the play drawer
 # One swipe illustrates browsing; it is not a limit on the list's swipe track.
 #
 # Before recording, stop any live drive by tapping You are driving the wall,
-# then turn off Light the board when I tap a climb and Light the board as I swipe
-# in Settings > Board. Driving overrides those settings, so both checks matter.
+# then leave Light the board when I tap a climb and Light the board as I swipe
+# off in Settings > Board (the 2.7 default, so a tap previews). Driving and the
+# Put on board window override those settings, so wait out any 45 s window too.
 # Keep the fake board connected: Disconnect board is the stopped state, not a
 # button this flow presses. It remains frosted after stopping; check the label
 # instead of treating frost as driving. Do not use screenshotDrive=1 for this take.

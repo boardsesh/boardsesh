@@ -77,10 +77,12 @@ label, frosting and climb change together.
 `screenshotDrive=1` is for a driving **still**; it starts driving before the
 gesture and would skip the lesson this clip teaches.
 
-For `preview-browsing`, stop driving first and turn off both tap and swipe
-lighting in Settings → Board. Tap a row to establish its list track, then swipe
-the board once. Show the back chip and Put on board without pressing it. A
-bare long-press Preview can have no swipe track; do not use it for this take.
+For `preview-browsing`, stop driving first, wait out any 45 s Put on board
+window, and leave both tap and swipe lighting off in Settings → Board (the 2.7
+default). Tap a row to establish its list track, then swipe the board once.
+Show the back chip and Put on board without pressing it. A standalone preview
+(a deep link or the Home new-climb card) can have no swipe track; do not use
+one for this take.
 
 The release wall-control captures use source `3c4fd3702d` on 2026-10-31, in the
 dedicated simulator `Boardsesh Release Help 20261031`, with Metro on port 8191.

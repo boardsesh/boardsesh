@@ -13,6 +13,12 @@ name: help clip - Start playlist? confirm
 # Seed the queue with a few climbs before recording: on the Climbs tab, swipe
 # two or three rows left-to-right.
 #
+# Switches this take needs (Settings > Board): turn ON Tapping a playlist loads
+# it into my queue, and leave Light the board when I tap a climb OFF (the 2.7
+# default). The tap then loads the list into Up next, keeps the wall's climb and
+# previews the tapped one. With the playlist switch off the tap just previews and
+# the sheet never appears.
+#
 # Coordinates, not selectors: the playlist cards, the climb rows and the sheet's
 # buttons are all pressables this RN Fabric build does not expose to Maestro.
 #   48%,60%  the "Five Stars" card in the FOR YOU row on Discover

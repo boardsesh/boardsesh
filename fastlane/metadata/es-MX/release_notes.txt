@@ -2,7 +2,7 @@ Boardsesh ya está disponible en italiano.
 
 SABE CUÁNDO ESTÁS ENCENDIENDO EL PLAFÓN
 
-“Poner en el plafón” conecta y enciende tu bloque. Lee el botón esmerilado del reproductor: “Estás al mando del plafón” significa que cada bloque elegido se enciende. Deslízalo a la izquierda para empezar; toca “Estás al mando del plafón” para parar y navegar sin desconectarte.
+Tocar un bloque lo muestra sin encenderlo. “Poner en el plafón” lo enciende, y los bloques que elijas en los siguientes 45 segundos también. Un MoonBoard sigue encendiendo hasta que pares. Desliza el botón esmerilado a la izquierda para seguir al mando; toca “Estás al mando del plafón” para parar sin desconectarte.
 
 iPad y iPhone Duo: más espacio para el plafón
 

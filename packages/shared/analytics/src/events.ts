@@ -125,7 +125,7 @@ export const SHARED_EVENTS = {
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
   // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
   // climb included), inSession, startedBy: 'swipe' (the wall button's swipe) |
-  // 'tap' (a solo press that puts a climb up, #7113 QA) | 'action' (the
+  // 'tap' (Put on board: a keep-lighting window, or a MoonBoard drive) | 'action' (the
   // screen-reader action or the board sheet's row) | 'solo_carry' (a solo
   // climber driving by Light the board as I swipe when a crew formed) }.
   // Fired once per drive by the drive-mode store.

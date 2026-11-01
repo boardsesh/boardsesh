@@ -456,9 +456,9 @@ export function PlayCore({
   // so the ≤1/2s session-stats push and every presence delta cost the drawer
   // nothing — it flips only across the solo ↔ crew boundary.
   const isSharedSession = useIsSharedSession();
-  // The roster's answer, whatever the browse rollout flag says: solo, a press
-  // that puts the climb up ends in driving (#7113 QA); in a crew it stays a
-  // one-off put. A crewmate's arrival dwell counts as solo until the crew forms;
+  // The roster's answer, whatever the browse rollout flag says: solo, Put on
+  // board opens a keep-lighting window (a MoonBoard drives); in a crew it stays a
+  // one-off put unless "In a session too" is on. A crewmate's arrival dwell counts as solo until the crew forms;
   // when it forms, solo driving carries into it (`DriveModeWatcher`).
   const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
@@ -1871,8 +1871,8 @@ export function PlayCore({
   wallControlForDriveRef.current = wallControl;
   const startDriving = useCallback(
     (startedBy: DriveModeStartedBy): DriveStartOutcome => {
-      // Behind the swipe's flag: a solo press asks for a drive too (`tapDrive`),
-      // and gets the plain light without one.
+      // Behind the swipe's flag: Put on board asks for a window or drive too
+      // (`tapDrive`), and gets the plain light without one.
       if (!swipeToDriveEnabled) return 'unavailable';
       const committing = commitBarModel.mode === 'commit';
       const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);

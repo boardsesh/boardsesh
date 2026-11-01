@@ -146,8 +146,8 @@ export type DriveModeEndReason =
   | 'signed_out';
 
 /**
- * What started the drive (#7113): the wall button's swipe, a solo press that
- * puts a climb up, the screen-reader action or the board sheet's row, or a solo
+ * What started the drive (#7113): the wall button's swipe, a Put on board press
+ * that opens a keep-lighting window (or drives a MoonBoard), the screen-reader action or the board sheet's row, or a solo
  * climber driving by Light the board as I swipe when a crew formed.
  */
 export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry';

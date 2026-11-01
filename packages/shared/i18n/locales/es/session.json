@@ -908,7 +908,6 @@
       "backToWall": "Volver al bloque del muro",
       "backToCurrent": "Volver a mi elección",
       "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
-      "previewNotLit": "Vista previa, sin encender",
       "onlyYouSeeThis": "Solo tú lo ves",
       "onlyYouSeeThisWallOn": "Solo tú lo ves · en el muro: {{name}}",
       "commitOverride": {
@@ -966,7 +965,7 @@
     "paneEmpty": {
       "title": "Elige un bloque",
       "subtitle": "Toca un bloque para verlo aquí.",
-      "unlitHint": "Toca un bloque para encenderlo"
+      "unlitHint": "Toca un bloque para verlo en vista previa"
     },
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",

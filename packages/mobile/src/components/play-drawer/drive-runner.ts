@@ -11,7 +11,7 @@ export type StartDriveInput = {
   wallHeldByOtherUser: boolean;
   /** The party session, or null solo. A drive ends when it changes. */
   sessionId: string | null;
-  /** What started it: the swipe, a solo press, or the screen-reader action / sheet row. */
+  /** What started it: the swipe, Put on board (a window or MoonBoard drive), or the screen-reader action / sheet row. */
   startedBy: DriveModeStartedBy;
   /** The climb on screen is a preview: it goes up first. */
   committing: boolean;

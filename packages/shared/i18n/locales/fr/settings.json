@@ -491,9 +491,9 @@
       "onSwipeLabel": "Allumer la board quand je fais défiler",
       "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
       "onTapLabel": "Allumer la board quand je touche un bloc",
-      "onTapDescription": "Toucher un bloc dans une liste l'allume au mur. Désactivé, le toucher ouvre un aperçu.",
+      "onTapDescription": "Chaque toucher dans une liste allume le bloc, sans limite de temps. Désactivé, le toucher ouvre un aperçu.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Seulement si Allumer la board quand je touche un bloc est activé. Sinon, le toucher et Lecture ouvrent un aperçu."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste dans votre file et ouvre en aperçu le bloc touché. La board garde son bloc jusqu'à Allumer sur la board."
     },
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",
