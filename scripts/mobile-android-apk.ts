@@ -54,10 +54,12 @@ export function androidApkAbi(candidate: unknown = DEFAULT_ABI): AndroidApkAbi {
 }
 
 export function parseApkAbi(args: readonly string[]): AndroidApkAbi {
-  const index = args.indexOf('--abi');
+  const index = args.findIndex((argument) => argument === '--abi' || argument.startsWith('--abi='));
   if (index < 0) return DEFAULT_ABI;
-  if (args[index + 1] === undefined) throw new Error('--abi requires x86_64 or arm64-v8a');
-  return androidApkAbi(args[index + 1]);
+  const argument = args[index];
+  const abi = argument === '--abi' ? args[index + 1] : argument.slice('--abi='.length);
+  if (!abi || abi.startsWith('--')) throw new Error('--abi requires x86_64 or arm64-v8a');
+  return androidApkAbi(abi);
 }
 
 export function localApkCacheKey(nativeHash: string, abi: AndroidApkAbi): string {
@@ -167,7 +169,8 @@ export function apkListingHasAbi(listing: string, abi: AndroidApkAbi): boolean {
 
 function apkHasAbi(apkPath: string, abi: AndroidApkAbi): boolean {
   const listing = runCapture('unzip', ['-Z1', apkPath]);
-  if (listing.status !== 0) return false;
+  if (listing.status !== 0)
+    throw new Error(`Cannot list APK archive ${apkPath}; verify unzip is on PATH and the APK is readable`);
   return apkListingHasAbi(listing.stdout, abi);
 }
 

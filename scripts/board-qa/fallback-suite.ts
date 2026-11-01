@@ -23,6 +23,7 @@ const label = (climb: CatalogClimb) => `.*${climb.name.replace(/[.*+?^${}()|[\]\
 /** Separate foreground-only schedule. The Android participant is an emulator, never a BLE holder. */
 export class SimulatorPeerSuite {
   private sessionId = '';
+  private sessionMayExist = false;
   private runtimes = new Map<Role, string>();
   private leased = false;
   constructor(
@@ -281,12 +282,16 @@ export class SimulatorPeerSuite {
     );
   }
   private async caseBoundary(): Promise<void> {
-    if (this.sessionId || (await this.fixture.request('status')).boards.some((board) => board.connections !== 0))
+    if (
+      this.sessionId ||
+      this.sessionMayExist ||
+      (await this.fixture.request('status')).boards.some((board) => board.connections !== 0)
+    )
       throw new QaFailure('Case boundary requires ended QA sessions and zero physical links', 'blocked');
     // A normal Record route must also show no retained session from another run.
     this.evidence.save(
       'inspect-record.yaml',
-      'appId: ${APP_ID}\n---\n- openLink: ${RECORD_URL}\n- extendedWaitUntil:\n    visible:\n      id: session-start\n    timeout: 10000\n- assertNotVisible:\n    id: session-active-.+\n',
+      'appId: ${APP_ID}\n---\n- openLink: ${RECORD_URL}\n- extendedWaitUntil:\n    visible:\n      id: session-start\n    timeout: 10000\n- assertNotVisible:\n    id: session-presence-.+\n',
     );
     try {
       await this.phones.ios.flow(join(this.evidence.directory, 'inspect-record.yaml'), {
@@ -469,8 +474,10 @@ export class SimulatorPeerSuite {
           await this.caseBoundary();
           await this.open('ios', board, board.catalog[0]);
           await this.send('ios', board, board.catalog[0], 'connect', { connect: true });
+          this.sessionMayExist = true;
           await this.phones.ios.flow('start-session', { RECORD_URL: this.url('ios', '/record') });
-          this.sessionId = (await this.phones.ios.hierarchy()).match(/session-active-([0-9a-f-]{36})/i)?.[1] ?? '';
+          this.sessionId =
+            (await this.phones.ios.hierarchy()).match(/session-presence-([0-9a-f-]{36})-[0-9]+/i)?.[1] ?? '';
           if (!this.sessionId) throw new QaFailure('Real session ID absent after creation');
           const join = () =>
             this.phone('android').flow('join-session', {
@@ -513,6 +520,7 @@ export class SimulatorPeerSuite {
             'session ended durably',
           );
           this.sessionId = '';
+          this.sessionMayExist = false;
           await this.open('ios', board, board.catalog[1]);
           await this.disconnect(board);
         },
@@ -536,7 +544,11 @@ export class SimulatorPeerSuite {
     }
     this.evidence.save('recovery.json', {
       retainedSessionId: this.sessionId || null,
-      note: this.sessionId ? 'End this QA session normally on its creator iPhone.' : 'No retained QA session.',
+      sessionMayExist: this.sessionMayExist,
+      note:
+        this.sessionId || this.sessionMayExist
+          ? 'End this QA session normally on its creator iPhone.'
+          : 'No retained QA session.',
     });
   }
   async failureArtifacts(): Promise<void> {

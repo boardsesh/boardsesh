@@ -4,6 +4,8 @@
 # ///
 """One USB owner. Keep this filename distinct from the pyserial module."""
 import argparse
+import fcntl
+import termios
 import base64
 import json
 import os
@@ -88,40 +90,66 @@ def main():
         trace.close()
 
 
+class TransportOutput:
+    def __init__(self):
+        self.lock = threading.Lock()
+
+    def emit(self, message):
+        with self.lock:
+            sys.stdout.write(message + "\n")
+            sys.stdout.flush()
+
+
+def receive(connection, trace, output, terminate=os._exit):
+    pending = bytearray()
+    try:
+        while connection.is_open:
+            received = connection.read(connection.in_waiting or 1)
+            trace.record("rx", received)
+            pending.extend(received)
+            while b"\n" in pending:
+                line, _, rest = pending.partition(b"\n")
+                pending[:] = rest
+                if line.startswith(b"BOARDSESH_QA "):
+                    output.emit(line[13:].decode("utf-8"))
+            if len(pending) > 512_000:
+                raise ValueError("USB line exceeds limit")
+    except Exception as error:
+        # Report only a stable category: serial exceptions may contain private paths.
+        category = "invalid UTF-8 reply" if isinstance(error, UnicodeDecodeError) else "receiver failed"
+        try:
+            output.emit(json.dumps({"transportError": category}))
+        finally:
+            terminate(1)
+
+
 def run_transport(port, trace):
-    with serial.Serial(port=None, baudrate=115200, timeout=0.25, write_timeout=3) as connection:
-        # Preserve native USB state: deasserting DTR can reset this board.
-        connection.dtr = True
-        connection.rts = False
-        connection.port = port
-        connection.open()
-
-        def receive():
-            pending = bytearray()
-            while connection.is_open:
-                received = connection.read(connection.in_waiting or 1)
-                trace.record("rx", received)
-                pending.extend(received)
-                while b"\n" in pending:
-                    line, _, rest = pending.partition(b"\n")
-                    pending[:] = rest
-                    if line.startswith(b"BOARDSESH_QA "):
-                        print(line[13:].decode("utf-8"), flush=True)
-                if len(pending) > 512_000:
-                    pending.clear()
-
-        threading.Thread(target=receive, daemon=True).start()
-        print(json.dumps({"transportReady": True}), flush=True)
-        for line in sys.stdin:
-            request = json.loads(line)
-            if not isinstance(request, dict):
-                raise ValueError("Expected a QA request object")
-            encoded = json.dumps(request, separators=(",", ":"))
-            if len(encoded) > 512:
-                raise ValueError("QA request too large")
-            wire_request = ("\nfixture-qa " + encoded + "\n").encode("utf-8")
-            trace.record("tx", wire_request)
-            connection.write(wire_request)
+    output = TransportOutput()
+    try:
+        with serial.Serial(port=None, baudrate=115200, timeout=0.25, write_timeout=3, exclusive=True) as connection:
+            # Preserve native USB state: deasserting DTR can reset this board.
+            connection.dtr = True
+            connection.rts = False
+            connection.port = port
+            connection.open()
+            # pyserial's flock excludes cooperating owners; TIOCEXCL also rejects
+            # subsequent ordinary opens by terminal monitors on macOS/Linux.
+            fcntl.ioctl(connection.fileno(), termios.TIOCEXCL)
+            output.emit(json.dumps({"transportReady": True}))
+            threading.Thread(target=receive, args=(connection, trace, output), daemon=True).start()
+            for line in sys.stdin:
+                request = json.loads(line)
+                if not isinstance(request, dict):
+                    raise ValueError("Expected a QA request object")
+                encoded = json.dumps(request, separators=(",", ":"))
+                if len(encoded) > 512:
+                    raise ValueError("QA request too large")
+                wire_request = ("\nfixture-qa " + encoded + "\n").encode("utf-8")
+                trace.record("tx", wire_request)
+                connection.write(wire_request)
+    except Exception:
+        output.emit(json.dumps({"transportError": "port unavailable, busy, or transport I/O failed"}))
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

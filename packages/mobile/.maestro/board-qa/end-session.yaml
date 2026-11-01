@@ -17,6 +17,8 @@ name: End only the session created by this QA run
     notVisible:
       id: session-presence-${SESSION_ID}-[1-9][0-9]*
     timeout: 30000
+- runFlow:
+    file: dismiss-session-summary.yaml
 - openLink: ${RECORD_URL}
 - extendedWaitUntil:
     visible:

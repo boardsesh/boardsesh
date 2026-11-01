@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Socket } from 'node:net';
 import { Kind, parse } from 'graphql';
 import { getAuroraBluetoothPacket } from '../../packages/shared/ble-protocol/src/aurora';
@@ -6,7 +7,7 @@ import { getMoonboardBluetoothPacket } from '../../packages/shared/ble-protocol/
 import { getLedPlacements } from '../../packages/board-constants/src/led-placements';
 import { KEEP_ALIVE_MS } from '../../packages/shared/graphql-client/src/constants';
 import { record, string, type Board, type CatalogClimb, type Led, type QaConfig } from './config';
-import { canonical, Evidence, QaFailure } from './evidence';
+import { canonical, Evidence, QaFailure, requireRunning, runAbortSignal } from './evidence';
 
 const CLIMB_FIELDS = 'climbUuid name angle mirrored sentByUserId seq sentAt';
 export type Presence = {
@@ -151,6 +152,47 @@ export class Backend {
   readonly users = new Map<string, string>();
   readonly profiles = new Map<string, { displayName: string; avatarUrl: string | null }>();
   private tokens = new Map<string, string>();
+  private presenceReads: Promise<void> = Promise.resolve();
+  private nextPresenceReadAt = 0;
+  // All boards share the user's per-operation buckets. Leave half of the
+  // 60/min budget for the phone, and never reuse a cached confirmation.
+  private async budgetPresenceRead(): Promise<void> {
+    const reserved = this.presenceReads.then(async () => {
+      requireRunning();
+      this.requireHealthyObserver();
+      const waitMs = this.nextPresenceReadAt - performance.now();
+      if (waitMs > 0) {
+        try {
+          await delay(waitMs, undefined, { signal: runAbortSignal() });
+        } catch (error) {
+          requireRunning();
+          throw error;
+        }
+      }
+      requireRunning();
+      this.requireHealthyObserver();
+      this.nextPresenceReadAt = performance.now() + 2_000;
+    });
+    this.presenceReads = reserved.catch(() => {});
+    await reserved;
+  }
+  private graphqlFailure(errors: unknown): QaFailure {
+    const details = (Array.isArray(errors) ? errors : []).map((candidate) => {
+      const error = record(candidate);
+      const extensions = error.extensions ? record(error.extensions) : {};
+      return {
+        message: typeof error.message === 'string' ? this.evidence.redact(error.message).slice(0, 512) : null,
+        code: typeof extensions.code === 'string' ? extensions.code : null,
+        operation: typeof extensions.operation === 'string' ? extensions.operation : null,
+        retryAfterSeconds: typeof extensions.retryAfterSeconds === 'number' ? extensions.retryAfterSeconds : null,
+      };
+    });
+    const rateLimited = details.some((error) => error.code === 'RATE_LIMITED');
+    return new QaFailure(
+      `Backend observer GraphQL ${rateLimited ? 'RATE_LIMITED' : 'request rejected'}: ${this.evidence.redact(JSON.stringify(details))}`,
+      rateLimited ? 'blocked' : 'infrastructure',
+    );
+  }
   private socket?: WebSocket;
   private socketError?: QaFailure;
   private observerFailureHandler?: (error: QaFailure) => void;
@@ -199,13 +241,19 @@ export class Backend {
       signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) throw new QaFailure(`Test account authentication rejected (HTTP ${response.status})`, 'blocked');
-    const token = string(record(await response.json()).jwt);
+    const credentials = record(await response.json());
+    // /auth/native/revoke signs out the WHOLE account and disables its push
+    // devices. Never call it for an observer sharing the phones' accounts.
+    if (typeof credentials.refreshToken === 'string') this.evidence.secret(credentials.refreshToken);
+    const token = string(credentials.jwt);
     this.evidence.secret(token);
     this.tokens.set(email, token);
     const profile = record((await this.query(QA_QUERIES.profile, {}, email)).profile);
+    if (typeof profile.displayName !== 'string' || !profile.displayName.trim())
+      throw new QaFailure('QA account requires a display name before running session identity checks', 'blocked');
     this.users.set(email, string(profile.id));
     this.profiles.set(email, {
-      displayName: typeof profile.displayName === 'string' && profile.displayName ? profile.displayName : email,
+      displayName: profile.displayName,
       avatarUrl: typeof profile.avatarUrl === 'string' ? profile.avatarUrl : null,
     });
   }
@@ -215,6 +263,7 @@ export class Backend {
     email = this.config.phones.ios.email,
   ): Promise<Record<string, unknown>> {
     requireReadOnlyQuery(query);
+    if (query === QA_QUERIES.wall) await this.budgetPresenceRead();
     const response = await fetch(this.config.backendUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', Authorization: `Bearer ${this.tokens.get(email) ?? ''}` },
@@ -223,11 +272,7 @@ export class Backend {
     });
     if (!response.ok) throw new QaFailure(`Backend observer HTTP ${response.status}`, 'infrastructure');
     const payload = record(await response.json());
-    if (payload.errors)
-      throw new QaFailure(
-        'Backend observer GraphQL request rejected; verify deployed schema and account access',
-        'infrastructure',
-      );
+    if (payload.errors) throw this.graphqlFailure(payload.errors);
     return record(payload.data);
   }
   async catalog(): Promise<Board[]> {
@@ -456,7 +501,7 @@ export class Backend {
           });
         } else if (message.type === 'next') {
           const payload = record(message.payload);
-          if (payload.errors) throw new Error('Board subscription rejected');
+          if (payload.errors) throw this.graphqlFailure(payload.errors);
           if (!boards.some((board) => board.uuid === message.id))
             throw new Error('Unexpected board subscription identity');
           const event = record(record(payload.data).boardNowPlaying);
@@ -472,12 +517,16 @@ export class Backend {
             throw new Error('Unknown board event');
           this.events.push({ boardUuid: string(message.id), event });
           this.evidence.event('board-subscription', { boardUuid: message.id, event });
-        } else if (message.type === 'error' || message.type === 'complete')
-          throw new Error('Board subscription ended unexpectedly');
-      } catch {
+        } else if (message.type === 'error') throw this.graphqlFailure(message.payload);
+        else if (message.type === 'complete') throw new Error('Board subscription ended unexpectedly');
+      } catch (error) {
         lifecycle('protocol-failure');
         this.clearObserverTimers();
-        this.failObserver(new QaFailure('Invalid or rejected board subscription evidence', 'infrastructure'));
+        this.failObserver(
+          error instanceof QaFailure
+            ? error
+            : new QaFailure('Invalid or rejected board subscription evidence', 'infrastructure'),
+        );
       }
     });
     await new Promise<void>((resolveAck, reject) => {
@@ -564,7 +613,6 @@ export class Backend {
         sendMessage('connection_init', {
           type: 'connection_init',
           payload: {
-            authToken: this.tokens.get(this.config.phones.ios.email),
             clientIdentity: 'boardsesh-local-qa-observer',
           },
         });
@@ -596,6 +644,7 @@ export class Backend {
     this.ack = undefined;
     this.clearObserverTimers();
     this.socket?.close(1000, 'QA observer finished');
+    this.tokens.clear();
   }
   private clearObserverTimers(): void {
     if (this.observerKeepalive) clearInterval(this.observerKeepalive);

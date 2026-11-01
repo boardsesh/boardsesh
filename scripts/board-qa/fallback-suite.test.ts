@@ -300,7 +300,7 @@ function harness(fault?: Fault, peerEnabled = true) {
         .fn<Driver['hierarchy']>()
         .mockImplementation(
           async () =>
-            `app-runtime-${fault === 'peer-release' && role === 'android' ? 'release' : 'metro'}-native-test wall-control-lit-self-${driving ? 'driving' : 'idle'} ${sessionActive ? `session-active-${sessionId}` : ''}`,
+            `app-runtime-${fault === 'peer-release' && role === 'android' ? 'release' : 'metro'}-native-test wall-control-lit-self-${driving ? 'driving' : 'idle'} ${sessionActive ? `session-presence-${sessionId}-1` : ''}`,
         ),
       background: vi.fn<Driver['background']>().mockResolvedValue(undefined),
       foreground: vi.fn<Driver['foreground']>().mockResolvedValue(undefined),
@@ -726,7 +726,7 @@ describe('physical iPhone with native emulator peer schedule', () => {
     expect(generated).toEqual([
       { openLink: 'com.boardsesh.app://record' },
       { extendedWaitUntil: { visible: { id: 'session-start' }, timeout: 10000 } },
-      { assertNotVisible: { id: 'session-active-.+' } },
+      { assertNotVisible: { id: 'session-presence-.+' } },
     ]);
   });
   it('refuses rejoin when Leave never removes the peer from the live roster', async () => {
@@ -746,4 +746,15 @@ describe('physical iPhone with native emulator peer schedule', () => {
     expect(await finish(current.suite.solo())).toMatchObject({ kind: 'blocked' });
     expect(current.phones.ios.restart).not.toHaveBeenCalled();
   });
+});
+
+it('retains the real session ID when durable End confirmation times out', async () => {
+  const current = harness();
+  current.backend.query.mockResolvedValue({ sessionStatus: 'active' });
+  expect(await finish(current.suite.sessions())).toMatchObject({
+    kind: 'failed',
+    message: 'Deadline exceeded: session ended durably',
+  });
+  expect(current.suite['sessionId']).toBe('11111111-2222-4333-8444-555555555555');
+  expect(current.suite['sessionMayExist']).toBe(true);
 });

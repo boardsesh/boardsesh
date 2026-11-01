@@ -236,8 +236,13 @@ describe('physical and emulator APK architecture', () => {
     expect(parseApkAbi([])).toBe('x86_64');
     expect(androidApkAbi()).toBe('x86_64');
     expect(parseApkAbi(['--require-fresh', '--abi', 'arm64-v8a'])).toBe('arm64-v8a');
+    expect(parseApkAbi(['--abi=arm64-v8a'])).toBe('arm64-v8a');
+    expect(parseApkAbi(['--abi=x86_64'])).toBe('x86_64');
     expect(() => parseApkAbi(['--abi'])).toThrow('requires');
+    expect(() => parseApkAbi(['--abi='])).toThrow('requires');
+    expect(() => parseApkAbi(['--abi', '--require-fresh'])).toThrow('requires');
     expect(() => parseApkAbi(['--abi', 'armeabi-v7a'])).toThrow('must be');
+    expect(() => parseApkAbi(['--abi=armeabi-v7a'])).toThrow('must be');
   });
 
   it.each(['x86_64', 'arm64-v8a'] as const)(
@@ -274,5 +279,15 @@ describe('physical and emulator APK architecture', () => {
     });
     expect(runCapture).toHaveBeenCalledWith('unzip', ['-Z1', filename]);
     expect(() => resolveAndroidApk({ appPath: filename })).toThrow('no x86_64');
+  });
+
+  it.each([1, 127])('reports an unreadable APK archive separately from missing libraries (exit %s)', (status) => {
+    const root = mkdtempSync(join(tmpdir(), 'boardsesh-apk-list-test-'));
+    temporaryRoots.push(root);
+    const filename = join(root, 'explicit.apk');
+    writeFileSync(filename, 'unreadable archive or unavailable unzip');
+    vi.mocked(runCapture).mockReturnValue({ status, stdout: '', stderr: 'archive listing failed' });
+    expect(() => resolveAndroidApk({ appPath: filename })).toThrow('Cannot list APK archive');
+    expect(() => resolveAndroidApk({ appPath: filename })).not.toThrow('no x86_64');
   });
 });

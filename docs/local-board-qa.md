@@ -6,6 +6,10 @@ The scenarios come from [release QA #7010](https://github.com/boardsesh/boardses
 
 ## Prepare once
 
+Install `uv` and Python 3.10 or newer (`python3`) on PATH before setup. The USB
+transport runs through `uv run --script` with pinned pyserial. Maestro, adb and the
+pinned iPhone driver are separate requirements below.
+
 1. Connect and unlock both phones over USB. Enable development/trust access, grant Bluetooth/Nearby devices access and Android board notifications, and sign in normally as the two QA accounts. The runner refuses an unexpected account and never signs it out, clears storage, or guesses a PIN. Use app builds containing the new test identifiers; older store builds fail the selector checks.
 2. Stage the pinned physical-iPhone driver with `vp run qa:boards:ios-driver -- stage SOURCE STAGE IPHONE_UDID TEAM_ID`. Run the exact build command it prints, then `vp run qa:boards:ios-driver -- prepare-launch STAGE`. Run both returned launch and USB-forward commands in separate terminals. The standard-library USB helper needs no `iproxy` installation. The runner validates its device process and refuses an existing WDA session. Standard Maestro cannot control physical iPhones; Android uses the installed Maestro CLI.
 3. Back up the ESP32 flash before changing firmware. Build and upload `waveshare-amoled-gym` using the pioarduino Core version supported by its platform; retain its partition layout, gym key, WiFi settings and asset cache. Do not erase flash. USB diagnostics must report QA schema 1 and the three production QA board UUIDs.
@@ -32,7 +36,15 @@ For a physical Android build, use `vp run mobile:android-apk -- --require-fresh 
 
 `solo` runs six single-board cases followed by six cross-board cases. `mixed` runs only those six cross-board cases, making an affected-scope retry explicit. `sessions` runs six shared-session cases. Each scope covers all three board families with each platform taking a turn as holder; `all` retains all eighteen cases. They require normal English UI for native End/Leave labels. Each board has a real 65-second membership dwell before durable-history assertions. Foreground delivery has a 30-second completion deadline; supported background delivery has 60 seconds. These deadlines are completion bounds, not latency targets.
 
-Before each independent cross-board or shared-session case, the runner requires zero fixture links and a visibly inactive Record screen, then restarts the relevant app and verifies the same account/runtime. It rechecks zero links immediately before termination. This bounds accumulated native navigation without restarting within source → target → Previous continuity or an active session.
+Readiness, picker dismissal and the End recap use host-supplied labels. Override
+`phones.ios.labels` or `phones.android.labels` with `HOME_LABEL`, `CLIMBS_LABEL`,
+`TAB_BAR_LABEL`, `CANCEL_LABEL` and `SESSION_SUMMARY_LABEL` as needed (defaults:
+Home, Climbs, Tab Bar, Cancel and Session Summary). This supports a different
+system tab-bar locale independently of the app. The complete suite still has
+an English app baseline for End/Leave, climb actions, history and notification
+controls; these overrides do not claim a fully localized matrix.
+
+Before every independent single-board, cross-board or shared-session case, the runner requires zero fixture links and a visibly inactive Record screen, then restarts the relevant app and verifies the same account/runtime. It rechecks zero links immediately before termination. This bounds accumulated native navigation without restarting within source → target → Previous continuity or an active session.
 
 The first product or infrastructure failure stops dependent scenarios so leftover state cannot produce misleading passes. Unrun scenarios are not passes. The report distinguishes `failed`, `blocked`, and `infrastructure`; known bugs are not silently skipped. Exit code 1 indicates a test or infrastructure failure. A driver endpoint disappearing does not establish an app crash.
 
@@ -78,7 +90,17 @@ MoonBoard multi-chunk tests require more than one received write. Diagnostic col
 
 Shared-session UI gates use the visible climbing-count Text, whose identifier binds the actual session UUID and deduplicated participant count. Native avatar identifiers and backend roster/profile checks independently verify identities. The older root session marker is retained as metadata; a hierarchy entry alone is not proof that presence is visible. Use a compatible PR preview containing these identifiers before running shared-session cases.
 
-The passive observer only queries/subscribes. It never joins the crew, claims a wall, writes presence, or logs a tick. Histories are checked relative to their starting sequences; existing records are retained. No climbing activity is invented through direct backend mutations.
+The WebSocket observer subscribes anonymously, so it does not record account activity or start authenticated Kilter live-sync watching. Authenticated HTTP queries remain separate for profile, session and durable presence reads. Wall snapshots are serialized at least two seconds apart per run (at most 30 reads/minute per operation), reserving space in the shared account rate limit for the phone. Each confirmation still requires a new response, never a cached snapshot. Rate-limit failures retain the GraphQL code and retry guidance. The observer never joins the crew, claims a wall, writes presence, or logs a tick. Histories are checked relative to their starting sequences; existing records are retained. No climbing activity is invented through direct backend mutations.
+
+Authenticated GraphQL HTTP reads still count as QA account activity on the server. Anonymous WebSocket observation avoids its own activity record and authenticated Kilter live-sync watch; it does not make the entire run invisible to account analytics.
+
+QA authentication requires each account to have a stored display name; missing setup is `blocked`. Native sign-in returns account-wide refresh credentials, which are immediately marked secret and discarded. The current revoke endpoint signs out all devices for the account, so the runner does not call it during cleanup.
+
+Discarding is not server-side revocation: issued refresh tokens remain valid
+until their expiry. Safe cleanup of an individual QA login needs a future
+single-token revoke contract.
+
+Run `vp run qa:boards:test-usb` for mocked USB framing, transport and trace-redaction tests without connected devices. Firmware CI runs this unit task; the physical suite remains prohibited in CI.
 
 The observer uses the app's five-second protocol keepalive, requires the matching pong within 20 seconds, and answers native WebSocket pings. It records send completion, matching sequence/round-trip time, bounded socket counters and buffering, deadline lag, close codes/reasons and whether shutdown was locally requested. Diagnostics omit socket addresses and authentication headers. A closed connection or missing heartbeat latches the first infrastructure failure, immediately cancels this runner's pending UI commands and blocks subsequent mutations. An OS action already dispatched may finish; without the full evidence chain its output is unconfirmed. Read-only failure artifacts remain available, and cleanup releases owned resources. The observer never reconnects across a gap in the evidence.
 

@@ -12,6 +12,7 @@ export type Phone = {
   email: string;
   wdaUrl?: string;
   runnerBundleId?: string;
+  labels?: Record<string, string>;
 };
 export type ClimbFixture = string | { name: string; uuid: string };
 export type QaConfig = {
@@ -64,6 +65,10 @@ export function loadConfig(filename: string): QaConfig {
       scheme: string(phone.scheme),
       email: string(phone.email),
     };
+    if (phone.labels !== undefined)
+      parsed.labels = Object.fromEntries(
+        Object.entries(record(phone.labels)).map(([key, label]) => [key, string(label)]),
+      );
     if (role === 'ios') {
       parsed.wdaUrl = string(phone.wdaUrl);
       const origin = new URL(parsed.wdaUrl);
@@ -131,7 +136,7 @@ export const EXAMPLE_CONFIG: QaConfig = {
       id: 'YOUR_IPHONE_UDID',
       appId: 'com.boardsesh.app',
       scheme: 'com.boardsesh.app',
-      email: 'test@boardsesh.com',
+      email: 'ios-qa@example.com',
       wdaUrl: 'http://127.0.0.1:8211',
       runnerBundleId: 'com.boardsesh.boardqa.runner.xctrunner',
     },
@@ -139,7 +144,7 @@ export const EXAMPLE_CONFIG: QaConfig = {
       id: 'YOUR_ANDROID_SERIAL',
       appId: 'com.boardsesh.app.dev',
       scheme: 'com.boardsesh.app',
-      email: 'test2@boardsesh.com',
+      email: 'android-qa@example.com',
     },
   },
   credentialsFile: '.boardsesh/board-qa.credentials.json',

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { Led } from './config';
 import { record } from './config';
-import { Evidence, QaFailure } from './evidence';
+import { Evidence, QaFailure, requireRunning, runFailure } from './evidence';
 
 export type FixtureBoard = {
   uuid: string;
@@ -187,7 +187,7 @@ export function parseStatus(candidate: unknown, expected: ExpectedReply): Fixtur
   };
 }
 
-class SerialTransport implements FixtureTransport {
+export class SerialTransport implements FixtureTransport {
   private child?: ChildProcessWithoutNullStreams;
   private closing = false;
   constructor(
@@ -211,11 +211,17 @@ class SerialTransport implements FixtureTransport {
       };
       const timer = setTimeout(() => fail('USB transport did not open; check pyserial and serial ownership'), 30_000);
       child.on('error', () => fail('Cannot start USB transport (uv)'));
+      child.stdin.on('error', () => fail('USB transport input pipe failed'));
       child.on('exit', () => fail('USB transport exited'));
       child.stderr.on('data', (chunk: Buffer) => this.evidence.event('serial-transport', chunk.toString()));
       createInterface({ input: child.stdout }).on('line', (line) => {
         try {
-          if (object(JSON.parse(line) as unknown, 'transport message').transportReady === true) {
+          const message = object(JSON.parse(line) as unknown, 'transport message');
+          if (typeof message.transportError === 'string') {
+            fail(`USB transport failure: ${message.transportError}`);
+            return;
+          }
+          if (message.transportReady === true) {
             clearTimeout(timer);
             resolveReady();
             return;
@@ -228,14 +234,38 @@ class SerialTransport implements FixtureTransport {
     });
   }
   write(request: FixtureRequest): void {
-    if (!this.child || !this.child.stdin.writable)
+    if (
+      !this.child ||
+      !this.child.stdin.writable ||
+      this.child.stdin.destroyed ||
+      this.child.exitCode !== null ||
+      this.child.signalCode !== null
+    )
       throw new QaFailure('USB transport is not writable', 'infrastructure');
     this.child.stdin.write(JSON.stringify(request) + '\n');
   }
   async close(): Promise<void> {
     this.closing = true;
-    this.child?.stdin.end();
-    this.child?.kill('SIGTERM');
+    const child = this.child;
+    if (!child) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => child.kill('SIGKILL'), 2000);
+      child.once('close', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      if (child.exitCode !== null || child.signalCode !== null) {
+        clearTimeout(timer);
+        resolve();
+        return;
+      }
+      child.stdin.end();
+      child.kill('SIGTERM');
+    });
     this.child = undefined;
   }
 }
@@ -281,10 +311,10 @@ export class Fixture {
     this.opened = true;
   }
   private fail(error: Error): void {
-    this.failure = error;
+    this.failure ??= error;
     for (const waiting of this.pending.values()) {
       clearTimeout(waiting.timer);
-      waiting.reject(error);
+      waiting.reject(this.failure);
     }
     this.pending.clear();
   }
@@ -323,10 +353,19 @@ export class Fixture {
     if (observeOnly && action !== 'status') return Promise.reject(new Error('Only status may be observe-only'));
     if (action === 'drop' && (!boardUuid || !UUID.test(boardUuid)))
       return Promise.reject(new Error('Drop requires a board UUID'));
+    const requireSafeRequest = () => {
+      if (!(action === 'status' && observeOnly) && !(action === 'end' && this.owned)) requireRunning();
+    };
+    try {
+      requireSafeRequest();
+    } catch (error) {
+      return Promise.reject(error);
+    }
     const key = observeOnly ? 'observe' : 'owner';
     const existing = action === 'status' ? this.statusRequests.get(key) : undefined;
     if (existing) return existing;
     const response = this.tail.then(async () => {
+      requireSafeRequest();
       if (!this.opened || (this.closing && action !== 'end'))
         throw new QaFailure('USB transport is not open', 'infrastructure');
       if (this.failure && action !== 'end') throw this.failure;
@@ -348,11 +387,14 @@ export class Fixture {
         }, this.replyTimeoutMs);
         this.pending.set(request.requestId, { request, resolve: resolveReply, reject, timer });
         try {
+          requireSafeRequest();
           this.transport.write(request);
         } catch (error) {
           clearTimeout(timer);
           this.pending.delete(request.requestId);
-          reject(error instanceof Error ? error : new QaFailure('USB request failed', 'infrastructure'));
+          reject(
+            this.failure ?? (error instanceof Error ? error : new QaFailure('USB request failed', 'infrastructure')),
+          );
         }
       });
     });
@@ -378,7 +420,8 @@ export class Fixture {
       void this.request('status').then(
         () => this.scheduleHeartbeat(),
         (error: unknown) => {
-          this.failure = error instanceof Error ? error : new QaFailure('Fixture heartbeat failed', 'infrastructure');
+          if (error === runFailure()) return;
+          this.fail(error instanceof Error ? error : new QaFailure('Fixture heartbeat failed', 'infrastructure'));
         },
       );
     }, this.heartbeatIntervalMs);

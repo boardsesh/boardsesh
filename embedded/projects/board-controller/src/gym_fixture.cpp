@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <esp_bt.h>
 #include <esp_random.h>
+#include <esp_heap_caps.h>
 
 // NimBLE-Arduino allocates the S3 controller for one advertiser. Reserve three
 // connectable sets plus three established connections in this executable only.
@@ -22,6 +23,10 @@ extern "C" esp_err_t __wrap_esp_bt_controller_init(esp_bt_controller_config_t* c
 #include "gym/cache.h"
 #include "gym/client.h"
 #include "gym/qa_output.h"
+
+#if CORE_DEBUG_LEVEL != 0 || CONFIG_NIMBLE_CPP_LOG_LEVEL != 0 || CONFIG_BT_NIMBLE_LOG_LEVEL < 5
+#error "Gym QA console requires Arduino and NimBLE logging disabled"
+#endif
 
 #include <ArduinoJson.h>
 #include <esp_web_server.h>
@@ -213,9 +218,21 @@ bool writeQaReply(JsonDocument& response) {
     return gym_fixture::writeQaLine(Serial, failure, static_cast<size_t>(length));
 }
 
+// ArduinoJson's small pools otherwise use scarce internal SRAM even when
+// PSRAM is enabled. Fail closed on PSRAM exhaustion; never fall back to SRAM.
+class QaJsonAllocator : public ArduinoJson::Allocator {
+  public:
+    void* allocate(size_t size) override { return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+    void deallocate(void* pointer) override { heap_caps_free(pointer); }
+    void* reallocate(void* pointer, size_t size) override {
+        return heap_caps_realloc(pointer, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+};
+
 bool serialQa(const String& encoded) {
     JsonDocument request;
-    JsonDocument response;
+    QaJsonAllocator responseAllocator;
+    JsonDocument response(&responseAllocator);
     String error;
     bool success = false;
     if (deserializeJson(request, encoded)) {
@@ -235,8 +252,7 @@ bool serialQa(const String& encoded) {
             else if (action == "drop")
                 success = fixtureBle.dropQa(runId, request["boardUuid"] | "", error);
             else if (action == "status") {
-                gym_fixture::QaSnapshot heartbeat;
-                success = fixtureBle.snapshotQa(runId, heartbeat, error);
+                success = fixtureBle.renewQa(runId, error);
             } else
                 error = "Unknown QA action";
         }

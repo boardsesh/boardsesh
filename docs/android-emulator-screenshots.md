@@ -74,6 +74,12 @@ By default the tool downloads the latest `rn-android-dev-*` prerelease asset
 it carries the `x86_64` ABI. The CI dev-client APK is **universal** (`arm64-v8a` + `x86_64`)
 — see `docs/android-sideload-build.md` and `.github/workflows/android-apk-dev-client.yml`.
 
+An explicit `--app-path` APK is checked for native libraries for the selected ABI
+before installation too. `unzip` must be on PATH and the archive must be readable;
+an archive-listing failure is reported separately from a missing ABI. The APK
+resolver accepts both `--abi arm64-v8a` and `--abi=arm64-v8a` for physical phones;
+screenshot callers retain their `x86_64` default.
+
 If the download is unavailable, the APK lacks `x86_64`, or you pass `--build-local`, the
 tool builds a dev-client APK locally (`BOARDSESH_APP_VARIANT=dev` prebuild +
 `gradlew assembleDebug` for `x86_64`) and caches it by a hash of the native inputs. The

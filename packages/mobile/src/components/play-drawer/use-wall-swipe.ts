@@ -56,22 +56,22 @@ export type UseWallSwipeOptions = {
   reduceMotion: boolean;
   /** The button's measured width. */
   width: number;
-  /** A frozen frame for the stories: the frost wiped in this far, no gesture. */
+  /** A frozen frame for the stories: flat progress this far, no gesture. */
   preview?: number | null;
 };
 
 /**
- * The wall button's swipe left to drive (#7113): a pan that wipes the frost in
+ * The wall button's swipe left to drive (#7113): a pan that wipes flat progress in
  * from the trailing edge as the finger moves, all on the UI thread.
  *
  * - Commits at 55% of the width, or on a fling under −800 pt/s past 25%.
  * - A medium buzz when the drag crosses the commit point, once per crossing.
- * - Short of it, the frost springs back. Past it, it fills the width in 150 ms
+ * - Short of it, the progress springs back. Past it, it fills the width in 150 ms
  *   and holds until the drive goes live; a refusal, or a drive that ends while
  *   still arming (a failed connect), springs it back with an error buzz.
  * - `consumePanned` lets the Pressable drop the tap or hold a pan ended in, and
  *   `noteLongPress` makes a drag after a hold that already fired do nothing.
- * - The frost mounts once a drag gets going or the peek plays (`frostArmed`),
+ * - Progress mounts once a drag gets going or the peek plays (`frostArmed`),
  *   never on a plain tap, and unmounts once it is back at rest.
  */
 export function useWallSwipe({
@@ -202,7 +202,7 @@ export function useWallSwipe({
     },
   });
 
-  // A committed swipe holds the full frost until the drive lands or ends.
+  // A committed swipe holds full flat progress until the drive lands or ends.
   useEffect(() => {
     if (!committed) return undefined;
     const release = (withError: boolean) => {

@@ -232,9 +232,9 @@ function harness(remembered = false, fault?: Fault) {
         if (role === 'ios' && pendingPicker) return `ble-device-${board.uuid}`;
         if (role === 'android' && takenOver && fault === 'blank-old-ui') return '';
         const owner = presence.holder?.userId === identities[role] ? 'self' : 'none';
-        return `wall-control-lit-${owner}-${driving[role] ? 'driving' : 'idle'}`;
+        return `app-runtime-release-test wall-control-lit-${owner}-${driving[role] ? 'driving' : 'idle'}`;
       }),
-      restart: vi.fn<Driver['restart']>().mockRejectedValue(finished),
+      restart: vi.fn<Driver['restart']>().mockResolvedValueOnce(undefined).mockRejectedValue(finished),
       foreground: vi.fn<Driver['foreground']>(),
       background: vi.fn<Driver['background']>(),
       screenshot: vi.fn<Driver['screenshot']>(),
@@ -322,7 +322,7 @@ describe('same-climb physical takeover through normal connection UI', () => {
     async (fault) => {
       const current = harness(false, fault);
       expect(await finish(current.suite.solo())).toBeInstanceOf(QaFailure);
-      expect(current.phones.ios.restart).not.toHaveBeenCalled();
+      expect(current.phones.ios.restart).toHaveBeenCalledOnce();
     },
   );
 });

@@ -167,7 +167,9 @@ function harness(fault?: Fault) {
       }),
       hierarchy: vi
         .fn<Driver['hierarchy']>()
-        .mockImplementation(async () => `app-runtime-metro-test ${sessionActive ? `session-active-${sessionId}` : ''}`),
+        .mockImplementation(
+          async () => `app-runtime-metro-test ${sessionActive ? `session-presence-${sessionId}-1` : ''}`,
+        ),
       restart: vi.fn<Driver['restart']>().mockResolvedValue(undefined),
       foreground: vi.fn<Driver['foreground']>(),
       background: vi.fn<Driver['background']>(),

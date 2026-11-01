@@ -208,8 +208,7 @@ function WallControlButtonComponent({
   const glowShown = frosted ? glow : null;
   // The filled bulb tracks this phone's ownership separately from driving frost.
   const holdsBoard = model.holder === 'self';
-  const glowLayer = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
-  const fullGlow = frosted ? glowLayer : null;
+  const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
@@ -252,13 +251,12 @@ function WallControlButtonComponent({
     return <View style={styles.placeholder} testID="play-drawer-wall-control-empty" />;
   }
 
-  // Flat fallback and bulb semantics retain the existing driving rule.
+  // Driving without hold geometry uses the flat live colour.
   const lit = model.driving;
   // Amber with white text in light; the dark scheme's amber is pale, so dark text.
   const litForeground = colorScheme === 'dark' ? brandColors.onAccent : brandColors.onPrimary;
   // On the wall per presence, with no link (QA #147): an amber outline on the
-  // sheet when no hold geometry is available. Its connect action can frost like
-  // other physical LED actions, without claiming a live link or adding a face.
+  // sheet. Connecting alone does not claim driving or add a face.
   const onWallUnlinked = model.state === 'on_wall_unlinked';
   // The glow (F1b) brings its own surface: white over the dark pill, dark over the light one.
   const restForeground = fullGlow
@@ -276,8 +274,6 @@ function WallControlButtonComponent({
         ? 'transparent'
         : withAlpha(brandColors.primaryFill, WALL_CONTROL_TONAL_ALPHA);
   const face = model.holderFace;
-  // The swipe's flat amber progress carries its own readable copy of the row.
-  const wipeForeground = litForeground;
 
   /** The bulb, the label, the chevrons and the face slot, in one set of colours. */
   const row = (rowColors: {
@@ -393,20 +389,19 @@ function WallControlButtonComponent({
         chevrons: (alpha) => withAlpha(fullGlow ? fullGlow.surface.label : brandColors.primary, alpha),
         resting: true,
       })}
-      {wiping && !fullGlow && size.w > 0 ? (
+      {wiping && size.w > 0 ? (
         <WallSwipeWipe
           progress={swipe.progress}
           opacity={swipe.opacity}
           width={size.w}
-          layer={null}
           fill={brandColors.live}
           rowStyle={[styles.wipeRow, compact && styles.compact]}
         >
           {row({
-            foreground: wipeForeground,
-            bulb: wipeForeground,
+            foreground: litForeground,
+            bulb: litForeground,
             shadow: null,
-            chevrons: () => wipeForeground,
+            chevrons: () => litForeground,
             resting: false,
           })}
         </WallSwipeWipe>
@@ -486,7 +481,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   labelViewer: { flex: 1, alignItems: 'center' },
-  // The wipe's copy of the row: the button's own row layout, laid over the frost.
+  // The wipe's copy of the row, laid over the flat progress fill.
   wipeRow: {
     flexDirection: 'row',
     alignItems: 'center',

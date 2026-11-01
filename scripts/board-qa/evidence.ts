@@ -47,8 +47,8 @@ export async function until<T>(
     requireRunning();
     const snapshot = await read();
     requireRunning();
-    if (matches(snapshot)) return snapshot;
     if (Date.now() >= deadline) break;
+    if (matches(snapshot)) return snapshot;
     await new Promise((resume) => setTimeout(resume, 250));
   } while (Date.now() <= deadline);
   throw new QaFailure(`Deadline exceeded: ${label}`);
