@@ -127,6 +127,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   // so they do not start during the drawer's slide-out.
   const pendingAfterCloseRef = useRef<(() => void) | null>(null);
   const closingRef = useRef(false);
+  const supportBrowserOpenRef = useRef(false);
   const signOutPreparationRef = useRef<AbortController | null>(null);
   // Guards popRoute against firing after this screen has unmounted (an interrupted
   // slide-out's completion callback could otherwise router.back() the wrong route).
@@ -173,8 +174,8 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
 
   // Defer drawer actions one frame past React unmount to separate the pop and
   // presentation transactions (#3211). React unmount does not guarantee native
-  // dismissal has completed: iOS Account sign-out confirms while Account stays
-  // mounted instead of relying on this frame to finish its modal dismissal.
+  // dismissal has completed: iOS Account presents sign-out confirmation and the
+  // support browser while mounted rather than racing its modal dismissal.
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -236,8 +237,18 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   };
 
   const handleSupport = () => {
+    if (!mountedRef.current || closingRef.current || !navigation.isFocused() || supportBrowserOpenRef.current) return;
     // Counted on the tap, before the browser opens, like every support link.
     trackSupportLinkTapped('account');
+    if (isAccount && Platform.OS === 'ios') {
+      // React can unmount Account before its native dismissal finishes. Keep
+      // its presenter stable so that dismissal cannot close the browser too.
+      supportBrowserOpenRef.current = true;
+      void openExternalUrl(supportUrlFor('account'), 'account-support').finally(() => {
+        supportBrowserOpenRef.current = false;
+      });
+      return;
+    }
     close(() => void openExternalUrl(supportUrlFor('account'), 'account-support'));
   };
 

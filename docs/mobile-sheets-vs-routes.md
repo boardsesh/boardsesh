@@ -932,6 +932,10 @@ per sheet so an account change resets each draft.
   My playlists closes the menu first, then uses `router.navigate` to reach Discover's
   playlist list. After the menu has popped, `dismissTo` from another tab targets the
   tab navigator with an unsupported `POP_TO` action (#6508).
+  Support opens the in-app browser while the iOS Account sheet stays mounted.
+  React unmount plus one frame does not mean native modal dismissal has finished;
+  opening the browser during that dismissal can immediately close it again. A
+  pending browser blocks repeat taps until it closes or fails, then allows retry.
 - **Native iPad pickers** use an anchored `AnchoredPopover` at regular width; compact
   windows retain the phone sheet. `AppMenu` already anchors native UIKit menus.
   The angle toolbar picker keeps its diagram and slider in the popover.
