@@ -27,10 +27,14 @@ type WatchedState = {
  * - `carries`: the current changed only because the cold-start restore landed
  *   the saved queue on the empty one, which is not the climber's change, so a
  *   pick made before it (from a notification or a link) stays;
- * - `keeps`: nothing it watches changed.
+ * - `keeps`: nothing it watches changed, or the stored active board arrived
+ *   (none before, one now). On a cold start the board is read from storage
+ *   after launch, so a pick from a notification can come first; a climber
+ *   with no board who picks their first one has not left a board either.
  */
 export function lastPickChange(previous: WatchedState, next: WatchedState): 'ends' | 'carries' | 'keeps' {
-  if (previous.boardKey !== next.boardKey || previous.generation !== next.generation) return 'ends';
+  const boardArrived = previous.boardKey === null && next.boardKey !== null;
+  if ((previous.boardKey !== next.boardKey && !boardArrived) || previous.generation !== next.generation) return 'ends';
   if (previous.currentItemUuid === next.currentItemUuid) return 'keeps';
   // The restore only lands on an empty queue, in the render that marks it done.
   const restoreLanded = !previous.restored && next.restored && previous.currentItemUuid === null;

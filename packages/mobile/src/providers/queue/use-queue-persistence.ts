@@ -243,6 +243,12 @@ export function useQueuePersistence({
             await hydrateLocalSnapshot();
             return;
           }
+          // `restored` turns true in the `finally` below, before the session's
+          // queue arrives from the server (the rejoin's FullSync). So a last
+          // pick made while launching into an open crew session is cleared
+          // when that queue lands: LastPickWatcher can't tell it from a
+          // crewmate's newer put-up, which must end the pick. Same for the
+          // offline rejoin below.
           setSessionId(storedId);
         } catch (err) {
           if (!isCurrent()) return;

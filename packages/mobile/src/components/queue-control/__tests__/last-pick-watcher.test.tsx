@@ -104,6 +104,29 @@ describe('LastPickWatcher', () => {
     expect(getLastPick()).toBeNull();
   });
 
+  // The stored active board is read from storage after launch, so a pick from
+  // a notification can land first. Its arrival is not a change of board.
+  it('keeps the pick when the stored board arrives after it', () => {
+    state.boardConfig = null;
+    const view = render(createElement(LastPickWatcher));
+    pick();
+    state.boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
+    view.rerender(createElement(LastPickWatcher));
+    expect(getLastPick()).not.toBeNull();
+    // Once there, a change of board still ends it.
+    state.boardConfig = { ...state.boardConfig, boardName: 'tension', layoutId: 9 };
+    view.rerender(createElement(LastPickWatcher));
+    expect(getLastPick()).toBeNull();
+  });
+
+  it('ends the pick when the board goes away', () => {
+    const view = render(createElement(LastPickWatcher));
+    pick();
+    state.boardConfig = null;
+    view.rerender(createElement(LastPickWatcher));
+    expect(getLastPick()).toBeNull();
+  });
+
   it('ends the pick on sign-out or an account change', () => {
     render(createElement(LastPickWatcher));
     pick();
@@ -175,6 +198,27 @@ describe('LastPickWatcher across the cold-start queue restore', () => {
     expect(getLastPick()).toBe(before);
   });
 
+  // The restore's render must be seen even when the current doesn't move, or
+  // the next put-up would read as the restore and carry a stale pick.
+  it('ends the pick on the first put-up after a restore that brought nothing back', () => {
+    const view = launchBeforeRestore();
+    restoreLands(null, view);
+    state.current = { uuid: 'queue-put-up' };
+    view.rerender(createElement(LastPickWatcher));
+    expect(getLastPick()).toBeNull();
+  });
+
+  // Cold start: the board read from storage lands after the pick, then the
+  // saved queue lands. Neither is the climber's change.
+  it('keeps a pick made before the stored board and the restore both land', () => {
+    state.boardConfig = null;
+    const view = launchBeforeRestore();
+    state.boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
+    view.rerender(createElement(LastPickWatcher));
+    restoreLands({ uuid: 'queue-restored' }, view);
+    expect(getLastPick()?.currentAtPick).toBe('queue-restored');
+  });
+
   it('ends the pick when the current changes before the restore lands', () => {
     const view = launchBeforeRestore();
     // Not the restore: it is still loading.
@@ -199,6 +243,20 @@ describe('lastPickChange', () => {
     ['the current changed', base, { ...base, currentItemUuid: 'b' }, 'ends'],
     ['the current went away', base, { ...base, currentItemUuid: null }, 'ends'],
     ['the board changed', base, { ...base, boardKey: 'tension:9:1:1' }, 'ends'],
+    ['the stored board arrived', { ...base, boardKey: null }, base, 'keeps'],
+    ['the board went away', base, { ...base, boardKey: null }, 'ends'],
+    [
+      'the stored board arrived as the current changed',
+      { ...base, boardKey: null },
+      { ...base, currentItemUuid: 'b' },
+      'ends',
+    ],
+    [
+      'the stored board arrived with the restore',
+      { ...loading, boardKey: null },
+      { ...loading, currentItemUuid: 'r', restored: true },
+      'carries',
+    ],
     ['the account changed', base, { ...base, generation: 2 }, 'ends'],
     [
       'the restore landed a current on the empty queue',
