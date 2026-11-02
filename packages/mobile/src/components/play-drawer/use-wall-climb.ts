@@ -8,7 +8,7 @@
 //
 // It reads the NARROW board-presence selector, so the drawer re-renders when the
 // lit climb changes and not on holder / stats / undo-target churn (the same
-// reason `useWallClimbIfDistinct` uses it). And it reads it through `useContext`
+// reason `useLiveWallClimb` uses it). And it reads it through `useContext`
 // rather than `useBoardPresenceWallClimb()`, which throws with no provider in
 // scope: the drawer can render outside that subtree, and a dark wall is the
 // honest answer there — never a crash. Same call the sibling `useBoardDriver`

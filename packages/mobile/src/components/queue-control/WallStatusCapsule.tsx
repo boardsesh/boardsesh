@@ -1,7 +1,9 @@
 // The "On the wall" status capsule — surfaces the climb currently LIT on the
-// physical board (when it differs from the user's own queue head, e.g. a teammate
-// is driving the wall in a party session). It sits in the centre of the
+// physical board, whoever lit it and whatever the queue shows, while presence
+// trusts it (`resolveClimbsHeaderCapsule`). It sits in the centre of the
 // top-header islands row (iOS) / a slim band under the app bar (Android).
+// The climber can hide it until another climb goes up: an × at its trailing
+// end, a left swipe, or the screen-reader action "Hide".
 //
 // Leads with the sender's avatar so the climb and whoever lit it are visible
 // together. The avatar is inert here; the whole pill opens the wall preview,
@@ -14,8 +16,9 @@
 //     retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
-//     carried by the tertiary colour role) + a bottom divider. No floating pill,
-//     no border, no lightbulb (the bottom queue bar already owns that glyph).
+//     carried by the tertiary colour role) + a bottom divider, ending in a 48dp
+//     × icon button. No floating pill, no border, no lightbulb (the bottom
+//     queue bar already owns that glyph).
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates.
@@ -55,6 +58,9 @@ const ANON_GLYPH = 12;
 // 56dp two-line body (overline + climb line) — already past the 48dp touch floor.
 const BAND_RAIL_WIDTH = 4;
 const BAND_MIN_HEIGHT = 56;
+// The band's ×: an M3 icon button, a 48dp target around a 24dp-class glyph.
+const BAND_DISMISS_TARGET = 48;
+const BAND_DISMISS_GLYPH = 20;
 // Debounce assistive-tech announcements so a fast party session (rapid wall
 // changes) doesn't spam the speech queue.
 const ANNOUNCE_DEBOUNCE_MS = 600;
@@ -71,7 +77,7 @@ type WallStatusCapsuleProps = {
 
 // memo'd so a ClimbTopChrome re-render (filter/board/search change) doesn't rebuild
 // the capsule's hooks while the wall climb is unchanged — the `climb` prop is the
-// stable BoardPresenceClimb from useWallClimbIfDistinct (changes only on a wall event).
+// stable BoardPresenceClimb from the wall-climb context (changes only on a wall event).
 function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, onDismiss }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
   const { variant, colorScheme, brandColors, m3, m3SurfaceContainers } = useTheme();
@@ -150,15 +156,20 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
     if (consumePanned()) return;
     openWallPreview(climbForStats);
   }, [consumePanned, openWallPreview, climbForStats]);
-  const accessibilityActions = onDismiss
-    ? [{ name: 'dismiss', label: t('mobile.boardPresence.stripDismiss') }]
-    : undefined;
+  // "Hide": the ×'s label and the screen-reader action's name.
+  const hideLabel = t('mobile.boardPresence.stripDismiss');
+  const accessibilityActions = onDismiss ? [{ name: 'dismiss', label: hideLabel }] : undefined;
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'dismiss') dismiss();
     },
     [dismiss],
   );
+  // A swipe that started on the × and sprang back must not hide on release.
+  const handleDismissPress = useCallback(() => {
+    if (consumePanned()) return;
+    dismiss();
+  }, [consumePanned, dismiss]);
   const accessibilityHint = onDismiss
     ? t('mobile.boardPresence.stripDismissHint')
     : t('mobile.boardPresence.stripA11yHint');
@@ -210,7 +221,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
           accessibilityHint={accessibilityHint}
           accessibilityActions={accessibilityActions}
           onAccessibilityAction={handleAccessibilityAction}
-          style={styles.bandPressable}
+          style={[styles.bandPressable, onDismiss ? styles.bandPressableBeforeDismiss : null]}
         >
           {/* The "lit" accent: a tertiary rail down the leading edge. */}
           <View pointerEvents="none" style={[styles.bandRail, { backgroundColor: m3.tertiary }]} />
@@ -264,6 +275,21 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
             </View>
           </View>
         </PressableSurface>
+        {onDismiss ? (
+          // Beside the band's tap target, not inside it, so TalkBack reaches it as
+          // its own button and its press never opens the wall preview.
+          <PressableSurface
+            onPress={handleDismissPress}
+            feedback="none"
+            rippleColor={m3.onSurfaceVariant}
+            rippleBorderless
+            accessibilityRole="button"
+            accessibilityLabel={hideLabel}
+            style={styles.bandDismiss}
+          >
+            <Icon maxFontSizeMultiplier={1} name="close" size={BAND_DISMISS_GLYPH} color={m3.onSurfaceVariant} />
+          </PressableSurface>
+        ) : null}
       </Animated.View>
     );
   } else {
@@ -276,6 +302,7 @@ function WallStatusCapsuleImpl({ climb, boardName, presentation, occurrenceKey, 
         accessibilityHint={accessibilityHint}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={handleAccessibilityAction}
+        dismiss={onDismiss ? { label: hideLabel, onPress: handleDismissPress } : undefined}
         compact={compact}
       >
         {/* One tap target and one spoken label; profile navigation lives in the preview. */}
@@ -348,13 +375,29 @@ const styles = StyleSheet.create({
   // --- Material 3 status band (Android) ---
   bandOuter: {
     width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   bandPressable: {
+    flex: 1,
+    minWidth: 0,
     minHeight: BAND_MIN_HEIGHT,
     justifyContent: 'center',
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[4],
+  },
+  // The ×'s 48dp target carries the trailing inset; keep a small gap before it.
+  bandPressableBeforeDismiss: {
+    paddingEnd: spacing[1],
+  },
+  bandDismiss: {
+    width: BAND_DISMISS_TARGET,
+    height: BAND_DISMISS_TARGET,
+    marginEnd: spacing[1],
+    borderRadius: BAND_DISMISS_TARGET / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bandRail: {
     position: 'absolute',

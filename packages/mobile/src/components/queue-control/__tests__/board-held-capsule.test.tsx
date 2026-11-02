@@ -255,16 +255,20 @@ vi.mock('../../PressableSurface', () => ({
     onPress,
     onLongPress,
     accessibilityActions,
+    onAccessibilityAction,
     feedback,
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
+    hitSlop,
     style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     onLongPress?: () => void;
     accessibilityActions?: { name: string; label: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+    hitSlop?: unknown;
     feedback?: string;
     accessibilityRole?: string;
     accessibilityLabel?: string;
@@ -282,9 +286,12 @@ vi.mock('../../PressableSurface', () => ({
         'data-hint': accessibilityHint,
         'data-actions': accessibilityActions ? JSON.stringify(accessibilityActions) : undefined,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-hit-slop': hitSlop ? JSON.stringify(hitSlop) : undefined,
         onClick: onPress,
         // Stands in for a long-press in jsdom.
         onContextMenu: onLongPress,
+        // Stands in for a screen-reader action: the key names it.
+        onKeyDown: (event: { key: string }) => onAccessibilityAction?.({ nativeEvent: { actionName: event.key } }),
       },
       children,
     ),
@@ -630,6 +637,81 @@ describe('BoardHeldCapsule', () => {
       expect(button.getAttribute('data-actions')).toBeNull();
       fireEvent.contextMenu(button);
       expect(spies.lightbulbLongPress).not.toHaveBeenCalled();
+    });
+  });
+
+  // While it draws the climb on the wall, the held capsule carries that climb's Hide.
+  describe('Hide, while it draws the climb on the wall', () => {
+    const hideButton = (root: HTMLElement) =>
+      root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
+
+    beforeEach(() => {
+      spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
+    });
+
+    it('has no × and no Hide action for a bare hold', () => {
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      expect(hideButton(container)).toBeNull();
+      expect(container.querySelector('[data-icon="close"]')).toBeNull();
+    });
+
+    it('ends in a 44 pt × that hides this lighting and never lets go of the board', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />,
+      );
+      const button = hideButton(container)!;
+      expect(button.getAttribute('data-role')).toBe('button');
+      const style = JSON.parse(button.getAttribute('data-style') ?? '{}');
+      const slop = JSON.parse(button.getAttribute('data-hit-slop') ?? '{}');
+      expect(style.width).toBeGreaterThanOrEqual(44);
+      // The capsule is the bar's 38 pt; the slop above and below reaches the floor.
+      expect(38 + slop.top + slop.bottom).toBeGreaterThanOrEqual(44);
+      fireEvent.click(button);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
+      expect(spies.lightbulbPress).not.toHaveBeenCalled();
+    });
+
+    it('offers Hide beside Board controls to screen readers', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />,
+      );
+      const capsule = container.querySelector('[data-pressable="true"]') as HTMLElement;
+      expect(JSON.parse(capsule.getAttribute('data-actions') ?? 'null')).toEqual([
+        { name: 'longpress', label: 'ble.holdForControls' },
+        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+      ]);
+      fireEvent.keyDown(capsule, { key: 'dismiss' });
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
+      fireEvent.keyDown(capsule, { key: 'longpress' });
+      expect(spies.lightbulbLongPress).toHaveBeenCalledOnce();
+      expect(spies.lightbulbPress).not.toHaveBeenCalled();
+    });
+
+    it('keeps Hide alone when there is no radio link to open controls for', () => {
+      spies.localConnected = false;
+      const { container } = render(
+        <BoardHeldCapsule ledless dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss: vi.fn() }} />,
+      );
+      const capsule = container.querySelector('[data-pressable="true"]') as HTMLElement;
+      expect(JSON.parse(capsule.getAttribute('data-actions') ?? 'null')).toEqual([
+        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+      ]);
+    });
+
+    it("draws the × in the hold pattern's checked foreground", () => {
+      spies.glowInput = TEST_GLOW;
+      const { container } = render(
+        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss: vi.fn() }} />,
+      );
+      // Stands in for the native layout report that sizes the pattern.
+      fireEvent.doubleClick(container.firstElementChild!);
+      expect(container.querySelector('[data-wall-glow]')).not.toBeNull();
+      const glyph = container.querySelector('[data-icon="close"]');
+      expect(glyph).not.toBeNull();
+      const words = container.querySelector('[data-text]')?.getAttribute('data-color');
+      expect(glyph?.getAttribute('data-icon-color')).toBe(words);
     });
   });
 });

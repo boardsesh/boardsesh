@@ -279,6 +279,22 @@ preview's put-up, and the Climbs
 header's wall capsule hides (#7095, `trustedWallCapsuleClimb`). With a live link the link decides and freshness
 doesn't matter.
 
+**The Climbs header's wall capsule (owner decision, 2026-11-02).** Inside that hour, or while a live link says a
+climb is lit, the Climbs header always shows the climb on the wall of the board the list shows. Age is the only rule:
+the capsule no longer hides when the wall's climb is your own queue head or the MiniPlayer's pick, while this phone
+holds the link, in a crew, or on iPad, the Duo or Material (`resolveClimbsHeaderCapsule` in
+`climbs-header-capsule.ts`). One skin choice is left: while this phone holds the board where the iOS 26 accessory
+platter collapses (iPhone, or an iPad in a narrow Split View) and the wall shows your queue head, "You have the board"
+is that climb's capsule, with the hold-pattern frost and its tap to let go; anywhere else it is the "On the wall"
+capsule, live with a link and "Last on the wall · 20m" without one. Either can be hidden: the × at its trailing end
+(44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above and below toward 44 pt where UIKit's bar
+slot allows it, like the bar's own items; a 48 dp icon button in the Material band), a
+left swipe on the "On the wall" capsule, or the screen-reader action Hide on both. The held capsule takes no swipe,
+because a swipe that ended as a tap would let go of the board. Hide lasts until a different climb, or a re-light of the
+same one, goes up on that board, across relaunches (`wall-capsule-dismissal-store.ts`, keyed on board, climb and lit
+time, one entry per board), and a hidden climb never falls back to the bare "You have the board". In a title slot
+under 100 pt the × drops out with the face; the swipe and Hide stay.
+
 ### Swipe to drive (#7113)
 
 Swipe the wall button left to drive the wall: connect if needed, light the climb on screen, and light every climb

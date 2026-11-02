@@ -97,12 +97,24 @@ function getSnapshot(): DismissalSnapshot {
   return snapshot;
 }
 
-/** A re-light of the same climb is a new occurrence, even after a board resets its sequence. */
-export function wallCapsuleOccurrenceKey(boardId: number, climb: BoardPresenceClimb): string {
-  return JSON.stringify([boardId, climb.seq, climb.sentAt, climb.climbUuid]);
+/**
+ * One lighting of one climb on one board: the board, the climb and the server's
+ * lit time. A different climb, or a re-light of the same climb, is a new
+ * occurrence and shows again. The per-board `seq` is left out: every lighting
+ * already carries its own server-stamped lit time.
+ */
+export function wallCapsuleOccurrenceKey(
+  boardId: number,
+  climb: Pick<BoardPresenceClimb, 'climbUuid' | 'sentAt'>,
+): string {
+  return JSON.stringify([boardId, climb.climbUuid, climb.sentAt]);
 }
 
-/** Hide just this lighting occurrence on this device, including across launches. */
+/**
+ * Hide just this lighting occurrence on this device, including across launches.
+ * One entry per board, so the newest choice replaces the last and the stored
+ * map never grows past the boards this phone has looked at.
+ */
 export function dismissWallCapsule(boardId: number, occurrenceKey: string): void {
   if (byBoard.get(boardId) === occurrenceKey) return;
   byBoard = new Map(byBoard).set(boardId, occurrenceKey);

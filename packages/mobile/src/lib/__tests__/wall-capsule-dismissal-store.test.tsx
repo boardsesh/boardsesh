@@ -44,6 +44,8 @@ const climb: BoardPresenceClimb = {
   seq: 1,
 };
 const occurrence = wallCapsuleOccurrenceKey(41, climb);
+// The same climb lit again an hour later.
+const relit: BoardPresenceClimb = { ...climb, sentAt: '2026-10-31T13:00:00.000Z', seq: 2 };
 
 function foreground() {
   act(() => {
@@ -101,10 +103,22 @@ describe('wall capsule dismissal', () => {
     expect(result.current.dismissed).toBe(false);
     rerender({ boardId: 41, key: occurrence });
     expect(result.current.dismissed).toBe(true);
-    rerender({ boardId: 41, key: wallCapsuleOccurrenceKey(41, { ...climb, seq: 2 }) });
+    // A re-light of the same climb is a new lighting: it shows again.
+    rerender({ boardId: 41, key: wallCapsuleOccurrenceKey(41, relit) });
     expect(result.current.dismissed).toBe(false);
-    expect(wallCapsuleOccurrenceKey(41, { ...climb, sentAt: '2026-10-31T13:00:00.000Z' })).not.toBe(occurrence);
+    // So is a different climb.
+    rerender({ boardId: 41, key: wallCapsuleOccurrenceKey(41, { ...climb, climbUuid: 'the-eyes' }) });
+    expect(result.current.dismissed).toBe(false);
     await waitFor(() => expect(preferences.setPreference).toHaveBeenCalledOnce());
+  });
+
+  it('keys a lighting on board, climb and lit time only', () => {
+    // A reseeded board sequence on the same lighting stays hidden.
+    const reseeded: BoardPresenceClimb = { ...climb, seq: 900 };
+    expect(wallCapsuleOccurrenceKey(41, reseeded)).toBe(occurrence);
+    expect(occurrence).toBe(JSON.stringify([41, 'wax-on', '2026-10-31T12:00:00.000Z']));
+    expect(wallCapsuleOccurrenceKey(42, climb)).not.toBe(occurrence);
+    expect(wallCapsuleOccurrenceKey(41, relit)).not.toBe(occurrence);
   });
 
   it('merges an in-flight swipe with stored dismissals for other boards', async () => {
@@ -165,7 +179,7 @@ describe('wall capsule dismissal', () => {
     await waitFor(() => expect(result.current.loaded).toBe(true));
     act(() => dismissWallCapsule(41, occurrence));
     await waitFor(() => expect(preferences.setPreference).toHaveBeenCalledOnce());
-    const nextOccurrence = wallCapsuleOccurrenceKey(41, { ...climb, seq: 2 });
+    const nextOccurrence = wallCapsuleOccurrenceKey(41, relit);
     act(() => dismissWallCapsule(41, nextOccurrence));
     await act(async () => {});
     expect(preferences.setPreference).toHaveBeenCalledOnce();
@@ -196,7 +210,7 @@ describe('wall capsule dismissal', () => {
     await waitFor(() => expect(result.current.loaded).toBe(true));
     act(() => dismissWallCapsule(41, occurrence));
     await waitFor(() => expect(preferences.setPreference).toHaveBeenCalledOnce());
-    const nextOccurrence = wallCapsuleOccurrenceKey(41, { ...climb, seq: 2 });
+    const nextOccurrence = wallCapsuleOccurrenceKey(41, relit);
     act(() => dismissWallCapsule(41, nextOccurrence));
     await act(async () => firstWrite.resolve());
     await waitFor(() => expect(preferences.stored).toEqual({ version: 1, byBoard: { 41: nextOccurrence } }));

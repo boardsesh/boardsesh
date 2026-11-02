@@ -26,7 +26,7 @@ const BoardPresenceHasClimbContext = createContext<boolean | undefined>(undefine
 // Narrow selector: the wall's lit climb when live, else `null`. `undefined`
 // means "outside the provider" (mirrors every other context here); `null` is a
 // real value (no board bound, or the feed isn't live). Consumers that only
-// need "what's lit right now" (e.g. mobile's `useWallClimbIfDistinct`) read
+// need "what's lit right now" (e.g. mobile's `useLiveWallClimb`) read
 // this instead of `BoardPresenceCurrentContext`, so they don't re-render on
 // holder/stats/undo-target churn that context also carries.
 const BoardPresenceWallClimbContext = createContext<BoardPresenceClimb | null | undefined>(undefined);
@@ -188,7 +188,7 @@ export function useBoardPresenceHasClimb(): boolean {
  * `useBoardPresenceCurrent()`: this context only changes when the lit climb
  * itself changes, not on holder/undo-target/isLive-independent churn, so
  * consumers that just need "what's on the wall right now" (e.g. mobile's
- * `useWallClimbIfDistinct`) avoid re-rendering on every presence event.
+ * `useLiveWallClimb`) avoid re-rendering on every presence event.
  */
 export function useBoardPresenceWallClimb(): BoardPresenceClimb | null {
   const context = useContext(BoardPresenceWallClimbContext);
