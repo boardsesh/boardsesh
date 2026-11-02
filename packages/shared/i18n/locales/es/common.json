@@ -855,7 +855,7 @@
           "label": "Control del plafón",
           "wallButton": "Botón del muro",
           "lightbulb": "Bombilla",
-          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; tócala para dejar el mando. Tu móvil sigue conectado salvo que Desconectar el Bluetooth al dejar el mando esté activado. Tras Poner en el plafón, un reloj junto a la etiqueta y el esmerilado que se encoge muestran cuándo termina el mando. La bombilla queda arriba a la derecha."
+          "footer": "Los dos controles conectan, encienden el bloque y muestran quién tiene el plafón. Con el plafón conectado, mantén pulsado para las opciones. Lee la etiqueta del botón del muro: Estás al mando del plafón significa que cada bloque que elijas se enciende; tócala para dejar el mando. Tu móvil sigue conectado salvo que Desconectar el Bluetooth al dejar el mando esté activado. Si el mando tiene límite de tiempo, un reloj junto a la etiqueta y el esmerilado que se encoge muestran cuándo termina. La bombilla queda arriba a la derecha."
         }
       },
       "climbView": {
@@ -1112,8 +1112,8 @@
       },
       "previewFirstSpotlight": {
         "title": "Explora bloques sin encender el plafón",
-        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta 45 segundos después del último bloque encendido. Cambia el tiempo en Dejar el mando tras, en Ajustes › Plafón.",
-        "swipe": "Desliza el botón del plafón a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende. Tócalo para parar. Tras Poner en el plafón, sale un reloj junto a la etiqueta y el esmerilado se encoge a medida que se acaba el tiempo.",
+        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta que se acabe el tiempo que elegiste (45 segundos por defecto). Cámbialo en Dejar el mando tras, en Ajustes › Plafón.",
+        "swipe": "Desliza el botón del muro a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende. Tócalo para parar. Si el mando tiene límite de tiempo, sale un reloj junto a la etiqueta y el esmerilado se encoge a medida que se acaba el tiempo.",
         "back": "La flecha de arriba a la izquierda cierra la vista previa y te lleva de vuelta a tu bloque, o al bloque del plafón. La barra de abajo guarda el último bloque que abriste.",
         "moonboard": "En un MoonBoard quedas al mando hasta que pares, por defecto; elige su tiempo en En un MoonBoard.",
         "cta": "Mira cómo funciona",

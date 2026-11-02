@@ -78,8 +78,10 @@ export const HELP_CLIPS = [
   {
     name: 'long-press-climb-actions',
     source: 'long-press-climb-actions',
-    // Recorded 2026-09-20: the card still lists Preview (removed in #7188) and
-    // Add to queue (Play next / Play last since #6772). Re-record after #7205.
+    // Recorded 2026-09-20: the old reaction card, still listing Preview (removed
+    // in #7188) and Add to queue (Play next / Play last since #6772). #7205
+    // (2315895fb5) replaced it with the lifted native menu: re-record on a build
+    // at or after it.
     description: 'Press and hold a climb row until the actions sheet rises.',
   },
   {

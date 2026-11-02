@@ -583,7 +583,7 @@
           "label": "Board control",
           "wallButton": "Wall button",
           "lightbulb": "Lightbulb",
-          "footer": "Both controls connect, light the climb and show who holds the board. Hold while connected for board options. Read the wall button’s label: You are driving the wall means each climb you pick lights up; tap it to stop driving. Your phone stays connected unless Disconnect Bluetooth when driving ends is on. After Put on board, a clock beside the label and the shrinking frost show when driving stops. The lightbulb sits at the top right."
+          "footer": "Both controls connect, light the climb and show who holds the board. Hold while connected for board options. Read the wall button’s label: You are driving the wall means each climb you pick lights up; tap it to stop driving. Your phone stays connected unless Disconnect Bluetooth when driving ends is on. When a drive has a time limit, a clock beside the label and the shrinking frost show when it stops. The lightbulb sits at the top right."
         }
       },
       "climbView": {
@@ -840,8 +840,8 @@
       },
       "previewFirstSpotlight": {
         "title": "Look through climbs without lighting the board",
-        "tap": "A tap opens a preview. Put on board lights it, and then you drive the wall: the climbs you pick light too, until 45 seconds after the last climb lights. Change the time under Stop driving after in Settings › Board.",
-        "swipe": "Swipe the board button left to drive the wall until you stop. While it glows in the climb's colours, every climb you pick lights up. Tap it to stop. After Put on board, a clock shows beside the label and the frost shrinks as the time runs out.",
+        "tap": "A tap opens a preview. Put on board lights it, and then you drive the wall: the climbs you pick light too, until the time you chose runs out (45 seconds by default). Change it under Stop driving after in Settings › Board.",
+        "swipe": "Swipe the wall button left to drive the wall until you stop. While it glows in the climb's colours, every climb you pick lights up. Tap it to stop. When a drive has a time limit, a clock shows beside the label and the frost shrinks as the time runs out.",
         "back": "The arrow at the top left ends a preview and takes you back to your pick, or to the climb on the wall. The bar at the bottom keeps the last climb you opened.",
         "moonboard": "On a MoonBoard you drive until you stop, by default; pick its time under On a MoonBoard.",
         "cta": "See how it works",

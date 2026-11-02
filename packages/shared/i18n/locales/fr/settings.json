@@ -495,7 +495,7 @@
       },
       "drivingEnds": {
         "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
-        "description": "Quand ton pilotage s’arrête, ton téléphone libère la board pour que le grimpeur suivant puisse se connecter : quand tu l’arrêtes ou éteins tout, quand le temps est écoulé, ou quand quelqu’un de ta crew allume un bloc. Allumer sur la board la reconnecte."
+        "description": "Quand votre pilotage s’arrête, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter : quand vous l’arrêtez ou éteignez tout, quand le temps est écoulé, ou quand quelqu’un de votre crew allume un bloc pendant un pilotage à durée limitée. Allumer sur la board la reconnecte."
       },
       "drivingHelp": "Comment marche le pilotage de la board",
       "onSwipeLabel": "Allumer la board quand je fais défiler",

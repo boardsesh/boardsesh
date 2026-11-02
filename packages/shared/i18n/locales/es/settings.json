@@ -495,7 +495,7 @@
       },
       "drivingEnds": {
         "label": "Desconectar el Bluetooth al dejar el mando",
-        "description": "Cuando termina tu mando, tu móvil suelta el plafón para que el siguiente escalador pueda conectarse: al dejarlo o apagar todas las luces, al acabarse el tiempo o cuando alguien de tu grupo pone un bloque. Poner en el plafón vuelve a conectar."
+        "description": "Cuando se acaba tu turno al mando, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse: al pararlo tú o apagar todas las luces, al acabarse el tiempo, o cuando alguien de tu crew pone un bloque mientras tu mando tiene límite de tiempo. Poner en el plafón vuelve a conectar."
       },
       "drivingHelp": "Cómo funciona el mando del plafón",
       "onSwipeLabel": "Iluminar el plafón al deslizar",

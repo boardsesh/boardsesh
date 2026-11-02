@@ -495,7 +495,7 @@
       },
       "drivingEnds": {
         "label": "Bluetooth trennen, wenn das Steuern endet",
-        "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet. „Am Board beleuchten“ verbindet wieder."
+        "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet, während dein Steuern ein Zeitlimit hat. „Am Board beleuchten“ verbindet wieder."
       },
       "drivingHelp": "So funktioniert das Steuern des Boards",
       "onSwipeLabel": "Board beim Wischen beleuchten",

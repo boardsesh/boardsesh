@@ -96,8 +96,9 @@ dedicated simulator `Boardsesh Release Help 20261031`, with Metro on port 8191.
 They are stale since #7170 (frost only while driving) and #7188 (wordless back
 chip, timed drive, last-look MiniPlayer); re-record pending on a build at or
 after `38eecfa2f0`. `start-playlist-queue` predates the three-way prompt, and
-`long-press-climb-actions` and `remove-from-playlist` still show Preview and Add
-to queue in the action card; re-record those after #7205 lands.
+`long-press-climb-actions` and `remove-from-playlist` still show the old reaction
+card with Preview and Add to queue. #7205 (`2315895fb5`) replaced that card with
+the lifted native menu, so re-record those two on a build at or after it.
 Record the source commit
 and capture date again when replacing these takes. Review the button label,
 frost, back chip and unchanged/changed wall climb against each caption before

@@ -92,6 +92,7 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.bluetooth.hidden.row4')}</li>
         </ProseList>
         <Prose>{t('help.bluetooth.hidden.p2')}</Prose>
+        <Prose>{t('help.bluetooth.hidden.autoLight')}</Prose>
         <Prose>{t('help.bluetooth.hidden.p3')}</Prose>
       </PageSection>
 

@@ -583,7 +583,7 @@
           "label": "Board-Steuerung",
           "wallButton": "Wand-Button",
           "lightbulb": "Glühbirne",
-          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden. Dein Handy bleibt verbunden, außer Bluetooth trennen, wenn das Steuern endet ist an. Nach Am Board beleuchten zeigen eine Uhr neben der Beschriftung und die schrumpfende Mattierung, wann das Steuern endet. Die Glühbirne sitzt oben rechts."
+          "footer": "Beide Bedienelemente verbinden, beleuchten den Boulder und zeigen, wer das Board hält. Halten öffnet bei bestehender Verbindung die Optionen. Lies die Beschriftung des Wand-Buttons: Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird; tippe darauf, um das Steuern zu beenden. Dein Handy bleibt verbunden, außer Bluetooth trennen, wenn das Steuern endet ist an. Hat das Steuern ein Zeitlimit, zeigen eine Uhr neben der Beschriftung und die schrumpfende Mattierung, wann es endet. Die Glühbirne sitzt oben rechts."
         }
       },
       "climbView": {
@@ -840,8 +840,8 @@
       },
       "previewFirstSpotlight": {
         "title": "Boulder durchsehen, ohne das Board zu beleuchten",
-        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis 45 Sekunden nach dem letzten beleuchteten Boulder. Die Zeit änderst du unter Steuern beenden nach in Einstellungen › Board.",
-        "swipe": "Wisch den Board-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst. Tippe ihn an, um aufzuhören. Nach Am Board beleuchten steht eine Uhr neben der Beschriftung, und die Mattierung schrumpft, während die Zeit abläuft.",
+        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis die gewählte Zeit um ist (standardmäßig 45 Sekunden). Die Zeit änderst du unter Steuern beenden nach in Einstellungen › Board.",
+        "swipe": "Wische den Wand-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst. Tippe ihn an, um aufzuhören. Hat das Steuern ein Zeitlimit, steht eine Uhr neben der Beschriftung, und die Mattierung schrumpft, während die Zeit abläuft.",
         "back": "Der Pfeil oben links beendet die Vorschau und bringt dich zurück zu deinem Boulder oder zum Boulder am Board. Die Leiste unten behält den letzten Boulder, den du geöffnet hast.",
         "moonboard": "Am MoonBoard steuerst du standardmäßig, bis du aufhörst; seine Zeit wählst du unter An einem MoonBoard.",
         "cta": "So funktioniert's",

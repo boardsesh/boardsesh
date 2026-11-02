@@ -13,8 +13,9 @@ someone re-captures them from `main` at or after `38eecfa2f0` (macOS only):
   coordinates need no change.
 - [Climb actions](../packages/web/public/images/help/climb-actions.webp) (`11`,
   last changed 2026-09-20): still lists Preview (removed in #7188) and Add to
-  queue (Play next / Play last since #6772). #7205 replaces this menu with a
-  native one, so capture it once that lands.
+  queue (Play next / Play last since #6772). #7205 (`2315895fb5`) replaced
+  this card with the lifted native menu, and the `11` flow already opens it, so
+  re-capture from a build at or after that commit.
 - [Driving player](../packages/web/public/images/help/board-view.webp) (`10`):
   an open-ended drive, which is still right for `#driving`. The Connect section
   tells the reader to tap Put on board, which now starts a timed drive with a
