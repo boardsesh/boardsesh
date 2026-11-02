@@ -276,6 +276,7 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityHint,
     accessibilityActions,
     onAccessibilityAction,
+    hitSlop,
     style,
   }: {
     children?: ReactNode;
@@ -286,6 +287,7 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityHint?: string;
     accessibilityActions?: readonly { name: string; label?: string }[];
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+    hitSlop?: unknown;
     style?: unknown;
   }) =>
     createElement(
@@ -298,6 +300,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
         'data-actions': JSON.stringify(accessibilityActions),
+        'data-hit-slop': hitSlop ? JSON.stringify(hitSlop) : undefined,
         onKeyDown: () => onAccessibilityAction?.({ nativeEvent: { actionName: 'dismiss' } }),
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         onClick: onPress,
@@ -701,6 +704,84 @@ describe('WallStatusCapsule', () => {
     fireEvent.keyDown(pressable!);
     expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
     expect(spies.openWallPreview).not.toHaveBeenCalled();
+  });
+
+  describe('the Hide ×', () => {
+    const hideButton = (root: HTMLElement) =>
+      root.querySelector('[data-label="mobile.boardPresence.stripDismiss"]') as HTMLElement | null;
+
+    it.each(['liquidGlass', 'material'] as const)('hides only this lighting on %s, without opening it', (variant) => {
+      spies.variant = variant;
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />,
+      );
+      const button = hideButton(container)!;
+      expect(button.getAttribute('data-role')).toBe('button');
+      expect(button.querySelector('[data-icon="close"]')).not.toBeNull();
+      // Its own button beside the capsule's tap target, never inside it.
+      expect(container.querySelector('[data-pressable] [data-label="mobile.boardPresence.stripDismiss"]')).toBeNull();
+      fireEvent.click(button);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+      expect(spies.openWallPreview).not.toHaveBeenCalled();
+    });
+
+    it('reaches the 44 pt floor on Liquid Glass: 44 wide, the 38 pt bar plus its slop', () => {
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
+      const button = hideButton(container)!;
+      const style = JSON.parse(button.getAttribute('data-style') ?? '{}');
+      const slop = JSON.parse(button.getAttribute('data-hit-slop') ?? '{}');
+      expect(style.width).toBe(44);
+      expect(38 + slop.top + slop.bottom).toBe(44);
+      // The ×'s width is the capsule's trailing inset.
+      const main = container.querySelector('[data-pressable]');
+      expect(JSON.parse(main?.getAttribute('data-style') ?? '{}').paddingEnd).toBe(0);
+    });
+
+    it('is an M3 48dp icon button in the Material band', () => {
+      spies.variant = 'material';
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={vi.fn()} />);
+      const style = JSON.parse(hideButton(container)?.getAttribute('data-style') ?? '{}');
+      expect(style).toMatchObject({ width: 48, height: 48 });
+    });
+
+    it.each(['liquidGlass', 'material'] as const)('is absent when the capsule cannot be hidden on %s', (variant) => {
+      spies.variant = variant;
+      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+      expect(hideButton(container)).toBeNull();
+      expect(container.querySelector('[data-icon="close"]')).toBeNull();
+      const pressable = container.querySelector('[data-pressable]');
+      expect(pressable?.getAttribute('data-actions')).toBeNull();
+      expect(pressable?.getAttribute('data-hint')).toBe('mobile.boardPresence.stripA11yHint');
+    });
+
+    it('drops out of a too-narrow title slot, keeping the screen-reader Hide', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <NativeTitleMaxWidthContext.Provider value={58}>
+          <WallStatusCapsule climb={makeClimb()} occurrenceKey="board:7:wall-1" onDismiss={onDismiss} />
+        </NativeTitleMaxWidthContext.Provider>,
+      );
+      expect(hideButton(container)).toBeNull();
+      const pressable = container.querySelector('[data-pressable]')!;
+      expect(JSON.parse(pressable.getAttribute('data-actions') ?? 'null')).toEqual([
+        { name: 'dismiss', label: 'mobile.boardPresence.stripDismiss' },
+      ]);
+      fireEvent.keyDown(pressable);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board:7:wall-1');
+    });
+
+    it.each(['liquidGlass', 'material'] as const)(
+      'ignores the release of a swipe that started on the × on %s',
+      (variant) => {
+        spies.variant = variant;
+        spies.panConsumed = true;
+        const onDismiss = vi.fn();
+        const { container } = render(<WallStatusCapsule climb={makeClimb()} onDismiss={onDismiss} />);
+        fireEvent.click(hideButton(container)!);
+        expect(onDismiss).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('drops the tap that follows an activated swipe', () => {

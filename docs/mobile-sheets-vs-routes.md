@@ -1131,15 +1131,19 @@ Keep native climb-menu long-press and screen-reader commands available.
 **Wall capsule:** the Climbs header uses the player's shared connection and
 presence-freshness rules. With no live link it reads “Last on the wall” for an
 hour from the lighting timestamp, then hides; a live link keeps the current
-presentation regardless of age. A left swipe dismisses only this device's
-header capsule, without changing the wall or queue. The choice survives navigation
-and app restarts until another lighting event, including a re-light of the same
-climb. VoiceOver and TalkBack offer the same Dismiss action. Climb, status and
-dismissal scope settle together while the player covers the native header.
+presentation regardless of age. Inside those rules it always shows, whatever the
+queue, the link or the layout (owner decision, 2026-11-02). The × at its trailing
+end, a left swipe, or the Hide action in VoiceOver and TalkBack hides only this
+device's header capsule, without changing the wall or queue. The choice survives
+navigation and app restarts until another lighting event, including a re-light of
+the same climb. Climb, status and dismissal scope settle together while the player
+covers the native header.
 
 The current-climb capsule while you hold an LED board uses the same holds-based
 background as the play drawer's driving button, including your hold colours and
-mirror setting. It reads cached geometry without starting a board-art fetch.
+mirror setting. It reads cached geometry without starting a board-art fetch. When
+that climb is the one on the wall it carries the same × and Hide action, but no
+swipe: its tap lets go of the board.
 
 The native story gallery shows the live and recent-history treatments side by side:
 [Liquid Glass dark](images/wall-capsule-glass-dark.png),

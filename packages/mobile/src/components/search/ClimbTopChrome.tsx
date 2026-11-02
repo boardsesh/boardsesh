@@ -35,7 +35,7 @@ import { BoardHeldCapsule } from '../queue-control/BoardHeldCapsule';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
-import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
+import { useLiveWallClimb } from '../queue-control/use-wall-or-queue-climb';
 import { trustedWallCapsuleClimb, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import {
@@ -44,6 +44,7 @@ import {
   wallCapsuleOccurrenceKey,
 } from '../../lib/wall-capsule-dismissal-store';
 import { useWallCapsuleHistoryAge } from '../queue-control/use-wall-capsule-history-age';
+import { resolveClimbsHeaderCapsule, type TrustedWallClimb } from './climbs-header-capsule';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
 import { FilterButton } from './FilterButton';
@@ -142,84 +143,103 @@ function ClimbTopChromeComponent({
   const { systemColors, variant } = useTheme();
   const { data: activeBoard } = useActiveBoard();
   const glassGradeRail = useFloatingHeaderControls();
-  // "On the wall" capsule: own the gate here so a falsy centre slot falls back to
-  // the title, and the capsule gets a clean mount/unmount (entering/exiting fade).
-  // Only present when a board feed lights a climb that differs from the user's own
-  // current climb (hidden in the solo case). Settled: the capsule swaps the native
-  // header out of large-title mode, which must not happen under the player's
-  // dismiss animation (#6619).
-  const currentClimbUuid = useActiveClimbUuid();
-  const distinctWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  // The centre slot: the climb on the wall, the "You have the board" capsule, or
+  // nothing (`resolveClimbsHeaderCapsule`). Owned here so a falsy slot falls back
+  // to the title and the capsule gets a clean mount/unmount. The climb on the
+  // wall shows whenever presence trusts it (lit under an hour ago, or a live link
+  // says it is lit), whatever the queue, the link or the layout, until the
+  // climber hides it. Settled: the capsule swaps the native header out of
+  // large-title mode, which must not happen under the player's dismiss
+  // animation (#6619).
+  const queueHeadUuid = useActiveClimbUuid();
+  const wallClimb = useLiveWallClimb();
   const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
+  // Presence follows the board the Climbs list shows (the drawer host binds it
+  // to the selected board), so this is that board's wall.
   const { boardId } = useBoardPresenceControls();
   const linked = inAppBoardConnection !== 'disconnected';
   // Hidden past an hour with no live link (#7095): the same trust rule as the player.
-  const wallPresenceFresh = usePresenceFresh(distinctWallClimb?.sentAt ?? null);
-  const liveWallClimb = trustedWallCapsuleClimb(distinctWallClimb, {
+  const wallPresenceFresh = usePresenceFresh(wallClimb?.sentAt ?? null);
+  const liveWallClimb = trustedWallCapsuleClimb(wallClimb, {
     linked,
     presenceFresh: wallPresenceFresh,
   });
   const occurrenceKey =
     boardId !== null && liveWallClimb !== null ? wallCapsuleOccurrenceKey(boardId, liveWallClimb) : null;
+  const trustedWall = useMemo<TrustedWallClimb | null>(
+    () =>
+      liveWallClimb !== null && boardId !== null && occurrenceKey !== null
+        ? { climb: liveWallClimb, boardId, occurrenceKey }
+        : null,
+    [liveWallClimb, boardId, occurrenceKey],
+  );
   const { loaded: dismissalLoaded, dismissed } = useWallCapsuleDismissed(boardId, occurrenceKey);
   const historyAge = useWallCapsuleHistoryAge(
     liveWallClimb?.sentAt ?? null,
     !linked && dismissalLoaded && !dismissed && liveWallClimb !== null,
   );
-  // Keep the climb, its meaning and its dismissal scope together while a modal
-  // covers the list. None may change the native title during player dismissal.
-  const liveWallCapsule = useMemo(
-    () =>
-      liveWallClimb !== null && boardId !== null && occurrenceKey !== null && dismissalLoaded && !dismissed
-        ? {
-            climb: liveWallClimb,
-            boardId,
-            occurrenceKey,
-            presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
-          }
-        : null,
-    [liveWallClimb, boardId, occurrenceKey, dismissalLoaded, dismissed, linked, historyAge],
-  );
-  const wallCapsuleState = useSettledHeaderValue(liveWallCapsule);
-  const handleDismissWallCapsule = useCallback(
-    (dismissedOccurrence: string) => {
-      if (wallCapsuleState === null || dismissedOccurrence !== wallCapsuleState.occurrenceKey) return;
-      dismissWallCapsule(wallCapsuleState.boardId, dismissedOccurrence);
-    },
-    [wallCapsuleState],
-  );
-  // "You have the board" takes the same slot while this climber holds the board
-  // and the wall shows their own climb. Only where the iOS 26 accessory platter
-  // mounts on iPhone: that platter collapses on scroll and drops its bulb, while
-  // the Material bar and the iOS 18 floating bar keep theirs on screen. A
-  // regular-width iPad has no bottom tab bar for the platter to collapse into, so
-  // its bulb stays in view and a capsule up here would only repeat it; an iPad in
-  // a narrow Split View has the phone's bottom bar and keeps the cue. Every input
-  // is settled, like the wall capsule, so nothing in the title view changes while
-  // the player covers the list (#6619).
+  // "You have the board" is the slot's skin while this climber holds the board,
+  // only where the iOS 26 accessory platter mounts on iPhone: that platter
+  // collapses on scroll and drops its bulb, while the Material bar and the iOS
+  // 18 floating bar keep theirs on screen. A regular-width iPad has no bottom
+  // tab bar for the platter to collapse into, so its bulb stays in view; an iPad
+  // in a narrow Split View has the phone's bottom bar and keeps the cue. Where
+  // the cue is off, the climb on the wall still shows, as the wall capsule.
   const { nativeAccessory } = useTabChrome();
   const { isPad, widthClass } = useDeviceLayout();
   const accessoryCollapses = !(isPad && widthClass === 'regular');
-  const boardHeld = useSettledHeaderValue(
-    nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe',
+  const heldCue = nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe';
+  // Keep the climb, its meaning and its dismissal scope together while a modal
+  // covers the list. None may change the native title during player dismissal.
+  const liveHeaderCapsule = useMemo(() => {
+    const capsule = resolveClimbsHeaderCapsule({
+      wall: trustedWall,
+      dismissal: { loaded: dismissalLoaded, dismissed },
+      heldCue,
+      queueHeadUuid,
+    });
+    if (capsule === null || capsule.kind === 'held') return capsule;
+    return {
+      ...capsule,
+      presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
+    };
+  }, [trustedWall, dismissalLoaded, dismissed, heldCue, queueHeadUuid, linked, historyAge]);
+  const headerCapsule = useSettledHeaderValue(liveHeaderCapsule);
+  const settledWall = headerCapsule?.wall ?? null;
+  const handleDismissWallCapsule = useCallback(
+    (dismissedOccurrence: string) => {
+      if (settledWall === null || dismissedOccurrence !== settledWall.occurrenceKey) return;
+      dismissWallCapsule(settledWall.boardId, dismissedOccurrence);
+    },
+    [settledWall],
   );
   const ledless = useSettledHeaderValue(liveLedless);
   const wallCapsule = useMemo(() => {
-    if (wallCapsuleState) {
+    if (headerCapsule === null) return undefined;
+    if (headerCapsule.kind === 'held') {
       return (
-        <WallStatusCapsule
-          climb={wallCapsuleState.climb}
-          boardName={boardName}
-          presentation={wallCapsuleState.presentation}
-          occurrenceKey={wallCapsuleState.occurrenceKey}
-          onDismiss={handleDismissWallCapsule}
+        <BoardHeldCapsule
+          ledless={ledless}
+          dismiss={
+            headerCapsule.wall
+              ? { occurrenceKey: headerCapsule.wall.occurrenceKey, onDismiss: handleDismissWallCapsule }
+              : undefined
+          }
         />
       );
     }
-    if (boardHeld) return <BoardHeldCapsule ledless={ledless} />;
-    return undefined;
-  }, [wallCapsuleState, boardName, handleDismissWallCapsule, boardHeld, ledless]);
-  const hasWallCapsule = wallCapsuleState !== null;
+    return (
+      <WallStatusCapsule
+        climb={headerCapsule.wall.climb}
+        boardName={boardName}
+        presentation={headerCapsule.presentation}
+        occurrenceKey={headerCapsule.wall.occurrenceKey}
+        onDismiss={handleDismissWallCapsule}
+      />
+    );
+  }, [headerCapsule, boardName, handleDismissWallCapsule, ledless]);
+  // The climb on the wall is in the header, in either skin.
+  const hasWallCapsule = settledWall !== null;
   const loggedWallCapsuleRef = useRef(false);
   useEffect(() => {
     // Skip the "hidden" every Climbs mount would log; only transitions are a trail.
@@ -280,9 +300,8 @@ function ClimbTopChromeComponent({
         scrollEdge={scrollEdge}
         below={
           <>
-            {/* "On the wall" status — a compact capsule in a slim centred row under the
-            app bar (M3 has no centre-slot in the bar), only when a board feed lights
-            a climb that differs from the user's own queue head. */}
+            {/* "On the wall" status — a full-bleed band under the app bar (M3 has no
+            centre slot in the bar) while the wall's climb is trusted and not hidden. */}
             {wallCapsule ? (
               <View pointerEvents="box-none" style={styles.materialWallStatusRow}>
                 {wallCapsule}
@@ -398,9 +417,9 @@ function ClimbTopChromeComponent({
       // The tab names the screen: the iOS native header draws no "Climbs" title.
       titleHidden
       // "On the wall" status — a compact capsule in the centre islands slot (where
-      // the title used to sit) when a board feed lights a climb that differs from
-      // the user's own current climb; otherwise undefined, so the centre falls back
-      // to the title.
+      // the title used to sit) while the wall's climb is trusted and not hidden, or
+      // "You have the board"; otherwise undefined, so the centre falls back to the
+      // title.
       centerContent={wallCapsule}
       canCreate={canCreate}
       onCreate={onCreate}
