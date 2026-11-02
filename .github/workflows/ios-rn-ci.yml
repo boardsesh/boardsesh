@@ -259,13 +259,24 @@ jobs:
             | python3 -c "
           import json, sys
           listing = json.load(sys.stdin)
+          # Newest runtime first. Prefer a single-screen iPhone: the iPhone Duo
+          # (the only iPhone on iOS 27.1) boots and launches far slower.
+          fallback = None
           for runtime in sorted(listing['devices'].keys(), reverse=True):
               if 'iOS' not in runtime:
                   continue
               for device in listing['devices'][runtime]:
-                  if 'iPhone' in device['name'] and device['isAvailable']:
+                  if 'iPhone' not in device['name'] or not device['isAvailable']:
+                      continue
+                  if 'Duo' not in device['name']:
+                      print(device['udid'] + ' ' + device['name'], file=sys.stderr)
                       print(device['udid'])
                       sys.exit(0)
+                  fallback = fallback or device
+          if fallback:
+              print(fallback['udid'] + ' ' + fallback['name'], file=sys.stderr)
+              print(fallback['udid'])
+              sys.exit(0)
           sys.exit(1)
           ")
           echo "udid=$SIMULATOR_UDID" >> "$GITHUB_OUTPUT"
@@ -280,7 +291,7 @@ jobs:
       - name: Launch the Release app and watch for crashes
         id: release-smoke
         # Leave time for the helper's bounded cold boot/install commands and
-        # diagnostic collection (about 14.5 min if every bound is hit);
+        # diagnostic collection (about 16.5 min if every bound is hit);
         # external cancellation would lose its summary.
         timeout-minutes: 20
         run: >-
