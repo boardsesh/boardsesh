@@ -502,6 +502,8 @@
       "emptyQueue": "La tua coda è vuota",
       "toggleHistory": "Mostra o nascondi la cronologia",
       "editQueue": "Modifica coda",
+      "moreActions": "Altre azioni della coda",
+      "clearQueue": "Svuota coda",
       "doneEditing": "Fine",
       "cleared": "Coda svuotata",
       "removed_one": "{{count}} blocco rimosso",

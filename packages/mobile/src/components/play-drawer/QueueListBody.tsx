@@ -7,7 +7,12 @@ import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
 import type { QueueItemRowBoard } from '../QueueItemRow';
-import { usePlaylistSuggestionSource, useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
+import {
+  usePlaylistSuggestionSource,
+  useQueueActions,
+  useQueueSessionId,
+  type QueueClearSource,
+} from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
@@ -60,7 +65,7 @@ export type QueueListBodyHandle = {
 };
 
 /**
- * The queue as the climber edits it: the header (History, Edit, Clear), the
+ * The queue as the climber edits it: the header (History, Edit, ⋯, Clear), the
  * list, the Undo after a removal and the bulk Remove bar. QueueSheet presents it
  * in a sheet; the landscape iPad player shows it in its Up next panel. Returns
  * siblings, so the host decides the container (the sheet's own content view, or
@@ -178,16 +183,22 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
     [playlistSuggestionSource, undoScope],
   );
 
-  const handleClearAll = useCallback(() => {
-    const before = getQueueSnapshot();
-    hapticWarning();
-    clearQueue();
-    setIsEditMode(false);
-    setSelectedItems(new Set());
-    if (before.queue.length > 0) {
-      offerUndo('cleared', before, new Set(before.queue.map((item) => item.uuid)));
-    }
-  }, [clearQueue, getQueueSnapshot, offerUndo]);
+  // The edit mode's Clear and the header's ⋯ → Clear queue both land here, so
+  // they clear the same way, for the same people, with the same Undo. `source`
+  // only tells analytics which one it was.
+  const handleClearAll = useCallback(
+    (source: QueueClearSource) => {
+      const before = getQueueSnapshot();
+      hapticWarning();
+      clearQueue({ source });
+      setIsEditMode(false);
+      setSelectedItems(new Set());
+      if (before.queue.length > 0) {
+        offerUndo('cleared', before, new Set(before.queue.map((item) => item.uuid)));
+      }
+    },
+    [clearQueue, getQueueSnapshot, offerUndo],
+  );
 
   const handleBulkRemove = useCallback(() => {
     const before = getQueueSnapshot();

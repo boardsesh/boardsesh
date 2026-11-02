@@ -502,6 +502,8 @@
       "emptyQueue": "Your queue is empty",
       "toggleHistory": "Toggle history",
       "editQueue": "Edit queue",
+      "moreActions": "More queue actions",
+      "clearQueue": "Clear queue",
       "doneEditing": "Done editing",
       "cleared": "Queue cleared",
       "removed_one": "{{count}} climb removed",
