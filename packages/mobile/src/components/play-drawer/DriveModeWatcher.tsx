@@ -167,18 +167,19 @@ export function DriveModeWatcher(): null {
     };
   }, [windowEndsAt]);
 
+  // A connect in flight holds the arming clock: the device picker stays open
+  // while the climber reads the list, as long as they need (the tap's own
+  // relight waits on it too). The clock starts again when the connect settles;
+  // one that settled with no link is `connect_failed` above.
   const armingSince = drive?.phase === 'arming' ? drive.startedAt : null;
   useEffect(() => {
-    if (armingSince === null) return undefined;
-    const timer = setTimeout(
-      () => {
-        const latest = getDriveMode();
-        if (latest?.phase === 'arming' && latest.startedAt === armingSince) exitDriveMode('arming_timed_out');
-      },
-      Math.max(0, armingSince + DRIVE_ARMING_TIMEOUT_MS - Date.now()),
-    );
+    if (armingSince === null || pending) return undefined;
+    const timer = setTimeout(() => {
+      const latest = getDriveMode();
+      if (latest?.phase === 'arming' && latest.startedAt === armingSince) exitDriveMode('arming_timed_out');
+    }, DRIVE_ARMING_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [armingSince]);
+  }, [armingSince, pending]);
 
   return null;
 }

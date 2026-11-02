@@ -496,9 +496,11 @@
         "off": "Off",
         "untilStopped": "Until I stop",
         "moonboardLabel": "On a MoonBoard",
+        "moonboardAccessibilityLabel": "Keep lighting on a MoonBoard",
         "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
         "sheetMoonboardLabel": "Keep lighting on this MoonBoard",
         "inSessionLabel": "In a session too",
+        "inSessionAccessibilityLabel": "Keep lighting in a session too",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
         "inSessionOffReason": "Turn on Keep lighting after Put on board to use this.",
         "footer": "Each climb that lights restarts the clock. Rest longer than that and your next pick opens as a preview."

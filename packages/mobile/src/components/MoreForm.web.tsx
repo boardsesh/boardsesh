@@ -24,6 +24,7 @@ import {
   disabledOptionKeys,
   guardedButtonPress,
   selectedOptionLabel,
+  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
 import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
@@ -67,6 +68,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
         <List.Item
           title={row.label}
           description={row.subtitle}
+          accessibilityLabel={row.accessibilityLabel}
           disabled={row.disabled}
           style={row.disabled ? styles.disabledRow : undefined}
           aria-disabled={row.disabled ?? false}
@@ -152,7 +154,8 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
         <List.Item
           key={row.key}
           title={row.label}
-          description={row.subtitle}
+          description={toggleRowSubtitle(row).text}
+          accessibilityLabel={row.accessibilityLabel}
           disabled={row.disabled}
           style={row.disabled ? styles.disabledToggle : undefined}
           onPress={() => {

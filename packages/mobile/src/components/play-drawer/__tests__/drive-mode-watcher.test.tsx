@@ -219,6 +219,52 @@ describe('DriveModeWatcher', () => {
     expect(getLastDriveModeExitReason()).toBe('arming_timed_out');
   });
 
+  // Put on board with no remembered board opens the device picker, and the
+  // climber may read the list for longer than the arming timeout.
+  it('holds the arming clock while the connect is in flight, then starts it over', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, isConnected: false, boardId: null };
+    const watcher = mount();
+    act(() =>
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      }),
+    );
+    watcher.change({ loading: true });
+    act(() => {
+      vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS * 2);
+    });
+    expect(getDriveMode()?.phase).toBe('arming');
+    // A board picked at last: the link is up and the climb is on its way.
+    watcher.change({ loading: false, isConnected: true, boardId: 7 });
+    act(() => {
+      vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS - 1);
+    });
+    expect(getDriveMode()?.phase).toBe('arming');
+    act(() => emitWallConfirm('climb-a'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
+  });
+
+  it('still gives up 30 s after a connect settles without lighting anything', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, isConnected: false, boardId: null };
+    const watcher = mount();
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null }));
+    watcher.change({ loading: true });
+    act(() => {
+      vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS);
+    });
+    watcher.change({ loading: false, isConnected: true, boardId: 7 });
+    act(() => {
+      vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS);
+    });
+    expect(getLastDriveModeExitReason()).toBe('arming_timed_out');
+  });
+
   it('never times out a live drive', () => {
     vi.useFakeTimers();
     mount();
@@ -597,6 +643,61 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     watcher.change({ drivesInSession: false });
     expect(getDriveMode()?.phase).toBe('live');
     watcher.change({ isCrew: true });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  // The window lights this phone's own picks (2.7): a crewmate's put-up takes
+  // the wall back, so the holder's next pick is a preview again and Put on
+  // board asks the busy-wall question. Their relay never renews the window.
+  it('ends the window when a crewmate puts a climb up; their relay never renews it', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-q-1'));
+    act(() => {
+      vi.advanceTimersByTime(40_000);
+    });
+    act(() => crewMove('q-2'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    // This phone's auto-sender lights the crewmate's climb: no drive to renew.
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    act(() => emitWallConfirm('climb-q-2'));
+    expect(getDriveMode()).toBeNull();
+    expect(getCrewPutUp()).toBeNull();
+  });
+
+  it("keeps the window through this phone's own move and its echo", () => {
+    reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-q-1'));
+    noteOwnMove('q-own');
+    act(() => crewMove('q-own'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
+  });
+
+  it("ends a MoonBoard window on the MoonBoard's own choice only", () => {
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs: 30_000,
+        windowSetting: 'moonboardPutOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ moonboardKeepLighting: '30' });
+    // The general choice and In a session too are not a MoonBoard's.
+    watcher.change({ keepLighting: 'off' });
+    expect(getDriveMode()?.phase).toBe('live');
+    watcher.change({ drivesInSession: false, isCrew: true });
+    expect(getDriveMode()?.phase).toBe('live');
+    watcher.change({ moonboardKeepLighting: 'off' });
+    expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('window_ended');
   });
 

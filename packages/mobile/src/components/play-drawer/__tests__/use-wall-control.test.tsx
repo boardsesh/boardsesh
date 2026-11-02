@@ -40,7 +40,10 @@ import {
   type WallControlRunners,
 } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
-import { registerAutoDisconnectActivity } from '../../../lib/auto-disconnect-deadline';
+import {
+  registerAutoDisconnectActivity,
+  registerAutoDisconnectDeadlineReader,
+} from '../../../lib/auto-disconnect-deadline';
 import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { startKeepLighting } from '../drive-runner';
 import {
@@ -627,7 +630,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
   });
 
-  it('drops the wait on Keep theirs, on another climb, or on a fresh press', () => {
+  it('drops the wait on Keep theirs or on another climb; a Put mine up that does not go up arms nothing', () => {
     const run = runners();
     run.light.mockReturnValue(false);
     const { hook } = setup(preview(), run);
@@ -647,6 +650,44 @@ describe('useWallControl: Put on board keeps lighting', () => {
     // A Put mine up that doesn't go up arms nothing either.
     run.light.mockReturnValue(false);
     act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+  });
+
+  it('keeps the wait through a noop tap while the question is up, so Put mine up still keeps lighting', () => {
+    const run = runners();
+    realKeepLighting(run);
+    run.light.mockReturnValueOnce(false);
+    const { hook } = setup(preview({ solo: false, crewSession: true }), run);
+    act(() => hook.result.current.press('button'));
+    // The question holds the second row: the first-row bulb and the MiniPlayer's do nothing.
+    const asking = preview({ solo: false, crewSession: true, confirmArmed: true });
+    expect(asking.bulbTapAction).toBe('noop');
+    hook.rerender({ model: asking });
+    act(() => hook.result.current.press('bulb'));
+    act(() => hook.result.current.press('mini_bar'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).toHaveBeenCalledOnce();
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+  });
+
+  it('drops the wait on a fresh press that does something else', () => {
+    const run = runners();
+    run.light.mockReturnValueOnce(false);
+    const { hook } = setup(preview(), run);
+    act(() => hook.result.current.press('button'));
+    // Keep lighting turned Off before the next press: that one lights one climb.
+    hook.rerender({ model: preview({ keepLighting: 'off' }) });
+    act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+
+    run.light.mockReturnValueOnce(false);
+    hook.rerender({ model: preview() });
+    act(() => hook.result.current.press('button'));
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
     act(() => hook.result.current.confirmPut());
     expect(run.keepLighting).not.toHaveBeenCalled();
   });
@@ -774,6 +815,22 @@ describe('useWallControl: the keep-lighting window', () => {
       noteDriveClimbLit();
     });
     expect(announceQueued).toHaveBeenCalledOnce();
+  });
+
+  // The clock counts to auto-disconnect when that comes first (spec B2), and
+  // the one spoken notice of the limit (WCAG 2.2.1) must say the same length.
+  it('says the length the clock shows when auto-disconnect comes first', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const release = registerAutoDisconnectDeadlineReader(() => 100_000 + 30_000);
+    try {
+      setup(windowModel());
+      openWindow(45_000);
+      expect(announceQueued).toHaveBeenCalledOnce();
+      expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStarted {"count":30}');
+    } finally {
+      release();
+    }
   });
 
   it('says a one-minute window in minutes', () => {

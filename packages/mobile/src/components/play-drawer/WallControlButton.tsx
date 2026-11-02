@@ -41,7 +41,7 @@
 // screen-reader value is the time left on a 10 s step, split from the label.
 
 import { PressableSurface, type PressableSurfaceProps } from '../PressableSurface';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -65,7 +65,7 @@ import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
-import { useWallControlText, windowTimeValue } from './wall-control-text';
+import { formatWindowClock, useWallControlText, windowTimeValue } from './wall-control-text';
 import { WallGlow } from './WallGlow';
 import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
@@ -326,13 +326,14 @@ function WallControlButtonComponent({
           />
         )}
       </View>
-      <LargeContentViewer
+      <WallLabelViewer
         testID={
           rowColors.resting && !sample
             ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
             : undefined
         }
         title={label}
+        lightWindow={model.lightWindow}
         onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
       >
@@ -354,7 +355,7 @@ function WallControlButtonComponent({
           {/* The clock is its own run, so the words shrink and cut first and the digits never do. */}
           {model.lightWindow ? <WallWindowDigits color={rowColors.foreground} /> : null}
         </View>
-      </LargeContentViewer>
+      </WallLabelViewer>
       {showChevrons ? (
         <View
           style={[styles.chevrons, { marginEnd: CHEVRON_FACE_GAP - (compact ? spacing[1] : spacing[2]) }]}
@@ -456,6 +457,24 @@ function WallControlButtonComponent({
 }
 
 export const WallControlButton = memo(WallControlButtonComponent);
+
+type WallLabelViewerProps = ComponentProps<typeof LargeContentViewer> & {
+  /** Put on board's keep-lighting window is on: the viewer shows the time left too. */
+  lightWindow: boolean;
+};
+
+/**
+ * The label's Large Content Viewer (spec B3). The label and its clock are both
+ * capped, and in a keep-lighting window the time left is the news, so the
+ * viewer shows "Each pick lights · 0:38". A leaf of its own, so the clock's
+ * 1 Hz tick re-renders only this; the row it wraps is the parent's element,
+ * which React keeps as it is.
+ */
+function WallLabelViewer({ lightWindow, title, ...viewer }: WallLabelViewerProps) {
+  const clock = useWindowSecondsLeft(1);
+  const shownTitle = lightWindow && clock ? `${title} · ${formatWindowClock(clock.secondsLeft * 1000)}` : title;
+  return <LargeContentViewer {...viewer} title={shownTitle} />;
+}
 
 type WallControlSurfaceProps = PressableSurfaceProps & {
   /** Put on board's keep-lighting window is on: the time left is the value. */

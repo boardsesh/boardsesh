@@ -84,7 +84,9 @@ export type DriveModeExitReason =
 /**
  * How long arming may wait for the wall before it gives up. The Bluetooth scan
  * is 15 s; past twice that the swipe's connect is not coming, and an arming
- * drive left behind would keep the button from offering the swipe again.
+ * drive left behind would keep the button from offering the swipe again. The
+ * clock runs only while no connect is in flight (`DriveModeWatcher`): an open
+ * device picker holds it, and it starts over when the connect settles.
  */
 export const DRIVE_ARMING_TIMEOUT_MS = 30_000;
 

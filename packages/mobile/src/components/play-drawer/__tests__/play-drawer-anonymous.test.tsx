@@ -1289,7 +1289,9 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     });
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
 
-    // ...and then lets go, without the climber having to find a button.
+    // ...and then lets go, without the climber having to find a button. The
+    // swipe commits again: from the preview the latched step opened, the climb
+    // its peek shows goes up, not the queue's next from the wall.
     act(() => {
       vi.advanceTimersByTime(SHARED_BROWSE_LATCH_RELEASE_MS + 100);
     });
@@ -1297,7 +1299,11 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     act(() => {
       (lastActionBarProps().onNextClick as () => void)();
     });
-    expect(queueActions.nextClimb).toHaveBeenCalledTimes(1);
+    expect(queueActions.nextClimb).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ uuid: 'queue-item-next' }),
+      expect.objectContaining({ keepWalkedTrack: true, trigger: 'next' }),
+    );
     vi.useRealTimers();
   });
 

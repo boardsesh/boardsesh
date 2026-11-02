@@ -3335,7 +3335,7 @@ export function PlayCore({
                       Logbook peek's slot. Never over the board, and outside the
                       first screen, so the board keeps its size. */}
                     {previewFirstTip.visible ? (
-                      <View testID="play-drawer-preview-first-slot" style={styles.previewFirstTipSlot}>
+                      <View style={styles.previewFirstTipSlot}>
                         <PlayerPreviewTip
                           boardName={boardName}
                           glow={wallGlowInput}
@@ -3350,7 +3350,7 @@ export function PlayCore({
 
                     {/* Below-fold deferred sections. */}
                     {hasVisibleSections && (
-                      <View testID="play-drawer-below-fold">
+                      <View>
                         {/* The frame the board paints on an animated climb, for Active
                           holds alone (and only while it is on): the sections' own
                           props stay the same between playback frames. */}

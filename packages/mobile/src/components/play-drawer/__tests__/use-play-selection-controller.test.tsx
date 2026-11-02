@@ -1007,6 +1007,98 @@ describe('preview-first host selections and deferred commits', () => {
     });
   });
 
+  // A queue-sheet row (or Replay from here) opens its slot as a preview. With
+  // Light the board as I swipe on, solo, a swipe from it commits the slot's own
+  // neighbour, the one the peek showed, never the queue's next from the wall.
+  it.each([
+    ['handleNext', 'nextItem', 'next'],
+    ['handlePrev', 'prevItem', 'previous'],
+  ] as const)('%s from a queue-slot preview commits the slot’s neighbour the peek showed', (handler, side, trigger) => {
+    const slot = item('slot-d');
+    const initialProps = inputs();
+    initialProps.navigation.navigationState = { prevItem: item('slot-c'), nextItem: item('slot-e') };
+    initialProps.preview.drawerPreviewItem = slot;
+    initialProps.openTarget = open(slot, {
+      previewQueueItem: slot,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current[handler]('swipe'));
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.previousClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      initialProps.navigation.navigationState[side],
+      { keepWalkedTrack: true, trigger, historyCopy: 'fresh' },
+    );
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(null);
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith({
+      direction: trigger,
+      method: 'swipe',
+      outcome: 'moved',
+    });
+  });
+
+  it('keeps going through the queue from a preview with no neighbour of its own', () => {
+    const orphan = item('deep-link');
+    const initialProps = inputs();
+    initialProps.navigation.navigationState = { prevItem: null, nextItem: null };
+    initialProps.preview.drawerPreviewItem = orphan;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    expect(initialProps.queue.nextClimb).toHaveBeenCalledOnce();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  // The deferred options belong to the slot as it was opened: a swipe away and
+  // back to the same slot is an ordinary browse, and Put on board then commits
+  // it plainly, not with Replay from here's STEP.
+  it('drops deferred replay placement after a swipe away and back to the same slot', () => {
+    const history = item('history');
+    const next = item('next');
+    const initialProps = inputs();
+    initialProps.navigation.lightOnSwipe = false;
+    initialProps.navigation.navigationState = { prevItem: item('before'), nextItem: next };
+    initialProps.preview.drawerPreviewItem = history;
+    initialProps.openTarget = open(history, {
+      previewQueueItem: history,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    const atNext = {
+      ...initialProps,
+      preview: { ...initialProps.preview, drawerPreviewItem: next },
+      navigation: { ...initialProps.navigation, navigationState: { prevItem: history, nextItem: item('after') } },
+    };
+    rerender(atNext);
+    act(() => result.current.handlePrev('swipe'));
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(history);
+    rerender({ ...atNext, preview: { ...atNext.preview, drawerPreviewItem: history } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(history, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('keeps deferred options to their own slot when another climb is on screen', () => {
+    const history = item('history');
+    const other = item('other');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = history;
+    initialProps.openTarget = open(history, {
+      previewQueueItem: history,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: other } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(other, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+
   it('does not carry deferred replay placement to a climb reached by Next', () => {
     const selected = item('history');
     const initialProps = inputs();

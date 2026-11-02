@@ -496,9 +496,11 @@
         "off": "Disattivato",
         "untilStopped": "Finché non mi fermo",
         "moonboardLabel": "Su una MoonBoard",
+        "moonboardAccessibilityLabel": "Continua a illuminare su una MoonBoard",
         "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
         "sheetMoonboardLabel": "Continua a illuminare su questa MoonBoard",
         "inSessionLabel": "Anche in una session",
+        "inSessionAccessibilityLabel": "Continua a illuminare anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
         "inSessionOffReason": "Attiva Continua a illuminare dopo Illumina il pannello per usarlo.",
         "footer": "Ogni blocco che si illumina fa ripartire il timer. Se riposi più a lungo, il prossimo blocco che scegli si apre in anteprima."

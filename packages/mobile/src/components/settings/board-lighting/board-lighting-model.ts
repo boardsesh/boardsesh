@@ -63,13 +63,14 @@ function keepLightingRow(
   key: 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting',
   label: string,
   picker: KeepLightingPicker,
-  subtitle?: string,
+  extra: { subtitle?: string; accessibilityLabel?: string } = {},
 ): MoreSelectRow {
   return {
     kind: 'select',
     key,
     label,
-    ...(subtitle ? { subtitle } : {}),
+    ...(extra.accessibilityLabel ? { accessibilityLabel: extra.accessibilityLabel } : {}),
+    ...(extra.subtitle ? { subtitle: extra.subtitle } : {}),
     options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
     selectedKey: picker.choice,
     onSelect: (selected) => {
@@ -110,7 +111,11 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
         'moonboardPutOnBoardKeepsLighting',
         t('settings:ble.lighting.keep.moonboardLabel'),
         input.moonboardKeepLighting,
-        t('settings:ble.lighting.keep.moonboardDescription'),
+        {
+          subtitle: t('settings:ble.lighting.keep.moonboardDescription'),
+          // Named on its own (spec B4): the rotor and Voice Control read it without the row above.
+          accessibilityLabel: t('settings:ble.lighting.keep.moonboardAccessibilityLabel'),
+        },
       ),
     );
   }
@@ -118,10 +123,10 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     kind: 'toggle',
     key: 'putOnBoardDrivesInSession',
     label: t('settings:ble.lighting.keep.inSessionLabel'),
+    accessibilityLabel: t('settings:ble.lighting.keep.inSessionAccessibilityLabel'),
+    subtitle: t('settings:ble.lighting.keep.inSessionDescription'),
     // Greyed with the general choice Off: the reason replaces the description, at full contrast.
-    subtitle: keepOff
-      ? t('settings:ble.lighting.keep.inSessionOffReason')
-      : t('settings:ble.lighting.keep.inSessionDescription'),
+    disabledReason: t('settings:ble.lighting.keep.inSessionOffReason'),
     value: input.drivesInSession.enabled,
     disabled: keepOff,
     onValueChange: input.drivesInSession.onChange,

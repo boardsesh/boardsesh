@@ -6,7 +6,7 @@ import { announceQueued } from '../../lib/announce-queued';
 import { hapticLight, hapticSuccess } from '../../lib/haptics';
 import { subscribeCrewMoves } from '../../lib/relay-receipt';
 import { clearCrewPutUp, formatCrewPutUp, resolveCrewPutUp, showCrewPutUp } from './crew-put-up-store';
-import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } from './drive-mode-store';
+import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } from './drive-mode-store';
 
 /**
  * A crewmate puts a climb up while this phone drives the wall (#7113). This
@@ -20,6 +20,13 @@ import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } f
  * or its echo), heard while live, and said once the queue has made it current.
  * Any other change of current climb first drops it: a crewmate's move the
  * driver's own swipe overtook is never said later.
+ *
+ * Put on board's keep-lighting window (2.7) is different: it lights this
+ * phone's own picks, so a crewmate's put-up ends it (`window_ended`). The
+ * auto-sender still lights their climb, and this phone's next pick is a
+ * preview again, with the busy-wall question in front of Put on board. A
+ * crewmate's relay never renews the window, or the holder's next swipe could
+ * take the wall back from the crewmate at it.
  *
  * It reads the current climb through `useActiveClimbUuid` (a change of climb)
  * and the queue snapshot, so the app-root watcher doesn't re-render on every
@@ -35,7 +42,12 @@ export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
   useEffect(
     () =>
       subscribeCrewMoves((queueItemUuid) => {
-        if (getDriveMode()?.phase === 'live') pendingRef.current = queueItemUuid;
+        const drive = getDriveMode();
+        if (drive?.windowMs != null) {
+          exitDriveMode('window_ended');
+          return;
+        }
+        if (drive?.phase === 'live') pendingRef.current = queueItemUuid;
       }),
     [],
   );

@@ -33,6 +33,7 @@ import {
   guardedButtonPress,
   isButtonRowPressable,
   selectedOptionLabel,
+  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
 import type { MoreFormProps, MoreRow, MoreSection, MoreSelectRow, MoreIconName } from './MoreForm.types';
@@ -77,7 +78,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
           // Equivalent option rebuilds keep the same mapping for queued taps.
           key={optionsKey}
           label={currentLabel}
-          accessibilityLabel={`${row.label}, ${currentLabel}`}
+          accessibilityLabel={`${row.accessibilityLabel ?? row.label}, ${currentLabel}`}
           actions={row.options.map((option) => ({ label: option.label, selected: option.key === row.selectedKey }))}
           onSelectIndex={(index) => {
             const currentRow = currentRowRef.current;
@@ -164,7 +165,7 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
         <View style={styles.padded}>
           <SwitchRow
             label={row.label}
-            description={row.subtitle}
+            description={toggleRowSubtitle(row).text}
             value={row.value}
             disabled={row.disabled}
             onValueChange={row.onValueChange}

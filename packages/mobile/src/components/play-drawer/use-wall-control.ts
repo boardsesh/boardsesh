@@ -2,7 +2,7 @@ import type { AnalyticsEventProperties, WallControlPreviewReason } from '@boards
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
-import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
+import { noteAutoDisconnectActivity, readAutoDisconnectDeadlineMs } from '../../lib/auto-disconnect-deadline';
 import { noteWallPutOnBoardPress } from '../../lib/wall-swipe-hint';
 import {
   trackWallControlSwiped,
@@ -14,6 +14,7 @@ import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
 import type { KeepLightingPlan } from '../../lib/keep-lighting';
 import {
+  clampWindowEnd,
   clearDrivingStopped,
   getDriveMode,
   getLastDriveModeExitReason,
@@ -207,9 +208,11 @@ export function useWallControl({
     if (previous === lightingMode) return;
     if (lightingMode === 'window') {
       const drive = getDriveMode();
-      if (!drive || drive.windowMs === null || announcedWindowForRef.current === drive.startedAt) return;
+      if (!drive || drive.expiresAt === null || announcedWindowForRef.current === drive.startedAt) return;
       announcedWindowForRef.current = drive.startedAt;
-      if (playerOpen) announceQueued(windowStartedAnnouncement(drive.windowMs, t));
+      // The length the clock shows: auto-disconnect's end when that comes first.
+      const shownMs = clampWindowEnd(drive.expiresAt, readAutoDisconnectDeadlineMs()) - Date.now();
+      if (playerOpen) announceQueued(windowStartedAnnouncement(Math.max(0, shownMs), t));
       return;
     }
     if (previous === 'window' && lightingMode === 'off' && getLastDriveModeExitReason() === 'window_ended') {
@@ -256,8 +259,10 @@ export function useWallControl({
       ...(latest.current.previewReason ? { previewReason: latest.current.previewReason } : {}),
       ...(latest.current.analyticsContext ? { analyticsContext: latest.current.analyticsContext } : {}),
     });
-    // A fresh press: whatever an earlier one left waiting on the question goes.
-    pendingKeepLightingRef.current = null;
+    // A fresh press that does something: whatever an earlier one left waiting
+    // on the question goes. A noop (a bulb while the question holds the second
+    // row) leaves it, so Put mine up still keeps lighting.
+    if (action !== 'noop') pendingKeepLightingRef.current = null;
     const putsUp = isPutUpAction(action);
     // The swipe peek's replay: a third Put on board within 5 minutes (spec B3).
     if (putsUp && control === 'button') noteWallPutOnBoardPress();

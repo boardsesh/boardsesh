@@ -85,8 +85,8 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
-    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
+  LargeContentViewer: ({ children, testID, title }: Children & { testID?: string; title: string }) =>
+    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true', 'data-title': title }, children),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -917,6 +917,22 @@ describe('WallControlButton: the keep-lighting window', () => {
     peekCtrl.screenReaderOn = false;
     renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
     expect(peekCtrl.triggers.at(-1)).toEqual({ offered: false, windowLive: false, screenReaderOn: false });
+  });
+
+  // Spec B3: the Large Content Viewer shows the full label, and in a window
+  // the time left is part of it. The clock ticks on the viewer's own leaf.
+  it('shows the time left in the Large Content Viewer, ticking on its own leaf', () => {
+    windowClock.secondsLeft = 38;
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const viewerTitle = () => view.container.querySelector('[data-native-viewer]')?.getAttribute('data-title');
+    expect(viewerTitle()).toBe('playView.wallControl.eachPickLights · 0:38');
+    const pillRenders = swipeCtrl.options.length;
+    act(() => tickWindow(37));
+    expect(viewerTitle()).toBe('playView.wallControl.eachPickLights · 0:37');
+    expect(swipeCtrl.options.length).toBe(pillRenders);
+    cleanup();
+    const outside = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(outside.container.querySelector('[data-native-viewer]')?.getAttribute('data-title')).not.toContain('0:');
   });
 
   it('says under ten seconds without a count', () => {

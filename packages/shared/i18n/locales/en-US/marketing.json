@@ -583,8 +583,8 @@
       },
       "crowd": {
         "title": "Browsing without moving the wall",
-        "p1": "With someone else in your session, swipes browse without changing the wall unless you are driving. Tap Put on board to put up one climb, or tap On the wall at the top to return to the climb on the wall.",
-        "p2": "If the player button says You are driving the wall, tap it to stop driving and keep the connection. A tap opens a preview and Put on board lights it, so browsing stays off the wall unless you turn on Light the board when I tap a climb or Light the board as I swipe under Settings, then Board.",
+        "p1": "With someone else in your session, swipes browse without changing the wall unless you are driving or just put a climb up. Tap Put on board to put up a climb, or tap On the wall at the top to return to the climb on the wall.",
+        "p2": "After Put on board, the climbs you pick for the next 45 seconds light the wall too, while In a session too is on; a MoonBoard keeps lighting until you stop. The button reads Each pick lights: tap it to stop early, or let the time run out. A crewmate putting a climb up ends it too. If the button says You are driving the wall, tap it to stop driving and keep the connection. Otherwise a tap opens a preview, so browsing stays off the wall unless you turn on Light the board when I tap a climb or Light the board as I swipe under Settings, then Board.",
         "previewLink": "Tap a climb to preview it",
         "drivingLink": "How to start and stop driving the wall"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Read the frosted wall button: Put on board lights this climb. You are driving the wall means every climb you pick lights up."
+        "subtitle": "Read the wall button: Put on board lights this climb and the next ones you pick for a short time. A glowing You are driving the wall lights every climb until you stop."
       },
       "connect": {
         "title": "Connect",
@@ -732,8 +732,8 @@
         "row2": "Turn off all lights. Your phone stays connected.",
         "row3": "Disconnect board. Use it when you connected to the wrong wall.",
         "row4": "Light the hold above. MoonBoard only.",
-        "p2": "Auto-disconnect, Light the board when I tap a climb and Light the board as I swipe are under Settings, then Board, and in the sheet the top bar’s lightbulb opens. The same screen sets how long Put on board keeps lighting. Auto-disconnect frees the board after 30 seconds idle. To browse without lighting, stop driving first and leave both lighting switches off. A live drive lights every climb you pick even when those switches are off.",
-        "p3": "With no board connected, Put on board connects and lights the climb on screen. Climbing alone, the next climbs you pick light for 45 seconds after each lit climb; a MoonBoard keeps lighting until you stop. In a crew, that needs In a session too turned on. The top bar’s lightbulb can reconnect to the last board you used.",
+        "p2": "Auto-disconnect, Light the board when I tap a climb and Light the board as I swipe are under Settings, then Board, and in the sheet the top bar’s lightbulb opens. The same screen sets how long Put on board keeps lighting. Auto-disconnect frees the board after 30 seconds idle. To browse without lighting, leave both lighting switches off, and stop driving or let Put on board’s time run out first (tap Each pick lights to end it early). While you drive, or in that time after Put on board, every climb you pick lights even when those switches are off.",
+        "p3": "With no board connected, Put on board connects and lights the climb on screen. Then the next climbs you pick light for 45 seconds after each lit climb; in a crew, only while In a session too is on. A MoonBoard keeps lighting until you stop, in a crew too. The top bar’s lightbulb can reconnect to the last board you used.",
         "shotAlt": "Board controls for a connected board",
         "shotCaption": "Re-light, turn off all lights or disconnect. Light every climb starts driving when offered."
       },

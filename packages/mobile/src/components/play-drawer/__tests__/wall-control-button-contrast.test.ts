@@ -73,13 +73,17 @@ describe('wall button contrast', () => {
     expect(contrastRatioHex(brandColorsDark.onAccent, brandColorsDark.live)).toBeGreaterThanOrEqual(4.5);
   });
 
-  // B1: the top bar's "Preview · not on the wall" line (PlayListContext) is
-  // drawn in Velvet's opaque secondary label on both variants. iOS's own
-  // secondaryLabel is translucent and measures 3.44:1 on a white sheet.
-  it.each(['light', 'dark'] as const)('keeps the preview line well past 4.6:1 on every %s ground', (scheme) => {
-    const label = materialSurfaces[scheme].secondaryLabel;
-    for (const surface of SURFACES[scheme]) {
-      expect(contrastRatioHex(label, surface), `${label} on ${surface}`).toBeGreaterThanOrEqual(6);
-    }
-  });
+  // B1: the top bar's "Preview · not on the wall" line (PlayListContext), and
+  // B3: the board sheet's status line (BoardSheetStatusLine), its full-size
+  // fallback, are drawn in Velvet's opaque secondary label on both variants.
+  // iOS's own secondaryLabel is translucent and measures 3.44:1 on a white sheet.
+  it.each(['light', 'dark'] as const)(
+    'keeps the preview and board sheet lines well past 4.6:1 on every %s ground',
+    (scheme) => {
+      const label = materialSurfaces[scheme].secondaryLabel;
+      for (const surface of SURFACES[scheme]) {
+        expect(contrastRatioHex(label, surface), `${label} on ${surface}`).toBeGreaterThanOrEqual(6);
+      }
+    },
+  );
 });

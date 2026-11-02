@@ -32,6 +32,14 @@ import { formatWindowClock, windowSecondsLeft, windowValueSeconds } from './wall
 const WINDOW_BAR_REFILL_MS = 250;
 
 /**
+ * How far the shown end may move under a running drain before the drain is
+ * aimed again. Auto-disconnect's deadline moves with no change of the window
+ * (a press, a hold, a short swipe, a preview, a new timeout in the sheet), and
+ * the digits re-read it every second; the drain checks on the same beat.
+ */
+const WINDOW_DRAIN_RETARGET_MS = 500;
+
+/**
  * The live window's end and length, or null outside one. Two primitive
  * subscriptions, so a climb counted outside a window re-renders nothing here.
  */
@@ -127,8 +135,9 @@ type WallWindowBarProps = {
  * The window's drain: 1 at a renewal, 0 at the shown end. On the UI thread (a
  * shared value with a linear `withTiming`), so the bar and a bulb's ring
  * (`WallWindowRing`) move with no React render per frame; under Reduce Motion
- * it steps with the clock's seconds instead, and a refill jumps. `active` is
- * false outside a window.
+ * it steps with the clock's seconds instead, and a refill jumps. A 1 s check
+ * (a timer, no render) re-aims it when auto-disconnect's end moves the shown
+ * end. `active` is false outside a window.
  */
 export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<number>; active: boolean } {
   const timing = useWindowTiming();
@@ -143,19 +152,38 @@ export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<n
 
   useEffect(() => {
     if (expiresAt === null || totalMs === null || totalMs <= 0) return undefined;
+    const shownEnd = () => clampWindowEnd(expiresAt, readAutoDisconnectDeadlineMs());
     const left = Math.max(0, remainingMs(expiresAt));
-    const start = Math.min(1, left / totalMs);
     if (reduceMotion) {
       cancelAnimation(fraction);
-      fraction.value = start;
+      fraction.value = Math.min(1, left / totalMs);
       return undefined;
     }
-    const drainMs = Math.max(0, left - WINDOW_BAR_REFILL_MS);
-    fraction.value = withSequence(
-      withTiming(start, { duration: WINDOW_BAR_REFILL_MS }),
-      withTiming(0, { duration: drainMs, easing: Easing.linear }),
-    );
-    return () => cancelAnimation(fraction);
+    // From where the bar should be now, then linearly to empty at the shown end.
+    const drain = (leftMs: number) => {
+      fraction.value = withSequence(
+        withTiming(Math.min(1, leftMs / totalMs), { duration: WINDOW_BAR_REFILL_MS }),
+        withTiming(0, { duration: Math.max(0, leftMs - WINDOW_BAR_REFILL_MS), easing: Easing.linear }),
+      );
+    };
+    drain(left);
+    // Aim the drain again when the shown end moves under it, as the digits do.
+    let drainingTo = shownEnd();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      const end = shownEnd();
+      const now = Date.now();
+      if (Math.abs(end - drainingTo) > WINDOW_DRAIN_RETARGET_MS) {
+        drainingTo = end;
+        drain(Math.max(0, end - now));
+      }
+      timer = end > now ? setTimeout(check, 1000) : null;
+    };
+    timer = setTimeout(check, 1000);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      cancelAnimation(fraction);
+    };
   }, [expiresAt, totalMs, reduceMotion, fraction]);
 
   useEffect(() => {

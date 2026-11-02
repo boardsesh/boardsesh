@@ -58,8 +58,9 @@ wall button.
 
 Climbs open in preview by default, including playlist Play and queue selections. Both
 lighting switches default off and preserve stored opt-ins. Tap the board control to light
-one climb; swipe the wall button, or choose **Light every climb**, to enter Driver mode.
-A tap does not start Driver mode, except solo on a MoonBoard (below).
+the climb and open the keep-lighting window (45 s by default); on a MoonBoard the tap starts
+Driver mode by default, in a crew too (below). Swipe the wall button, or choose **Light every
+climb**, for open-ended Driver mode.
 
 ### One model, several views
 
@@ -128,8 +129,12 @@ flat amber fallback; the label still says what the next press does.
   up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
 - **A tap opens a keep-lighting window (2.7).** Connect, Put on board and re-light put the
   climb up with the existing one-climb runner. Put on board then lights every climb you pick
-  until the window ends: 45 s after the last lit climb by default, renewed by each lit climb
-  (Settings › Board: Off, 30 s, 45 s, 1 min or Until I stop). The window starts on the wall's
+  until the window ends: 45 s after the last lit climb by default, renewed by each climb this
+  phone's own picks light (Settings › Board: Off, 30 s, 45 s, 1 min or Until I stop). A
+  crewmate's put-up ends the window (`window_ended`, `use-drive-follow.ts`): their relay
+  never renews it, so the holder's next pick is a preview again and Put on board asks the
+  busy-wall question. Open-ended driving follows a crewmate's put-up instead. While a connect
+  is in flight (the device picker open) the 30 s arming timeout waits. The window starts on the wall's
   lit confirm, not on the press, and its shown end is clamped to the auto-disconnect deadline.
   Every pick reads the window's end off the wall clock (`drivingAtPick` in `drive-mode-store.ts`),
   never a timer alone: Android pauses JS timers with the activity (#7038), so a pick past the end

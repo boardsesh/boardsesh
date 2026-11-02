@@ -67,6 +67,7 @@ import {
   guardedButtonPress,
   isButtonRowPressable,
   selectedOptionLabel,
+  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
 import { materialStepCount, useSliderCommit } from './MoreForm.slider';
@@ -79,6 +80,7 @@ import type {
   MoreRowAction,
   MoreSelectRow,
   MoreSliderRow,
+  MoreToggleRow,
   MoreValueRow,
 } from './MoreForm.types';
 
@@ -224,7 +226,13 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
     >
       <Row modifiers={anchorModifiers} verticalAlignment="center">
         <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
-          <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+          <Text
+            style={{ typography: 'bodyLarge' }}
+            // Named on its own for TalkBack when the visible label leans on the row above.
+            modifiers={row.accessibilityLabel ? [semantics({ contentDescription: row.accessibilityLabel })] : undefined}
+          >
+            {row.label}
+          </Text>
           {/* M3 supporting text, as the switch rows draw theirs. */}
           {row.subtitle ? (
             <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
@@ -438,6 +446,24 @@ function ButtonRow({ row, colors }: { row: MoreButtonRow; colors: RowColors }) {
   );
 }
 
+/**
+ * A switch row's label and the line under it: M3 supporting text at 60%, or,
+ * while greyed out, its reason (`disabledReason`) at full contrast.
+ */
+function ToggleRowText({ row }: { row: MoreToggleRow }) {
+  const subtitle = toggleRowSubtitle(row);
+  return (
+    <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
+      <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+      {subtitle.text ? (
+        <Text style={{ typography: 'bodySmall' }} modifiers={subtitle.isReason ? undefined : [alpha(0.6)]}>
+          {subtitle.text}
+        </Text>
+      ) : null}
+    </Column>
+  );
+}
+
 function renderRow(row: MoreRow, colors: RowColors): ReactNode {
   switch (row.kind) {
     case 'nav':
@@ -465,14 +491,7 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               />
             </IconButton>
           ))}
-          <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
-            <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
-            {row.subtitle ? (
-              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
-                {row.subtitle}
-              </Text>
-            ) : null}
-          </Column>
+          <ToggleRowText row={row} />
           <Switch
             value={row.value}
             enabled={!row.disabled}
@@ -480,6 +499,8 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               if (!row.disabled) row.onValueChange(next);
             }}
             colors={colors.switchColors}
+            // Its own name for TalkBack and Voice Access, which reach the switch on its own.
+            modifiers={row.accessibilityLabel ? [semantics({ contentDescription: row.accessibilityLabel })] : undefined}
           />
         </Row>
       );

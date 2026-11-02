@@ -1,5 +1,5 @@
 Novità della 2.7:
-- Tocca per sfogliare senza luce. Illumina il pannello e i prossimi per 45 s; MoonBoard finché non smetti. Scorri a sinistra il pulsante per continuare a guidare; toccalo per fermarti.
+- Tocca per sfogliare senza luce. Illumina il pannello e i prossimi per 45 s; MoonBoard finché non smetti. Scorri a sinistra il pulsante per illuminare ogni blocco; toccalo per fermarti.
 - Ora in italiano. Recupero con conto alla rovescia e suono nella notifica.
 - Allenamenti in fasi. Scorri nella tua lista; metti subito dopo o in fondo.
 - Ordina e filtra playlist, Mi piace e Progetti.

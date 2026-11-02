@@ -25,16 +25,32 @@ vi.mock('react-i18next', () => ({
     t: (key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key),
   }),
 }));
+const theme = vi.hoisted(() => ({ colorScheme: 'light' as 'light' | 'dark' }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#888' } }),
+  // iOS's translucent secondaryLabel, the colour the line must not take.
+  useTheme: () => ({ colorScheme: theme.colorScheme, systemColors: { secondaryLabel: 'rgba(60,60,67,0.6)' } }),
 }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
+vi.mock('../../../theme/colors', async () => {
+  const { materialSurfaces } = await import('@boardsesh/velvet-tokens');
+  return { withAlpha: (color: string) => color, materialSurfaces };
+});
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('span', { 'data-testid': testID }, children),
+  Text: ({
+    children,
+    testID,
+    color,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    color?: string;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('span', { 'data-testid': testID, 'data-color': color, 'aria-label': accessibilityLabel }, children),
 }));
 
+import { materialSurfaces } from '@boardsesh/velvet-tokens';
 import { enterDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
 import { BoardSheetStatusLine } from '../BoardSheetStatusLine';
 
@@ -42,6 +58,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(100_000);
   resetDriveModeForTests();
+  theme.colorScheme = 'light';
 });
 afterEach(() => {
   cleanup();
@@ -81,6 +98,32 @@ describe('BoardSheetStatusLine', () => {
     });
     expect(lineOf(container)).toBe(
       'playView.wallControl.eachPickLights · playView.wallControl.secondsLeft {"count":44}',
+    );
+  });
+
+  // The full-size fallback for the capped wall button (spec B3): Velvet's
+  // opaque secondary label (wall-control-button-contrast), never iOS's 3.44:1.
+  it.each(['light', 'dark'] as const)('draws in the opaque secondary label in %s', (scheme) => {
+    theme.colorScheme = scheme;
+    const { container } = render(createElement(BoardSheetStatusLine, { status: 'preview' }));
+    const line = container.querySelector('[data-testid="ble-control-status"]');
+    expect(line?.getAttribute('data-color')).toBe(materialSurfaces[scheme].secondaryLabel);
+  });
+
+  it('reads the "·" as a pause, not "middle dot"', () => {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
+    expect(container.querySelector('[data-testid="ble-control-status"]')?.getAttribute('aria-label')).toBe(
+      'playView.wallControl.eachPickLights, playView.wallControl.secondsLeft {"count":45}',
     );
   });
 
