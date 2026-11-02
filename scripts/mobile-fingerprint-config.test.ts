@@ -18,6 +18,7 @@ type ExtraSource = HashSource & { overrideHashKey: string };
 type FingerprintConfig = {
   preset: string;
   extraSources: ExtraSource[];
+  ignorePaths: string[];
   sourceSkips: string[];
   fileHookTransform(source: HookSource, chunk: HookChunk): HookChunk;
   __test: {
@@ -48,7 +49,12 @@ type FingerprintOptionsApi = {
   normalizeOptionsAsync(
     projectRoot: string,
     options?: Record<string, unknown>,
-  ): Promise<{ sourceSkips: number; nativeModuleSourceType: string; configPluginSourceType: string }>;
+  ): Promise<{
+    sourceSkips: number;
+    nativeModuleSourceType: string;
+    configPluginSourceType: string;
+    ignorePathMatchObjects: Array<{ pattern: string }>;
+  }>;
 };
 type ContentsSource = { type: 'contents'; id: string; contents: string; reasons: string[] };
 type ExpoSourcerApi = {
@@ -114,8 +120,11 @@ function writeFixtureFile(projectRoot: string, relativePath: string, contents: s
   writeFileSync(absolutePath, contents);
 }
 
-function createHashOptions(): Record<string, unknown> {
-  const ignorePathMatchObjects = patchedPathApi.buildPathMatchObjects(fingerprintApi.DEFAULT_IGNORE_PATHS);
+function createHashOptions(extraIgnorePaths: string[] = []): Record<string, unknown> {
+  const ignorePathMatchObjects = patchedPathApi.buildPathMatchObjects([
+    ...fingerprintApi.DEFAULT_IGNORE_PATHS,
+    ...extraIgnorePaths,
+  ]);
   return {
     concurrentIoLimit: 4,
     debug: false,
@@ -274,6 +283,40 @@ describe('mobile fingerprint config', () => {
         overrideHashKey: 'rootPatchedDependencies',
       },
     ]);
+  });
+
+  it('adds editor and patch leftovers to the default ignores instead of replacing them', async () => {
+    expect(fingerprintConfig.ignorePaths).toEqual(['**/*.swp', '**/*.swo', '**/*~', '**/*.orig', '**/*.rej']);
+
+    // The real loader: if the config replaced the defaults, .DS_Store and the
+    // Pods/build dirs would start hashing and every local resolve would drift.
+    const normalizedOptions = await fingerprintOptionsApi.normalizeOptionsAsync(MOBILE_ROOT, { silent: true });
+    const patterns = normalizedOptions.ignorePathMatchObjects.map((matchObject) => matchObject.pattern);
+    for (const pattern of [...fingerprintApi.DEFAULT_IGNORE_PATHS, ...fingerprintConfig.ignorePaths]) {
+      expect(patterns).toContain(pattern);
+    }
+  });
+
+  it('keeps a widget dir hash still for editor leftovers and moves it for a Swift edit', async () => {
+    const projectRoot = createTemporaryRoot();
+    writeFixtureFile(projectRoot, 'targets/Widget/Live.swift', 'struct Live {}\n');
+    const hashTargets = async () =>
+      (
+        await fingerprintHashApi.createFingerprintFromSourcesAsync(
+          [{ type: 'dir', filePath: 'targets', reasons: ['iosAppleTargets'], overrideHashKey: 'iosAppleTargets' }],
+          projectRoot,
+          createHashOptions(fingerprintConfig.ignorePaths),
+        )
+      ).hash;
+
+    const baseline = await hashTargets();
+    for (const leftover of ['.Live.swift.swp', '.Live.swift.swo', 'Live.swift~', 'Live.swift.orig', 'Live.swift.rej']) {
+      writeFixtureFile(projectRoot, `targets/Widget/${leftover}`, 'not source\n');
+    }
+    expect(await hashTargets()).toBe(baseline);
+
+    writeFixtureFile(projectRoot, 'targets/Widget/Live.swift', 'struct Live { let edited = true }\n');
+    expect(await hashTargets()).not.toBe(baseline);
   });
 });
 

@@ -1681,6 +1681,18 @@ would move `runtimeVersion` and force a native build for install-graph noise.
   build and an Android OTA cut-off. `fingerprint.config.js` cannot scope a source to one platform:
   `@expo/fingerprint` loads it once with no platform, and neither `extraSources` nor
   `fileHookTransform` carries one.
+- Dir sources hash every file on disk, tracked or not; `@expo/fingerprint` does not read
+  `.gitignore`. `ignorePaths` in `fingerprint.config.js` adds editor and patch leftovers (`*.swp`,
+  `*.swo`, `*~`, `*.orig`, `*.rej`) to the library's default ignores, so an open vim buffer under
+  `targets/`, `plugins/`, `modules/` or `locales/` no longer moves a local resolve. The loader
+  appends these to the defaults rather than replacing them. CI always resolves from clean
+  checkouts. Any other untracked file in a hashed dir still moves a local resolve, so publish by
+  hand only from a clean tree.
+- The widget's entitlements come from the `entitlements` object in its `expo-target.config.js`.
+  `@bacons/apple-targets` writes them to `ios/.targets/BoardseshWidgets/` at prebuild. A
+  `generated.entitlements` file in `targets/BoardseshWidgets/` is ignored while that object
+  exists, and prebuild warns about it in red. #7215 deleted the leftover copy; don't add it back,
+  because it would still be hashed.
 
 Long pnpm store entries are truncated and end in a 32-hex digest. The digest is part of the peer tail
 and is removed with it. `virtualStoreDirMaxLength` is pinned to 120 in `pnpm-workspace.yaml`; pnpm's
@@ -1844,7 +1856,7 @@ Historical fingerprint changes (branch names below describe where those commits 
 | --- | --- | --- | --- |
 | 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | main `b71bdb600c5a3e954d75c9ca673f056c62247ea9` (shipped tag) → PR `f0a4650d0746…` (`ota-check`; full hash lands as `fingerprint-ios-*` when `ios-testflight-rn` uploads) | main shipped tag `154bc941c504727afc914057aed2edff2c096576`; `ota-check` sees `fbc79fa47dc8…` → `4f14a7ee6bac…` WITHOUT the maps key, so neither is the binary's value — the real one lands as `fingerprint-android-*` when `android-apk-rn` uploads |
 | 2026-10-04, #6006 | `fingerprint.config.js` gained `sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun']` (bitmask 513), so `version`, `ios.buildNumber` and `android.versionCode` are no longer hashed. The config file is itself a hashed source, so this edit moved both fingerprints once. Landed on `release/next` | see the `fingerprint-ios-*` tags for #6006 | see the `fingerprint-android-*` tags for #6006 |
-| 2026-11, fixes #7215 | `fingerprint.config.js` gained the `iosAppleTargets` dir source, so every file under `packages/mobile/targets/` (widget Swift, `Info.plist`, strings) is hashed on both platforms. Adding the source and editing the hashed config moved both fingerprints once | see `ota-check` on the PR, then the `fingerprint-ios-*` tags | minted on merge; see the `fingerprint-android-*` tags |
+| 2026-11, fixes #7215 | `fingerprint.config.js` gained the `iosAppleTargets` dir source, so every file under `packages/mobile/targets/` (widget Swift, `Info.plist`, strings) is hashed on both platforms, and `ignorePaths` for editor and patch leftovers. The unused `targets/BoardseshWidgets/generated.entitlements` was deleted in the same change (prebuild output unchanged). Adding the source and editing the hashed config moved both fingerprints once | see `ota-check` on the PR, then the `fingerprint-ios-*` tags | minted on merge; see the `fingerprint-android-*` tags |
 
 ### Version-only releases
 
