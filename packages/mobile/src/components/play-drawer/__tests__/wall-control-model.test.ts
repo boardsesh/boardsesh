@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { isHolderSelfAccount, resolveWallControl, type WallControlInput } from '../wall-control';
+import {
+  EMPTY_WALL_CONTROL,
+  isHolderSelfAccount,
+  resolveBoardSheetStatus,
+  resolveWallControl,
+  type WallControlInput,
+  type WallControlModel,
+} from '../wall-control';
 import { wallControlText } from '../wall-control-text';
 
 // The one model behind every view of the board control (#7000): the wall
@@ -1226,5 +1233,35 @@ describe('isHolderSelfAccount', () => {
     ['the signed-in id not known yet', 'me', null, false],
   ] as const)('%s', (_case, holderUserId, viewerUserId, expected) => {
     expect(isHolderSelfAccount(holderUserId, viewerUserId)).toBe(expected);
+  });
+});
+
+// The board sheet's status line (spec B3): the button's words, uncapped.
+describe('resolveBoardSheetStatus', () => {
+  const model = (change: Partial<WallControlModel>): WallControlModel => ({ ...EMPTY_WALL_CONTROL, ...change });
+  it.each<[string, Partial<WallControlModel>, ReturnType<typeof resolveBoardSheetStatus>]>([
+    ['a preview on this phone’s board', { state: 'put_on_wall', holder: 'self' }, 'preview'],
+    ['a preview with nobody holding the board', { state: 'put_on_wall', holder: null }, 'preview'],
+    ['lit on this phone’s link', { state: 'lit', holder: 'self' }, 'on_wall'],
+    ['the keep-lighting window', { state: 'lit', holder: 'self', lightWindow: true }, 'window'],
+    ['an open-ended drive', { state: 'lit', holder: 'self', driving: true }, 'driving'],
+    ['a crewmate’s board', { state: 'put_on_wall', holder: 'crew' }, null],
+    ['a crewmate’s lit climb', { state: 'lit', holder: 'crew' }, null],
+    ['dark', { state: 'dark', holder: 'self' }, null],
+    ['no link', { state: 'connect' }, null],
+    ['nothing to offer', {}, null],
+  ])('%s: %s', (_name, change, status) => {
+    expect(resolveBoardSheetStatus(model(change))).toBe(status);
+  });
+
+  it('reads the window off a real resolved model', () => {
+    const windowed = resolveWallControl({
+      ...FREE,
+      ...MINE,
+      displayedLit: true,
+      driveMode: 'live',
+      lightWindow: true,
+    });
+    expect(resolveBoardSheetStatus(windowed)).toBe('window');
   });
 });

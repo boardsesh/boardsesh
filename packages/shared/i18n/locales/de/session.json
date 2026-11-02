@@ -969,7 +969,9 @@
       "windowStarted_other": "Jeder Boulder, den du wählst, wird {{count}} Sekunden lang beleuchtet. Mit „Jeden Boulder beleuchten“ bleibt es dabei.",
       "windowStartedMinute": "Jeder Boulder, den du wählst, wird 1 Minute lang beleuchtet. Mit „Jeden Boulder beleuchten“ bleibt es dabei.",
       "stoppedWindow": "Boulder werden nicht mehr beleuchtet",
-      "windowEnded": "Boulder öffnen sich wieder als Vorschau"
+      "windowEnded": "Boulder öffnen sich wieder als Vorschau",
+      "sheetStatusPreview": "Vorschau · nicht am Board",
+      "sheetStatusDriving": "Du steuerst das Board. Jeder Boulder, den du wählst, wird beleuchtet."
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

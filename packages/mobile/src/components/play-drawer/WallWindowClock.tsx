@@ -18,6 +18,7 @@ import Animated, {
   useSharedValue,
   withSequence,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { readAutoDisconnectDeadlineMs } from '../../lib/auto-disconnect-deadline';
 import { withAlpha } from '../../theme/colors';
@@ -123,13 +124,14 @@ type WallWindowBarProps = {
 };
 
 /**
- * The drain bar: full at a renewal, empty at the shown end. On the UI thread
- * (a shared value with a linear `withTiming`), so it moves with no React render
- * per frame; under Reduce Motion it steps with the clock instead.
+ * The window's drain: 1 at a renewal, 0 at the shown end. On the UI thread (a
+ * shared value with a linear `withTiming`), so the bar and a bulb's ring
+ * (`WallWindowRing`) move with no React render per frame; under Reduce Motion
+ * it steps with the clock's seconds instead, and a refill jumps. `active` is
+ * false outside a window.
  */
-function WallWindowBarComponent({ color, width, reduceMotion }: WallWindowBarProps) {
+export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<number>; active: boolean } {
   const timing = useWindowTiming();
-  const trackWidth = Math.max(0, width - WINDOW_BAR_INSET * 2);
   const fraction = useSharedValue(1);
   const expiresAt = timing?.expiresAt ?? null;
   const totalMs = timing?.totalMs ?? null;
@@ -161,13 +163,21 @@ function WallWindowBarComponent({ color, width, reduceMotion }: WallWindowBarPro
     fraction.value = steppedFraction;
   }, [reduceMotion, steppedFraction, fraction]);
 
+  return { fraction, active: timing !== null };
+}
+
+/** The drain bar: full at a renewal, empty at the shown end (`useWindowDrain`). */
+function WallWindowBarComponent({ color, width, reduceMotion }: WallWindowBarProps) {
+  const { fraction, active } = useWindowDrain(reduceMotion);
+  const trackWidth = Math.max(0, width - WINDOW_BAR_INSET * 2);
+
   // Drains toward the bulb, at the leading edge: the fill slides out past it.
   const direction = I18nManager.isRTL ? 1 : -1;
   const fillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: direction * trackWidth * (1 - fraction.value) }],
   }));
 
-  if (timing === null || trackWidth <= 0) return null;
+  if (!active || trackWidth <= 0) return null;
   return (
     <View
       pointerEvents="none"

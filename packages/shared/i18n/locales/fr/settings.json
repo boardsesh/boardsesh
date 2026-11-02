@@ -496,6 +496,7 @@
         "untilStopped": "Jusqu'à ce que j'arrête",
         "moonboardLabel": "Sur un MoonBoard",
         "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
+        "sheetMoonboardLabel": "Continuer d'allumer sur ce MoonBoard",
         "inSessionLabel": "Aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
         "inSessionOffReason": "Activez Continuer d'allumer après Allumer sur la board pour utiliser ce réglage.",

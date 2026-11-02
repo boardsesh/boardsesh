@@ -194,6 +194,15 @@ export function windowTimeValue(remainingMs: number, t: TFunction): string {
   return t('playView.wallControl.secondsLeft', { count: seconds });
 }
 
+/**
+ * A bulb's value during the window (spec B3): "Each pick lights, 30 seconds
+ * left". The bulb's label stays "Board lights", so the window rides its value,
+ * on the same 10 s step as the button's.
+ */
+export function windowBulbValue(remainingMs: number, t: TFunction): string {
+  return `${t('playView.wallControl.eachPickLights')}, ${windowTimeValue(remainingMs, t)}`;
+}
+
 /** Said once when the window opens: how long, and how to keep lighting (WCAG 2.2.1). */
 export function windowStartedAnnouncement(windowMs: number, t: TFunction): string {
   const seconds = Math.round(windowMs / 1000);

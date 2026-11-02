@@ -31,6 +31,12 @@ export const WALL_CONTROL_TONAL_ALPHA = 0.2;
 export const WINDOW_BAR_HEIGHT = 4;
 export const WINDOW_BAR_INSET = 24;
 export const WINDOW_BAR_TRACK_ALPHA = 0.16;
+/**
+ * The same window on a bulb (spec B3: the first row's, and the MiniPlayer's
+ * standing in for a tablet's player): a 2 pt violet arc round its edge that
+ * drains from 12 o'clock, on the bar's track. A shape, never colour alone.
+ */
+export const WINDOW_RING_WIDTH = 2;
 
 /**
  * - `connect` — no board linked: a tap connects (and lights the climb).
@@ -815,3 +821,27 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   writing: false,
   autoDisconnectWarning: false,
 });
+
+/**
+ * The player's board sheet's status line (spec B3): what the wall button says
+ * about the climb on screen, in full at any text size, since the button's own
+ * label is capped at 1.2x and Android has no Large Content Viewer.
+ *
+ * - `preview` — a preview, not on the wall (Put on board).
+ * - `on_wall` — this phone's link has the climb on screen lit.
+ * - `window` — Put on board's keep-lighting window, with its time left.
+ * - `driving` — an open-ended drive (the frost).
+ * - null — anything else (no link, a crewmate's board, a wall with no lights).
+ */
+export type BoardSheetStatus = 'preview' | 'on_wall' | 'window' | 'driving';
+
+export function resolveBoardSheetStatus(
+  model: Pick<WallControlModel, 'state' | 'holder' | 'lightWindow' | 'driving'>,
+): BoardSheetStatus | null {
+  if (model.state === 'lit' && model.holder === 'self') {
+    if (model.lightWindow) return 'window';
+    return model.driving ? 'driving' : 'on_wall';
+  }
+  if (model.state === 'put_on_wall' && model.holder !== 'crew') return 'preview';
+  return null;
+}

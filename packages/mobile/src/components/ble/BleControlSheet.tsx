@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
@@ -6,6 +6,7 @@ import { ListRow } from '../ListRow';
 import { Separator } from '../Separator';
 import { SwitchRow } from '../SwitchRow';
 import { Icon } from '../Icon';
+import { BleKeepLightingRow, type BleKeepLightingRowModel } from './BleKeepLightingRow';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 
@@ -43,9 +44,19 @@ type BleControlSheetProps = {
   linked?: boolean;
   /**
    * Light every climb (#7113): start driving the wall, the wall button's swipe
-   * as a row. First, where the player offers the swipe.
+   * as a row. First among the board's actions, where the player offers the swipe.
    */
   onDrive?: () => void;
+  /**
+   * The player's status line at the top (spec B3): what the wall button says,
+   * in full at any text size, since the button's own label is capped.
+   */
+  status?: ReactNode;
+  /**
+   * Keep lighting after Put on board (2.7, spec B4), the first row: the timer
+   * changed or turned off at the wall in two taps. Omitted, no row.
+   */
+  keepLighting?: BleKeepLightingRowModel;
   onClose: () => void;
 };
 
@@ -70,6 +81,8 @@ function BleControlSheet({
   showLightingSwitches = true,
   linked = true,
   onDrive,
+  status,
+  keepLighting,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
@@ -102,6 +115,8 @@ function BleControlSheet({
     // the Disconnect action at accessibility text sizes on a small iPhone.
     <ModalSheet visible={visible} snapPoints={['90%']} scrollable onClose={onClose} enablePanDownToClose>
       <View style={styles.content}>
+        {status ? <View style={styles.status}>{status}</View> : null}
+        {keepLighting ? <BleKeepLightingRow model={keepLighting} /> : null}
         {/* The app's native SwitchRow (SwiftUI Toggle / Compose Switch) instead of
             raw RN Switches, which render system green on iOS: HIG Color asks for
             one tint across every control. */}
@@ -144,7 +159,7 @@ function BleControlSheet({
             onValueChange={onToggleLightOnSwipe}
           />
         )}
-        {showLightingSwitches || showLightAdjacentHolds ? <Separator /> : null}
+        {showLightingSwitches || showLightAdjacentHolds || keepLighting ? <Separator /> : null}
         {onDrive ? (
           <ListRow
             testID="ble-control-drive"
@@ -189,5 +204,9 @@ export { BleControlSheet };
 const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[2],
+  },
+  status: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
   },
 });

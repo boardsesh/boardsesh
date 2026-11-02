@@ -969,7 +969,9 @@
       "windowStarted_other": "Each pick lights for {{count}} seconds. Light every climb keeps them lighting.",
       "windowStartedMinute": "Each pick lights for 1 minute. Light every climb keeps them lighting.",
       "stoppedWindow": "Stopped lighting picks",
-      "windowEnded": "Picks are previews again"
+      "windowEnded": "Picks are previews again",
+      "sheetStatusPreview": "Preview · not on the wall",
+      "sheetStatusDriving": "You are driving the wall. Every climb you pick lights up."
     },
     "setActive": "Set active",
     "paneEmpty": {

@@ -969,7 +969,9 @@
       "windowStarted_other": "Ogni blocco che scegli si illumina in parete per {{count}} secondi. Illumina ogni blocco li tiene accesi.",
       "windowStartedMinute": "Ogni blocco che scegli si illumina in parete per 1 minuto. Illumina ogni blocco li tiene accesi.",
       "stoppedWindow": "I blocchi non si illuminano più",
-      "windowEnded": "I blocchi tornano ad aprirsi in anteprima"
+      "windowEnded": "I blocchi tornano ad aprirsi in anteprima",
+      "sheetStatusPreview": "Anteprima · non in parete",
+      "sheetStatusDriving": "Guidi tu il pannello. Ogni blocco che scegli si illumina in parete."
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {

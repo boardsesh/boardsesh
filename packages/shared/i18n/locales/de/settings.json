@@ -496,6 +496,7 @@
         "untilStopped": "Bis ich stoppe",
         "moonboardLabel": "An einem MoonBoard",
         "moonboardDescription": "Die meisten MoonBoard-Controller vertragen keinen Handywechsel, deshalb gilt das auch in einer Session.",
+        "sheetMoonboardLabel": "An diesem MoonBoard weiter beleuchten",
         "inSessionLabel": "Auch in einer Session",
         "inSessionDescription": "Wenn dein Handy das Board der Crew hat. Ist das aus, bleiben die Boulder, die du in einer Session wählst, Vorschauen.",
         "inSessionOffReason": "Schalte dafür „Nach ‚Am Board beleuchten‘ weiter beleuchten“ ein.",

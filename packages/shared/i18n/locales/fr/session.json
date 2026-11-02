@@ -969,7 +969,9 @@
       "windowStarted_other": "Chaque bloc que tu choisis s'allume pendant {{count}} secondes. Allumer chaque bloc les garde allumés.",
       "windowStartedMinute": "Chaque bloc que tu choisis s'allume pendant 1 minute. Allumer chaque bloc les garde allumés.",
       "stoppedWindow": "Les blocs ne s'allument plus",
-      "windowEnded": "Les blocs s'ouvrent de nouveau en aperçu"
+      "windowEnded": "Les blocs s'ouvrent de nouveau en aperçu",
+      "sheetStatusPreview": "Aperçu · pas au mur",
+      "sheetStatusDriving": "Tu pilotes la board. Chaque bloc que tu choisis s'allume."
     },
     "setActive": "Activer",
     "paneEmpty": {

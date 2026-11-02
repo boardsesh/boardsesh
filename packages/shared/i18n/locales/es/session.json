@@ -969,7 +969,9 @@
       "windowStarted_other": "Cada bloque que elijas se enciende durante {{count}} segundos. Encender cada bloque los mantiene encendidos.",
       "windowStartedMinute": "Cada bloque que elijas se enciende durante 1 minuto. Encender cada bloque los mantiene encendidos.",
       "stoppedWindow": "Los bloques ya no se encienden",
-      "windowEnded": "Los bloques vuelven a abrirse como vista previa"
+      "windowEnded": "Los bloques vuelven a abrirse como vista previa",
+      "sheetStatusPreview": "Vista previa · no está en el plafón",
+      "sheetStatusDriving": "Estás al mando del plafón. Cada bloque que elijas se enciende."
     },
     "setActive": "Activar",
     "paneEmpty": {

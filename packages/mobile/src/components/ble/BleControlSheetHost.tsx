@@ -1,5 +1,14 @@
-import { useCallback, useContext, useEffect } from 'react';
+import { useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { hapticSelection } from '../../lib/haptics';
+import {
+  DEFAULT_KEEP_LIGHTING,
+  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  KEEP_LIGHTING_CHOICES,
+  sanitiseKeepLighting,
+  type KeepLightingChoice,
+} from '../../lib/keep-lighting';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { QueueActiveClimbContext } from '../../providers/queue/queue-contexts';
 import { markWallCleared, resetWallCleared } from './wall-cleared-store';
@@ -7,6 +16,8 @@ import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
 import { useAutoDisconnectTimeoutLabels } from './use-auto-disconnect-timeout-labels';
+import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
+import type { BleKeepLightingRowModel } from './BleKeepLightingRow';
 
 type BleControlSheetHostProps = {
   visible: boolean;
@@ -14,7 +25,7 @@ type BleControlSheetHostProps = {
   /**
    * Auto-disconnect and the two lighting switches. Only the player's own sheet
    * drops them (#7000); the app-wide sheet (toolbar
-   * bulb, Climbs header pill) always keeps them.
+   * bulb, Climbs header pill) always keeps them. Both keep the keep-lighting row.
    */
   showLightingSwitches?: boolean;
   /**
@@ -30,6 +41,8 @@ type BleControlSheetHostProps = {
    * sheet also opens with no link, showing only that row.
    */
   onDrive?: () => void;
+  /** The player's status line at the top of its sheet (spec B3); the app-wide sheet has none. */
+  status?: ReactNode;
 };
 
 /**
@@ -47,7 +60,9 @@ export function BleControlSheetHost({
   showLightingSwitches = true,
   clearedClimbUuid,
   onDrive,
+  status,
 }: BleControlSheetHostProps) {
+  const { t } = useTranslation('common');
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
@@ -57,6 +72,28 @@ export function BleControlSheetHost({
   const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
   const timeoutLabels = useAutoDisconnectTimeoutLabels();
   const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);
+  // Keep lighting after Put on board (2.7, spec B4), the sheet's first row on
+  // both sheets: the timer at the wall in two taps (WCAG 2.2.1). On a connected
+  // MoonBoard the MoonBoard's own choice, the one its Put on board takes.
+  const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const onMoonboard = showLightAdjacentHolds;
+  const keepLightingChoice = onMoonboard
+    ? sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING)
+    : sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
+  const setKeepLightingChoice = onMoonboard ? setMoonboardKeepLighting : setKeepLighting;
+  const keepLighting = useMemo<BleKeepLightingRowModel>(
+    () => ({
+      label: onMoonboard ? t('settings:ble.lighting.keep.sheetMoonboardLabel') : t('settings:ble.lighting.keep.label'),
+      choice: keepLightingChoice,
+      options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
+      onChange: (choice: KeepLightingChoice) => {
+        hapticSelection();
+        setKeepLightingChoice(choice);
+      },
+    }),
+    [t, onMoonboard, keepLightingChoice, setKeepLightingChoice],
+  );
 
   // Close if the link drops while the sheet is open — otherwise it lingers
   // showing Re-light / Disconnect actions that no-op on a dead link. A sheet
@@ -110,6 +147,8 @@ export function BleControlSheetHost({
       showLightingSwitches={showLightingSwitches}
       linked={isConnected}
       onDrive={onDrive}
+      status={status}
+      keepLighting={keepLighting}
       onClose={onClose}
     />
   );

@@ -39,8 +39,11 @@ export type BoardLightingModelInput = {
   };
 };
 
-/** The words for each keep-lighting choice; 30/45/60 reuse the auto-disconnect timeout labels. */
-function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoice): string {
+/**
+ * The words for each keep-lighting choice; 30/45/60 reuse the auto-disconnect
+ * timeout labels. Settings › Board and the board sheet's row both read it.
+ */
+export function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoice): string {
   switch (choice) {
     case 'off':
       return t('settings:ble.lighting.keep.off');

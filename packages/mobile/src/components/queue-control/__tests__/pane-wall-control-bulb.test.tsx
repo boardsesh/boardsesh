@@ -16,6 +16,7 @@ vi.mock('../../PressableSurface', () => ({
     onLongPress,
     accessibilityLabel,
     accessibilityHint,
+    accessibilityValue,
     accessibilityActions,
   }: {
     children?: ReactNode;
@@ -23,6 +24,7 @@ vi.mock('../../PressableSurface', () => ({
     onLongPress?: () => void;
     accessibilityLabel?: string;
     accessibilityHint?: string;
+    accessibilityValue?: { text?: string };
     accessibilityActions?: { label?: string }[];
   }) =>
     createElement(
@@ -33,6 +35,7 @@ vi.mock('../../PressableSurface', () => ({
         onContextMenu: onLongPress,
         'aria-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-value': accessibilityValue?.text,
         'data-actions': (accessibilityActions ?? []).map((action) => action.label).join('|'),
       },
       children,
@@ -47,6 +50,11 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../hooks/use-differentiate-without-color', () => ({ useDifferentiateWithoutColor: () => 'off' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
+vi.mock('../../play-drawer/WallWindowRing', () => ({
+  WallWindowRing: ({ size }: { size: number }) => createElement('s', { 'data-ring': String(size) }),
+  useWindowValueText: (kind: string, active: boolean) => (active ? `window-${kind}` : null),
+}));
 
 import { PaneWallControlBulb } from '../PaneWallControlBulb';
 import { EMPTY_WALL_CONTROL, type WallControlModel } from '../../play-drawer/wall-control';
@@ -100,6 +108,25 @@ describe('PaneWallControlBulb', () => {
       a11yHintKey: 'stopDrivingHint',
     });
     expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.litHint');
+  });
+
+  // Beside a tablet's player this bulb stands in for the wall button: the window needs its cue here too.
+  it("draws the keep-lighting window's ring and says the time left, only during the window", () => {
+    const windowed = renderBulb({
+      ...LIT,
+      lightWindow: true,
+      tapAction: 'stop_window',
+      labelKey: 'eachPickLights',
+      a11yValueKey: null,
+    });
+    expect(windowed.container.querySelector('[data-ring]')).not.toBeNull();
+    const bulb = windowed.getByRole('button');
+    expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.eachPickLights');
+    expect(bulb.getAttribute('data-value')).toBe('window-time');
+    cleanup();
+    const plain = renderBulb(LIT);
+    expect(plain.container.querySelector('[data-ring]')).toBeNull();
+    expect(plain.getByRole('button').getAttribute('data-value')).toBeNull();
   });
 
   it.each([

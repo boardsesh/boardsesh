@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 
 const mockSetMoonboardLightAdjacentHolds = vi.fn();
 const mockReassertWall = vi.fn();
@@ -28,6 +28,13 @@ const mockBleControlSheet = vi.hoisted(() => ({
     showLightingSwitches?: boolean;
     linked?: boolean;
     onDrive?: () => void;
+    status?: unknown;
+    keepLighting?: {
+      label: string;
+      choice: string;
+      options: readonly { key: string; label: string }[];
+      onChange: (choice: string) => void;
+    };
   } | null,
 }));
 
@@ -39,9 +46,18 @@ vi.mock('../../../lib/ble/bluetooth-status-store', () => ({
   disconnectAllBluetooth: vi.fn(),
 }));
 
-vi.mock('../../../settings', () => ({
-  useSetting: () => [false, vi.fn()],
+const mockSettings = vi.hoisted(() => ({
+  values: {} as Record<string, unknown>,
+  setters: {} as Record<string, ReturnType<typeof vi.fn>>,
 }));
+vi.mock('../../../settings', () => ({
+  useSetting: (key: string) => {
+    mockSettings.setters[key] ??= vi.fn();
+    return [key in mockSettings.values ? mockSettings.values[key] : false, mockSettings.setters[key]];
+  },
+}));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../use-auto-disconnect-timeout-labels', () => ({
   useAutoDisconnectTimeoutLabels: () => ({ 30: '30 seconds' }),
@@ -74,6 +90,56 @@ describe('BleControlSheetHost', () => {
     mockBluetooth.boardName = 'moonboard';
     mockBluetoothContext.current = mockBluetooth;
     mockBleControlSheet.props = null;
+    mockSettings.values = {};
+    mockSettings.setters = {};
+  });
+
+  // 2.7, spec B4: the timer at the wall in two taps, on both sheets.
+  it.each([
+    ['the app-wide sheet', undefined],
+    ['the player’s sheet', false],
+  ] as const)('%s leads with Keep lighting after Put on board', (_host, showLightingSwitches) => {
+    mockBluetooth.boardName = 'kilter';
+    mockSettings.values = { putOnBoardKeepsLighting: '30', moonboardPutOnBoardKeepsLighting: 'off' };
+    render(<BleControlSheetHost visible onClose={vi.fn()} showLightingSwitches={showLightingSwitches} />);
+    const row = mockBleControlSheet.props?.keepLighting;
+    expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.label', choice: '30' });
+    expect(row?.options.map((option) => option.key)).toEqual(['off', '30', '45', '60', 'until_stopped']);
+    expect(row?.options.map((option) => option.label)).toEqual([
+      'settings:ble.lighting.keep.off',
+      'settings:ble.autoDisconnect.timeoutOptions.30',
+      'settings:ble.autoDisconnect.timeoutOptions.45',
+      'settings:ble.autoDisconnect.timeoutOptions.60',
+      'settings:ble.lighting.keep.untilStopped',
+    ]);
+    row?.onChange('off');
+    expect(mockSettings.setters.putOnBoardKeepsLighting).toHaveBeenCalledWith('off');
+    expect(mockSettings.setters.moonboardPutOnBoardKeepsLighting).not.toHaveBeenCalled();
+  });
+
+  it('takes the MoonBoard’s own choice on a connected MoonBoard', () => {
+    mockSettings.values = { putOnBoardKeepsLighting: '30', moonboardPutOnBoardKeepsLighting: '60' };
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+    const row = mockBleControlSheet.props?.keepLighting;
+    expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.sheetMoonboardLabel', choice: '60' });
+    row?.onChange('until_stopped');
+    expect(mockSettings.setters.moonboardPutOnBoardKeepsLighting).toHaveBeenCalledWith('until_stopped');
+    expect(mockSettings.setters.putOnBoardKeepsLighting).not.toHaveBeenCalled();
+  });
+
+  it('reads an unknown stored choice as the default: 45 s, Until I stop on a MoonBoard', () => {
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+    expect(mockBleControlSheet.props?.keepLighting?.choice).toBe('until_stopped');
+    cleanup();
+    mockBluetooth.boardName = 'kilter';
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+    expect(mockBleControlSheet.props?.keepLighting?.choice).toBe('45');
+  });
+
+  it('passes the player’s status line through', () => {
+    const status = createElement('span', null, 'On the wall');
+    render(<BleControlSheetHost visible onClose={vi.fn()} status={status} />);
+    expect(mockBleControlSheet.props?.status).toBe(status);
   });
 
   // #7000: only the player's sheet drops auto-disconnect and the two
