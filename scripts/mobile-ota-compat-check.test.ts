@@ -355,10 +355,12 @@ describe('deriveCheckConclusion (informational compatibility)', () => {
 });
 
 describe('enforcementNote', () => {
-  it('tells a main-targeting native PR that it opens an automatic patch', () => {
+  it('tells a main-targeting native PR that it starts builds on the open version', () => {
     const note = enforcementNote({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false });
     expect(note).toContain('starts TestFlight and Play tester builds');
-    expect(note).toContain('Merging into `main` automatically opens a patch version');
+    expect(note).toContain('keep the open marketing version while it is unreleased');
+    expect(note).toContain('open the next patch only after a store release');
+    expect(note).not.toContain('automatically opens a patch version');
   });
 
   it('says nothing at all for an OTA-compatible PR', () => {
