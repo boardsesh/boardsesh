@@ -30,7 +30,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useChoose } from '../../providers/dialog-provider';
 import { useFirstConnectCtaEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
-import { useIsCrewSession } from '../../providers/queue-provider';
+import { useIsCrewSession, useIsSharedSession } from '../../providers/queue-provider';
 import { SHEET_SETTLE_MS } from '../../providers/sheet-presentation-provider';
 import { useOptionalTheme } from '../../providers/theme-provider';
 
@@ -50,9 +50,10 @@ type ConfirmationCopyInput = Parameters<typeof firstConnectConfirmationCopy>[0];
  *   context's public `isConnected`; nothing under `lib/ble/` changes.
  * - Shows the one-time "Connected to {{board}}" confirmation, in both arms,
  *   saying what lights from here on under this climber's lighting settings
- *   (`firstConnectConfirmationCopy`). From the moment it decides to show it
- *   until the dialog closes, the player's preview-first card stands down
- *   (`first-connect-confirmation-presence.ts`).
+ *   (`firstConnectConfirmationCopy`). From the moment it sees the connect it
+ *   will confirm (before recording it, which hides the Climbs card) until the
+ *   dialog closes, the Climbs list's tips and the player's preview-first card
+ *   stand down (`first-connect-confirmation-presence.ts`).
  * - Re-enrols the signed-in account when a tester changes the QA override
  *   (More → Feature Flags), so a forced arm shows at once instead of on the
  *   next launch. The gate enrols once per launch, which a test plan followed
@@ -81,16 +82,24 @@ export function FirstConnectHost() {
   const uiVariant = useOptionalTheme()?.variant ?? null;
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
+  const bluetooth = useOptionalBluetoothContext();
+  const isConnected = bluetooth?.isConnected ?? false;
   // What the confirmation says lights from here on: read when it is decided,
-  // the way Put on board reads it (the player's `resolveKeepLightingPlan`).
+  // the way a list tap and Put on board read it (`firstConnectConfirmationCopy`).
   const [lightOnClimbTap] = useSetting('lightOnClimbTap');
+  const [lightOnSwipe] = useSetting('lightOnSwipe');
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const inSession = useIsCrewSession();
+  const inSharedSession = useIsSharedSession();
   const keepLightingEnabled = useWallSwipeToDriveEnabled();
   const copyInput: ConfirmationCopyInput = {
     lightOnClimbTap,
+    lightOnSwipe,
+    inSharedSession,
+    // The provider runs auto-disconnect, so its own read is the one that ends lighting.
+    autoDisconnectSeconds: bluetooth?.autoDisconnectEnabled ? bluetooth.autoDisconnectTimeoutSeconds : null,
     boardName: activeBoard?.boardType ?? null,
     keepLighting: keepLightingEnabled
       ? {
@@ -106,19 +115,27 @@ export function FirstConnectHost() {
   const choose = useChoose();
   const showConfirmation = useCallback(
     (boardName: string | null, copy: FirstConnectConfirmationCopy) => {
-      const message =
-        copy.variant === 'tap_lights'
-          ? t('mobile.firstConnect.confirm.body')
-          : copy.variant === 'window'
-            ? t('mobile.firstConnect.confirm.bodyWindow', { seconds: copy.seconds })
-            : copy.variant === 'until_stop'
-              ? t('mobile.firstConnect.confirm.bodyUntilStop')
-              : t('mobile.firstConnect.confirm.bodyPutOnBoard');
+      const messageFor = (): string => {
+        switch (copy.variant) {
+          case 'tap_lights':
+            return t('mobile.firstConnect.confirm.body');
+          case 'window':
+            return t('mobile.firstConnect.confirm.bodyWindow', { seconds: copy.seconds });
+          case 'window_minute':
+            return t('mobile.firstConnect.confirm.bodyWindowMinute');
+          case 'until_stop':
+            return t('mobile.firstConnect.confirm.bodyUntilStop');
+          case 'until_stop_or_disconnect':
+            return t('mobile.firstConnect.confirm.bodyUntilStopOrDisconnect');
+          case 'put_on_board':
+            return t('mobile.firstConnect.confirm.bodyPutOnBoard');
+        }
+      };
       choose({
         title: boardName
           ? t('mobile.firstConnect.confirm.title', { board: boardName })
           : t('mobile.firstConnect.confirm.titleNoName'),
-        message,
+        message: messageFor(),
         options: [{ value: CONFIRMATION_ACKNOWLEDGED, label: t('mobile.firstConnect.confirm.gotIt') }],
         cancelValue: CONFIRMATION_ACKNOWLEDGED,
       })
@@ -129,9 +146,6 @@ export function FirstConnectHost() {
   );
   const showConfirmationRef = useRef(showConfirmation);
   showConfirmationRef.current = showConfirmation;
-
-  const bluetooth = useOptionalBluetoothContext();
-  const isConnected = bluetooth?.isConnected ?? false;
 
   useEffect(() => {
     if (!accountKnown) return;
@@ -149,40 +163,68 @@ export function FirstConnectHost() {
   // Only an unmount cancels the confirmation: a link that drops a moment after
   // it came up still happened, and the dialog is already marked as shown.
   const confirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (confirmationTimerRef.current === null) return;
-      clearTimeout(confirmationTimerRef.current);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (confirmationTimerRef.current !== null) clearTimeout(confirmationTimerRef.current);
       confirmationTimerRef.current = null;
+      // This host is the presence's only writer, so nothing is coming any more.
       setFirstConnectConfirmationShowing(false);
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     if (!isConnected) return;
+    // Recording this connect is what hides the Climbs card, and the list's tips
+    // and the player's preview-first card are waiting behind that card. So the
+    // confirmation is announced first, from the phone's state as it stands,
+    // before any of the writes below: otherwise one of them takes the slot in
+    // the moment between and the dialog lands on top of it. With the state not
+    // read yet there is no card up to hide, and the decision below announces it.
+    const pending = getFirstConnectSnapshot();
+    const announced =
+      pending.device !== null &&
+      shouldConfirmFirstConnect({ enrolment: pending.enrolment, enabled: enabledRef.current, device: pending.device });
+    if (announced) setFirstConnectConfirmationShowing(true);
+    // Whether this run holds the presence, and whether it handed it to the dialog.
+    let held = announced;
+    let scheduled = false;
     void (async () => {
       const before = await markFirstConnectPhoneConnected(nowMs());
-      if (before === null) return;
-      const shouldConfirm = shouldConfirmFirstConnect({
-        enrolment: getFirstConnectSnapshot().enrolment,
-        enabled: enabledRef.current,
-        device: before,
-      });
-      if (!shouldConfirm) return;
-      await markFirstConnectConfirmationShown(nowMs());
-      const boardName = boardNameRef.current;
-      const copy = firstConnectConfirmationCopy(copyInputRef.current);
+      const shouldConfirm =
+        before !== null &&
+        shouldConfirmFirstConnect({
+          enrolment: getFirstConnectSnapshot().enrolment,
+          enabled: enabledRef.current,
+          device: before,
+        });
+      if (!shouldConfirm || !mountedRef.current) {
+        if (held) setFirstConnectConfirmationShowing(false);
+        return;
+      }
       // The player's preview-first card says the same thing: it waits from
       // here until the dialog closes.
+      held = true;
       setFirstConnectConfirmationShowing(true);
+      await markFirstConnectConfirmationShown(nowMs());
+      // An unmount meanwhile already let everything waiting go.
+      if (!mountedRef.current) return;
+      const boardName = boardNameRef.current;
+      const copy = firstConnectConfirmationCopy(copyInputRef.current);
       // After the device picker has finished sliding away, so the dialog does
       // not land on a sheet mid-dismiss.
+      scheduled = true;
       confirmationTimerRef.current = setTimeout(() => {
         confirmationTimerRef.current = null;
         showConfirmationRef.current(boardName, copy);
       }, SHEET_SETTLE_MS);
-    })().catch(reportError);
+    })().catch((error: unknown) => {
+      // Nothing will show, so nothing waits for it.
+      if (held && !scheduled) setFirstConnectConfirmationShowing(false);
+      reportError(error);
+    });
   }, [isConnected]);
 
   // The QA override, live. Only a CHANGE re-enrols: the value this launch

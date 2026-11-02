@@ -80,8 +80,9 @@ phone holds the board. A playlist tap with **Tapping a playlist loads it into my
 depends on Light on tap: off, the list from the tapped climb becomes Up next, the wall keeps
 its climb and the tapped climb opens as a preview; on, the list replaces the queue and the
 tapped climb lights. A newcomer's first-connect confirmation and the Climbs list's connect card
-read the same settings, so neither promises that a tap lights a climb while Light on tap is off:
-the confirmation names Put on board's window (or Until I stop on a MoonBoard) instead.
+read the same settings, so neither promises that a tap lights a climb while Light on tap is off
+or in a shared session: the confirmation names Put on board's window (or Until I stop on a
+MoonBoard) instead, cut to auto-disconnect's timeout when that is shorter.
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.

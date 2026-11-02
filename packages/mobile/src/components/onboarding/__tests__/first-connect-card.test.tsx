@@ -41,6 +41,7 @@ const storeCtrl = vi.hoisted(() => ({
 }));
 const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
 const settingsCtrl = vi.hoisted(() => ({ lightOnClimbTap: false }));
+const sessionCtrl = vi.hoisted(() => ({ shared: false }));
 const bluetoothMocks = vi.hoisted(() => ({
   // The hook's own connect (`useLightbulbControl().connect`): it logs Board
   // Connect Tapped, arms the undo toast and relights the remembered board; its
@@ -149,6 +150,7 @@ vi.mock('../../../settings', () => ({
     return [settingsCtrl.lightOnClimbTap, vi.fn()];
   },
 }));
+vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => sessionCtrl.shared }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
@@ -191,6 +193,7 @@ describe('FirstConnectCard', () => {
     };
     flagsCtrl.enabled = true;
     settingsCtrl.lightOnClimbTap = false;
+    sessionCtrl.shared = false;
     lightbulbCtrl.pressAction = 'connect';
     lightbulbCtrl.pending = false;
     lightbulbCtrl.holderIsAuthoritative = false;
@@ -230,6 +233,17 @@ describe('FirstConnectCard', () => {
 
     expect(screen.getByText('Connect this phone to the board, then tap any climb to light it.')).toBeTruthy();
     expect(screen.queryByText(/Put on board/)).toBeNull();
+  });
+
+  // A list tap in a shared session stays a preview whatever the setting says.
+  it('names Put on board in a shared session even with Light on tap on', () => {
+    settingsCtrl.lightOnClimbTap = true;
+    sessionCtrl.shared = true;
+    renderCard();
+
+    expect(
+      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
+    ).toBeTruthy();
   });
 
   // The card can mount while Climbs is scrolled, and an iOS button host that

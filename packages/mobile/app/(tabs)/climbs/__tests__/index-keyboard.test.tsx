@@ -119,6 +119,8 @@ const mocks = vi.hoisted(() => ({
   // without a second mock scaffold.
   searchParams: {} as Record<string, string>,
   isFocused: true,
+  // Run the screen's focus effects (the one-shot tips arm there).
+  runFocusEffects: false,
   connectCardExpected: false,
   // Mutable per-test setting: false exercises the preview-open branch instead
   // of the committing activateClimb path.
@@ -352,18 +354,25 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-vi.mock('expo-router', () => ({
-  Stack: {
-    Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
-      mocks.stackOptions.push(options);
-      return null;
+vi.mock('expo-router', async () => {
+  const { useEffect: useMountEffect } = await import('react');
+  return {
+    Stack: {
+      Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
+        mocks.stackOptions.push(options);
+        return null;
+      },
     },
-  },
-  useRouter: () => ({ push: mocks.push }),
-  useLocalSearchParams: () => mocks.searchParams,
-  useIsFocused: () => mocks.isFocused,
-  useFocusEffect: () => {},
-}));
+    useRouter: () => ({ push: mocks.push }),
+    useLocalSearchParams: () => mocks.searchParams,
+    useIsFocused: () => mocks.isFocused,
+    // Off unless a case asks: only the one-shot tips arm on focus, and most
+    // cases are about something else.
+    useFocusEffect: (effect: () => void | (() => void)) => {
+      useMountEffect(() => (mocks.runFocusEffects ? effect() : undefined), [effect]);
+    },
+  };
+});
 vi.mock('expo-router/react-navigation', async () => {
   const { createContext } = await import('react');
   return {
@@ -396,7 +405,8 @@ vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
 const onboardingStorage = vi.hoisted(() => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
   clearBoardRevealTipPending: vi.fn(async () => {}),
-  markTipSeen: vi.fn(async () => {}),
+  hasSeenTip: vi.fn(async (_key: string) => true),
+  markTipSeen: vi.fn(async (_key: string) => {}),
 }));
 vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => onboardingStorage);
 
@@ -974,6 +984,11 @@ vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }))
 
 import ClimbList from '../index';
 import { isListCardShowing } from '../../../../src/lib/onboarding/list-card-presence';
+import {
+  _resetFirstConnectConfirmationPresenceForTests,
+  setFirstConnectConfirmationShowing,
+} from '../../../../src/lib/onboarding/first-connect-confirmation-presence';
+import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { HIDDEN_HEADER_TITLE_STYLE } from '../../../../src/components/chrome/hidden-header-title';
 import { setPinnedChips } from '../../../../src/lib/pinned-chips-store';
 import { DEFAULT_PINNED_CHIPS } from '../../../../src/lib/pinnable-chips';
@@ -1058,7 +1073,14 @@ beforeEach(() => {
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
   mocks.isFocused = true;
+  mocks.runFocusEffects = false;
   mocks.connectCardExpected = false;
+  onboardingStorage.hasBoardRevealTipPending.mockReset();
+  onboardingStorage.hasBoardRevealTipPending.mockImplementation(async () => false);
+  onboardingStorage.hasSeenTip.mockReset();
+  onboardingStorage.hasSeenTip.mockImplementation(async () => true);
+  onboardingStorage.markTipSeen.mockClear();
+  _resetFirstConnectConfirmationPresenceForTests();
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
@@ -2872,6 +2894,41 @@ describe('ClimbList publishes its cards for the preview-first card', () => {
     mocks.isFocused = false;
     const view = render(<ClimbList />);
     expect(isListCardShowing('firstConnect')).toBe(false);
+    view.unmount();
+  });
+});
+
+// Connecting from the first-connect card hides it, and the "Connected to
+// {{board}}" dialog lands a moment later. The tips that waited behind the card
+// wait through the dialog too, so neither shows under it, and the
+// quick-actions tip (spent the moment it shows) is not used up there.
+describe('ClimbList one-shot tips and the first-connect confirmation', () => {
+  it('holds the board-reveal tip back until the confirmation closes', async () => {
+    mocks.runFocusEffects = true;
+    onboardingStorage.hasBoardRevealTipPending.mockImplementation(async () => true);
+    setFirstConnectConfirmationShowing(true);
+    const view = render(<ClimbList />);
+    await waitFor(() => expect(onboardingStorage.clearBoardRevealTipPending).toHaveBeenCalled());
+    expect(isListCardShowing('boardReveal')).toBe(false);
+
+    act(() => setFirstConnectConfirmationShowing(false));
+    expect(isListCardShowing('boardReveal')).toBe(true);
+    view.unmount();
+  });
+
+  it('keeps the quick-actions tip unspent while the confirmation is coming or up', async () => {
+    mocks.runFocusEffects = true;
+    onboardingStorage.hasSeenTip.mockImplementation(async () => false);
+    setFirstConnectConfirmationShowing(true);
+    const view = render(<ClimbList />);
+    await waitFor(() => expect(onboardingStorage.hasSeenTip).toHaveBeenCalledWith(ONBOARDING_TIP_QUICKACTIONS_KEY));
+    await act(async () => {});
+    expect(isListCardShowing('quickActions')).toBe(false);
+    expect(onboardingStorage.markTipSeen).not.toHaveBeenCalledWith(ONBOARDING_TIP_QUICKACTIONS_KEY);
+
+    act(() => setFirstConnectConfirmationShowing(false));
+    expect(isListCardShowing('quickActions')).toBe(true);
+    expect(onboardingStorage.markTipSeen).toHaveBeenCalledWith(ONBOARDING_TIP_QUICKACTIONS_KEY);
     view.unmount();
   });
 });

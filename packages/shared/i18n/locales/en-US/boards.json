@@ -127,7 +127,9 @@
         "titleNoName": "Connected to your board",
         "body": "Tapping a climb in the list now lights it on the wall.",
         "bodyWindow": "For {{seconds}} seconds after Put on board, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyWindowMinute": "For 1 minute after Put on board, every climb you pick lights too. After that, tap Put on board again.",
         "bodyUntilStop": "After Put on board, every climb you pick lights until you tap the button to stop.",
+        "bodyUntilStopOrDisconnect": "After Put on board, every climb you pick lights until you tap the button to stop, or until auto-disconnect lets go of the board.",
         "bodyPutOnBoard": "Tap a climb, then Put on board to light it on the wall.",
         "gotIt": "Got it"
       }

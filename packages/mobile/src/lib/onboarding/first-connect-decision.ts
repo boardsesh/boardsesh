@@ -10,7 +10,8 @@
 //   phone's first successful connect, saying what lights from here on.
 
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { resolveKeepLightingPlan, type KeepLightingChoice } from '../keep-lighting';
+import { climbChangeStaysViewOnly } from '../../components/play-drawer/play-drawer-navigation';
+import { resolveKeepLightingPlan, resolveKeepLightingReach, type KeepLightingChoice } from '../keep-lighting';
 import { isNativeVersionAtLeast } from '../native-version';
 import { isNewAccount } from './first-board-picker-decision';
 import { assignConnectStepArm, type ConnectStepArm } from './connect-step-arm';
@@ -257,21 +258,44 @@ export function shouldConfirmFirstConnect(input: {
 }
 
 /**
+ * Whether a tap on a climb in a list lights it, as the Climbs card and the
+ * confirmation promise it: Light the board when I tap a climb on, outside a
+ * shared session, where a list tap stays a preview whatever the setting says
+ * (`climbChangeStaysViewOnly`). Nothing drives the wall before a first connect.
+ */
+export function firstConnectTapLights({
+  lightOnClimbTap,
+  inSharedSession,
+}: {
+  lightOnClimbTap: boolean;
+  /** A shared session with someone else in it (`useIsSharedSession`). */
+  inSharedSession: boolean;
+}): boolean {
+  return !climbChangeStaysViewOnly({ driving: false, inSharedSession, lightSetting: lightOnClimbTap });
+}
+
+/**
  * What the confirmation says lights from here on:
  *
- * - `tap_lights` — Light the board when I tap a climb is on: every tap lights.
+ * - `tap_lights` — every tap in a list lights (`firstConnectTapLights`).
  * - `window` — Put on board keeps lighting for `seconds` (Settings › Board's
- *   keep-lighting choice, 45 s by default).
+ *   keep-lighting choice, 45 s by default, or auto-disconnect's timeout when
+ *   that is shorter). Never 60: that is `window_minute`, worded as the
+ *   preview-first card words it.
  * - `until_stop` — Put on board keeps lighting until the climber taps the
- *   button (Until I stop, a MoonBoard's default).
- * - `put_on_board` — Put on board lights one climb: the choice is Off, or no
+ *   button (Until I stop, a MoonBoard's default); `until_stop_or_disconnect`
+ *   when auto-disconnect can end it first.
+ * - `put_on_board` — Put on board lights one climb: the choice is Off, no
  *   window can start here (a crew session with In a session too off, or the
- *   keep-lighting flag off).
+ *   keep-lighting flag off), or solo with Light the board as I swipe on, where
+ *   the press opens no window.
  */
 export type FirstConnectConfirmationCopy =
   | { variant: 'tap_lights' }
   | { variant: 'window'; seconds: number }
+  | { variant: 'window_minute' }
   | { variant: 'until_stop' }
+  | { variant: 'until_stop_or_disconnect' }
   | { variant: 'put_on_board' };
 
 /** Settings › Board's keep-lighting choices and the crew read, as `resolveKeepLightingPlan` takes them. */
@@ -283,28 +307,44 @@ export type FirstConnectKeepLightingInput = {
 };
 
 /**
- * The confirmation's body, read by the rule Put on board itself follows
- * (`resolveKeepLightingPlan`), so it never promises lighting the press won't do.
+ * The confirmation's body, read by the rules a tap and Put on board follow
+ * (`firstConnectTapLights`, `resolveKeepLightingPlan`, `resolveKeepLightingReach`),
+ * so it never promises lighting the climber won't get.
  */
 export function firstConnectConfirmationCopy({
   lightOnClimbTap,
+  lightOnSwipe,
+  inSharedSession,
+  autoDisconnectSeconds,
   boardName,
   keepLighting,
 }: {
   lightOnClimbTap: boolean;
+  lightOnSwipe: boolean;
+  /** A shared session with someone else in it (`useIsSharedSession`): see `firstConnectTapLights`. */
+  inSharedSession: boolean;
+  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
+  autoDisconnectSeconds: number | null;
   /** The board type (`kilter`, `moonboard`, …): a MoonBoard takes its own keep-lighting choice. */
   boardName: string | null;
   /** Null when keep-lighting is off for everyone (its `wall-swipe-to-drive` kill switch). */
   keepLighting: FirstConnectKeepLightingInput | null;
 }): FirstConnectConfirmationCopy {
-  if (lightOnClimbTap) return { variant: 'tap_lights' };
-  const plan =
-    keepLighting === null
-      ? null
-      : resolveKeepLightingPlan({ boardIsMoonboard: isMoonboardBoardName(boardName), ...keepLighting });
-  if (plan === null) return { variant: 'put_on_board' };
-  if (plan.windowMs === null) return { variant: 'until_stop' };
-  return { variant: 'window', seconds: Math.round(plan.windowMs / 1000) };
+  if (firstConnectTapLights({ lightOnClimbTap, inSharedSession })) return { variant: 'tap_lights' };
+  if (keepLighting === null) return { variant: 'put_on_board' };
+  const reach = resolveKeepLightingReach({
+    plan: resolveKeepLightingPlan({ boardIsMoonboard: isMoonboardBoardName(boardName), ...keepLighting }),
+    swipeLightsSolo: lightOnSwipe && !keepLighting.inSession && !inSharedSession,
+    autoDisconnectSeconds,
+  });
+  switch (reach.kind) {
+    case 'one_climb':
+      return { variant: 'put_on_board' };
+    case 'until_stop':
+      return { variant: reach.autoDisconnects ? 'until_stop_or_disconnect' : 'until_stop' };
+    case 'window':
+      return reach.seconds === 60 ? { variant: 'window_minute' } : { variant: 'window', seconds: reach.seconds };
+  }
 }
 
 /** The phone's local calendar day, `YYYY-MM-DD`. */

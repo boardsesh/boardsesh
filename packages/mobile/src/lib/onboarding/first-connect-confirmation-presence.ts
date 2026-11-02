@@ -1,9 +1,14 @@
 // Whether the one-time "Connected to {{board}}" confirmation (#5654) is about to
-// show or is on screen, for the player's preview-first card to wait on: both
-// explain what Put on board keeps lighting, so they never stack (one prompt at
-// a time, the `quick-actions-tip.ts` rule). The confirmation goes first: it
-// comes once per phone and has to reach every first connect, while the card
-// can come back once the dialog is closed.
+// show or is on screen, for the Climbs list's board-reveal and quick-actions
+// tips and the player's preview-first card to wait on: one prompt at a time
+// (the `quick-actions-tip.ts` rule). The confirmation goes first: it comes once
+// per phone and has to reach every first connect, while the others can come
+// back once the dialog is closed.
+//
+// The host turns it on BEFORE it records the connect. Recording it hides the
+// Climbs list's first-connect card, which those three were waiting behind, so
+// they see the confirmation coming without a moment in between to claim the
+// slot.
 //
 // `FirstConnectHost` publishes rather than the player asking the first-connect
 // store, so the player's module graph stays free of that store and its storage.
@@ -18,7 +23,7 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** From the moment the host decides to confirm until the dialog is closed. */
+/** From the moment the host sees the connect it will confirm until the dialog is closed. */
 export function setFirstConnectConfirmationShowing(on: boolean): void {
   if (showing === on) return;
   showing = on;

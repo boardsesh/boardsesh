@@ -97,12 +97,27 @@ export type PlayerPreviewTipProps = {
    * Off, or a session with In a session too off, or the swipe flag off.
    */
   keepLighting: KeepLightingPlan | null;
+  /**
+   * Solo with Light the board as I swipe on: Put on board opens no window
+   * there (the wall control's `tapDrive: 'resume'`), so the card names none.
+   */
+  swipeLightsSolo?: boolean;
+  /** Auto-disconnect's timeout, or null while it is off: lighting stops when it lets go of the board. */
+  autoDisconnectSeconds?: number | null;
   /** The card should go, and why. */
   onExit: (exit: PlayerPreviewTipExit) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
 };
 
-function PlayerPreviewTipComponent({ boardName, glow, keepLighting, onExit, onLayout }: PlayerPreviewTipProps) {
+function PlayerPreviewTipComponent({
+  boardName,
+  glow,
+  keepLighting,
+  swipeLightsSolo = false,
+  autoDisconnectSeconds = null,
+  onExit,
+  onLayout,
+}: PlayerPreviewTipProps) {
   const { t } = useTranslation('common');
   const { brandColors, systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
@@ -112,6 +127,8 @@ function PlayerPreviewTipComponent({ boardName, glow, keepLighting, onExit, onLa
   const windowLine = resolvePreviewFirstWindowLine({
     plan: keepLighting,
     isMoonboard: isMoonboardBoardName(boardName),
+    swipeLightsSolo,
+    autoDisconnectSeconds,
   });
 
   // A drive that starts while the card is up means the frost has been learned:
@@ -154,7 +171,9 @@ function PlayerPreviewTipComponent({ boardName, glow, keepLighting, onExit, onLa
           ? t('mobile.onboarding.tips.previewFirst.windowMinute')
           : windowLine.key === 'untilStop'
             ? t('mobile.onboarding.tips.previewFirst.untilStop')
-            : t('mobile.onboarding.tips.previewFirst.moonboard');
+            : windowLine.key === 'untilStopOrDisconnect'
+              ? t('mobile.onboarding.tips.previewFirst.untilStopOrDisconnect')
+              : t('mobile.onboarding.tips.previewFirst.moonboard');
   // A screen reader can't see the glow or make the swipe: name the label and
   // the action that needs no gesture instead.
   const frostText = screenReaderEnabled

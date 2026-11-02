@@ -759,6 +759,7 @@
           "windowSeconds": "Pendant les {{seconds}} secondes qui suivent, chaque bloc que tu choisis s'allume aussi.",
           "windowMinute": "Pendant la minute qui suit, chaque bloc que tu choisis s'allume aussi.",
           "untilStop": "Ensuite, chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
+          "untilStopOrDisconnect": "Ensuite, chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes, ou jusqu'à ce que la déconnexion automatique libère la board.",
           "moonboard": "Sur un MoonBoard, chaque bloc que tu choisis ensuite s'allume jusqu'à ce que tu arrêtes.",
           "frost": "Quand le bouton affiche Tu pilotes la board et brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Pour commencer, fais glisser le bouton vers la gauche, ou maintiens-le et choisis Allumer chaque bloc. Touche-le pour arrêter.",
           "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Pour commencer, utilise l'action Allumer chaque bloc. Touche le bouton pour arrêter.",

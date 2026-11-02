@@ -9,6 +9,7 @@ import {
   isConnectStepTreatmentLive,
   localDayKey,
   firstConnectConfirmationCopy,
+  firstConnectTapLights,
   shouldConfirmFirstConnect,
   shouldShowFirstConnectCard,
   type ConnectStepEnrolment,
@@ -261,12 +262,82 @@ describe('firstConnectConfirmationCopy', () => {
     drivesInSession: true,
     inSession: false,
   };
-  const base = { lightOnClimbTap: false, boardName: 'kilter', keepLighting: defaults };
+  const base = {
+    lightOnClimbTap: false,
+    lightOnSwipe: false,
+    inSharedSession: false,
+    autoDisconnectSeconds: null,
+    boardName: 'kilter',
+    keepLighting: defaults,
+  };
 
   it('says a tap lights a climb only while Light the board when I tap a climb is on', () => {
     expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true })).toEqual({ variant: 'tap_lights' });
     expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnClimbTap: true })).toEqual({
       variant: 'tap_lights',
+    });
+  });
+
+  // A list tap in a shared session stays a preview whatever Light on tap says
+  // (`climbChangeStaysViewOnly`), so the copy falls through to Put on board's plan.
+  it('never says a tap lights a climb in a shared session', () => {
+    expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true, inSharedSession: true })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+    expect(
+      firstConnectConfirmationCopy({
+        ...base,
+        lightOnClimbTap: true,
+        inSharedSession: true,
+        keepLighting: { ...defaults, inSession: true, drivesInSession: false },
+      }),
+    ).toEqual({ variant: 'put_on_board' });
+  });
+
+  it('agrees with the tap rule the Climbs card reads', () => {
+    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: false })).toBe(true);
+    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: true })).toBe(false);
+    expect(firstConnectTapLights({ lightOnClimbTap: false, inSharedSession: false })).toBe(false);
+  });
+
+  // Solo with Light the board as I swipe on, the press drops a stop and opens
+  // no window (the wall control's `tapDrive: 'resume'`): a list pick stays a
+  // preview, so no window is promised.
+  it('promises no window solo with Light the board as I swipe on', () => {
+    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true })).toEqual({ variant: 'put_on_board' });
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnSwipe: true })).toEqual({
+      variant: 'put_on_board',
+    });
+    // In a crew or a shared session the swipe setting lights nothing, so the window stands.
+    expect(
+      firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, keepLighting: { ...defaults, inSession: true } }),
+    ).toEqual({ variant: 'window', seconds: 45 });
+    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, inSharedSession: true })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+  });
+
+  // Auto-disconnect lets go of the board its timeout after the last climb that
+  // lit, and lighting stops with it (`clampWindowEnd`).
+  it('names auto-disconnect’s timeout when it ends lighting first', () => {
+    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 30 })).toEqual({
+      variant: 'window',
+      seconds: 30,
+    });
+    // A timeout no shorter than the window changes nothing.
+    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 45 })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 600 })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+    // Until I stop: any timeout can end it.
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', autoDisconnectSeconds: 600 })).toEqual({
+      variant: 'until_stop_or_disconnect',
     });
   });
 
@@ -276,15 +347,14 @@ describe('firstConnectConfirmationCopy', () => {
   });
 
   it('reads the window from the climber’s keep-lighting choice', () => {
-    for (const [choice, seconds] of [
-      ['30', 30],
-      ['60', 60],
-    ] as const) {
-      expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: choice } })).toEqual({
-        variant: 'window',
-        seconds,
-      });
-    }
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '30' } })).toEqual({
+      variant: 'window',
+      seconds: 30,
+    });
+    // Worded as the preview-first card words it: "For 1 minute".
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '60' } })).toEqual({
+      variant: 'window_minute',
+    });
     expect(
       firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: 'until_stopped' } }),
     ).toEqual({ variant: 'until_stop' });

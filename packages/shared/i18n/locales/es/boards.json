@@ -127,7 +127,9 @@
         "titleNoName": "Conectado a tu plafón",
         "body": "Ahora, al tocar un bloque de la lista, se ilumina en el muro.",
         "bodyWindow": "Durante los {{seconds}} segundos siguientes a Poner en el plafón, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
+        "bodyWindowMinute": "Durante el minuto siguiente a Poner en el plafón, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
         "bodyUntilStop": "Después de Poner en el plafón, cada bloque que elijas se enciende hasta que toques el botón para parar.",
+        "bodyUntilStopOrDisconnect": "Después de Poner en el plafón, cada bloque que elijas se enciende hasta que toques el botón para parar o hasta que la desconexión automática suelte el plafón.",
         "bodyPutOnBoard": "Toca un bloque y pulsa Poner en el plafón para encenderlo en el muro.",
         "gotIt": "Entendido"
       }

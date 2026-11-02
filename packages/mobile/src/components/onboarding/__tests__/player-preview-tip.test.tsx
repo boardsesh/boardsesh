@@ -238,6 +238,20 @@ describe('PlayerPreviewTip', () => {
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.moonboard);
   });
 
+  // The two settings Put on board's plan does not take (`resolveKeepLightingReach`).
+  it('reads Light the board as I swipe and auto-disconnect the way the press and the link do', () => {
+    renderTip({ swipeLightsSolo: true });
+    expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
+    cleanup();
+    renderTip({ autoDisconnectSeconds: 30 });
+    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(
+      tips.windowSeconds.replace('{{seconds}}', '30'),
+    );
+    cleanup();
+    renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED, autoDisconnectSeconds: 120 });
+    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStopOrDisconnect);
+  });
+
   it('goes on Got it, the close button and Lighting settings, saying which', () => {
     const onExit = renderTip();
     fireEvent.click(screen.getByText(tips.done));

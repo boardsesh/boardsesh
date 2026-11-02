@@ -126,8 +126,10 @@
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",
         "body": "Ora, toccando un blocco nell'elenco, lo illumini in parete.",
-        "bodyWindow": "Nei {{seconds}} secondi dopo Illumina il pannello si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindow": "Nei {{seconds}} secondi dopo Illumina il pannello, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindowMinute": "Nel minuto dopo Illumina il pannello, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
         "bodyUntilStop": "Dopo Illumina il pannello, ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere.",
+        "bodyUntilStopOrDisconnect": "Dopo Illumina il pannello, ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere, o finché la disconnessione automatica non libera il pannello.",
         "bodyPutOnBoard": "Tocca un blocco e poi Illumina il pannello per illuminarlo in parete.",
         "gotIt": "Ok"
       }

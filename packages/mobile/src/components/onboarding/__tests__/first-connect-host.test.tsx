@@ -15,14 +15,21 @@ const flagsCtrl = vi.hoisted(() => ({ enabled: true, keepLighting: true }));
 const settingsCtrl = vi.hoisted(() => ({
   values: {
     lightOnClimbTap: true,
+    lightOnSwipe: false,
     putOnBoardKeepsLighting: '45',
     moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
   } as Record<string, unknown>,
 }));
-const sessionCtrl = vi.hoisted(() => ({ crew: false }));
+const sessionCtrl = vi.hoisted(() => ({ crew: false, shared: false }));
 const boardCtrl = vi.hoisted(() => ({ boardType: 'kilter' }));
-const bluetoothCtrl = vi.hoisted(() => ({ isConnected: false, virtualWallHeld: false, ledless: false }));
+const bluetoothCtrl = vi.hoisted(() => ({
+  isConnected: false,
+  virtualWallHeld: false,
+  ledless: false,
+  autoDisconnectEnabled: false,
+  autoDisconnectTimeoutSeconds: 30,
+}));
 const overridesCtrl = vi.hoisted(() => ({ overrides: {} as Record<string, boolean | string>, loaded: true }));
 const enrolMock = vi.hoisted(() => vi.fn(async () => 'enrolled'));
 
@@ -70,7 +77,10 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { name: 'Kilter at Blocs', boardType: boardCtrl.boardType } }),
 }));
 vi.mock('../../../settings', () => ({ useSetting: (key: string) => [settingsCtrl.values[key], vi.fn()] }));
-vi.mock('../../../providers/queue-provider', () => ({ useIsCrewSession: () => sessionCtrl.crew }));
+vi.mock('../../../providers/queue-provider', () => ({
+  useIsCrewSession: () => sessionCtrl.crew,
+  useIsSharedSession: () => sessionCtrl.shared,
+}));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({ ...bluetoothCtrl }),
@@ -90,6 +100,7 @@ vi.mock('../../../providers/sheet-presentation-provider', () => ({
 import { FirstConnectHost } from '../FirstConnectHost';
 import {
   getFirstConnectSnapshot,
+  loadFirstConnectDevice,
   resetFirstConnectStoreForTests,
   writeConnectStepEnrolment,
 } from '../../../lib/onboarding/first-connect-store';
@@ -112,11 +123,13 @@ describe('FirstConnectHost', () => {
     flagsCtrl.keepLighting = true;
     settingsCtrl.values = {
       lightOnClimbTap: true,
+      lightOnSwipe: false,
       putOnBoardKeepsLighting: '45',
       moonboardPutOnBoardKeepsLighting: 'until_stopped',
       putOnBoardDrivesInSession: true,
     };
     sessionCtrl.crew = false;
+    sessionCtrl.shared = false;
     boardCtrl.boardType = 'kilter';
     chooseMock.mockImplementation(async () => 'got_it');
     settleCtrl.ms = 5;
@@ -124,6 +137,8 @@ describe('FirstConnectHost', () => {
     bluetoothCtrl.isConnected = false;
     bluetoothCtrl.virtualWallHeld = false;
     bluetoothCtrl.ledless = false;
+    bluetoothCtrl.autoDisconnectEnabled = false;
+    bluetoothCtrl.autoDisconnectTimeoutSeconds = 30;
     overridesCtrl.overrides = {};
     overridesCtrl.loaded = true;
     enrolMock.mockClear();
@@ -244,6 +259,49 @@ describe('FirstConnectHost', () => {
     expect(await confirmFirstConnect()).toMatch(/^For 30 seconds after Put on board/);
   });
 
+  it('says a 60 s window the way the preview-first card does', async () => {
+    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.putOnBoardKeepsLighting = '60';
+
+    expect(await confirmFirstConnect()).toBe(
+      'For 1 minute after Put on board, every climb you pick lights too. After that, tap Put on board again.',
+    );
+  });
+
+  // A list tap in a shared session stays a preview whatever Light on tap says.
+  it('never says a tap lights a climb in a shared session', async () => {
+    sessionCtrl.shared = true;
+
+    expect(await confirmFirstConnect()).toMatch(/^For 45 seconds after Put on board/);
+  });
+
+  // Solo with Light the board as I swipe on, Put on board opens no window.
+  it('promises no window solo with Light the board as I swipe on', async () => {
+    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.lightOnSwipe = true;
+
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
+  });
+
+  it('names auto-disconnect’s timeout when it lets go of the board first', async () => {
+    settingsCtrl.values.lightOnClimbTap = false;
+    bluetoothCtrl.autoDisconnectEnabled = true;
+    bluetoothCtrl.autoDisconnectTimeoutSeconds = 15;
+
+    expect(await confirmFirstConnect()).toMatch(/^For 15 seconds after Put on board/);
+  });
+
+  it('says auto-disconnect can end a MoonBoard’s drive', async () => {
+    settingsCtrl.values.lightOnClimbTap = false;
+    boardCtrl.boardType = 'moonboard';
+    bluetoothCtrl.autoDisconnectEnabled = true;
+    bluetoothCtrl.autoDisconnectTimeoutSeconds = 120;
+
+    expect(await confirmFirstConnect()).toBe(
+      'After Put on board, every climb you pick lights until you tap the button to stop, or until auto-disconnect lets go of the board.',
+    );
+  });
+
   it('says a MoonBoard keeps lighting until the climber stops it', async () => {
     settingsCtrl.values.lightOnClimbTap = false;
     boardCtrl.boardType = 'moonboard';
@@ -292,6 +350,29 @@ describe('FirstConnectHost', () => {
     await waitFor(() => expect(isFirstConnectConfirmationShowing()).toBe(false));
   });
 
+  // Recording the connect is what hides the Climbs card, and the list's tips
+  // and the preview-first card wait behind it. They must see the confirmation
+  // coming before the card goes, or one of them takes the slot in between and
+  // the dialog lands on top of it (and the quick-actions tip is used up).
+  it('says the confirmation is coming before it records the connect that hides the card', async () => {
+    // The dialog stays up, so the presence is still on whenever the test looks.
+    chooseMock.mockImplementation(() => new Promise<string>(() => {}));
+    await writeConnectStepEnrolment(ENROLMENT);
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().enrolment).toEqual(ENROLMENT));
+    // The card had this phone's state read: it shows only once it has.
+    await loadFirstConnectDevice();
+
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+
+    expect(getFirstConnectSnapshot().device?.connectedAt).toBeNull();
+    expect(isFirstConnectConfirmationShowing()).toBe(true);
+    await waitFor(() => expect(getFirstConnectSnapshot().device?.connectedAt).toBe(1_000));
+    expect(isFirstConnectConfirmationShowing()).toBe(true);
+    await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
+  });
+
   it('lets the preview-first card go again when it unmounts before the dialog', async () => {
     // Long enough for the unmount to land while the picker would still be settling.
     settleCtrl.ms = 10_000;
@@ -316,6 +397,26 @@ describe('FirstConnectHost', () => {
     await waitFor(() => expect(getFirstConnectSnapshot().device?.connectedAt).toBe(1_000));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(isFirstConnectConfirmationShowing()).toBe(false);
+  });
+
+  it('never announces a reconnect on a phone that has connected before', async () => {
+    await writeConnectStepEnrolment(ENROLMENT);
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().enrolment).toEqual(ENROLMENT));
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+    await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(isFirstConnectConfirmationShowing()).toBe(false));
+
+    bluetoothCtrl.isConnected = false;
+    rerender(<FirstConnectHost />);
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+
+    expect(isFirstConnectConfirmationShowing()).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(isFirstConnectConfirmationShowing()).toBe(false);
+    expect(chooseMock).toHaveBeenCalledTimes(1);
   });
 
   it('never reads a virtual hold as "no lights", even one that moves with a board switch', async () => {

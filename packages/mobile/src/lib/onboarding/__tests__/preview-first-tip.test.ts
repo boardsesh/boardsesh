@@ -224,6 +224,26 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true })).toEqual({ key: 'moonboard' });
   });
 
+  // Solo with Light the board as I swipe on, the press opens no window (the
+  // wall control's `tapDrive: 'resume'`), so the card promises none.
+  it('names no window solo with Light the board as I swipe on', () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, swipeLightsSolo: true })).toBeNull();
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, swipeLightsSolo: true })).toBeNull();
+  });
+
+  // Auto-disconnect ends lighting when it lets go of the board (`clampWindowEnd`).
+  it('reads auto-disconnect the way the window clock does', () => {
+    expect(
+      resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, autoDisconnectSeconds: 30 }),
+    ).toEqual({ key: 'windowSeconds', seconds: 30 });
+    expect(
+      resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false, autoDisconnectSeconds: 120 }),
+    ).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, autoDisconnectSeconds: 300 })).toEqual({
+      key: 'untilStopOrDisconnect',
+    });
+  });
+
   it("reads a MoonBoard's timed window as a window", () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(30_000), isMoonboard: true })).toEqual({
       key: 'windowSeconds',

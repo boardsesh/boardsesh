@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { shouldShowQuickActionsTip } from '../quick-actions-tip';
 
-const ready = { armed: true, revealTipShowing: false, connectCardVisible: false, climbCount: 3 };
+const ready = {
+  armed: true,
+  revealTipShowing: false,
+  connectCardVisible: false,
+  connectConfirmationShowing: false,
+  climbCount: 3,
+};
 
 describe('shouldShowQuickActionsTip', () => {
   it('shows once armed with climbs in the list and nothing else on screen', () => {
@@ -14,9 +20,11 @@ describe('shouldShowQuickActionsTip', () => {
     expect(shouldShowQuickActionsTip({ ...ready, climbCount: 0 })).toBe(false);
   });
 
-  it('yields to the board-reveal tip and the first-connect card', () => {
+  it('yields to the board-reveal tip, the first-connect card and its confirmation', () => {
     expect(shouldShowQuickActionsTip({ ...ready, revealTipShowing: true })).toBe(false);
     expect(shouldShowQuickActionsTip({ ...ready, connectCardVisible: true })).toBe(false);
+    // Connecting from the card hides it a moment before the dialog lands.
+    expect(shouldShowQuickActionsTip({ ...ready, connectConfirmationShowing: true })).toBe(false);
   });
 
   it('stays hidden once seen', () => {
