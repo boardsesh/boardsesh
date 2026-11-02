@@ -978,7 +978,8 @@
     "paneEmpty": {
       "title": "Elige un bloque",
       "subtitle": "Toca un bloque para verlo aquí.",
-      "unlitHint": "Toca un bloque para verlo en vista previa"
+      "unlitHint": "Toca un bloque para verlo en vista previa",
+      "unlitHintLights": "Toca un bloque para encenderlo"
     },
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",

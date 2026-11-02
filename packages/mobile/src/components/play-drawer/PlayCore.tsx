@@ -2133,10 +2133,8 @@ export function PlayCore({
   // below), so a press whose keep-lighting waited on the question gets it once
   // its climb goes up (2.7), and Keep theirs drops it.
   const wallControlAnswersRef = useRef<{ confirmPut: () => void; cancelPut: () => void } | null>(null);
-  const handleBusyWallPut = useCallback(() => {
-    if (wallControlAnswersRef.current) wallControlAnswersRef.current.confirmPut();
-    else handleLightThisClimb();
-  }, [handleLightThisClimb]);
+  // Set on every render below, before any press can ask the question.
+  const handleBusyWallPut = useCallback(() => wallControlAnswersRef.current?.confirmPut(), []);
   const handleBusyWallKeep = useCallback(() => {
     wallControlAnswersRef.current?.cancelPut();
     handleBackToLive();

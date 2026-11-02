@@ -139,7 +139,9 @@ flat amber fallback; the label still says what the next press does.
   Every pick reads the window's end off the wall clock (`drivingAtPick` in `drive-mode-store.ts`),
   never a timer alone: Android pauses JS timers with the activity (#7038), so a pick past the end
   stays a preview even before `DriveModeWatcher` has ended the window and tidied the button.
-  A rest or a long look drops back to previews. In a crew the window needs **In a session too**
+  A rest or a long look drops back to previews. **Turn off all lights** in the board sheet ends a window or an
+  open-ended drive as a stop does (`stopDrivingForLink`, said aloud), so the dark wall's Put on board means one
+  climb and the next pick is a preview. In a crew the window needs **In a session too**
   (on by default). A swipe or the accessible **Light every climb** command starts open-ended
   Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
   swipe** explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved
@@ -148,8 +150,10 @@ flat amber fallback; the label still says what the next press does.
   Plain with a violet drain bar and an m:ss clock ("Each pick lights · 0:38"): the window.
   A tap on it stops the window and keeps the link. Frost: open-ended driving only, "You are
   driving the wall". A window never frosts. The top bar's second line says "Preview · not on
-  the wall" for a preview while this phone holds the board.
-- **A MoonBoard press always drives (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop).** Most
+  the wall" for a preview while this phone holds the board, or while a climb lit in the last hour may still be
+  on the wall (`wallCouldLight` in `wall-state.ts`).
+- **A MoonBoard press drives by default (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop), in a crew
+  too.** Most
   MoonBoard controllers don't like phones switching, so a MoonBoard has its own keep-lighting choice, and it applies
   in a crew session too, whatever **In a session too** says (`resolveKeepLightingPlan` in `lib/keep-lighting.ts`).
   At the default the model's `tapDrive` is `drive`: once the climb is up, the press starts an open-ended drive (the

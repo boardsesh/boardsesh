@@ -871,6 +871,25 @@ describe('useWallControl: the keep-lighting window', () => {
     expect(run.disconnect).toHaveBeenCalledOnce();
   });
 
+  // The route player closed and reopened from the mini player mid-window: the
+  // new player never saw the window open, and still owes its end (WCAG 2.2.1).
+  it('says the end of a window that was already running when the player mounted', () => {
+    vi.useFakeTimers();
+    openWindow();
+    announceQueued.mockClear();
+    const { hook, run } = setup(windowModel());
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => {
+      vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).not.toHaveBeenCalled();
+  });
+
   it("drops a bulb's disconnect in those 2 s too", () => {
     vi.useFakeTimers();
     const { hook, run } = setup(windowModel());

@@ -72,13 +72,13 @@ With untouched settings, selecting a climb opens a preview without committing it
 lighting the wall, including playlist **Play** and queue rows. Tap the board button (**Put on board**) to
 light that climb: from 2.7 it also opens a keep-lighting window, so every climb you pick lights
 until 45 s after the last lit one (renewed by each of your own; 30 s, 45 s, 1 min, Until I stop
-or Off in Settings; in a crew only with **In a session too** on, and a crewmate's put-up ends
-it). Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
+or Off in Settings; in a crew only on the phone that holds the board, with **In a session too** on,
+and a crewmate's put-up ends it; Put on board from any other phone lights that one climb). Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
 of a queue slot puts up the slot's neighbour the peek shows. Swipe the button, or use **Light every
 climb**, to start open-ended Driver mode. On a MoonBoard Put on board starts Driver mode by
 default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
 setting; still to be tested in the field). The top bar's second line says "Preview · not on the wall" for a preview while this
-phone holds the board. A playlist tap with **Tapping a playlist loads it into my queue** on
+phone holds the board, or while a climb lit in the last hour may still be on the wall. A playlist tap with **Tapping a playlist loads it into my queue** on
 depends on Light on tap: off, the list from the tapped climb becomes Up next, the wall keeps
 its climb and the tapped climb opens as a preview; on, the list replaces the queue and the
 tapped climb lights. A newcomer's first-connect confirmation and the Climbs list's connect card

@@ -978,7 +978,8 @@
     "paneEmpty": {
       "title": "Scegli un blocco",
       "subtitle": "Tocca un blocco per vederlo qui.",
-      "unlitHint": "Tocca un blocco per vederne l’anteprima"
+      "unlitHint": "Tocca un blocco per vederne l’anteprima",
+      "unlitHintLights": "Tocca un blocco per illuminarlo"
     },
     "previousFrame": "Frame precedente",
     "nextFrame": "Frame successivo",
