@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Help pages now explain browsing before lighting and how long Put on board keeps lighting. ([#7207](https://github.com/boardsesh/boardsesh/pull/7207))
+  Settings › Board links straight to how driving the wall works.
+  Replay walkthrough brings back the card about previews and the frosted button.
 - Hold a climb or tap ⋯ for the same menu, with the climb lifted above the list. ([#7205](https://github.com/boardsesh/boardsesh/pull/7205))
 - Your Lock Screen and notification show how long picks keep lighting the wall. ([#7203](https://github.com/boardsesh/boardsesh/pull/7203))
   Next and Previous on the Lock Screen keep the countdown going.
