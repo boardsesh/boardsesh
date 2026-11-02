@@ -414,9 +414,10 @@ function WallControlButtonComponent({
       ]}
     >
       {fullGlow ? <WallGlow layer={fullGlow} width={size.w} /> : null}
-      {/* The window's drain bar; it steps aside while a drag or the peek wipes in. */}
-      {model.lightWindow && !wiping && size.w > 0 ? (
-        <WallWindowBar color={tonalForeground} width={size.w} reduceMotion={reduceMotion} />
+      {/* The window's drain bar; it steps aside while a drag or the peek wipes in,
+          still mounted, so it comes back where it stood rather than refilling. */}
+      {model.lightWindow && size.w > 0 ? (
+        <WallWindowBar color={tonalForeground} width={size.w} reduceMotion={reduceMotion} hidden={wiping} />
       ) : null}
       {row({
         foreground: restForeground,

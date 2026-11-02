@@ -40,7 +40,13 @@ export function BleKeepLightingRow({ model }: { model: BleKeepLightingRowModel }
   );
   return (
     <View style={styles.row} testID="ble-control-keep-lighting">
-      <Text variant="body" style={styles.label}>
+      <Text
+        variant="body"
+        style={styles.label}
+        // The menu's own name starts with it: a screen reader reads the row once, on the control.
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {model.label}
       </Text>
       <AppMenu

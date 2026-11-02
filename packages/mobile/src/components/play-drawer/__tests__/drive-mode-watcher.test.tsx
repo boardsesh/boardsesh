@@ -727,6 +727,23 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     expect(getCrewPutUp()).toBeNull();
   });
 
+  // The window can stay arming for as long as the device picker is open. A
+  // crewmate's put-up then ends it too: left arming, the crewmate's climb
+  // lighting here would take it live, and the holder's next pick would take
+  // the wall back from them without the busy-wall question.
+  it('ends a window still arming when a crewmate puts a climb up; their lit climb never starts it', () => {
+    reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
+    const watcher = mount();
+    openWindow();
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', windowMs: 45_000 });
+    act(() => crewMove('q-2'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    act(() => emitWallConfirm('climb-q-2'));
+    expect(getDriveMode()).toBeNull();
+  });
+
   // The climber's own Lock Screen Next or watch step: the server names their
   // account as the mover, so it is their step, never a crewmate's put-up.
   it("keeps the window through the climber's own Lock Screen step", () => {

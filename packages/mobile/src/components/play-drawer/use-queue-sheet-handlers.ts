@@ -71,9 +71,9 @@ export function useQueueSheetHandlers({
   // Where a pick lands, read at the tap (`resolveQueuePickLanding`): it
   // commits once automatic lighting is opted in or this phone is driving, and
   // previews otherwise. A pick of the climb already up never previews, since
-  // that preview would offer no Put on board: it commits when nothing on the
-  // wall would change, and reopens the climb up as it is when a commit would
-  // light the wall or write a crew's queue.
+  // that preview would offer no Put on board: it commits solo with no hold
+  // (in either orientation), and reopens the climb up as it is in a crew or
+  // while the hold keeps the wall dark.
   const landingOf = useCallback(
     (item: ClimbQueueItem) =>
       readQueuePickLanding(item, {

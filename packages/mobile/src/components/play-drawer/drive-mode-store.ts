@@ -191,6 +191,23 @@ let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
 const listeners = new Set<() => void>();
 
+/** A line the player speaks about a keep-lighting window: its start, a swipe opening it up, its end. */
+export type DriveAnnouncement = 'window_started' | 'window_opened_up' | 'window_ended';
+/** The lines already said for one drive (by its start). A new drive starts empty. */
+let claimedAnnouncements: { startedAt: number; said: Set<DriveAnnouncement> } | null = null;
+
+/**
+ * Whether this caller says `line` for the drive that started at `startedAt`:
+ * true once per drive and line. Every mounted player (each tab's pane on the
+ * phone split) watches the same drive, so only the first to claim it speaks.
+ */
+export function claimDriveAnnouncement(startedAt: number, line: DriveAnnouncement): boolean {
+  if (claimedAnnouncements?.startedAt !== startedAt) claimedAnnouncements = { startedAt, said: new Set() };
+  if (claimedAnnouncements.said.has(line)) return false;
+  claimedAnnouncements.said.add(line);
+  return true;
+}
+
 function emit(): void {
   for (const listener of listeners) listener();
 }
@@ -254,6 +271,7 @@ export function enterDriveMode({
   };
   stoppedForLink = false;
   lastExitReason = null;
+  claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
 }
@@ -460,6 +478,7 @@ export function resetDriveModeForTests(): void {
   driveMode = null;
   stoppedForLink = false;
   lastExitReason = null;
+  claimedAnnouncements = null;
   emit();
 }
 

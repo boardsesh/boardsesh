@@ -528,7 +528,7 @@ export function usePlaySelectionController({
       // fresh here, #7113 QA, where Put on board used to drop "Search results ·
       // 4 of 23" and leave swipes nowhere to go), and clears it as before
       // otherwise. Only the walk's own peek: a crew browse open of a list climb
-      // (a peer's tick, a logbook row, a deep link, the Preview action) is a
+      // (a peer's tick, a logbook row, a deep link, the Home new-climb card) is a
       // fresh item, not a peek, and never borrows the track (#5403). The peek
       // goes up as Next places a list step: a fresh copy at the Now slot, never
       // an older entry pulled out of History.

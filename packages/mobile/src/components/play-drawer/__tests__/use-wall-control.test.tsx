@@ -13,7 +13,12 @@ const analytics = vi.hoisted(() => ({
   started: vi.fn(),
   swiped: vi.fn(),
 }));
-const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
+const haptics = vi.hoisted(() => ({
+  hapticMedium: vi.fn(),
+  hapticWarning: vi.fn(),
+  hapticLight: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
@@ -57,6 +62,7 @@ import {
   enterDriveMode,
   exitDriveMode,
   getDriveMode,
+  makeDriveOpenEnded,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
   markDriveLive,
@@ -910,6 +916,92 @@ describe('useWallControl: the keep-lighting window', () => {
       exitDriveMode('window_ended');
     });
     expect(announceQueued).not.toHaveBeenCalled();
+  });
+
+  // A window that ends before the wall lit never started for the climber: a
+  // crewmate's put-up mid-connect, or the setting turned Off while arming.
+  it('says nothing about a window that ended while arming, and drops no tap after it', () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).not.toHaveBeenCalledWith('playView.wallControl.windowEnded');
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => {
+      vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1_000);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  // Nothing on the wall changes (the lit climb stays lit), so the screen
+  // reader and a buzz are the only sign the window turned into a drive.
+  it('says the drive is open-ended when a swipe or Light every climb opens the window up, with a buzz', () => {
+    setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.sheetStatusDriving');
+    expect(haptics.hapticSuccess).toHaveBeenCalledOnce();
+  });
+
+  it('says nothing about an open-ended drive that never was a window', () => {
+    setup(windowModel());
+    act(() => {
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+    });
+    act(() => markDriveLive());
+    expect(announceQueued).not.toHaveBeenCalled();
+    expect(haptics.hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  // The phone split mounts a player in every tab, each with its own control.
+  it('says each window line once with several players mounted, and a closed one never takes it', () => {
+    vi.useFakeTimers();
+    const closed = setup(windowModel());
+    closed.hook.rerender({ model: windowModel(), playerOpen: false });
+    const first = setup(windowModel());
+    setup(windowModel());
+    openWindow();
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowStarted {"count":45}');
+    announceQueued.mockClear();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    // The tap guard is each player's own: the one that stayed quiet still has it.
+    first.hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => first.hook.result.current.press('button'));
+    expect(first.run.disconnect).not.toHaveBeenCalled();
+    // The next window is news again.
+    announceQueued.mockClear();
+    vi.advanceTimersByTime(1);
+    openWindow();
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowStarted {"count":45}');
+  });
+
+  it('says the open-ended turn once with several players mounted', () => {
+    setup(windowModel());
+    setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.sheetStatusDriving');
+    expect(haptics.hapticSuccess).toHaveBeenCalledOnce();
   });
 });
 

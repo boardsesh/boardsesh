@@ -19,8 +19,8 @@ export function assertNeverRow(row: never): never {
 
 /**
  * The line under a toggle row's label: its disabled reason while greyed out,
- * else its subtitle. Every renderer reads this, so the reason replaces the
- * description everywhere.
+ * else its subtitle. Every renderer of a row that sets a reason reads this
+ * (iOS, MoreFormRN, web), so the reason replaces the description everywhere.
  */
 export function toggleRowSubtitle(row: Pick<MoreToggleRow, 'subtitle' | 'disabled' | 'disabledReason'>): {
   text: string | undefined;

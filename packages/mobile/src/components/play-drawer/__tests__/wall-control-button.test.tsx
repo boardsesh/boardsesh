@@ -198,11 +198,12 @@ vi.mock('../WallWindowClock', async () => {
     },
     WallWindowDigits: ({ color }: { color: string }) =>
       createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
-    WallWindowBar: ({ color, reduceMotion }: { color: string; reduceMotion: boolean }) =>
+    WallWindowBar: ({ color, reduceMotion, hidden }: { color: string; reduceMotion: boolean; hidden?: boolean }) =>
       createElement('div', {
         'data-testid': 'window-bar',
         'data-color': color,
         'data-reduce-motion': String(reduceMotion),
+        'data-hidden': String(hidden === true),
       }),
   };
 });
@@ -961,8 +962,28 @@ describe('WallControlButton: the keep-lighting window', () => {
     swipeCtrl.frostArmed = true;
     const wiping = renderButton(windowModel(), { onSwipe: () => 'started' });
     measure();
-    expect(wiping.queryByTestId('window-bar')).toBeNull();
+    expect(wiping.getByTestId('window-bar').dataset.hidden).toBe('true');
     expect(wiping.queryByTestId('wall-swipe-wipe')).not.toBeNull();
+  });
+
+  // A cancelled drag or the peek: the same bar comes back, its drain still
+  // running, rather than a new one that refills from full as a lit climb would.
+  it('keeps the same bar mounted through a wipe, so it comes back where it stood', () => {
+    const handlers = { onPress: vi.fn(), onLongPress: vi.fn(), onSwipe: () => 'started' as const };
+    // A fresh model each time, so the memoised button draws the swipe's new state.
+    const element = () => createElement(WallControlButton, { model: windowModel(), ...handlers });
+    const view = render(element());
+    measure();
+    const bar = view.getByTestId('window-bar');
+    expect(bar.dataset.hidden).toBe('false');
+    swipeCtrl.frostArmed = true;
+    view.rerender(element());
+    expect(view.getByTestId('window-bar')).toBe(bar);
+    expect(bar.dataset.hidden).toBe('true');
+    swipeCtrl.frostArmed = false;
+    view.rerender(element());
+    expect(view.getByTestId('window-bar')).toBe(bar);
+    expect(bar.dataset.hidden).toBe('false');
   });
 
   it('draws no clock, bar or value outside a window', () => {

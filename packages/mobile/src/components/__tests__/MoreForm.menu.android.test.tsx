@@ -32,6 +32,7 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   clickable: () => ({}),
   defaultMinSize: () => ({}),
   padding: () => ({}),
+  selectable: () => ({}),
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: (options: { android?: unknown }) => options.android },

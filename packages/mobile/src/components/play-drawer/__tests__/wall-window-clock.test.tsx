@@ -208,6 +208,47 @@ describe('useWindowDrain', () => {
     });
     expect(drains()).toHaveLength(2);
   });
+
+  // The player opening on a running window, or the bar coming back after a
+  // drag: it starts where the window stands, with no refill from full, which
+  // would read as a climb lighting.
+  it('mounted mid-window, starts where the window stands and refills only on a renewal', () => {
+    openWindow();
+    act(() => {
+      vi.advanceTimersByTime(33_000);
+    });
+    let firstFrame: number | null = null;
+    renderHook(() => {
+      const drain = useWindowDrain(false);
+      firstFrame ??= drain.fraction.value;
+      return drain;
+    });
+    expect(firstFrame).toBeCloseTo(12_000 / 45_000);
+    expect(timings.slice(0, 2)).toEqual([
+      { to: 12_000 / 45_000, duration: 0 },
+      { to: 0, duration: 12_000 },
+    ]);
+    timings.length = 0;
+    act(() => noteDriveClimbLit());
+    expect(timings.slice(0, 2)).toEqual([
+      { to: 1, duration: 250 },
+      { to: 0, duration: 45_000 - 250 },
+    ]);
+  });
+
+  it('under Reduce Motion, draws its first frame where the window stands', () => {
+    openWindow();
+    act(() => {
+      vi.advanceTimersByTime(33_000);
+    });
+    let firstFrame: number | null = null;
+    renderHook(() => {
+      const drain = useWindowDrain(true);
+      firstFrame ??= drain.fraction.value;
+      return drain;
+    });
+    expect(firstFrame).toBeCloseTo(12_000 / 45_000);
+  });
 });
 
 describe('WallWindowDigits and WallWindowBar', () => {

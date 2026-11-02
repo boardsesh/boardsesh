@@ -46,16 +46,30 @@ const ROWS: Row[] = [
     inSharedSession: true,
     expected: 'reopen',
   },
+  // A preview of the other orientation would have no Put on board, and the
+  // board control would light or let go of the climb up instead.
   {
-    label: 'a copy of the climb up in the other orientation',
+    label: 'a copy of the climb up in the other orientation, solo',
     picked: entry('history-copy', 'climb-up', true),
-    expected: 'preview',
+    expected: 'commit',
   },
   {
     label: 'the climb up mirrored, picked unmirrored',
     picked: entry('history-copy', 'climb-up'),
     current: entry('now-slot', 'climb-up', true),
-    expected: 'preview',
+    expected: 'commit',
+  },
+  {
+    label: 'a copy of the climb up in the other orientation, in a crew',
+    picked: entry('history-copy', 'climb-up', true),
+    inSharedSession: true,
+    expected: 'reopen',
+  },
+  {
+    label: 'a copy of the climb up in the other orientation while it is held',
+    picked: entry('history-copy', 'climb-up', true),
+    heldQueueItemUuid: 'now-slot',
+    expected: 'reopen',
   },
   {
     label: 'any pick with automatic lighting on, held climb included',

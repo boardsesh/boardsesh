@@ -171,7 +171,7 @@ import {
   hasSeenTip,
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
-import { ONBOARDING_TIP_PREVIEW_FIRST_KEY, ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
+import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { setListCardShowing } from '../../../src/lib/onboarding/list-card-presence';
 import { useFirstConnectConfirmationShowing } from '../../../src/lib/onboarding/first-connect-confirmation-presence';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -1437,8 +1437,8 @@ function ClimbListInner() {
 
   // Screenshot mode: open the first climb in one of the drawer's two wall-state
   // shots. `screenshotOpenPreview` is the browse latch — the Browsing pill, the
-  // viewfinder brackets and the commit row — which is the same landing as the
-  // "Preview" climb action. `screenshotOpenWallPreview` adds `previewIsWallClimb`
+  // viewfinder brackets and the commit row — which is the same landing as a
+  // deep-link preview. `screenshotOpenWallPreview` adds `previewIsWallClimb`
   // so the drawer says the displayed climb IS the lit one (the On-the-wall pill,
   // no commit to offer). Declared AFTER the wall-seed effect above so the kiosk
   // seed — which publishes this same first climb at index 0 — is already in the
@@ -1487,9 +1487,6 @@ function ClimbListInner() {
       // is a portrait of the steady state, not of a climber's first five seconds
       // — so the capture device starts already told.
       setSetting('browseNoticeSeen', true);
-      // The same goes for the preview-first card under the wall button. Screenshot
-      // mode already reads every tip as seen (`hasSeenTip`); this writes it too.
-      void markTipSeen(ONBOARDING_TIP_PREVIEW_FIRST_KEY);
     }
     openPlayDrawer(firstClimb, {
       previewQueueItem: climbToQueueItem(firstClimb),

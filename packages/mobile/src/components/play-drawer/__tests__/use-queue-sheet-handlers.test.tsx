@@ -326,15 +326,17 @@ describe('every queue pick reaches a commit', () => {
     expect(requestCloseQueueSheet).toHaveBeenCalledOnce();
   });
 
-  it('previews a History copy in the other orientation, which a commit would light mirrored', () => {
+  // Its preview would show no Put on board (the bar compares climbs), and the
+  // board control would light or let go of the climb up in its own orientation.
+  it('commits a History copy in the other orientation solo, so it can go up mirrored', () => {
     const { result, setCurrentClimb, openPlayDrawer } = renderHandlers();
     const mirroredCopy = { ...queueItemWithCount(null), uuid: 'history-copy' };
     mirroredCopy.climb = { ...mirroredCopy.climb, mirrored: true };
 
     act(() => result.current.handleClimbPress(mirroredCopy));
 
-    expect(setCurrentClimb).not.toHaveBeenCalled();
-    expect(openPlayDrawer.mock.calls[0]?.[1]).toMatchObject({ previewQueueItem: mirroredCopy });
+    expect(setCurrentClimb).toHaveBeenCalledExactlyOnceWith(mirroredCopy, { playlistSuggestionSource: null });
+    expect(openPlayDrawer).toHaveBeenCalledExactlyOnceWith(mirroredCopy.climb, { committedExternally: true });
   });
 
   it('previews a suggestion of another climb with its list, and the preview offers Put on board', () => {

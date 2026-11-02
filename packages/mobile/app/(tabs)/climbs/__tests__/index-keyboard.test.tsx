@@ -2623,8 +2623,6 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       // And the one-shot card that same setting triggers is spent up front: a
       // store shot is the steady state, not a climber's first five seconds.
       expect(mocks.setSetting).toHaveBeenCalledWith('browseNoticeSeen', true);
-      // So is the preview-first card under the wall button (2.7).
-      expect(onboardingStorage.markTipSeen).toHaveBeenCalledWith('onboarding_tip_preview_first_seen');
     });
   });
 

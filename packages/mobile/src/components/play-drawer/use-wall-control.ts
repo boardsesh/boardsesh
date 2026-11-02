@@ -11,9 +11,10 @@ import {
 } from '../../lib/analytics-wall-control';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import type { DriveModeStartedBy } from '@boardsesh/analytics';
-import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
+import { hapticLight, hapticMedium, hapticSuccess, hapticWarning } from '../../lib/haptics';
 import type { KeepLightingPlan } from '../../lib/keep-lighting';
 import {
+  claimDriveAnnouncement,
   clampWindowEnd,
   clearDrivingStopped,
   getDriveMode,
@@ -145,8 +146,9 @@ export type WallControlHandlers = {
  * Put on board's keep-lighting (2.7): a press that puts the climb up runs the
  * ordinary put-up, and only once it went up arms the window (`keepLighting`),
  * so the busy-wall question still guards it in a crew. When the question took
- * the press, its Put mine up (`confirmPut`) arms it instead. The window's start
- * and end are said once each, queued, while the player is open; renewals are silent.
+ * the press, its Put mine up (`confirmPut`) arms it instead. The window's start,
+ * its turn to open-ended and its end are said once each, queued, while the
+ * player is open; renewals are silent.
  */
 export function useWallControl({
   analyticsContext,
@@ -198,26 +200,45 @@ export function useWallControl({
   }, [climbUuid]);
 
   // The window's start and its end, once each (WCAG 2.2.1: its length and how
-  // to extend it, then that it is over). Renewals say nothing.
+  // to extend it, then that it is over), and a swipe or Light every climb
+  // turning it open-ended, which nothing on the wall shows: the lit climb stays
+  // lit. Renewals say nothing. Each line is claimed once per drive
+  // (`claimDriveAnnouncement`), so a phone split with a player in every tab
+  // says it once. The 2 s tap guard is each player's own.
   const lightingMode = useDriveLightingMode();
   const lightingModeRef = useRef(lightingMode);
-  const announcedWindowForRef = useRef<number | null>(null);
+  // The window this player saw, by its drive's start: its end is said for it.
+  // A player mounted mid-window starts with that one.
+  const windowStartedAtRef = useRef<number | null>(
+    lightingMode === 'window' ? (getDriveMode()?.startedAt ?? null) : null,
+  );
   useEffect(() => {
     const previous = lightingModeRef.current;
     lightingModeRef.current = lightingMode;
     if (previous === lightingMode) return;
+    const drive = getDriveMode();
     if (lightingMode === 'window') {
-      const drive = getDriveMode();
-      if (!drive || drive.expiresAt === null || announcedWindowForRef.current === drive.startedAt) return;
-      announcedWindowForRef.current = drive.startedAt;
+      if (!drive || drive.expiresAt === null) return;
+      windowStartedAtRef.current = drive.startedAt;
+      if (!playerOpen || !claimDriveAnnouncement(drive.startedAt, 'window_started')) return;
       // The length the clock shows: auto-disconnect's end when that comes first.
       const shownMs = clampWindowEnd(drive.expiresAt, readAutoDisconnectDeadlineMs()) - Date.now();
-      if (playerOpen) announceQueued(windowStartedAnnouncement(Math.max(0, shownMs), t));
+      announceQueued(windowStartedAnnouncement(Math.max(0, shownMs), t));
       return;
     }
-    if (previous === 'window' && lightingMode === 'off' && getLastDriveModeExitReason() === 'window_ended') {
+    if (previous !== 'window') return;
+    const windowStartedAt = windowStartedAtRef.current;
+    windowStartedAtRef.current = null;
+    if (lightingMode === 'driving') {
+      if (!drive || !playerOpen || !claimDriveAnnouncement(drive.startedAt, 'window_opened_up')) return;
+      hapticSuccess();
+      announceQueued(t('playView.wallControl.sheetStatusDriving'));
+      return;
+    }
+    if (lightingMode === 'off' && getLastDriveModeExitReason() === 'window_ended') {
       windowEndedAtRef.current = Date.now();
-      if (playerOpen) announceQueued(t('playView.wallControl.windowEnded'));
+      if (!playerOpen || windowStartedAt === null || !claimDriveAnnouncement(windowStartedAt, 'window_ended')) return;
+      announceQueued(t('playView.wallControl.windowEnded'));
     }
   }, [lightingMode, playerOpen, t]);
 

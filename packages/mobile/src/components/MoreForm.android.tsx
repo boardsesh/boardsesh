@@ -16,7 +16,7 @@
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
 // tree renders props and invokes handlers.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ComposeHost } from './ComposeHost.android';
 import {
   LazyColumn,
@@ -33,25 +33,14 @@ import {
   Spacer,
   SingleChoiceSegmentedButtonRow,
   SegmentedButton,
+  DropdownMenu,
   DropdownMenuItem,
-  ExposedDropdownMenu,
-  ExposedDropdownMenuBox,
   BasicTextField,
   Slider,
   CircularProgressIndicator,
   useNativeState,
 } from '@expo/ui/jetpack-compose';
-import {
-  fillMaxWidth,
-  padding,
-  alpha,
-  weight,
-  clickable,
-  size,
-  semantics,
-  menuAnchor,
-  selectable,
-} from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding, alpha, weight, clickable, size, semantics } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import {
@@ -67,7 +56,6 @@ import {
   guardedButtonPress,
   isButtonRowPressable,
   selectedOptionLabel,
-  toggleRowSubtitle,
   useOpensOutsideAppHint,
 } from './MoreForm.logic';
 import { materialStepCount, useSliderCommit } from './MoreForm.slider';
@@ -80,7 +68,6 @@ import type {
   MoreRowAction,
   MoreSelectRow,
   MoreSliderRow,
-  MoreToggleRow,
   MoreValueRow,
 } from './MoreForm.types';
 
@@ -138,8 +125,6 @@ const OPEN_EXTERNAL_ICON_SOURCE: ImageSourcePropType = require('../../assets/mat
 // Trailing disclosure chevron. The Compose `Icon` needs a vector-drawable source,
 // so a muted `›` glyph stands in for the disclosure indicator on these nav rows.
 const CHEVRON = '›';
-/** The open select menu's mark on the current choice (AppMenu.android draws the same). */
-const SELECTED_MARK = '✓';
 // M3's disabled-content opacity, for a select row that cannot open.
 const DISABLED_ROW = alpha(material.disabledContentOpacity);
 const ROW_PADDING = padding(spacing[4], spacing[3], spacing[4], spacing[3]);
@@ -154,7 +139,7 @@ type RowColors = {
   /** Tint for a nav row's leading Material icon — the secondary-label colour. */
   iconTint: ColorValue;
   /**
-   * Scheme-aware label colour for the select-row menu popup. The popup is
+   * Scheme-aware label colour for the select-row DropdownMenu popup. The popup is
    * a separate Compose composition the Host's `colorScheme` doesn't reach, and a
    * custom `Text` in an item slot doesn't inherit `DropdownMenuItem`'s content
    * colour — so without this the option labels render dark-on-dark when the app
@@ -171,111 +156,48 @@ type RowColors = {
   sectionTextColor: string;
 };
 
-/**
- * A select row (TalkBack): M3's exposed dropdown, so the row reads as a
- * dropdown list ("Keep lighting after Put on board, 45 seconds, drop-down
- * list"), and the open menu marks the current choice with a ✓ and the
- * selected state. `menuAnchor` gives the row Role.DropdownList and opens the
- * menu; `clickable` keeps the ripple and merges the label, subtitle and value
- * into the one node TalkBack reads. A tap reaches both, so both only open:
- * M3's own anchor click is a toggle (`onExpandedChange(!expanded)`), and its
- * `false` is dropped here, or the two would race to opposite states. The menu
- * closes on a pick or a dismiss (an outside tap, back).
- *
- * One pick per open: the current choice's `selectable` and the item's own
- * click run the same pick, and a tap that reaches both must not report the
- * setting twice.
- *
- * On a device (not visible to the JS test, which records modifiers): one tap
- * opens the menu once, an outside tap dismisses it, TalkBack reads "drop-down
- * list" on the row and "selected" on the current item, a disabled row stays shut.
- *
- * Not here: a stateDescription with the value. @expo/ui's `semantics`
- * (58.0.23) takes only contentDescription and contentType, and a native
- * modifier would change the fingerprint. The value is in the merged text.
- *
- * The anchor and the menu must stay direct children of the box: both read its
- * scope natively, and anywhere else Compose throws.
- */
 function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
   const [expanded, setExpanded] = useState(false);
-  const pickedRef = useRef(false);
-  const open = expanded && !row.disabled;
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
-  const openMenu = () => {
-    pickedRef.current = false;
-    setExpanded(true);
-  };
   // A disabled row drops its click target (the menu can't open) and dims to
   // M3's disabled-content opacity.
-  const anchorModifiers = row.disabled
-    ? [fillMaxWidth(), menuAnchor('primaryNotEditable', false), ROW_PADDING, DISABLED_ROW]
-    : [fillMaxWidth(), menuAnchor('primaryNotEditable', true), clickable(openMenu), ROW_PADDING];
-  const pick = (key: string) => {
-    if (pickedRef.current) return;
-    pickedRef.current = true;
-    if (!row.disabled) row.onSelect(key);
-    setExpanded(false);
-  };
+  const triggerModifiers = row.disabled
+    ? [fillMaxWidth(), ROW_PADDING, DISABLED_ROW]
+    : [fillMaxWidth(), clickable(() => setExpanded(true)), ROW_PADDING];
   return (
-    <ExposedDropdownMenuBox
-      expanded={open}
-      onExpandedChange={(next) => {
-        if (next) openMenu();
-      }}
-    >
-      <Row modifiers={anchorModifiers} verticalAlignment="center">
-        <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
-          <Text
-            style={{ typography: 'bodyLarge' }}
-            // Named on its own for TalkBack when the visible label leans on the row above.
-            modifiers={row.accessibilityLabel ? [semantics({ contentDescription: row.accessibilityLabel })] : undefined}
-          >
-            {row.label}
+    <DropdownMenu expanded={expanded && !row.disabled} onDismissRequest={() => setExpanded(false)}>
+      <DropdownMenu.Trigger>
+        <Row modifiers={triggerModifiers} verticalAlignment="center">
+          <Column modifiers={[weight(1)]}>
+            <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+          </Column>
+          <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
+            {currentLabel}
           </Text>
-          {/* M3 supporting text, as the switch rows draw theirs. */}
-          {row.subtitle ? (
-            <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
-              {row.subtitle}
-            </Text>
-          ) : null}
-        </Column>
-        <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
-          {currentLabel}
-        </Text>
-        <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.4)]}>
-          {CHEVRON}
-        </Text>
-      </Row>
-      <ExposedDropdownMenu expanded={open} onDismissRequest={() => setExpanded(false)}>
-        {row.options.map((option) => {
-          const selected = option.key === row.selectedKey;
-          return (
-            <DropdownMenuItem
-              key={option.key}
-              // Both the item's own content colour and the custom `Text` in its
-              // slot need setting — see the `RowColors.itemColor` doc comment.
-              elementColors={{ textColor: colors.itemColor }}
-              // The current choice carries the selected state too, so TalkBack
-              // says "Selected". Its activation runs the same pick as a tap.
-              modifiers={selected ? [selectable(true, () => pick(option.key))] : undefined}
-              onClick={() => pick(option.key)}
-            >
-              {/* The current choice carries a leading ✓, as AppMenu's rows do,
-                  so the open menu shows which one is set. */}
-              {selected ? (
-                <DropdownMenuItem.LeadingIcon>
-                  <Text color={colors.brandColors.primary}>{SELECTED_MARK}</Text>
-                </DropdownMenuItem.LeadingIcon>
-              ) : null}
-              <DropdownMenuItem.Text>
-                <Text color={colors.itemColor}>{option.label}</Text>
-              </DropdownMenuItem.Text>
-            </DropdownMenuItem>
-          );
-        })}
-      </ExposedDropdownMenu>
-    </ExposedDropdownMenuBox>
+          <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.4)]}>
+            {CHEVRON}
+          </Text>
+        </Row>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Items>
+        {row.options.map((option) => (
+          <DropdownMenuItem
+            key={option.key}
+            // Both the item's own content colour and the custom `Text` in its
+            // slot need setting — see the `RowColors.itemColor` doc comment.
+            elementColors={{ textColor: colors.itemColor }}
+            onClick={() => {
+              if (!row.disabled) row.onSelect(option.key);
+              setExpanded(false);
+            }}
+          >
+            <DropdownMenuItem.Text>
+              <Text color={colors.itemColor}>{option.label}</Text>
+            </DropdownMenuItem.Text>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenu.Items>
+    </DropdownMenu>
   );
 }
 
@@ -446,24 +368,6 @@ function ButtonRow({ row, colors }: { row: MoreButtonRow; colors: RowColors }) {
   );
 }
 
-/**
- * A switch row's label and the line under it: M3 supporting text at 60%, or,
- * while greyed out, its reason (`disabledReason`) at full contrast.
- */
-function ToggleRowText({ row }: { row: MoreToggleRow }) {
-  const subtitle = toggleRowSubtitle(row);
-  return (
-    <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
-      <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
-      {subtitle.text ? (
-        <Text style={{ typography: 'bodySmall' }} modifiers={subtitle.isReason ? undefined : [alpha(0.6)]}>
-          {subtitle.text}
-        </Text>
-      ) : null}
-    </Column>
-  );
-}
-
 function renderRow(row: MoreRow, colors: RowColors): ReactNode {
   switch (row.kind) {
     case 'nav':
@@ -491,7 +395,14 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               />
             </IconButton>
           ))}
-          <ToggleRowText row={row} />
+          <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
+            <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+            {row.subtitle ? (
+              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+                {row.subtitle}
+              </Text>
+            ) : null}
+          </Column>
           <Switch
             value={row.value}
             enabled={!row.disabled}
@@ -499,8 +410,6 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               if (!row.disabled) row.onValueChange(next);
             }}
             colors={colors.switchColors}
-            // Its own name for TalkBack and Voice Access, which reach the switch on its own.
-            modifiers={row.accessibilityLabel ? [semantics({ contentDescription: row.accessibilityLabel })] : undefined}
           />
         </Row>
       );

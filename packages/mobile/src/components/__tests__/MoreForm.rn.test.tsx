@@ -27,7 +27,20 @@ vi.mock('../../theme/tokens', () => ({
   borderRadius: { lg: 12 },
 }));
 vi.mock('../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'span',
+      { 'data-hidden-ios': accessibilityElementsHidden, 'data-important-android': importantForAccessibility },
+      children,
+    ),
 }));
 vi.mock('../PressableSurface', () => ({ PressableSurface: () => null }));
 vi.mock('../Icon', () => ({
@@ -184,6 +197,24 @@ describe('MoreFormRN menu selects', () => {
     view.unmount();
     act(() => currentMenu?.onSelectIndex(0));
     expect(row.onSelect).not.toHaveBeenCalled();
+  });
+
+  // Settings › Board renders through MoreFormRN on Android: the menu's name
+  // carries the label and the value, so TalkBack reads the row once.
+  it('names the menu with the label and value, and hides the visible label from screen readers', () => {
+    const row = { ...timeoutRow(), accessibilityLabel: 'Board disconnect timeout' };
+    const view = render(<MoreFormRN model={selectModel(row)} />);
+    expect(controls.menu?.accessibilityLabel).toBe('Board disconnect timeout, 30 seconds');
+    const label = view.getByText('Disconnect timeout');
+    expect(label.getAttribute('data-hidden-ios')).toBe('true');
+    expect(label.getAttribute('data-important-android')).toBe('no-hide-descendants');
+  });
+
+  it("keeps a disabled row's label readable: it has no menu to carry the name", () => {
+    const view = render(<MoreFormRN model={selectModel({ ...timeoutRow(), disabled: true })} />);
+    const label = view.getByText('Disconnect timeout');
+    expect(label.getAttribute('data-hidden-ios')).toBe('false');
+    expect(label.getAttribute('data-important-android')).toBe('auto');
   });
 
   it('retains the Board look and Accessibility navigation icons', () => {

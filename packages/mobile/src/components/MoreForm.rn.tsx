@@ -64,7 +64,14 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   currentOptionsKeyRef.current = optionsKey;
   return (
     <View style={styles.padded}>
-      <Text variant="footnote" color={systemColors.secondaryLabel}>
+      <Text
+        variant="footnote"
+        color={systemColors.secondaryLabel}
+        // The menu's own name already starts with it: a screen reader reads
+        // the row once, on the control. A disabled row has no menu to carry it.
+        accessibilityElementsHidden={!row.disabled}
+        importantForAccessibility={row.disabled ? 'auto' : 'no-hide-descendants'}
+      >
         {row.label}
       </Text>
       {row.disabled ? (

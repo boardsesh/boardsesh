@@ -280,10 +280,22 @@ describe('PlayerPreviewTip', () => {
 
   // A swipe or Light every climb during the window clears it: the same drive
   // (same start, still 'tap') now has no end, which is the frost.
-  it('goes when a swipe turns the running window open-ended', () => {
+  it('goes when a swipe turns a window it saw start open-ended', () => {
     const onExit = renderTip();
     const startedAt = Date.now() + 1;
     act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: 45_000 }));
+    expect(onExit).not.toHaveBeenCalled();
+    act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: null }));
+    expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');
+  });
+
+  // The window was already running when the card showed (it started before
+  // shownAt): only the card's own record of that window says the drive that
+  // now has no end is the same one, turned open-ended by the climber.
+  it('goes when a swipe turns a window already running when it showed open-ended', () => {
+    const startedAt = Date.now() - 5_000;
+    drive.current = { startedAt, startedBy: 'tap', windowMs: 45_000 };
+    const onExit = renderTip();
     expect(onExit).not.toHaveBeenCalled();
     act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: null }));
     expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');
