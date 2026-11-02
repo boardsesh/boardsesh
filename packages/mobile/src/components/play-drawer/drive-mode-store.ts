@@ -423,6 +423,9 @@ const readDriveMode = (): DriveModeState | null => driveMode;
 const readStopped = (): boolean => stoppedForLink;
 const readPhase = (): 'off' | DriveModePhase => driveMode?.phase ?? 'off';
 const readLightingMode = (): DriveLightingMode => lightingModeOf(driveMode);
+const readWindowExpiresAt = (): number | null =>
+  driveMode?.phase === 'live' && driveMode.windowMs !== null ? driveMode.expiresAt : null;
+const readWindowMs = (): number | null => driveMode?.windowMs ?? null;
 
 /** The drive in progress, or null. */
 export function useDriveMode(): DriveModeState | null {
@@ -437,6 +440,19 @@ export function useDriveModePhase(): 'off' | DriveModePhase {
 /** Off, arming, a keep-lighting window, or open-ended driving. Re-renders only when that word changes. */
 export function useDriveLightingMode(): DriveLightingMode {
   return useSyncExternalStore(subscribe, readLightingMode, readLightingMode);
+}
+
+/**
+ * The live keep-lighting window's own end (unclamped), or null outside one.
+ * A primitive, so its readers re-render on a renewal, never on a count alone.
+ */
+export function useDriveWindowExpiresAt(): number | null {
+  return useSyncExternalStore(subscribe, readWindowExpiresAt, readWindowExpiresAt);
+}
+
+/** The keep-lighting window's length, or null with no window. */
+export function useDriveWindowMs(): number | null {
+  return useSyncExternalStore(subscribe, readWindowMs, readWindowMs);
 }
 
 /** A press on the frosted button stopped driving on this link. */

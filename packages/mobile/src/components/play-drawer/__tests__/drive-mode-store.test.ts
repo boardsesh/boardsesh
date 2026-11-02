@@ -27,6 +27,8 @@ import {
   useDriveLightingMode,
   useDriveMode,
   useDriveModePhase,
+  useDriveWindowExpiresAt,
+  useDriveWindowMs,
   useDrivingStoppedForLink,
   type DriveModeState,
   type DriveWatchSnapshot,
@@ -390,6 +392,33 @@ describe('the keep-lighting window', () => {
     expect(getDriveLightingSnapshot()).toEqual({ mode: 'driving', endsAt: null });
     expect(listener).toHaveBeenCalledTimes(3);
     unsubscribe();
+  });
+
+  it("hands the clock the window's end and length, re-rendering on a renewal and never on a count alone", () => {
+    let renders = 0;
+    const window = renderHook(() => {
+      renders += 1;
+      return { expiresAt: useDriveWindowExpiresAt(), windowMs: useDriveWindowMs() };
+    });
+    expect(window.result.current).toEqual({ expiresAt: null, windowMs: null });
+    act(() => openWindow());
+    // Arming: the length is known, the end is not.
+    expect(window.result.current).toEqual({ expiresAt: null, windowMs: 45_000 });
+    act(() => markDriveLive({ now: 5_000 }));
+    expect(window.result.current).toEqual({ expiresAt: 50_000, windowMs: 45_000 });
+    act(() => noteDriveClimbLit({ now: 9_000 }));
+    expect(window.result.current.expiresAt).toBe(54_000);
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    expect(window.result.current).toEqual({ expiresAt: null, windowMs: null });
+    // An open-ended drive's climbs change nothing these readers show.
+    const before = renders;
+    act(() => {
+      noteDriveClimbLit();
+      noteDriveClimbLit();
+    });
+    expect(renders).toBe(before);
   });
 
   it('clamps the shown end only when auto-disconnect comes first', () => {

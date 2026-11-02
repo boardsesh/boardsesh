@@ -23,18 +23,20 @@ import { readAutoDisconnectDeadlineMs } from '../../lib/auto-disconnect-deadline
 import { withAlpha } from '../../theme/colors';
 import { Text } from '../Text';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
-import { clampWindowEnd, useDriveMode } from './drive-mode-store';
+import { clampWindowEnd, useDriveWindowExpiresAt, useDriveWindowMs } from './drive-mode-store';
 import { WINDOW_BAR_HEIGHT, WINDOW_BAR_INSET, WINDOW_BAR_TRACK_ALPHA } from './wall-control';
 import { formatWindowClock, windowSecondsLeft, windowValueSeconds } from './wall-control-text';
 
 /** A renewal refills the bar this fast before it drains again. */
 const WINDOW_BAR_REFILL_MS = 250;
 
-/** The live window's end and length, or null outside one. */
+/**
+ * The live window's end and length, or null outside one. Two primitive
+ * subscriptions, so a climb counted outside a window re-renders nothing here.
+ */
 function useWindowTiming(): { expiresAt: number; totalMs: number } | null {
-  const drive = useDriveMode();
-  const expiresAt = drive?.phase === 'live' && drive.windowMs !== null ? drive.expiresAt : null;
-  const totalMs = drive?.windowMs ?? null;
+  const expiresAt = useDriveWindowExpiresAt();
+  const totalMs = useDriveWindowMs();
   if (expiresAt === null || totalMs === null) return null;
   return { expiresAt, totalMs };
 }

@@ -329,12 +329,13 @@ export function useWallControl({
     trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });
   }, []);
 
+  // Another climb on screen already dropped the wait (the effect above).
   const confirmPut = useCallback(() => {
-    const { runners: run, climbUuid: shownClimbUuid } = latest.current;
+    const { runners: run } = latest.current;
     const pending = pendingKeepLightingRef.current;
     pendingKeepLightingRef.current = null;
     const wentUp = run.light();
-    if (wentUp && pending && pending.climbUuid === shownClimbUuid) run.keepLighting(pending.plan);
+    if (wentUp && pending) run.keepLighting(pending.plan);
   }, []);
   const cancelPut = useCallback(() => {
     pendingKeepLightingRef.current = null;
