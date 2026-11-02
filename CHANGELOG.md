@@ -12,6 +12,10 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- The mini player's bulb shows a ring that empties as your drive runs out. ([#7213](https://github.com/boardsesh/boardsesh/pull/7213))
+  On the Lock Screen and in the Dynamic Island, the draining ring alone shows the time left.
+- The climb on the wall now stays at the top of Climbs for an hour after it's lit, even when it's your own pick. ([#7216](https://github.com/boardsesh/boardsesh/pull/7216))
+  Tap × to hide it. It stays hidden until a different climb goes up.
 - Help pages now explain browsing before lighting and how long Put on board keeps lighting. ([#7207](https://github.com/boardsesh/boardsesh/pull/7207))
   Settings › Board links straight to how driving the wall works.
   Replay walkthrough brings back the card about previews and the frosted button.
@@ -28,6 +32,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Tap the glowing bulb on your Lock Screen to stop driving the wall ([#7214](https://github.com/boardsesh/boardsesh/pull/7214))
+  Tap to reconnect on the Lock Screen gets your board back, or tells you why it couldn't
 - Swiping to the next climb works even while its holds are still loading. ([#7210](https://github.com/boardsesh/boardsesh/pull/7210))
 - Your MoonBoard and older Kilter boxes show up in the board list again. ([#7202](https://github.com/boardsesh/boardsesh/pull/7202))
   Boards you haven't connected to before are listed too.
