@@ -2,7 +2,11 @@
 import { act, renderHook } from '@testing-library/react';
 import type { ClimbQueueItem, Climb as QueueClimb, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LogAscentInput, OpenPlayDrawerOptions } from '../../../providers/drawer-host-provider';
+import type {
+  ClimbActionsTarget,
+  LogAscentInput,
+  OpenPlayDrawerOptions,
+} from '../../../providers/drawer-host-provider';
 
 const lighting = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../use-climb-change-lights', () => ({ readClimbChangeLights: () => lighting.enabled }));
@@ -160,10 +164,14 @@ describe('useQueueSheetHandlers', () => {
     expect(Number.isFinite(payload.baseAscensionistCount)).toBe(true);
   });
 
-  it('opens actions for the exact duplicate slot without playing or dismissing it', () => {
+  it('resolves the menu for the exact duplicate slot without playing or dismissing it', () => {
     const setCurrentClimb = vi.fn();
     const openPlayDrawer = vi.fn();
-    const getClimbActions = vi.fn();
+    const menuTarget = {
+      climb: queueItemWithCount(null).climb,
+      boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+    } as unknown as ClimbActionsTarget;
+    const getClimbActions = vi.fn((): ClimbActionsTarget | null => menuTarget);
     const requestCloseQueueSheet = vi.fn();
     const dismissQueueSheetAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
     const { result } = renderHook(() =>
@@ -179,7 +187,8 @@ describe('useQueueSheetHandlers', () => {
       }),
     );
     const duplicateSlot = { ...queueItemWithCount(null), uuid: 'second-slot-for-climb-1' };
-    act(() => result.current.handleOpenActions(duplicateSlot));
+    // Resolving the target opens nothing: the native menu presents on its own.
+    expect(result.current.handleOpenActions(duplicateSlot)).toBe(menuTarget);
     expect(getClimbActions).toHaveBeenCalledExactlyOnceWith(duplicateSlot.climb, undefined, {
       queueItemUuid: 'second-slot-for-climb-1',
       dismissSourceSheet: dismissQueueSheetAndWait,
