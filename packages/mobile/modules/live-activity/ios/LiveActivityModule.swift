@@ -353,10 +353,10 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         Task { @MainActor in
-            let failure = await LiveActivityBleBridge.reconnectForIntent()
+            let outcome = await LiveActivityBleBridge.reconnectForIntent()
             // Same outcome as the in-process intent: the card lights, or says why not.
             if let defaults = SharedConstants.sharedDefaults {
-                SharedBoardReconnect.record(failure, in: defaults)
+                outcome.record(in: defaults)
             }
             await LiveActivityManager.shared.rerenderForLightingWindow()
         }

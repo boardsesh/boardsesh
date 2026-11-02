@@ -24,9 +24,14 @@ struct StopDrivingIntent: LiveActivityIntent {
 
     private static let logger = Logger(subsystem: "com.boardsesh.app", category: "LiveActivityIntent")
 
-    /// How long the intent waits for the app's JS to take the stop over before
-    /// it returns, so a stop that frees the board (Disconnect Bluetooth when
-    /// driving ends) gets to run before iOS suspends the app again.
+    /// How long the intent waits for the app's JS to adopt the stop (its own
+    /// "off" over the stored stop) before it returns, keeping a just-woken app
+    /// running while it does. That is all the wait covers: JS writes the "off"
+    /// as it stops the drive, a moment before its driving-ends effect frees
+    /// the board (Disconnect Bluetooth when driving ends). The release usually
+    /// runs in the same wake; if iOS suspends the app first, it runs when the
+    /// app next resumes. The card is right meanwhile either way: it reads the
+    /// stop from the App Group, and JS pushes the disconnect when it lands.
     static let appSettleTimeout: TimeInterval = 2.0
     private static let appSettlePollInterval: UInt64 = 100_000_000
 

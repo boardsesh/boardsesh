@@ -37,6 +37,10 @@ final class BoardBleAssociationTests: XCTestCase {
         )
         instance.testHooks.sync {
             instance.testHooks.setCentralState(.poweredOn)
+            // The bulb's reconnect falls back to a scan, which creates the
+            // central: the XCTest host has no bluetooth-central background
+            // mode, so a real one with a restore identifier would crash it.
+            instance.testHooks.setCentralManagerCreationOverride {}
             instance.testHooks.setStopScanOverride {}
             instance.testHooks.setScanForPeripheralsOverride { _ in }
             instance.testHooks.setConnectPeripheralOverride { [weak self] in self?.connects.append($0.identifier) }
@@ -390,7 +394,64 @@ final class BoardBleAssociationTests: XCTestCase {
         XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
     }
 
+    /// A second bulb tap while the first still looks for the board takes over:
+    /// the first settles at once instead of leaving its intent waiting on a
+    /// completion nobody calls, and the card hears nothing from it.
+    func testASecondBulbTapTakesOverTheFirstOnesScan() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        manager.testHooks.sync { manager.disconnect(forgetBoard: false) }
+
+        var first: [Result<Void, Error>] = []
+        var second: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.reconnectToLastKnownBoard(origin: .liveActivityIntent) { first.append($0) }
+        }
+        XCTAssertTrue(first.isEmpty)
+        manager.testHooks.sync {
+            manager.reconnectToLastKnownBoard(origin: .liveActivityIntent) { second.append($0) }
+        }
+
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(failureDescription(first.first), BoardBleError.superseded.localizedDescription)
+        XCTAssertEqual(first.first.map(BoardReconnectOutcome.init), .overtaken)
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isScanRequested })
+    }
+
+    /// Only an outcome the climber can act on reaches the card. A tap another
+    /// tap or connect took over, or one that raced a Disconnect, says nothing:
+    /// before, it flashed "Board didn't answer" until the newer outcome landed.
+    func testOnlyAnOutcomeTheClimberCanActOnReachesTheCard() {
+        XCTAssertEqual(BoardReconnectOutcome(.success(())), .reconnected)
+        XCTAssertEqual(BoardReconnectOutcome(.failure(BoardBleError.bluetoothUnavailable)), .failed(.bluetoothOff))
+        XCTAssertEqual(BoardReconnectOutcome(.failure(BoardBleError.connectTimedOut)), .failed(.unreachable))
+        XCTAssertEqual(BoardReconnectOutcome(.failure(BoardBleError.uartServiceMissing)), .failed(.unreachable))
+        XCTAssertEqual(
+            BoardReconnectOutcome(.failure(NSError(domain: "CBErrorDomain", code: 6))),
+            .failed(.unreachable)
+        )
+        for error in [BoardBleError.superseded, .notConnected, .deviceNotFound] {
+            XCTAssertEqual(BoardReconnectOutcome(.failure(error)), .overtaken, "\(error)")
+        }
+
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        manager.testHooks.sync { manager.disconnect(forgetBoard: false) }
+        BoardReconnectOutcome.overtaken.record(in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        BoardReconnectOutcome.failed(.unreachable).record(in: defaults)
+        BoardReconnectOutcome.overtaken.record(in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .retry(.unreachable))
+        BoardReconnectOutcome.reconnected.record(in: defaults)
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        XCTAssertEqual(SharedWidgetWallControlState.loadBoardConnection(from: defaults).boardConnection, "connectedByMe")
+    }
+
     func testOnlyAnAnsweredQuestionWaitsForTheCentral() {
+        // Briefly: the wait runs ahead of the reconnect scan and the connect
+        // (8 s each), inside the time iOS gives a background-launched intent.
+        XCTAssertLessThanOrEqual(BoardBleManager.reconnectFirstCentralStateTimeout, 3)
         XCTAssertTrue(BoardBleManager.awaitsFirstCentralState(.unknown, authorization: .allowedAlways))
         XCTAssertTrue(BoardBleManager.awaitsFirstCentralState(.resetting, authorization: .allowedAlways))
         XCTAssertFalse(BoardBleManager.awaitsFirstCentralState(.poweredOff, authorization: .allowedAlways))

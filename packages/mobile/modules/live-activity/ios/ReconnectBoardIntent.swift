@@ -54,17 +54,19 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         // The outcome goes to the App Group for the card's next render: on
         // success the bulb lights now (the app adopts the link when its JS
         // next runs), on failure the card says why instead of offering the
-        // same tap again. A board the app forgot (an in-app Disconnect) never
-        // gets here from the card: it says to open the app instead.
+        // same tap again. A tap that a newer one took over records nothing:
+        // the newer tap says how it went. A board the app forgot (an in-app
+        // Disconnect) never gets here from the card: it says to open the app
+        // instead.
         #if !WIDGET_EXTENSION
         diagnosticRun.mark(.bleStarted)
-        let failure = await LiveActivityBleBridge.reconnectForIntent()
-        diagnosticRun.mark(failure == nil ? .bleFinishedSuccess : .bleFinishedFailure)
-        if failure != nil {
+        let outcome = await LiveActivityBleBridge.reconnectForIntent()
+        diagnosticRun.mark(outcome == .reconnected ? .bleFinishedSuccess : .bleFinishedFailure)
+        if outcome != .reconnected {
             completionClass = .bleFailure
         }
         if let defaults = SharedConstants.sharedDefaults {
-            SharedBoardReconnect.record(failure, in: defaults)
+            outcome.record(in: defaults)
         }
         #else
         postBleReconnectDarwinNotification()
