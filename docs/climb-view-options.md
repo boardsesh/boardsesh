@@ -84,7 +84,7 @@ window in code); on a MoonBoard the tap drives until you stop by default, in a c
    (`startedBy: 'always'`) that `DriveModeWatcher` starts at link-up, at the switch, or when
    another drive ends with the link up, lighting nothing itself. In a crew only with In a session
    too on (a MoonBoard whatever it says). A tap on You are driving the wall stops it until the
-   link drops or the next Put on board; turning it off ends it keeping the link
+   link drops, the next Put on board or a flip of the switch; turning it off ends it keeping the link
    (`always_off`). The board sheet shows the same switch and leaves its Stop driving after row
    out while it is on.
 4. An untitled card: **Tapping a playlist loads it into my queue** (off by default), plus the

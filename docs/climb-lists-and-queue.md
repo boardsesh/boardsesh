@@ -97,8 +97,8 @@ whatever connecting lit. From then on every pick lights, exactly as after a swip
 button. In a crew it drives only with **In a session too** on (a MoonBoard drives whatever that
 says, as its Stop driving after choice does; `alwaysDriveApplies` in `lib/keep-lighting.ts`).
 A tap on **You are driving the wall** stops it and keeps the link; it stays stopped until the
-link drops or the climber's next Put on board (the wall control's `tapDrive: 'resume'`), and the
-switch never flips by itself. Disconnect Bluetooth when driving ends applies to that stop as to
+link drops, the climber's next Put on board (the wall control's `tapDrive: 'resume'`) or a flip
+of the switch, and the switch never flips by itself. Disconnect Bluetooth when driving ends applies to that stop as to
 any. Turning the switch off, or a crew forming with In a session too off, ends its drive keeping
 the link (`always_off`). While it is on, Stop driving after and the MoonBoard's choice don't
 apply: Settings › Board shows them greyed with that reason, and the board sheet leaves its

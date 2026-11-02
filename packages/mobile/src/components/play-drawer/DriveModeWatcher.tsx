@@ -57,7 +57,8 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * an open-ended drive is on (`startAlwaysDrive`), started live when the link
  * comes up, when the switch turns on, or when a drive ends with the link still
  * up. It lights nothing as it starts. A stop on this link holds it off until
- * the link drops or the next Put on board (`tapDrive: 'resume'`). Where it
+ * the link drops or the next Put on board (`tapDrive: 'resume'`), or until the
+ * climber flips the switch (it speaks for itself again). Where it
  * stops applying (the switch off, or a crew forming where In a session too is
  * off) its drive ends keeping the link (`always_off`). A drive another way
  * started (a swipe, Light every climb) is left as it is.
@@ -214,6 +215,13 @@ export function DriveModeWatcher(): null {
   const ownLink = bluetooth?.isConnected ?? false;
   const driveActive = drive !== null;
   const windowed = drive?.windowMs != null;
+  // Flipping the switch is a fresh choice: a stop made before it no longer holds.
+  const alwaysDriveRef = useRef(alwaysDrive);
+  useEffect(() => {
+    if (alwaysDriveRef.current === alwaysDrive) return;
+    alwaysDriveRef.current = alwaysDrive;
+    clearDrivingStopped();
+  }, [alwaysDrive]);
   useEffect(() => {
     const latest = getDriveMode();
     if (!alwaysApplies) {

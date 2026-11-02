@@ -2303,6 +2303,31 @@ describe('PlayDrawer — reading the wall', () => {
     },
   );
 
+  // Light automatically on, a stop holding its drive off: the press drops the
+  // stop and Light automatically's open-ended drive comes back, whatever Stop
+  // driving after says. In a crew with In a session too off it doesn't drive,
+  // so Put on board is its plain self there.
+  it.each([
+    ['solo', false, true, 'resume', null],
+    ['a crew with In a session too off', true, false, null, null],
+  ] as const)(
+    'with Light automatically on, %s, a press that lights a dark climb: %s',
+    (_case, crew, drivesInSession, tapDrive, plan) => {
+      setSetting('alwaysDrive', true);
+      setSetting('putOnBoardDrivesInSession', drivesInSession);
+      if (crew) {
+        session.isShared = true;
+        session.sessionId = 'session-1';
+      }
+      connectBoard();
+      lightbulb.lit = false;
+      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+      wall.uuid = null;
+      render(drawerElement('member', committedTargetFor(CLIMB)));
+      expect(lastActionBarProps().wallControl).toMatchObject({ state: 'dark', tapDrive, tapKeepLighting: plan });
+    },
+  );
+
   it('lights one climb with After Put on board, keep lighting set to Off', () => {
     setSetting('putOnBoardKeepsLighting', 'off');
     connectBoard();

@@ -591,6 +591,20 @@ describe('DriveModeWatcher: Light automatically', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
   });
 
+  // A flip of the switch is a fresh choice: the stop made before it goes.
+  it('turning the switch off and on again after a stop drives again', () => {
+    const watcher = mount();
+    act(() => {
+      stopDrivingForLink();
+    });
+    watcher.change({});
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+  });
+
   // The wall control's `tapDrive: 'resume'` drops the stop at the press.
   it('Put on board after a stop resumes it, open-ended', () => {
     const watcher = mount();
