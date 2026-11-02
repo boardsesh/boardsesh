@@ -172,6 +172,9 @@ describe('BleControlSheetHost', () => {
 
     expect(mockSetMoonboardLightAdjacentHolds).toHaveBeenCalledWith(true);
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
+    // A toggle, not a press: it never carries to the next connect's link, so a
+    // bulb connect right after it keeps the #4979 hold.
+    expect(mockReassertWall).toHaveBeenCalledWith();
     expect(mockSetMoonboardLightAdjacentHolds.mock.invocationCallOrder[0]).toBeLessThan(
       mockReassertWall.mock.invocationCallOrder[0],
     );

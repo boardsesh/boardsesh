@@ -144,7 +144,7 @@ import {
   useIsSharedSession,
   useIsCrewSession,
 } from '../../providers/queue-provider';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useOptionalBluetoothContext, type ReassertWallOptions } from '../../providers/bluetooth-provider';
 import { getSetting, useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
@@ -2009,16 +2009,18 @@ export function PlayCore({
       if (!handleSetActive()) return false;
       climb = displayedClimb ?? null;
     }
-    const relight = () => {
+    const relight = (options?: ReassertWallOptions) => {
       resetWallCleared();
-      bluetoothForRelightRef.current?.reassertWall();
+      bluetoothForRelightRef.current?.reassertWall(options);
     };
     if (bluetoothConnected) {
       relight();
       return true;
     }
+    // This press connected: the link it brought up owes the climb a write
+    // through the #4979 hold, even when that link mounts in this same render.
     void connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb).then((connected) => {
-      if (connected) relight();
+      if (connected) relight({ carryToConnect: true });
     });
     return true;
   }, [
@@ -2060,9 +2062,11 @@ export function PlayCore({
         commit: () => handleSetActive({ skipBusyWall: true }),
         connected: bluetoothConnected,
         connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
+        // A press, so after its connect the ask carries to the link it brought
+        // up (`carryToConnect`); with the link already up that is a no-op.
         relight: () => {
           resetWallCleared();
-          bluetoothForRelightRef.current?.reassertWall();
+          bluetoothForRelightRef.current?.reassertWall({ carryToConnect: true });
         },
       });
     },

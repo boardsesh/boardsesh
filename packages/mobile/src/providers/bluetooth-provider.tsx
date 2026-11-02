@@ -91,6 +91,11 @@ import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
 
+export type ReassertWallOptions = {
+  /** A press whose own connect brought the link up: carry the ask to that link. */
+  carryToConnect?: boolean;
+};
+
 type BluetoothContextValue = {
   isConnected: boolean;
   /** Account observed holding this board during our BLE connection, scoped to the session. */
@@ -133,8 +138,14 @@ type BluetoothContextValue = {
    * normally dedups). The lightbulb tap calls this so re-taking control of an
    * unchanged climb re-lights the wall — and, if the link is secretly dead, the
    * failing write trips disconnect detection. No-op until called.
+   *
+   * `carryToConnect`: the caller is a press whose own connect just resolved
+   * (Light again, the swipe's drive), so the link it brought up owes this
+   * climb a write through the #4979 hold even if that link mounts in the same
+   * render. Everything else (a lighting toggle, the Live Activity's re-light)
+   * leaves it off: with no link, a later plain connect keeps the hold.
    */
-  reassertWall: () => void;
+  reassertWall: (options?: ReassertWallOptions) => void;
   /**
    * Forget what the wall physically shows. Any surface that writes the wall
    * OUTSIDE the auto-sender (the create drawer's live preview and its route
@@ -253,10 +264,11 @@ const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
 // without a settle window a five-climb swipe would land five reports (and five
 // durable board_climb_events rows) instead of the two a BLE write produces.
 const VIRTUAL_WALL_SETTLE_MS = 600;
-// A reassert asked for with no link carries to the link that comes up this
-// soon after it: a press that connects re-asserts as its connect resolves,
-// ahead of the link's render. Longer, it was no press (a lighting setting
-// changed with no link), and the next connect keeps the #4979 hold.
+// A press that connects re-asserts as its connect resolves, ahead of the link's
+// render, so its ask (`carryToConnect`) carries to the link that comes up this
+// soon after it. Only a press carries: the provider cannot tell a press from a
+// lighting toggle, so the caller says. Longer than this, no link took it, and
+// the next connect keeps the #4979 hold.
 const REASSERT_CARRY_MS = 5_000;
 
 /** Resolves after `ms`, or immediately when the caller's signal aborts. */
@@ -2678,15 +2690,21 @@ export function BluetoothProvider({
   // what releases a #4979 hold: released here, before the nonce reaches the
   // auto-sender, whose pending reassert then lets the write through.
   //
-  // With no link up yet, the press that asked for it is connecting: the link it
-  // brings up may mount its auto-sender in the same render as this nonce, so
-  // the ask is also carried to that mount (`takeCarriedReassert`).
+  // A press whose connect just resolved (`carryToConnect`) with no link up yet:
+  // the link it brought up may mount its auto-sender in the same render as this
+  // nonce, so the ask is also carried to that mount (`takeCarriedReassert`).
+  // A reassert with no press behind it (the MoonBoard adjacent-holds toggle,
+  // the Live Activity's re-light) carries nothing, so a plain connect after it
+  // keeps the hold, however soon.
   const carriedReassertAtRef = useRef<number | null>(null);
-  const reassertWall = useCallback(() => {
-    if (!bleConnectedRef.current) carriedReassertAtRef.current = nowMs();
-    releaseStaleCurrentHold('relight');
-    setReassertNonce((nonce) => nonce + 1);
-  }, [releaseStaleCurrentHold]);
+  const reassertWall = useCallback(
+    (options?: ReassertWallOptions) => {
+      if (options?.carryToConnect && !bleConnectedRef.current) carriedReassertAtRef.current = nowMs();
+      releaseStaleCurrentHold('relight');
+      setReassertNonce((nonce) => nonce + 1);
+    },
+    [releaseStaleCurrentHold],
+  );
   const takeCarriedReassert = useCallback((): boolean => {
     const askedAt = carriedReassertAtRef.current;
     carriedReassertAtRef.current = null;

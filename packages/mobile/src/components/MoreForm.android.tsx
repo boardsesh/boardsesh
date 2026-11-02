@@ -16,7 +16,7 @@
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
 // tree renders props and invokes handlers.
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ComposeHost } from './ComposeHost.android';
 import {
   LazyColumn,
@@ -175,8 +175,18 @@ type RowColors = {
  * list"), and the open menu marks the current choice with a ✓ and the
  * selected state. `menuAnchor` gives the row Role.DropdownList and opens the
  * menu; `clickable` keeps the ripple and merges the label, subtitle and value
- * into the one node TalkBack reads. Both open, never toggle closed, so a tap
- * that reaches both lands open once.
+ * into the one node TalkBack reads. A tap reaches both, so both only open:
+ * M3's own anchor click is a toggle (`onExpandedChange(!expanded)`), and its
+ * `false` is dropped here, or the two would race to opposite states. The menu
+ * closes on a pick or a dismiss (an outside tap, back).
+ *
+ * One pick per open: the current choice's `selectable` and the item's own
+ * click run the same pick, and a tap that reaches both must not report the
+ * setting twice.
+ *
+ * On a device (not visible to the JS test, which records modifiers): one tap
+ * opens the menu once, an outside tap dismisses it, TalkBack reads "drop-down
+ * list" on the row and "selected" on the current item, a disabled row stays shut.
  *
  * Not here: a stateDescription with the value. @expo/ui's `semantics`
  * (58.0.23) takes only contentDescription and contentType, and a native
@@ -187,19 +197,31 @@ type RowColors = {
  */
 function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
   const [expanded, setExpanded] = useState(false);
+  const pickedRef = useRef(false);
   const open = expanded && !row.disabled;
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
+  const openMenu = () => {
+    pickedRef.current = false;
+    setExpanded(true);
+  };
   // A disabled row drops its click target (the menu can't open) and dims to
   // M3's disabled-content opacity.
   const anchorModifiers = row.disabled
     ? [fillMaxWidth(), menuAnchor('primaryNotEditable', false), ROW_PADDING, DISABLED_ROW]
-    : [fillMaxWidth(), menuAnchor('primaryNotEditable', true), clickable(() => setExpanded(true)), ROW_PADDING];
+    : [fillMaxWidth(), menuAnchor('primaryNotEditable', true), clickable(openMenu), ROW_PADDING];
   const pick = (key: string) => {
+    if (pickedRef.current) return;
+    pickedRef.current = true;
     if (!row.disabled) row.onSelect(key);
     setExpanded(false);
   };
   return (
-    <ExposedDropdownMenuBox expanded={open} onExpandedChange={setExpanded}>
+    <ExposedDropdownMenuBox
+      expanded={open}
+      onExpandedChange={(next) => {
+        if (next) openMenu();
+      }}
+    >
       <Row modifiers={anchorModifiers} verticalAlignment="center">
         <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
           <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>

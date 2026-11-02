@@ -2092,8 +2092,10 @@ describe('PlayDrawer wall button taps', () => {
         'play_drawer',
         expect.objectContaining({ uuid: TWELVE_CLIMB.uuid }),
       );
-      // Lit explicitly, never left to the auto-send the hold would stop.
+      // Lit explicitly, never left to the auto-send the hold would stop, and
+      // carried to the link this press brought up (it can mount in this render).
       expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+      expect(bluetooth.reassertWall).toHaveBeenCalledWith({ carryToConnect: true });
       expect(wallControlTapped).toHaveBeenCalledWith({
         state: 'on_wall_unlinked',
         action: 'relight',
@@ -2421,6 +2423,7 @@ describe('PlayDrawer wall button taps', () => {
 
       expect(lightbulbState.connect).toHaveBeenCalledOnce();
       expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+      expect(bluetooth.reassertWall).toHaveBeenCalledWith({ carryToConnect: true });
       expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'action', windowMs: null });
     });
   });

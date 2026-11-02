@@ -25,6 +25,7 @@ const compose = vi.hoisted(() => ({
   boxChildren: [] as { kind: string; modifiers: RecordedModifier[] }[][],
   boxExpanded: [] as boolean[],
   onExpandedChange: null as ((expanded: boolean) => void) | null,
+  onDismissRequest: null as (() => void) | null,
   items: [] as { modifiers: RecordedModifier[]; onClick?: () => void }[],
 }));
 vi.mock('@expo/ui/jetpack-compose', async () => {
@@ -38,8 +39,17 @@ vi.mock('@expo/ui/jetpack-compose', async () => {
   });
   const Row = ({ children }: { children?: ReactNode; modifiers?: RecordedModifier[] }) =>
     createElement('div', null, children);
-  const ExposedDropdownMenu = ({ children }: { children?: ReactNode; expanded: boolean }) =>
-    createElement('div', { 'data-menu': 'true' }, children);
+  const ExposedDropdownMenu = ({
+    children,
+    onDismissRequest,
+  }: {
+    children?: ReactNode;
+    expanded: boolean;
+    onDismissRequest?: () => void;
+  }) => {
+    compose.onDismissRequest = onDismissRequest ?? null;
+    return createElement('div', { 'data-menu': 'true' }, children);
+  };
   const ExposedDropdownMenuBox = ({
     children,
     expanded,
@@ -151,6 +161,7 @@ afterEach(() => {
   compose.boxChildren = [];
   compose.boxExpanded = [];
   compose.onExpandedChange = null;
+  compose.onDismissRequest = null;
   compose.items = [];
 });
 
@@ -254,13 +265,50 @@ describe('MoreForm on Android: a select row', () => {
 
   it('gives only the current choice the selected state, which picks like a tap', () => {
     const { onSelect } = renderSelect();
-    const items = compose.items.slice(-2);
+    act(() => compose.onExpandedChange?.(true));
+    let items = compose.items.slice(-2);
     expect(items.map((item) => named(item.modifiers, 'selectable')?.args[0] ?? null)).toEqual([null, true]);
     const activate = named(items[1]?.modifiers ?? [], 'selectable')?.args[1] as (() => void) | undefined;
-    act(() => activate?.());
+    // One tap on the current choice can reach its `selectable` and the item's
+    // own click: one pick, one report, and the menu closes.
+    act(() => {
+      activate?.();
+      items[1]?.onClick?.();
+    });
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('45');
+    expect(compose.boxExpanded.at(-1)).toBe(false);
+
+    act(() => compose.onExpandedChange?.(true));
+    items = compose.items.slice(-2);
     act(() => items[0]?.onClick?.());
     expect(onSelect).toHaveBeenLastCalledWith('off');
+    expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
+  // M3's anchor click is a toggle and the row's `clickable` only opens: a tap
+  // reaches both, so the box's `false` is dropped or the two would race. The
+  // menu closes on a dismiss (an outside tap, back) or a pick.
+  it('only opens from the anchor, and closes on a dismiss', () => {
+    renderSelect();
+    const clickable = named(compose.boxChildren.at(-1)?.[0]?.modifiers ?? [], 'clickable')?.args[0] as
+      | (() => void)
+      | undefined;
+    act(() => {
+      compose.onExpandedChange?.(true);
+      clickable?.();
+    });
+    expect(compose.boxExpanded.at(-1)).toBe(true);
+    // A second tap on the anchor with the menu open: M3 asks to close, the row opens.
+    act(() => {
+      compose.onExpandedChange?.(false);
+      clickable?.();
+    });
+    expect(compose.boxExpanded.at(-1)).toBe(true);
+    act(() => compose.onExpandedChange?.(false));
+    expect(compose.boxExpanded.at(-1)).toBe(true);
+
+    act(() => compose.onDismissRequest?.());
+    expect(compose.boxExpanded.at(-1)).toBe(false);
   });
 
   it('opens from the box and never for a disabled row', () => {

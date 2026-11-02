@@ -468,7 +468,7 @@
     "relightBoard": "Reiluminar plafón",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
+      "description": "Desconecta del plafón cuando no se ha encendido ni previsualizado ningún bloque durante el tiempo elegido.",
       "cutsLighting": "La desconexión automática suelta el plafón tras {{timeout}}, así que la iluminación también se detiene entonces.",
       "disconnectedToast": "Plafón desconectado tras {{timeout}} sin ningún bloque encendido. Toca Poner en el plafón para volver a conectar.",
       "enabledLabel": "Desconexión automática",
