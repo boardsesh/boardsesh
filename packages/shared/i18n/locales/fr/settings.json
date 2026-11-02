@@ -468,8 +468,9 @@
     "relightBoard": "Rallumer la board",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
+      "description": "Se déconnecter de la board après la durée choisie sans bloc allumé ni ouvert en aperçu.",
       "cutsLighting": "La déconnexion automatique libère la board après {{timeout}}, donc l'éclairage s'arrête aussi à ce moment-là.",
+      "disconnectedToast": "Board déconnectée après {{timeout}} sans bloc allumé. Touche Allumer sur la board pour te reconnecter.",
       "enabledLabel": "Déconnexion automatique",
       "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
       "timeoutLabel": "Déconnecter après",

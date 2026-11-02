@@ -35,7 +35,11 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => 
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../lib/playlists/track-pager', () => ({ canLoadMoreOfTrack: () => targets.canLoadMore }));
-vi.mock('../../../settings/hooks', () => ({ useSetting: () => [settings.lightOnSwipe, vi.fn()] }));
+vi.mock('../../../settings/hooks', () => ({
+  useSetting: () => [settings.lightOnSwipe, vi.fn()],
+  // The at-press read (`readClimbChangeLights`), for a window that lapsed under a paused timer.
+  getSetting: () => settings.lightOnSwipe,
+}));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
 vi.mock('@boardsesh/play-view', () => ({
   computeNavigationTargetsWithSuggestions: () => ({
@@ -146,6 +150,37 @@ describe('useMiniPlayerNavigation', () => {
         ['Queue Navigation', expect.objectContaining({ outcome: 'moved', sessionMode, driving: true })],
       ]);
     } finally {
+      resetDriveModeForTests();
+    }
+  });
+
+  // 2.7: Put on board's keep-lighting window is a live drive with an end. Its
+  // end is read off the clock at the press: Android pauses JS timers with the
+  // activity (#7038), so the watcher may not have ended it. The timers here
+  // never advance.
+  it('previews once a keep-lighting window is past its end, before the watcher has tidied it', () => {
+    settings.lightOnSwipe = false;
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: 7,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      now: 1_000,
+    });
+    markDriveLive({ now: 1_000 });
+    try {
+      const { result } = renderHook(() => useMiniPlayerNavigation());
+      vi.setSystemTime(46_000);
+      act(() => result.current.onNext());
+      expect(queue.nextClimb).not.toHaveBeenCalled();
+      expect(drawer.openPlayDrawer).toHaveBeenCalledOnce();
+      expect(navigationEvents()).toEqual([
+        ['Queue Navigation', expect.objectContaining({ outcome: 'preview', driving: false })],
+      ]);
+    } finally {
+      vi.useRealTimers();
       resetDriveModeForTests();
     }
   });

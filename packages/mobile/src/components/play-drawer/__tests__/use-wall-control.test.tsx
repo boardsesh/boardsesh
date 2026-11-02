@@ -36,9 +36,12 @@ import {
   WINDOW_END_TAP_GRACE_MS,
   useWallControl,
   type DriveStartOutcome,
+  type WallControlHandlers,
   type WallControlRunners,
 } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
+import { registerAutoDisconnectActivity } from '../../../lib/auto-disconnect-deadline';
+import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { startKeepLighting } from '../drive-runner';
 import {
   EMPTY_WALL_CONTROL,
@@ -381,6 +384,81 @@ describe('useWallControl swipe', () => {
       hook.result.current.drive('button');
     });
     expect(analytics.swiped).not.toHaveBeenCalled();
+  });
+});
+
+// 2.7: auto-disconnect counted only writes, so a climber browsing previews with
+// the button in hand was dropped mid-look. Every press on the wall button is
+// activity: a tap (even one a guard drops), a hold, a swipe and its cancel,
+// and the screen-reader action.
+describe('useWallControl: presses keep auto-disconnect from letting go', () => {
+  const activity = vi.fn();
+  let release: () => void = () => undefined;
+  beforeEach(() => {
+    activity.mockClear();
+    release = registerAutoDisconnectActivity(activity);
+  });
+  afterEach(() => release());
+
+  type Handlers = WallControlHandlers;
+  const presses: Array<[string, (handlers: Handlers) => void]> = [
+    ['a tap', (handlers) => handlers.press('button')],
+    ['a tap on a bulb', (handlers) => handlers.press('bulb')],
+    ['a hold', (handlers) => handlers.longPress('button')],
+    [
+      'a swipe',
+      (handlers) => {
+        handlers.swipe('button');
+      },
+    ],
+    ['a swipe let go early', (handlers) => handlers.swipeCancelled('button')],
+    [
+      'the screen-reader action',
+      (handlers) => {
+        handlers.drive('button');
+      },
+    ],
+  ];
+  it.each(presses)('%s counts as activity, once', (_label, run) => {
+    const { hook } = setup(modelFor('lit', 'disconnect', { swipeAction: 'drive', longPress: 'sheet' }));
+    expect(activity).not.toHaveBeenCalled();
+    act(() => {
+      run(hook.result.current);
+    });
+    expect(activity).toHaveBeenCalledOnce();
+  });
+
+  it('counts a tap while a connect is in flight too: the climber is still there', () => {
+    const { hook } = setup(modelFor('connect', 'connect', { pending: true }));
+    act(() => {
+      hook.result.current.press('button');
+    });
+    expect(activity).toHaveBeenCalledOnce();
+  });
+
+  // Spec B3: the swipe peek's replay counts the presses that put a climb up.
+  it('counts a Put on board on the button towards the swipe peek’s replay, never a bulb or a stop', () => {
+    const presses = vi.spyOn(wallSwipeHint, 'noteWallPutOnBoardPress');
+    try {
+      const putUp = setup(modelFor('put_on_wall', 'put_on_wall'));
+      act(() => {
+        putUp.hook.result.current.press('button');
+        putUp.hook.result.current.press('bulb');
+      });
+      const stop = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => {
+        stop.hook.result.current.press('button');
+      });
+      expect(presses).toHaveBeenCalledOnce();
+    } finally {
+      presses.mockRestore();
+    }
+  });
+
+  it('counts nothing on a render alone', () => {
+    const { hook } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    hook.rerender({ model: modelFor('lit', 'stop_driving', { driving: true }) });
+    expect(activity).not.toHaveBeenCalled();
   });
 });
 

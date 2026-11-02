@@ -468,8 +468,9 @@
     "relightBoard": "Re-light board",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Disconnect from the board after no climb has been displayed for the selected time.",
+      "description": "Disconnect from the board after no climb has been lit or previewed for the selected time.",
       "cutsLighting": "Auto-disconnect lets go of the board after {{timeout}}, so lighting stops then too.",
+      "disconnectedToast": "Disconnected after {{timeout}} with nothing lit. Put on board to reconnect.",
       "enabledLabel": "Auto-disconnect",
       "enabledDescription": "Let other climbers connect after the timer expires.",
       "timeoutLabel": "Disconnect after",

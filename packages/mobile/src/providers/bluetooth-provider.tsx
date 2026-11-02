@@ -14,7 +14,7 @@ import {
   toBoardName,
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, blePickerSessionProps, type BlePickerSessionInput } from '@boardsesh/analytics';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
@@ -26,6 +26,7 @@ import {
   type BleConnectionHandle,
   type BleConnectionEnded,
   type BluetoothDisconnectReason,
+  type PickerState,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
@@ -53,8 +54,14 @@ import {
   type PickerSelectionDecision,
 } from '../lib/ble/board-config-match';
 import { summarizePickerResolution, type PickerResolutionStats } from '../lib/ble/picker-resolution-stats';
+import { deviceMatchesPickerTarget } from '../lib/ble/picker-device-target';
 import { getAndroidLocationPermissionState } from '../lib/ble/android-location-permission';
-import { trackBoardConnectTapped } from '../lib/analytics-board-connect';
+import {
+  readPhoneNeverConnected,
+  readRecentBoardConnectSurface,
+  registerConnectBoardUuidReader,
+  trackBoardConnectTapped,
+} from '../lib/analytics-board-connect';
 import { useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getHttpClient } from '../lib/graphql/client';
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
@@ -70,17 +77,24 @@ import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
+import type { DevicePickerSeen } from '../lib/ble/picker-seen';
+import { useAutoDisconnectTimeoutLabels } from '../components/ble/use-auto-disconnect-timeout-labels';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
-import { registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
+import { registerAutoDisconnectActivity, registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
+
+export type ReassertWallOptions = {
+  /** A press whose own connect brought the link up: carry the ask to that link. */
+  carryToConnect?: boolean;
+};
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -124,8 +138,14 @@ type BluetoothContextValue = {
    * normally dedups). The lightbulb tap calls this so re-taking control of an
    * unchanged climb re-lights the wall — and, if the link is secretly dead, the
    * failing write trips disconnect detection. No-op until called.
+   *
+   * `carryToConnect`: the caller is a press whose own connect just resolved
+   * (Light again, the swipe's drive), so the link it brought up owes this
+   * climb a write through the #4979 hold even if that link mounts in the same
+   * render. Everything else (a lighting toggle, the Live Activity's re-light)
+   * leaves it off: with no link, a later plain connect keeps the hold.
    */
-  reassertWall: () => void;
+  reassertWall: (options?: ReassertWallOptions) => void;
   /**
    * Forget what the wall physically shows. Any surface that writes the wall
    * OUTSIDE the auto-sender (the create drawer's live preview and its route
@@ -244,6 +264,12 @@ const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
 // without a settle window a five-climb swipe would land five reports (and five
 // durable board_climb_events rows) instead of the two a BLE write produces.
 const VIRTUAL_WALL_SETTLE_MS = 600;
+// A press that connects re-asserts as its connect resolves, ahead of the link's
+// render, so its ask (`carryToConnect`) carries to the link that comes up this
+// soon after it. Only a press carries: the provider cannot tell a press from a
+// lighting toggle, so the caller says. Longer than this, no link took it, and
+// the next connect keeps the #4979 hold.
+const REASSERT_CARRY_MS = 5_000;
 
 /** Resolves after `ms`, or immediately when the caller's signal aborts. */
 function settleVirtualWallWrite(
@@ -279,6 +305,43 @@ type VirtualWallHold = {
   connectionSeqAtTake: number;
   controller: AbortController;
 };
+
+/**
+ * The release watch's running view of one picker session (2.7): what the list
+ * showed and where its tap came from. What the sheet showed the climber
+ * (`targetNotListedSeen`, `tipsSeen`) and the close time join it at the flush.
+ */
+type PickerSessionWatch = Omit<BlePickerSessionInput, 'targetNotListedSeen' | 'tipsSeen' | 'closedAt'>;
+
+/** The list just showed: when, filtered or not, and the tap and phone it came from. Synchronous reads only. */
+function openPickerSessionWatch(picker: PickerState): PickerSessionWatch {
+  return {
+    targetFiltered: Boolean(picker.targetBoard?.boardUuid) && !picker.showAllBoards,
+    searchedAnyBoard: picker.showAllBoards,
+    listedCount: 0,
+    openedAt: Date.now(),
+    phoneNeverConnected: readPhoneNeverConnected(),
+    entrySurface: readRecentBoardConnectSurface(),
+  };
+}
+
+/**
+ * Each scan push: whether Search for any board was tapped, and how many boards
+ * the list shows (the sheet's own filter, `deviceMatchesPickerTarget`).
+ */
+function updatePickerSessionWatch(
+  watch: PickerSessionWatch,
+  picker: PickerState,
+  resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>,
+): void {
+  if (picker.showAllBoards) watch.searchedAnyBoard = true;
+  const target = picker.targetBoard;
+  const filtering = Boolean(target?.boardUuid) && !picker.showAllBoards;
+  watch.listedCount =
+    filtering && target
+      ? picker.devices.filter((device) => deviceMatchesPickerTarget(device, resolvedBoards, target)).length
+      : picker.devices.length;
+}
 
 function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfig): string {
   return t('boardConfigMismatch.mobileConfigValue', {
@@ -374,6 +437,7 @@ function BluetoothAutoSender({
   onStaleCurrentHeld,
   onStaleCurrentPassed,
   physicalLink,
+  takeCarriedReassert,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -435,6 +499,10 @@ function BluetoothAutoSender({
   // True when this mount writes over Bluetooth, false on a virtual hold, whose
   // "write" is a 600 ms stand-in. Fixed per mount: the mount is keyed on it.
   physicalLink: boolean;
+  // A reassert asked for while this link was still coming up (a press that
+  // connects: Light again, the swipe's drive). Taken once, at mount, by a
+  // physical link: that link owes the climb a write through the #4979 hold.
+  takeCarriedReassert: () => boolean;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -532,6 +600,16 @@ function BluetoothAutoSender({
       controller.abort();
     };
   }, []);
+
+  // Before the first drain (effects run in this order): a press that connects
+  // re-asserts the moment its connect resolves, which on Android is before the
+  // link's render commits, so this mount starts with that nonce already in its
+  // props and the bump alone would read as nothing to do. One press, lit.
+  const takeCarriedReassertRef = useRef(takeCarriedReassert);
+  takeCarriedReassertRef.current = takeCarriedReassert;
+  useEffect(() => {
+    if (physicalLink && takeCarriedReassertRef.current()) reassertPendingRef.current = true;
+  }, [physicalLink]);
 
   useEffect(() => {
     if (!currentClimbQueueItem) {
@@ -943,10 +1021,13 @@ export function BluetoothProvider({
       onExpire: () => autoDisconnectExpireRef.current(),
     });
   }
+  // Activity pushes the deadline out: a write that landed (below), and the
+  // climber's own changes of climb in the player and wall-button presses
+  // (`noteAutoDisconnectActivity`). The warning ring goes with it.
   const resetAutoDisconnect = useCallback(() => {
-    autoDisconnectControllerRef.current?.reset();
-    setAutoDisconnectWarning(false);
+    if (autoDisconnectControllerRef.current?.noteActivity()) setAutoDisconnectWarning(false);
   }, []);
+  useEffect(() => registerAutoDisconnectActivity(resetAutoDisconnect), [resetAutoDisconnect]);
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
   const bluetoothColorOverrides = useMemo(
     () => getBluetoothColorOverrides(holdColorOverrides),
@@ -995,6 +1076,8 @@ export function BluetoothProvider({
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
   boardUuidRef.current = boardUuid;
+  // Board Connect Tapped names the board a connect is for (2.7 release watch).
+  useEffect(() => registerConnectBoardUuidReader(() => boardUuidRef.current ?? null), []);
   const reachableBoardKeysRef = useRef(reachableBoardKeys);
   reachableBoardKeysRef.current = reachableBoardKeys;
   // One membership re-stamp per report signature. An anonymous emitter is keyed
@@ -1779,6 +1862,18 @@ export function BluetoothProvider({
   // both stream in), then flush ONE summary event when it closes — per-device
   // or per-render events would massively overcount repeat advertisements.
   const pickerResolutionStatsRef = useRef<PickerResolutionStats | null>(null);
+  // The 2.7 release watch's view of the same session (`blePickerSessionProps`):
+  // kept in refs, updated as the session moves, flushed on the one event. No
+  // await and no render of its own.
+  const pickerSessionWatchRef = useRef<PickerSessionWatch | null>(null);
+  // What the sheet showed the climber, from its one callback (`onSeen`). Set
+  // apart from the watch because the sheet's effect runs before this
+  // provider's in the commit the list first shows; cleared at each flush.
+  const pickerSeenRef = useRef<{ targetNotListed: boolean; tips: boolean }>({ targetNotListed: false, tips: false });
+  const handlePickerSeen = useCallback((seen: DevicePickerSeen) => {
+    if (seen === 'target_not_listed') pickerSeenRef.current.targetNotListed = true;
+    else pickerSeenRef.current.tips = true;
+  }, []);
   // Whether the app held a location permission when this picker session opened.
   // Read once per session (PermissionsAndroid.check never prompts) so a
   // devicesTotal=0 flush can be split into "the OS suppressed the results" vs
@@ -1802,26 +1897,46 @@ export function BluetoothProvider({
           if (pickerSessionIdRef.current !== sessionId) return;
           pickerLocationPermissionRef.current = granted;
         });
+        pickerSessionWatchRef.current = openPickerSessionWatch(pickerState);
       }
       pickerResolutionStatsRef.current = summarizePickerResolution(
         pickerState.devices,
         resolvedPickerBoards,
         currentBoardConfig,
       );
+      if (pickerSessionWatchRef.current) {
+        updatePickerSessionWatch(pickerSessionWatchRef.current, pickerState, resolvedPickerBoards);
+      }
       return;
     }
     const finalStats = pickerResolutionStatsRef.current;
-    if (!finalStats) return;
+    if (!finalStats) {
+      // No list showed this session: nothing the sheet saw belongs to the next.
+      pickerSeenRef.current = { targetNotListed: false, tips: false };
+      return;
+    }
     pickerResolutionStatsRef.current = null;
     const androidLocationPermissionGranted = pickerLocationPermissionRef.current;
     // Retire the session id as well as the value, so an in-flight check from the
     // session we are flushing right now can no longer land anywhere.
     pickerSessionIdRef.current += 1;
     pickerLocationPermissionRef.current = null;
+    const watch = pickerSessionWatchRef.current;
+    const seen = pickerSeenRef.current;
+    pickerSessionWatchRef.current = null;
+    pickerSeenRef.current = { targetNotListed: false, tips: false };
     track(SHARED_EVENTS.BlePickerDevicesResolved, {
       ...finalStats,
       boardName,
       androidLocationPermissionGranted,
+      ...(watch
+        ? blePickerSessionProps({
+            ...watch,
+            targetNotListedSeen: seen.targetNotListed,
+            tipsSeen: seen.tips,
+            closedAt: Date.now(),
+          })
+        : {}),
     });
   }, [pickerState, resolvedPickerBoards, currentBoardConfig, boardName]);
 
@@ -2574,10 +2689,27 @@ export function BluetoothProvider({
   // A reassert is the climber asking for the climb on the wall, so it is also
   // what releases a #4979 hold: released here, before the nonce reaches the
   // auto-sender, whose pending reassert then lets the write through.
-  const reassertWall = useCallback(() => {
-    releaseStaleCurrentHold('relight');
-    setReassertNonce((nonce) => nonce + 1);
-  }, [releaseStaleCurrentHold]);
+  //
+  // A press whose connect just resolved (`carryToConnect`) with no link up yet:
+  // the link it brought up may mount its auto-sender in the same render as this
+  // nonce, so the ask is also carried to that mount (`takeCarriedReassert`).
+  // A reassert with no press behind it (the MoonBoard adjacent-holds toggle,
+  // the Live Activity's re-light) carries nothing, so a plain connect after it
+  // keeps the hold, however soon.
+  const carriedReassertAtRef = useRef<number | null>(null);
+  const reassertWall = useCallback(
+    (options?: ReassertWallOptions) => {
+      if (options?.carryToConnect && !bleConnectedRef.current) carriedReassertAtRef.current = nowMs();
+      releaseStaleCurrentHold('relight');
+      setReassertNonce((nonce) => nonce + 1);
+    },
+    [releaseStaleCurrentHold],
+  );
+  const takeCarriedReassert = useCallback((): boolean => {
+    const askedAt = carriedReassertAtRef.current;
+    carriedReassertAtRef.current = null;
+    return askedAt !== null && nowMs() - askedAt <= REASSERT_CARRY_MS;
+  }, []);
   // The kill switch came on: nothing is held any more, and the climb the hold
   // kept dark goes on the wall now, as it would have without the hold. The
   // drain does not list the flag as a dep, so the nonce is what re-runs it.
@@ -2626,9 +2758,15 @@ export function BluetoothProvider({
     [clearPendingWallReportAndUndoToastArm, disconnect],
   );
 
+  // Auto-disconnect used to let go silently, which read as the board dropping.
+  // It says what happened and the one tap that brings the board back.
+  const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
+  const autoDisconnectTimeoutLabel =
+    autoDisconnectTimeoutLabels[autoDisconnectTimeoutSeconds] ?? String(autoDisconnectTimeoutSeconds);
   const autoDisconnectOnExpire = useCallback(() => {
     void wrappedDisconnect('auto_disconnect');
-  }, [wrappedDisconnect]);
+    showToast(t('ble.autoDisconnect.disconnectedToast', { timeout: autoDisconnectTimeoutLabel }), 'info');
+  }, [wrappedDisconnect, showToast, t, autoDisconnectTimeoutLabel]);
   autoDisconnectExpireRef.current = autoDisconnectOnExpire;
 
   useEffect(() => {
@@ -2768,6 +2906,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       onNoLeds: takeVirtualWallAfterPickerDismiss,
       onScanAgain: handlePickerScanAgain,
+      onSeen: handlePickerSeen,
     }),
     [
       pickerState,
@@ -2777,6 +2916,7 @@ export function BluetoothProvider({
       activeExternalHostId,
       takeVirtualWallAfterPickerDismiss,
       handlePickerScanAgain,
+      handlePickerSeen,
     ],
   );
 
@@ -2806,6 +2946,7 @@ export function BluetoothProvider({
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
             physicalLink={isConnected}
+            takeCarriedReassert={takeCarriedReassert}
           />
         )}
         {/* Reconciles a virtual hold with the server's single holder slot, and
@@ -2835,6 +2976,7 @@ export function BluetoothProvider({
             onClosed={pickerState.handleClosed}
             onSearchAnyBoard={pickerState.handleSearchAnyBoard}
             onDisplaced={pickerState.handleDisplaced}
+            onSeen={handlePickerSeen}
           />
         )}
       </BluetoothWriteActivityProvider>

@@ -123,6 +123,7 @@ import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveWallLit } from './wall-lit';
 import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
+import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 import { nowMs } from '../../lib/clock';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -143,7 +144,7 @@ import {
   useIsSharedSession,
   useIsCrewSession,
 } from '../../providers/queue-provider';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useOptionalBluetoothContext, type ReassertWallOptions } from '../../providers/bluetooth-provider';
 import { getSetting, useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
@@ -265,9 +266,38 @@ const SWITCH_BOARD_CARD_MARGIN = spacing[2];
  * present ABOVE (the FullWindowOverlay it replaced could not, since native sheets
  * present off the key window beneath it).
  */
-// How long after the wall button's connect a #4979 hold still counts as the one
-// that tap ran into: long enough to pick a board in the picker.
+// How long after the wall button's connect linked a #4979 hold still counts as
+// the one that tap ran into. While the connect is on its way (the picker) there
+// is no limit: the hold can only come from that link.
 const RELIGHT_HELD_AFTER_CONNECT_MS = 60_000;
+
+/** The wall button's connect that owes its climb a relight through the #4979 hold. */
+type RelightHeldAfterConnect = {
+  queueItemUuid: string;
+  /** When the press connected, then (once linked) when the link came up. */
+  at: number;
+  /** The connect has not settled yet. */
+  connecting: boolean;
+};
+
+/**
+ * The wall button's connect settled. Linked, the minute starts now. Failed (or
+ * rejected), nothing is owed, so a later link (the bulb's) keeps the hold. A
+ * newer press has its own entry and is left alone.
+ */
+function settleRelightHeldAfterConnect(
+  ref: RefObject<RelightHeldAfterConnect | null>,
+  pending: RelightHeldAfterConnect | null,
+  connected: boolean,
+): void {
+  if (!pending || ref.current !== pending) return;
+  if (!connected) {
+    ref.current = null;
+    return;
+  }
+  pending.connecting = false;
+  pending.at = nowMs();
+}
 
 export function PlayCore({
   swipeDismiss,
@@ -348,6 +378,13 @@ export function PlayCore({
   const [drawerPreviewIsWallClimb, setDrawerPreviewIsWallClimb] = useState(
     () => !!initialDrawerPreviewItem(openTarget) && !!openTarget?.options?.previewIsWallClimb,
   );
+  // A change of the preview on screen is the climber at the wall, browsing: it
+  // pushes auto-disconnect's deadline out (2.7), as a write does, so looking
+  // through climbs never drops the board under them.
+  const drawerPreviewUuid = drawerPreviewItem?.uuid ?? null;
+  useEffect(() => {
+    if (drawerPreviewUuid !== null) noteAutoDisconnectActivity();
+  }, [drawerPreviewUuid]);
   // The wall-state pill's explainer, and the header's measured bottom edge it
   // hangs from. Owned here rather than inside the pill because the callout is an
   // absolute sibling of the swipeable header (so it doesn't ride the swipe
@@ -1898,14 +1935,17 @@ export function PlayCore({
 
   // A current climb unchanged for 4 h is held dark on the connect's first write
   // (#4979). A tap that connects asked for the climb, so the hold it meets right
-  // after the connect is released, instead of needing a second tap.
-  const relightHeldAfterConnectRef = useRef<{ queueItemUuid: string; at: number } | null>(null);
+  // after the connect is released, instead of needing a second tap. While the
+  // connect is still on its way (the picker can stay open for minutes) any
+  // hold is its own; once it linked, a hold within the minute after is. A
+  // connect that failed asks for nothing: a later link (the bulb's) keeps the hold.
+  const relightHeldAfterConnectRef = useRef<RelightHeldAfterConnect | null>(null);
   useEffect(() => {
     const pending = relightHeldAfterConnectRef.current;
     if (!pending || !staleCurrentHold) return;
     relightHeldAfterConnectRef.current = null;
     if (staleCurrentHold.queueItemUuid !== pending.queueItemUuid) return;
-    if (nowMs() - pending.at > RELIGHT_HELD_AFTER_CONNECT_MS) return;
+    if (!pending.connecting && nowMs() - pending.at > RELIGHT_HELD_AFTER_CONNECT_MS) return;
     bluetooth?.reassertWall();
   }, [staleCurrentHold, bluetooth]);
 
@@ -1932,10 +1972,14 @@ export function PlayCore({
       return true;
     }
     if (lightbulbPressAction === 'connect') {
-      if (currentClimbQueueItem) {
-        relightHeldAfterConnectRef.current = { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs() };
-      }
-      void connectLightbulb('play_drawer', currentClimbQueueItem?.climb ?? null);
+      const pending: RelightHeldAfterConnect | null = currentClimbQueueItem
+        ? { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs(), connecting: true }
+        : null;
+      relightHeldAfterConnectRef.current = pending;
+      void connectLightbulb('play_drawer', currentClimbQueueItem?.climb ?? null).then(
+        (connected) => settleRelightHeldAfterConnect(relightHeldAfterConnectRef, pending, connected),
+        () => settleRelightHeldAfterConnect(relightHeldAfterConnectRef, pending, false),
+      );
       return true;
     }
     if (!bluetoothConnected) return false;
@@ -1965,16 +2009,18 @@ export function PlayCore({
       if (!handleSetActive()) return false;
       climb = displayedClimb ?? null;
     }
-    const relight = () => {
+    const relight = (options?: ReassertWallOptions) => {
       resetWallCleared();
-      bluetoothForRelightRef.current?.reassertWall();
+      bluetoothForRelightRef.current?.reassertWall(options);
     };
     if (bluetoothConnected) {
       relight();
       return true;
     }
+    // This press connected: the link it brought up owes the climb a write
+    // through the #4979 hold, even when that link mounts in this same render.
     void connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb).then((connected) => {
-      if (connected) relight();
+      if (connected) relight({ carryToConnect: true });
     });
     return true;
   }, [
@@ -2016,9 +2062,11 @@ export function PlayCore({
         commit: () => handleSetActive({ skipBusyWall: true }),
         connected: bluetoothConnected,
         connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
+        // A press, so after its connect the ask carries to the link it brought
+        // up (`carryToConnect`); with the link already up that is a no-op.
         relight: () => {
           resetWallCleared();
-          bluetoothForRelightRef.current?.reassertWall();
+          bluetoothForRelightRef.current?.reassertWall({ carryToConnect: true });
         },
       });
     },

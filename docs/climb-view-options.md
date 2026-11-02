@@ -131,6 +131,9 @@ flat amber fallback; the label still says what the next press does.
   until the window ends: 45 s after the last lit climb by default, renewed by each lit climb
   (Settings › Board: Off, 30 s, 45 s, 1 min or Until I stop). The window starts on the wall's
   lit confirm, not on the press, and its shown end is clamped to the auto-disconnect deadline.
+  Every pick reads the window's end off the wall clock (`drivingAtPick` in `drive-mode-store.ts`),
+  never a timer alone: Android pauses JS timers with the activity (#7038), so a pick past the end
+  stays a preview even before `DriveModeWatcher` has ended the window and tidied the button.
   A rest or a long look drops back to previews. In a crew the window needs **In a session too**
   (on by default). A swipe or the accessible **Light every climb** command starts open-ended
   Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
@@ -165,7 +168,16 @@ flat amber fallback; the label still says what the next press does.
   Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets lead with **Keep
   lighting after Put on board** (the MoonBoard's own choice on a connected MoonBoard), so the window's length is two
   taps away at the wall, and the player's sheet carries a status line for the climb on screen. Auto-disconnect still frees the
-  board.
+  board. Its countdown starts over on every write that lands, every change of preview in the player and every
+  wall-button press (tap, hold, swipe, the named action), so browsing previews with nothing lit never drops the
+  board; an open-ended drive with nothing picked still counts down, so a phone left in a bag lets go. When it
+  lets go it says so in a toast: "Disconnected after 30 seconds with nothing lit. Put on board to reconnect."
+  (the configured time).
+- **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark
+  for 4 h in that one press: Put on board re-asserts when its connect's first write meets the hold (any hold while
+  the connect is on its way, or within a minute of it linking), and Light again and the swipe's drive re-assert as
+  their connect resolves, which the provider carries to the link that comes up within 5 s. A bulb's connect never
+  re-asserts: it keeps the hold by design.
 - **No control for a climb this wall can't light**: the switch-board overlay, another board's climb, or a board with
   no lights linked (`offWall`). A tap there could only re-send the queue head.
 - **A tap while the busy-wall question is up does nothing**: Put mine up is the one answer
@@ -246,10 +258,14 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   start (presence says another account holds the board) answers `held_by_crew`, cancels with an error buzz and
   springs back the progress.
 - **The hint.** Resting ‹‹ chevrons (10 pt, at 70% and 40% of brand violet) sit before the face slot wherever the
-  swipe is offered; the flat progress uses its readable amber label colour over them. Once per app session, the first swipeable
-  state starts a 28 pt trailing-edge peek and spring-back (about 700 ms; a fade in place under Reduce Motion).
-  The peek uses the same flat amber progress, with no bokeh before driving. At most 3 sessions, never again once a swipe has driven the wall, never in screenshot mode
-  (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`). A session counts towards the three once the peek runs.
+  swipe is offered; the flat progress uses its readable amber label colour over them. A 28 pt trailing-edge peek and
+  spring-back (about 700 ms; a fade in place under Reduce Motion) plays where the swipe is news (2.7, spec B3): the
+  first keep-lighting window in an app session, and one replay that session on the third Put on board within 5
+  minutes. The peek uses the same flat amber progress, with no bokeh before driving. At most 3 sessions on the v2
+  count `wallSwipePeekSessionsV2`, so a climber who used up 2.6's three sees it again for the new meaning; never again
+  once a swipe has driven the wall (`wallSwipeUsed`, kept from 2.6), never in screenshot mode, never with VoiceOver or
+  TalkBack on (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`). A session counts towards the three once a
+  peek runs, however many play in it.
 - **Driving frost and flat swipe progress.** PlayCore prepares hold geometry only for confirmed physical driving,
   when the button renders `WallGlow`. Non-driving drags and peeks use the temporary flat `live` amber `WallSwipeWipe`,
   which unmounts when the gesture settles or driving is confirmed. Stopping or browsing removes driving frost

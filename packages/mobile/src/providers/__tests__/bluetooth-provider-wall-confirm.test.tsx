@@ -147,6 +147,8 @@ vi.mock('react-native', () => ({
   },
 }));
 
+// Auto-disconnect is off unless a test turns it on (`autoDisconnect.enabled`).
+const autoDisconnect = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../settings', async () => {
   const { useState } = await import('react');
   return {
@@ -154,7 +156,8 @@ vi.mock('../../settings', async () => {
       // Mirror the real custom hook: every call owns one state slot. BluetoothProvider
       // invokes its settings unconditionally in a fixed order, so this setter can
       // rerender the provider without a test-only rerender seam.
-      const initialValue = key === 'autoDisconnectBle' || key === 'moonboardLightAdjacentHolds' ? false : 30;
+      const initialValue =
+        key === 'autoDisconnectBle' ? autoDisconnect.enabled : key === 'moonboardLightAdjacentHolds' ? false : 30;
       return useState(initialValue);
     },
   };
@@ -284,8 +287,14 @@ vi.mock('../queue-provider', () => ({
   },
 }));
 
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('../toast-provider', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: toast.showToast }),
+}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key),
+  }),
 }));
 
 const boardDetails = vi.hoisted(() => ({
@@ -302,6 +311,7 @@ import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
 import { readHeldQueueItemUuid } from '../../lib/held-climb-reader';
+import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -422,6 +432,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     wallConfirm.emitWallConfirm.mockClear();
     analytics.track.mockClear();
     alert.alert.mockClear();
+    toast.showToast.mockClear();
+    autoDisconnect.enabled = false;
     pickerSheet.props = null;
     resolvedBoards.value = new Map();
     bluetooth.options = undefined;
@@ -796,6 +808,90 @@ describe('BluetoothProvider wall-confirm integration', () => {
       ]);
     });
 
+    // A press that connects (Light again, the swipe's drive) re-asserts the
+    // moment its connect resolves. On Android that is before the link's render
+    // commits, so the auto-sender mounts with the bumped nonce already in its
+    // props: the press must still light the held climb, in one press.
+    it('lights the held climb when the reassert lands in the same render as the link', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      bluetooth.state.isConnected = false;
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      act(() => {
+        bluetooth.state.isConnected = true;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+        capturedBluetooth?.reassertWall({ carryToConnect: true });
+      });
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(heldTelemetry()).toEqual([]);
+      await settle();
+      // One write: the carried reassert is spent on this link.
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+
+      // The link drops and a plain connect (the bulb) comes straight back: no
+      // press asked again, so the hold keeps the climb dark this time.
+      act(() => {
+        bluetooth.state.isConnected = false;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+      });
+      act(() => {
+        bluetooth.state.isConnected = true;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+      });
+      await settle();
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
+    // A reassert with no press behind it (the MoonBoard adjacent-holds toggle in
+    // the board sheet, the Live Activity's re-light) carries nothing: a plain
+    // connect (the bulb) landing in the same render still keeps the hold.
+    it('keeps the hold on a plain connect right after a reassert with no press behind it', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      bluetooth.state.isConnected = false;
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      act(() => {
+        bluetooth.state.isConnected = true;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+        capturedBluetooth?.reassertWall();
+      });
+      await settle();
+
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
+    // A press's carry that no link took within 5 s (the link came up for
+    // something else, much later) is spent: that later plain connect keeps the hold.
+    it('keeps the hold on a plain connect long after a press asked with no link', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      bluetooth.state.isConnected = false;
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+      const realNow = Date.now();
+      act(() => {
+        capturedBluetooth?.reassertWall({ carryToConnect: true });
+      });
+      const later = vi.spyOn(Date, 'now').mockReturnValue(realNow + 60_000);
+      try {
+        act(() => {
+          bluetooth.state.isConnected = true;
+          rerenderProvider(rerender, createElement(BluetoothProbe));
+        });
+        await settle();
+      } finally {
+        later.mockRestore();
+      }
+
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
     it('releases when the current climb changes (a tap, Next or a crewmate pick)', async () => {
       queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
       const { rerender } = renderProvider(createElement(BluetoothProbe));
@@ -937,6 +1033,60 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(releaseTelemetry()).toEqual([
         ['Board Stale Current Released', expect.objectContaining({ reason: 'disconnect', scope: 'solo' })],
       ]);
+    });
+  });
+
+  // 2.7: auto-disconnect let go of the board with nothing on screen, which read
+  // as the board dropping. It says so now, with the configured time, and the
+  // climber's own activity (a preview change, a wall-button press) pushes the
+  // deadline out as a write does.
+  describe('auto-disconnect', () => {
+    beforeEach(() => {
+      autoDisconnect.enabled = true;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      // Nothing current: no write of its own pushes the deadline out.
+      queue.currentClimbQueueItem = null;
+    });
+
+    it('lets go after the configured seconds with nothing lit, and says so with that time', () => {
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        vi.advanceTimersByTime(29_999);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(bluetooth.state.disconnect).toHaveBeenCalledWith('auto_disconnect');
+      expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(
+        'ble.autoDisconnect.disconnectedToast {"timeout":"ble.autoDisconnect.timeoutOptions.30"}',
+        'info',
+      );
+    });
+
+    it('starts over on the climber’s activity, and still lets go once it stops', () => {
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        vi.advanceTimersByTime(20_000);
+        noteAutoDisconnectActivity();
+        vi.advanceTimersByTime(20_000);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(bluetooth.state.disconnect).toHaveBeenCalledWith('auto_disconnect');
+    });
+
+    it('lets nothing go and says nothing with auto-disconnect off, activity or not', () => {
+      autoDisconnect.enabled = false;
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        noteAutoDisconnectActivity();
+        vi.advanceTimersByTime(10 * 60_000);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      expect(toast.showToast).not.toHaveBeenCalled();
     });
   });
 

@@ -101,6 +101,7 @@ import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/r
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
+  drivingAtPick,
   enterDriveMode,
   exitDriveMode,
   getDriveMode,
@@ -516,6 +517,26 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     act(() => {
       vi.advanceTimersByTime(3_000);
     });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  // #7038: Android pauses JS timers with the activity, so a pick can come
+  // after the window's end with this timer not yet fired. The pick reads the
+  // clock and lights nothing; the watcher tidies once its timer runs.
+  it('lets a pick past the end light nothing while its timer is held, then tidies', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    // The clock moves past the end; no timer runs.
+    vi.setSystemTime(Date.now() + 46_000);
+    expect(drivingAtPick(getDriveMode()?.phase === 'live')).toBe(false);
+    expect(getDriveMode()?.phase).toBe('live');
+    // The activity resumes and the held timer runs.
+    act(() => {
+      vi.advanceTimersByTime(45_000);
+    });
+    expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('window_ended');
   });
 

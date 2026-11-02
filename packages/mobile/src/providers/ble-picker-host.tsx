@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { PickerState } from '../lib/ble/use-board-bluetooth';
 import type { BleBoardConfig } from '../lib/ble/board-config-match';
+import type { DevicePickerSeen } from '../lib/ble/picker-seen';
 
 // Dedicated, lightweight context for the BLE device picker so the play route can
 // host its OWN picker sheet — presenting ABOVE the modal route — without the
@@ -37,6 +38,8 @@ export type BlePickerHostValue = {
   onNoLeds: () => void;
   /** Cancel this picker and start the connect over, for "Scan again" after an empty scan. */
   onScanAgain: () => void;
+  /** What the sheet showed the climber, for the picker session's release-watch props (2.7). */
+  onSeen: (seen: DevicePickerSeen) => void;
 };
 
 export const BlePickerHostContext = createContext<BlePickerHostValue | null>(null);

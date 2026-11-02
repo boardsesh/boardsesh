@@ -65,7 +65,7 @@ describe('AutoDisconnectController', () => {
     test.controller.update(true, 30);
     test.controller.connectedNow();
     test.advance(20_000);
-    test.controller.reset();
+    expect(test.controller.noteActivity()).toBe(true);
     expect(test.controller.getDeadlineMs()).toBe(50_000);
     test.advance(29_999);
     test.controller.resume();
@@ -73,6 +73,32 @@ describe('AutoDisconnectController', () => {
     test.advance(1);
     test.controller.resume();
     expect(test.expired).toEqual([50_000]);
+  });
+
+  it('re-arms on activity only while on and linked', () => {
+    const test = harness();
+    test.controller.update(false, 30);
+    test.controller.connectedNow();
+    expect(test.controller.noteActivity()).toBe(false);
+    expect(test.controller.getDeadlineMs()).toBeNull();
+    test.controller.update(true, 30);
+    test.controller.disconnectedNow();
+    expect(test.controller.noteActivity()).toBe(false);
+    expect(test.controller.getDeadlineMs()).toBeNull();
+  });
+
+  // Until I stop (MoonBoard's default) keeps every pick lighting, but a phone
+  // left in a bag picks nothing: with no activity the board is let go on time.
+  it('lets go on time with no activity, however long the drive', () => {
+    const test = harness();
+    test.controller.update(true, 30);
+    test.controller.connectedNow();
+    test.advance(10_000);
+    test.controller.noteActivity();
+    const callback = [...test.callbacks.values()].at(-1);
+    test.advance(30_000);
+    callback?.();
+    expect(test.expired).toEqual([40_000]);
   });
 
   it('cancels on disable and timeout changes start a fresh deadline', () => {

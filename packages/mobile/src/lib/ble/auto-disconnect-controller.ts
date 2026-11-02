@@ -55,10 +55,18 @@ export class AutoDisconnectController {
     this.invalidate();
   }
 
-  reset(): void {
-    if (!this.connected || !this.enabled) return;
+  /**
+   * The climber is at the wall: a write landed, the player changed the climb
+   * on screen, or a wall-button press. The deadline starts over from now.
+   * Driving (Until I stop) is no activity of its own, so a phone left in a bag
+   * mid-drive still lets go of the board. Returns whether a deadline re-armed
+   * (false while off or with no link).
+   */
+  noteActivity(): boolean {
+    if (!this.connected || !this.enabled) return false;
     this.invalidate();
     this.arm();
+    return true;
   }
 
   /** Re-check the wall-clock deadline after the app returns to the foreground. */

@@ -27,3 +27,26 @@ export function registerAutoDisconnectDeadlineReader(next: DeadlineReader): () =
 export function readAutoDisconnectDeadlineMs(): number | null {
   return reader?.() ?? null;
 }
+
+/**
+ * The climber's own activity for the same deadline: the player changed the
+ * climb on screen, or a wall-button press. A successful write already counts
+ * (the provider wraps its sender). The provider registers what pushes its
+ * deadline out; with no provider (no board) this does nothing.
+ */
+type ActivityHandler = () => void;
+
+let activityHandler: ActivityHandler | null = null;
+
+/** The provider's handler. Returns the unregister, which only clears its own handler. */
+export function registerAutoDisconnectActivity(next: ActivityHandler): () => void {
+  activityHandler = next;
+  return () => {
+    if (activityHandler === next) activityHandler = null;
+  };
+}
+
+/** Push auto-disconnect's deadline out: the climber is at the wall. */
+export function noteAutoDisconnectActivity(): void {
+  activityHandler?.();
+}

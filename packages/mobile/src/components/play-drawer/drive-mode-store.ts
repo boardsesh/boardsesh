@@ -159,6 +159,17 @@ export function isDriveWindowDue(drive: DriveModeState | null, now = Date.now())
 }
 
 /**
+ * A render's read of a live drive, checked again at the pick being made now.
+ * A keep-lighting window past its end lights nothing, even while the watcher's
+ * timer has not fired: Android pauses JS timers with the activity (#7038), so
+ * the end is read off the wall clock at every pick, never trusted to a timer.
+ * `DriveModeWatcher` still ends the drive and tidies the button.
+ */
+export function drivingAtPick(rendered: boolean, now = Date.now()): boolean {
+  return rendered && !isDriveWindowDue(driveMode, now);
+}
+
+/**
  * The end the window shows: its own, or auto-disconnect's when that comes
  * first (spec B2), since the link drops then and lighting stops with it.
  */
@@ -182,13 +193,18 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-/** Drive Mode Ended, once per drive: whichever exit ran first reports it. */
+/**
+ * Drive Mode Ended, once per drive: whichever exit ran first reports it. A
+ * window that ran out ended at its end, not when a late timer (or the app
+ * coming back) noticed it (#7038), so its duration is the climber's.
+ */
 function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = Date.now()): void {
+  const endedAt = reason === 'window_ended' && ended.expiresAt !== null ? Math.min(now, ended.expiresAt) : now;
   trackDriveModeEnded({
     reason,
     startedBy: ended.startedBy,
     startedAt: ended.startedAt,
-    endedAt: now,
+    endedAt,
     climbsLit: ended.climbsLit,
     inSession: ended.sessionId !== null,
     windowRenewals: ended.windowRenewals,
