@@ -923,7 +923,8 @@
       "a11y": {
         "browseAnnounce": "Stai sfogliando. La parete resta com'è.",
         "backToLive": "Torna alla diretta: {{name}}",
-        "committed": "{{name}} è in parete"
+        "committed": "{{name}} è in parete",
+        "previewFirstAnnounce": "Anteprima, non in parete. Illumina il pannello mette il blocco in parete."
       },
       "backMyPick": "La mia scelta",
       "backOnWall": "In parete",

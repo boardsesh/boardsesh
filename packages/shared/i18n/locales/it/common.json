@@ -753,7 +753,19 @@
         "workout": "Crea un allenamento: Volume, Piramide, Scala o Grado fisso. Imposta un grado, guarda in anteprima i blocchi e chiudili uno alla volta.",
         "crew": "Arrampichi con altre persone? Avvia una session e condividete una sola coda. Chiunque può illuminare il blocco successivo, senza passarsi il telefono.",
         "record": "Le tue ripetizioni finiscono nei grafici qui, in Progressi: distribuzione dei gradi e blocco più duro chiuso. Importa il tuo diario Kilter e Tension da Aurora per partire con la tua storia.",
-        "accessory": "La barra in basso mostra sempre cosa c'è sul pannello. Da lì scorri i blocchi."
+        "accessory": "La barra in basso mostra sempre cosa c'è sul pannello. Da lì scorri i blocchi.",
+        "previewFirst": {
+          "title": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete.",
+          "windowSeconds": "Nei {{seconds}} secondi successivi si illumina anche ogni blocco che scegli.",
+          "windowMinute": "Nel minuto successivo si illumina anche ogni blocco che scegli.",
+          "untilStop": "Da lì in poi ogni blocco che scegli si illumina in parete finché non smetti.",
+          "moonboard": "Su una MoonBoard, da lì in poi ogni blocco che scegli si illumina in parete finché non smetti.",
+          "frost": "Quando il pulsante dice Guidi tu il pannello e brilla dei colori del blocco, ogni blocco che scegli si illumina in parete. Per iniziare, scorri il pulsante verso sinistra, oppure tienilo premuto e scegli Illumina ogni blocco. Toccalo per smettere.",
+          "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. Per iniziare, usa l'azione Illumina ogni blocco. Tocca il pulsante per smettere.",
+          "settings": "Impostazioni di illuminazione",
+          "done": "Ok",
+          "close": "Chiudi il suggerimento"
+        }
       },
       "link": {
         "title": "Porta con te le tue ripetizioni di {{boardName}}",
@@ -822,6 +834,14 @@
         "finishTesting": "Termina il test della PR #{{prNumber}}",
         "options": "Opzioni di aggiornamento",
         "earlyUpdatesHelp": "Gli aggiornamenti anticipati possono avere qualche imperfezione. Le modifiche valgono dal prossimo avvio."
+      },
+      "previewFirstSpotlight": {
+        "title": "Sfoglia i blocchi senza illuminare il pannello",
+        "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e si illuminano anche i blocchi che scegli nei 45 secondi successivi.",
+        "swipe": "Scorri verso sinistra il pulsante del pannello per continuare a illuminare finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete.",
+        "moonboard": "Sulle MoonBoard l'illuminazione continua finché non smetti. Cambia i tempi in Impostazioni › Pannello.",
+        "cta": "Scopri come funziona",
+        "dismiss": "Ok"
       }
     },
     "launchUpdate": {

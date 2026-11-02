@@ -44,8 +44,11 @@ import { useSetting } from '../../../settings';
  * way every other card applies its own look. The row is navigation only and
  * writes nothing — its subtitle says which look you are currently on, so it
  * reads as "go and tune what you have".
+ *
+ * `leadWithLighting` puts the lighting group first, for a climber sent here for
+ * it (the route's `?section=lighting`).
  */
-export function BoardLookScreen() {
+export function BoardLookScreen({ leadWithLighting = false }: { leadWithLighting?: boolean } = {}) {
   const { t } = useTranslation('common');
   const { settings, matchingOptionId, boardseshRendererAvailable, requestedMode, applyPreset, restoreCustomLook } =
     useBoardLookSettings();
@@ -189,6 +192,7 @@ export function BoardLookScreen() {
           sprayWalls,
           moonboardGridLabels,
           lightingSections,
+          leadWithLighting,
         }),
         'board',
       ),
@@ -206,6 +210,7 @@ export function BoardLookScreen() {
       sprayWalls,
       moonboardGridLabels,
       lightingSections,
+      leadWithLighting,
     ],
   );
 

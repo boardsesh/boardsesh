@@ -753,7 +753,19 @@
         "workout": "Bau ein Workout: Volumen, Pyramide, Leiter oder Grad-Fokus. Grad setzen, Runs vorab ansehen, einen nach dem anderen toppen.",
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
-        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder."
+        "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder.",
+        "previewFirst": {
+          "title": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten.",
+          "windowSeconds": "In den {{seconds}} Sekunden danach wird jeder Boulder, den du wählst, auch beleuchtet.",
+          "windowMinute": "In der Minute danach wird jeder Boulder, den du wählst, auch beleuchtet.",
+          "untilStop": "Danach wird jeder Boulder, den du wählst, beleuchtet, bis du aufhörst.",
+          "moonboard": "An einem MoonBoard wird danach jeder Boulder, den du wählst, beleuchtet, bis du aufhörst.",
+          "frost": "Steht auf dem Button Du steuerst das Board und leuchtet er in den Farben des Boulders, wird jeder Boulder beleuchtet, den du wählst. Zum Starten wischst du ihn nach links, oder du hältst ihn gedrückt und wählst Jeden Boulder beleuchten. Tippe ihn an, um aufzuhören.",
+          "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Zum Starten nutzt du die Aktion Jeden Boulder beleuchten. Tippe den Button an, um aufzuhören.",
+          "settings": "Beleuchtung einstellen",
+          "done": "Alles klar",
+          "close": "Tipp schließen"
+        }
       },
       "link": {
         "title": "Nimm deine {{boardName}}-Begehungen mit",
@@ -822,6 +834,14 @@
         "finishTesting": "Test von PR #{{prNumber}} abschließen",
         "options": "Update-Optionen",
         "earlyUpdatesHelp": "Frühe Updates können Fehler haben. Änderungen gelten beim nächsten App-Start."
+      },
+      "previewFirstSpotlight": {
+        "title": "Boulder durchsehen, ohne das Board zu beleuchten",
+        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und die Boulder, die du in den 45 Sekunden danach wählst, werden auch beleuchtet.",
+        "swipe": "Wisch den Board-Button nach links, dann wird weiter beleuchtet, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst.",
+        "moonboard": "Am MoonBoard wird weiter beleuchtet, bis du aufhörst. Die Zeit stellst du unter Einstellungen › Board ein.",
+        "cta": "So funktioniert's",
+        "dismiss": "Alles klar"
       }
     },
     "launchUpdate": {

@@ -88,6 +88,11 @@ import {
   resolveBrowseCaption,
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
+import { resolvePreviewFirstTipInput, usePreviewFirstTip } from './use-preview-first-tip';
+import { WallStateLiveRegion } from './WallStateLiveRegion';
+import { PlayerPreviewTip, type PlayerPreviewTipExit } from '../onboarding/PlayerPreviewTip';
+import { retirePreviewFirstTip } from '../../lib/onboarding/preview-first-tip';
+import { BOARD_LOOK_LIGHTING_SECTION } from '../settings/board-look/board-look-model';
 import { usePresenceClearedClimbUuid, useWallClimb } from './use-wall-climb';
 import { resolveBusyWallHolder } from './busy-wall-question';
 import { formatBusyWallCaption } from './busy-wall-question-text';
@@ -1514,9 +1519,49 @@ export function PlayCore({
     t,
   });
 
-  const { markLatchExit, suppressBrowseAnnouncement } = useWallStateAnnouncer({
+  // Reserve only the first eligible section's header. Without sections, content
+  // plus bottom safe area exactly fills the measured viewport and cannot scroll.
+  // The phone split's pane and the landscape iPad player fit the board to the
+  // viewport's height instead (`computeFitToHeightFirstScreenHeight`).
+  // - The pane always does, whatever its rows hold: its bottom inset clears the
+  //   MiniPlayer capsule (`PhoneSplitPane`), and the first screen pads that band
+  //   so every button ends above the capsule and the first section starts below
+  //   the fold rather than peeking under the capsule.
+  // - The iPad player does only with sections to scroll to, with the controls
+  //   under the board, and with a plain second row that hangs below the fold.
+  //   The wall button, the busy-wall question and Fell / Sent keep their place
+  //   on screen (`shouldFitBoardToHeight`, #6956).
+  const fitsBoardToHeight = shouldFitBoardToHeight({
+    fitBoardToHeight,
+    isPane,
+    hasVisibleSections,
+    controlsAbove,
+    secondaryRow: actionBarLayout.secondaryRow,
+  });
+
+  // The one-shot preview-first card under the wall button (2.7): the first
+  // preview on a board with lights, signed in, while nothing else is asking.
+  const previewFirstTip = usePreviewFirstTip(
+    resolvePreviewFirstTipInput({
+      signedIn: isAuthenticated && !isAnonymous,
+      playerHasWall,
+      wallControl,
+      isPreview,
+      displayedLit,
+      busyWallUp,
+      workoutOutcomeUp: workoutOutcome !== null,
+      boardMismatchUp: showBoardMismatch,
+      trackEndCardUp: trackEndCardClimbUuid !== null && trackEndCardClimbUuid === displayedClimbUuid,
+      hasVisibleSections,
+      tabletop,
+      fitsBoardToHeight,
+      openKey: openTarget?.nonce ?? null,
+    }),
+  );
+  const { markLatchExit, suppressBrowseAnnouncement, noteBrowseNoticeSpoken, liveRegionText } = useWallStateAnnouncer({
     pillState: wallPillState,
     climbName: displayedClimb?.name ?? null,
+    previewFirstDue: previewFirstTip.announcementDue,
   });
 
   // Something silently changed what a swipe does, so say so to a screen reader,
@@ -1530,8 +1575,13 @@ export function PlayCore({
   // about something the climber hasn't got. Read from the wall itself, not the
   // commit label: with no board connected that label offers to connect one.
   const wallReachable = wallClimbUuid != null || lightbulbActive;
+  const previewFirstDeciding = previewFirstTip.deciding;
+  const previewFirstDue = previewFirstTip.announcementDue;
   useEffect(() => {
     if (isAnonymous || !browseLatchActive) return;
+    // The preview-first card may be about to make its first show, and its line
+    // replaces this notice: wait the few milliseconds its seen flag takes.
+    if (previewFirstDeciding) return;
     const claimed = isSharedSession ? claimJoinedBrowseNotice(sessionId) : wallReachable && claimSoloBrowseNotice();
     if (!claimed) return;
     // Spoken on both platforms. The drawer can open straight into a browse (a
@@ -1539,8 +1589,23 @@ export function PlayCore({
     // wall-state announcer to narrate. Its browse sentence stands down when this
     // speaks, so one moment gets one sentence.
     suppressBrowseAnnouncement();
+    // The preview-first line says the same thing for this moment (B1): it speaks
+    // instead, and the notice is spent all the same.
+    if (previewFirstDue) return;
+    noteBrowseNoticeSpoken();
     AccessibilityInfo.announceForAccessibility(t('playView.wallState.joinedBrowseNotice'));
-  }, [isAnonymous, isSharedSession, browseLatchActive, sessionId, wallReachable, suppressBrowseAnnouncement, t]);
+  }, [
+    isAnonymous,
+    isSharedSession,
+    browseLatchActive,
+    sessionId,
+    wallReachable,
+    previewFirstDeciding,
+    previewFirstDue,
+    suppressBrowseAnnouncement,
+    noteBrowseNoticeSpoken,
+    t,
+  ]);
 
   // Leave the browse latch: drop the pinned preview (and the peek anchor + wall
   // flag that ride it) so the drawer re-derives from the committed queue head,
@@ -2264,6 +2329,27 @@ export function PlayCore({
   const handleSeeWorkout = useCallback(() => {
     pushAfterPlayerDismiss(() => router.navigate('/(tabs)/record'));
   }, [pushAfterPlayerDismiss]);
+  // The preview-first card goes for good on any of its exits; Lighting settings
+  // also opens Settings › Board once the player is out of the way.
+  const handlePreviewFirstTipExit = useCallback(
+    (exit: PlayerPreviewTipExit) => {
+      retirePreviewFirstTip();
+      if (exit === 'settings') {
+        // The Board page, opened on its lighting group, where the keep-lighting choice is.
+        pushAfterPlayerDismiss(() =>
+          router.push({ pathname: '/settings/board-look', params: { section: BOARD_LOOK_LIGHTING_SECTION } }),
+        );
+      }
+    },
+    [pushAfterPlayerDismiss],
+  );
+  // The card's height, so expanding the section below it still scrolls that
+  // section (not the card) into view.
+  const [previewFirstTipHeight, setPreviewFirstTipHeight] = useState(0);
+  const handlePreviewFirstTipLayout = useCallback((event: LayoutChangeEvent) => {
+    setPreviewFirstTipHeight(Math.round(event.nativeEvent.layout.height));
+  }, []);
+  const previewFirstTipOffset = previewFirstTip.visible ? previewFirstTipHeight + spacing[3] : 0;
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the first section peek.
   const handleFirstSectionToggle = useCallback(
@@ -2407,7 +2493,10 @@ export function PlayCore({
     !isAnonymous &&
     wallControlFrostHasLeds({ boardType: boardName, hasLeds: !boardIsLedless }, climbGymBoard) &&
     wallControlUsesFrost(wallControl);
-  const wallGlowFrames = wallGlowShown
+  // The preview-first card draws the real wall button frosted in this climb's
+  // colours, so it needs the same hold geometry while it is up.
+  const wallGlowWanted = wallGlowShown || previewFirstTip.visible;
+  const wallGlowFrames = wallGlowWanted
     ? playback.isAnimatable
       ? playback.currentFrameString
       : (displayedClimb?.frames ?? '')
@@ -2420,7 +2509,7 @@ export function PlayCore({
   );
   const holdStateColours = useHoldStateColors(boardName as BoardName, layoutId);
   const wallGlowInput = useMemo<WallGlowInput | null>(() => {
-    if (!wallGlowShown || !boardRenderData) return null;
+    if (!wallGlowWanted || !boardRenderData) return null;
     return buildWallGlowInput({
       parsedHolds: wallGlowParsed,
       roleColors: holdStateColours,
@@ -2431,7 +2520,7 @@ export function PlayCore({
       mirrored: isMirrored,
     });
   }, [
-    wallGlowShown,
+    wallGlowWanted,
     boardRenderData,
     wallGlowParsed,
     holdStateColours,
@@ -2507,25 +2596,7 @@ export function PlayCore({
     handleFirstSectionHeaderLayout,
   });
 
-  // Reserve only the first eligible section's header. Without sections, content
-  // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  // The phone split's pane and the landscape iPad player fit the board to the
-  // viewport's height instead (`computeFitToHeightFirstScreenHeight`).
-  // - The pane always does, whatever its rows hold: its bottom inset clears the
-  //   MiniPlayer capsule (`PhoneSplitPane`), and the first screen pads that band
-  //   so every button ends above the capsule and the first section starts below
-  //   the fold rather than peeking under the capsule.
-  // - The iPad player does only with sections to scroll to, with the controls
-  //   under the board, and with a plain second row that hangs below the fold.
-  //   The wall button, the busy-wall question and Fell / Sent keep their place
-  //   on screen (`shouldFitBoardToHeight`, #6956).
-  const fitsBoardToHeight = shouldFitBoardToHeight({
-    fitBoardToHeight,
-    isPane,
-    hasVisibleSections,
-    controlsAbove,
-    secondaryRow: actionBarLayout.secondaryRow,
-  });
+  // `fitsBoardToHeight` is resolved above, where the preview-first card reads it too.
   const firstScreenPaddingBottom = fitsBoardToHeight && isPane ? insets.bottom : 0;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
   // In tabletop the controls sit between the first screen and the sections.
@@ -2565,8 +2636,9 @@ export function PlayCore({
     (sectionHeight: number) => {
       if (!pendingFirstSectionScrollRef.current) return;
       const target = computeFirstSectionScrollTarget({
-        // In tabletop the controls sit between the first screen and the sections.
-        firstScreenHeight: firstScreenHeight + (tabletop ? tabletopControlsHeight : 0),
+        // In tabletop the controls sit between the first screen and the sections,
+        // and the preview-first card sits above them while it is up.
+        firstScreenHeight: firstScreenHeight + (tabletop ? tabletopControlsHeight : 0) + previewFirstTipOffset,
         topPadding: spacing[3],
         sectionHeight,
         viewport: sheetViewportHeight || windowHeight,
@@ -2576,7 +2648,16 @@ export function PlayCore({
       });
       scrollRef.current?.scrollTo({ y: target, animated: true });
     },
-    [firstScreenHeight, tabletop, tabletopControlsHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
+    [
+      firstScreenHeight,
+      tabletop,
+      tabletopControlsHeight,
+      previewFirstTipOffset,
+      sheetViewportHeight,
+      windowHeight,
+      insets.bottom,
+      insets.top,
+    ],
   );
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
@@ -2706,7 +2787,7 @@ export function PlayCore({
       upNextBadgeCount={listWalkUpNextCount}
       // The board control's one model and one handler, whichever view draws it.
       wallControl={wallControl}
-      wallGlow={wallGlowInput}
+      wallGlow={wallGlowShown ? wallGlowInput : null}
       miniPlayerMirrors={miniPlayerMirrors}
       onWallControlPress={wallControlHandlers.press}
       onWallControlLongPress={wallControlHandlers.longPress}
@@ -3174,9 +3255,24 @@ export function PlayCore({
                       </View>
                     ) : null}
 
+                    {/* The one-shot preview-first card (2.7): the first section
+                      under the board, above Logbook, its headline in the
+                      Logbook peek's slot. Never over the board, and outside the
+                      first screen, so the board keeps its size. */}
+                    {previewFirstTip.visible ? (
+                      <View testID="play-drawer-preview-first-slot" style={styles.previewFirstTipSlot}>
+                        <PlayerPreviewTip
+                          boardName={boardName}
+                          glow={wallGlowInput}
+                          onExit={handlePreviewFirstTipExit}
+                          onLayout={handlePreviewFirstTipLayout}
+                        />
+                      </View>
+                    ) : null}
+
                     {/* Below-fold deferred sections. */}
                     {hasVisibleSections && (
-                      <View>
+                      <View testID="play-drawer-below-fold">
                         {/* The frame the board paints on an animated climb, for Active
                           holds alone (and only while it is on): the sections' own
                           props stay the same between playback frames. */}
@@ -3214,6 +3310,8 @@ export function PlayCore({
                   </>
                 )}
               </ScrollView>
+              {/* Android's preview-first line: always in view, whatever the scroll. */}
+              <WallStateLiveRegion text={liveRegionText} />
               {ownsTopInset && insets.top > 0 ? (
                 <PlayDrawerStatusBarScrim height={insets.top} scrollY={scrollYSV} />
               ) : null}
@@ -3299,6 +3397,11 @@ const styles = StyleSheet.create({
   },
   tabletopBelowFold: {
     paddingTop: PHONE_SPLIT_FOLD_GUTTER,
+  },
+  // Lines up with the Logbook card below it (DeferredSections' own padding).
+  previewFirstTipSlot: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
   },
   // Takes the whole first screen so the board section inside keeps its flex:1
   // share; exists only to give the wall-state callout a sibling it can hide from

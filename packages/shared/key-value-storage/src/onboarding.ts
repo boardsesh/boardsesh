@@ -25,6 +25,12 @@ export const ONBOARDING_TIP_RECORD_KEY = 'onboarding_tip_record_seen';
 // teaches that the bar always mirrors what's on the wall. Fires the first time a
 // current climb exists (so the bar is on screen), then never again.
 export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_seen';
+// One-shot card in the player, under the wall button: climbs open as a preview
+// now (2.7), Put on board lights one, and what the frosted "You are driving the
+// wall" button means. Marked seen the first time it shows; the same flag gates
+// the one queued screen-reader line that goes with it, so a climber hears that
+// line once per install.
+export const ONBOARDING_TIP_PREVIEW_FIRST_KEY = 'onboarding_tip_preview_first_seen';
 // One-shot tip on the Climbs list teaching the quick-actions menu: long-press a
 // climb (or tap the ⋯ button) for queue / tick / playlists and more. Fires once,
 // after the board-reveal banner has had its turn.

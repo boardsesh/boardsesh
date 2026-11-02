@@ -169,6 +169,12 @@ type WallControlButtonProps = {
   glow?: WallGlowInput | null;
   /** The stories' frozen swipe frame. */
   swipePreview?: WallSwipePreview;
+  /**
+   * A picture of the button (the preview-first card's sample): no testIDs, so
+   * tests and Maestro `id:` selectors only ever find the real one. Android's
+   * UiAutomator still lists resource-ids under a hidden subtree.
+   */
+  sample?: boolean;
 };
 
 function WallControlButtonComponent({
@@ -182,6 +188,7 @@ function WallControlButtonComponent({
   onSwipeCancel,
   glow = null,
   swipePreview,
+  sample = false,
 }: WallControlButtonProps) {
   const { brandColors, colorScheme, systemColors } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -262,7 +269,7 @@ function WallControlButtonComponent({
 
   // Nothing to offer (no board selected, no climb): the row keeps its height.
   if (model.state === null) {
-    return <View style={styles.placeholder} testID="play-drawer-wall-control-empty" />;
+    return <View style={styles.placeholder} testID={sample ? undefined : 'play-drawer-wall-control-empty'} />;
   }
 
   // Driving without hold geometry uses the flat live colour.
@@ -317,7 +324,7 @@ function WallControlButtonComponent({
       </View>
       <LargeContentViewer
         testID={
-          rowColors.resting
+          rowColors.resting && !sample
             ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
             : undefined
         }
@@ -349,7 +356,7 @@ function WallControlButtonComponent({
           style={[styles.chevrons, { marginEnd: CHEVRON_FACE_GAP - (compact ? spacing[1] : spacing[2]) }]}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          testID={rowColors.resting ? 'play-drawer-wall-control-swipe-hint' : undefined}
+          testID={rowColors.resting && !sample ? 'play-drawer-wall-control-swipe-hint' : undefined}
         >
           {CHEVRON_ALPHAS.map((alpha) => (
             <Icon
@@ -366,7 +373,7 @@ function WallControlButtonComponent({
         style={[styles.edge, styles.edgeTrailing]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        testID={face && rowColors.resting ? 'play-drawer-wall-control-holder' : undefined}
+        testID={face && rowColors.resting && !sample ? 'play-drawer-wall-control-holder' : undefined}
       >
         {face ? (
           <BoardDriverAvatar size={AVATAR_SIZE} userId={null} uri={face.avatarUrl} name={face.name} status="none" />
@@ -376,7 +383,7 @@ function WallControlButtonComponent({
   );
   const button = (
     <PressableSurface
-      testID="play-drawer-wall-control"
+      testID={sample ? undefined : 'play-drawer-wall-control'}
       onPress={handlePress}
       onLongPress={hold ? handleLongPress : undefined}
       accessibilityActions={accessibilityActions}

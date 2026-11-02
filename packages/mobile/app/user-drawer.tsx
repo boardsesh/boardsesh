@@ -20,6 +20,7 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
+import { hasUnseenPreviewFirstSpotlight } from '../src/lib/preview-first-spotlight';
 import { useClimbModerationEnabled, useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useQaMenu } from '../src/lib/qa/use-qa-menu';
@@ -82,8 +83,11 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
     void Promise.all([
       getLastSeenChangelogDate(),
       spotlightReachable ? hasUnseenOfflineSpotlight() : Promise.resolve(false),
-    ]).then(([lastSeen, spotlightUnseen]) => {
-      if (active) setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen);
+      // The 2.7 preview-first card pinned there, until it has shown once.
+      hasUnseenPreviewFirstSpotlight(),
+    ]).then(([lastSeen, spotlightUnseen, previewFirstUnseen]) => {
+      if (active)
+        setChangelogUnseen(hasUnseenChangelog(latestEntryDate, lastSeen) || spotlightUnseen || previewFirstUnseen);
     });
     return () => {
       active = false;
