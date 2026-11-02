@@ -68,7 +68,8 @@ export const RUNTIME_INPUTS: readonly RuntimeInput[] = [
   { path: 'packages/mobile/plugins', platforms: BOTH },
   { path: 'packages/mobile/modules', platforms: BOTH },
   { path: 'packages/mobile/locales', platforms: BOTH },
-  // expo-target.config.js is a config-plugin source on both platforms.
+  // fingerprint.config.js hashes the whole dir (widget Swift, Info.plist,
+  // strings) on both platforms; it cannot scope a source to iOS (#7215).
   { path: 'packages/mobile/targets', platforms: BOTH },
   { path: 'packages/mobile/ios', platforms: ['ios'] },
   { path: 'packages/mobile/android', platforms: ['android'] },

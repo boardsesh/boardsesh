@@ -69,7 +69,7 @@ jobs:
       - name: Compute screenshot app cache key
         id: appkey
         env:
-          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
+          NATIVE_INPUT_HASH: ${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/targets/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements', '.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts', '.boardsesh/cache-tooling/scripts/select-screenshot-xcode.sh') }}
         run: node --experimental-strip-types .boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts key --native-hash "$NATIVE_INPUT_HASH"
       - name: Restore screenshot dev-client
         id: app-cache
