@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Learn preview browsing and Put on board from fresh Help clips. ([#7232](https://github.com/boardsesh/boardsesh/pull/7232))
 - Clear your queue from the ⋯ menu in the queue. ([#7228](https://github.com/boardsesh/boardsesh/pull/7228))
 - A climb you open from a link or notification while the app starts stays in the mini player. ([#7222](https://github.com/boardsesh/boardsesh/pull/7222))
 - In a crew session, your drive starts only once your own wall lights, not a crewmate's. ([#7221](https://github.com/boardsesh/boardsesh/pull/7221))
@@ -41,6 +42,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- On Android, a board that misses your first Connect tap now gets a second try on its own. ([#4153](https://github.com/boardsesh/boardsesh/pull/4153))
+  When the app moves you to another board and can't reach it, the message now says so.
 - Swiping keeps going past the end of your queue again. ([#7230](https://github.com/boardsesh/boardsesh/pull/7230))
   Swipe back after your queue and you retrace it, climb by climb.
 - Tap the glowing bulb on your Lock Screen to stop driving the wall ([#7214](https://github.com/boardsesh/boardsesh/pull/7214))
