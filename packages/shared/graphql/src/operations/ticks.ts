@@ -39,6 +39,7 @@ export const GET_USER_TICKS = gql`
       boardseshConfidence
       climbedAt
       layoutId
+      boardDisplayName
     }
   }
 `;
@@ -113,6 +114,7 @@ type TickFromGetUserTicks = Pick<
   | 'boardseshConfidence'
   | 'climbedAt'
   | 'layoutId'
+  | 'boardDisplayName'
 >;
 type TickFromSaveTick = Pick<
   Tick,

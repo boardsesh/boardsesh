@@ -732,6 +732,18 @@ describe('buildStatisticsSummary', () => {
     expect(buildStatisticsSummary(profileStats).totalAscents).toBe(42);
   });
 
+  it('labels a spray layout with the wall name from the caller lookup (#5487)', () => {
+    const profileStats = {
+      totalDistinctClimbs: 6,
+      layoutStats: [
+        { layoutKey: 'spray-941', boardType: 'spray', layoutId: 941, distinctClimbCount: 6, gradeCounts: [] },
+      ],
+    };
+    const names = new Map([['spray-941', 'Garage']]);
+    const { layoutPercentages } = buildStatisticsSummary(profileStats, 'v-grade', names);
+    expect(layoutPercentages[0].displayName).toBe('Spray wall · Garage');
+  });
+
   it('filters out layouts with 0 distinctClimbCount', () => {
     const profileStats = {
       totalDistinctClimbs: 10,

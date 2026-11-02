@@ -180,8 +180,9 @@ export type LayoutPercentage = {
 export function buildStatisticsSummary(
   profileStats: GetUserProfileStatsQueryResponse['userProfileStats'] | null,
   gradeFormat: GradeDisplayFormat = 'v-grade',
+  layoutNames?: Map<string, string>,
 ): { totalAscents: number; layoutPercentages: LayoutPercentage[] } {
-  const raw = buildStatisticsSummaryRaw(profileStats, gradeFormat);
+  const raw = buildStatisticsSummaryRaw(profileStats, gradeFormat, layoutNames);
   return {
     totalAscents: raw.totalAscents,
     layoutPercentages: raw.layoutPercentages.map((layout) => ({
