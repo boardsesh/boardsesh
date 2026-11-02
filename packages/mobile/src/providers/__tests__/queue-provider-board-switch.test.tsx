@@ -2,7 +2,12 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import {
+  reanchorPlaylistSuggestionSource,
+  type Climb,
+  type ClimbQueueItem,
+  type PlaylistSuggestionSource,
+} from '@boardsesh/queue';
 
 // Issue #5099: after the climber switches boards, the held suggestion source
 // still belongs to the board they left. `next` kept walking that board's list —
@@ -220,7 +225,14 @@ vi.mock('@boardsesh/playlists-react', async () => ({
   usePlaylistClimbActivation: () => async () => {},
 }));
 
+import {
+  computeNavigationTargetsWithSuggestions,
+  resolveNavigationSuggestionSource,
+  resolvePreviewStepSource,
+} from '@boardsesh/play-view';
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
+import { resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
+import { resolvePreviewStepCommit } from '../../components/play-drawer/preview-step-commit';
 import { SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../queue/use-queue-persistence';
 import { setSetting } from '../../settings/hooks';
 import { resetDriveModeForTests, startAlwaysDrive } from '../../components/play-drawer/drive-mode-store';
@@ -239,6 +251,7 @@ type Snapshot = {
   refreshPlaylistSuggestionSource: ReturnType<typeof useQueue>['refreshPlaylistSuggestionSource'];
   dispatchWidgetNavigation: ReturnType<typeof useQueue>['dispatchWidgetNavigation'];
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
+  reorderQueue: ReturnType<typeof useQueue>['reorderQueue'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -254,6 +267,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       refreshPlaylistSuggestionSource: queue.refreshPlaylistSuggestionSource,
       dispatchWidgetNavigation: queue.dispatchWidgetNavigation,
       addToQueue: queue.addToQueue,
+      reorderQueue: queue.reorderQueue,
     });
   }, [
     queue.state,
@@ -264,6 +278,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.refreshPlaylistSuggestionSource,
     queue.dispatchWidgetNavigation,
     queue.addToQueue,
+    queue.reorderQueue,
     onSnapshot,
   ]);
   return null;
@@ -1194,6 +1209,41 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     expect(latest().playlistSuggestionSource?.resume).toBeUndefined();
   });
 
+  // #7227 re-review: the widget's step from the last Up next climb back onto
+  // the list records that climb on the detour, so Previous retraces from it,
+  // not from a climb a reorder put between it and the list climb since.
+  it('retraces from the Up next climb the widget stepped off, past a climb a reorder put behind it', async () => {
+    const s3Entry: ClimbQueueItem = { uuid: 'item-s3', climb: s3, suggested: true };
+    const playLastX = makeItem('item-x', makeClimb('x', 'kilter', 1));
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [tapped, queuedFirst, queuedSecond, s3Entry],
+      currentClimbQueueItem: tapped,
+      playlistSuggestionSource: results,
+      savedAt: '2026-10-25T00:00:00.000Z',
+    });
+    await renderOnTheTappedClimb();
+    const queuedUuids = () => latest().state.queue.map(({ uuid }) => uuid);
+
+    act(() => latest().dispatchWidgetNavigation(queuedFirst, 'widget-next-1'));
+    act(() => latest().dispatchWidgetNavigation(queuedSecond, 'widget-next-2'));
+    act(() => latest().dispatchWidgetNavigation(s3Entry, 'widget-next-3'));
+    expect(latest().state.currentClimbQueueItem).toBe(s3Entry);
+    expect(latest().playlistSuggestionSource?.detour).toEqual({
+      climbUuid: 's2',
+      queueItemUuid: 'item-s2',
+      lastUpNextQueueItemUuid: 'item-q2',
+    });
+
+    await act(async () => {
+      await latest().addToQueue(playLastX);
+    });
+    act(() => latest().reorderQueue('item-x', 4, 3));
+    expect(queuedUuids()).toEqual(['item-s2', 'item-q1', 'item-q2', 'item-x', 'item-s3']);
+
+    act(() => latest().previousClimb());
+    expect(latest().state.currentClimbQueueItem).toBe(queuedSecond);
+  });
+
   // Not driving (solo or in a crew): the swipe into Up next was a look that
   // walked the queue, and Put on the wall commits the queued entry it reached.
   it('keeps the list place when a looked-at Up next climb goes up on the wall', async () => {
@@ -1264,6 +1314,250 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     expect(latest().playlistSuggestionSource).toBeNull();
   });
 
+  // #7227 review: solo, outside the now-slot percent, a look carries the list
+  // into Up next, and Put on board (or a step once a drive starts) commits a
+  // queued workout climb with that list. A commit with a list prunes the
+  // `suggested` climbs after it, which would drop the rest of the workout;
+  // `keepQueue` puts the queued climb up as Next does instead.
+  describe('a queued climb a look carried a list to (#7227)', () => {
+    const limit1: ClimbQueueItem = { ...makeItem('item-limit-1', makeClimb('limit-1', 'kilter', 1)), suggested: true };
+    const limit2: ClimbQueueItem = { ...makeItem('item-limit-2', makeClimb('limit-2', 'kilter', 1)), suggested: true };
+    const lookSource = { ...results, resume: { climbUuid: 's2', queueItemUuid: 'item-s2' } };
+    const queuedUuids = () => latest().state.queue.map(({ uuid }) => uuid);
+
+    beforeEach(() => {
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+        queue: [tapped, limit1, limit2],
+        currentClimbQueueItem: tapped,
+        playlistSuggestionSource: results,
+        savedAt: '2026-10-25T00:00:00.000Z',
+      });
+    });
+
+    it('keeps the rest of the workout queued', async () => {
+      await renderOnTheTappedClimb();
+      act(() =>
+        latest().setCurrentClimb(limit1, {
+          playlistSuggestionSource: lookSource,
+          keepQueue: true,
+          trigger: 'put_on_wall',
+        }),
+      );
+      expect(latest().state.currentClimbQueueItem).toBe(limit1);
+      expect(queuedUuids()).toEqual(['item-s2', 'item-limit-1', 'item-limit-2']);
+      expect(latest().playlistSuggestionSource?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+      // Next plays the rest of the workout, then the list.
+      act(() => latest().nextClimb());
+      expect(latest().state.currentClimbQueueItem).toBe(limit2);
+      act(() => latest().nextClimb());
+      expect(currentClimbUuid()).toBe('s3');
+    });
+
+    it('prunes after it without keepQueue, as a commit with a list always has', async () => {
+      await renderOnTheTappedClimb();
+      act(() => latest().setCurrentClimb(limit1, { playlistSuggestionSource: lookSource, trigger: 'put_on_wall' }));
+      expect(queuedUuids()).toEqual(['item-s2', 'item-limit-1']);
+    });
+
+    // A list tap opens its climb with a fresh list that never entered Up next:
+    // it ends the earlier pass as a commit with a list always has.
+    it('still prunes after a list tap’s climb, whose list never went through Up next', async () => {
+      await renderOnTheTappedClimb();
+      const freshS3: ClimbQueueItem = { ...makeItem('fresh-s3', s3), suggested: true };
+      act(() =>
+        latest().setCurrentClimb(freshS3, {
+          playlistSuggestionSource: { ...results, activatedClimbUuid: 's3' },
+          keepQueue: true,
+          trigger: 'put_on_wall',
+        }),
+      );
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('fresh-s3');
+      expect(queuedUuids()).toEqual(['item-s2', 'fresh-s3']);
+    });
+
+    // #7227 re-review: the look played the workout in Up next and came back to
+    // the list as a peek of s3. Its list holds the detour, so the peek goes up
+    // as Next would put it up: the workout stays queued.
+    it('keeps the workout when a peek the look reached through Up next goes up', async () => {
+      await renderOnTheTappedClimb();
+      const freshS3: ClimbQueueItem = { ...makeItem('fresh-s3', s3), suggested: true };
+      act(() =>
+        latest().setCurrentClimb(freshS3, {
+          playlistSuggestionSource: {
+            ...results,
+            activatedClimbUuid: 's3',
+            detour: { climbUuid: 's2', queueItemUuid: 'item-s2' },
+          },
+          keepQueue: true,
+          historyCopy: 'fresh',
+          trigger: 'put_on_wall',
+        }),
+      );
+      expect(latest().state.currentClimbQueueItem?.uuid).toBe('fresh-s3');
+      expect(queuedUuids()).toEqual(['item-s2', 'fresh-s3', 'item-limit-1', 'item-limit-2']);
+    });
+
+    /**
+     * The player's look off the climb on the wall, step by step, with the real
+     * navigation rules: each step lands as a preview carrying the list it
+     * walked (`resolvePreviewStepSource`), as PlayCore and the selection
+     * controller hand it on, marked as a look's from the first step off the
+     * climb on the wall. Returns where the look stands and the list it carries,
+     * plus the next step's target and the list that step carries, the same way.
+     */
+    function look(direction: 'next' | 'previous', steps: number) {
+      const { queue, currentClimbQueueItem } = latest().state;
+      const committedSource = latest().playlistSuggestionSource;
+      let previewItem: ClimbQueueItem | null = null;
+      let previewSource: PlaylistSuggestionSource | null = null;
+      const stepOnce = () => {
+        const source = resolveNavigationSuggestionSource({
+          previewItem,
+          previewSource,
+          committedItem: currentClimbQueueItem,
+          committedSource,
+        });
+        const from = previewItem ?? currentClimbQueueItem;
+        const targets = computeNavigationTargetsWithSuggestions(queue, from, source);
+        const forward = direction === 'next';
+        return {
+          nextItem: forward ? targets.nextItem : targets.prevItem,
+          nextSource: resolvePreviewStepSource(source, forward ? targets.nextTrackResume : targets.prevTrackResume, {
+            steppedOffQueueItemUuid: from?.uuid,
+            offWall: previewItem === null,
+          }),
+        };
+      };
+      for (let step = 0; step < steps; step += 1) {
+        const { nextItem, nextSource } = stepOnce();
+        previewItem = nextItem;
+        previewSource = nextSource;
+      }
+      return { previewItem, previewSource, ...stepOnce() };
+    }
+    const lookNext = (steps: number) => look('next', steps);
+
+    // The review's repro: the look walks limit-1, limit-2, then a peek of s3,
+    // and Put on board puts that peek up with the list it carries.
+    it('keeps the workout when Put on board commits the peek the look walked to', async () => {
+      await renderOnTheTappedClimb();
+      const { previewItem, previewSource } = lookNext(3);
+      expect(previewItem?.uuid).toBe('playlist-peek:s3');
+      expect(previewSource?.detour).toMatchObject({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+      if (!previewItem || !previewSource) throw new Error('the look never reached the peek');
+
+      // What the selection controller's Put on board sends for that preview.
+      const { item } = resolveCommittableQueueItem(previewItem);
+      act(() =>
+        latest().setCurrentClimb(item, {
+          playlistSuggestionSource: reanchorPlaylistSuggestionSource(previewSource, 's3'),
+          keepQueue: true,
+          historyCopy: 'fresh',
+          trigger: 'put_on_wall',
+        }),
+      );
+      expect(currentClimbUuid()).toBe('s3');
+      expect(queuedUuids()).toEqual(['item-s2', item.uuid, 'item-limit-1', 'item-limit-2']);
+    });
+
+    // The same look, with a drive starting while it stands on limit-2: Next
+    // lights the peek of s3 the way a swipe that lights puts it up.
+    it('keeps the workout when a drive starts mid-look and Next lights the list', async () => {
+      await renderOnTheTappedClimb();
+      const { previewItem, nextItem, nextSource } = lookNext(2);
+      expect(previewItem).toBe(limit2);
+      expect(nextItem?.uuid).toBe('playlist-peek:s3');
+      if (!nextItem) throw new Error('nothing after limit-2');
+
+      const { item, options } = resolvePreviewStepCommit({
+        previewSuggestionSource: nextSource,
+        targetItem: nextItem,
+        direction: 'next',
+      });
+      act(() => latest().setCurrentClimb(item, options));
+      expect(currentClimbUuid()).toBe('s3');
+      expect(queuedUuids()).toEqual(['item-s2', item.uuid, 'item-limit-1', 'item-limit-2']);
+    });
+
+    // #7227 re-review: a look that goes BACK up the list never enters Up next,
+    // so its list holds no resume and no detour. It began off the climb on the
+    // wall all the same, and its list says so: Put on board keeps the workout,
+    // as Previous from the wall would.
+    describe('back up the list', () => {
+      const s0 = makeClimb('s0', 'kilter', 1);
+      const longer: PlaylistSuggestionSource = { ...kilterSource([s0, s1, s2, s3, s4], s2), label: 'Search results' };
+
+      beforeEach(() => {
+        queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+          queue: [tapped, limit1, limit2],
+          currentClimbQueueItem: tapped,
+          playlistSuggestionSource: longer,
+          savedAt: '2026-10-25T00:00:00.000Z',
+        });
+      });
+
+      it('keeps the workout when Put on board commits the peek the look stepped back to', async () => {
+        await renderOnTheTappedClimb();
+        const { previewItem, previewSource } = look('previous', 1);
+        expect(previewItem?.uuid).toBe('playlist-peek:s1');
+        expect(previewSource).toMatchObject({ lookOffWall: true });
+        expect(previewSource?.resume ?? previewSource?.detour).toBeUndefined();
+        if (!previewItem || !previewSource) throw new Error('the look never reached the peek');
+
+        const { item } = resolveCommittableQueueItem(previewItem);
+        act(() =>
+          latest().setCurrentClimb(item, {
+            playlistSuggestionSource: reanchorPlaylistSuggestionSource(previewSource, 's1'),
+            keepQueue: true,
+            historyCopy: 'fresh',
+            trigger: 'put_on_wall',
+          }),
+        );
+        expect(currentClimbUuid()).toBe('s1');
+        expect(queuedUuids()).toEqual(['item-s2', item.uuid, 'item-limit-1', 'item-limit-2']);
+        // The list went up without the look's mark.
+        expect(latest().playlistSuggestionSource).toMatchObject({
+          playlistUuid: 'climblist',
+          activatedClimbUuid: 's1',
+        });
+        expect(latest().playlistSuggestionSource).not.toHaveProperty('lookOffWall');
+        expect(latest().state.playlistSuggestionSource).not.toHaveProperty('lookOffWall');
+      });
+
+      it('keeps the workout when a drive starts mid-look and Previous lights the list', async () => {
+        await renderOnTheTappedClimb();
+        const { previewItem, nextItem, nextSource } = look('previous', 1);
+        expect(previewItem?.uuid).toBe('playlist-peek:s1');
+        expect(nextItem?.uuid).toBe('playlist-peek:s0');
+        if (!nextItem) throw new Error('nothing before s1');
+
+        const { item, options } = resolvePreviewStepCommit({
+          previewSuggestionSource: nextSource,
+          targetItem: nextItem,
+          direction: 'previous',
+        });
+        act(() => latest().setCurrentClimb(item, options));
+        expect(currentClimbUuid()).toBe('s0');
+        expect(queuedUuids()).toEqual(['item-s2', item.uuid, 'item-limit-1', 'item-limit-2']);
+      });
+
+      // The control: the same peek opened by a list tap carries a list of its
+      // own, never marked, and still ends the earlier pass.
+      it('still prunes when a list tap’s preview of the same climb goes up', async () => {
+        await renderOnTheTappedClimb();
+        const freshS1: ClimbQueueItem = { ...makeItem('fresh-s1', s1), suggested: true };
+        act(() =>
+          latest().setCurrentClimb(freshS1, {
+            playlistSuggestionSource: { ...longer, activatedClimbUuid: 's1' },
+            keepQueue: true,
+            trigger: 'put_on_wall',
+          }),
+        );
+        expect(queuedUuids()).toEqual(['item-s2', 'fresh-s1']);
+      });
+    });
+  });
+
   // Codex review on #6798: the swipe down the list and back leaves the list's
   // own entries between the climb Up next was played from and Up next.
   it('retraces Up next past the list entries a swipe down and back left behind', async () => {
@@ -1300,7 +1594,12 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     act(() => latest().nextClimb());
     expect(currentClimbUuid()).toBe('s2');
     expect(queuedClimbs()).toEqual(['s1', 's2', 's3', 'x', 's2']);
-    expect(latest().playlistSuggestionSource?.detour).toEqual({ climbUuid: 's1', queueItemUuid: 'item-s1' });
+    // The detour names the Up next climb Next stepped off, where Previous starts (#7227).
+    expect(latest().playlistSuggestionSource?.detour).toEqual({
+      climbUuid: 's1',
+      queueItemUuid: 'item-s1',
+      lastUpNextQueueItemUuid: 'item-x',
+    });
 
     // Previous follows the walk back: X, then s1, where the detour started.
     act(() => latest().previousClimb());

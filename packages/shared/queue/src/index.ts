@@ -17,6 +17,7 @@ export type {
   PlaylistSuggestionSource,
   PlaylistTrackContinuation,
   PlaylistTrackResume,
+  PlaylistTrackDetour,
   PlaylistTrackPage,
   SetCurrentClimbOptions,
   SetCurrentClimbTrigger,
@@ -101,6 +102,8 @@ export {
   withPlaylistTrackResume,
   withPlaylistTrackPlace,
   samePlaylistTrackResume,
+  asLookOffWall,
+  withoutLookOffWall,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';
 

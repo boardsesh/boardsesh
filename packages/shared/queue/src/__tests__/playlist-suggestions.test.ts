@@ -12,6 +12,8 @@ import {
   withPlaylistTrackResume,
   withPlaylistTrackPlace,
   samePlaylistTrackResume,
+  asLookOffWall,
+  withoutLookOffWall,
 } from '../playlist-suggestions';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from '../types';
 
@@ -413,6 +415,55 @@ describe('withPlaylistTrackResume', () => {
     expect(withPlaylistTrackPlace(fresh, back)).toEqual({ ...fresh, detour: resume });
     // Nothing to carry: the fresh copy itself.
     expect(withPlaylistTrackPlace(fresh, track)).toBe(fresh);
+  });
+
+  // #7227 review: Previous retraces from the Up next climb the walk stepped
+  // off, not from whatever is queued last by then.
+  it('records the Up next climb a step back onto the list stepped off', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    const back = withPlaylistTrackResume(walking, null, 'item-up-next');
+    expect(back.detour).toEqual({ ...resume, lastUpNextQueueItemUuid: 'item-up-next' });
+    // The list climb's own entry is no Up next climb: nothing recorded.
+    expect(withPlaylistTrackResume(walking, null, 'item-b').detour).toEqual(resume);
+    // Into Up next again, the detour and what it recorded go.
+    expect('detour' in withPlaylistTrackResume(back, resume, 'item-b')).toBe(false);
+  });
+
+  it('carries the recorded climb onto a fresh copy of the list', () => {
+    const fresh = createPlaylistSuggestionSource({
+      playlistUuid: 'p',
+      activatedClimb: climbs[0],
+      climbs,
+      boardKey: 'k',
+    });
+    const back = withPlaylistTrackResume(withPlaylistTrackResume(track, resume), null, 'item-up-next');
+    const unrecorded = withPlaylistTrackResume(withPlaylistTrackResume(track, resume), null);
+    expect(withPlaylistTrackPlace(withPlaylistTrackPlace(fresh, unrecorded), back).detour).toEqual(back.detour);
+  });
+});
+
+// #7227 re-review: the list a look off the climb on the wall carries says so,
+// and the queue holds a list that went up without the mark.
+describe('asLookOffWall / withoutLookOffWall', () => {
+  const climbs = [makeClimb('a'), makeClimb('b'), makeClimb('c')];
+  const track = createPlaylistSuggestionSource({ playlistUuid: 'p', activatedClimb: climbs[0], climbs, boardKey: 'k' });
+  const resume = { climbUuid: 'b', queueItemUuid: 'item-b' };
+
+  it('marks a copy, keeping everything else, and leaves the list it was given alone', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    const look = asLookOffWall(walking);
+    expect(look).toEqual({ ...walking, lookOffWall: true });
+    expect('lookOffWall' in walking).toBe(false);
+    // Already marked: the same list.
+    expect(asLookOffWall(look)).toBe(look);
+  });
+
+  it('drops the mark and nothing else, and hands an unmarked list back as it is', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    const committed = withoutLookOffWall(asLookOffWall(walking));
+    expect(committed).toEqual(walking);
+    expect('lookOffWall' in committed).toBe(false);
+    expect(withoutLookOffWall(track)).toBe(track);
   });
 });
 

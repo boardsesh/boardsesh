@@ -138,7 +138,19 @@ export type PlaylistSuggestionSource = {
    * `withPlaylistTrackResume` alone: clearing `resume` moves it here, setting a
    * new one drops it. Client-only, like the rest of the track.
    */
-  detour?: PlaylistTrackResume;
+  detour?: PlaylistTrackDetour;
+  /**
+   * Set on the list a look off the climb on the wall carries (issue #7227): a
+   * preview that began as a swipe, Next or Previous from the committed climb,
+   * walking the list that climb is on. The look's steps, and the last pick it
+   * leaves on the bar, keep it. Its Put on board, or a step once a drive
+   * starts, then leaves the queue as Next would (`keepQueue`), whichever way
+   * the look went: forward through Up next, or back up the list. A list opened
+   * any other way (a list tap, a suggestion, the board sheet) never has it.
+   * Only a preview's list carries it: the queue drops it when the list goes
+   * up. Client-only, like the rest of the track.
+   */
+  lookOffWall?: true;
 };
 
 /**
@@ -155,6 +167,20 @@ export type PlaylistSuggestionSource = {
 export type PlaylistTrackResume = {
   climbUuid: string;
   queueItemUuid: string;
+};
+
+/**
+ * A walk's last stretch of Up next. See {@link PlaylistSuggestionSource.detour}.
+ *
+ * `lastUpNextQueueItemUuid` is the Up next entry the walk stepped off when it
+ * came back to the list (issue #7227), where Previous starts retracing. Without
+ * it Previous takes everything queued after the entry the walk left from as
+ * the stretch, so a climb a crewmate added to Up next meanwhile, or one a
+ * reorder moved there, reads as the last climb played. Absent on a detour from
+ * before it was recorded, or when the step had no queued climb to name.
+ */
+export type PlaylistTrackDetour = PlaylistTrackResume & {
+  lastUpNextQueueItemUuid?: string;
 };
 
 /** Where a track's next page comes from. See {@link PlaylistSuggestionSource}. */
@@ -223,6 +249,21 @@ export type SetCurrentClimbOptions = {
    * deep link) never borrows the track (#5403).
    */
   walkedPeek?: boolean;
+  /**
+   * With `playlistSuggestionSource`: a step along a list, which leaves the
+   * queue as Next does (issue #7227). Passed by a preview's step that lights
+   * and by Put on board from a preview with a list, which can now land on an
+   * Up next climb, or on the list after walking one. Without it, a solo commit
+   * with a list drops the `suggested` climbs after the new current climb, which
+   * ends an earlier pass of a list but would also drop a workout's queued
+   * climbs. The queue stays for a look off the climb on the wall (its list's
+   * `lookOffWall`), when the climb is already in the queue, or when the source
+   * holds a `resume` or a `detour` (the walk went through Up next). A climb
+   * not yet queued along a list opened another way (a list tap, its peeks)
+   * still prunes as before. Ignored in now-slot mode and in a session, where
+   * nothing is pruned.
+   */
+  keepQueue?: boolean;
   trigger?: SetCurrentClimbTrigger;
   /**
    * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the
