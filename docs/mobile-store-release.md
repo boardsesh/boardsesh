@@ -531,7 +531,8 @@ A busy store is reported as deferred; retry requires another explicit dispatch.
 
 All public writes keep their existing queued store locks and identity checks. Rejected
 versions, custom product pages, staged rollouts, and release-control changes remain
-explicit operations. Merges never authorize them.
+explicit operations. Merges never authorize them. A phased release doesn't use this
+workflow: see Phased release: hold at 5% (below).
 
 ### Submitting by hand
 
@@ -611,28 +612,46 @@ the audit after all upload jobs finish.
 A native release reaches climbers in phases, and it stops at 5% until connecting
 to a board on it looks no worse than on the store version.
 
-1. **Start in phases.** App Store: turn on phased release for automatic updates
-   on the version in App Store Connect before submitting it for review. The
-   submission workflow sets AFTER_APPROVAL, so the version goes live as soon as
-   Apple approves it, and nothing in this repo turns phased release on. Apple's
-   percentage covers automatic updates only; anyone can still update by hand.
-   Google Play: release with `rollout_percent=5` through Android Production
-   Release (above), not the combined submission, which releases at 100%.
-2. **Turn the connect alerts on.** They sit on the PostHog dashboard
+The combined Mobile Store Submission (above) can't start a phased release on
+either store. It releases Android at 100%, and Android Production Release can't
+shrink a completed release afterwards. Its "Push listing text and What's New"
+step runs deliver, which removes an App Store phased release it wasn't asked
+for: deliver's `phased_release` option defaults to false, and false deletes a
+phased release the version already has. So a phased release goes through the two
+single-store workflows, Android first:
+
+1. **Release Android at 5%.** Dispatch Android Production Release (above) with
+   the exact versionCode, `rollout_percent=5` and `apply`, before anything else
+   writes Android production. If the combined submission runs for the same build
+   pair later, it reports Android `done` (production already carries the build)
+   and leaves Android alone.
+2. **Submit iOS with phased release on.** Let the store draft and its listing
+   text push finish, then turn on phased release for automatic updates on the
+   version in App Store Connect. Submit with App Store Review Submission (below),
+   which writes no listing text. Any later listing text push to the editable
+   version (Mobile Store Metadata, a new draft, the combined submission) removes
+   the phased release again, so check it is still on right before you submit.
+   Apple's percentage covers automatic updates only; anyone can still update by
+   hand.
+3. **Turn the connect alerts on.** They sit on the PostHog dashboard
    [Boardsesh 2.7 connect release watch](https://us.posthog.com/project/412845/dashboard/2293063)
    and were created switched off, so nobody gets paged outside a release.
-3. **Hold at 5%.** On the App Store that is day 3 of the phased release: pause
+4. **Hold at 5%.** On the App Store that is day 3 of the phased release: pause
    it there. On Play, leave `rollout_percent` at 5.
-4. **Go on once the connect alerts have been quiet for 48 hours.** Resume the
+5. **Go on once the connect alerts have been quiet for 48 hours.** Resume the
    App Store phased release, and dispatch Android Production Release again with
    a higher `rollout_percent`. If an alert fires, keep holding and find the
    cause on the dashboard's charts first.
-5. **Turn the alerts off** once both stores reach 100%.
+6. **Turn the alerts off** once both stores reach 100%.
 
 The four alerts read the dashboard's "Connect alerts source" table. It compares
 the release (2.7.0 and up) with the store version (2.6.x) on each OS over the
-trailing 7 days, native production only, internal accounts left out. Each alert
-checks once a day.
+trailing 7 days, native production only, internal accounts left out. iPadOS
+counts as iOS, so the table has two rows: iOS and Android. Each alert checks
+once a day. Because the window is the trailing 7 days, an alert that fired stays
+red for up to a week after the bad events, even once a fix lands. Read the
+daily charts to see whether a fix worked; the alert clears once the bad days
+leave the window.
 
 | Alert           | Fires when, on any OS                                                                                                                                            |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -652,6 +671,11 @@ that OS, so one climber retrying can't fire an alert and a thin day can't clear
 one. Before calling the alerts quiet, check that the `release_*_climbers`
 columns read 10 or more for iOS and Android. If they don't after 48 hours, keep
 holding; Apple lets a phased release pause for up to 30 days in total.
+
+The three comparisons also read 0 while the store version has fewer than 20
+events of its own on that OS (the `store_*` columns). Once nearly everyone has
+updated past the store version, those alerts can't fire and their quiet means
+nothing; by then the release should be at 100% and the alerts off.
 
 Before the next phased release, move the version floors: `2.7.0` and `2.6.0` in
 the alert source's SQL, and the `2.6.0` floor on the dashboard's charts. What
@@ -764,7 +788,10 @@ after the shipped fingerprint moves on.
 1. Merge native work into main and wait for its stamp and tester builds of the open version.
 2. Check Discord Users assignment, beta-review state, and Android tester availability.
 3. QA the exact uploaded candidates and inspect their drafts, listing, and screenshots.
-4. Plan the explicit build pair, then deliberately submit it through the manual workflow.
+4. Plan the explicit build pair, then submit it in phases: Android at 5% through
+   Android Production Release first, then iOS with phased release on through App
+   Store Review Submission (Phased release: hold at 5%, above). The combined manual
+   workflow releases both stores at 100%.
 5. Confirm public availability and immutable accepted-build anchors after store approval.
    The anchor closes the version; the next native merge opens the next patch.
 6. Hold the phased release at 5% until the connect alerts stay quiet for 48 hours
