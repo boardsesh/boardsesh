@@ -923,7 +923,8 @@
       "a11y": {
         "browseAnnounce": "Exploration. Le mur ne bouge pas.",
         "backToLive": "Retour au mur : {{name}}",
-        "committed": "{{name}} est sur le mur"
+        "committed": "{{name}} est sur le mur",
+        "previewFirstAnnounce": "Aperçu, pas allumé au mur. Touche Allumer sur la board pour l'allumer."
       },
       "backMyPick": "Mon choix",
       "backOnWall": "Au mur",

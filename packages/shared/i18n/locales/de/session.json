@@ -923,7 +923,8 @@
       "a11y": {
         "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
         "backToLive": "Zurück zu live: {{name}}",
-        "committed": "{{name}} ist an der Wand"
+        "committed": "{{name}} ist an der Wand",
+        "previewFirstAnnounce": "Vorschau, nicht am Board beleuchtet. Am Board beleuchten bringt den Boulder zum Leuchten."
       },
       "backMyPick": "Meine Wahl",
       "backOnWall": "Am Board",

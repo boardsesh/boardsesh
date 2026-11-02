@@ -11,6 +11,7 @@ import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
 import { Text } from '../src/components/Text';
 import { OfflineSpotlightCard } from '../src/components/offline/OfflineSpotlightCard';
+import { PreviewFirstSpotlightCard } from '../src/components/onboarding/PreviewFirstSpotlightCard';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import {
@@ -308,6 +309,10 @@ export default function ChangelogScreen() {
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.intro}>
                 {t('mobile.changelog.intro')}
               </Text>
+              {/* 2.7: climbs open as a preview. Pinned for the same reason,
+                    translated; it goes on dismiss or 30 days after it first
+                    showed. */}
+              <PreviewFirstSpotlightCard style={styles.spotlight} />
               {/* Pinned above the generated timeline — see OfflineSpotlightCard
                     for why it isn't a changelog entry. Renders itself away once
                     the user has a board offline. */}

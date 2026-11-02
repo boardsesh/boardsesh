@@ -923,7 +923,8 @@
       "a11y": {
         "browseAnnounce": "Explorando. El muro sigue como está.",
         "backToLive": "Volver al muro: {{name}}",
-        "committed": "{{name}} está en el muro"
+        "committed": "{{name}} está en el muro",
+        "previewFirstAnnounce": "Vista previa, no está en el plafón. Poner en el plafón enciende el bloque."
       },
       "backMyPick": "Mi elección",
       "backOnWall": "En el plafón",

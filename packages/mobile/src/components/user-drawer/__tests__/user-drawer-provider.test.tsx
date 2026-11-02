@@ -203,6 +203,9 @@ vi.mock('../../../lib/changelog-seen', () => changelogSeen);
 vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
   hasUnseenOfflineSpotlight: async () => false,
 }));
+// SecureStore-backed; the 2.7 preview-first spotlight lights the pill until it has shown once.
+const previewFirstSpotlight = vi.hoisted(() => ({ hasUnseenPreviewFirstSpotlight: vi.fn(async () => false) }));
+vi.mock('../../../lib/preview-first-spotlight', () => previewFirstSpotlight);
 // Pulls PostHog into the graph; the pill only asks it whether the spotlight
 // could render at all.
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -844,6 +847,13 @@ describe('user-drawer route defers each action until the route unmounts', () => 
 
     // The pill (userDrawer.newBadge) renders only once the mount read of
     // getLastSeenChangelogDate resolves and flips changelogUnseen to true.
+    expect(await screen.findByText('New')).toBeTruthy();
+  });
+
+  it('shows the "New" pill while the preview-first spotlight has never shown', async () => {
+    previewFirstSpotlight.hasUnseenPreviewFirstSpotlight.mockResolvedValueOnce(true);
+    render(<Harness showScreen />);
+
     expect(await screen.findByText('New')).toBeTruthy();
   });
 

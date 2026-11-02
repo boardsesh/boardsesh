@@ -1025,7 +1025,19 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
+        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí.",
+        "previewFirst": {
+          "title": "Un toque abre una vista previa. Poner en el plafón enciende el bloque.",
+          "windowSeconds": "Durante los {{seconds}} segundos siguientes, cada bloque que elijas también se enciende.",
+          "windowMinute": "Durante el minuto siguiente, cada bloque que elijas también se enciende.",
+          "untilStop": "Después, cada bloque que elijas se enciende hasta que pares.",
+          "moonboard": "En un MoonBoard, cada bloque que elijas después se enciende hasta que pares.",
+          "frost": "Cuando el botón dice Estás al mando del plafón y brilla con los colores del bloque, cada bloque que elijas se enciende. Para empezar, desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque. Tócalo para parar.",
+          "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. Para empezar, usa la acción Encender cada bloque. Toca el botón para parar.",
+          "settings": "Ajustes de iluminación",
+          "done": "Entendido",
+          "close": "Cerrar consejo"
+        }
       },
       "link": {
         "title": "Trae contigo tus encadenes de {{boardName}}",
@@ -1094,6 +1106,14 @@
         "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}",
         "options": "Opciones de actualización",
         "earlyUpdatesHelp": "Las actualizaciones anticipadas pueden tener fallos. Los cambios se aplican al volver a abrir la app."
+      },
+      "previewFirstSpotlight": {
+        "title": "Explora bloques sin encender el plafón",
+        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y los bloques que elijas en los 45 segundos siguientes también se encienden.",
+        "swipe": "Desliza el botón del plafón a la izquierda para seguir encendiendo hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende.",
+        "moonboard": "En un MoonBoard se sigue encendiendo hasta que pares. Cambia los tiempos en Ajustes › Plafón.",
+        "cta": "Mira cómo funciona",
+        "dismiss": "Entendido"
       }
     },
     "launchUpdate": {

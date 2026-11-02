@@ -119,6 +119,7 @@ const mocks = vi.hoisted(() => ({
   // without a second mock scaffold.
   searchParams: {} as Record<string, string>,
   isFocused: true,
+  connectCardExpected: false,
   // Mutable per-test setting: false exercises the preview-open branch instead
   // of the committing activateClimb path.
   lightOnClimbTap: true,
@@ -390,12 +391,14 @@ vi.mock('../../../../src/components/spray-wall/SprayWallArchivedBanner', () => (
 }));
 vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
   FirstConnectCard: () => null,
-  useFirstConnectCardExpected: () => false,
+  useFirstConnectCardExpected: () => mocks.connectCardExpected,
 }));
-vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
+const onboardingStorage = vi.hoisted(() => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
   clearBoardRevealTipPending: vi.fn(async () => {}),
+  markTipSeen: vi.fn(async () => {}),
 }));
+vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => onboardingStorage);
 
 // The favourite-hearts fetcher reads the signed-in user's id, which reaches
 // `expo-secure-store` (a native module) through `local-user-id`. Stub the hook
@@ -970,6 +973,7 @@ vi.mock('../../../../src/theme/layout', () => ({ glassSize: { standard: 48 } }))
 vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }));
 
 import ClimbList from '../index';
+import { isListCardShowing } from '../../../../src/lib/onboarding/list-card-presence';
 import { HIDDEN_HEADER_TITLE_STYLE } from '../../../../src/components/chrome/hidden-header-title';
 import { setPinnedChips } from '../../../../src/lib/pinned-chips-store';
 import { DEFAULT_PINNED_CHIPS } from '../../../../src/lib/pinnable-chips';
@@ -1054,6 +1058,7 @@ beforeEach(() => {
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
   mocks.isFocused = true;
+  mocks.connectCardExpected = false;
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
@@ -2596,6 +2601,8 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       // And the one-shot card that same setting triggers is spent up front: a
       // store shot is the steady state, not a climber's first five seconds.
       expect(mocks.setSetting).toHaveBeenCalledWith('browseNoticeSeen', true);
+      // So is the preview-first card under the wall button (2.7).
+      expect(onboardingStorage.markTipSeen).toHaveBeenCalledWith('onboarding_tip_preview_first_seen');
     });
   });
 
@@ -2851,6 +2858,28 @@ describe('ClimbList row highlight', () => {
 // searches and the search in force are untouched, new searches still save, and
 // pinning it again shows the same history at once. Whether the row draws the
 // chip from these props is locked in climb-capsules.test.ts.
+// The player's preview-first card waits for this list's cards (one card at a
+// time). Beside a tablet's player pane both are on screen, so the list says
+// when its first-connect card is up, and stops saying it once it is not.
+describe('ClimbList publishes its cards for the preview-first card', () => {
+  it('says the first-connect card is up while the list is focused', () => {
+    mocks.connectCardExpected = true;
+    const view = render(<ClimbList />);
+    expect(isListCardShowing('firstConnect')).toBe(true);
+
+    view.unmount();
+    expect(isListCardShowing('firstConnect')).toBe(false);
+  });
+
+  it('says nothing while the list is covered', () => {
+    mocks.connectCardExpected = true;
+    mocks.isFocused = false;
+    const view = render(<ClimbList />);
+    expect(isListCardShowing('firstConnect')).toBe(false);
+    view.unmount();
+  });
+});
+
 describe('ClimbList with the Recent chip unpinned', () => {
   const savedSearch: RecentFilter = {
     id: 'crimp',

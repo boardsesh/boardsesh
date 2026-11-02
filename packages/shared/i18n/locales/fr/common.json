@@ -753,7 +753,19 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
+        "previewFirst": {
+          "title": "Toucher un bloc ouvre un aperçu. Touche Allumer sur la board pour l'allumer.",
+          "windowSeconds": "Pendant les {{seconds}} secondes qui suivent, chaque bloc que tu choisis s'allume aussi.",
+          "windowMinute": "Pendant la minute qui suit, chaque bloc que tu choisis s'allume aussi.",
+          "untilStop": "Ensuite, chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
+          "moonboard": "Sur un MoonBoard, chaque bloc que tu choisis ensuite s'allume jusqu'à ce que tu arrêtes.",
+          "frost": "Quand le bouton affiche Tu pilotes la board et brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Pour commencer, fais glisser le bouton vers la gauche, ou maintiens-le et choisis Allumer chaque bloc. Touche-le pour arrêter.",
+          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Pour commencer, utilise l'action Allumer chaque bloc. Touche le bouton pour arrêter.",
+          "settings": "Paramètres d'éclairage",
+          "done": "C'est noté",
+          "close": "Fermer l'astuce"
+        }
       },
       "link": {
         "title": "Emporte tes croix {{boardName}} avec toi",
@@ -822,6 +834,14 @@
         "finishTesting": "Terminer le test de la PR #{{prNumber}}",
         "options": "Options de mise à jour",
         "earlyUpdatesHelp": "Les mises à jour anticipées peuvent avoir des bugs. Les changements s’appliquent au prochain lancement."
+      },
+      "previewFirstSpotlight": {
+        "title": "Parcours les blocs sans allumer la board",
+        "tap": "Un toucher ouvre un aperçu. Allumer sur la board allume le bloc, et les blocs que tu choisis dans les 45 secondes qui suivent s'allument aussi.",
+        "swipe": "Fais glisser le bouton de la board vers la gauche pour continuer à allumer jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume.",
+        "moonboard": "Sur un MoonBoard, l'éclairage continue jusqu'à ce que tu arrêtes. Change la durée dans Paramètres › Board.",
+        "cta": "Voir comment ça marche",
+        "dismiss": "C'est noté"
       }
     },
     "launchUpdate": {

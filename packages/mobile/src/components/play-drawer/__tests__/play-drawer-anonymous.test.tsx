@@ -38,13 +38,14 @@
 //   9. The mirror toggle doesn't push a previewed climb's frames to a board that
 //      is lit with the LIVE climb.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render as renderInitial, act } from '@testing-library/react';
+import { render as renderInitial, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import { configKey, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
 const toggleFavorite = vi.hoisted(() => vi.fn());
+const announceMock = vi.hoisted(() => vi.fn());
 
 const recorded = vi.hoisted(() => ({
   actionBar: [] as Props[],
@@ -60,6 +61,7 @@ const recorded = vi.hoisted(() => ({
   swipeableHeader: [] as { next?: ReactNode; previous?: ReactNode }[],
   panePlaceholder: 0,
   boardSheet: [] as Props[],
+  previewFirstTip: [] as Props[],
 }));
 // Signed out unless a case says otherwise: both viewers here render without a
 // session, which is what the web export's read-only climb view is.
@@ -218,7 +220,7 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
   PixelRatio: { get: () => 3 },
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1 }),
-  AccessibilityInfo: { announceForAccessibility: vi.fn() },
+  AccessibilityInfo: { announceForAccessibility: announceMock },
 }));
 // The settings store backs `lightOnSwipe`, which decides whether a preview's
 // next swipe commits — and therefore whether the browse chrome is telling the
@@ -374,6 +376,21 @@ vi.mock('../PanePlaceholder', () => ({
   },
 }));
 vi.mock('../DeferredBoard', () => ({ DeferredBoard: () => createElement('div', { 'data-testid': 'board' }) }));
+// The preview-first card's seen flag. Seen unless a case says otherwise, so the
+// card stays out of every other case here.
+const previewFirstSeen = vi.hoisted(() => ({ current: true }));
+vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
+  hasSeenTip: async () => previewFirstSeen.current,
+  markTipSeen: async () => undefined,
+}));
+// The one-shot preview-first card (2.7): recorded, so a case can see where the
+// player puts it and what it hands it.
+vi.mock('../../onboarding/PlayerPreviewTip', () => ({
+  PlayerPreviewTip: (props: Props) => {
+    recorded.previewFirstTip.push(props);
+    return createElement('div', { 'data-testid': 'player-preview-tip' });
+  },
+}));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 // Renders its `leading` slot: that is where the wall-state pill lands, so a mock
@@ -525,8 +542,9 @@ vi.mock('../../../lib/board-details', () => ({
 
 const { AccessibilityInfo } = await import('react-native');
 const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDrawer');
-const { setSetting, resetAllSettings } = await import('../../../settings');
+const { getSetting, setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
+const { _resetPreviewFirstTipForTests } = await import('../../../lib/onboarding/preview-first-tip');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
 const { BUSY_WALL_TAP_DEBOUNCE_MS } = await import('../busy-wall-question');
 const { QueueSessionBoardPathContext } = await import('../../../providers/queue/queue-contexts');
@@ -683,6 +701,7 @@ beforeEach(() => {
   recorded.listContext = [];
   recorded.swipeableHeader = [];
   recorded.panePlaceholder = 0;
+  recorded.previewFirstTip = [];
   queueActions.addToQueue.mockResolvedValue('added');
   session.isShared = false;
   session.useRealNavigation = false;
@@ -701,6 +720,8 @@ beforeEach(() => {
   ble.current = null;
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
+  _resetPreviewFirstTipForTests();
+  previewFirstSeen.current = true;
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
   auth.isAuthenticated = false;
@@ -1115,19 +1136,21 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     },
   );
 
-  it('previews a similar climb instead of double-writing it', () => {
+  it('previews a similar climb instead of double-writing it', async () => {
     CREW();
     renderDrawer('member');
     const onSimilarClimbPress = lastSimilarClimbHandler();
 
-    return act(async () => {
+    // Awaited, not chained: React's act thenable returns nothing from `then`, so
+    // a returned `act(...).then(...)` let these assertions run during whichever
+    // later case first yielded to the event loop.
+    await act(async () => {
       onSimilarClimbPress(SIMILAR_CLIMB);
-    }).then(() => {
-      // The member branch appends to the crew's queue AND takes the wall.
-      expect(queueActions.addToQueue).not.toHaveBeenCalled();
-      expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
-      expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
     });
+    // The member branch appends to the crew's queue AND takes the wall.
+    expect(queueActions.addToQueue).not.toHaveBeenCalled();
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
   });
 
   // Every "show me this climb" opener that carries no preview — a tick in the
@@ -2277,6 +2300,91 @@ describe('PlayDrawer — reading the wall', () => {
 // The auto-sender is already browse-safe (it keys on the committed queue item),
 // but two paths in the drawer write frames directly off the DISPLAYED climb. Both
 // would put a climb nobody committed on a board that is lit with the live one.
+// The one-shot preview-first card (2.7, brief B5) and its screen-reader line
+// (B1). The card's own rules are pure and tested in `preview-first-tip.test.ts`;
+// what only a render can see is where the player docks it and whether its line
+// really replaces the browse notice.
+describe('PlayDrawer — the preview-first card (2.7)', () => {
+  const PREVIEW_FIRST_LINE = 'playView.wallState.a11y.previewFirstAnnounce';
+  beforeEach(() => {
+    previewFirstSeen.current = false;
+    auth.isAuthenticated = true;
+    // This phone holds a lit board, so the preview's Put on board lights it.
+    ble.current = { isConnected: true, sendFramesToBoard: vi.fn(async () => true) };
+    lightbulb.lit = true;
+    lightbulb.localConnected = true;
+    lightbulb.pressAction = 'disconnect';
+  });
+
+  async function renderFirstPreview() {
+    const view = render(drawerElement('member', openTargetFor(CLIMB)));
+    await waitFor(() => expect(recorded.previewFirstTip.length).toBeGreaterThan(0));
+    return view;
+  }
+
+  // "Nothing over the climb": the card is the first section under the board and
+  // its controls, above Logbook. It is not in the board's box, so it can't cover
+  // or resize the board.
+  it('docks below the board and the wall button, above the sections', async () => {
+    const view = await renderFirstPreview();
+    const tip = view.getByTestId('player-preview-tip');
+    const board = view.getByTestId('board');
+    const controls = view.getByTestId('action-bar');
+    const sections = view.getByTestId('deferred-sections');
+
+    expect(board.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(controls.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tip.compareDocumentPosition(sections) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(board.parentElement?.contains(tip)).toBe(false);
+    expect(controls.parentElement?.contains(tip)).toBe(false);
+  });
+
+  it('hands the card the board on screen, and keeps the wall button plain', async () => {
+    await renderFirstPreview();
+    expect(recorded.previewFirstTip.at(-1)?.boardName).toBe(BOARD_CONFIG.boardName);
+    // The card's sample needs hold geometry; the real button frosts only while driving.
+    expect(lastActionBarProps().wallGlow).toBeNull();
+  });
+
+  it('stays away from a climber who saw it before', async () => {
+    previewFirstSeen.current = true;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(recorded.previewFirstTip).toEqual([]);
+  });
+
+  it('never shows signed out', async () => {
+    auth.isAuthenticated = false;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(recorded.previewFirstTip).toEqual([]);
+  });
+
+  it('goes when Got it is tapped', async () => {
+    const view = await renderFirstPreview();
+    const onExit = recorded.previewFirstTip.at(-1)?.onExit as ((exit: string) => void) | undefined;
+    if (!onExit) throw new Error('The preview-first card never rendered');
+    act(() => onExit('got_it'));
+    expect(view.queryByTestId('player-preview-tip')).toBeNull();
+  });
+
+  // One moment, one sentence: the solo browse notice would say the wall stays
+  // put, at the same moment and in more words.
+  it('speaks its line in place of the browse notice, and spends the notice', async () => {
+    setSetting('lightOnSwipe', false);
+    wall.uuid = 'wall-climb-a';
+    await renderFirstPreview();
+
+    await waitFor(() => expect(announceMock).toHaveBeenCalledWith(PREVIEW_FIRST_LINE));
+    expect(joinedNoticeAnnouncements()).toBe(0);
+    expect(getSetting('browseNoticeSeen')).toBe(true);
+  });
+});
+
 describe('PlayDrawer — the mirror toggle and the wall', () => {
   const connectBle = () => {
     ble.current = {

@@ -171,7 +171,8 @@ import {
   hasSeenTip,
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
-import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
+import { ONBOARDING_TIP_PREVIEW_FIRST_KEY, ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
+import { setListCardShowing } from '../../../src/lib/onboarding/list-card-presence';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -957,6 +958,22 @@ function ClimbListInner() {
   useEffect(() => {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
+  // The player's preview-first card waits while any of this list's cards is on
+  // screen: on a tablet the player pane sits beside this list. A phone's player
+  // covers the list, which loses focus, so nothing is published then.
+  useEffect(() => {
+    setListCardShowing('firstConnect', isFocused && connectCardVisible);
+    setListCardShowing('boardReveal', isFocused && showRevealTip);
+    setListCardShowing('quickActions', isFocused && showQuickActionsTip);
+  }, [isFocused, connectCardVisible, showRevealTip, showQuickActionsTip]);
+  useEffect(
+    () => () => {
+      setListCardShowing('firstConnect', false);
+      setListCardShowing('boardReveal', false);
+      setListCardShowing('quickActions', false);
+    },
+    [],
+  );
 
   const firstSearchPage = searchPages?.pages[0];
 
@@ -1464,6 +1481,9 @@ function ClimbListInner() {
       // is a portrait of the steady state, not of a climber's first five seconds
       // — so the capture device starts already told.
       setSetting('browseNoticeSeen', true);
+      // The same goes for the preview-first card under the wall button. Screenshot
+      // mode already reads every tip as seen (`hasSeenTip`); this writes it too.
+      void markTipSeen(ONBOARDING_TIP_PREVIEW_FIRST_KEY);
     }
     openPlayDrawer(firstClimb, {
       previewQueueItem: climbToQueueItem(firstClimb),

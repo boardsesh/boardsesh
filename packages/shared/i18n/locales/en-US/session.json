@@ -923,7 +923,8 @@
       "a11y": {
         "browseAnnounce": "Browsing. The wall stays where it is.",
         "backToLive": "Back to live: {{name}}",
-        "committed": "{{name}} is on the wall"
+        "committed": "{{name}} is on the wall",
+        "previewFirstAnnounce": "Preview, not on the wall. Put on board lights it."
       },
       "backMyPick": "My pick",
       "backOnWall": "On the wall",
