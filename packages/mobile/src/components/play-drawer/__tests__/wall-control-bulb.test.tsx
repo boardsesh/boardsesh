@@ -23,6 +23,7 @@ vi.mock('../../ble/BleLightbulbButton', () => ({
   BleLightbulbButton: (props: {
     isConnected: boolean;
     ready?: boolean;
+    halo?: boolean;
     accessibilityLabel: string;
     accessibilityValueText?: string;
     accessibilityTapHint?: string;
@@ -44,6 +45,7 @@ vi.mock('../../ble/BleLightbulbButton', () => ({
       'data-hint': props.accessibilityTapHint,
       'data-lit': String(props.isConnected),
       'data-ready': String(Boolean(props.ready)),
+      'data-halo': String(props.halo ?? true),
       'data-selected': String(Boolean(props.accessibilitySelected)),
       'data-hold': props.onLongPress ? props.longPressActionLabel : 'none',
       'data-own-haptics': `${props.haptic}/${String(props.longPressHaptic)}`,
@@ -56,7 +58,7 @@ vi.mock('../../ble/BleLightbulbButton', () => ({
 // only whether the bulb asks for it, and what it says.
 vi.mock('../WallWindowRing', () => ({
   WallWindowRing: ({ size }: { size: number }) => createElement('s', { 'data-ring': String(size) }),
-  useWindowValueText: (kind: string, active: boolean) => (active ? `window-${kind}` : null),
+  useWindowValueText: (active: boolean) => (active ? 'window-bulb' : null),
 }));
 
 import { WallControlBulb } from '../WallControlBulb';
@@ -132,7 +134,7 @@ describe('WallControlBulb', () => {
     expect(onLongPress).toHaveBeenCalledOnce();
   });
 
-  it("draws the timed drive's ring and says its time, only during the timed drive", () => {
+  it("draws the timed drive's ring, with no halo under it, and says its time, only during the timed drive", () => {
     const windowed = renderBulb({
       ...LIT,
       lightWindow: true,
@@ -142,9 +144,13 @@ describe('WallControlBulb', () => {
     });
     expect(windowed.container.querySelector('[data-ring]')?.getAttribute('data-ring')).toBe('48');
     expect(windowed.bulb.dataset.value).toBe('window-bulb');
+    // The arc meets the row itself, as on the MiniPlayer: amber on its amber halo falls under 3:1.
+    expect(windowed.bulb.dataset.lit).toBe('true');
+    expect(windowed.bulb.dataset.halo).toBe('false');
     cleanup();
     const plain = renderBulb(LIT);
     expect(plain.container.querySelector('[data-ring]')).toBeNull();
+    expect(plain.bulb.dataset.halo).toBe('true');
     expect(plain.bulb.dataset.value).toBe('playView.wallControl.youHaveBoardLit');
   });
 

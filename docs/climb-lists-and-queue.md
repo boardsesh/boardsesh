@@ -205,7 +205,9 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   driving, the swipe's own first. A step along a list is placed as Next places one: a fresh
   copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
-  the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
+  the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`). During
+  Put on board's timed drive it is the amber bulb in an amber ring that drains to the
+  drive's end instead, as on the Live Activity (`BulbDriveCue`).
 - **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
   default settings, later taps and swipes preview. A board-button tap (Put on board) lights
   that climb and opens the keep-lighting window (`startedBy: 'tap'`: 45 s by default, renewed
@@ -272,7 +274,8 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   not the pick (QA #147). Lit, it is the bar's usual bulb. A pick this wall can't light, with
   no board at the gym to walk to, gets no bulb, as the player offers no board control for it.
   In the collapsed platter the pick's bulb takes the one slot only while the pick is unlit on a
-  board with lights; otherwise ✓ keeps it.
+  board with lights, or while this phone's timed drive runs (its ring is the time left);
+  otherwise ✓ keeps it.
 - **✓** logs the climb the bar shows, in the flip the bar draws: the pick's own, never its
   queue slot's. **Mirror** flips the pick's own flip, never the queue.
 - **⏮ ⏭** step from the pick along its own list by the player's swipe rules for a preview

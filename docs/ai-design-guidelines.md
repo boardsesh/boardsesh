@@ -103,7 +103,8 @@ older iPhone is the variant with the chrome degraded, not Material.
     (kept mounted at opacity 0, because UIKit snapshots the platter between placements) means free.
     The shape carries the state, so it survives Differentiate Without Color; amber only ever means
     lit LEDs. The collapsed platter's climb link also speaks the connection as its accessibility
-    value; the open one doesn't, because its bulb already does.
+    value, plus "Driving the wall" while this phone drives; the open one doesn't, because its bulb
+    already does.
     Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
     carries the same climb, positioned above whichever bar is on screen.
 - Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`

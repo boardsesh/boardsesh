@@ -538,7 +538,8 @@
       "wallHeldWithClimb": "Du hast die Wand: {{name}}, {{grade}}",
       "wallHeldHint": "Gibt die Wand frei",
       "wallOpenLabel": "Wand ist frei",
-      "wallOpenHint": "Übernimmt die Wand"
+      "wallOpenHint": "Übernimmt die Wand",
+      "drivingValue": "Du steuerst das Board"
     },
     "relayToWall": "Deinen Boulder am Board beleuchten",
     "peerDrivingBoard": "Jemand anderes hat das Board"
