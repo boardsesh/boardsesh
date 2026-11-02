@@ -231,16 +231,15 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, swipeLightsSolo: true })).toBeNull();
   });
 
-  // Auto-disconnect ends lighting when it lets go of the board (`clampWindowEnd`).
-  it('reads auto-disconnect the way the window clock does', () => {
-    expect(
-      resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, autoDisconnectSeconds: 30 }),
-    ).toEqual({ key: 'windowSeconds', seconds: 30 });
-    expect(
-      resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false, autoDisconnectSeconds: 120 }),
-    ).toEqual({ key: 'windowMinute' });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, autoDisconnectSeconds: 300 })).toEqual({
-      key: 'untilStopOrDisconnect',
+  it('says whole minutes in minutes', () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false })).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(120_000), isMoonboard: false })).toEqual({
+      key: 'windowMinutes',
+      minutes: 2,
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(300_000), isMoonboard: true })).toEqual({
+      key: 'windowMinutes',
+      minutes: 5,
     });
   });
 

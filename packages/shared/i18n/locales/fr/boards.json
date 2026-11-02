@@ -126,10 +126,10 @@
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
         "body": "Touche un bloc dans la liste : il s'allume au mur.",
-        "bodyWindow": "Pendant les {{seconds}} secondes qui suivent Allumer sur la board, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
-        "bodyWindowMinute": "Pendant la minute qui suit Allumer sur la board, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
-        "bodyUntilStop": "Après Allumer sur la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
-        "bodyUntilStopOrDisconnect": "Après Allumer sur la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter, ou jusqu'à ce que la déconnexion automatique libère la board.",
+        "bodyWindow": "Allumer sur la board te fait piloter la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinute": "Allumer sur la board te fait piloter la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyWindowMinutes": "Allumer sur la board te fait piloter la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyUntilStop": "Allumer sur la board te fait piloter la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
         "bodyPutOnBoard": "Touche un bloc, puis Allumer sur la board pour l'allumer au mur.",
         "gotIt": "Compris"
       }

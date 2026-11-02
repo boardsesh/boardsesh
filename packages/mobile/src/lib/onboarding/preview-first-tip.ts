@@ -20,7 +20,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { ONBOARDING_TIP_PREVIEW_FIRST_KEY } from '@boardsesh/key-value-storage';
-import { resolveKeepLightingReach, type KeepLightingPlan } from '../keep-lighting';
+import { driveLengthWords, resolveKeepLightingReach, type KeepLightingPlan } from '../keep-lighting';
 
 /**
  * `hasSeenTip` / `markTipSeen`, loaded on first use rather than at import: the
@@ -240,48 +240,47 @@ export function previewFirstTipRetiredByDrive({
   return previous !== null && previous.startedAt === drive.startedAt && !previous.openEnded;
 }
 
-/** The card's second line: what happens after Put on board, for the board on screen. */
+/** The card's second line: what Put on board's drive does, for the board on screen. */
 export type PreviewFirstWindowLine =
   | { key: 'windowSeconds'; seconds: number }
   | { key: 'windowMinute' }
+  | { key: 'windowMinutes'; minutes: number }
   | { key: 'untilStop' }
-  | { key: 'untilStopOrDisconnect' }
   | { key: 'moonboard' }
   | null;
 
 /**
  * Read by the same rule as the first-connect confirmation
  * (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
- * press opens no window, so there is no line; a shorter auto-disconnect is
- * the window; and auto-disconnect can end an Until I stop drive.
+ * press starts no drive, so there is no line. A timed drive says how long it
+ * lasts after each climb, in whole minutes from one minute up.
  */
 export function resolvePreviewFirstWindowLine({
   plan,
   isMoonboard,
   swipeLightsSolo = false,
-  autoDisconnectSeconds = null,
 }: {
   /**
-   * What Put on board keeps lighting here (`resolveKeepLightingPlan`), or null
-   * when it lights one climb: the choice is Off, or the press can't open a
-   * window here (a session with In a session too off, the swipe flag off).
+   * What Put on board's drive does here (`resolveKeepLightingPlan`), or null
+   * when it lights one climb: the choice is Right away, or the press can't
+   * start a drive here (a session with In a session too off, the swipe flag off).
    */
   plan: KeepLightingPlan | null;
   isMoonboard: boolean;
   /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
   swipeLightsSolo?: boolean;
-  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
-  autoDisconnectSeconds?: number | null;
 }): PreviewFirstWindowLine {
-  const reach = resolveKeepLightingReach({ plan, swipeLightsSolo, autoDisconnectSeconds });
+  const reach = resolveKeepLightingReach({ plan, swipeLightsSolo });
   switch (reach.kind) {
     // One climb lights and nothing after it: the headline already says so.
     case 'one_climb':
       return null;
     case 'until_stop':
-      if (reach.autoDisconnects) return { key: 'untilStopOrDisconnect' };
       return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
-    case 'window':
-      return reach.seconds === 60 ? { key: 'windowMinute' } : { key: 'windowSeconds', seconds: reach.seconds };
+    case 'window': {
+      const length = driveLengthWords(reach.seconds);
+      if (length.unit === 'seconds') return { key: 'windowSeconds', seconds: length.count };
+      return length.count === 1 ? { key: 'windowMinute' } : { key: 'windowMinutes', minutes: length.count };
+    }
   }
 }

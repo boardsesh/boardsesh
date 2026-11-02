@@ -91,13 +91,13 @@ describe('BoardSheetStatusLine', () => {
     });
     const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
     expect(lineOf(container)).toBe(
-      'playView.wallControl.eachPickLights · playView.wallControl.secondsLeft {"count":45}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":45}',
     );
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
     expect(lineOf(container)).toBe(
-      'playView.wallControl.eachPickLights · playView.wallControl.secondsLeft {"count":44}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":44}',
     );
   });
 
@@ -123,7 +123,7 @@ describe('BoardSheetStatusLine', () => {
     });
     const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
     expect(container.querySelector('[data-testid="ble-control-status"]')?.getAttribute('aria-label')).toBe(
-      'playView.wallControl.eachPickLights, playView.wallControl.secondsLeft {"count":40}',
+      'playView.wallControl.youAreDriving, playView.wallControl.stopsInSeconds {"count":40}',
     );
   });
 
@@ -148,13 +148,13 @@ describe('BoardSheetStatusLine', () => {
       vi.advanceTimersByTime(1_000);
     });
     expect(lineOf(container)).toBe(
-      'playView.wallControl.eachPickLights · playView.wallControl.secondsLeft {"count":44}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":44}',
     );
     expect(label()).toBe(before);
     act(() => {
       vi.advanceTimersByTime(36_000);
     });
-    expect(label()).toBe('playView.wallControl.eachPickLights, playView.wallControl.underTenSeconds');
+    expect(label()).toBe('playView.wallControl.youAreDriving, playView.wallControl.stopsInUnderTen');
   });
 
   it('says nothing for a window with no clock yet', () => {

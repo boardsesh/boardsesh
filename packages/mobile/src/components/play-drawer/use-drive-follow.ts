@@ -21,17 +21,41 @@ import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type Dri
  * Any other change of current climb first drops it: a crewmate's move the
  * driver's own swipe overtook is never said later.
  *
- * Put on board's keep-lighting window (2.7) is different: it lights this
- * phone's own picks, so a crewmate's put-up ends it (`window_ended`). The
- * auto-sender still lights their climb, and this phone's next pick is a
- * preview again, with the busy-wall question in front of Put on board. A
- * crewmate's relay never renews the window, or the holder's next swipe could
- * take the wall back from the crewmate at it.
+ * Put on board's timed drive (2.7) is different: it lights this phone's own
+ * picks, so a crewmate's put-up ends it (`window_ended`). The auto-sender
+ * still lights their climb, and this phone's next pick is a preview again,
+ * with the busy-wall question in front of Put on board. A crewmate's relay
+ * never renews the drive, or the holder's next swipe could take the wall back
+ * from the crewmate at it. With Disconnect Bluetooth when driving ends on, the
+ * board is let go once their climb is on the wall (`waitForWallConfirm`), so
+ * it isn't dropped before it lights.
  *
  * It reads the current climb through `useActiveClimbUuid` (a change of climb)
  * and the queue snapshot, so the app-root watcher doesn't re-render on every
  * queue change.
  */
+/**
+ * After a crewmate's put-up ended a timed drive, the longest the board is held
+ * for their climb to reach the wall before it is let go anyway (a write that
+ * failed, or the #4979 hold keeping it dark).
+ */
+export const CREW_PUT_UP_DISCONNECT_WAIT_MS = 5_000;
+
+/** Resolves at the next climb this phone's link lights, or after `timeoutMs`. */
+export function waitForWallConfirm(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | null = null;
+    const done = () => {
+      clearTimeout(timer);
+      unsubscribe?.();
+      unsubscribe = null;
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    unsubscribe = subscribeToWallConfirm(() => done());
+  });
+}
+
 export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
   const { t } = useTranslation('session');
   const activeClimbUuid = useActiveClimbUuid();
@@ -44,7 +68,7 @@ export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
       subscribeCrewMoves((queueItemUuid) => {
         const drive = getDriveMode();
         if (drive?.windowMs != null) {
-          exitDriveMode('window_ended');
+          exitDriveMode('window_ended', { disconnectAfter: () => waitForWallConfirm(CREW_PUT_UP_DISCONNECT_WAIT_MS) });
           return;
         }
         if (drive?.phase === 'live') pendingRef.current = queueItemUuid;

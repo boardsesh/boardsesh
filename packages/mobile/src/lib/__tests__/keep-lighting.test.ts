@@ -1,11 +1,11 @@
-// After Put on board, keep lighting (2.7): the choices, how a stored value
-// reads back, and which choice a press takes on which board.
+// Stop driving after (2.7): the choices, how a stored value reads back, and
+// which choice a press takes on which board.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_KEEP_LIGHTING,
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
   KEEP_LIGHTING_CHOICES,
-  keepLightingSeconds,
+  driveLengthWords,
   keepLightingWindowMs,
   resolveKeepLightingPlan,
   resolveKeepLightingReach,
@@ -32,20 +32,19 @@ describe('keep-lighting choices', () => {
     expect(sanitiseKeepLighting(null, 'off')).toBe('off');
   });
 
-  it('gives each choice its window: none for Off, no end for Until I stop', () => {
+  it('offers Right away, 30 s, 45 s, 1 min, 2 min, 5 min and Until I stop, in that order', () => {
+    expect(KEEP_LIGHTING_CHOICES).toEqual(['off', '30', '45', '60', '120', '300', 'until_stopped']);
+  });
+
+  it('gives each choice its drive: none for Right away, no end for Until I stop', () => {
     expect(KEEP_LIGHTING_CHOICES.map((choice) => keepLightingWindowMs(choice))).toEqual([
       undefined,
       30_000,
       45_000,
       60_000,
+      120_000,
+      300_000,
       null,
-    ]);
-    expect(KEEP_LIGHTING_CHOICES.map((choice) => keepLightingSeconds(choice))).toEqual([
-      0,
-      30,
-      45,
-      60,
-      Number.POSITIVE_INFINITY,
     ]);
   });
 });
@@ -89,48 +88,40 @@ describe('resolveKeepLightingPlan', () => {
   });
 });
 
-// What the copy promises after Put on board: the plan read against the two
-// settings it does not take.
+// What the copy promises after Put on board: the plan read against the one
+// setting it does not take.
 describe('resolveKeepLightingReach', () => {
   const window45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
+  const window300 = { windowMs: 300_000, setting: 'putOnBoardKeepsLighting' } as const;
   const untilStopped = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
-  const none = { swipeLightsSolo: false, autoDisconnectSeconds: null };
 
-  it('reads the plan as it is with neither setting on', () => {
-    expect(resolveKeepLightingReach({ ...none, plan: window45 })).toEqual({ kind: 'window', seconds: 45 });
-    expect(resolveKeepLightingReach({ ...none, plan: untilStopped })).toEqual({
-      kind: 'until_stop',
-      autoDisconnects: false,
+  it('reads the plan as it is with Light the board as I swipe off', () => {
+    expect(resolveKeepLightingReach({ plan: window45, swipeLightsSolo: false })).toEqual({
+      kind: 'window',
+      seconds: 45,
     });
-    expect(resolveKeepLightingReach({ ...none, plan: null })).toEqual({ kind: 'one_climb' });
+    expect(resolveKeepLightingReach({ plan: window300, swipeLightsSolo: false })).toEqual({
+      kind: 'window',
+      seconds: 300,
+    });
+    expect(resolveKeepLightingReach({ plan: untilStopped, swipeLightsSolo: false })).toEqual({ kind: 'until_stop' });
+    expect(resolveKeepLightingReach({ plan: null, swipeLightsSolo: false })).toEqual({ kind: 'one_climb' });
   });
 
-  // The wall control's `tapDrive: 'resume'`: the press opens no window.
+  // The wall control's `tapDrive: 'resume'`: the press starts no drive.
   it('promises one climb solo with Light the board as I swipe on', () => {
-    expect(resolveKeepLightingReach({ ...none, plan: window45, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
-    expect(resolveKeepLightingReach({ ...none, plan: untilStopped, swipeLightsSolo: true })).toEqual({
-      kind: 'one_climb',
-    });
+    expect(resolveKeepLightingReach({ plan: window45, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
+    expect(resolveKeepLightingReach({ plan: untilStopped, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
   });
+});
 
-  // `clampWindowEnd`: the window ends when auto-disconnect lets go of the board.
-  it('takes a shorter auto-disconnect as the window, and lets it end Until I stop', () => {
-    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 30 })).toEqual({
-      kind: 'window',
-      seconds: 30,
-    });
-    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 45 })).toEqual({
-      kind: 'window',
-      seconds: 45,
-    });
-    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 120 })).toEqual({
-      kind: 'window',
-      seconds: 45,
-    });
-    expect(resolveKeepLightingReach({ ...none, plan: untilStopped, autoDisconnectSeconds: 600 })).toEqual({
-      kind: 'until_stop',
-      autoDisconnects: true,
-    });
-    expect(resolveKeepLightingReach({ ...none, plan: null, autoDisconnectSeconds: 10 })).toEqual({ kind: 'one_climb' });
+describe('driveLengthWords', () => {
+  it('says whole minutes from one minute up, and seconds below that', () => {
+    expect(driveLengthWords(30)).toEqual({ unit: 'seconds', count: 30 });
+    expect(driveLengthWords(45)).toEqual({ unit: 'seconds', count: 45 });
+    expect(driveLengthWords(60)).toEqual({ unit: 'minutes', count: 1 });
+    expect(driveLengthWords(120)).toEqual({ unit: 'minutes', count: 2 });
+    expect(driveLengthWords(300)).toEqual({ unit: 'minutes', count: 5 });
+    expect(driveLengthWords(90)).toEqual({ unit: 'seconds', count: 90 });
   });
 });

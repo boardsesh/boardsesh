@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { blendOpaque, brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
 import { contrastRatioHex } from '../../../lib/color-contrast-oracle';
-import { WALL_CONTROL_TONAL_ALPHA, WINDOW_BAR_TRACK_ALPHA } from '../wall-control';
+import { BOKEH_DARK_SURFACE, BOKEH_LIGHT_SURFACE } from '@boardsesh/frosted-bokeh';
+import { WALL_CONTROL_TONAL_ALPHA } from '../wall-control';
 
 const SURFACES = {
   light: ['#FFFFFF', '#F2F2F7', materialSurfaces.light.background, materialSurfaces.light.secondaryBackground],
@@ -26,7 +27,7 @@ const tonalFill = (scheme: (typeof SCHEMES)[number], surface: string) =>
   blendOpaque(brandFor(scheme).primaryFill, surface, WALL_CONTROL_TONAL_ALPHA);
 
 describe('wall button contrast', () => {
-  it.each(SCHEMES)('keeps Put on board and Each pick lights at 4.6:1 in %s', (scheme) => {
+  it.each(SCHEMES)('keeps Put on board at 4.6:1 in %s', (scheme) => {
     const brand = brandFor(scheme);
     for (const surface of SURFACES[scheme]) {
       const fill = tonalFill(scheme, surface);
@@ -37,26 +38,16 @@ describe('wall button contrast', () => {
     }
   });
 
-  // The keep-lighting window's clock is the same run colour as its words (2.7).
-  it.each(SCHEMES)("keeps the window's clock digits at 4.6:1 in %s", (scheme) => {
-    const brand = brandFor(scheme);
-    for (const surface of SURFACES[scheme]) {
-      expect(contrastRatioHex(brand.primaryStrong, tonalFill(scheme, surface))).toBeGreaterThanOrEqual(4.6);
-    }
-  });
-
-  // A non-text graphic (WCAG 1.4.11): 3:1 against the pill's fill and its own track.
-  it.each(SCHEMES)("keeps the window's drain bar at 3:1 against the fill and its track in %s", (scheme) => {
-    const brand = brandFor(scheme);
-    for (const surface of SURFACES[scheme]) {
-      const fill = tonalFill(scheme, surface);
-      const track = blendOpaque(brand.primaryStrong, fill, WINDOW_BAR_TRACK_ALPHA);
-      expect(contrastRatioHex(brand.primaryStrong, fill), `bar on ${fill} over ${surface}`).toBeGreaterThanOrEqual(3);
-      expect(
-        contrastRatioHex(brand.primaryStrong, track),
-        `bar on track ${track} over ${surface}`,
-      ).toBeGreaterThanOrEqual(3);
-    }
+  // Put on board's timed drive with no holds to frost (2.7): the flat amber
+  // shrinks over the frost pill whose label is the amber's own ink, so the
+  // label, and the clock in the same colour, read on both as the amber drains.
+  it('keeps a timed drive’s label at 4.5:1 on the shrinking amber and the pill under it', () => {
+    // Light: white on the amber and on the dark frost pill.
+    expect(contrastRatioHex(brandColors.onPrimary, brandColors.live)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatioHex(brandColors.onPrimary, BOKEH_DARK_SURFACE.base)).toBeGreaterThanOrEqual(4.5);
+    // Dark: dark ink on the pale amber and on the light frost pill.
+    expect(contrastRatioHex(brandColorsDark.onAccent, brandColorsDark.live)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatioHex(brandColorsDark.onAccent, BOKEH_LIGHT_SURFACE.base)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('keeps the deeper violet for light only: dark keeps its lifted foreground', () => {

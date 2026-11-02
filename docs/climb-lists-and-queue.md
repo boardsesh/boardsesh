@@ -70,10 +70,14 @@ The two lighting settings, in Settings › Board, are **Light the board when I t
 **off**. Stored choices are preserved: someone who already saved either switch keeps it.
 With untouched settings, selecting a climb opens a preview without committing it or
 lighting the wall, including playlist **Play** and queue rows. Tap the board button (**Put on board**) to
-light that climb: from 2.7 it also opens a keep-lighting window, so every climb you pick lights
-until 45 s after the last lit one (renewed by each of your own; 30 s, 45 s, 1 min, Until I stop
-or Off in Settings; in a crew only on the phone that holds the board, with **In a session too** on,
-and a crewmate's put-up ends it; Put on board from any other phone lights that one climb). Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
+light that climb: from 2.7 it also starts a timed drive, so every climb you pick lights
+until 45 s after the last lit one (renewed by each of your own; **Stop driving after** in Settings:
+Right away, 30 s, 45 s, 1, 2 or 5 min, or Until I stop; in a crew only on the phone that holds the
+board, with **In a session too** on, and a crewmate's put-up ends it; Put on board from any other
+phone lights that one climb). Only Put on board's drive is timed: a swipe or **Light every climb**
+drives until you tap the button. With **Disconnect Bluetooth when driving ends** on (off by
+default; it replaced auto-disconnect in 2.7) the phone lets go of the board when you stop driving or
+the time runs out, without forgetting it, so the next Put on board reconnects. Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
 of a queue slot puts up the slot's neighbour the peek shows. Swipe the button, or use **Light every
 climb**, to start open-ended Driver mode. On a MoonBoard Put on board starts Driver mode by
 default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
@@ -83,8 +87,8 @@ depends on Light on tap: off, the list from the tapped climb becomes Up next, th
 its climb and the tapped climb opens as a preview; on, the list replaces the queue and the
 tapped climb lights. A newcomer's first-connect confirmation and the Climbs list's connect card
 read the same settings, so neither promises that a tap lights a climb while Light on tap is off
-or in a shared session: the confirmation names Put on board's window (or Until I stop on a
-MoonBoard) instead, cut to auto-disconnect's timeout when that is shorter.
+or in a shared session: the confirmation names Put on board's drive length (or Until I stop on a
+MoonBoard) instead.
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -228,12 +232,13 @@ held link without driving stay plain. A peek, drag or committed swipe awaiting c
 uses flat amber progress; bokeh appears only once driving is confirmed. The label says what
 a tap does. When hold colours are unavailable, driving uses the existing flat amber fallback;
 other states keep their tonal/outline treatment. Stopping or browsing removes frost immediately.
-The keep-lighting window after Put on board is not driving: it stays plain, with a short
-violet bar and an m:ss clock ("Each pick lights · 0:38"). Frost means open-ended driving only.
+Put on board's timed drive is driving too: the same frost and "You are driving the wall", plus an
+m:ss clock beside the label, and the frost shrinks toward the bulb as the time runs out, refilling
+with each climb that lights (in 5 s steps under Reduce Motion).
 
 | State | What you see | What happens next |
 | --- | --- | --- |
-| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then opens the keep-lighting window (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on, except on a MoonBoard. |
+| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then starts a timed drive (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on, except on a MoonBoard. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
 | Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
 | Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |

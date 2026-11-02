@@ -20,6 +20,8 @@ type Reads = {
   keepLighting?: string;
   moonboardKeepLighting?: string;
   drivesInSession?: boolean;
+  /** Disconnect Bluetooth when driving ends (2.7). */
+  disconnectWhenDrivingEnds?: boolean;
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
@@ -33,12 +35,14 @@ const reads = vi.hoisted((): { current: Reads } => ({
     lightOnSwipe: true,
   },
 }));
+const bluetoothDisconnect = vi.hoisted(() => vi.fn(async (_reason?: string) => undefined));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({
     isConnected: reads.current.isConnected,
     virtualWallHeld: reads.current.virtualWallHeld,
     loading: reads.current.loading,
     boardName: 'moonboard',
+    disconnect: bluetoothDisconnect,
   }),
 }));
 // The queue is read narrowly: the current climb's uuid as the trigger, the
@@ -76,6 +80,8 @@ vi.mock('../../../settings', () => ({
         return [reads.current.moonboardKeepLighting ?? 'until_stopped', vi.fn()];
       case 'putOnBoardDrivesInSession':
         return [reads.current.drivesInSession ?? true, vi.fn()];
+      case 'disconnectWhenDrivingEnds':
+        return [reads.current.disconnectWhenDrivingEnds ?? false, vi.fn()];
       default:
         return [reads.current.lightOnSwipe, vi.fn()];
     }
@@ -110,7 +116,9 @@ import {
   markDriveLive,
   resetDriveModeForTests,
   stopDrivingForLink,
+  type DriveModeExitReason,
 } from '../drive-mode-store';
+import { CREW_PUT_UP_DISCONNECT_WAIT_MS } from '../use-drive-follow';
 
 const DEFAULT_READS: Reads = {
   currentClimbQueueItem: null,
@@ -148,6 +156,7 @@ beforeEach(() => {
   clearRelayReceipt();
   clearCrewPutUp();
   for (const effect of Object.values(effects)) effect.mockClear();
+  bluetoothDisconnect.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -809,5 +818,201 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     });
     expect(getLastDriveModeExitReason()).toBe('link_dropped');
     expect(appState.listeners.size).toBe(0);
+  });
+});
+
+// 2.7: auto-disconnect gave way to Disconnect Bluetooth when driving ends. The
+// ends the climber or the clock caused let go of the board, without forgetting
+// it (`driving_ended`), so the next Put on board reconnects. The ends that
+// already deal with the link, or move this phone elsewhere, never do.
+describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
+  function openTimedDrive() {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+  }
+
+  it('lets go when the time runs out, and only then', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    openTimedDrive();
+    act(() => {
+      vi.advanceTimersByTime(45_000 - 1);
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('lets go on a tap on You are driving the wall, a swipe drive too', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    driveLive();
+    act(() => {
+      stopDrivingForLink();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('lets go when the time setting is turned to Right away mid-drive', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    const watcher = mount();
+    openTimedDrive();
+    watcher.change({ keepLighting: 'off' });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it.each<[string, Partial<Reads> | null, DriveModeExitReason]>([
+    ['the link drops', { isConnected: false }, 'link_dropped'],
+    ['the session changes', { sessionId: 'session-2' }, 'session_changed'],
+    ['the board changes', { boardId: 9 }, 'board_changed'],
+    ['the climber signs out', { isAuthenticated: false }, 'signed_out'],
+    ['the first light fails', null, 'commit_failed'],
+  ])('never lets go when %s', (_case, change, reason) => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    if (change) watcher.change(change);
+    else
+      act(() => {
+        exitDriveMode('commit_failed');
+      });
+    expect(getLastDriveModeExitReason()).toBe(reason);
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('never lets go when arming times out or the connect fails', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true, isConnected: false, boardId: null };
+    const watcher = mount();
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: null }));
+    watcher.change({ loading: true });
+    watcher.change({ loading: false });
+    expect(getLastDriveModeExitReason()).toBe('connect_failed');
+    reads.current = { ...reads.current, isConnected: true };
+    watcher.change({});
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
+    act(() => {
+      vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS);
+    });
+    expect(getLastDriveModeExitReason()).toBe('arming_timed_out');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the board with the setting off, however the drive ends', () => {
+    vi.useFakeTimers();
+    mount();
+    openTimedDrive();
+    act(() => {
+      vi.advanceTimersByTime(45_000);
+    });
+    driveLive();
+    act(() => {
+      stopDrivingForLink();
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to let go on a wall with no lights: no Bluetooth link', () => {
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      isConnected: false,
+      virtualWallHeld: true,
+    };
+    mount();
+    driveLive();
+    act(() => {
+      stopDrivingForLink();
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // A crewmate's put-up ends the timed drive; their climb goes up through this
+  // phone's link first, so the board is let go once it is lit, never before.
+  it('after a crewmate’s put-up, lets go once their climb is lit', async () => {
+    vi.useFakeTimers();
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      isCrew: true,
+      currentClimbQueueItem: queueItem('q-1', 'Mine'),
+    };
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-q-1'));
+    act(() => crewMove('q-2'));
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    await act(async () => {
+      emitWallConfirm('climb-q-2');
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('after a crewmate’s put-up, lets go anyway once the wait runs out', async () => {
+    vi.useFakeTimers();
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      isCrew: true,
+      currentClimbQueueItem: queueItem('q-1', 'Mine'),
+    };
+    mount();
+    openTimedDrive();
+    act(() => crewMove('q-2'));
+    await act(async () => {
+      vi.advanceTimersByTime(CREW_PUT_UP_DISCONNECT_WAIT_MS - 1);
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('keeps the board when a new drive took it during the wait', async () => {
+    vi.useFakeTimers();
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      isCrew: true,
+      currentClimbQueueItem: queueItem('q-1', 'Mine'),
+    };
+    mount();
+    openTimedDrive();
+    act(() => crewMove('q-2'));
+    // The climber swipes to drive again before the crewmate's climb lit.
+    driveLive();
+    await act(async () => {
+      vi.advanceTimersByTime(CREW_PUT_UP_DISCONNECT_WAIT_MS);
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 });

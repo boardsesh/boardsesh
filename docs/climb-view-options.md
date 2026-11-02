@@ -127,15 +127,17 @@ flat amber fallback; the label still says what the next press does.
   relay, so a press on You are driving the wall never disconnects. Solo with
   Light the board as I swipe on, the stop holds until the link drops, or until the climber presses to put a climb
   up again (below); it never flips the setting. A second tap inside 600 ms of a stop or a disconnect is dropped.
-- **A tap opens a keep-lighting window (2.7).** Connect, Put on board and re-light put the
+- **A tap starts a timed drive (2.7, Stop driving after).** Connect, Put on board and re-light put the
   climb up with the existing one-climb runner. Put on board then lights every climb you pick
-  until the window ends: 45 s after the last lit climb by default, renewed by each climb this
-  phone's own picks light (Settings › Board: Off, 30 s, 45 s, 1 min or Until I stop). A
+  until the drive ends: 45 s after the last lit climb by default, renewed by each climb this
+  phone's own picks light (Settings › Board, **Stop driving after**: Right away, 30 s, 45 s,
+  1, 2 or 5 min, or Until I stop; the keys are still `putOnBoardKeepsLighting` and
+  `moonboardPutOnBoardKeepsLighting`). Only Put on board's drive is timed. A
   crewmate's put-up ends the window (`window_ended`, `use-drive-follow.ts`): their relay
   never renews it, so the holder's next pick is a preview again and Put on board asks the
   busy-wall question. Open-ended driving follows a crewmate's put-up instead. While a connect
   is in flight (the device picker open) the 30 s arming timeout waits. The window starts on the wall's
-  lit confirm, not on the press, and its shown end is clamped to the auto-disconnect deadline.
+  lit confirm, not on the press.
   Every pick reads the window's end off the wall clock (`drivingAtPick` in `drive-mode-store.ts`),
   never a timer alone: Android pauses JS timers with the activity (#7038), so a pick past the end
   stays a preview even before `DriveModeWatcher` has ended the window and tidied the button.
@@ -146,10 +148,14 @@ flat amber fallback; the label still says what the next press does.
   Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
   swipe** explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved
   opt-in applies again.
-- **The three looks of the wall button.** Plain tonal: a preview, or a single lit climb.
-  Plain with a violet drain bar and an m:ss clock ("Each pick lights · 0:38"): the window.
-  A tap on it stops the window and keeps the link. Frost: open-ended driving only, "You are
-  driving the wall". A window never frosts. The top bar's second line says "Preview · not on
+- **The looks of the wall button.** Plain tonal: a preview, or a single lit climb. Frost, "You
+  are driving the wall": any drive. Put on board's timed drive adds an m:ss clock beside the
+  label, and its frost shrinks toward the bulb as the time runs out (`WallWindowFrost`: a
+  Reanimated shared value and one `withTiming` from the store's `expiresAt`, no JS per frame;
+  5 s steps under Reduce Motion), refilling with each climb that lights. A screen reader hears
+  "You are driving the wall", the value "Stops in 30 seconds" on a 10 s step, and "Stopped
+  driving the wall" once when the time ends it. A tap on either stops driving and keeps the
+  link (`stop_driving`, or `stop_window` for a timed drive in Wall Control Tapped). The top bar's second line says "Preview · not on
   the wall" for a preview while this phone holds the board, or while a climb lit in the last hour may still be
   on the wall (`wallCouldLight` in `wall-state.ts`).
 - **A MoonBoard press drives by default (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop), in a crew
@@ -173,17 +179,19 @@ flat amber fallback; the label still says what the next press does.
   screen-reader action, or the board sheet's row. Holding any
   view, in any state, or ⋯ › Board controls opens the board sheet (Re-light, Turn off all lights, Disconnect, plus
   the MoonBoard "Light the hold above") while this phone holds the link; screen readers get the hold as a named
-  action, "Board options". Every view runs the same tap. The player's sheet leaves out auto-disconnect and the two lighting switches, which live in Settings ›
-  Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets lead with **Keep
-  lighting after Put on board** (the MoonBoard's own choice on a connected MoonBoard), so the window's length is two
-  taps away at the wall. A change there applies to the window that is running (`DriveModeWatcher`): a new length
-  counts from the change, Until I stop makes it open-ended, and Off ends it. The player's sheet carries a status
-  line for the climb on screen. Auto-disconnect still frees the
-  board. Its countdown starts over on every write that lands, every change of preview in the player and every
-  wall-button press (tap, hold, swipe, the named action), so browsing previews with nothing lit never drops the
-  board; an open-ended drive with nothing picked still counts down, so a phone left in a bag lets go. When it
-  lets go it says so in a toast: "Disconnected after 30 seconds with no new climb lit or previewed. Put on board to reconnect."
-  (the configured time).
+  action, "Board options". Every view runs the same tap. The player's sheet leaves out **Disconnect Bluetooth when driving ends** and the two lighting switches, which
+  live in Settings › Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets
+  lead with **Stop driving after** (the MoonBoard's own choice on a connected MoonBoard), so the drive's length is
+  two taps away at the wall. A change there applies to the drive that is running (`DriveModeWatcher`): a new length
+  counts from the change, Until I stop makes it open-ended, and Right away ends it. The player's sheet carries a
+  status line for the climb on screen. Auto-disconnect is gone (2.7): with **Disconnect Bluetooth when driving
+  ends** on, the ends the climber or the clock caused (a tap on the frost, Turn off all lights during a drive, the
+  time running out or set to Right away, a crewmate's put-up) let go of the board without forgetting it
+  (`driving_ended`, `use-driving-ended-disconnect.ts`); a dropped link, a failed connect or first light, arming
+  timing out, a new session or board and sign-out never do. Turn off all lights waits for its write first, and a
+  crewmate's put-up waits for their climb to light (5 s at most). Climbers who had auto-disconnect on keep it in
+  this form: a one-time migration (`settings/migrations.ts`) turns the switch on and carries their timeout into
+  Stop driving after where they never chose one.
 - **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark
   for 4 h in that one press: Put on board re-asserts when its connect's first write meets the hold (any hold while
   the connect is on its way, or within a minute of it linking), and Light again and the swipe's drive re-assert as
@@ -212,8 +220,7 @@ flat amber fallback; the label still says what the next press does.
   PlayCore supplies `useParseFrames` geometry from the playback frame and colours from `use-hold-state-colors.ts`,
   memoised on climb, frame, mirror and colours. 44 pt tall on iOS, 48 dp on Android; the second row's fixed height is built from it, so nothing moves
   between states. The row's padding matches the Logbook card's edges below it. A long label (German, a long name)
-  shrinks to 80% before it truncates. While a climb is written to the LEDs it shows the bulb's spinner, and in
-  auto-disconnect's last ten seconds the bulb's amber ring.
+  shrinks to 80% before it truncates. While a climb is written to the LEDs it shows the bulb's spinner.
 
 While the #4979 hold keeps the current climb dark, the wall button reads Put on board and nothing else
 changes in the controls. The "Last on the wall …" note that used to sit under it (#7000) was removed: climbers

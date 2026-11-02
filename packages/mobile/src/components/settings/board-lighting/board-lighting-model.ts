@@ -1,21 +1,23 @@
 import type { MoreRow, MoreSection, MoreSelectRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
-import { KEEP_LIGHTING_CHOICES, keepLightingSeconds, type KeepLightingChoice } from '../../../lib/keep-lighting';
+import { KEEP_LIGHTING_CHOICES, type KeepLightingChoice } from '../../../lib/keep-lighting';
 
 type Toggle = { enabled: boolean; onChange: (enabled: boolean) => void };
 type KeepLightingPicker = { choice: KeepLightingChoice; onChange: (choice: KeepLightingChoice) => void };
 
 export type BoardLightingModelInput = {
   t: SettingsTranslate;
-  /** After Put on board, keep lighting (2.7): every board but a MoonBoard. */
+  /** Stop driving after (2.7): every board but a MoonBoard. */
   keepLighting: KeepLightingPicker;
   /**
    * The MoonBoard's own choice, or `null` when no MoonBoard is in view (the
    * connected board, the active board, or a saved one).
    */
   moonboardKeepLighting: KeepLightingPicker | null;
-  /** In a session too: keep-lighting applies in a crew session as well. */
+  /** In a session too: Put on board drives in a crew session as well. */
   drivesInSession: Toggle;
+  /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
+  disconnectWhenDrivingEnds: Toggle;
   lightOnSwipe: Toggle;
   lightOnClimbTap: Toggle;
   /**
@@ -30,29 +32,26 @@ export type BoardLightingModelInput = {
    * reachable without a live connection.
    */
   moonboardLightAdjacentHolds: Toggle | null;
-  autoDisconnect: Toggle;
-  autoDisconnectTimeout: {
-    seconds: number;
-    /** Every choice, in seconds, with its label. */
-    options: readonly { seconds: number; label: string }[];
-    onChange: (seconds: number) => void;
-  };
 };
 
 /**
- * The words for each keep-lighting choice; 30/45/60 reuse the auto-disconnect
- * timeout labels. Settings › Board and the board sheet's row both read it.
+ * The words for each Stop driving after choice. Settings › Board and the board
+ * sheet's row both read it.
  */
 export function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoice): string {
   switch (choice) {
     case 'off':
       return t('settings:ble.lighting.keep.off');
     case '30':
-      return t('settings:ble.autoDisconnect.timeoutOptions.30');
+      return t('settings:ble.lighting.keep.options.30');
     case '45':
-      return t('settings:ble.autoDisconnect.timeoutOptions.45');
+      return t('settings:ble.lighting.keep.options.45');
     case '60':
-      return t('settings:ble.autoDisconnect.timeoutOptions.60');
+      return t('settings:ble.lighting.keep.options.60');
+    case '120':
+      return t('settings:ble.lighting.keep.options.120');
+    case '300':
+      return t('settings:ble.lighting.keep.options.300');
     case 'until_stopped':
       return t('settings:ble.lighting.keep.untilStopped');
   }
@@ -81,15 +80,16 @@ function keepLightingRow(
 }
 
 /**
- * The Board page's lighting half (spec B4). First what Put on board keeps
- * lighting (2.7): the general choice, the MoonBoard's own right under it (only
- * where a MoonBoard is in view), and In a session too, greyed with its reason
- * while the general choice is Off (its state follows only the general choice;
- * a MoonBoard's applies in a session anyway). Then what lights the connected
- * board on its own (Light automatically), then what a list tap does (and the
- * MoonBoard's extra LEDs), then the Bluetooth group, which says when the phone
- * lets go of the board so another climber can connect, and that it cuts the
- * keep-lighting short when it comes first.
+ * The Board page's lighting half (spec B4). First how long Put on board's
+ * drive lasts (2.7, Stop driving after): the general choice, the MoonBoard's
+ * own right under it (only where a MoonBoard is in view), and In a session
+ * too, greyed with its reason while the general choice is Right away (its
+ * state follows only the general choice; a MoonBoard's applies in a session
+ * anyway). Under that card, what happens when a drive ends: Disconnect
+ * Bluetooth when driving ends, which frees the board for the next climber (it
+ * replaced auto-disconnect). Then what lights the connected board on its own
+ * (Light automatically), then what a list tap does (and the MoonBoard's extra
+ * LEDs).
  *
  * The two lighting switches get a group of their own, tap first and swipe
  * under it, because swipe only matters once tap (or Put on the wall) has a
@@ -98,7 +98,7 @@ function keepLightingRow(
  * so, since six climbers in six read the old side-by-side pair as independent.
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
-  const { t, autoDisconnectTimeout } = input;
+  const { t } = input;
 
   const keepOff = input.keepLighting.choice === 'off';
   const keepRows: MoreRow[] = [
@@ -131,19 +131,6 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     disabled: keepOff,
     onValueChange: input.drivesInSession.onChange,
   });
-
-  // Auto-disconnect lets go of the board before keep-lighting would stop.
-  const longestKeepSeconds = Math.max(
-    keepLightingSeconds(input.keepLighting.choice),
-    input.moonboardKeepLighting ? keepLightingSeconds(input.moonboardKeepLighting.choice) : 0,
-  );
-  const cutsLighting = input.autoDisconnect.enabled && autoDisconnectTimeout.seconds < longestKeepSeconds;
-  const timeoutLabel =
-    autoDisconnectTimeout.options.find((option) => option.seconds === autoDisconnectTimeout.seconds)?.label ??
-    String(autoDisconnectTimeout.seconds);
-  const bluetoothFooter = cutsLighting
-    ? `${t('settings:ble.autoDisconnect.description')} ${t('settings:ble.autoDisconnect.cutsLighting', { timeout: timeoutLabel })}`
-    : t('settings:ble.autoDisconnect.description');
 
   const lightingRows: MoreRow[] = [
     {
@@ -192,6 +179,20 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       rows: keepRows,
     },
     {
+      // Untitled: Stop driving after's second card, what happens when the drive ends.
+      key: 'drivingEnds',
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'disconnectWhenDrivingEnds',
+          label: t('settings:ble.lighting.drivingEnds.label'),
+          subtitle: t('settings:ble.lighting.drivingEnds.description'),
+          value: input.disconnectWhenDrivingEnds.enabled,
+          onValueChange: input.disconnectWhenDrivingEnds.onChange,
+        },
+      ],
+    },
+    {
       key: 'lightingAuto',
       title: t('settings:ble.lighting.autoTitle'),
       footer: t('settings:ble.lighting.description'),
@@ -201,35 +202,6 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       // Untitled: Light automatically's second card, so the pair above stays a pair.
       key: 'lightingMore',
       rows: moreLightingRows,
-    },
-    {
-      key: 'bluetooth',
-      title: t('settings:ble.sectionTitle'),
-      footer: bluetoothFooter,
-      rows: [
-        {
-          kind: 'toggle',
-          key: 'autoDisconnectBle',
-          label: t('settings:ble.autoDisconnect.enabledLabel'),
-          subtitle: t('settings:ble.autoDisconnect.enabledDescription'),
-          value: input.autoDisconnect.enabled,
-          onValueChange: input.autoDisconnect.onChange,
-        },
-        {
-          kind: 'select',
-          key: 'autoDisconnectTimeoutSeconds',
-          label: t('settings:ble.autoDisconnect.timeoutLabel'),
-          options: autoDisconnectTimeout.options.map((option) => ({
-            key: String(option.seconds),
-            label: option.label,
-          })),
-          selectedKey: String(autoDisconnectTimeout.seconds),
-          onSelect: (key) => {
-            const choice = autoDisconnectTimeout.options.find((option) => String(option.seconds) === key);
-            if (choice) autoDisconnectTimeout.onChange(choice.seconds);
-          },
-        },
-      ],
     },
   ];
 }

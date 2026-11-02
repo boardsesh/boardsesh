@@ -466,44 +466,34 @@
     "cancel": "Cancel",
     "connectBoard": "Connect Board",
     "relightBoard": "Re-light board",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Disconnect from the board after no climb has been lit or previewed for the selected time.",
-      "cutsLighting": "Auto-disconnect lets go of the board after {{timeout}}, so lighting stops then too.",
-      "disconnectedToast": "Disconnected after {{timeout}} with no new climb lit or previewed. Put on board to reconnect.",
-      "enabledLabel": "Auto-disconnect",
-      "enabledDescription": "Let other climbers connect after the timer expires.",
-      "timeoutLabel": "Disconnect after",
-      "toggleTitle": "Auto-disconnect",
-      "toggleSubtitle": "Disconnect after {{timeout}} of inactivity",
-      "timeoutOptions": {
-        "10": "10 seconds",
-        "15": "15 seconds",
-        "30": "30 seconds",
-        "45": "45 seconds",
-        "60": "1 minute",
-        "120": "2 minutes",
-        "300": "5 minutes",
-        "600": "10 minutes"
-      }
-    },
     "lighting": {
       "title": "Board lighting",
       "autoTitle": "Light automatically",
       "description": "Choose what lights up the connected board automatically.",
       "keep": {
-        "label": "Keep lighting after Put on board",
-        "off": "Off",
+        "label": "Stop driving after",
+        "off": "Right away",
+        "options": {
+          "30": "30 seconds",
+          "45": "45 seconds",
+          "60": "1 minute",
+          "120": "2 minutes",
+          "300": "5 minutes"
+        },
         "untilStopped": "Until I stop",
         "moonboardLabel": "On a MoonBoard",
-        "moonboardAccessibilityLabel": "Keep lighting on a MoonBoard",
+        "moonboardAccessibilityLabel": "Stop driving a MoonBoard after",
         "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
-        "sheetMoonboardLabel": "Keep lighting on this MoonBoard",
+        "sheetMoonboardLabel": "Stop driving this MoonBoard after",
         "inSessionLabel": "In a session too",
-        "inSessionAccessibilityLabel": "Keep lighting in a session too",
+        "inSessionAccessibilityLabel": "Put on board drives in a session too",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
-        "inSessionOffReason": "Turn on Keep lighting after Put on board to use this.",
-        "footer": "Each climb that lights restarts the clock. Rest longer than that and your next pick opens as a preview."
+        "inSessionOffReason": "Pick a time under Stop driving after to use this.",
+        "footer": "Put on board lights the climb and you drive the wall: every climb you pick lights too. Each one restarts the clock. Rest longer than that and your next pick opens as a preview."
+      },
+      "drivingEnds": {
+        "label": "Disconnect Bluetooth when driving ends",
+        "description": "When you stop driving or the time runs out, your phone lets go of the board so the next climber can connect. Put on board reconnects."
       },
       "onSwipeLabel": "Light the board as I swipe",
       "onSwipeDescription": "Only once a climb is on the wall. A preview never lights the board as you swipe.",

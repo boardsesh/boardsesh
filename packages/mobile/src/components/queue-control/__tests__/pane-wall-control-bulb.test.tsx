@@ -110,18 +110,19 @@ describe('PaneWallControlBulb', () => {
     expect(getByRole('button').getAttribute('data-hint')).toBe('playView.wallControl.litHint');
   });
 
-  // Beside a tablet's player this bulb stands in for the wall button: the window needs its cue here too.
-  it("draws the keep-lighting window's ring and says the time left, only during the window", () => {
+  // Beside a tablet's player this bulb stands in for the wall button: the timed drive needs its cue here too.
+  it("draws the timed drive's ring and says the time left, only during the timed drive", () => {
     const windowed = renderBulb({
       ...LIT,
       lightWindow: true,
+      driving: true,
       tapAction: 'stop_window',
-      labelKey: 'eachPickLights',
+      labelKey: 'youAreDriving',
       a11yValueKey: null,
     });
     expect(windowed.container.querySelector('[data-ring]')).not.toBeNull();
     const bulb = windowed.getByRole('button');
-    expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.eachPickLights');
+    expect(bulb.getAttribute('aria-label')).toBe('playView.wallControl.youAreDriving');
     expect(bulb.getAttribute('data-value')).toBe('window-time');
     cleanup();
     const plain = renderBulb(LIT);

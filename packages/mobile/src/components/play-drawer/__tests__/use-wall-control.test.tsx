@@ -41,15 +41,11 @@ import {
   WINDOW_END_TAP_GRACE_MS,
   useWallControl,
   type DriveStartOutcome,
-  type WallControlHandlers,
   type WallControlRunners,
 } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
-import {
-  registerAutoDisconnectActivity,
-  registerAutoDisconnectDeadlineReader,
-} from '../../../lib/auto-disconnect-deadline';
 import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
+import { resetAllSettings, setSetting } from '../../../settings';
 import { startKeepLighting } from '../drive-runner';
 import {
   EMPTY_WALL_CONTROL,
@@ -396,55 +392,7 @@ describe('useWallControl swipe', () => {
   });
 });
 
-// 2.7: auto-disconnect counted only writes, so a climber browsing previews with
-// the button in hand was dropped mid-look. Every press on the wall button is
-// activity: a tap (even one a guard drops), a hold, a swipe and its cancel,
-// and the screen-reader action.
-describe('useWallControl: presses keep auto-disconnect from letting go', () => {
-  const activity = vi.fn();
-  let release: () => void = () => undefined;
-  beforeEach(() => {
-    activity.mockClear();
-    release = registerAutoDisconnectActivity(activity);
-  });
-  afterEach(() => release());
-
-  type Handlers = WallControlHandlers;
-  const presses: Array<[string, (handlers: Handlers) => void]> = [
-    ['a tap', (handlers) => handlers.press('button')],
-    ['a tap on a bulb', (handlers) => handlers.press('bulb')],
-    ['a hold', (handlers) => handlers.longPress('button')],
-    [
-      'a swipe',
-      (handlers) => {
-        handlers.swipe('button');
-      },
-    ],
-    ['a swipe let go early', (handlers) => handlers.swipeCancelled('button')],
-    [
-      'the screen-reader action',
-      (handlers) => {
-        handlers.drive('button');
-      },
-    ],
-  ];
-  it.each(presses)('%s counts as activity, once', (_label, run) => {
-    const { hook } = setup(modelFor('lit', 'disconnect', { swipeAction: 'drive', longPress: 'sheet' }));
-    expect(activity).not.toHaveBeenCalled();
-    act(() => {
-      run(hook.result.current);
-    });
-    expect(activity).toHaveBeenCalledOnce();
-  });
-
-  it('counts a tap while a connect is in flight too: the climber is still there', () => {
-    const { hook } = setup(modelFor('connect', 'connect', { pending: true }));
-    act(() => {
-      hook.result.current.press('button');
-    });
-    expect(activity).toHaveBeenCalledOnce();
-  });
-
+describe('useWallControl: the swipe peek’s replay', () => {
   // Spec B3: the swipe peek's replay counts the presses that put a climb up.
   it('counts a Put on board on the button towards the swipe peek’s replay, never a bulb or a stop', () => {
     const presses = vi.spyOn(wallSwipeHint, 'noteWallPutOnBoardPress');
@@ -462,12 +410,6 @@ describe('useWallControl: presses keep auto-disconnect from letting go', () => {
     } finally {
       presses.mockRestore();
     }
-  });
-
-  it('counts nothing on a render alone', () => {
-    const { hook } = setup(modelFor('lit', 'stop_driving', { driving: true }));
-    hook.rerender({ model: modelFor('lit', 'stop_driving', { driving: true }) });
-    expect(activity).not.toHaveBeenCalled();
   });
 });
 
@@ -494,7 +436,6 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     commitLabel: 'putOnWall',
     otherClimbLit: false,
     writing: false,
-    autoDisconnectWarning: false,
     navigationCommits: false,
     drivingStopped: true,
   };
@@ -589,7 +530,6 @@ describe('useWallControl: Put on board keeps lighting', () => {
     commitLabel: 'putOnWall',
     otherClimbLit: false,
     writing: false,
-    autoDisconnectWarning: false,
     navigationCommits: false,
     solo: true,
     lightOnSwipe: false,
@@ -752,7 +692,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
   });
 });
 
-describe('useWallControl: the keep-lighting window', () => {
+describe('useWallControl: Put on board’s timed drive', () => {
   beforeEach(() => {
     resetDriveModeForTests();
     for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
@@ -763,7 +703,12 @@ describe('useWallControl: the keep-lighting window', () => {
   });
 
   const windowModel = () =>
-    modelFor('lit', 'stop_window', { lightWindow: true, labelKey: 'eachPickLights', bulbTapAction: 'disconnect' });
+    modelFor('lit', 'stop_window', {
+      lightWindow: true,
+      driving: true,
+      labelKey: 'youAreDriving',
+      bulbTapAction: 'disconnect',
+    });
   function openWindow(windowMs = 45_000) {
     act(() => {
       enterDriveMode({
@@ -777,7 +722,7 @@ describe('useWallControl: the keep-lighting window', () => {
     act(() => markDriveLive());
   }
 
-  it('stops the window on a press and keeps the link, with a light buzz, and says so', () => {
+  it('stops the timed drive on a press and keeps the link, with a light buzz, and says so', () => {
     const { hook, run } = setup(windowModel());
     openWindow();
     act(() => hook.result.current.press('button'));
@@ -786,11 +731,36 @@ describe('useWallControl: the keep-lighting window', () => {
     expect(isDrivingStoppedForLink()).toBe(true);
     expect(run.disconnect).not.toHaveBeenCalled();
     expect(haptics.hapticLight).toHaveBeenCalledOnce();
-    expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedWindow');
+    expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedDriving');
     expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_window', control: 'button' });
   });
 
-  it('drops the second tap of a double tap on Each pick lights', () => {
+  // Disconnect Bluetooth when driving ends: the stop lets go of the board too
+  // (DriveModeWatcher), so a screen reader hears it once the link drops.
+  it('says Board disconnected once the link drops after a stop, with Disconnect Bluetooth when driving ends on', () => {
+    setSetting('disconnectWhenDrivingEnds', true);
+    try {
+      const { hook } = setup(windowModel());
+      openWindow();
+      act(() => hook.result.current.press('button'));
+      expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedDriving');
+      hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+      expect(announceQueued).toHaveBeenLastCalledWith('ble.barControl.disconnectedLabel');
+    } finally {
+      resetAllSettings();
+    }
+  });
+
+  it('says nothing more when the link drops later with the setting off', () => {
+    const { hook } = setup(windowModel());
+    openWindow();
+    act(() => hook.result.current.press('button'));
+    announceQueued.mockClear();
+    hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+    expect(announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('drops the second tap of a double tap on the timed drive', () => {
     vi.useFakeTimers();
     const { hook, run } = setup(windowModel());
     openWindow();
@@ -823,29 +793,19 @@ describe('useWallControl: the keep-lighting window', () => {
     expect(announceQueued).toHaveBeenCalledOnce();
   });
 
-  // The clock counts to auto-disconnect when that comes first (spec B2), and
-  // the one spoken notice of the limit (WCAG 2.2.1) must say the same length.
-  it('says the length the clock shows when auto-disconnect comes first', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(100_000);
-    const release = registerAutoDisconnectDeadlineReader(() => 100_000 + 30_000);
-    try {
-      setup(windowModel());
-      openWindow(45_000);
-      expect(announceQueued).toHaveBeenCalledOnce();
-      expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStarted {"count":30}');
-    } finally {
-      release();
-    }
-  });
-
-  it('says a one-minute window in minutes', () => {
+  it('says a one-minute drive in minutes, and 2 or 5 minutes too', () => {
     setup(windowModel());
     openWindow(60_000);
     expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStartedMinute');
+    act(() => {
+      exitDriveMode('stopped');
+    });
+    announceQueued.mockClear();
+    openWindow(300_000);
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStartedMinutes {"count":5}');
   });
 
-  it('says when the window ran out, and drops taps for 2 s after, so a stop meant for it never disconnects', () => {
+  it('says Stopped driving the wall when the time ran out, and drops taps for 2 s after, so a stop meant for it never disconnects', () => {
     vi.useFakeTimers();
     const { hook, run } = setup(windowModel());
     openWindow();
@@ -854,7 +814,7 @@ describe('useWallControl: the keep-lighting window', () => {
       exitDriveMode('window_ended');
     });
     expect(announceQueued).toHaveBeenCalledOnce();
-    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowEnded');
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
     // The label flipped to Disconnect board under the climber's thumb.
     hook.rerender({ model: modelFor('lit', 'disconnect') });
     act(() => hook.result.current.press('button'));
@@ -881,7 +841,7 @@ describe('useWallControl: the keep-lighting window', () => {
     act(() => {
       exitDriveMode('window_ended');
     });
-    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.stoppedDriving');
     hook.rerender({ model: modelFor('lit', 'disconnect') });
     act(() => {
       vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1);
@@ -954,7 +914,7 @@ describe('useWallControl: the keep-lighting window', () => {
     act(() => {
       exitDriveMode('window_ended');
     });
-    expect(announceQueued).not.toHaveBeenCalledWith('playView.wallControl.windowEnded');
+    expect(announceQueued).not.toHaveBeenCalledWith('playView.wallControl.stoppedDriving');
     hook.rerender({ model: modelFor('lit', 'disconnect') });
     act(() => {
       vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1_000);
@@ -999,7 +959,7 @@ describe('useWallControl: the keep-lighting window', () => {
     act(() => {
       exitDriveMode('window_ended');
     });
-    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.stoppedDriving');
     // The tap guard is each player's own: the one that stayed quiet still has it.
     first.hook.rerender({ model: modelFor('lit', 'disconnect') });
     act(() => first.hook.result.current.press('button'));

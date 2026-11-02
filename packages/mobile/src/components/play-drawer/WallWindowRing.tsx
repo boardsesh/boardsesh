@@ -1,8 +1,8 @@
-// Put on board's keep-lighting window on a bulb (2.7, spec B3): the first
-// row's bulb and the MiniPlayer's, which stands in for the wall button beside
-// a tablet's player. Without it a bulb shows a plain lit board for the whole
-// window. A 2 pt violet arc round the bulb's edge drains like the button's bar
-// (`useWindowDrain`), and the bulb speaks the time left as its value.
+// Put on board's timed drive on a bulb (2.7, spec B3): the first row's bulb and
+// the MiniPlayer's, which stands in for the wall button beside a tablet's
+// player. A bulb draws no frost to shrink, so a 2 pt violet arc round its edge
+// drains as the button's frost does (`useWindowDrain`), and the bulb speaks
+// the time left as its value.
 
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,17 +12,17 @@ import Svg, { Circle } from 'react-native-svg';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useTheme } from '../../providers/theme-provider';
 import { withAlpha } from '../../theme/colors';
-import { WINDOW_BAR_TRACK_ALPHA, WINDOW_RING_WIDTH } from './wall-control';
+import { WINDOW_RING_TRACK_ALPHA, WINDOW_RING_WIDTH } from './wall-control';
 import { windowBulbValue, windowTimeValue } from './wall-control-text';
 import { useWindowDrain, useWindowSecondsLeft } from './WallWindowClock';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 /**
- * The window's time left as a bulb's screen-reader value, on the button's 10 s
- * step, or null outside a window. `bulb`: "Each pick lights, 30 seconds left",
- * for a bulb labelled Board lights. `time`: "30 seconds left", for one that
- * already carries the button's label (the MiniPlayer's).
+ * The timed drive's time left as a bulb's screen-reader value, on the button's
+ * 10 s step, or null outside one. `bulb`: "You are driving the wall, stops in
+ * 30 seconds", for a bulb labelled Board lights. `time`: "Stops in 30
+ * seconds", for one that already carries the button's label (the MiniPlayer's).
  */
 export function useWindowValueText(kind: 'bulb' | 'time', active: boolean): string | null {
   const { t } = useTranslation('session');
@@ -37,7 +37,7 @@ type WallWindowRingProps = {
   size: number;
 };
 
-/** The draining arc round a bulb, drawn only during a live window. Drawing only: the bulb speaks. */
+/** The draining arc round a bulb, drawn only during a live timed drive. Drawing only: the bulb speaks. */
 function WallWindowRingComponent({ size }: WallWindowRingProps) {
   const { brandColors } = useTheme();
   const reduceMotion = useReduceMotion();
@@ -47,7 +47,7 @@ function WallWindowRingComponent({ size }: WallWindowRingProps) {
   const arcProps = useAnimatedProps(() => ({ strokeDashoffset: circumference * (1 - fraction.value) }));
   if (!active || radius <= 0) return null;
   const centre = size / 2;
-  // The button's bar violet: the deeper one in light, the lighter one in dark.
+  // The tonal label's violet: the deeper one in light, the lighter one in dark.
   const color = brandColors.primaryStrong;
   return (
     <View
@@ -62,7 +62,7 @@ function WallWindowRingComponent({ size }: WallWindowRingProps) {
           cx={centre}
           cy={centre}
           r={radius}
-          stroke={withAlpha(color, WINDOW_BAR_TRACK_ALPHA)}
+          stroke={withAlpha(color, WINDOW_RING_TRACK_ALPHA)}
           strokeWidth={WINDOW_RING_WIDTH}
           fill="none"
         />

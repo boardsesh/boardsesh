@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { trackDriveModeEnded, trackDriveModeStarted } from '../../lib/analytics-wall-control';
-import { readAutoDisconnectDeadlineMs } from '../../lib/auto-disconnect-deadline';
 import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-lighting';
 
 /**
@@ -18,11 +17,18 @@ import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-
  *   flight. Nothing lights on a climb change yet.
  * - `live` — the climb is lit on this phone's link; every change lights.
  *
- * Put on board's keep-lighting window (2.7) is a live drive with an end
- * (`windowMs`, `expiresAt`): it starts at the wall's lit confirm, not at the
- * press, so a slow write doesn't eat the climber's seconds, and each climb that
- * lights restarts it. A swipe or Light every climb during it makes it
- * open-ended. `DriveModeWatcher` ends it (`window_ended`) once its time is up.
+ * Put on board's timed drive (2.7, Stop driving after) is a live drive with an
+ * end (`windowMs`, `expiresAt`): it starts at the wall's lit confirm, not at
+ * the press, so a slow write doesn't eat the climber's seconds, and each climb
+ * that lights restarts it. It looks like any drive (the frost, You are driving
+ * the wall), plus a clock, and the frost shrinks as its time runs out. Only Put
+ * on board's drive is timed: a swipe or Light every climb starts an open-ended
+ * one, and during a timed drive makes it open-ended. `DriveModeWatcher` ends it
+ * (`window_ended`) once its time is up.
+ *
+ * Every end is handed on (`subscribeDriveEnded`), so Disconnect Bluetooth when
+ * driving ends can let go of the board for the ends the climber or the clock
+ * caused (`use-driving-ended-disconnect.ts`).
  */
 export type DriveModePhase = 'arming' | 'live';
 
@@ -41,7 +47,7 @@ export type DriveModeState = {
   /** Climbs lit on this phone's link, the swipe's own included, for Drive Mode Ended. */
   climbsLit: number;
   /**
-   * Put on board's keep-lighting window (2.7): how long it lasts after each
+   * Put on board's timed drive (2.7, Stop driving after): how long it lasts after each
    * climb that lights, or null for an open-ended drive (a swipe, Light every
    * climb, Until I stop, or a window a swipe turned open-ended).
    */
@@ -78,7 +84,10 @@ export type DriveModeExitReason =
   /** The board changed under a live drive. */
   | 'board_changed'
   | 'signed_out'
-  /** Put on board's keep-lighting window ran out, or its setting was turned off. */
+  /**
+   * Put on board's timed drive ran out, its setting was turned to Right away,
+   * or a crewmate's put-up ended it.
+   */
   | 'window_ended';
 
 /**
@@ -133,7 +142,7 @@ export function resolveDriveModeExit({
 }
 
 /**
- * Whether a keep-lighting window ends because Settings › Board changed under it:
+ * Whether a timed drive ends because Settings › Board changed under it:
  * its own choice turned Off, or (the general choice, in a crew session) In a
  * session too turned off. A MoonBoard's window ignores In a session too.
  */
@@ -162,23 +171,13 @@ export function isDriveWindowDue(drive: DriveModeState | null, now = Date.now())
 
 /**
  * A render's read of a live drive, checked again at the pick being made now.
- * A keep-lighting window past its end lights nothing, even while the watcher's
+ * A timed drive past its end lights nothing, even while the watcher's
  * timer has not fired: Android pauses JS timers with the activity (#7038), so
  * the end is read off the wall clock at every pick, never trusted to a timer.
  * `DriveModeWatcher` still ends the drive and tidies the button.
  */
 export function drivingAtPick(rendered: boolean, now = Date.now()): boolean {
   return rendered && !isDriveWindowDue(driveMode, now);
-}
-
-/**
- * The end the window shows: its own, or auto-disconnect's when that comes
- * first (spec B2), since the link drops then and lighting stops with it.
- */
-export function clampWindowEnd(expiresAt: number, autoDisconnectDeadlineMs: number | null): number {
-  return autoDisconnectDeadlineMs !== null && autoDisconnectDeadlineMs < expiresAt
-    ? autoDisconnectDeadlineMs
-    : expiresAt;
 }
 
 let driveMode: DriveModeState | null = null;
@@ -191,7 +190,47 @@ let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
 const listeners = new Set<() => void>();
 
-/** A line the player speaks about a keep-lighting window: its start, a swipe opening it up, its end. */
+/** How a drive ended, as `subscribeDriveEnded` hands it on. */
+export type DriveEnded = {
+  reason: DriveModeExitReason;
+  /**
+   * The drive that ended, or null for a stop on this link while only Light the
+   * board as I swipe drove (solo, no drive in this store).
+   */
+  drive: DriveModeState | null;
+  /**
+   * What letting go of the board must wait for, where something is still on
+   * its way to the wall: Turn off all lights' write, or a crewmate's climb.
+   * Called only by a listener that lets go. Null: nothing to wait for.
+   */
+  disconnectAfter: (() => Promise<void>) | null;
+};
+
+/** What the caller ending a drive knows about it. */
+export type DriveEndOptions = {
+  /** See `DriveEnded.disconnectAfter`. */
+  disconnectAfter?: () => Promise<void>;
+};
+
+const endedListeners = new Set<(ended: DriveEnded) => void>();
+
+function emitEnded(ended: DriveEnded): void {
+  for (const listener of endedListeners) listener(ended);
+}
+
+/**
+ * Every end of a drive, after the store has dropped it: a press on the frosted
+ * button, the clock, a dropped link, a changed session, and the rest. For
+ * Disconnect Bluetooth when driving ends, outside React.
+ */
+export function subscribeDriveEnded(listener: (ended: DriveEnded) => void): () => void {
+  endedListeners.add(listener);
+  return () => {
+    endedListeners.delete(listener);
+  };
+}
+
+/** A line the player speaks about a timed drive: its start, a swipe opening it up, its end. */
 export type DriveAnnouncement = 'window_started' | 'window_opened_up' | 'window_ended';
 /** The lines already said for one drive (by its start). A new drive starts empty. */
 let claimedAnnouncements: { startedAt: number; said: Set<DriveAnnouncement> } | null = null;
@@ -234,8 +273,8 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
 
 /**
  * A swipe on the wall button landed, or Put on board's climb went up with
- * keep-lighting on: start arming. A fresh drive clears an earlier stop.
- * `windowMs` makes it a keep-lighting window once live; omitted, it is open-ended.
+ * Stop driving after set to a time (or Until I stop): start arming. A fresh drive clears an earlier stop.
+ * `windowMs` makes it a timed drive once live; omitted, it is open-ended.
  */
 export function enterDriveMode({
   sessionId,
@@ -331,7 +370,7 @@ export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
 }
 
 /**
- * A swipe or Light every climb during a keep-lighting window: the drive goes on
+ * A swipe or Light every climb during a timed drive: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
  */
 export function makeDriveOpenEnded(): boolean {
@@ -387,21 +426,25 @@ export function carryDriveIntoCrew({
 }
 
 /** End driving. Returns what ended, or null when nobody was driving. */
-export function exitDriveMode(reason: DriveModeExitReason): DriveModeState | null {
+export function exitDriveMode(reason: DriveModeExitReason, options: DriveEndOptions = {}): DriveModeState | null {
   const ended = driveMode;
   if (!ended) return null;
   driveMode = null;
   lastExitReason = reason;
   emit();
   reportEnded(ended, reason);
+  emitEnded({ reason, drive: ended, disconnectAfter: options.disconnectAfter ?? null });
   return ended;
 }
 
 /**
- * The press on the frosted button: stop driving and keep the link. Swipes stay
- * previews until the link drops, solo with Light the board as I swipe on too.
+ * The press on the frosted button (or Turn off all lights during a drive):
+ * stop driving and keep the link. Swipes stay previews until the link drops,
+ * solo with Light the board as I swipe on too. Handed on as a `stopped` end
+ * even with no drive in this store, since the climber stopped driving all the
+ * same; Disconnect Bluetooth when driving ends then lets go of the board.
  */
-export function stopDrivingForLink(): DriveModeState | null {
+export function stopDrivingForLink(options: DriveEndOptions = {}): DriveModeState | null {
   const ended = driveMode;
   driveMode = null;
   if (ended) lastExitReason = 'stopped';
@@ -410,6 +453,7 @@ export function stopDrivingForLink(): DriveModeState | null {
     emit();
   }
   if (ended) reportEnded(ended, 'stopped');
+  emitEnded({ reason: 'stopped', drive: ended, disconnectAfter: options.disconnectAfter ?? null });
   return ended;
 }
 
@@ -429,7 +473,8 @@ export function getDriveMode(): DriveModeState | null {
  *
  * - `off` — nobody drives: picks are previews (unless a setting lights them).
  * - `arming` — a drive (or a window) is on its way to the wall.
- * - `window` — Put on board's keep-lighting window: picks light until it ends.
+ * - `window` — Put on board's timed drive: the frost with a clock, picks light
+ *   until its time runs out.
  * - `driving` — an open-ended drive, the frost: picks light until stopped.
  */
 export type DriveLightingMode = 'off' | 'arming' | 'window' | 'driving';
@@ -440,23 +485,18 @@ function lightingModeOf(drive: DriveModeState | null): DriveLightingMode {
   return drive.windowMs !== null ? 'window' : 'driving';
 }
 
-/** The lighting mode and, for a window, when it ends (clamped to auto-disconnect). */
+/** The lighting mode and, for a timed drive, when it ends. */
 export type DriveLightingSnapshot = { mode: DriveLightingMode; endsAt: number | null };
 
 /**
  * The seam for the Live Activity and the Android notification bridge (Step 3b):
  * read `{ mode, endsAt }` here on every `subscribeDriveMode` call. `endsAt` is
- * the window's shown end (`clampWindowEnd`), null outside a window. A fresh
- * object per call: read it in a listener, never as a `useSyncExternalStore`
- * snapshot.
+ * the timed drive's end, null outside one. A fresh object per call: read it in
+ * a listener, never as a `useSyncExternalStore` snapshot.
  */
 export function getDriveLightingSnapshot(): DriveLightingSnapshot {
   const mode = lightingModeOf(driveMode);
-  const expiresAt = mode === 'window' ? (driveMode?.expiresAt ?? null) : null;
-  return {
-    mode,
-    endsAt: expiresAt === null ? null : clampWindowEnd(expiresAt, readAutoDisconnectDeadlineMs()),
-  };
+  return { mode, endsAt: mode === 'window' ? (driveMode?.expiresAt ?? null) : null };
 }
 
 /** Every change to the drive (start, live, a lit climb, a renewal, the end), for a bridge outside React. */
@@ -473,12 +513,13 @@ export function getLastDriveModeExitReason(): DriveModeExitReason | null {
   return lastExitReason;
 }
 
-/** Tests only: back to nobody driving, nothing stopped. */
+/** Tests only: back to nobody driving, nothing stopped, no end listeners. */
 export function resetDriveModeForTests(): void {
   driveMode = null;
   stoppedForLink = false;
   lastExitReason = null;
   claimedAnnouncements = null;
+  endedListeners.clear();
   emit();
 }
 
@@ -507,20 +548,20 @@ export function useDriveModePhase(): 'off' | DriveModePhase {
   return useSyncExternalStore(subscribe, readPhase, readPhase);
 }
 
-/** Off, arming, a keep-lighting window, or open-ended driving. Re-renders only when that word changes. */
+/** Off, arming, a timed drive, or open-ended driving. Re-renders only when that word changes. */
 export function useDriveLightingMode(): DriveLightingMode {
   return useSyncExternalStore(subscribe, readLightingMode, readLightingMode);
 }
 
 /**
- * The live keep-lighting window's own end (unclamped), or null outside one.
+ * The live timed drive's end, or null outside one.
  * A primitive, so its readers re-render on a renewal, never on a count alone.
  */
 export function useDriveWindowExpiresAt(): number | null {
   return useSyncExternalStore(subscribe, readWindowExpiresAt, readWindowExpiresAt);
 }
 
-/** The keep-lighting window's length, or null with no window. */
+/** The timed drive's length, or null with no timed drive. */
 export function useDriveWindowMs(): number | null {
   return useSyncExternalStore(subscribe, readWindowMs, readWindowMs);
 }

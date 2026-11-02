@@ -123,7 +123,6 @@ import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveWallLit } from './wall-lit';
 import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
-import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 import { nowMs } from '../../lib/clock';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -378,13 +377,6 @@ export function PlayCore({
   const [drawerPreviewIsWallClimb, setDrawerPreviewIsWallClimb] = useState(
     () => !!initialDrawerPreviewItem(openTarget) && !!openTarget?.options?.previewIsWallClimb,
   );
-  // A change of the preview on screen is the climber at the wall, browsing: it
-  // pushes auto-disconnect's deadline out (2.7), as a write does, so looking
-  // through climbs never drops the board under them.
-  const drawerPreviewUuid = drawerPreviewItem?.uuid ?? null;
-  useEffect(() => {
-    if (drawerPreviewUuid !== null) noteAutoDisconnectActivity();
-  }, [drawerPreviewUuid]);
   // The wall-state pill's explainer, and the header's measured bottom edge it
   // hangs from. Owned here rather than inside the pill because the callout is an
   // absolute sibling of the swipeable header (so it doesn't ride the swipe
@@ -527,12 +519,12 @@ export function PlayCore({
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
   const drivingLive = driveModePhase === 'live';
-  // Put on board's keep-lighting window (2.7): a live drive with an end. It
-  // lights every change of climb like any live drive; the wall button draws it
-  // its own way (Each pick lights, the bar and the clock) instead of the frost.
+  // Put on board's timed drive (2.7, Stop driving after): a live drive with an
+  // end. It lights every change of climb like any live drive, and the wall
+  // button draws the same frost, plus a clock, shrinking as its time runs out.
   const lightWindow = useDriveLightingMode() === 'window';
-  // After Put on board, keep lighting (Settings › Board): read here so the wall
-  // control's press knows whether its climb going up opens a window.
+  // Stop driving after (Settings › Board): read here so the wall control's
+  // press knows whether its climb going up starts a drive.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [putOnBoardDrivesInSession] = useSetting('putOnBoardDrivesInSession');
@@ -1422,7 +1414,6 @@ export function PlayCore({
         commitLabel: commitBarModel.commitLabel,
         otherClimbLit: wallClimbUuid !== null && wallClimbUuid !== displayedClimbUuid,
         writing: wallWriting,
-        autoDisconnectWarning: bluetooth?.autoDisconnectWarning ?? false,
         // Driving the board: a swipe from here goes up on the wall (#7017).
         navigationCommits: navigationCommits && !browseLatchActive,
         driveMode: driveModePhase,
@@ -1468,7 +1459,6 @@ export function PlayCore({
       wallClimbUuid,
       displayedClimbUuid,
       wallWriting,
-      bluetooth?.autoDisconnectWarning,
       navigationCommits,
       browseLatchActive,
       driveModePhase,
@@ -1577,10 +1567,11 @@ export function PlayCore({
     secondaryRow: actionBarLayout.secondaryRow,
   });
 
-  // What the card says Put on board keeps lighting: the board family's choice,
-  // read the way the press reads it (`resolveKeepLightingPlan`), so it never
-  // promises a window where none can start: a crew session with In a session
-  // too off, or the swipe flag (keep-lighting's kill switch) off.
+  // What the card says Put on board's drive does: the board family's Stop
+  // driving after choice, read the way the press reads it
+  // (`resolveKeepLightingPlan`), so it never promises a drive where none can
+  // start: a crew session with In a session too off, or the swipe flag (the
+  // drive's kill switch) off.
   const previewFirstKeepLighting = useMemo(
     () =>
       swipeToDriveEnabled
@@ -1594,14 +1585,10 @@ export function PlayCore({
         : null,
     [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
   );
-  // The two settings the plan doesn't take, read as the press and the link read
-  // them (`resolveKeepLightingReach`): solo with Light the board as I swipe on
-  // the press opens no window (the wall control's `solo` and `lightOnSwipe`),
-  // and auto-disconnect ends lighting when it lets go of the board.
+  // The setting the plan doesn't take, read as the press reads it
+  // (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
+  // press starts no drive (the wall control's `solo` and `lightOnSwipe`).
   const previewFirstSwipeLightsSolo = lightOnSwipe && !isCrewSession && !browseByDefault;
-  const previewFirstAutoDisconnectSeconds = bluetooth?.autoDisconnectEnabled
-    ? bluetooth.autoDisconnectTimeoutSeconds
-    : null;
 
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
@@ -3339,7 +3326,6 @@ export function PlayCore({
                           glow={wallGlowInput}
                           keepLighting={previewFirstKeepLighting}
                           swipeLightsSolo={previewFirstSwipeLightsSolo}
-                          autoDisconnectSeconds={previewFirstAutoDisconnectSeconds}
                           onExit={handlePreviewFirstTipExit}
                           onLayout={handlePreviewFirstTipLayout}
                         />

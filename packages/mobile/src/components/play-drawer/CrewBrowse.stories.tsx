@@ -60,7 +60,6 @@ function storyModel(
     commitLabel: 'putOnWall',
     otherClimbLit: false,
     writing: false,
-    autoDisconnectWarning: false,
     navigationCommits: driving,
   });
 }

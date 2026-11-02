@@ -114,7 +114,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
+  useSetting: () => [30, vi.fn()],
 }));
 
 vi.mock('@boardsesh/play-view', () => ({

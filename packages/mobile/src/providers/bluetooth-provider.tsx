@@ -78,13 +78,10 @@ import { toClimbInput } from '../lib/climb-to-queue-item';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import type { DevicePickerSeen } from '../lib/ble/picker-seen';
-import { useAutoDisconnectTimeoutLabels } from '../components/ble/use-auto-disconnect-timeout-labels';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
-import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
-import { registerAutoDisconnectActivity, registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
@@ -188,9 +185,6 @@ type BluetoothContextValue = {
    * board instead of opening the picker.
    */
   reconnectDeviceIdForCurrentBoard: string | null;
-  autoDisconnectEnabled: boolean;
-  autoDisconnectTimeoutSeconds: number;
-  autoDisconnectWarning: boolean;
   /** The board type this provider is scoped to (route-derived), so BLE-controls
    * UI can gate MoonBoard-only affordances. Undefined off a board route. */
   boardName: string | undefined;
@@ -1009,25 +1003,8 @@ export function BluetoothProvider({
   // queue changes) + toast, for advancing past a spill climb and telling the user.
   const { setCurrentClimb, getQueueSnapshot } = useQueueActions();
   const { showToast } = useToast();
-  const [autoDisconnectBle] = useSetting('autoDisconnectBle');
-  const [autoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
   const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useSetting('moonboardLightAdjacentHolds');
   const encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds);
-  const [autoDisconnectWarning, setAutoDisconnectWarning] = useState(false);
-  const autoDisconnectExpireRef = useRef<() => void>(() => {});
-  const autoDisconnectControllerRef = useRef<AutoDisconnectController | null>(null);
-  if (!autoDisconnectControllerRef.current) {
-    autoDisconnectControllerRef.current = new AutoDisconnectController({
-      onExpire: () => autoDisconnectExpireRef.current(),
-    });
-  }
-  // Activity pushes the deadline out: a write that landed (below), and the
-  // climber's own changes of climb in the player and wall-button presses
-  // (`noteAutoDisconnectActivity`). The warning ring goes with it.
-  const resetAutoDisconnect = useCallback(() => {
-    if (autoDisconnectControllerRef.current?.noteActivity()) setAutoDisconnectWarning(false);
-  }, []);
-  useEffect(() => registerAutoDisconnectActivity(resetAutoDisconnect), [resetAutoDisconnect]);
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
   const bluetoothColorOverrides = useMemo(
     () => getBluetoothColorOverrides(holdColorOverrides),
@@ -1587,26 +1564,6 @@ export function BluetoothProvider({
     isConnected,
   });
 
-  // Every successful board write is activity for the auto-disconnect deadline,
-  // no matter which surface wrote (queue auto-sender, mirror toggle, playback
-  // scrub, climb-edit preview, clear lights). Wrapping the sender here keeps
-  // all consumers covered without each one remembering to notify.
-  const sendFramesToBoardWithActivityReset = useCallback<SendFramesToBoard>(
-    (frames, mirrored, signal, sendContext) => {
-      // Pass the hook's promise through untouched (no extra await hop in the
-      // send path); the timer reset rides a side chain that only observes
-      // success. Callers keep owning failure handling on the returned promise.
-      const sendPromise = sendFramesToBoard(frames, mirrored, signal, sendContext);
-      sendPromise
-        .then((writeSucceeded) => {
-          if (writeSucceeded === true) resetAutoDisconnect();
-        })
-        .catch(() => {});
-      return sendPromise;
-    },
-    [sendFramesToBoard, resetAutoDisconnect],
-  );
-
   /**
    * The single commit seam for "put this climb on the wall". Two backends, one
    * pipeline: everything downstream of a `true` — the latest-wins coalescing
@@ -1622,7 +1579,7 @@ export function BluetoothProvider({
    */
   const commitWallFrames = useCallback<SendFramesToBoard>(
     (frames, mirrored, signal, sendContext) => {
-      if (isConnected) return sendFramesToBoardWithActivityReset(frames, mirrored, signal, sendContext);
+      if (isConnected) return sendFramesToBoard(frames, mirrored, signal, sendContext);
       // A wall with no lights: nothing to write. Wait out a stand-in for the
       // write latency so the drain loop coalesces a fast swipe the same way a
       // physical write does, then report the climb as up.
@@ -1638,7 +1595,7 @@ export function BluetoothProvider({
       }
       return Promise.resolve(false);
     },
-    [isConnected, sendFramesToBoardWithActivityReset],
+    [isConnected, sendFramesToBoard],
   );
 
   /**
@@ -2445,8 +2402,8 @@ export function BluetoothProvider({
   );
 
   const clearBoard = useCallback(
-    () => sendFramesToBoardWithActivityReset('', false, undefined, { sendSource: 'clear' }),
-    [sendFramesToBoardWithActivityReset],
+    () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
+    [sendFramesToBoard],
   );
 
   // Blank the wall, keep the link, and tell the feed (#7015, #7047). The link
@@ -2727,8 +2684,9 @@ export function BluetoothProvider({
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
   // generation synchronously before awaiting the native adapter teardown.
-  // Auto-disconnect reuses the same release path but keeps the remembered
-  // board handle (the hook only forgets the board on a 'user' reason).
+  // Disconnect Bluetooth when driving ends reuses the same release path but
+  // keeps the remembered board handle (the hook only forgets the board on a
+  // 'user' reason), so the next Put on board reconnects silently.
   const wrappedDisconnect = useCallback(
     async (reason: BluetoothDisconnectReason = 'user') => {
       const disconnectInFlight = disconnectInFlightRef.current;
@@ -2758,58 +2716,6 @@ export function BluetoothProvider({
     [clearPendingWallReportAndUndoToastArm, disconnect],
   );
 
-  // Auto-disconnect used to let go silently, which read as the board dropping.
-  // It says what happened and the one tap that brings the board back.
-  const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
-  const autoDisconnectTimeoutLabel =
-    autoDisconnectTimeoutLabels[autoDisconnectTimeoutSeconds] ?? String(autoDisconnectTimeoutSeconds);
-  const autoDisconnectOnExpire = useCallback(() => {
-    void wrappedDisconnect('auto_disconnect');
-    showToast(t('ble.autoDisconnect.disconnectedToast', { timeout: autoDisconnectTimeoutLabel }), 'info');
-  }, [wrappedDisconnect, showToast, t, autoDisconnectTimeoutLabel]);
-  autoDisconnectExpireRef.current = autoDisconnectOnExpire;
-
-  useEffect(() => {
-    autoDisconnectControllerRef.current?.update(autoDisconnectBle, autoDisconnectTimeoutSeconds);
-  }, [autoDisconnectBle, autoDisconnectTimeoutSeconds]);
-
-  useEffect(() => {
-    const controller = autoDisconnectControllerRef.current;
-    if (isConnected) controller?.connectedNow();
-    else controller?.disconnectedNow();
-    return () => controller?.disconnectedNow();
-  }, [isConnected]);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') autoDisconnectControllerRef.current?.resume();
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // The one deadline, read where a view ends before it does: Put on board's
-  // keep-lighting window shows the sooner of its own end and this (spec B2).
-  useEffect(
-    () => registerAutoDisconnectDeadlineReader(() => autoDisconnectControllerRef.current?.getDeadlineMs() ?? null),
-    [],
-  );
-
-  // The deadline controller owns expiry; this lightweight poll only drives the
-  // final-ten-second visual hint. It runs while connected and updates once per
-  // second, avoiding a per-frame animation/state subscription in the provider.
-  useEffect(() => {
-    setAutoDisconnectWarning(false);
-    if (!isConnected || !autoDisconnectBle) return;
-
-    const updateWarning = () => {
-      const deadlineMs = autoDisconnectControllerRef.current?.getDeadlineMs() ?? null;
-      setAutoDisconnectWarning(deadlineMs !== null && deadlineMs - Date.now() <= 10_000);
-    };
-    updateWarning();
-    const interval = setInterval(updateWarning, 1000);
-    return () => clearInterval(interval);
-  }, [isConnected, autoDisconnectBle, autoDisconnectTimeoutSeconds]);
-
   // Register with the module-level status store so consumers rendered outside
   // this provider (e.g. the root tab bar, the long-press BLE controls sheet) can
   // observe BT connection state and force a disconnect. Register the instrumented
@@ -2832,7 +2738,7 @@ export function BluetoothProvider({
       connectAfterBoardSwitch,
       hasRememberedDeviceForBoard,
       disconnect: wrappedDisconnect,
-      sendFramesToBoard: sendFramesToBoardWithActivityReset,
+      sendFramesToBoard,
       clearBoard,
       turnOffAllLights,
       reassertWall,
@@ -2842,9 +2748,6 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
-      autoDisconnectEnabled: autoDisconnectBle,
-      autoDisconnectTimeoutSeconds,
-      autoDisconnectWarning,
       boardName,
       layoutId,
       sizeId,
@@ -2866,7 +2769,7 @@ export function BluetoothProvider({
       connectAfterBoardSwitch,
       hasRememberedDeviceForBoard,
       wrappedDisconnect,
-      sendFramesToBoardWithActivityReset,
+      sendFramesToBoard,
       clearBoard,
       turnOffAllLights,
       reassertWall,
@@ -2876,9 +2779,6 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
-      autoDisconnectBle,
-      autoDisconnectTimeoutSeconds,
-      autoDisconnectWarning,
       boardName,
       layoutId,
       sizeId,

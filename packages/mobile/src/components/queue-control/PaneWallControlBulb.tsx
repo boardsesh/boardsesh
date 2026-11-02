@@ -27,9 +27,9 @@ type PaneWallControlBulbProps = {
  * The MiniPlayer's bulb standing in for the player beside it (#7000, the tablet
  * rule, with the bulb chosen). It draws the player's own board control model and runs the
  * player's own tap and hold, so its face and taps match the player's, and the
- * events fire once with `control: 'mini_bar'`. During Put on board's
- * keep-lighting window it carries the button's cue too (spec B3): a violet arc
- * that drains, and the time left as its value.
+ * events fire once with `control: 'mini_bar'`. During Put on board's timed
+ * drive it carries the button's cue too (spec B3): a violet arc that drains,
+ * and the time left as its value.
  */
 export function PaneWallControlBulb({
   control,
@@ -41,7 +41,7 @@ export function PaneWallControlBulb({
   const { systemColors, brandColors, colorScheme } = useTheme();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   const text = useWallControlText(model);
-  // Its label is the button's ("Each pick lights"), so the value is the time alone.
+  // Its label is the button's ("You are driving the wall"), so the value is the time alone.
   const windowValue = useWindowValueText('time', model.lightWindow);
   const hold = model.longPress === 'sheet';
   const accessibilityActions = useMemo(

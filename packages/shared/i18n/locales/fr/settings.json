@@ -466,44 +466,34 @@
     "cancel": "Annuler",
     "connectBoard": "Connecter la board",
     "relightBoard": "Rallumer la board",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Se déconnecter de la board après la durée choisie sans bloc allumé ni ouvert en aperçu.",
-      "cutsLighting": "La déconnexion automatique libère la board après {{timeout}}, donc l'éclairage s'arrête aussi à ce moment-là.",
-      "disconnectedToast": "Board déconnectée après {{timeout}} sans nouveau bloc allumé ni ouvert en aperçu. Touche Allumer sur la board pour te reconnecter.",
-      "enabledLabel": "Déconnexion automatique",
-      "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
-      "timeoutLabel": "Déconnecter après",
-      "toggleTitle": "Déconnexion automatique",
-      "toggleSubtitle": "Déconnexion après {{timeout}} d'inactivité",
-      "timeoutOptions": {
-        "10": "10 secondes",
-        "15": "15 secondes",
-        "30": "30 secondes",
-        "45": "45 secondes",
-        "60": "1 minute",
-        "120": "2 minutes",
-        "300": "5 minutes",
-        "600": "10 minutes"
-      }
-    },
     "lighting": {
       "title": "Éclairage de la board",
       "autoTitle": "Allumer automatiquement",
       "description": "Choisissez ce qui allume automatiquement la board connectée.",
       "keep": {
-        "label": "Continuer d'allumer après Allumer sur la board",
-        "off": "Désactivé",
+        "label": "Arrêter de piloter après",
+        "off": "Tout de suite",
+        "options": {
+          "30": "30 secondes",
+          "45": "45 secondes",
+          "60": "1 minute",
+          "120": "2 minutes",
+          "300": "5 minutes"
+        },
         "untilStopped": "Jusqu'à ce que j'arrête",
         "moonboardLabel": "Sur un MoonBoard",
-        "moonboardAccessibilityLabel": "Continuer d'allumer sur un MoonBoard",
+        "moonboardAccessibilityLabel": "Arrêter de piloter un MoonBoard après",
         "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
-        "sheetMoonboardLabel": "Continuer d'allumer sur ce MoonBoard",
+        "sheetMoonboardLabel": "Arrêter de piloter ce MoonBoard après",
         "inSessionLabel": "Aussi en session",
-        "inSessionAccessibilityLabel": "Continuer d'allumer aussi en session",
+        "inSessionAccessibilityLabel": "Allumer sur la board pilote aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
-        "inSessionOffReason": "Activez Continuer d'allumer après Allumer sur la board pour utiliser ce réglage.",
-        "footer": "Chaque bloc qui s'allume relance le chrono. Si vous vous reposez plus longtemps, le bloc suivant s'ouvre en aperçu."
+        "inSessionOffReason": "Choisissez une durée dans Arrêter de piloter après pour utiliser ce réglage.",
+        "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi. Chacun relance le chrono. Si vous vous reposez plus longtemps, le bloc suivant s'ouvre en aperçu."
+      },
+      "drivingEnds": {
+        "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
+        "description": "Quand vous arrêtez de piloter ou que le temps est écoulé, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter. Allumer sur la board la reconnecte."
       },
       "onSwipeLabel": "Allumer la board quand je fais défiler",
       "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
