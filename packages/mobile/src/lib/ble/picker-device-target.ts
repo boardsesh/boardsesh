@@ -58,6 +58,21 @@ export function classifyPickerDevice(
     : 'unknown';
 }
 
+/**
+ * A box only its BLE id could ever tell apart: it advertises the target's board
+ * type and no serial. Every stock MoonBoard box looks like this, and so does a
+ * Kilter-built box that advertises only `Kilter Board`. On a first connect the
+ * climber's own box is one of these, sitting in the `unknown` group, so the
+ * picker counts it as their board heard and keeps "Don't see your board?" off
+ * the sheet while it is listed. An `unknown` box with a serial nobody recorded
+ * is another box, and one that advertises no board type could be anything.
+ */
+export function isSerialLessBoxOfTargetType(device: DiscoveredDevice, target: PickerBoardTarget): boolean {
+  return (
+    parseSerialNumber(device.name) === undefined && parseAnyBoardTypeFromDeviceName(device.name) === target.boardName
+  );
+}
+
 export type PickerDeviceGroups = Record<PickerTargetMatch, DiscoveredDevice[]>;
 
 /**

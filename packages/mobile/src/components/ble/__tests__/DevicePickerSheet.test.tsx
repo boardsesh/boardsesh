@@ -49,18 +49,27 @@ vi.mock('react-native', () => ({
 }));
 
 // The last `data` array the list was handed, so a test can tell a list that kept
-// its identity from one rebuilt with the same rows.
+// its identity from one rebuilt with the same rows. The list renders its footer
+// and the scroll view its children, so a test can tell which scroller holds
+// the hints.
 const flatList = vi.hoisted(() => ({ lastData: undefined as DiscoveredDevice[] | undefined }));
-type FlatListMockProps = { data?: DiscoveredDevice[] };
+type FlatListMockProps = { data?: DiscoveredDevice[]; ListFooterComponent?: ReactNode };
+type ScrollViewMockProps = { children?: ReactNode };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetFlatList: ({ data }: FlatListMockProps) => {
+  BottomSheetFlatList: ({ data, ListFooterComponent }: FlatListMockProps) => {
     flatList.lastData = data;
-    return createElement('div', {
-      'data-list': 'true',
-      'data-count': String(data?.length ?? 0),
-      'data-device-ids': JSON.stringify(data?.map((device) => device.deviceId) ?? []),
-    });
+    return createElement(
+      'div',
+      {
+        'data-list': 'true',
+        'data-count': String(data?.length ?? 0),
+        'data-device-ids': JSON.stringify(data?.map((device) => device.deviceId) ?? []),
+      },
+      ListFooterComponent ?? null,
+    );
   },
+  BottomSheetScrollView: ({ children }: ScrollViewMockProps) =>
+    createElement('div', { 'data-scroll': 'true' }, children),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -517,6 +526,37 @@ describe('DevicePickerSheet Scan again', () => {
     expect(scanAgainButton(container)).toBeNull();
   });
 
+  // The location hints come in 5 s into the scan now, so their "connect again"
+  // copy can show while the scan still runs, up to 25 s before it would end.
+  it('offers it mid-scan once location is granted, as the hint asks', () => {
+    locationHint.wasGranted = true;
+    const onScanAgain = vi.fn();
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, onScanAgain })} />);
+
+    expect(hasText(container, 'ble.locationHintGranted')).toBe(true);
+    act(() => scanAgainButton(container)?.click());
+    expect(onScanAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers it mid-scan once Location services are on, as the hint asks', () => {
+    locationHint.servicesWereEnabled = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, onScanAgain: vi.fn() })} />);
+
+    expect(hasText(container, 'ble.locationServicesHintEnabled')).toBe(true);
+    expect(scanAgainButton(container)).not.toBeNull();
+  });
+
+  it('holds it back mid-scan while the hint still asks for location', () => {
+    locationHint.shouldOfferLocationGrant = true;
+    // Services were turned on earlier, but the permission hint is the one on
+    // screen, and it asks for the grant, not a fresh connect.
+    locationHint.servicesWereEnabled = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, onScanAgain: vi.fn() })} />);
+
+    expect(hasText(container, 'ble.locationHintBody')).toBe(true);
+    expect(scanAgainButton(container)).toBeNull();
+  });
+
   it('hides it once boards are listed', () => {
     const { container } = render(
       <DevicePickerSheet {...makeProps({ devices: [device('a')], onScanAgain: vi.fn() })} />,
@@ -944,19 +984,22 @@ describe('DevicePickerSheet tips from 5 s into the scan', () => {
     expect(tipsShown(container)).toBe(false);
   });
 
-  it('shows them for a known board while its target group is empty, with other boxes listed', () => {
+  it('shows them for a serial-identified board while only a box with an unrecorded serial is listed', () => {
+    // The gym's Kilter advertises a serial on record, so a Kilter box whose
+    // serial nobody recorded is another box: the climber's board is not heard.
+    const unrecorded = { deviceId: 'unrecorded', name: 'Kilter Board#K-9@3', rssi: -45 };
     const { container } = render(
       <DevicePickerSheet
         {...makeProps({
           isScanning: true,
-          devices: [tension, unknown],
+          devices: [tension, unrecorded],
           resolvedBoards: resolutions,
           targetBoard,
           onSearchAnyBoard: vi.fn(),
         })}
       />,
     );
-    expect(listedIds(container)).toEqual(['unknown']);
+    expect(listedIds(container)).toEqual(['unrecorded']);
     expect(tipsShown(container)).toBe(false);
 
     act(() => {
@@ -965,6 +1008,46 @@ describe('DevicePickerSheet tips from 5 s into the scan', () => {
     expect(tipsShown(container)).toBe(true);
     // Boards were heard, so Android is not hiding the scan.
     expect(locationHint.lastActive).toBe(false);
+  });
+
+  // A box with no serial can only be told apart by its BLE id, so on a first
+  // connect nothing puts the climber's own box in the target group. The tips
+  // saying "Don't see your board?" under the row they are about to tap was wrong.
+  it.each([
+    [
+      'a MoonBoard',
+      { boardUuid: 'qa-moon', boardName: 'moonboard' },
+      { deviceId: 'moon', name: 'MoonBoard', rssi: -60 },
+    ],
+    ['a Kilter-built box', targetBoard, unknown],
+  ])('keeps them off on the first connect to %s, whose box advertises no serial', (_label, target, box) => {
+    const { container } = render(
+      <DevicePickerSheet {...makeProps({ isScanning: true, devices: [tension, box], targetBoard: target })} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(listedIds(container)).toEqual([box.deviceId]);
+    expect(tipsShown(container)).toBe(false);
+  });
+
+  it('still shows them when the only listed box advertises no board type', () => {
+    // Nothing says it is a MoonBoard at all, so it is no sign the board is heard.
+    const nameless = { deviceId: 'nameless', name: 'LED Controller', rssi: -50 };
+    const { container } = render(
+      <DevicePickerSheet
+        {...makeProps({
+          isScanning: true,
+          devices: [nameless],
+          targetBoard: { boardUuid: 'qa-moon', boardName: 'moonboard' },
+        })}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(listedIds(container)).toEqual(['nameless']);
+    expect(tipsShown(container)).toBe(true);
   });
 
   it('never shows them while the target board is listed', () => {
@@ -1113,6 +1196,56 @@ describe('DevicePickerSheet tips from 5 s into the scan', () => {
       const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: false, devices: [] })} />);
       expect(tipsShown(container)).toBe(true);
       expect(browseButton(container)).toBeNull();
+    });
+  });
+
+  // The sheet opens at a medium detent with no room to spare. A block of hints
+  // pinned under the list or the empty state squeezed them to nothing, so the
+  // hints share one scroller with whatever is above them.
+  describe('room at a medium detent', () => {
+    const scroller = (root: HTMLElement) => root.querySelector('[data-scroll]');
+
+    it('scrolls the empty scan, Scan again, the tips and Browse for now together', () => {
+      const { container } = render(
+        <DevicePickerSheet
+          {...makeProps({ isScanning: false, devices: [], onScanAgain: vi.fn(), onBrowseForNow: vi.fn() })}
+        />,
+      );
+      const scroll = scroller(container);
+      expect(scroll).not.toBeNull();
+      expect(hasText(scroll as HTMLElement, 'ble.noDevicesFound')).toBe(true);
+      expect(scroll?.querySelector('[data-button="ble.scanAgain"]')).not.toBeNull();
+      expect(hasText(scroll as HTMLElement, 'ble.troubleshootTitle')).toBe(true);
+      expect(scroll?.querySelector('[data-button="ble.browseForNow"]')).not.toBeNull();
+      expect(container.querySelector('[data-list]')).toBeNull();
+    });
+
+    it('scrolls "not found" for a known board, its escape and the tips together', () => {
+      const { container } = render(
+        <DevicePickerSheet
+          {...makeProps({
+            devices: [tension],
+            resolvedBoards: resolutions,
+            targetBoard,
+            onSearchAnyBoard: vi.fn(),
+          })}
+        />,
+      );
+      const scroll = scroller(container);
+      expect(hasText(scroll as HTMLElement, 'ble.selectedBoardNotFound')).toBe(true);
+      expect(scroll?.querySelector('[data-button="ble.searchAnyBoard"]')).not.toBeNull();
+      expect(hasText(scroll as HTMLElement, 'ble.troubleshootTitle')).toBe(true);
+    });
+
+    it('puts the tips at the foot of the list when boards are listed', () => {
+      stats.noneMatchedSelectedType = true;
+      const { container } = render(
+        <DevicePickerSheet {...makeProps({ isScanning: false, devices: [device('a')], onBrowseForNow: vi.fn() })} />,
+      );
+      const list = container.querySelector('[data-list]') as HTMLElement;
+      expect(hasText(list, 'ble.troubleshootTitle')).toBe(true);
+      expect(list.querySelector('[data-button="ble.browseForNow"]')).not.toBeNull();
+      expect(scroller(container)).toBeNull();
     });
   });
 });

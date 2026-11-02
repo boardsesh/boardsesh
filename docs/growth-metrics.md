@@ -432,7 +432,7 @@ built by `blePickerSessionProps` in `@boardsesh/analytics`):
 | `searchedAnyBoard`    | The climber tapped Search for any board, in the search or on the filtered list.                          |
 | `listedCount`         | Boards the list showed at close: while filtered, the target's own plus the unidentified ones of its type (#7202); every board found otherwise. |
 | `targetNotListedSeen` | "Your board isn't in the list" was on screen: boards were found, none of them the target.                |
-| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen.               |
+| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen. From 2026-11 the tips show 5 s into the scan (and for a known board while nothing listed may be the climber's), so the rate is not comparable with earlier events. |
 | `tipsShownAtMs`       | Milliseconds from the list showing to the tips first showing; null when they never did. From 2026-11 the tips come in 5 s into the scan, not at its end. |
 | `browsedForNow`       | The climber closed the picker with "Browse for now" (2026-11).                                            |
 | `secondsOpen`         | Whole seconds from the list showing to the session closing.                                               |

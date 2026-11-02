@@ -604,8 +604,10 @@ export const SHARED_EVENTS = {
   // `targetFiltered` (the list first showed filtered to a known gym or saved
   // board), `searchedAnyBoard` (Search for any board tapped), `listedCount`
   // (boards the list showed at close), `targetNotListedSeen` ("your board isn't
-  // in the list" showed), `tipsSeen` (the troubleshooting tips showed),
-  // `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
+  // in the list" showed), `tipsSeen` (the troubleshooting tips showed; from
+  // 2026-11 they show 5 s into the scan, and for a known board while nothing
+  // listed may be the climber's, so the rate is not comparable with earlier
+  // events), `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
   // phone's history isn't loaded) and `entrySurface` (the last Board Connect
   // Tapped surface within 2 minutes before the list, or null). Older events have
   // none of them.
