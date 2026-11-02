@@ -154,13 +154,10 @@ const GLOW = { key: 'climb-1', holds: [{ x: 10, y: 10, color: '#00DD00' }], boar
 /** Put on board's plan at the default: a 45 s window. */
 const WINDOW_45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
 const UNTIL_STOPPED = { windowMs: null, setting: 'putOnBoardKeepsLighting' } as const;
-const MOONBOARD_UNTIL_STOPPED = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
 
 function renderTip(props: Partial<Parameters<typeof PlayerPreviewTip>[0]> = {}) {
   const onExit = vi.fn();
-  render(
-    createElement(PlayerPreviewTip, { boardName: 'kilter', glow: GLOW, keepLighting: WINDOW_45, onExit, ...props }),
-  );
+  render(createElement(PlayerPreviewTip, { glow: GLOW, keepLighting: WINDOW_45, onExit, ...props }));
   return onExit;
 }
 
@@ -239,11 +236,6 @@ describe('PlayerPreviewTip', () => {
     expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
   });
 
-  it('says a MoonBoard keeps lighting until stopped', () => {
-    renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED });
-    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.moonboard);
-  });
-
   // The setting Put on board's plan does not take (`resolveKeepLightingReach`):
   // where Always drive the wall drives, Put on board drives until you stop.
   it('reads Always drive the wall the way the press does', () => {
@@ -252,10 +244,9 @@ describe('PlayerPreviewTip', () => {
   });
 
   // The frost sentence names a clock only where Put on board's drive has one:
-  // never on a MoonBoard's Until I stop, Right away, or where the press starts no drive.
+  // never on Until I stop, Right away, or where the press starts no drive.
   it.each([
     ['Until I stop', { keepLighting: UNTIL_STOPPED }],
-    ['a MoonBoard until stopped', { boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED }],
     ['Right away, or no drive in a session', { keepLighting: null }],
     ['Always drive the wall', { alwaysDrive: true }],
   ] as const)('says the frost means driving until you stop, with no clock, for %s', (_case, props) => {
@@ -265,14 +256,6 @@ describe('PlayerPreviewTip', () => {
     screenReader.enabled = true;
     renderTip(props);
     expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEndedScreenReader);
-  });
-
-  it("says a MoonBoard's timed drive stops after its time, as any timed drive", () => {
-    renderTip({
-      boardName: 'moonboard',
-      keepLighting: { windowMs: 30_000, setting: 'moonboardPutOnBoardKeepsLighting' },
-    });
-    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frost);
   });
 
   it('goes on Got it, the close button and Lighting settings, saying which', () => {
@@ -324,27 +307,10 @@ describe('PlayerPreviewTip', () => {
     expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');
   });
 
-  // Most MoonBoard controllers don't like phones switching, so Put on board
-  // starts a drive with no end there: that is the frost the card explains.
-  it('goes when Put on board starts a drive with no end on a MoonBoard', () => {
-    const onExit = renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED });
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: null }));
-    expect(onExit).toHaveBeenCalledWith('drive');
-  });
-
   it('goes when Put on board keeps lighting until stopped', () => {
     const onExit = renderTip({ keepLighting: UNTIL_STOPPED });
     act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: null }));
     expect(onExit).toHaveBeenCalledWith('drive');
-  });
-
-  it("stays through a MoonBoard's timed window", () => {
-    const onExit = renderTip({
-      boardName: 'moonboard',
-      keepLighting: { windowMs: 30_000, setting: 'moonboardPutOnBoardKeepsLighting' },
-    });
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: 30_000 }));
-    expect(onExit).not.toHaveBeenCalled();
   });
 
   it('ignores a drive that was already on when it showed', () => {

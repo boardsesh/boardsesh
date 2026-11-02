@@ -1021,12 +1021,12 @@ describe('resolveWallControl: a press resumes Always drive the wall', () => {
   });
 });
 
-// After Put on board, keep lighting (2.7): the board family's choice opens a
-// window (or, for Until I stop, an open-ended drive) once the press's climb is
-// up, wherever a swipe could start a drive. Never on a relay, Set active, a
-// wall with no lights, or with the swipe's flag off. In a crew only with In a
-// session too on, except on a MoonBoard, whose controllers don't like phones
-// switching.
+// After Put on board, keep lighting (2.7): Stop driving after opens a window
+// (or, for Until I stop, an open-ended drive) once the press's climb is up,
+// wherever a swipe could start a drive. Never on a relay, Set active, a wall
+// with no lights, or with the swipe's flag off. In a crew only with In a
+// session too on. The model takes no board: every board, MoonBoards included,
+// reads the same rule.
 describe('resolveWallControl: Put on board keeps lighting', () => {
   const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
     ['connect', {}],
@@ -1035,13 +1035,12 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
   ];
-  /** Solo, the flag on, both choices at their defaults, Always drive the wall off. */
+  /** Solo, the flag on, Stop driving after at its default, Always drive the wall off. */
   const ON: Partial<WallControlInput> = {
     alwaysDrive: false,
     navigationCommits: false,
     swipeToDriveEnabled: true,
     keepLighting: '45',
-    moonboardKeepLighting: 'until_stopped',
     drivesInSession: true,
   };
 
@@ -1071,26 +1070,9 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
       45_000,
       'putOnBoardKeepsLighting',
     ],
-    ['MoonBoard, solo, Until I stop', { boardIsMoonboard: true }, 'drive', null, 'moonboardPutOnBoardKeepsLighting'],
-    [
-      'MoonBoard, a crew with In a session too off',
-      { boardIsMoonboard: true, crewSession: true, drivesInSession: false },
-      'drive',
-      null,
-      'moonboardPutOnBoardKeepsLighting',
-    ],
-    [
-      'MoonBoard, 30 s, the general choice Off',
-      { boardIsMoonboard: true, moonboardKeepLighting: '30', keepLighting: 'off' },
-      'window',
-      30_000,
-      'moonboardPutOnBoardKeepsLighting',
-    ],
-    ['MoonBoard, Off', { boardIsMoonboard: true, moonboardKeepLighting: 'off' }, null, null, null],
     // Where Always drive the wall drives, its own drive lights the next climbs:
-    // the timed choice doesn't apply, on a MoonBoard neither.
+    // the timed choice doesn't apply.
     ['Always drive the wall on', { alwaysDrive: true }, 'resume', null, null],
-    ['Always drive the wall on, a MoonBoard', { alwaysDrive: true, boardIsMoonboard: true }, 'resume', null, null],
     ['the swipe flag off', { swipeToDriveEnabled: false }, null, null, null],
   ];
   const cases = PUT_UP.flatMap(([name, state]) =>

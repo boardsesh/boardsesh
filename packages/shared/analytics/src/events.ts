@@ -278,7 +278,8 @@ export const SHARED_EVENTS = {
   // From 2.7 the lightbulb's board sheet reports its switches too, under page
   // 'boardControls' (keys as on the Board page: alwaysDrive (2026-11, Light
   // automatically; lightOnClimbTap and lightOnSwipe before it),
-  // putOnBoardKeepsLighting, moonboardPutOnBoardKeepsLighting,
+  // putOnBoardKeepsLighting, moonboardPutOnBoardKeepsLighting (2.7 until
+  // 2026-11, when a MoonBoard took the one Stop driving after choice),
   // disconnectWhenDrivingEnds (2.7, replacing autoDisconnectBle, which builds
   // before it sent), moonboardLightAdjacentHolds). Leave that page out when
   // ranking the Settings root.

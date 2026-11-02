@@ -48,17 +48,16 @@ export type AutoDisconnectMigrationWrite =
  *
  * - Already migrated: nothing, whatever the old keys say now.
  * - Auto-disconnect not on (`=== true`): nothing.
- * - Auto-disconnect on: Disconnect Bluetooth when driving ends on; each Stop
- *   driving after choice the climber never set (the general one and the
- *   MoonBoard's) takes the timeout's drive length; then the one-shot flag,
- *   last, so a launch killed half-way runs the rest again.
+ * - Auto-disconnect on: Disconnect Bluetooth when driving ends on; Stop
+ *   driving after, where the climber never set it, takes the timeout's drive
+ *   length; then the one-shot flag, last, so a launch killed half-way runs the
+ *   rest again.
  */
 export function planAutoDisconnectMigration({
   migrated,
   autoDisconnect,
   timeoutSeconds,
   keepLightingSet,
-  moonboardKeepLightingSet,
 }: {
   /** `autoDisconnectMigrated` is on: it already ran. */
   migrated: boolean;
@@ -68,14 +67,11 @@ export function planAutoDisconnectMigration({
   timeoutSeconds: unknown;
   /** The climber chose a Stop driving after length (the key is stored). */
   keepLightingSet: boolean;
-  /** The climber chose the MoonBoard's Stop driving after length. */
-  moonboardKeepLightingSet: boolean;
 }): AutoDisconnectMigrationWrite[] {
   if (migrated || autoDisconnect !== true) return [];
   const length = stopDrivingAfterForTimeout(timeoutSeconds);
   const writes: AutoDisconnectMigrationWrite[] = [{ key: 'disconnectWhenDrivingEnds', value: true }];
   if (!keepLightingSet) writes.push({ key: 'putOnBoardKeepsLighting', value: length });
-  if (!moonboardKeepLightingSet) writes.push({ key: 'moonboardPutOnBoardKeepsLighting', value: length });
   writes.push({ key: 'autoDisconnectMigrated', value: true });
   return writes;
 }
@@ -98,7 +94,6 @@ export function migrateAutoDisconnect(store: SettingsMigrationStore): boolean {
     autoDisconnect: store.read(LEGACY_AUTO_DISCONNECT_KEY),
     timeoutSeconds: store.read(LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY),
     keepLightingSet: store.has('putOnBoardKeepsLighting'),
-    moonboardKeepLightingSet: store.has('moonboardPutOnBoardKeepsLighting'),
   });
   for (const write of writes) store.set(write.key, write.value);
   return writes.length > 0;

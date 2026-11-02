@@ -83,14 +83,13 @@ describe('planAutoDisconnectMigration', () => {
     autoDisconnect: true,
     timeoutSeconds: 60,
     keepLightingSet: false,
-    moonboardKeepLightingSet: false,
   };
 
-  it('turns on the disconnect and sets both lengths, then the flag last', () => {
+  // One Stop driving after for every board: no MoonBoard length any more.
+  it('turns on the disconnect and sets the length, then the flag last', () => {
     expect(planAutoDisconnectMigration(ON)).toEqual([
       { key: 'disconnectWhenDrivingEnds', value: true },
       { key: 'putOnBoardKeepsLighting', value: '60' },
-      { key: 'moonboardPutOnBoardKeepsLighting', value: '60' },
       { key: 'autoDisconnectMigrated', value: true },
     ]);
   });
@@ -98,12 +97,6 @@ describe('planAutoDisconnectMigration', () => {
   it('leaves a length the climber already chose', () => {
     expect(planAutoDisconnectMigration({ ...ON, keepLightingSet: true })).toEqual([
       { key: 'disconnectWhenDrivingEnds', value: true },
-      { key: 'moonboardPutOnBoardKeepsLighting', value: '60' },
-      { key: 'autoDisconnectMigrated', value: true },
-    ]);
-    expect(planAutoDisconnectMigration({ ...ON, moonboardKeepLightingSet: true })).toEqual([
-      { key: 'disconnectWhenDrivingEnds', value: true },
-      { key: 'putOnBoardKeepsLighting', value: '60' },
       { key: 'autoDisconnectMigrated', value: true },
     ]);
   });
@@ -133,7 +126,8 @@ describe('migrateAutoDisconnect', () => {
     const store = memoryStore({ [LEGACY_AUTO_DISCONNECT_KEY]: true, [LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY]: seconds });
     expect(migrateAutoDisconnect(store)).toBe(true);
     expect(parsed(store, 'putOnBoardKeepsLighting')).toBe(choice);
-    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBe(choice);
+    // The retired MoonBoard length is never written.
+    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBeUndefined();
     expect(parsed(store, 'disconnectWhenDrivingEnds')).toBe(true);
     expect(parsed(store, 'autoDisconnectMigrated')).toBe(true);
   });
@@ -142,10 +136,9 @@ describe('migrateAutoDisconnect', () => {
     const store = memoryStore({ [LEGACY_AUTO_DISCONNECT_KEY]: true });
     migrateAutoDisconnect(store);
     expect(parsed(store, 'putOnBoardKeepsLighting')).toBe('30');
-    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBe('30');
   });
 
-  it('keeps the Stop driving after lengths a climber already set', () => {
+  it('keeps the Stop driving after length a climber already set, and leaves the retired MoonBoard one alone', () => {
     const store = memoryStore({
       [LEGACY_AUTO_DISCONNECT_KEY]: true,
       [LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY]: 600,
@@ -283,7 +276,6 @@ describe('at the settings store import', () => {
     mockStorage.set(LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY, '15');
     const { getSetting } = await import('../hooks');
     expect(getSetting('putOnBoardKeepsLighting')).toBe('30');
-    expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe('30');
     expect(getSetting('disconnectWhenDrivingEnds')).toBe(true);
     expect(getSetting('autoDisconnectMigrated')).toBe(true);
   });
@@ -292,7 +284,6 @@ describe('at the settings store import', () => {
     mockStorage.set(LEGACY_AUTO_DISCONNECT_KEY, 'false');
     const { getSetting } = await import('../hooks');
     expect(getSetting('putOnBoardKeepsLighting')).toBe('45');
-    expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe('until_stopped');
     expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
     expect([...mockStorage.keys()]).toEqual([LEGACY_AUTO_DISCONNECT_KEY]);
   });

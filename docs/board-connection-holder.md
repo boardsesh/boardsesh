@@ -109,8 +109,9 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 Put on board, a swipe on the player's wall button, its "Light every climb" action or the board sheet's row makes
 this phone drive the wall: it connects if needed, lights the climb on screen, and from then on every change of
 climb lights the wall. Since 2.7 Put on board's drive is timed by Stop driving after (45 s after the last lit climb
-by default; a MoonBoard drives until stopped; in a crew only with In a session too, on by default, except on a
-MoonBoard). A swipe or Light every climb drives with no end, in a crew too. It changes nothing on the server: the
+by default; in a crew only with In a session too, on by default). Since 2026-11 a MoonBoard follows that rule like
+every board: its own Until I stop choice and its crew exception went. A swipe or Light every climb drives with no
+end, in a crew too. It changes nothing on the server: the
 phone holds the board through its link like any holder, and each climb it lights is an ordinary
 `reportBoardClimb`. The drive lives on the phone (`drive-mode-store.ts`, in memory). It ends when the climber
 presses the frosted button or Turn off all lights, a timed drive's time runs out, a crewmate's put-up ends a timed

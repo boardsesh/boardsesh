@@ -200,7 +200,7 @@ describe('startKeepLighting', () => {
 
   it('arms an open-ended drive for Until I stop', () => {
     startKeepLighting({
-      plan: { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' },
+      plan: { windowMs: null, setting: 'putOnBoardKeepsLighting' },
       sessionId: null,
       wallHeldByOtherUser: false,
     });

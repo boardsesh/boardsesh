@@ -83,10 +83,6 @@ export type LockScreenAdoption =
   /** Read and settled: nothing to change (already driving, a later end here, or the timed drive is over). */
   | { kind: 'none' };
 
-function settingOf(family: LiveActivityLightingWindowSnapshot['family']): KeepLightingSettingKey {
-  return family === 'moonboard' ? 'moonboardPutOnBoardKeepsLighting' : 'putOnBoardKeepsLighting';
-}
-
 /**
  * The adoption for one stored snapshot, or null when it can't be judged yet
  * (not a lock-screen write, another session, no link, a drive still arming):
@@ -140,7 +136,9 @@ export function resolveLockScreenAdoption({
     return {
       kind: 'start',
       windowMs,
-      windowSetting: settingOf(snapshot.family ?? null),
+      // Every board's timed drive comes from Stop driving after, so a snapshot
+      // an older JS wrote with the MoonBoard family reads the same.
+      windowSetting: 'putOnBoardKeepsLighting',
       expiresAt: endsAt,
       startedAt: Math.min(snapshot.updatedAtMs, now),
       ...replaces,

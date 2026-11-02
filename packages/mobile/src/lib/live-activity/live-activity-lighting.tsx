@@ -19,7 +19,7 @@ import { useEffect, useRef } from 'react';
 import { useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
 import { useIsCrewSession } from '../../providers/queue-provider';
 import { useSetting } from '../../settings';
-import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../keep-lighting';
+import { DEFAULT_KEEP_LIGHTING, sanitiseKeepLighting } from '../keep-lighting';
 import {
   getDriveLightingSnapshot,
   getDriveMode,
@@ -40,7 +40,6 @@ import { buildKeepLightingConfig, buildLightingWindowPayload } from './lighting-
 
 type UseLiveActivityLightingOptions = {
   sessionId: string | null;
-  boardName: string;
   /**
    * Bumped by useLiveActivity after every successful start. Native clears the
    * settings (iOS) when a session ends and the window when another session
@@ -49,17 +48,11 @@ type UseLiveActivityLightingOptions = {
   activityStartCount: number;
 };
 
-export function useLiveActivityLighting({
-  sessionId,
-  boardName,
-  activityStartCount,
-}: UseLiveActivityLightingOptions): void {
+export function useLiveActivityLighting({ sessionId, activityStartCount }: UseLiveActivityLightingOptions): void {
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const [alwaysDrive] = useSetting('alwaysDrive');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   // The roster's crew, as Put on board and DriveModeWatcher read it.
   const isCrewSession = useIsCrewSession();
   const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
@@ -74,10 +67,8 @@ export function useLiveActivityLighting({
     const config = sessionId
       ? buildKeepLightingConfig({
           keepLighting,
-          moonboardKeepLighting,
           drivesInSession,
           isCrewSession,
-          boardName,
           swipeToDriveEnabled,
           alwaysDrive,
         })
@@ -88,17 +79,7 @@ export function useLiveActivityLighting({
     if (!restarted && serialized === lastConfigRef.current) return;
     lastConfigRef.current = serialized;
     void updateLiveActivityKeepLightingConfig(config);
-  }, [
-    sessionId,
-    keepLighting,
-    moonboardKeepLighting,
-    drivesInSession,
-    isCrewSession,
-    boardName,
-    swipeToDriveEnabled,
-    alwaysDrive,
-    activityStartCount,
-  ]);
+  }, [sessionId, keepLighting, drivesInSession, isCrewSession, swipeToDriveEnabled, alwaysDrive, activityStartCount]);
 
   useEffect(() => {
     if (!sessionPresenceSupportsLightingWindow) return undefined;

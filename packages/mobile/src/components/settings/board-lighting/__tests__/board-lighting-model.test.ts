@@ -7,7 +7,6 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
   return {
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
     keepLighting: { choice: '45', onChange: vi.fn() },
-    moonboardKeepLighting: null,
     drivesInSession: { enabled: true, onChange: vi.fn() },
     disconnectWhenDrivingEnds: { enabled: false, onChange: vi.fn() },
     alwaysDrive: { enabled: false, onChange: vi.fn() },
@@ -171,8 +170,8 @@ describe('buildBoardLightingSections', () => {
 });
 
 // Always drive the wall on: this phone always drives the wall while it holds the
-// board, so Stop driving after (and the MoonBoard's) doesn't apply. The rows
-// stay where they are, greyed, each saying why. In a session too still
+// board, so Stop driving after doesn't apply. The row stays where it is,
+// greyed, saying why. In a session too still
 // decides a crew session, so it is never greyed then.
 describe('buildBoardLightingSections: Always drive the wall on', () => {
   const ON = { alwaysDrive: { enabled: true, onChange: vi.fn() } };
@@ -182,25 +181,12 @@ describe('buildBoardLightingSections: Always drive the wall on', () => {
     const row = findRow(makeInput(ON), 'putOnBoardKeepsLighting');
     if (row.kind !== 'select') throw new Error('not a select');
     expect(row.disabled).toBe(true);
-    // Where a screen reader lands on it, as the MoonBoard row does.
+    // Where a screen reader lands on it.
     expect(row.subtitle).toBe('settings:ble.lighting.keep.alwaysDriveReason');
     // Still shows the climber's choice, for when they turn it off again.
     expect(row.selectedKey).toBe('45');
     expect(sections[1].key).toBe('keepLighting');
     expect(sections[1].footer).toBeUndefined();
-  });
-
-  it('greys the MoonBoard row and puts the reason on it', () => {
-    const row = findRow(
-      makeInput({ ...ON, moonboardKeepLighting: { choice: 'until_stopped', onChange: vi.fn() } }),
-      'moonboardPutOnBoardKeepsLighting',
-    );
-    if (row.kind !== 'select') throw new Error('not a select');
-    expect(row).toMatchObject({
-      disabled: true,
-      subtitle: 'settings:ble.lighting.keep.alwaysDriveReason',
-      accessibilityLabel: 'settings:ble.lighting.keep.moonboardAccessibilityLabel',
-    });
   });
 
   it('keeps In a session too live, even with Stop driving after at Right away', () => {
@@ -216,16 +202,11 @@ describe('buildBoardLightingSections: Always drive the wall on', () => {
     });
   });
 
-  it('leaves every row live with it off, the general row with no caption', () => {
-    const input = makeInput({ moonboardKeepLighting: { choice: 'until_stopped', onChange: vi.fn() } });
-    for (const key of ['putOnBoardKeepsLighting', 'moonboardPutOnBoardKeepsLighting'] as const) {
-      const row = findRow(input, key);
-      if (row.kind !== 'select') throw new Error('not a select');
-      expect(row.disabled).toBeFalsy();
-    }
-    const general = findRow(input, 'putOnBoardKeepsLighting');
-    if (general.kind !== 'select') throw new Error('not a select');
-    expect(general.subtitle).toBeUndefined();
+  it('leaves Stop driving after live with it off, with no caption', () => {
+    const row = findRow(makeInput(), 'putOnBoardKeepsLighting');
+    if (row.kind !== 'select') throw new Error('not a select');
+    expect(row.disabled).toBeFalsy();
+    expect(row.subtitle).toBeUndefined();
   });
 });
 
@@ -258,27 +239,15 @@ describe('buildBoardLightingSections: Stop driving after', () => {
     expect(vi.mocked(input.keepLighting.onChange).mock.calls).toEqual([['until_stopped'], ['300']]);
   });
 
-  it("puts the MoonBoard's own choice right under it, with its reason on the row, only where a MoonBoard is in view", () => {
-    const onChange = vi.fn();
-    const input = makeInput({ moonboardKeepLighting: { choice: 'until_stopped', onChange } });
-    expect(buildBoardLightingSections(input)[1].rows.map((row) => row.key)).toEqual([
+  // One choice for every board: no MoonBoard row of its own (2026-11).
+  it('has one Stop driving after row, then In a session too', () => {
+    expect(buildBoardLightingSections(makeInput())[1].rows.map((row) => row.key)).toEqual([
       'putOnBoardKeepsLighting',
-      'moonboardPutOnBoardKeepsLighting',
       'putOnBoardDrivesInSession',
     ]);
-    const row = findRow(input, 'moonboardPutOnBoardKeepsLighting');
-    if (row.kind !== 'select') throw new Error('not a select');
-    expect(row.label).toBe('settings:ble.lighting.keep.moonboardLabel');
-    // Named on its own for the rotor, Voice Control and TalkBack (spec B4).
-    expect(row.accessibilityLabel).toBe('settings:ble.lighting.keep.moonboardAccessibilityLabel');
-    expect(row.subtitle).toBe('settings:ble.lighting.keep.moonboardDescription');
-    expect(row.selectedKey).toBe('until_stopped');
-    row.onSelect('30');
-    expect(onChange).toHaveBeenCalledWith('30');
-    expect(input.keepLighting.onChange).not.toHaveBeenCalled();
   });
 
-  it('greys In a session too with its reason while the general choice is Right away, whatever the MoonBoard says', () => {
+  it('greys In a session too with its reason while Stop driving after is Right away', () => {
     const on = findRow(makeInput(), 'putOnBoardDrivesInSession');
     if (on.kind !== 'toggle') throw new Error('not a toggle');
     expect(on).toMatchObject({
@@ -289,13 +258,7 @@ describe('buildBoardLightingSections: Stop driving after', () => {
       disabled: false,
     });
     expect(toggleRowSubtitle(on)).toEqual({ text: 'settings:ble.lighting.keep.inSessionDescription', isReason: false });
-    const off = findRow(
-      makeInput({
-        keepLighting: { choice: 'off', onChange: vi.fn() },
-        moonboardKeepLighting: { choice: 'until_stopped', onChange: vi.fn() },
-      }),
-      'putOnBoardDrivesInSession',
-    );
+    const off = findRow(makeInput({ keepLighting: { choice: 'off', onChange: vi.fn() } }), 'putOnBoardDrivesInSession');
     if (off.kind !== 'toggle') throw new Error('not a toggle');
     expect(off).toMatchObject({ disabledReason: 'settings:ble.lighting.keep.inSessionOffReason', disabled: true });
     // The reason replaces the description while greyed out.

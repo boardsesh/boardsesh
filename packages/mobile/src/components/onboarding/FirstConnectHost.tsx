@@ -4,7 +4,7 @@ import { registerConnectStepArm } from '../../lib/analytics-connect-step-arm';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
 import { useFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
-import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
+import { DEFAULT_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { isConnectStepArm, type ConnectStepArm } from '../../lib/onboarding/connect-step-arm';
@@ -90,24 +90,19 @@ export function FirstConnectHost() {
   // (`firstConnectConfirmationCopy`).
   const [alwaysDrive] = useSetting('alwaysDrive');
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const inSession = useIsCrewSession();
   const keepLightingEnabled = useWallSwipeToDriveEnabled();
-  const boardType = activeBoard?.boardType ?? null;
   const copyInput: ConfirmationCopyInput = {
     alwaysDrive: firstConnectAlwaysDrives({
       alwaysDrive,
       swipeToDriveEnabled: keepLightingEnabled,
-      boardType,
       drivesInSession,
       inSession,
     }),
-    boardName: boardType,
     keepLighting: keepLightingEnabled
       ? {
           keepLighting: sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING),
-          moonboardKeepLighting: sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING),
           drivesInSession,
           inSession,
         }

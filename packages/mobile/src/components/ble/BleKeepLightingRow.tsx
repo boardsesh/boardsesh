@@ -7,7 +7,7 @@ import { spacing } from '../../theme/tokens';
 
 /** What the board sheet's keep-lighting row shows and changes. */
 export type BleKeepLightingRowModel = {
-  /** "Keep lighting after Put on board", or "Keep lighting on this MoonBoard" on a connected MoonBoard. */
+  /** Stop driving after's label, the same on every board. */
   label: string;
   choice: KeepLightingChoice;
   /** Every choice, in order, with its words. */

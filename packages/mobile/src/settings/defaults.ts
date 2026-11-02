@@ -1,4 +1,4 @@
-import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING } from '../lib/keep-lighting';
+import { DEFAULT_KEEP_LIGHTING } from '../lib/keep-lighting';
 import type { AppSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,7 +19,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   moonboardGridLabels: true,
   alwaysDrive: false,
   putOnBoardKeepsLighting: DEFAULT_KEEP_LIGHTING,
-  moonboardPutOnBoardKeepsLighting: DEFAULT_MOONBOARD_KEEP_LIGHTING,
   putOnBoardDrivesInSession: true,
   disconnectWhenDrivingEnds: false,
   autoDisconnectMigrated: false,

@@ -36,12 +36,6 @@ type FirstRunCardAction = 'connect' | 'no_lights' | 'dismiss' | 'retry';
 type FirstConnectCardProps = {
   /** The bound board's name, or null when there is none to show. */
   boardName: string | null;
-  /**
-   * The bound board's type (`kilter`, `moonboard`, …), or null while it isn't
-   * known: a MoonBoard's Always drive the wall drives in a crew whatever In a
-   * session too says.
-   */
-  boardType?: string | null;
   /** A board is bound and not flagged as having no lights (`hasLeds !== false`). */
   boardHasLights: boolean;
   /** Layout (margins) from the host list. */
@@ -74,7 +68,7 @@ function trackCardAction(action: FirstRunCardAction): void {
  * Self-gating: renders nothing outside the treatment. Opaque on Liquid Glass
  * (glass stays on the chrome) and tonal on Material.
  */
-function FirstConnectCardComponent({ boardName, boardType = null, boardHasLights, style }: FirstConnectCardProps) {
+function FirstConnectCardComponent({ boardName, boardHasLights, style }: FirstConnectCardProps) {
   const enabled = useFirstConnectCtaEnabled();
   // Only the treatment mounts the body, so every other climber pays for one
   // store read here and none of the Bluetooth and presence subscriptions.
@@ -82,9 +76,7 @@ function FirstConnectCardComponent({ boardName, boardType = null, boardHasLights
     isConnectStepTreatmentLive({ enrolment, enabled, device }),
   );
   if (!boardHasLights || !treatmentLive) return null;
-  return (
-    <FirstConnectCardBody boardName={boardName} boardType={boardType} boardHasLights={boardHasLights} style={style} />
-  );
+  return <FirstConnectCardBody boardName={boardName} boardHasLights={boardHasLights} style={style} />;
 }
 
 /**
@@ -109,7 +101,7 @@ export function useFirstConnectCardExpected(boardHasLights: boolean): boolean {
   );
 }
 
-function FirstConnectCardBody({ boardName, boardType = null, boardHasLights, style }: FirstConnectCardProps) {
+function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnectCardProps) {
   const { t } = useTranslation('boards');
   const { variant, systemColors, brandColors, m3SurfaceContainers } = useTheme();
   const { device, enrolment, cardDismissedThisLaunch } = useFirstConnectSnapshot();
@@ -121,7 +113,6 @@ function FirstConnectCardBody({ boardName, boardType = null, boardHasLights, sty
   const alwaysDrives = firstConnectAlwaysDrives({
     alwaysDrive,
     swipeToDriveEnabled,
-    boardType,
     drivesInSession,
     inSession,
   });

@@ -75,11 +75,8 @@ const OFF: LiveActivityLightingWindowOptions = {
 function renderSync({
   activityStartCount = 0,
   sessionId = SESSION,
-  boardName = 'kilter',
-}: { activityStartCount?: number; sessionId?: string | null; boardName?: string } = {}) {
-  return render(
-    <LiveActivityLightingSync sessionId={sessionId} boardName={boardName} activityStartCount={activityStartCount} />,
-  );
+}: { activityStartCount?: number; sessionId?: string | null } = {}) {
+  return render(<LiveActivityLightingSync sessionId={sessionId} activityStartCount={activityStartCount} />);
 }
 
 function openWindow(now = T0) {
@@ -106,6 +103,7 @@ beforeEach(() => {
   harness.swipeToDrive = true;
   harness.settings = {
     putOnBoardKeepsLighting: '45',
+    // The retired MoonBoard choice a climber may still have on disk: read by nothing.
     moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
     alwaysDrive: false,
@@ -132,7 +130,7 @@ describe('LiveActivityLightingSync', () => {
     harness.mirrorsConfig = false;
     const view = renderSync();
     harness.settings.putOnBoardKeepsLighting = '30';
-    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="kilter" activityStartCount={1} />);
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} activityStartCount={1} />);
     expect(harness.configs).toEqual([]);
     // The window itself still reaches the notification.
     expect(harness.windows).toEqual([OFF, OFF]);
@@ -144,7 +142,7 @@ describe('LiveActivityLightingSync', () => {
     expect(harness.configs).toEqual([
       {
         keepLighting: '45',
-        moonboardKeepLighting: 'until_stopped',
+        moonboardKeepLighting: '45',
         drivesInSession: true,
         inCrew: false,
         moonboard: false,
@@ -202,21 +200,28 @@ describe('LiveActivityLightingSync', () => {
     const view = renderSync();
     openWindow();
     const windowSends = harness.windows.length;
-    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="kilter" activityStartCount={1} />);
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} activityStartCount={1} />);
     expect(harness.windows).toHaveLength(windowSends + 1);
     expect(harness.windows.at(-1)?.mode).toBe('window');
     expect(harness.configs).toHaveLength(2);
   });
 
-  it('mirrors a settings change, the crew forming and a MoonBoard', () => {
+  // A MoonBoard takes the general choice, so the binary's MoonBoard slot gets
+  // it too and the board is never named a MoonBoard.
+  it('mirrors a settings change and the crew forming, the general choice in the MoonBoard slot too', () => {
     const view = renderSync();
     harness.settings.putOnBoardKeepsLighting = 'off';
     harness.crew = true;
-    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="moonboard" activityStartCount={0} />);
-    expect(harness.configs.at(-1)).toMatchObject({ keepLighting: 'off', inCrew: true, moonboard: true });
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} activityStartCount={0} />);
+    expect(harness.configs.at(-1)).toMatchObject({
+      keepLighting: 'off',
+      moonboardKeepLighting: 'off',
+      inCrew: true,
+      moonboard: false,
+    });
     // An unchanged render sends nothing more.
     const sends = harness.configs.length;
-    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="moonboard" activityStartCount={0} />);
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} activityStartCount={0} />);
     expect(harness.configs).toHaveLength(sends);
   });
 
@@ -226,7 +231,7 @@ describe('LiveActivityLightingSync', () => {
     const view = renderSync();
     expect(harness.configs.at(-1)).toMatchObject({ enabled: true });
     harness.settings.alwaysDrive = true;
-    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="kilter" activityStartCount={0} />);
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} activityStartCount={0} />);
     expect(harness.configs.at(-1)).toMatchObject({ enabled: false });
   });
 

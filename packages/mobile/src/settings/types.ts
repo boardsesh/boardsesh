@@ -133,19 +133,17 @@ export type AppSettings = {
    * Stop driving after (2.7): how long a drive Put on board starts keeps
    * lighting. Right away (`off`, one climb, no drive), a 30 s, 45 s, 1, 2 or
    * 5 minute drive that each lit climb restarts, or Until I stop (an
-   * open-ended drive). Every board but a MoonBoard. The key keeps its first
-   * name so stored choices carry over. Read through `sanitiseKeepLighting`.
+   * open-ended drive). Every board, MoonBoards included. The key keeps its
+   * first name so stored choices carry over. Read through
+   * `sanitiseKeepLighting`. Until 2026-11 a MoonBoard had its own choice
+   * (`moonboardPutOnBoardKeepsLighting`, Until I stop by default); that key
+   * stays on disk, read by nothing, so an older bundle still finds it.
    */
   putOnBoardKeepsLighting: KeepLightingChoice;
   /**
-   * The same choice on a MoonBoard, Until I stop by default: most MoonBoard
-   * controllers don't like phones switching. Applies in a crew session too.
-   */
-  moonboardPutOnBoardKeepsLighting: KeepLightingChoice;
-  /**
    * "In a session too": Put on board drives in a crew session as well, when
    * this phone has the crew's board. Off, picks in a session stay previews.
-   * MoonBoards ignore it.
+   * Every board, MoonBoards included.
    */
   putOnBoardDrivesInSession: boolean;
   /**

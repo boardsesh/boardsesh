@@ -479,10 +479,6 @@
           "300": "5 minutes"
         },
         "untilStopped": "Until I stop",
-        "moonboardLabel": "On a MoonBoard",
-        "moonboardAccessibilityLabel": "Stop driving a MoonBoard after",
-        "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
-        "sheetMoonboardLabel": "Stop driving this MoonBoard after",
         "inSessionLabel": "In a session too",
         "inSessionAccessibilityLabel": "Put on board and Always drive the wall also apply in a session",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
@@ -498,7 +494,7 @@
       },
       "drivingHelp": "How driving the wall works",
       "alwaysDriveLabel": "Always drive the wall",
-      "alwaysDriveDescription": "Every climb you pick lights while this phone holds the board. In a session it needs In a session too, except on a MoonBoard.",
+      "alwaysDriveDescription": "Every climb you pick lights while this phone holds the board. In a session it needs In a session too.",
       "alwaysDriveFooter": "Tap You are driving the wall to stop. Your picks then open as previews until you disconnect or tap Put on board.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
       "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list. While you drive the wall, the list replaces your queue and the climb you tapped lights. Otherwise the list from the climb you tapped becomes Up next, and that climb opens as a preview while the wall keeps its climb until you Put on board. In a session the list never goes into the shared queue."

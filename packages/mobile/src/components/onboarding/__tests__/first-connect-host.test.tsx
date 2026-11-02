@@ -16,7 +16,6 @@ const settingsCtrl = vi.hoisted(() => ({
   values: {
     alwaysDrive: true,
     putOnBoardKeepsLighting: '45',
-    moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
   } as Record<string, unknown>,
 }));
@@ -120,6 +119,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values = {
       alwaysDrive: true,
       putOnBoardKeepsLighting: '45',
+      // The retired MoonBoard choice a climber may still have on disk: read by nothing.
       moonboardPutOnBoardKeepsLighting: 'until_stopped',
       putOnBoardDrivesInSession: true,
     };
@@ -277,13 +277,13 @@ describe('FirstConnectHost', () => {
     expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
-  // A MoonBoard drives in a crew whatever In a session too says.
-  it('says every pick lights on a MoonBoard in a crew with In a session too off', async () => {
+  // A MoonBoard follows In a session too like every board.
+  it('falls back to Put on board on a MoonBoard in a crew with In a session too off', async () => {
     settingsCtrl.values.putOnBoardDrivesInSession = false;
     sessionCtrl.crew = true;
     boardCtrl.boardType = 'moonboard';
 
-    expect(await confirmFirstConnect()).toMatch(/^Always drive the wall is on:/);
+    expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
   // The swipe flag is driving's kill switch: off, Always drive the wall drives nothing either.
@@ -302,12 +302,14 @@ describe('FirstConnectHost', () => {
     );
   });
 
-  it('says a MoonBoard keeps lighting until the climber stops it', async () => {
+  // Stop driving after is one choice for every board: a MoonBoard gets the
+  // 45 s default, whatever the retired MoonBoard choice says.
+  it('names the general 45 s drive on a MoonBoard', async () => {
     settingsCtrl.values.alwaysDrive = false;
     boardCtrl.boardType = 'moonboard';
 
     expect(await confirmFirstConnect()).toBe(
-      'Put on board lets you drive the wall: every climb you pick lights until you tap the button to stop.',
+      'Put on board lets you drive the wall: for 45 seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
     );
   });
 

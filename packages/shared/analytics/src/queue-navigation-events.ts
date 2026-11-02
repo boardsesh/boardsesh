@@ -186,7 +186,7 @@ export type DriveModeEndReason =
 /**
  * What started the drive (#7113): the wall button's swipe, a press on Put on
  * board that keeps lighting (the keep-lighting window, or an open-ended drive
- * where the setting says Until I stop, the MoonBoard default), the
+ * where the setting says Until I stop; a MoonBoard's default until 2026-11), the
  * screen-reader action or the board sheet's row, (2.7) a Lock Screen,
  * Dynamic Island or Android notification Next / Previous that opened the
  * window: natively on iOS, adopted once the app ran again, and in the app on

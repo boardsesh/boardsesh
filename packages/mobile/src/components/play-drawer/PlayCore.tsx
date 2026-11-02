@@ -154,7 +154,6 @@ import { useOptionalBluetoothContext, type ReassertWallOptions } from '../../pro
 import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
   alwaysDriveApplies,
   resolveKeepLightingPlan,
   sanitiseKeepLighting,
@@ -507,8 +506,8 @@ export function PlayCore({
   // nothing — it flips only across the solo ↔ crew boundary.
   const isSharedSession = useIsSharedSession();
   // The roster's answer, whatever the browse rollout flag says: solo, Put on
-  // board opens a keep-lighting window (a MoonBoard drives); in a crew it stays a
-  // one-off put unless "In a session too" is on. A crewmate's arrival dwell
+  // board opens a keep-lighting window; in a crew it stays a one-off put unless
+  // "In a session too" is on, on every board. A crewmate's arrival dwell
   // counts as solo until the crew forms; a live drive goes on when it forms.
   const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
@@ -532,10 +531,8 @@ export function PlayCore({
   // Stop driving after (Settings › Board): read here so the wall control's
   // press knows whether its climb going up starts a drive.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [putOnBoardDrivesInSession] = useSetting('putOnBoardDrivesInSession');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const [enhancementSnapshot, setEnhancementSnapshot] = usePrivacyScopedState<PlayCoreEnhancementSnapshot>();
   const handleEnhancementSnapshot = useCallback(
     (snapshot: PlayCoreEnhancementSnapshot | null) => setEnhancementSnapshot(snapshot),
@@ -780,7 +777,6 @@ export function PlayCore({
   const alwaysDriveHere = alwaysDriveApplies({
     alwaysDrive,
     swipeToDriveEnabled,
-    boardIsMoonboard: isMoonboardBoardName(boardName),
     drivesInSession: putOnBoardDrivesInSession,
     inSession: isCrewSession,
   });
@@ -1442,12 +1438,9 @@ export function PlayCore({
         crewSession: isCrewSession,
         // Always drive the wall drives here: the press only drops a stop.
         alwaysDrive: alwaysDriveHere,
-        // After Put on board, keep lighting (2.7): the board family's choice.
-        // Most MoonBoard controllers don't like phones switching, so a MoonBoard
-        // has its own (Until I stop by default), which applies in a crew too.
-        boardIsMoonboard: isMoonboardBoardName(boardName),
+        // After Put on board, keep lighting (2.7): Stop driving after, the
+        // same choice on every board.
         keepLighting,
-        moonboardKeepLighting,
         drivesInSession: putOnBoardDrivesInSession,
         // The swipe's flag is keep-lighting's kill switch too.
         swipeToDriveEnabled,
@@ -1485,7 +1478,6 @@ export function PlayCore({
       isCrewSession,
       alwaysDriveHere,
       keepLighting,
-      moonboardKeepLighting,
       putOnBoardDrivesInSession,
       swipeToDriveEnabled,
       lightWindow,
@@ -1585,8 +1577,8 @@ export function PlayCore({
     secondaryRow: actionBarLayout.secondaryRow,
   });
 
-  // What the card says Put on board's drive does: the board family's Stop
-  // driving after choice, read the way the press reads it
+  // What the card says Put on board's drive does: the Stop driving after
+  // choice, read the way the press reads it
   // (`resolveKeepLightingPlan`), so it never promises a drive where none can
   // start: a crew session with In a session too off, or the swipe flag (the
   // drive's kill switch) off.
@@ -1594,14 +1586,12 @@ export function PlayCore({
     () =>
       swipeToDriveEnabled
         ? resolveKeepLightingPlan({
-            boardIsMoonboard: isMoonboardBoardName(boardName),
             keepLighting,
-            moonboardKeepLighting,
             drivesInSession: putOnBoardDrivesInSession,
             inSession: isCrewSession,
           })
         : null,
-    [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
+    [swipeToDriveEnabled, keepLighting, putOnBoardDrivesInSession, isCrewSession],
   );
 
   // The one-shot preview-first card under the wall button (2.7): the first
@@ -3431,7 +3421,6 @@ export function PlayCore({
                     {previewFirstTip.visible ? (
                       <View style={styles.previewFirstTipSlot}>
                         <PlayerPreviewTip
-                          boardName={boardName}
                           glow={wallGlowInput}
                           keepLighting={previewFirstKeepLighting}
                           alwaysDrive={alwaysDriveHere}

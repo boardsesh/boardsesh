@@ -60,9 +60,8 @@ Climbs open in preview by default, including playlist Play and queue selections.
 automatically** (off by default) keeps this phone driving whenever its link holds the board
 instead (below). Tap the board control to light
 the climb and start a drive (45 s after the last lit climb by default; the keep-lighting
-window in code); on a MoonBoard the tap drives until you stop by default, in a crew too
-(below). Swipe the wall button, or choose **Light every climb**, to drive with no end
-(`Driver mode` in code).
+window in code), the same on every board, MoonBoards included (below). Swipe the wall button,
+or choose **Light every climb**, to drive with no end (`Driver mode` in code).
 
 **Settings › Board**, in order:
 
@@ -73,21 +72,24 @@ window in code); on a MoonBoard the tap drives until you stop by default, in a c
    (`settings/migrations.ts`). On, this phone always drives the wall while its own link holds the
    board: an open-ended drive (`startedBy: 'always'`) that `DriveModeWatcher` starts at link-up,
    at the switch, or when another drive ends with the link up (a change of session or board, or
-   a sign-out, included), lighting nothing itself. In a crew only with In a session too on (a
-   MoonBoard whatever it says), and never with the `wall-swipe-to-drive` flag off. A tap on You
+   a sign-out, included), lighting nothing itself. In a crew only with In a session too on, on
+   every board, and never with the `wall-swipe-to-drive` flag off. A tap on You
    are driving the wall stops it until the link drops, the next Put on board or a flip of the
    switch; turning it off ends it keeping the link (`always_off`), and so does a timed drive it
    opened up when it turned on. The board sheet shows the same switch and leaves its Stop
    driving after row out while it is on.
 2. An untitled card: **Stop driving after** (Right away, 30 s, 45 s, 1, 2 or 5 min, Until I stop;
-   45 s by default); **On a MoonBoard**, its own choice (Until I stop by default), shown only when
-   a MoonBoard is connected, active or saved; **In a session too** (on by default), greyed with
-   "Change Stop driving after from Right away to use this." while the general choice is Right
-   away. Its footer follows the general choice (`settings.json` `ble.lighting.keep.footer`,
-   `footerUntilStopped`, `footerOff`). With Always drive the wall on, both Stop driving after rows
-   are greyed, each saying "Always drive the wall is on, so this doesn't apply."
+   45 s by default), one choice for every board, MoonBoards included; **In a session too** (on
+   by default), greyed with "Change Stop driving after from Right away to use this." while the
+   choice is Right away. Its footer follows the choice (`settings.json` `ble.lighting.keep.footer`,
+   `footerUntilStopped`, `footerOff`). With Always drive the wall on, Stop driving after is
+   greyed, saying "Always drive the wall is on, so this doesn't apply."
    (`keep.alwaysDriveReason`) on the row, and the card drops its footer; In a session too stays
-   live, since it still decides a crew session.
+   live, since it still decides a crew session. Until 2026-11 a MoonBoard had its own row (**On a
+   MoonBoard**, `moonboardPutOnBoardKeepsLighting`, Until I stop by default, in a crew too). It
+   went: a MoonBoard now takes Stop driving after and In a session too like every board, and the
+   stored key stays on disk, read by nothing, with no value carried over. A climber who had
+   changed the MoonBoard row gets the general choice.
 3. An untitled card: **Disconnect Bluetooth when driving ends** (off by default), then **How
    driving the wall works**, which opens `/help/board-and-bluetooth#driving` in the browser.
 4. An untitled card: **Tapping a playlist loads it into my queue** (off by default), plus the
@@ -164,8 +166,8 @@ flat amber fallback; the label still says what the next press does.
   climb up with the existing one-climb runner. Put on board then lights every climb you pick
   until the drive ends: 45 s after the last lit climb by default, renewed by each climb this
   phone's own picks light (Settings › Board, **Stop driving after**: Right away, 30 s, 45 s,
-  1, 2 or 5 min, or Until I stop; the keys are still `putOnBoardKeepsLighting` and
-  `moonboardPutOnBoardKeepsLighting`). Only Put on board's drive is timed. A
+  1, 2 or 5 min, or Until I stop; the key is still `putOnBoardKeepsLighting`, for every
+  board). Only Put on board's drive is timed. A
   crewmate's put-up ends the window (`window_ended`, `use-drive-follow.ts`): their relay
   never renews it, so the holder's next pick is a preview again and Put on board asks the
   busy-wall question. Open-ended driving follows a crewmate's put-up instead. While a connect
@@ -200,15 +202,15 @@ flat amber fallback; the label still says what the next press does.
   link (`stop_driving`, or `stop_window` for a timed drive in Wall Control Tapped). The top bar's second line says "Preview · not on
   the wall" for a preview while this phone holds the board, or while a climb lit in the last hour may still be
   on the wall (`wallCouldLight` in `wall-state.ts`).
-- **A MoonBoard press drives by default (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop), in a crew
-  too.** Most
-  MoonBoard controllers don't like phones switching, so a MoonBoard has its own keep-lighting choice, and it applies
-  in a crew session too, whatever **In a session too** says (`resolveKeepLightingPlan` in `lib/keep-lighting.ts`).
-  At the default the model's `tapDrive` is `drive`: once the climb is up, the press starts an open-ended drive (the
-  frost). A timed MoonBoard choice gives `window` like any other board. Where no drive can start here (no swipe
-  offered, the `wall-swipe-to-drive` flag off, a drive already on) the press lights one climb. Never on Set active.
-  `Drive Mode Started` and `Drive Mode Ended` say `startedBy: 'tap'` and carry `boardType` for these drives. This
-  still needs a field test on real MoonBoard controllers.
+- **A MoonBoard press follows the same rule as every board (2026-11).** 2.7 gave a MoonBoard its own Stop driving
+  after (`moonboardPutOnBoardKeepsLighting`, Until I stop by default) that applied in a crew whatever **In a session
+  too** said, since most MoonBoard controllers don't like phones switching. That carve-out is gone:
+  `resolveKeepLightingPlan` and `alwaysDriveApplies` (`lib/keep-lighting.ts`) take no board, so a MoonBoard press
+  opens the 45 s window by default, lights one climb under Right away, and in a crew drives only with In a session
+  too on, and Always drive the wall does the same. Where no drive can start here (no swipe offered, the
+  `wall-swipe-to-drive` flag off, a drive already on) the press lights one climb. Never on Set active. `Drive Mode
+  Started` and `Drive Mode Ended` still carry `boardType`. A per-board MoonBoard controller setting, where a classic
+  controller keeps the first phone's link and crewmates drive through it, is a separate later change.
 - **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
   first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
@@ -223,7 +225,7 @@ flat amber fallback; the label still says what the next press does.
   the MoonBoard "Light the hold above") while this phone holds the link; screen readers get the hold as a named
   action, "Board options". Every view runs the same tap. The player's sheet leaves out **Disconnect Bluetooth when driving ends** and the two lighting switches, which
   live in Settings › Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets
-  lead with **Stop driving after** (the MoonBoard's own choice on a connected MoonBoard), so the drive's length is
+  lead with **Stop driving after** (the same row on a connected MoonBoard), so the drive's length is
   two taps away at the wall. A change there applies to the drive that is running (`DriveModeWatcher`): a new length
   counts from the change, Until I stop makes it open-ended, and Right away ends it. The player's sheet carries a
   status line for the climb on screen. Auto-disconnect is gone (2.7): with **Disconnect Bluetooth when driving
@@ -237,9 +239,8 @@ flat amber fallback; the label still says what the next press does.
   after the time runs out, a tap that would disconnect is dropped, and so is a put-up when that end let go of the
   board: a tap aimed at the frost never reconnects and starts a fresh drive. Climbers who had auto-disconnect on keep it in
   this form: a one-time migration (`settings/migrations.ts`) turns the switch on and carries their timeout into
-  Stop driving after where they never chose one. Both the general and the MoonBoard choice take the rounded-up
-  timeout (10 and 15 s become 30 s, 10 min becomes 5 min), so a migrated MoonBoard climber drives for that time
-  rather than until they stop.
+  Stop driving after where they never chose one, rounded up (10 and 15 s become 30 s, 10 min becomes 5 min). It
+  applies on a MoonBoard too, and Disconnect Bluetooth when driving ends lets go of a MoonBoard like any board.
 - **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark
   for 4 h in that one press: Put on board re-asserts when its connect's first write meets the hold (any hold while
   the connect is on its way, or within a minute of it linking), and Light again and the swipe's drive re-assert as
@@ -384,8 +385,8 @@ player's card back (`forgetPreviewFirstTip`).
   `lib/onboarding/preview-first-tip.ts`). It docks as the first section under the board, above Logbook, never
   over the climb. It shows the first time a signed-in climber opens a preview on a board with lights, on up to 3
   player opens in that app run (`PREVIEW_FIRST_TIP_MAX_OPENS`), and draws the real frosted `WallControlButton`.
-  Its window line follows Stop driving after (seconds, 1 minute, N minutes, until you stop, or the MoonBoard
-  line), read through `resolveKeepLightingReach`. It retires on Got it, close, Lighting settings (which opens
+  Its window line follows Stop driving after (seconds, 1 minute, N minutes, or until you stop), read through
+  `resolveKeepLightingReach`, the same on every board. It retires on Got it, close, Lighting settings (which opens
   Settings › Board on its lighting group), or a drive starting, and waits behind the first-connect card and
   confirmation. Seen flag: `ONBOARDING_TIP_PREVIEW_FIRST_KEY`. Copy: `common` `mobile.onboarding.tips.previewFirst.*`.
 - **The What's New spotlight** (`components/onboarding/PreviewFirstSpotlightCard.tsx`,

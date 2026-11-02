@@ -149,14 +149,14 @@ describe('renderSettingsRow (iOS)', () => {
   it('names a select row on its own', () => {
     const row: MoreSelectRow = {
       kind: 'select',
-      key: 'moonboardPutOnBoardKeepsLighting',
-      label: 'On a MoonBoard',
-      accessibilityLabel: 'Keep lighting on a MoonBoard',
+      key: 'putOnBoardKeepsLighting',
+      label: 'After',
+      accessibilityLabel: 'Stop driving the wall after',
       options: [{ key: 'until_stopped', label: 'Until I stop' }],
       selectedKey: 'until_stopped',
       onSelect: vi.fn(),
     };
     const view = render(createElement('div', null, renderSettingsRow(row, TINTS)));
-    expect(view.getByRole('listbox').getAttribute('aria-label')).toBe('Keep lighting on a MoonBoard');
+    expect(view.getByRole('listbox').getAttribute('aria-label')).toBe('Stop driving the wall after');
   });
 });

@@ -113,7 +113,7 @@ describe('BleControlSheetHost', () => {
     ['the player’s sheet', false],
   ] as const)('%s leads with Stop driving after', (_host, showLightingSwitches) => {
     mockBluetooth.boardName = 'kilter';
-    mockSettings.values = { putOnBoardKeepsLighting: '30', moonboardPutOnBoardKeepsLighting: 'off' };
+    mockSettings.values = { putOnBoardKeepsLighting: '30' };
     render(<BleControlSheetHost visible onClose={vi.fn()} showLightingSwitches={showLightingSwitches} />);
     const row = mockBleControlSheet.props?.keepLighting;
     expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.label', choice: '30' });
@@ -134,22 +134,23 @@ describe('BleControlSheetHost', () => {
       'off',
     );
     expect(mockSettings.setters.putOnBoardKeepsLighting).toHaveBeenCalledWith('off');
-    expect(mockSettings.setters.moonboardPutOnBoardKeepsLighting).not.toHaveBeenCalled();
   });
 
-  it('takes the MoonBoard’s own choice on a connected MoonBoard', () => {
+  // One Stop driving after for every board (2026-11): a connected MoonBoard's
+  // sheet shows and writes the same choice, whatever the retired MoonBoard one says.
+  it('takes the one Stop driving after choice on a connected MoonBoard', () => {
     mockSettings.values = { putOnBoardKeepsLighting: '30', moonboardPutOnBoardKeepsLighting: '60' };
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
     const row = mockBleControlSheet.props?.keepLighting;
-    expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.sheetMoonboardLabel', choice: '60' });
+    expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.label', choice: '30' });
     row?.onChange('until_stopped');
     expect(settingsAnalytics.trackSettingChanged).toHaveBeenCalledExactlyOnceWith(
       'boardControls',
-      'moonboardPutOnBoardKeepsLighting',
+      'putOnBoardKeepsLighting',
       'until_stopped',
     );
-    expect(mockSettings.setters.moonboardPutOnBoardKeepsLighting).toHaveBeenCalledWith('until_stopped');
-    expect(mockSettings.setters.putOnBoardKeepsLighting).not.toHaveBeenCalled();
+    expect(mockSettings.setters.putOnBoardKeepsLighting).toHaveBeenCalledWith('until_stopped');
+    expect(mockSettings.setters.moonboardPutOnBoardKeepsLighting).toBeUndefined();
   });
 
   // Always drive the wall drives with no end: no timer applies, so no row.
@@ -161,9 +162,9 @@ describe('BleControlSheetHost', () => {
     expect(mockBleControlSheet.props?.alwaysDrive).toBe(true);
   });
 
-  it('reads an unknown stored choice as the default: 45 s, Until I stop on a MoonBoard', () => {
+  it('reads an unknown stored choice as the default: 45 s, on a MoonBoard too', () => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
-    expect(mockBleControlSheet.props?.keepLighting?.choice).toBe('until_stopped');
+    expect(mockBleControlSheet.props?.keepLighting?.choice).toBe('45');
     cleanup();
     mockBluetooth.boardName = 'kilter';
     render(<BleControlSheetHost visible onClose={vi.fn()} />);

@@ -5,7 +5,6 @@ import { announceQueued } from '../../lib/announce-queued';
 import { hapticSelection } from '../../lib/haptics';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
   KEEP_LIGHTING_CHOICES,
   sanitiseKeepLighting,
   type KeepLightingChoice,
@@ -78,33 +77,24 @@ export function BleControlSheetHost({
   const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
   // Stop driving after (2.7, spec B4), the sheet's first row on both sheets:
-  // the timer at the wall in two taps (WCAG 2.2.1). On a connected MoonBoard
-  // the MoonBoard's own choice, the one its Put on board takes. Left out while
-  // Always drive the wall is on: it drives with no end, so no timer applies.
+  // the timer at the wall in two taps (WCAG 2.2.1), the same choice on every
+  // board, MoonBoards included. Left out while Always drive the wall is on: it
+  // drives with no end, so no timer applies.
   const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
-  const onMoonboard = showLightAdjacentHolds;
-  const keepLightingChoice = onMoonboard
-    ? sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING)
-    : sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const setKeepLightingChoice = onMoonboard ? setMoonboardKeepLighting : setKeepLighting;
+  const keepLightingChoice = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
   const keepLighting = useMemo<BleKeepLightingRowModel>(
     () => ({
-      label: onMoonboard ? t('settings:ble.lighting.keep.sheetMoonboardLabel') : t('settings:ble.lighting.keep.label'),
+      label: t('settings:ble.lighting.keep.label'),
       choice: keepLightingChoice,
       options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
       onChange: (choice: KeepLightingChoice) => {
         hapticSelection();
         // Reported like the Board page's row of the same key.
-        trackSettingChanged(
-          BOARD_CONTROLS_SETTINGS_PAGE,
-          onMoonboard ? 'moonboardPutOnBoardKeepsLighting' : 'putOnBoardKeepsLighting',
-          choice,
-        );
-        setKeepLightingChoice(choice);
+        trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'putOnBoardKeepsLighting', choice);
+        setKeepLighting(choice);
       },
     }),
-    [t, onMoonboard, keepLightingChoice, setKeepLightingChoice],
+    [t, keepLightingChoice, setKeepLighting],
   );
 
   // Close if the link drops while the sheet is open — otherwise it lingers

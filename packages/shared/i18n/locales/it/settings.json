@@ -479,10 +479,6 @@
           "300": "5 minuti"
         },
         "untilStopped": "Finché non mi fermo",
-        "moonboardLabel": "Su una MoonBoard",
-        "moonboardAccessibilityLabel": "Smetti di guidare una MoonBoard dopo",
-        "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
-        "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
         "inSessionLabel": "Anche in una session",
         "inSessionAccessibilityLabel": "Illumina il pannello e Guida sempre il pannello valgono anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
@@ -498,7 +494,7 @@
       },
       "drivingHelp": "Come funziona la guida del pannello",
       "alwaysDriveLabel": "Guida sempre il pannello",
-      "alwaysDriveDescription": "Ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello. In una session serve Anche in una session, tranne su una MoonBoard.",
+      "alwaysDriveDescription": "Ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello. In una session serve Anche in una session.",
       "alwaysDriveFooter": "Tocca Guidi tu il pannello per smettere. Poi i blocchi che scegli si aprono in anteprima finché non ti disconnetti o tocchi Illumina il pannello.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
       "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se guidi tu il pannello, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Altrimenti, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello. In una session la lista non entra mai nella coda condivisa."

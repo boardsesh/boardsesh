@@ -1,17 +1,16 @@
 /**
  * Stop driving after (2.7, preview-first lighting): how long a drive that Put
- * on board started keeps lighting. Settings › Board holds the two choices, one
- * for every board and one for MoonBoards, plus whether it applies in a crew
- * session. The setting keys keep their first name (`putOnBoardKeepsLighting`)
- * so stored choices carry over.
+ * on board started keeps lighting. Settings › Board holds one choice for every
+ * board, MoonBoards included, plus whether it applies in a crew session.
+ * The setting key keeps its first name (`putOnBoardKeepsLighting`) so stored
+ * choices carry over.
  *
  * - `off` — Right away: the press lights that one climb and starts no drive.
  *   The next pick is a preview.
  * - `30` / `45` / `60` / `120` / `300` — a timed drive: every pick lights for
  *   that many seconds, and each climb that lights restarts the clock.
  * - `until_stopped` — Until I stop: an open-ended drive. Every pick lights
- *   until the climber taps the button or the link drops. The MoonBoard
- *   default, since most MoonBoard controllers don't like phones switching.
+ *   until the climber taps the button or the link drops.
  *
  * Only Put on board's drive is timed: a swipe or Light every climb always
  * starts an open-ended one. With Always drive the wall on (`alwaysDrive`), none
@@ -26,11 +25,13 @@ export const KEEP_LIGHTING_CHOICES = ['off', '30', '45', '60', '120', '300', 'un
 
 export type KeepLightingChoice = (typeof KEEP_LIGHTING_CHOICES)[number];
 
-/** Settings › Board's Stop driving after keys. */
-export type KeepLightingSettingKey = 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting';
+/**
+ * Settings › Board's Stop driving after key. A drive's `windowSetting` names it
+ * so turning the choice to Right away ends a timed drive it started.
+ */
+export type KeepLightingSettingKey = 'putOnBoardKeepsLighting';
 
 export const DEFAULT_KEEP_LIGHTING: KeepLightingChoice = '45';
-export const DEFAULT_MOONBOARD_KEEP_LIGHTING: KeepLightingChoice = 'until_stopped';
 
 /** A stored value this build doesn't know (an older or newer bundle wrote it) reads as the default. */
 export function sanitiseKeepLighting(value: unknown, fallback: KeepLightingChoice): KeepLightingChoice {
@@ -72,23 +73,16 @@ export function keepLightingWindowMs(choice: KeepLightingChoice): number | null 
 export type KeepLightingPlan = { windowMs: number | null; setting: KeepLightingSettingKey };
 
 /**
- * The plan for one press, or null for one-climb lighting.
- *
- * A MoonBoard takes its own choice, which applies in a crew session too: its
- * controllers don't like phones switching, so the phone that put the climb up
- * keeps the board. Every other board takes the general choice, and in a crew
- * session only while "In a session too" is on.
+ * The plan for one press, or null for one-climb lighting. Every board takes
+ * the one choice, MoonBoards included, and in a crew session only while "In a
+ * session too" is on.
  */
 export function resolveKeepLightingPlan({
-  boardIsMoonboard,
   keepLighting,
-  moonboardKeepLighting,
   drivesInSession,
   inSession,
 }: {
-  boardIsMoonboard: boolean;
   keepLighting: KeepLightingChoice;
-  moonboardKeepLighting: KeepLightingChoice;
   /** Settings › Board's "In a session too". */
   drivesInSession: boolean;
   /**
@@ -98,10 +92,6 @@ export function resolveKeepLightingPlan({
    */
   inSession: boolean;
 }): KeepLightingPlan | null {
-  if (boardIsMoonboard) {
-    const windowMs = keepLightingWindowMs(moonboardKeepLighting);
-    return windowMs === undefined ? null : { windowMs, setting: 'moonboardPutOnBoardKeepsLighting' };
-  }
   if (inSession && !drivesInSession) return null;
   const windowMs = keepLightingWindowMs(keepLighting);
   return windowMs === undefined ? null : { windowMs, setting: 'putOnBoardKeepsLighting' };
@@ -109,10 +99,8 @@ export function resolveKeepLightingPlan({
 
 /**
  * Whether Always drive the wall (Settings › Board, `alwaysDrive`) drives here:
- * the switch is on and, in a crew session, In a session too is on too. A
- * MoonBoard drives in a crew session whatever In a session too says, as its
- * Stop driving after choice does: most MoonBoard controllers don't like phones
- * switching, so the phone that has the board keeps it.
+ * the switch is on and, in a crew session, In a session too is on too. Every
+ * board follows that rule, MoonBoards included.
  *
  * Never with the `wall-swipe-to-drive` flag off: it is driving's kill switch
  * (docs/feature-flags.md), and Always drive the wall's drive is a drive like any
@@ -126,7 +114,6 @@ export function resolveKeepLightingPlan({
 export function alwaysDriveApplies({
   alwaysDrive,
   swipeToDriveEnabled,
-  boardIsMoonboard,
   drivesInSession,
   inSession,
 }: {
@@ -134,14 +121,13 @@ export function alwaysDriveApplies({
   alwaysDrive: boolean;
   /** The `wall-swipe-to-drive` flag (`useWallSwipeToDriveEnabled`), driving's kill switch. */
   swipeToDriveEnabled: boolean;
-  boardIsMoonboard: boolean;
   /** Settings › Board's In a session too. */
   drivesInSession: boolean;
   /** A crew is in this session (the roster's `useIsCrewSession`). */
   inSession: boolean;
 }): boolean {
   if (!alwaysDrive || !swipeToDriveEnabled) return false;
-  return boardIsMoonboard || !inSession || drivesInSession;
+  return !inSession || drivesInSession;
 }
 
 /**

@@ -162,25 +162,22 @@ export function resolveDriveModeExit({
 }
 
 /**
- * Whether a timed drive ends because Settings › Board changed under it:
- * its own choice turned Off, or (the general choice, in a crew session) In a
- * session too turned off. A MoonBoard's window ignores In a session too.
+ * Whether a timed drive ends because Settings › Board changed under it: Stop
+ * driving after turned to Right away, or (in a crew session) In a session too
+ * turned off. The same on every board, MoonBoards included.
  */
 export function shouldEndWindowForSettings({
   drive,
   keepLighting,
-  moonboardKeepLighting,
   drivesInSession,
   inSession,
 }: {
   drive: DriveModeState | null;
   keepLighting: KeepLightingChoice;
-  moonboardKeepLighting: KeepLightingChoice;
   drivesInSession: boolean;
   inSession: boolean;
 }): boolean {
   if (!drive || drive.windowMs === null || drive.windowSetting === null) return false;
-  if (drive.windowSetting === 'moonboardPutOnBoardKeepsLighting') return moonboardKeepLighting === 'off';
   return keepLighting === 'off' || (inSession && !drivesInSession);
 }
 

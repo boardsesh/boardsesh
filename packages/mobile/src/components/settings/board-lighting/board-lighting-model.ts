@@ -7,22 +7,16 @@ type KeepLightingPicker = { choice: KeepLightingChoice; onChange: (choice: KeepL
 
 export type BoardLightingModelInput = {
   t: SettingsTranslate;
-  /** Stop driving after (2.7): every board but a MoonBoard. */
+  /** Stop driving after (2.7): every board, MoonBoards included. */
   keepLighting: KeepLightingPicker;
-  /**
-   * The MoonBoard's own choice, or `null` when no MoonBoard is in view (the
-   * connected board, the active board, or a saved one).
-   */
-  moonboardKeepLighting: KeepLightingPicker | null;
   /** In a session too: Put on board drives in a crew session as well. */
   drivesInSession: Toggle;
   /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
   disconnectWhenDrivingEnds: Toggle;
   /**
    * Always drive the wall: this phone drives the wall while it holds the
-   * board. On, Stop driving after (and the MoonBoard's) shows greyed with its
-   * reason on the row, and In a session too applies whatever Stop driving
-   * after says.
+   * board. On, Stop driving after shows greyed with its reason on the row,
+   * and In a session too applies whatever Stop driving after says.
    */
   alwaysDrive: Toggle;
   /**
@@ -70,7 +64,7 @@ export function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoi
 }
 
 /**
- * The Stop driving after card's footer, for the general choice: a drive with a
+ * The Stop driving after card's footer: a drive with a
  * clock that each lit climb restarts, a drive until the climber stops it, or
  * Right away's one climb and no drive.
  */
@@ -91,16 +85,13 @@ export function keepLightingFooter(t: SettingsTranslate, choice: KeepLightingCho
 
 function keepLightingRow(
   t: SettingsTranslate,
-  key: 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting',
-  label: string,
   picker: KeepLightingPicker,
-  extra: { subtitle?: string; accessibilityLabel?: string; disabled?: boolean } = {},
+  extra: { subtitle?: string; disabled?: boolean } = {},
 ): MoreSelectRow {
   return {
     kind: 'select',
-    key,
-    label,
-    ...(extra.accessibilityLabel ? { accessibilityLabel: extra.accessibilityLabel } : {}),
+    key: 'putOnBoardKeepsLighting',
+    label: t('settings:ble.lighting.keep.label'),
     ...(extra.subtitle ? { subtitle: extra.subtitle } : {}),
     ...(extra.disabled ? { disabled: true } : {}),
     options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
@@ -120,12 +111,10 @@ function keepLightingRow(
  * before the rows it turns off. Its footer, only while it is on, says how to
  * stop and what a stop holds.
  *
- * Then how long Put on board's drive lasts (2.7, Stop driving after): the
- * general choice, the MoonBoard's own right under it (only where a MoonBoard
- * is in view), and In a session too, greyed with its reason while the general
- * choice is Right away (its state follows only the general choice; a
- * MoonBoard's applies in a session anyway). Under Always drive the wall the two
- * choices don't apply: they stay in place, greyed, each saying why on the row
+ * Then how long Put on board's drive lasts (2.7, Stop driving after), one
+ * choice for every board, MoonBoards included, and In a session too, greyed
+ * with its reason while the choice is Right away. Under Always drive the wall
+ * the choice doesn't apply: it stays in place, greyed, saying why on the row
  * itself (where a screen reader lands), and the card drops its footer, which
  * describes Put on board's drive. In a session too still decides a crew
  * session for Always drive the wall, so it is never greyed then.
@@ -142,34 +131,18 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
   // Greyed under Always drive the wall, each row says why where a screen reader lands on it.
   const alwaysDriveReason = t('settings:ble.lighting.keep.alwaysDriveReason');
   const keepRows: MoreRow[] = [
-    keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting, {
+    keepLightingRow(t, input.keepLighting, {
       ...(alwaysDrive ? { subtitle: alwaysDriveReason } : {}),
       disabled: alwaysDrive,
     }),
   ];
-  if (input.moonboardKeepLighting) {
-    keepRows.push(
-      keepLightingRow(
-        t,
-        'moonboardPutOnBoardKeepsLighting',
-        t('settings:ble.lighting.keep.moonboardLabel'),
-        input.moonboardKeepLighting,
-        {
-          subtitle: alwaysDrive ? alwaysDriveReason : t('settings:ble.lighting.keep.moonboardDescription'),
-          // Named on its own (spec B4): the rotor and Voice Control read it without the row above.
-          accessibilityLabel: t('settings:ble.lighting.keep.moonboardAccessibilityLabel'),
-          disabled: alwaysDrive,
-        },
-      ),
-    );
-  }
   keepRows.push({
     kind: 'toggle',
     key: 'putOnBoardDrivesInSession',
     label: t('settings:ble.lighting.keep.inSessionLabel'),
     accessibilityLabel: t('settings:ble.lighting.keep.inSessionAccessibilityLabel'),
     subtitle: t('settings:ble.lighting.keep.inSessionDescription'),
-    // Greyed with the general choice Off: the reason replaces the description,
+    // Greyed with Stop driving after Off: the reason replaces the description,
     // at full contrast. Always drive the wall drives in a session only with it
     // on, so it is never greyed then.
     disabledReason: t('settings:ble.lighting.keep.inSessionOffReason'),

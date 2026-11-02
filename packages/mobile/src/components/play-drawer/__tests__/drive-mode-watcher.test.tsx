@@ -23,7 +23,6 @@ type Reads = {
   isCrew?: boolean;
   /** Settings › Board's keep-lighting (2.7). */
   keepLighting?: string;
-  moonboardKeepLighting?: string;
   drivesInSession?: boolean;
   /** The swipe flag, keep-lighting's kill switch. */
   swipeToDrive?: boolean;
@@ -97,8 +96,7 @@ vi.mock('../../../settings', () => ({
     switch (key) {
       case 'putOnBoardKeepsLighting':
         return [reads.current.keepLighting ?? '45', vi.fn()];
-      case 'moonboardPutOnBoardKeepsLighting':
-        return [reads.current.moonboardKeepLighting ?? 'until_stopped', vi.fn()];
+      // The retired MoonBoard choice is not read: asking for it throws below.
       case 'putOnBoardDrivesInSession':
         return [reads.current.drivesInSession ?? true, vi.fn()];
       case 'disconnectWhenDrivingEnds':
@@ -163,6 +161,7 @@ import {
   enterDriveMode,
   exitDriveMode,
   getDriveMode,
+  getLastDriveEnded,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
   markDriveLive,
@@ -730,8 +729,15 @@ describe('DriveModeWatcher: Always drive the wall', () => {
       expect(getDriveMode()).toBeNull();
     });
 
-    it('drives a MoonBoard whatever In a session too says', () => {
+    // A MoonBoard follows In a session too like every board.
+    it("leaves a MoonBoard's picks previews with In a session too off", () => {
       reads.current = { ...reads.current, isCrew: true, drivesInSession: false, boardName: 'moonboard' };
+      mount();
+      expect(getDriveMode()).toBeNull();
+    });
+
+    it('drives a MoonBoard with In a session too on', () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: true, boardName: 'moonboard' };
       mount();
       expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always', boardType: 'moonboard' });
     });
@@ -776,6 +782,7 @@ describe('DriveModeWatcher: the timed drive', () => {
         startedBy: 'tap',
         sessionId: reads.current.sessionId,
         boardId: reads.current.boardId,
+        boardType: reads.current.boardName ?? 'moonboard',
         windowMs,
         windowSetting: 'putOnBoardKeepsLighting',
       });
@@ -943,27 +950,15 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getDriveMode()?.phase).toBe('live');
   });
 
-  it("takes only its own choice's new length: a MoonBoard window reads the MoonBoard's", () => {
+  // Stop driving after is one choice for every board: a MoonBoard's timed
+  // drive takes its new length too.
+  it("gives a MoonBoard's timed drive the new Stop driving after length", () => {
+    reads.current = { ...reads.current, boardName: 'moonboard' };
     const watcher = mount();
     openWindow();
     act(() => emitWallConfirm('climb-a'));
-    watcher.change({ moonboardKeepLighting: '30' });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
-    act(() => {
-      exitDriveMode('stopped');
-      enterDriveMode({
-        startedBy: 'tap',
-        sessionId: reads.current.sessionId,
-        boardId: reads.current.boardId,
-        windowMs: 30_000,
-        windowSetting: 'moonboardPutOnBoardKeepsLighting',
-      });
-    });
-    act(() => emitWallConfirm('climb-b'));
-    watcher.change({ keepLighting: '60' });
-    expect(getDriveMode()).toMatchObject({ windowMs: 30_000 });
-    watcher.change({ moonboardKeepLighting: '60' });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 60_000 });
+    watcher.change({ keepLighting: '30' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 30_000 });
   });
 
   it('ends the window in a crew when In a session too is turned off, and not solo', () => {
@@ -1045,27 +1040,18 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
   });
 
-  it("ends a MoonBoard window on the MoonBoard's own choice only", () => {
+  // In a session too is one rule for every board: a MoonBoard's timed drive
+  // ends keeping the link once a crew forms with it off.
+  it("ends a MoonBoard's timed drive when a crew forms with In a session too off", () => {
+    reads.current = { ...reads.current, boardName: 'moonboard', drivesInSession: false };
     const watcher = mount();
-    act(() => {
-      enterDriveMode({
-        startedBy: 'tap',
-        sessionId: reads.current.sessionId,
-        boardId: reads.current.boardId,
-        windowMs: 30_000,
-        windowSetting: 'moonboardPutOnBoardKeepsLighting',
-      });
-    });
+    openWindow(30_000);
     act(() => emitWallConfirm('climb-a'));
-    watcher.change({ moonboardKeepLighting: '30' });
-    // The general choice and In a session too are not a MoonBoard's.
-    watcher.change({ keepLighting: 'off' });
-    expect(getDriveMode()?.phase).toBe('live');
-    watcher.change({ drivesInSession: false, isCrew: true });
-    expect(getDriveMode()?.phase).toBe('live');
-    watcher.change({ moonboardKeepLighting: 'off' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', boardType: 'moonboard' });
+    watcher.change({ isCrew: true });
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
   });
 
   it('drops its timer once the window ends another way', () => {
@@ -1241,7 +1227,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
 
   it('starts an open-ended drive from nothing when the press drove the wall (Until I stop)', () => {
     mount();
-    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'moonboard' });
+    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'general' });
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen', windowMs: null, expiresAt: null });
   });
@@ -1476,8 +1462,8 @@ describe('DriveModeWatcher: an Android notification press', () => {
     expect(getLastDriveModeExitReason()).toBe('arming_timed_out');
   });
 
-  it('arms an open-ended drive for Until I stop (the MoonBoard default)', () => {
-    reads.current = { ...reads.current, boardName: 'moonboard' };
+  it('arms an open-ended drive for Until I stop', () => {
+    reads.current = { ...reads.current, keepLighting: 'until_stopped' };
     mount();
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen', windowMs: null });
@@ -1609,6 +1595,39 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
       vi.advanceTimersByTime(1);
     });
     expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  // A MoonBoard is no exception: the switch frees it like every board, so a
+  // climber who wants to keep the MoonBoard's link leaves the switch off.
+  it.each([
+    ['its time runs out', 'window_ended'],
+    ['the climber stops it', 'stopped'],
+  ] as const)('lets go of a MoonBoard when %s, like every board', (_case, reason) => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true, boardName: 'moonboard' };
+    mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        boardType: 'moonboard',
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    if (reason === 'window_ended') {
+      act(() => {
+        vi.advanceTimersByTime(45_000);
+      });
+    } else {
+      act(() => {
+        stopDrivingForLink();
+      });
+    }
+    expect(getLastDriveEnded()).toMatchObject({ reason, drive: { boardType: 'moonboard' } });
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
   });
 

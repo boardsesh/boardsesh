@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
-import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -8,7 +7,6 @@ import { useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provid
 import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
   alwaysDriveApplies,
   keepLightingWindowMs,
   lockScreenPressKeepsLighting,
@@ -58,7 +56,7 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  *
  * Always drive the wall (Settings › Board, `alwaysDrive`) drives from here: while
  * it applies (`alwaysDriveApplies`: in a crew only with In a session too on,
- * except on a MoonBoard, and never with the `wall-swipe-to-drive` flag off,
+ * on every board, and never with the `wall-swipe-to-drive` flag off,
  * driving's kill switch) and this phone's own Bluetooth link holds the board,
  * an open-ended drive is on (`startAlwaysDrive`), started live when the link
  * comes up, when the switch turns on, or when a drive ends with the link still
@@ -120,10 +118,8 @@ export function DriveModeWatcher(): null {
   // Settings › Board's Stop driving after (2.7): the timed-drive end rule
   // below, and the drive an Android notification press starts.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
   const { getQueueSnapshot } = useQueueActions();
   const boardType = bluetooth?.boardName ?? null;
@@ -132,7 +128,6 @@ export function DriveModeWatcher(): null {
   const alwaysApplies = alwaysDriveApplies({
     alwaysDrive,
     swipeToDriveEnabled,
-    boardIsMoonboard: isMoonboardBoardName(boardType),
     drivesInSession,
     inSession: isCrewSession,
   });
@@ -143,9 +138,7 @@ export function DriveModeWatcher(): null {
   // a press lights its climb and starts nothing: every pick lights already.
   const pressPlan = lockScreenPressKeepsLighting({ swipeToDriveEnabled, alwaysDrive: alwaysApplies })
     ? resolveKeepLightingPlan({
-        boardIsMoonboard: isMoonboardBoardName(boardType),
         keepLighting,
-        moonboardKeepLighting,
         drivesInSession,
         inSession: isCrewSession,
       })
@@ -273,17 +266,16 @@ export function DriveModeWatcher(): null {
   // stop makes it open-ended. Only a change does: a drive started from a plan
   // (or adopted from the Lock Screen) keeps its length until its choice moves.
   // The settings are read above, with what a lock-screen press keeps lighting.
-  const choicesRef = useRef({ keepLighting, moonboardKeepLighting });
+  const previousKeepLightingRef = useRef(keepLighting);
   useEffect(() => {
-    const previous = choicesRef.current;
-    choicesRef.current = { keepLighting, moonboardKeepLighting };
+    const previousKeepLighting = previousKeepLightingRef.current;
+    previousKeepLightingRef.current = keepLighting;
     if (!windowed) return;
     const latest = getDriveMode();
     if (
       shouldEndWindowForSettings({
         drive: latest,
         keepLighting,
-        moonboardKeepLighting,
         drivesInSession,
         inSession: isCrewSession,
       })
@@ -291,13 +283,11 @@ export function DriveModeWatcher(): null {
       exitDriveMode('window_ended', { keepLink: true });
       return;
     }
-    const moonboardWindow = latest?.windowSetting === 'moonboardPutOnBoardKeepsLighting';
-    const choice = moonboardWindow ? moonboardKeepLighting : keepLighting;
-    if (choice === (moonboardWindow ? previous.moonboardKeepLighting : previous.keepLighting)) return;
-    const windowMs = keepLightingWindowMs(choice);
+    if (keepLighting === previousKeepLighting) return;
+    const windowMs = keepLightingWindowMs(keepLighting);
     if (windowMs === null) makeDriveOpenEnded();
     else if (windowMs !== undefined) retimeDriveWindow(windowMs);
-  }, [windowed, keepLighting, moonboardKeepLighting, drivesInSession, isCrewSession]);
+  }, [windowed, keepLighting, drivesInSession, isCrewSession]);
 
   // The timed drive's end, modelled on the arming timeout below: one timeout, keyed
   // on the end, so a renewal re-arms it. A timer that fires a beat early (or a

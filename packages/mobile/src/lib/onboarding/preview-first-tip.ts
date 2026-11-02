@@ -225,7 +225,7 @@ export type PreviewFirstTipDrive = {
   /**
    * It lights every pick until the climber stops it: a swipe, Light every
    * climb, the board sheet's row, or Put on board set to keep lighting until
-   * stopped (a MoonBoard's default). Not Put on board's timed window.
+   * stopped. Not Put on board's timed window.
    */
   openEnded: boolean;
 };
@@ -259,7 +259,6 @@ export type PreviewFirstWindowLine =
   | { key: 'windowMinute' }
   | { key: 'windowMinutes'; minutes: number }
   | { key: 'untilStop' }
-  | { key: 'moonboard' }
   | null;
 
 /**
@@ -267,11 +266,11 @@ export type PreviewFirstWindowLine =
  * (`resolveKeepLightingReach`): where Always drive the wall drives, every pick
  * lights until the climber stops, on any board, whatever Stop driving after
  * says. A timed drive says how long it lasts after each climb, in whole
- * minutes from one minute up.
+ * minutes from one minute up. A MoonBoard reads the same, Stop driving after
+ * being one choice for every board.
  */
 export function resolvePreviewFirstWindowLine({
   plan,
-  isMoonboard,
   alwaysDrive = false,
 }: {
   /**
@@ -280,7 +279,6 @@ export function resolvePreviewFirstWindowLine({
    * start a drive here (a session with In a session too off, the swipe flag off).
    */
   plan: KeepLightingPlan | null;
-  isMoonboard: boolean;
   /** Always drive the wall drives here (`alwaysDriveApplies`). */
   alwaysDrive?: boolean;
 }): PreviewFirstWindowLine {
@@ -290,9 +288,7 @@ export function resolvePreviewFirstWindowLine({
     case 'one_climb':
       return null;
     case 'until_stop':
-      // The MoonBoard line gives the MoonBoard's own reason; Light
-      // automatically's drive has none to give.
-      return isMoonboard && !alwaysDrive ? { key: 'moonboard' } : { key: 'untilStop' };
+      return { key: 'untilStop' };
     case 'window': {
       const length = driveLengthWords(reach.seconds);
       if (length.unit === 'seconds') return { key: 'windowSeconds', seconds: length.count };
@@ -305,8 +301,8 @@ export function resolvePreviewFirstWindowLine({
  * Which sentence the card says about the frost, read by the same rule as its
  * second line (`resolveKeepLightingReach`): the one about Put on board's drive
  * stopping after the chosen time, and the frost shrinking as it runs out, only
- * where that drive has a clock (`window`). Until I stop (a MoonBoard's
- * default) and Right away (or no drive here at all) say the frost means
+ * where that drive has a clock (`window`). Until I stop and Right away (or no
+ * drive here at all) say the frost means
  * driving until you stop, with nothing about a clock.
  */
 export type PreviewFirstFrostLine = 'timed' | 'open_ended';

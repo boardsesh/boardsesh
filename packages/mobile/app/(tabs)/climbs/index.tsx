@@ -2108,7 +2108,6 @@ function ClimbListInner() {
       <>
         <FirstConnectCard
           boardName={connectCardBoardName}
-          boardType={boardName || null}
           boardHasLights={connectCardBoardHasLights}
           style={styles.revealBanner}
         />

@@ -1,9 +1,8 @@
 // Stop driving after (2.7): the choices, how a stored value reads back, and
-// which choice a press takes on which board.
+// what a press takes, the same on every board.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
   KEEP_LIGHTING_CHOICES,
   alwaysDriveApplies,
   driveLengthWords,
@@ -16,14 +15,14 @@ import {
 import { DEFAULT_SETTINGS } from '../../settings/defaults';
 
 describe('keep-lighting choices', () => {
-  it('defaults to a 45 s window, Until I stop on a MoonBoard, and applies in a session', () => {
+  it('defaults to a 45 s window that applies in a session, with no MoonBoard choice of its own', () => {
     expect(DEFAULT_KEEP_LIGHTING).toBe('45');
-    expect(DEFAULT_MOONBOARD_KEEP_LIGHTING).toBe('until_stopped');
     expect(DEFAULT_SETTINGS).toMatchObject({
       putOnBoardKeepsLighting: '45',
-      moonboardPutOnBoardKeepsLighting: 'until_stopped',
       putOnBoardDrivesInSession: true,
     });
+    // The retired MoonBoard choice stays on disk, read by nothing.
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('moonboardPutOnBoardKeepsLighting');
   });
 
   it('reads back a known choice, and anything else as the default', () => {
@@ -53,9 +52,7 @@ describe('keep-lighting choices', () => {
 
 describe('resolveKeepLightingPlan', () => {
   const BASE = {
-    boardIsMoonboard: false,
     keepLighting: '45',
-    moonboardKeepLighting: 'until_stopped',
     drivesInSession: true,
     inSession: false,
   } as const;
@@ -72,18 +69,6 @@ describe('resolveKeepLightingPlan', () => {
         { drivesInSession: false },
         { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
       ],
-      ['MoonBoard', { boardIsMoonboard: true }, { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' }],
-      [
-        'MoonBoard in a session, In a session too off',
-        { boardIsMoonboard: true, inSession: true, drivesInSession: false },
-        { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' },
-      ],
-      [
-        'MoonBoard at 1 minute, the general choice Off',
-        { boardIsMoonboard: true, moonboardKeepLighting: '60', keepLighting: 'off' },
-        { windowMs: 60_000, setting: 'moonboardPutOnBoardKeepsLighting' },
-      ],
-      ['MoonBoard, Off', { boardIsMoonboard: true, moonboardKeepLighting: 'off' }, null],
     ],
   )('%s', (_name, change, plan) => {
     expect(resolveKeepLightingPlan({ ...BASE, ...change })).toEqual(plan);
@@ -95,7 +80,6 @@ describe('alwaysDriveApplies', () => {
   const ON = {
     alwaysDrive: true,
     swipeToDriveEnabled: true,
-    boardIsMoonboard: false,
     drivesInSession: false,
     inSession: false,
   };
@@ -105,14 +89,8 @@ describe('alwaysDriveApplies', () => {
     ['solo, In a session too off', { drivesInSession: false }, true],
     ['in a crew with In a session too on', { inSession: true, drivesInSession: true }, true],
     ['in a crew with In a session too off', { inSession: true }, false],
-    ['a MoonBoard in a crew with In a session too off', { inSession: true, boardIsMoonboard: true }, true],
     ['switched off', { alwaysDrive: false }, false],
     ["the swipe flag off (driving's kill switch)", { swipeToDriveEnabled: false }, false],
-    [
-      'the swipe flag off, on a MoonBoard in a crew',
-      { swipeToDriveEnabled: false, inSession: true, boardIsMoonboard: true },
-      false,
-    ],
     [
       'switched off, in a crew with In a session too on',
       { alwaysDrive: false, inSession: true, drivesInSession: true },
@@ -138,7 +116,7 @@ describe('lockScreenPressKeepsLighting', () => {
 describe('resolveKeepLightingReach', () => {
   const window45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
   const window300 = { windowMs: 300_000, setting: 'putOnBoardKeepsLighting' } as const;
-  const untilStopped = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
+  const untilStopped = { windowMs: null, setting: 'putOnBoardKeepsLighting' } as const;
 
   it('reads the plan as it is where Always drive the wall does not drive', () => {
     expect(resolveKeepLightingReach({ plan: window45, alwaysDrive: false })).toEqual({

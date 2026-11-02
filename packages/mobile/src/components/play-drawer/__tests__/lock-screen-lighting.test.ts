@@ -68,15 +68,20 @@ beforeEach(() => {
 afterEach(() => resetDriveModeForTests());
 
 describe('resolveLockScreenAdoption', () => {
-  it('starts a live window from the press, ending where native said', () => {
-    expect(resolve(snapshot({ family: 'moonboard' }))).toEqual({
-      kind: 'start',
-      windowMs: 45_000,
-      windowSetting: 'moonboardPutOnBoardKeepsLighting',
-      expiresAt: NOW + 30_000,
-      startedAt: NOW - 15_000,
-    });
-  });
+  // A snapshot an older JS wrote with the MoonBoard family reads as Stop
+  // driving after's window too: it is one choice for every board.
+  it.each(['general', 'moonboard'] as const)(
+    'starts a live window from the press, ending where native said (family %s)',
+    (family) => {
+      expect(resolve(snapshot({ family }))).toEqual({
+        kind: 'start',
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+        expiresAt: NOW + 30_000,
+        startedAt: NOW - 15_000,
+      });
+    },
+  );
 
   it('starts an open-ended drive for a press that drove the wall', () => {
     expect(resolve(snapshot({ mode: 'driving', endsAtMs: undefined, windowSeconds: undefined }))).toEqual({
@@ -371,9 +376,9 @@ describe('armNotificationPressDrive', () => {
   });
 
   it('arms an open-ended drive for Until I stop', () => {
-    expect(
-      armNotificationPressDrive({ ...press, plan: { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } }),
-    ).toBe(true);
+    expect(armNotificationPressDrive({ ...press, plan: { windowMs: null, setting: 'putOnBoardKeepsLighting' } })).toBe(
+      true,
+    );
     expect(getDriveMode()).toMatchObject({ phase: 'arming', windowMs: null, windowSetting: null });
   });
 

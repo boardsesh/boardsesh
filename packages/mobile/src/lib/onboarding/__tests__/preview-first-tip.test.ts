@@ -223,60 +223,52 @@ describe('resolvePreviewFirstWindowLine', () => {
   const plan = (windowMs: number | null) => ({ windowMs, setting: 'putOnBoardKeepsLighting' as const });
 
   it('says the window in seconds, or as a minute', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(30_000), isMoonboard: false })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(30_000) })).toEqual({
       key: 'windowSeconds',
       seconds: 30,
     });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000) })).toEqual({
       key: 'windowSeconds',
       seconds: 45,
     });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false })).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000) })).toEqual({ key: 'windowMinute' });
   });
 
   // Off, or a press that can't open a window here (a session with In a session
   // too off): the press lights one climb, which the headline already says.
   it('says nothing more when Put on board lights one climb only', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: false })).toBeNull();
-    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: true })).toBeNull();
+    expect(resolvePreviewFirstWindowLine({ plan: null })).toBeNull();
   });
 
-  it('keeps lighting until stopped, and says so for a MoonBoard', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: false })).toEqual({ key: 'untilStop' });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true })).toEqual({ key: 'moonboard' });
+  // A MoonBoard takes the same Stop driving after, so it reads the same line.
+  it('keeps lighting until stopped', () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null) })).toEqual({ key: 'untilStop' });
   });
 
   // Where Always drive the wall drives, Put on board resumes its drive with no
   // end (the wall control's `tapDrive: 'resume'`), whatever Stop driving after
-  // says, on a MoonBoard too: the card promises driving until you stop.
+  // says: the card promises driving until you stop.
   it('names driving until you stop where Always drive the wall drives', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, alwaysDrive: true })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), alwaysDrive: true })).toEqual({
       key: 'untilStop',
     });
-    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: false, alwaysDrive: true })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: null, alwaysDrive: true })).toEqual({
       key: 'untilStop',
     });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, alwaysDrive: true })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), alwaysDrive: true })).toEqual({
       key: 'untilStop',
     });
   });
 
   it('says whole minutes in minutes', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false })).toEqual({ key: 'windowMinute' });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(120_000), isMoonboard: false })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000) })).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(120_000) })).toEqual({
       key: 'windowMinutes',
       minutes: 2,
     });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(300_000), isMoonboard: true })).toEqual({
+    expect(resolvePreviewFirstWindowLine({ plan: plan(300_000) })).toEqual({
       key: 'windowMinutes',
       minutes: 5,
-    });
-  });
-
-  it("reads a MoonBoard's timed window as a window", () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(30_000), isMoonboard: true })).toEqual({
-      key: 'windowSeconds',
-      seconds: 30,
     });
   });
 });

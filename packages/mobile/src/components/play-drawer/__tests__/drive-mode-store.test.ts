@@ -673,15 +673,13 @@ describe('the timed drive', () => {
     ['its choice turned Off', { keepLighting: 'off' }, true],
     ['In a session too turned off, solo', { drivesInSession: false }, false],
     ['In a session too turned off, in a crew', { drivesInSession: false, inSession: true }, true],
-    ["the MoonBoard's choice turned Off, which isn't its own", { moonboardKeepLighting: 'off' }, false],
-  ])('ends a window from the general choice when %s: %s', (_name, change, ends) => {
+  ])('ends a timed drive when %s: %s', (_name, change, ends) => {
     openWindow();
     markDriveLive({ now: 5_000 });
     expect(
       shouldEndWindowForSettings({
         drive: getDriveMode(),
         keepLighting: '45',
-        moonboardKeepLighting: 'until_stopped',
         drivesInSession: true,
         inSession: false,
         ...change,
@@ -689,26 +687,29 @@ describe('the timed drive', () => {
     ).toBe(ends);
   });
 
-  it("ends a MoonBoard's window only on its own choice, in a crew too", () => {
+  // Stop driving after and In a session too are one rule for every board: a
+  // MoonBoard's timed drive ends in a crew once In a session too goes off.
+  it("ends a MoonBoard's timed drive like any other, in a crew too", () => {
     enterDriveMode({
       startedBy: 'tap',
       sessionId: 's',
       boardId: null,
+      boardType: 'moonboard',
       windowMs: 30_000,
-      windowSetting: 'moonboardPutOnBoardKeepsLighting',
+      windowSetting: 'putOnBoardKeepsLighting',
     });
     const base = {
       drive: getDriveMode(),
-      keepLighting: 'off' as const,
-      moonboardKeepLighting: '30' as const,
-      drivesInSession: false,
+      keepLighting: '30' as const,
+      drivesInSession: true,
       inSession: true,
     };
     expect(shouldEndWindowForSettings(base)).toBe(false);
-    expect(shouldEndWindowForSettings({ ...base, moonboardKeepLighting: 'off' })).toBe(true);
+    expect(shouldEndWindowForSettings({ ...base, drivesInSession: false })).toBe(true);
+    expect(shouldEndWindowForSettings({ ...base, keepLighting: 'off' })).toBe(true);
     // An open-ended drive has no window to end.
-    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
-    expect(shouldEndWindowForSettings({ ...base, drive: getDriveMode(), moonboardKeepLighting: 'off' })).toBe(false);
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null, boardType: 'moonboard' });
+    expect(shouldEndWindowForSettings({ ...base, drive: getDriveMode(), keepLighting: 'off' })).toBe(false);
   });
 });
 

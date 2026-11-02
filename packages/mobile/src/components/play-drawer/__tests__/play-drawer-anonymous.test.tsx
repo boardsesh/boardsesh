@@ -2266,39 +2266,64 @@ describe('PlayDrawer — reading the wall', () => {
   });
 
   // After Put on board, keep lighting (2.7), at its defaults: a press that puts
-  // a climb up opens the 45 s window. On a MoonBoard, whose controllers mostly
-  // don't like phones switching, it starts an open-ended drive (Until I stop).
+  // a climb up opens the 45 s window. A MoonBoard takes the same Stop driving
+  // after as every board (2026-11: its own Until I stop choice went).
+  const MOON_CONFIG = { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 };
+  const MOON_CLIMB = { ...CLIMB, boardType: 'moonboard', layoutId: 3 } as unknown as Climb;
+  function renderDarkClimb(boardConfig: typeof BOARD_CONFIG | typeof MOON_CONFIG, climb: Climb) {
+    connectBoard();
+    lightbulb.lit = false;
+    session.currentItem = { uuid: 'queue-item-current', climb };
+    wall.uuid = null;
+    render(
+      createElement(PlayDrawer, {
+        viewer: 'member',
+        presentation: 'pane',
+        boardConfig,
+        reachableBoardKeys: new Set([configKey(boardConfig)]),
+        openTarget: committedTargetFor(climb),
+        onOpenQueue: vi.fn(),
+      }),
+    );
+  }
+
   it.each([
-    ['a Kilter', BOARD_CONFIG, CLIMB, 'window', { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' }],
-    [
-      'a MoonBoard',
-      { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 },
-      { ...CLIMB, boardType: 'moonboard', layoutId: 3 } as unknown as Climb,
-      'drive',
-      { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' },
-    ],
+    ['a Kilter', BOARD_CONFIG, CLIMB],
+    ['a MoonBoard', MOON_CONFIG, MOON_CLIMB],
+  ] as const)('on %s, a solo press that lights a dark climb opens the 45 s window', (_board, boardConfig, climb) => {
+    renderDarkClimb(boardConfig, climb);
+    expect(lastActionBarProps().wallControl).toMatchObject({
+      state: 'dark',
+      tapAction: 'relight',
+      tapDrive: 'window',
+      tapKeepLighting: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
+    });
+  });
+
+  it('lights one climb on a MoonBoard with Stop driving after set to Right away', () => {
+    setSetting('putOnBoardKeepsLighting', 'off');
+    renderDarkClimb(MOON_CONFIG, MOON_CLIMB);
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'dark', tapDrive: null, tapKeepLighting: null });
+  });
+
+  // In a session too is one rule for every board: on a MoonBoard in a crew
+  // with it off, neither Put on board nor Always drive the wall drives.
+  it.each([
+    ['Put on board', false],
+    ['Always drive the wall on', true],
   ] as const)(
-    'on %s, a solo press that lights a dark climb keeps lighting: %s',
-    (_board, boardConfig, climb, tapDrive, plan) => {
-      connectBoard();
-      lightbulb.lit = false;
-      session.currentItem = { uuid: 'queue-item-current', climb };
-      wall.uuid = null;
-      render(
-        createElement(PlayDrawer, {
-          viewer: 'member',
-          presentation: 'pane',
-          boardConfig,
-          reachableBoardKeys: new Set([configKey(boardConfig)]),
-          openTarget: committedTargetFor(climb),
-          onOpenQueue: vi.fn(),
-        }),
-      );
+    'on a MoonBoard in a crew with In a session too off, %s lights one climb and starts no drive',
+    (_case, alwaysDrive) => {
+      setSetting('alwaysDrive', alwaysDrive);
+      setSetting('putOnBoardDrivesInSession', false);
+      session.isShared = true;
+      session.sessionId = 'session-1';
+      renderDarkClimb(MOON_CONFIG, MOON_CLIMB);
       expect(lastActionBarProps().wallControl).toMatchObject({
         state: 'dark',
         tapAction: 'relight',
-        tapDrive,
-        tapKeepLighting: plan,
+        tapDrive: null,
+        tapKeepLighting: null,
       });
     },
   );
@@ -2512,9 +2537,10 @@ describe('PlayDrawer — the preview-first card (2.7)', () => {
     expect(controls.parentElement?.contains(tip)).toBe(false);
   });
 
-  it('hands the card the board on screen, and keeps the wall button plain', async () => {
+  it('hands the card the glow on screen, and keeps the wall button plain', async () => {
     await renderFirstPreview();
-    expect(recorded.previewFirstTip.at(-1)?.boardName).toBe(BOARD_CONFIG.boardName);
+    // Stop driving after is one choice for every board, so the card needs no board name.
+    expect(recorded.previewFirstTip.at(-1)).not.toHaveProperty('boardName');
     // The card's sample needs hold geometry; the real button frosts only while driving.
     expect(lastActionBarProps().wallGlow).toBeNull();
   });

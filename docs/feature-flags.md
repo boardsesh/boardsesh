@@ -258,9 +258,9 @@ diagnostic) applies on native. The whole surface lives in three files:
   Its body now says what lights from there, read the way Always drive the wall and
   Put on board read it (`firstConnectConfirmationCopy`): every pick, while **Light
   automatically** drives there (`firstConnectAlwaysDrives`: the switch on, and in a
-  crew In a session too on, except on a MoonBoard; it replaced the two switches in
+  crew In a session too on, on every board; it replaced the two switches in
   2026-11), Put on board's timed drive (30 or 45 seconds, or whole minutes from 1
-  minute up), until the climber stops it (a MoonBoard's default), or the one climb
+  minute up), until the climber stops it (Until I stop), or the one climb
   Put on board lights (Stop driving after set to Right away, a crew with In a
   session too off, or `wall-swipe-to-drive` off) (`resolveKeepLightingReach`, the
   same rule the player's preview-first card reads). The Climbs card's body follows

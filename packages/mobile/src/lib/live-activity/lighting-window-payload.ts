@@ -1,4 +1,3 @@
-import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { DriveLightingSnapshot, DriveModeState } from '../../components/play-drawer/drive-mode-store';
 import {
   alwaysDriveApplies,
@@ -46,9 +45,7 @@ export function buildLightingWindowPayload({
 }
 
 function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingFamily | null {
-  if (setting === 'moonboardPutOnBoardKeepsLighting') return 'moonboard';
-  if (setting === 'putOnBoardKeepsLighting') return 'general';
-  return null;
+  return setting === 'putOnBoardKeepsLighting' ? 'general' : null;
 }
 
 /**
@@ -60,43 +57,43 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * starts the drive itself (`armNotificationPressDrive`).
  *
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
- * start a drive in the app either, Always drive the wall's board and session
- * included (`alwaysDriveApplies`): every pick lights there already.
+ * start a drive in the app either, Always drive the wall's session included
+ * (`alwaysDriveApplies`): every pick lights there already.
  * `lockScreenStop` says this JS takes a stop from the Lock Screen bulb; a
  * binary without one ignores it.
+ *
+ * A MoonBoard takes the one choice like every board. The binary still reads a
+ * MoonBoard choice and a MoonBoard flag (`SharedKeepLightingConfig`), so this
+ * sends the general choice in that slot too and never says MoonBoard: a press
+ * on a MoonBoard's card then follows the general rule, In a session too
+ * included, on every binary.
  */
 export function buildKeepLightingConfig({
   keepLighting,
-  moonboardKeepLighting,
   drivesInSession,
   isCrewSession,
-  boardName,
   swipeToDriveEnabled,
   alwaysDrive,
 }: {
   keepLighting: KeepLightingChoice;
-  moonboardKeepLighting: KeepLightingChoice;
   drivesInSession: boolean;
   /** The roster's crew (`useIsCrewSession`), as the press reads it. */
   isCrewSession: boolean;
-  boardName: string;
   swipeToDriveEnabled: boolean;
   /** Settings › Board's Always drive the wall. */
   alwaysDrive: boolean;
 }): LiveActivityKeepLightingConfig {
-  const moonboard = isMoonboardBoardName(boardName);
   return {
     keepLighting,
-    moonboardKeepLighting,
+    moonboardKeepLighting: keepLighting,
     drivesInSession,
     inCrew: isCrewSession,
-    moonboard,
+    moonboard: false,
     enabled: lockScreenPressKeepsLighting({
       swipeToDriveEnabled,
       alwaysDrive: alwaysDriveApplies({
         alwaysDrive,
         swipeToDriveEnabled,
-        boardIsMoonboard: moonboard,
         drivesInSession,
         inSession: isCrewSession,
       }),

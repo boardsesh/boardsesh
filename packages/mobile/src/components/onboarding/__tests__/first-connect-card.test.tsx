@@ -266,15 +266,15 @@ describe('FirstConnectCard', () => {
     expect(screen.getByText(body)).toBeTruthy();
   });
 
-  // A MoonBoard drives in a crew whatever In a session too says.
-  it('says every pick lights on a MoonBoard in a crew with In a session too off', () => {
+  // A MoonBoard follows In a session too like every board.
+  it('names Put on board on a MoonBoard in a crew with In a session too off', () => {
     settingsCtrl.alwaysDrive = true;
     settingsCtrl.drivesInSession = false;
     sessionCtrl.crew = true;
-    render(<FirstConnectCard boardName="MoonBoard at home" boardType="moonboard" boardHasLights />);
+    render(<FirstConnectCard boardName="MoonBoard at home" boardHasLights />);
 
     expect(
-      screen.getByText('Connect this phone to the board and you drive the wall: every climb you pick lights.'),
+      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
     ).toBeTruthy();
   });
 

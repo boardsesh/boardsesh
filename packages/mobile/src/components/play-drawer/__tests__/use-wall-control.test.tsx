@@ -540,7 +540,6 @@ describe('useWallControl: Put on board keeps lighting', () => {
     alwaysDrive: false,
     swipeToDriveEnabled: true,
     keepLighting: '45',
-    moonboardKeepLighting: 'until_stopped',
     drivesInSession: true,
   };
   const preview = (input: Partial<WallControlInput> = {}) => resolveWallControl({ ...PREVIEW, ...input });
@@ -650,12 +649,12 @@ describe('useWallControl: Put on board keeps lighting', () => {
     expect(run.keepLighting).not.toHaveBeenCalled();
   });
 
-  it('on a MoonBoard, Put on board starts an open-ended drive: the frost, no window', () => {
+  it('with Until I stop, Put on board starts an open-ended drive: the frost, no window', () => {
     const run = runners();
     realKeepLighting(run);
-    const { hook } = setup(preview({ boardIsMoonboard: true }), run);
+    const { hook } = setup(preview({ keepLighting: 'until_stopped' }), run);
     act(() => hook.result.current.press('button'));
-    expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' });
+    expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: null, setting: 'putOnBoardKeepsLighting' });
     act(() => markDriveLive());
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', windowMs: null, expiresAt: null });
   });
