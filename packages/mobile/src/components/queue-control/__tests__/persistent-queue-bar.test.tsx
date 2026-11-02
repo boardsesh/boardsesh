@@ -82,6 +82,7 @@ vi.mock('../../../hooks/use-device-layout', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
+  useQueueData: () => ({ currentClimbQueueItem: cfg.currentClimbQueueItem }),
   useHasActiveClimb: () => cfg.currentClimbQueueItem?.climb != null,
   useQueueSessionId: () => ({ sessionId: cfg.sessionId }),
 }));

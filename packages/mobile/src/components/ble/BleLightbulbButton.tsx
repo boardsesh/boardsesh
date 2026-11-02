@@ -50,8 +50,6 @@ type BleLightbulbButtonProps = {
   accessibilityValueText?: string;
   /** What a tap does ("Turns the lights off"), when the label doesn't say it. */
   accessibilityTapHint?: string;
-  /** Subtle visual warning that auto-disconnect is in its final ten seconds. */
-  autoDisconnectWarning?: boolean;
   scanningAccessibilityHint?: string;
   /** Announces the foreground wall write while preserving the button's action label. */
   writingAccessibilityHint?: string;
@@ -85,7 +83,6 @@ export function BleLightbulbButton({
   accessibilitySelected,
   accessibilityValueText,
   accessibilityTapHint,
-  autoDisconnectWarning = false,
   scanningAccessibilityHint,
   writingAccessibilityHint,
   longPressAccessibilityHint,
@@ -101,7 +98,6 @@ export function BleLightbulbButton({
   const liveWriting = useBluetoothWriteInProgress();
   const isWriting = writing ?? liveWriting;
   const pulseOpacity = useSharedValue(1);
-  const warningPulse = useSharedValue(0);
 
   useEffect(() => {
     if (isScanning) {
@@ -112,19 +108,8 @@ export function BleLightbulbButton({
     }
   }, [isScanning, pulseOpacity]);
 
-  useEffect(() => {
-    if (autoDisconnectWarning) {
-      warningPulse.value = withRepeat(withTiming(1, { duration: timing.slow }), -1, true);
-    } else {
-      cancelAnimation(warningPulse);
-      warningPulse.value = withTiming(0, { duration: timing.fast });
-    }
-  }, [autoDisconnectWarning, warningPulse]);
-
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,
-    borderWidth: warningPulse.value * 2,
-    borderColor: brandColors.warning,
   }));
 
   const handlePress = () => {

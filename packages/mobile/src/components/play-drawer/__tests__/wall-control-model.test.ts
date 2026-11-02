@@ -33,7 +33,6 @@ const FREE: WallControlInput = {
   commitLabel: 'putOnWall',
   otherClimbLit: false,
   writing: false,
-  autoDisconnectWarning: false,
   // Solo with lighting on swipes: a swipe from here goes up on the wall.
   navigationCommits: true,
 };
@@ -349,11 +348,8 @@ describe('resolveWallControl', () => {
     expect(resolveWallControl({ ...FREE, otherClimbLit: true }).bulbValueKey).toBe('valueOff');
   });
 
-  it('carries the spinner, the write and the warning ring to every view', () => {
-    expect(resolveWallControl({ ...FREE, ...MINE, writing: true, autoDisconnectWarning: true })).toMatchObject({
-      writing: true,
-      autoDisconnectWarning: true,
-    });
+  it('carries the write to every view', () => {
+    expect(resolveWallControl({ ...FREE, ...MINE, writing: true })).toMatchObject({ writing: true });
   });
 });
 
@@ -387,17 +383,17 @@ describe('wallControlText', () => {
     expect(text.accessibilityHint).toBe('playView.wallControl.relayHint:{"name":"Sam"}');
   });
 
-  // Spec B2: the accessible name is the visible words only; the time is the button's value.
-  it("says Each pick lights alone, and how to stop it, in Put on board's window", () => {
+  // The accessible name is the visible words only; the time is the button's value.
+  it("says You are driving the wall alone, and how to stop it, in Put on board's timed drive", () => {
     const text = wallControlText(
       resolveWallControl({ ...FREE, ...MINE, displayedLit: true, driveMode: 'live', lightWindow: true }),
       t,
       t,
     );
     expect(text).toMatchObject({
-      label: 'playView.wallControl.eachPickLights',
-      accessibilityLabel: 'playView.wallControl.eachPickLights',
-      accessibilityHint: 'playView.wallControl.stopWindowHint',
+      label: 'playView.wallControl.youAreDriving',
+      accessibilityLabel: 'playView.wallControl.youAreDriving',
+      accessibilityHint: 'playView.wallControl.stopDrivingHint',
       // A bulb draws no window: its tap lets go of the board.
       bulbAccessibilityHint: 'playView.wallControl.litHint',
       driveActionLabel: 'playView.wallControl.lightEveryClimb',
@@ -1076,6 +1072,8 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['solo, 45 s', {}, 'window', 45_000, 'putOnBoardKeepsLighting'],
     ['solo, 30 s', { keepLighting: '30' }, 'window', 30_000, 'putOnBoardKeepsLighting'],
     ['solo, 1 minute', { keepLighting: '60' }, 'window', 60_000, 'putOnBoardKeepsLighting'],
+    ['solo, 2 minutes', { keepLighting: '120' }, 'window', 120_000, 'putOnBoardKeepsLighting'],
+    ['solo, 5 minutes', { keepLighting: '300' }, 'window', 300_000, 'putOnBoardKeepsLighting'],
     ['solo, Until I stop', { keepLighting: 'until_stopped' }, 'drive', null, 'putOnBoardKeepsLighting'],
     ['solo, Off', { keepLighting: 'off' }, null, null, null],
     ['a crew, In a session too on', { solo: false, crewSession: true }, 'window', 45_000, 'putOnBoardKeepsLighting'],
@@ -1181,9 +1179,11 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
   });
 });
 
-// The window on this phone's lit climb (2.7, spec B2/B3): Each pick lights, its
-// press stops it and keeps the link, the swipe still offered, never the frost.
-describe('resolveWallControl: the keep-lighting window', () => {
+// Put on board's timed drive on this phone's lit climb (2.7, Stop driving
+// after): a drive like any other, the frost and You are driving the wall, its
+// press stops it and keeps the link, and the swipe stays offered to make it
+// open-ended.
+describe('resolveWallControl: Put on board’s timed drive', () => {
   const WINDOW: Partial<WallControlInput> = {
     ...MINE,
     displayedLit: true,
@@ -1193,21 +1193,22 @@ describe('resolveWallControl: the keep-lighting window', () => {
     navigationCommits: true,
   };
 
-  it('says Each pick lights, stops on a press, and keeps the swipe to drive open-ended', () => {
+  it('says You are driving the wall, stops on a press, and keeps the swipe to drive open-ended', () => {
     const model = resolveWallControl({ ...FREE, ...WINDOW });
     expect(model).toMatchObject({
       state: 'lit',
       holder: 'self',
       lightWindow: true,
-      driving: false,
-      labelKey: 'eachPickLights',
+      driving: true,
+      labelKey: 'youAreDriving',
+      // Told apart from an open-ended drive's stop for Wall Control Tapped only.
       tapAction: 'stop_window',
-      a11yHintKey: 'stopWindowHint',
+      a11yHintKey: 'stopDrivingHint',
+      // The time left is the value, said on its own 10 s step.
       a11yValueKey: null,
       swipeAction: 'drive',
       selected: true,
-      // The plain lit bulb: the live fill stays the open-ended drive's.
-      look: 'lit',
+      look: 'driving',
     });
     // A bulb draws no window: its tap disconnects, as while driving.
     expect(model.bulbTapAction).toBe('disconnect');
@@ -1217,14 +1218,25 @@ describe('resolveWallControl: the keep-lighting window', () => {
     expect(resolveWallControl({ ...FREE, ...WINDOW, confirmArmed: true }).tapAction).toBe('noop');
   });
 
-  it('is the window only on a lit climb this phone holds', () => {
+  // The drive itself drives: not only the player's read of it.
+  it('drives on the live timed drive alone, whatever the player reads as committing', () => {
+    expect(resolveWallControl({ ...FREE, ...WINDOW, navigationCommits: false })).toMatchObject({
+      lightWindow: true,
+      driving: true,
+      labelKey: 'youAreDriving',
+      tapAction: 'stop_window',
+      look: 'driving',
+    });
+  });
+
+  it('is a timed drive only on a lit climb this phone holds', () => {
     // The climb on screen went dark under the window: Put on board relights it.
     expect(resolveWallControl({ ...FREE, ...WINDOW, displayedLit: false })).toMatchObject({
       state: 'dark',
       lightWindow: false,
       labelKey: 'putOnBoard',
     });
-    // No window: the open-ended drive's frost.
+    // No clock: an open-ended drive, which offers no swipe.
     expect(resolveWallControl({ ...FREE, ...WINDOW, lightWindow: false })).toMatchObject({
       lightWindow: false,
       driving: true,
@@ -1266,7 +1278,7 @@ describe('resolveBoardSheetStatus', () => {
     ['a preview on this phone’s board', { state: 'put_on_wall', holder: 'self' }, 'preview'],
     ['a preview with nobody holding the board', { state: 'put_on_wall', holder: null }, 'preview'],
     ['lit on this phone’s link', { state: 'lit', holder: 'self' }, 'on_wall'],
-    ['the keep-lighting window', { state: 'lit', holder: 'self', lightWindow: true }, 'window'],
+    ['Put on board’s timed drive', { state: 'lit', holder: 'self', lightWindow: true, driving: true }, 'window'],
     ['an open-ended drive', { state: 'lit', holder: 'self', driving: true }, 'driving'],
     ['a crewmate’s board', { state: 'put_on_wall', holder: 'crew' }, null],
     ['a crewmate’s lit climb', { state: 'lit', holder: 'crew' }, null],
@@ -1277,7 +1289,7 @@ describe('resolveBoardSheetStatus', () => {
     expect(resolveBoardSheetStatus(model(change))).toBe(status);
   });
 
-  it('reads the window off a real resolved model', () => {
+  it('reads the timed drive off a real resolved model', () => {
     const windowed = resolveWallControl({
       ...FREE,
       ...MINE,

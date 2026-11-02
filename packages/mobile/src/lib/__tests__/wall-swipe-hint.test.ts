@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 // The wall button's frost peek (#7113, spec B3 for 2.7): at the first
 // keep-lighting window in an app session, plus one replay on the third Put on
-// board within 5 minutes; in at most three sessions on a fresh v2 count; never
-// after the swipe has been used, never in screenshot mode, never with a
-// screen reader on.
+// board within 5 minutes; in at most three sessions on a v2 count, or one
+// last peek for a climber who saw 2.6's three; never after the swipe has been
+// used, never in screenshot mode, never with a screen reader on.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,7 +32,10 @@ import {
   resetWallSwipeHintSessionForTests,
   shouldPlayWallSwipePeek,
   shouldPlayWallSwipeReplay,
+  claimWallSwipeReplay,
+  UPGRADE_PEEKS,
   useWallSwipePeek,
+  wallSwipePeekOwed,
   type WallSwipePeekTriggers,
 } from '../wall-swipe-hint';
 
@@ -76,11 +79,60 @@ describe('wall swipe peek', () => {
   });
 
   // 2.7: the swipe means something new (keep the window going), so a climber
-  // who used up 2.6's three peeks gets three fresh ones. A swipe they already
+  // who saw 2.6's three peeks gets ONE more, not three. A swipe they already
   // drove with still stops it: they know the gesture.
-  it('gives a 2.6 climber who used up the old count fresh peeks', async () => {
+  it(`gives a 2.6 climber who saw all ${MAX_PEEK_SESSIONS} peeks exactly ${UPGRADE_PEEKS} more`, async () => {
     store.values.set('wallSwipePeekSessions', MAX_PEEK_SESSIONS);
     expect(await shouldPlayWallSwipePeek()).toBe(true);
+    expect(claimWallSwipePeek()).toBe(true);
+    recordWallSwipePeekPlayed();
+    await settle();
+    expect(store.values.get(SESSIONS_V2)).toBe(1);
+    // The next session: nothing.
+    resetWallSwipeHintSessionForTests();
+    expect(await shouldPlayWallSwipePeek()).toBe(false);
+  });
+
+  it('plays an upgrader no replay in the session that used their one peek', async () => {
+    store.values.set('wallSwipePeekSessions', MAX_PEEK_SESSIONS);
+    claimWallSwipePeek();
+    recordWallSwipePeekPlayed();
+    await settle();
+    noteWallPutOnBoardPress(0);
+    noteWallPutOnBoardPress(1);
+    noteWallPutOnBoardPress(2);
+    expect(await shouldPlayWallSwipeReplay()).toBe(false);
+  });
+
+  it('counts an upgrader whose one peek was the replay, so no window peek follows', async () => {
+    store.values.set('wallSwipePeekSessions', MAX_PEEK_SESSIONS);
+    noteWallPutOnBoardPress(0);
+    noteWallPutOnBoardPress(1);
+    noteWallPutOnBoardPress(2);
+    expect(await shouldPlayWallSwipeReplay()).toBe(true);
+    expect(claimWallSwipeReplay()).toBe(true);
+    recordWallSwipePeekPlayed();
+    await settle();
+    expect(await shouldPlayWallSwipePeek()).toBe(false);
+  });
+
+  it('gives a climber 2.6 showed fewer than three the normal three sessions', async () => {
+    store.values.set('wallSwipePeekSessions', MAX_PEEK_SESSIONS - 1);
+    for (let session = 1; session <= MAX_PEEK_SESSIONS; session++) {
+      resetWallSwipeHintSessionForTests();
+      expect(await shouldPlayWallSwipePeek()).toBe(true);
+      claimWallSwipePeek();
+      recordWallSwipePeekPlayed();
+      await settle();
+    }
+    resetWallSwipeHintSessionForTests();
+    expect(await shouldPlayWallSwipePeek()).toBe(false);
+  });
+
+  it('never plays for an upgrader who has swiped', async () => {
+    store.values.set('wallSwipePeekSessions', MAX_PEEK_SESSIONS);
+    store.values.set('wallSwipeUsed', true);
+    expect(await shouldPlayWallSwipePeek()).toBe(false);
   });
 
   it('stops for good once the swipe has been used, on 2.6 too', async () => {
@@ -223,5 +275,28 @@ describe('useWallSwipePeek', () => {
     await settle();
     expect(reader.result.current).toBe(0);
     expect(noSwipe.result.current).toBe(0);
+  });
+});
+
+// The allowance, as one rule: upgraders (2.6's count at three) one peek,
+// newcomers and partial 2.6 climbers three sessions, swiped climbers none.
+describe('wallSwipePeekOwed', () => {
+  const owed = (over: Partial<Parameters<typeof wallSwipePeekOwed>[0]> = {}) =>
+    wallSwipePeekOwed({ used: false, legacySessions: null, sessions: null, countedThisSession: false, ...over });
+
+  it.each([
+    ['a newcomer', {}, true],
+    ['a newcomer after two sessions', { sessions: 2 }, true],
+    ['a newcomer after three sessions', { sessions: 3 }, false],
+    ['a newcomer mid-session after the third', { sessions: 3, countedThisSession: true }, true],
+    ['an upgrader', { legacySessions: 3 }, true],
+    ['an upgrader past 2.6’s count', { legacySessions: 5 }, true],
+    ['an upgrader after their peek', { legacySessions: 3, sessions: 1 }, false],
+    ['an upgrader mid-session after their peek', { legacySessions: 3, countedThisSession: true }, false],
+    ['a partial 2.6 climber', { legacySessions: 2, sessions: 2 }, true],
+    ['a newcomer who swiped', { used: true }, false],
+    ['an upgrader who swiped', { used: true, legacySessions: 3 }, false],
+  ] as const)('%s', (_label, over, expected) => {
+    expect(owed(over)).toBe(expected);
   });
 });

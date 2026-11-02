@@ -8,13 +8,12 @@ const mockReassertWall = vi.fn();
 const mockBluetooth = {
   isConnected: true,
   boardName: 'moonboard',
-  autoDisconnectTimeoutSeconds: 30,
   moonboardLightAdjacentHolds: false,
   setMoonboardLightAdjacentHolds: mockSetMoonboardLightAdjacentHolds,
   reassertWall: mockReassertWall,
   armUndoWallChangeToast: vi.fn(),
   clearBoard: vi.fn(),
-  turnOffAllLights: vi.fn(),
+  turnOffAllLights: vi.fn((): Promise<boolean> | undefined => undefined),
 };
 const mockBluetoothContext = vi.hoisted(() => ({
   current: null as typeof mockBluetooth | null,
@@ -35,7 +34,7 @@ const mockBleControlSheet = vi.hoisted(() => ({
       options: readonly { key: string; label: string }[];
       onChange: (choice: string) => void;
     };
-    onToggleAutoDisconnect: (enabled: boolean) => void;
+    onToggleDisconnectWhenDrivingEnds: (enabled: boolean) => void;
     onToggleLightOnSwipe: (enabled: boolean) => void;
     onToggleLightOnClimbTap: (enabled: boolean) => void;
   } | null,
@@ -72,10 +71,6 @@ vi.mock('../../../lib/analytics-wall-control', () => ({
 vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-vi.mock('../use-auto-disconnect-timeout-labels', () => ({
-  useAutoDisconnectTimeoutLabels: () => ({ 30: '30 seconds' }),
-}));
-
 vi.mock('../BleControlSheet', () => ({
   BleControlSheet: (props: NonNullable<typeof mockBleControlSheet.props>) => {
     mockBleControlSheet.props = props;
@@ -97,6 +92,8 @@ import {
   getLastDriveModeExitReason,
   markDriveLive,
   resetDriveModeForTests,
+  subscribeDriveEnded,
+  type DriveEnded,
 } from '../../play-drawer/drive-mode-store';
 import { readClimbChangeLights } from '../../play-drawer/use-climb-change-lights';
 
@@ -114,18 +111,20 @@ describe('BleControlSheetHost', () => {
   it.each([
     ['the app-wide sheet', undefined],
     ['the player’s sheet', false],
-  ] as const)('%s leads with Keep lighting after Put on board', (_host, showLightingSwitches) => {
+  ] as const)('%s leads with Stop driving after', (_host, showLightingSwitches) => {
     mockBluetooth.boardName = 'kilter';
     mockSettings.values = { putOnBoardKeepsLighting: '30', moonboardPutOnBoardKeepsLighting: 'off' };
     render(<BleControlSheetHost visible onClose={vi.fn()} showLightingSwitches={showLightingSwitches} />);
     const row = mockBleControlSheet.props?.keepLighting;
     expect(row).toMatchObject({ label: 'settings:ble.lighting.keep.label', choice: '30' });
-    expect(row?.options.map((option) => option.key)).toEqual(['off', '30', '45', '60', 'until_stopped']);
+    expect(row?.options.map((option) => option.key)).toEqual(['off', '30', '45', '60', '120', '300', 'until_stopped']);
     expect(row?.options.map((option) => option.label)).toEqual([
       'settings:ble.lighting.keep.off',
-      'settings:ble.autoDisconnect.timeoutOptions.30',
-      'settings:ble.autoDisconnect.timeoutOptions.45',
-      'settings:ble.autoDisconnect.timeoutOptions.60',
+      'settings:ble.lighting.keep.options.30',
+      'settings:ble.lighting.keep.options.45',
+      'settings:ble.lighting.keep.options.60',
+      'settings:ble.lighting.keep.options.120',
+      'settings:ble.lighting.keep.options.300',
       'settings:ble.lighting.keep.untilStopped',
     ]);
     row?.onChange('off');
@@ -168,8 +167,8 @@ describe('BleControlSheetHost', () => {
     expect(mockBleControlSheet.props?.status).toBe(status);
   });
 
-  // #7000: only the player's sheet drops auto-disconnect and the two
-  // lighting switches; the app-wide sheet keeps them whatever the QA switch says.
+  // #7000: only the player's sheet drops Disconnect Bluetooth when driving
+  // ends and the two lighting switches; the app-wide sheet keeps them whatever the QA switch says.
   it.each([
     ['the app-wide sheet', undefined, true],
     ['the player’s sheet', false, false],
@@ -201,7 +200,7 @@ describe('BleControlSheetHost', () => {
   it.each([
     ['onToggleLightOnClimbTap', 'lightOnClimbTap'],
     ['onToggleLightOnSwipe', 'lightOnSwipe'],
-    ['onToggleAutoDisconnect', 'autoDisconnectBle'],
+    ['onToggleDisconnectWhenDrivingEnds', 'disconnectWhenDrivingEnds'],
   ] as const)('%s reports Setting Changed and saves the setting', (handler, key) => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
@@ -262,12 +261,12 @@ describe('BleControlSheetHost', () => {
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
   });
 
-  // 2.7: a dark wall is the climber stopping. A window (or a drive) left
-  // running behind a button that reads Put on board would light the next pick.
+  // 2.7: a dark wall is the climber stopping. A drive left running behind a
+  // button that reads Put on board would light the next pick.
   it.each([
-    ['a keep-lighting window', 45_000, 'session:playView.wallControl.stoppedWindow'],
-    ['an open-ended drive', null, 'session:playView.wallControl.stoppedDriving'],
-  ] as const)('Turn off all lights ends %s and says so', (_drive, windowMs, line) => {
+    ['a timed drive', 45_000],
+    ['an open-ended drive', null],
+  ] as const)('Turn off all lights ends %s and says so', (_drive, windowMs) => {
     resetDriveModeForTests();
     mockBluetooth.boardName = 'kilter';
     enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: null, windowMs, windowSetting: null });
@@ -280,8 +279,43 @@ describe('BleControlSheetHost', () => {
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('stopped');
     expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
-    expect(announceQueued).toHaveBeenCalledExactlyOnceWith(line);
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('session:playView.wallControl.stoppedDriving');
     expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
+  });
+
+  // Disconnect Bluetooth when driving ends lets go on this `stopped` end, but
+  // only once the lights-off write has gone: never mid-write.
+  it('hands on a stopped end that waits for the lights-off write', async () => {
+    resetDriveModeForTests();
+    mockBluetooth.boardName = 'kilter';
+    let finishWrite: (ok: boolean) => void = () => {};
+    mockBluetooth.turnOffAllLights.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishWrite = resolve;
+        }),
+    );
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+    markDriveLive();
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+
+    mockBleControlSheet.props?.onClearLights();
+
+    expect(ends).toHaveLength(1);
+    expect(ends[0]?.reason).toBe('stopped');
+    let waited = false;
+    void ends[0]?.disconnectAfter?.().then(() => {
+      waited = true;
+    });
+    await Promise.resolve();
+    expect(waited).toBe(false);
+    finishWrite(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(waited).toBe(true);
+    unsubscribe();
   });
 
   it('Turn off all lights with nothing driving leaves the lighting settings alone', () => {

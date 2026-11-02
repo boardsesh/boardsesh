@@ -132,8 +132,14 @@ describe('WallControlBulb', () => {
     expect(onLongPress).toHaveBeenCalledOnce();
   });
 
-  it("draws the keep-lighting window's ring and says its time, only during the window", () => {
-    const windowed = renderBulb({ ...LIT, lightWindow: true, tapAction: 'stop_window', labelKey: 'eachPickLights' });
+  it("draws the timed drive's ring and says its time, only during the timed drive", () => {
+    const windowed = renderBulb({
+      ...LIT,
+      lightWindow: true,
+      driving: true,
+      tapAction: 'stop_window',
+      labelKey: 'youAreDriving',
+    });
     expect(windowed.container.querySelector('[data-ring]')?.getAttribute('data-ring')).toBe('48');
     expect(windowed.bulb.dataset.value).toBe('window-bulb');
     cleanup();

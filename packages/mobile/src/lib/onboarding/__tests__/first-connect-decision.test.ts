@@ -266,7 +266,6 @@ describe('firstConnectConfirmationCopy', () => {
     lightOnClimbTap: false,
     lightOnSwipe: false,
     inSharedSession: false,
-    autoDisconnectSeconds: null,
     boardName: 'kilter',
     keepLighting: defaults,
   };
@@ -319,25 +318,18 @@ describe('firstConnectConfirmationCopy', () => {
     });
   });
 
-  // Auto-disconnect lets go of the board its timeout after the last climb that
-  // lit, and lighting stops with it (`clampWindowEnd`).
-  it('names auto-disconnect’s timeout when it ends lighting first', () => {
-    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 30 })).toEqual({
-      variant: 'window',
-      seconds: 30,
+  // 2 and 5 minutes are said in minutes, 1 minute as before.
+  it('names a drive of whole minutes in minutes', () => {
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '60' } })).toEqual({
+      variant: 'window_minute',
     });
-    // A timeout no shorter than the window changes nothing.
-    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 45 })).toEqual({
-      variant: 'window',
-      seconds: 45,
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '120' } })).toEqual({
+      variant: 'window_minutes',
+      minutes: 2,
     });
-    expect(firstConnectConfirmationCopy({ ...base, autoDisconnectSeconds: 600 })).toEqual({
-      variant: 'window',
-      seconds: 45,
-    });
-    // Until I stop: any timeout can end it.
-    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', autoDisconnectSeconds: 600 })).toEqual({
-      variant: 'until_stop_or_disconnect',
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '300' } })).toEqual({
+      variant: 'window_minutes',
+      minutes: 5,
     });
   });
 

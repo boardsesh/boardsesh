@@ -9,10 +9,10 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
 
 /**
- * One-time tip teaching that the bottom accessory bar (the current-climb / queue
- * platter) always mirrors what's on the board. It fires the first time a current
- * climb exists — i.e. the first time the accessory bar is on screen — and never
- * again.
+ * One-time tip teaching what the bottom accessory bar (the MiniPlayer) holds:
+ * the last climb the climber opened, a preview included, until the queue
+ * moves on to another climb (owner decision A, `useBarClimb`). It fires the first
+ * time the accessory bar is on screen and never again.
  *
  * On iOS 26 Liquid Glass the accessory is a UIKit-hosted native platter
  * (`NativeTabs.BottomAccessory`), which a JS tip can't attach to; everywhere else

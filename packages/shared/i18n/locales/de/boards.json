@@ -126,10 +126,10 @@
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
         "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
-        "bodyWindow": "In den {{seconds}} Sekunden nach „Am Board beleuchten“ wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
-        "bodyWindowMinute": "In der Minute nach „Am Board beleuchten“ wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
-        "bodyUntilStop": "Nach „Am Board beleuchten“ wird jeder Boulder, den du wählst, beleuchtet, bis du auf den Button tippst, um aufzuhören.",
-        "bodyUntilStopOrDisconnect": "Nach „Am Board beleuchten“ wird jeder Boulder, den du wählst, beleuchtet, bis du auf den Button tippst, um aufzuhören, oder bis „Automatisch trennen“ das Board freigibt.",
+        "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyUntilStop": "Mit „Am Board beleuchten“ steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf den Button tippst, um aufzuhören.",
         "bodyPutOnBoard": "Tipp einen Boulder an und dann auf „Am Board beleuchten“.",
         "gotIt": "Verstanden"
       }

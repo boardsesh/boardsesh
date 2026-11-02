@@ -94,8 +94,8 @@ iOS Alert, so its Cancel button is matched by text.
   a teaching choice, not a limit on list navigation.
 - **`wall-swipe-to-drive` starts stopped.** Do not use `screenshotDrive=1` when
   opening the player: that parameter starts driving automatically for stills.
-  Do not press Put on board first either: it opens the 45 s window, whose clock
-  replaces the label this clip teaches.
+  Do not press Put on board first either: it starts a timed drive, whose clock and
+  shrinking frost replace the full frost this clip teaches.
   The clip needs the chevrons first, then a left swipe on the wall button,
   Let go to light every climb, the You are driving the wall label, a board
   swipe, and a tap on You are driving the wall to stop. Disconnect board at the

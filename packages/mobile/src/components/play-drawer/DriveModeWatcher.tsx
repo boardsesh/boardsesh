@@ -29,6 +29,7 @@ import {
   type DriveWatchSnapshot,
 } from './drive-mode-store';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
+import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 
 /**
  * Ends driving the wall (#7113) when the wall stops being this phone's to
@@ -45,11 +46,15 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * solo by Light the board as I swipe (no stop, a link up), it carries that into
  * the crew as a live drive (`shouldCarryDriveIntoCrew`, #7113 QA).
  *
- * Put on board's keep-lighting window (2.7) ends here too (`window_ended`):
- * one timeout to its end, re-keyed by each climb that renews it, and a
- * catch-up when the app comes back to the foreground, since a timer doesn't
- * run while the app is suspended. Turning its setting off ends it as well, and
- * changing its length mid-window applies to the running window.
+ * Put on board's timed drive (2.7, Stop driving after) ends here too
+ * (`window_ended`): one timeout to its end, re-keyed by each climb that renews
+ * it, and a catch-up when the app comes back to the foreground, since a timer
+ * doesn't run while the app is suspended. Turning its setting to Right away
+ * ends it as well (keeping the link), and changing its length mid-drive
+ * applies to the running one.
+ *
+ * And with Disconnect Bluetooth when driving ends on, the ends the climber or
+ * the clock caused let go of the board (`use-driving-ended-disconnect.ts`).
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -65,6 +70,7 @@ export function DriveModeWatcher(): null {
   useDriveCrewPutUp(drive?.phase ?? null);
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
+  useDisconnectWhenDrivingEnds(bluetooth);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
   const lightOnSwipeRef = useRef(lightOnSwipe);
   // The roster's crew, after its arrival dwell: until it forms, the climber is solo.
@@ -122,14 +128,17 @@ export function DriveModeWatcher(): null {
     clearDrivingStopped();
   }, [lightOnSwipe]);
 
-  // Settings › Board changed under a keep-lighting window: its choice turned
-  // Off, or In a session too turned off in a crew. The window ends. "A crew"
+  // Settings › Board changed under a timed drive: its choice turned to Right
+  // away, or In a session too turned off in a crew (or a crew formed with it
+  // off). The drive ends, and the link stays (`keepLink`): Disconnect
+  // Bluetooth when driving ends is for the ends the climber made at the wall
+  // or the clock made, never a settings change or a crewmate joining. "A crew"
   // is the roster's `isCrewSession`, the read the press's own `crewSession`
   // takes in PlayCore, so both agree on what a session is.
   //
   // Its own choice moved to another length (the board sheet's row, at the
-  // wall, spec B4): the running window takes it, counted from now, and Until I
-  // stop makes it open-ended. Only a change does: a window opened from a plan
+  // wall, spec B4): the running drive takes it, counted from now, and Until I
+  // stop makes it open-ended. Only a change does: a drive started from a plan
   // keeps its length until its choice moves.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
@@ -152,7 +161,7 @@ export function DriveModeWatcher(): null {
         inSession: isCrewSession,
       })
     ) {
-      exitDriveMode('window_ended');
+      exitDriveMode('window_ended', { keepLink: true });
       return;
     }
     const moonboardWindow = latest?.windowSetting === 'moonboardPutOnBoardKeepsLighting';
@@ -163,7 +172,7 @@ export function DriveModeWatcher(): null {
     else if (windowMs !== undefined) retimeDriveWindow(windowMs);
   }, [windowed, keepLighting, moonboardKeepLighting, drivesInSession, isCrewSession]);
 
-  // The window's end, modelled on the arming timeout below: one timeout, keyed
+  // The timed drive's end, modelled on the arming timeout below: one timeout, keyed
   // on the end, so a renewal re-arms it. A timer that fires a beat early (or a
   // clock that moved) waits out the rest instead of letting the window run on.
   const windowEndsAt = drive?.phase === 'live' ? drive.expiresAt : null;

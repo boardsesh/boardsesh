@@ -124,7 +124,6 @@ import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveWallLit } from './wall-lit';
 import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
-import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 import { nowMs } from '../../lib/clock';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -212,6 +211,10 @@ import { useWallHolderIdentity } from './use-wall-holder-name';
 import { track } from '../../lib/analytics';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
+import { pickBoardOverride, useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
+import { useSharedBrowseLatch } from './shared-browse-latch';
+import { usePutOnBoardIntent } from './use-put-on-board-intent';
+import type { AppliedPlayerOpen } from './use-play-selection-controller';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
 const { GestureDetector, Gesture, ScrollView: DefaultScrollView } = GestureHandler;
@@ -242,17 +245,8 @@ const MENU_ANCHOR_SIZE =
 // A collapsed section header is a single row (title + summary + chevron).
 const DEFAULT_SECTION_HEADER_HEIGHT = 52;
 
-/**
- * How long the session must stay solo before an armed browse latch lets go.
- *
- * Longer than the provider's arming dwell, and deliberately so: arming late is a
- * mild inconvenience, but releasing early re-arms wall control under a climber
- * who is still mid-browse with a crew that is merely reconnecting. Ten seconds
- * outlasts a wifi handover and a backgrounded peer's socket teardown, which are
- * the flaps worth surviving, while still guaranteeing that a climber left alone
- * gets their board back without having to find a button.
- */
-export const SHARED_BROWSE_LATCH_RELEASE_MS = 10_000;
+// How long the session must stay solo before an armed browse latch lets go.
+export { SHARED_BROWSE_LATCH_RELEASE_MS } from './shared-browse-latch';
 
 /** A typical switch-board card at the default text size, until the real one is measured. */
 const SWITCH_BOARD_CARD_HEIGHT_ESTIMATE = 184;
@@ -379,13 +373,6 @@ export function PlayCore({
   const [drawerPreviewIsWallClimb, setDrawerPreviewIsWallClimb] = useState(
     () => !!initialDrawerPreviewItem(openTarget) && !!openTarget?.options?.previewIsWallClimb,
   );
-  // A change of the preview on screen is the climber at the wall, browsing: it
-  // pushes auto-disconnect's deadline out (2.7), as a write does, so looking
-  // through climbs never drops the board under them.
-  const drawerPreviewUuid = drawerPreviewItem?.uuid ?? null;
-  useEffect(() => {
-    if (drawerPreviewUuid !== null) noteAutoDisconnectActivity();
-  }, [drawerPreviewUuid]);
   // The wall-state pill's explainer, and the header's measured bottom edge it
   // hangs from. Owned here rather than inside the pill because the callout is an
   // absolute sibling of the swipeable header (so it doesn't ride the swipe
@@ -528,12 +515,12 @@ export function PlayCore({
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
   const drivingLive = driveModePhase === 'live';
-  // Put on board's keep-lighting window (2.7): a live drive with an end. It
-  // lights every change of climb like any live drive; the wall button draws it
-  // its own way (Each pick lights, the bar and the clock) instead of the frost.
+  // Put on board's timed drive (2.7, Stop driving after): a live drive with an
+  // end. It lights every change of climb like any live drive, and the wall
+  // button draws the same frost, plus a clock, shrinking as its time runs out.
   const lightWindow = useDriveLightingMode() === 'window';
-  // After Put on board, keep lighting (Settings › Board): read here so the wall
-  // control's press knows whether its climb going up opens a window.
+  // Stop driving after (Settings › Board): read here so the wall control's
+  // press knows whether its climb going up starts a drive.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [putOnBoardDrivesInSession] = useSetting('putOnBoardDrivesInSession');
@@ -710,6 +697,11 @@ export function PlayCore({
       ? previewMirrorFlip.mirrored
       : displayedClimb?.mirrored === true;
   const clearMirror = useCallback(() => setPreviewMirrorFlip(null), []);
+  // The MiniPlayer reopening the climber's last pick puts its mirror flip back.
+  const restoreMirror = useCallback(
+    (climbUuid: string, mirrored: boolean) => setPreviewMirrorFlip({ climbUuid, mirrored }),
+    [],
+  );
 
   // A climb that lost a hold: the banner's count and its one action, Remix.
   const { lostHoldCount, onRemix: handleRemixLostHolds } = useLostHoldRemix({
@@ -1043,17 +1035,7 @@ export function PlayCore({
   // once the session has genuinely been solo for a dwell, ordinary wall control
   // comes back on its own. The exits still fire instantly — this only covers the
   // case where nobody ever took one.
-  const [sharedBrowseLatched, setSharedBrowseLatched] = useState(false);
-  useEffect(() => {
-    if (isSharedSession && isPreview) setSharedBrowseLatched(true);
-  }, [isSharedSession, isPreview]);
-  useEffect(() => {
-    if (isSharedSession) return;
-    const timer = setTimeout(() => {
-      setSharedBrowseLatched(false);
-    }, SHARED_BROWSE_LATCH_RELEASE_MS);
-    return () => clearTimeout(timer);
-  }, [isSharedSession]);
+  const [sharedBrowseLatched, setSharedBrowseLatched] = useSharedBrowseLatch(isSharedSession, isPreview);
   // What the gestures and the chrome both read. Live crew OR a latch that armed
   // while there was one.
   const browseByDefault = isSharedSession || sharedBrowseLatched;
@@ -1130,8 +1112,24 @@ export function PlayCore({
   wallClimbUuidRef.current = wallClimbUuid;
   const wallUuidAtLatchStartRef = useRef<string | null>(null);
   const latchStartedAtRef = useRef<number | null>(null);
+  // The MiniPlayer reopening the last pick hands over the wall as it was when
+  // the climber started looking (`previewLatchStart`): the latch starts from
+  // THAT wall, so a crewmate who lit something while the player was closed is
+  // still asked about. Only for the preview it came with.
+  const latchSeedRef = useRef<{ itemUuid: string; start: PickLatchStart } | null>(null);
+  const previewItemUuidRef = useRef(drawerPreviewItem?.uuid ?? null);
+  previewItemUuidRef.current = drawerPreviewItem?.uuid ?? null;
+  const browseLatchActiveRef = useRef(browseLatchActive);
+  browseLatchActiveRef.current = browseLatchActive;
   useEffect(() => {
     if (!browseLatchActive) return;
+    const seed = latchSeedRef.current;
+    latchSeedRef.current = null;
+    if (seed && seed.itemUuid === previewItemUuidRef.current) {
+      wallUuidAtLatchStartRef.current = seed.start.wallClimbUuid;
+      latchStartedAtRef.current = seed.start.at;
+      return;
+    }
     wallUuidAtLatchStartRef.current = wallClimbUuidRef.current;
     latchStartedAtRef.current = Date.now();
   }, [browseLatchActive]);
@@ -1423,7 +1421,6 @@ export function PlayCore({
         commitLabel: commitBarModel.commitLabel,
         otherClimbLit: wallClimbUuid !== null && wallClimbUuid !== displayedClimbUuid,
         writing: wallWriting,
-        autoDisconnectWarning: bluetooth?.autoDisconnectWarning ?? false,
         // Driving the board: a swipe from here goes up on the wall (#7017).
         navigationCommits: navigationCommits && !browseLatchActive,
         driveMode: driveModePhase,
@@ -1469,7 +1466,6 @@ export function PlayCore({
       wallClimbUuid,
       displayedClimbUuid,
       wallWriting,
-      bluetooth?.autoDisconnectWarning,
       navigationCommits,
       browseLatchActive,
       driveModePhase,
@@ -1578,10 +1574,11 @@ export function PlayCore({
     secondaryRow: actionBarLayout.secondaryRow,
   });
 
-  // What the card says Put on board keeps lighting: the board family's choice,
-  // read the way the press reads it (`resolveKeepLightingPlan`), so it never
-  // promises a window where none can start: a crew session with In a session
-  // too off, or the swipe flag (keep-lighting's kill switch) off.
+  // What the card says Put on board's drive does: the board family's Stop
+  // driving after choice, read the way the press reads it
+  // (`resolveKeepLightingPlan`), so it never promises a drive where none can
+  // start: a crew session with In a session too off, or the swipe flag (the
+  // drive's kill switch) off.
   const previewFirstKeepLighting = useMemo(
     () =>
       swipeToDriveEnabled
@@ -1595,14 +1592,10 @@ export function PlayCore({
         : null,
     [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
   );
-  // The two settings the plan doesn't take, read as the press and the link read
-  // them (`resolveKeepLightingReach`): solo with Light the board as I swipe on
-  // the press opens no window (the wall control's `solo` and `lightOnSwipe`),
-  // and auto-disconnect ends lighting when it lets go of the board.
+  // The setting the plan doesn't take, read as the press reads it
+  // (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
+  // press starts no drive (the wall control's `solo` and `lightOnSwipe`).
   const previewFirstSwipeLightsSolo = lightOnSwipe && !isCrewSession && !browseByDefault;
-  const previewFirstAutoDisconnectSeconds = bluetooth?.autoDisconnectEnabled
-    ? bluetooth.autoDisconnectTimeoutSeconds
-    : null;
 
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
@@ -1890,6 +1883,36 @@ export function PlayCore({
     onOpenQueue();
   }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
 
+  // The MiniPlayer's bulb on an unlit last pick (owner decision A): once the
+  // preview it opened lands, Put on board is pressed for it (below).
+  const [putOnBoardFor, setPutOnBoardFor] = useState<string | null>(null);
+  // Each open the controller applies: the last pick, the reopened pick's
+  // busy-wall snapshot, and the bulb's Put on board. The writer is built after
+  // the controller (its effect must follow the target effect), so this forwards.
+  const noteOpenAppliedRef = useRef<(applied: AppliedPlayerOpen) => void>(() => {});
+  const handleOpenApplied = useCallback((applied: AppliedPlayerOpen) => {
+    const item = applied.previewItem;
+    const latchStart = item ? applied.latchStart : undefined;
+    if (item && latchStart) {
+      if (browseLatchActiveRef.current) {
+        // A latch already up (a crew) took its snapshot on mount: correct it
+        // now and spend the seed, so a later rise on this preview (Back and the
+        // same slot again, a drive that starts and ends) reads the wall as it
+        // is then, never this old snapshot.
+        wallUuidAtLatchStartRef.current = latchStart.wallClimbUuid;
+        latchStartedAtRef.current = latchStart.at;
+        latchSeedRef.current = null;
+      } else {
+        // The latch rises once the preview lands, and takes the seed then.
+        latchSeedRef.current = { itemUuid: item.uuid, start: latchStart };
+      }
+    } else {
+      // Any other open is a look of its own: an older seed never applies to it.
+      latchSeedRef.current = null;
+    }
+    setPutOnBoardFor(applied.putOnBoard && item ? item.uuid : null);
+    noteOpenAppliedRef.current(applied);
+  }, []);
   const {
     handlePrev,
     handleNext,
@@ -1920,7 +1943,7 @@ export function PlayCore({
       stoppedForLink: drivingStopped,
       previewOnOtherBoard,
     },
-    chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
+    chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
     confirmation: {
       busyWallConfirmArmed,
       browseLatchActive,
@@ -1935,7 +1958,37 @@ export function PlayCore({
       putHeldClimbOnWall: handlePutHeldClimbOnWall,
     },
     onNavigationStep: handleNavigationStep,
+    onOpenApplied: handleOpenApplied,
   });
+  // The climber's last pick, for the MiniPlayer once this player closes
+  // (owner decision A). Built after the controller so its effect follows the
+  // target effect: an open writes once, its state landing writes nothing.
+  const currentQueueItemUuidRef = useRef(currentClimbQueueItem?.uuid ?? null);
+  currentQueueItemUuidRef.current = currentClimbQueueItem?.uuid ?? null;
+  const getCurrentQueueItemUuid = useCallback(() => currentQueueItemUuidRef.current, []);
+  const getPickLatchStart = useCallback(
+    (): PickLatchStart =>
+      browseLatchActiveRef.current
+        ? { wallClimbUuid: wallUuidAtLatchStartRef.current, at: latchStartedAtRef.current ?? Date.now() }
+        : { wallClimbUuid: wallClimbUuidRef.current, at: Date.now() },
+    [],
+  );
+  // A logbook, session or profile row opens on its own board and angle: the
+  // pick keeps that board, so the bar reopens it there, at its own angle.
+  const pickBoardOverrideRef = useRef<BoardConfig | null>(null);
+  pickBoardOverrideRef.current = pickBoardOverride(boardConfig, activeBoardForNavigation);
+  const getPickBoardOverride = useCallback(() => pickBoardOverrideRef.current, []);
+  const { noteOpenApplied } = useLastPickWriter({
+    enabled: !isAnonymous,
+    previewItem: drawerPreviewItem,
+    previewSuggestionSource: drawerPreviewSuggestionSource,
+    previewMirrored: isMirrored,
+    getCommitOptions: getPreviewCommitOptions,
+    getCurrentItemUuid: getCurrentQueueItemUuid,
+    getLatchStart: getPickLatchStart,
+    getBoardOverride: getPickBoardOverride,
+  });
+  noteOpenAppliedRef.current = noteOpenApplied;
   // The same step, told apart by how it was asked for.
   const handlePrevButton = useCallback(() => handlePrev('button'), [handlePrev]);
   const handleNextButton = useCallback(() => handleNext('button'), [handleNext]);
@@ -2565,6 +2618,28 @@ export function PlayCore({
     }),
   });
   wallControlAnswersRef.current = wallControlHandlers;
+  // The MiniPlayer's bulb on an unlit last pick (owner decision A): the preview
+  // it opened has landed, so press Put on board for it through this handler,
+  // the wall button's own path. In a crew it waits for the browse latch, so
+  // the busy-wall question compares against the wall at the pick; a drive
+  // never asks. Analytics count it as the bar's control (`mini_bar`).
+  const pressWallControl = wallControlHandlers.press;
+  const barWallControlActionRef = useRef(wallControl.bulbTapAction);
+  barWallControlActionRef.current = wallControl.bulbTapAction;
+  const pressWallControlForBar = useCallback(() => {
+    // A climb this wall can't light (another board, with no board at this gym
+    // to walk to): nothing to press, and no bar tap to count.
+    if (barWallControlActionRef.current === 'noop') return;
+    pressWallControl('mini_bar');
+  }, [pressWallControl]);
+  const clearPutOnBoard = useCallback(() => setPutOnBoardFor(null), []);
+  usePutOnBoardIntent({
+    intendedFor: putOnBoardFor,
+    clear: clearPutOnBoard,
+    previewItemUuid: drawerPreviewItem?.uuid ?? null,
+    ready: !isSharedSession || browseLatchActive || drivingLive,
+    press: pressWallControlForBar,
+  });
   // The board sheet's Light every climb row (#7113): the sheet closes itself.
   const { drive: driveWallControl } = wallControlHandlers;
   const handleBoardSheetDrive = useCallback(() => {
@@ -3366,7 +3441,6 @@ export function PlayCore({
                           glow={wallGlowInput}
                           keepLighting={previewFirstKeepLighting}
                           swipeLightsSolo={previewFirstSwipeLightsSolo}
-                          autoDisconnectSeconds={previewFirstAutoDisconnectSeconds}
                           onExit={handlePreviewFirstTipExit}
                           onLayout={handlePreviewFirstTipLayout}
                         />

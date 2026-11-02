@@ -13,9 +13,9 @@ name: help clip - swipe the wall button to drive
 # Before recording, open a tracked climb with screenshotOpenFirst=1 and leave
 # screenshotDrive unset. Start with Put on board and chevrons, with no link, or
 # Disconnect board and chevrons after stopping an earlier drive. Do not tap
-# Put on board first: it opens the 45 s keep-lighting window (a MoonBoard drives
-# at once), and the button then shows a clock instead of the label this take teaches. A slower
-# drag keeps the release label readable. Physical-board buttons are already
+# Put on board first: it starts a timed drive (45 s by default; a MoonBoard drives
+# until you stop), and the button then shows a clock and a shrinking frost instead of the
+# full frost this take teaches. A slower drag keeps the release label readable. Physical-board buttons are already
 # fully frosted, so the gesture shows no frost wipe; do not wait for one.
 #
 # Use mobile:ios-shots --backend local. Its existing store-capture environment

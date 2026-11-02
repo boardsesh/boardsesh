@@ -114,7 +114,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
+  useSetting: () => [30, vi.fn()],
 }));
 
 vi.mock('@boardsesh/play-view', () => ({
@@ -1123,6 +1123,36 @@ describe('BluetoothProvider mismatch switch', () => {
         'Board Connect Tapped',
         expect.objectContaining({ surface: 'play_drawer', boardUuid: 'board-kilter' }),
       );
+    });
+  });
+
+  it('flushes the picker groups for a picker opened for a known board (#7125)', () => {
+    bluetooth.state.pickerState = {
+      ...makeMismatchingPickerState(),
+      targetBoard: { boardUuid: 'qa-kilter', boardName: 'kilter' },
+      devices: [
+        { deviceId: 'device-2', name: 'Tension Board#SN-2@2', rssi: -50 },
+        { deviceId: 'bare-kilter', name: 'Kilter Board', rssi: -60 },
+      ],
+    };
+    resolvedBoards.value = new Map();
+    const { rerender } = renderProvider(KILTER_PROPS);
+
+    bluetooth.state.pickerState = null;
+    rerender(
+      createElement(BluetoothProvider, {
+        ...KILTER_PROPS,
+        children: createElement('div', null),
+      }),
+    );
+
+    const statsCalls = analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved');
+    expect(statsCalls).toHaveLength(1);
+    expect(statsCalls[0]?.[1]).toMatchObject({
+      devicesTotal: 2,
+      targetMatchedDevices: 0,
+      targetUnknownDevices: 1,
+      targetOtherDevices: 1,
     });
   });
 

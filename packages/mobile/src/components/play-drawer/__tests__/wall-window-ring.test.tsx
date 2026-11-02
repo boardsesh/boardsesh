@@ -116,10 +116,10 @@ describe('useWindowValueText', () => {
   it("says the window and its time for the Board lights bulb, the time alone for the button's stand-in", () => {
     openWindow();
     expect(renderHook(() => useWindowValueText('bulb', true)).result.current).toBe(
-      'playView.wallControl.eachPickLights, playView.wallControl.secondsLeft {"count":40}',
+      'playView.wallControl.youAreDriving, playView.wallControl.stopsInSeconds {"count":40}',
     );
     expect(renderHook(() => useWindowValueText('time', true)).result.current).toBe(
-      'playView.wallControl.secondsLeft {"count":40}',
+      'playView.wallControl.stopsInSeconds {"count":40}',
     );
   });
 });

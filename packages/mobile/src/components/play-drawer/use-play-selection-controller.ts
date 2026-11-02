@@ -16,6 +16,7 @@ import { climbChangeStaysViewOnly, getSimilarClimbTapMode, getSwipeNavigationTar
 import { drivingAtPick } from './drive-mode-store';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
+import { resolvePreviewStepCommit } from './preview-step-commit';
 
 type PreviewSelection = {
   drawerPreviewItem: ClimbQueueItem | null;
@@ -27,6 +28,8 @@ type PreviewSelection = {
 };
 type SelectionChrome = {
   clearMirror: () => void;
+  /** Put a preview's mirror flip back: the MiniPlayer reopening the last pick (`previewMirrored`). */
+  restoreMirror: (climbUuid: string, mirrored: boolean) => void;
   setIsTickBarActive: Dispatch<SetStateAction<boolean>>;
   setActiveSubDrawer: Dispatch<SetStateAction<ActiveSubDrawer>>;
 };
@@ -80,6 +83,23 @@ type HeldClimbSelection = {
   /** Put on the wall for the held climb: releases the hold and lights the board. */
   putHeldClimbOnWall: () => void;
 };
+/**
+ * An open the player applied, as the last pick (`use-last-pick-writer.ts`)
+ * and the bar's Put on board need it. `replay` is a pane that mounted later
+ * showing a target another pane already applied: a look, never a new pick.
+ */
+export type AppliedPlayerOpen = {
+  previewItem: ClimbQueueItem | null;
+  suggestionSource: PlaylistSuggestionSource | null;
+  commitOptions: PlayDrawerOpenOptions['previewCommitOptions'];
+  mirrored: boolean;
+  replay: boolean;
+  /** The reopened pick's busy-wall snapshot (`previewLatchStart`), when it carried one. */
+  latchStart: PlayDrawerOpenOptions['previewLatchStart'];
+  /** The MiniPlayer's bulb asked for Put on board once this preview lands (never on a replay). */
+  putOnBoard: boolean;
+};
+
 /** One step the climber took, for `Queue Navigation`; the caller adds the surface and the board. */
 export type PlayNavigationStep = {
   direction: QueueNavigationDirection;
@@ -101,6 +121,8 @@ type PlaySelectionInputs = {
   hold: HeldClimbSelection;
   /** Reports each Next / Previous that moved the wall or opened a preview. */
   onNavigationStep: (step: PlayNavigationStep) => void;
+  /** Each open the player applied, for the last pick and the bar's Put on board. */
+  onOpenApplied?: (applied: AppliedPlayerOpen) => void;
 };
 
 type SwipeSelectionInputs = PreviewSelection &
@@ -183,12 +205,12 @@ function useSwipeSelection({
       if (drawerPreviewItem && drawerPreviewSuggestionSource) {
         if (!targetItem) return;
         clearPreviewCommitOptions();
-        const { item } = resolveCommittableQueueItem(targetItem);
-        setCurrentClimb(item, {
-          playlistSuggestionSource: reanchorPlaylistSuggestionSource(drawerPreviewSuggestionSource, item.climb?.uuid),
-          trigger: direction,
-          historyCopy: 'fresh',
+        const { item, options } = resolvePreviewStepCommit({
+          previewSuggestionSource: drawerPreviewSuggestionSource,
+          targetItem,
+          direction,
         });
+        setCurrentClimb(item, options);
         setSharedBrowseLatched(false);
         setDrawerPreviewItem(null);
         setDrawerPreviewSuggestionSource(null);
@@ -204,13 +226,8 @@ function useSwipeSelection({
       // wall instead. The slot's deferred commit options never follow a swipe.
       if (drawerPreviewItem && targetItem) {
         clearPreviewCommitOptions();
-        const { item, converted } = resolveCommittableQueueItem(targetItem);
-        setCurrentClimb(item, {
-          keepWalkedTrack: true,
-          ...(converted ? { walkedPeek: true } : {}),
-          trigger: direction,
-          historyCopy: 'fresh',
-        });
+        const { item, options } = resolvePreviewStepCommit({ previewSuggestionSource: null, targetItem, direction });
+        setCurrentClimb(item, options);
         setSharedBrowseLatched(false);
         setDrawerPreviewItem(null);
         setDrawerPreviewIsWallClimb(false);
@@ -269,7 +286,7 @@ export function usePlaySelectionController({
   queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
   similarTrack,
   navigation: { navigationState, lightOnSwipe, browseByDefault, driving, stoppedForLink, previewOnOtherBoard },
-  chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
+  chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
   confirmation: {
     busyWallConfirmArmed,
     browseLatchActive,
@@ -281,6 +298,7 @@ export function usePlaySelectionController({
   },
   hold: { heldQueueItemUuid, putHeldClimbOnWall },
   onNavigationStep,
+  onOpenApplied,
 }: PlaySelectionInputs) {
   // A queue/history pick can defer its exact commit behavior until the board
   // button is pressed. It belongs to this slot only and never follows a swipe.
@@ -358,6 +376,20 @@ export function usePlaySelectionController({
       // crew is present.
       if (!pinnedItem) setSharedBrowseLatched(false);
       clearMirror();
+      // The MiniPlayer reopening the last pick puts the preview's flip back.
+      const restoredMirror = pinnedItem ? options?.previewMirrored : undefined;
+      if (pinnedItem && restoredMirror !== undefined && restoredMirror !== (pinnedItem.climb.mirrored === true)) {
+        restoreMirror(pinnedItem.climb.uuid, restoredMirror);
+      }
+      onOpenApplied?.({
+        previewItem: pinnedItem,
+        suggestionSource: pinnedItem ? playlistSuggestionSource : null,
+        commitOptions: previewCommitRef.current?.options,
+        mirrored: restoredMirror ?? pinnedItem?.climb.mirrored === true,
+        replay,
+        latchStart: pinnedItem ? options?.previewLatchStart : undefined,
+        putOnBoard: pinnedItem !== null && options?.putOnBoard === true && !replay,
+      });
       setIsTickBarActive(false);
       setActiveSubDrawer('none');
       if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse && !replay) {
@@ -401,6 +433,9 @@ export function usePlaySelectionController({
       showBoardMismatch,
       heldQueueItemUuid,
       putHeldClimbOnWall,
+      clearMirror,
+      restoreMirror,
+      onOpenApplied,
     ],
   );
 

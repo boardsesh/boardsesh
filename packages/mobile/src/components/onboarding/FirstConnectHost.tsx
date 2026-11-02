@@ -98,8 +98,6 @@ export function FirstConnectHost() {
     lightOnClimbTap,
     lightOnSwipe,
     inSharedSession,
-    // The provider runs auto-disconnect, so its own read is the one that ends lighting.
-    autoDisconnectSeconds: bluetooth?.autoDisconnectEnabled ? bluetooth.autoDisconnectTimeoutSeconds : null,
     boardName: activeBoard?.boardType ?? null,
     keepLighting: keepLightingEnabled
       ? {
@@ -123,10 +121,10 @@ export function FirstConnectHost() {
             return t('mobile.firstConnect.confirm.bodyWindow', { seconds: copy.seconds });
           case 'window_minute':
             return t('mobile.firstConnect.confirm.bodyWindowMinute');
+          case 'window_minutes':
+            return t('mobile.firstConnect.confirm.bodyWindowMinutes', { minutes: copy.minutes });
           case 'until_stop':
             return t('mobile.firstConnect.confirm.bodyUntilStop');
-          case 'until_stop_or_disconnect':
-            return t('mobile.firstConnect.confirm.bodyUntilStopOrDisconnect');
           case 'put_on_board':
             return t('mobile.firstConnect.confirm.bodyPutOnBoard');
         }

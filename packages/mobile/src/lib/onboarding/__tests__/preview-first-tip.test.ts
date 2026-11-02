@@ -23,6 +23,7 @@ const {
   loadPreviewFirstTip,
   previewFirstAnnouncementDue,
   previewFirstTipRetiredByDrive,
+  resolvePreviewFirstFrostLine,
   resolvePreviewFirstWindowLine,
   retirePreviewFirstTip,
   shouldShowPreviewFirstTip,
@@ -231,16 +232,15 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, swipeLightsSolo: true })).toBeNull();
   });
 
-  // Auto-disconnect ends lighting when it lets go of the board (`clampWindowEnd`).
-  it('reads auto-disconnect the way the window clock does', () => {
-    expect(
-      resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, autoDisconnectSeconds: 30 }),
-    ).toEqual({ key: 'windowSeconds', seconds: 30 });
-    expect(
-      resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false, autoDisconnectSeconds: 120 }),
-    ).toEqual({ key: 'windowMinute' });
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, autoDisconnectSeconds: 300 })).toEqual({
-      key: 'untilStopOrDisconnect',
+  it('says whole minutes in minutes', () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false })).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(120_000), isMoonboard: false })).toEqual({
+      key: 'windowMinutes',
+      minutes: 2,
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(300_000), isMoonboard: true })).toEqual({
+      key: 'windowMinutes',
+      minutes: 5,
     });
   });
 
@@ -249,6 +249,24 @@ describe('resolvePreviewFirstWindowLine', () => {
       key: 'windowSeconds',
       seconds: 30,
     });
+  });
+});
+
+// The frost sentence follows the same reach as the second line: a clock only
+// where Put on board's drive has one.
+describe('resolvePreviewFirstFrostLine', () => {
+  const plan = (windowMs: number | null) => ({ windowMs, setting: 'putOnBoardKeepsLighting' as const });
+
+  it('names the clock for a timed drive, whatever its length', () => {
+    for (const windowMs of [30_000, 45_000, 60_000, 120_000, 300_000]) {
+      expect(resolvePreviewFirstFrostLine({ plan: plan(windowMs) })).toBe('timed');
+    }
+  });
+
+  it('names none for Until I stop, Right away, or solo with Light the board as I swipe on', () => {
+    expect(resolvePreviewFirstFrostLine({ plan: plan(null) })).toBe('open_ended');
+    expect(resolvePreviewFirstFrostLine({ plan: null })).toBe('open_ended');
+    expect(resolvePreviewFirstFrostLine({ plan: plan(45_000), swipeLightsSolo: true })).toBe('open_ended');
   });
 });
 

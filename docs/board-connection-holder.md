@@ -39,6 +39,8 @@ Board presence is **auth-optional** so anonymous web/mobile users are first-clas
 
 The clean release path is the client calling `reportBoardDisconnect` on BLE drop (BLE survives a WS blip). As a backstop for a crashed holder, the WebSocket `onDisconnect` hook (`packages/backend/src/websocket/setup.ts`) calls `roomManager.clearBoardWriterForConnection`, which frees the wall via the emitter-keyed compare-and-delete. It runs at the single WS-close chokepoint (covering both solo `removeClient` and party `disconnectClient` holders) and is recorded per connection by `roomManager.noteBoardWriter` (called from `reportBoardClimb`).
 
+There is no idle timer any more. Bluetooth auto-disconnect (a timeout since 2.6) was replaced in 2.7 by **Disconnect Bluetooth when driving ends** (`disconnectWhenDrivingEnds`, default off). When it is on and a drive ends because the climber or the timer ended it (`stopped`, `window_ended`, Turn off all lights, or a crewmate's put-up taking the board; never a `window_ended` that Settings › Board caused, `keepLink`), the phone lets go of the link with trigger `driving_ended`, once any write in flight on the link has landed (5 s at most) and reports `reportBoardDisconnect`, so the holder frees at once. It keeps the board remembered, so the next Put on board reconnects silently. Link drops, failed connects, session or board changes and sign-out already release the hold and never use this path.
+
 ## Clients
 
 - **Shared** (`@boardsesh/board-presence` + `@boardsesh/board-presence-react`): the reducer tracks `holder` + `lastConnectionSeq` (seq-gated `APPLY_CONNECTION_CHANGED` / `SEED_CONNECTION`); `useBoardPresenceCurrent()` exposes `holder`; the client interface gains optional `fetchConnection` / `reportDisconnect`.
@@ -48,7 +50,7 @@ The relay suppresses connecting only for a session member identified by the auth
 
 ### No undo on a lightbulb disconnect (product decision)
 
-A short tap on a lit lightbulb hangs up the board at once. There is no confirm and no Undo, on every bulb (MiniPlayer, toolbar, Android app bar, the header pill, the player). A climber who hangs up by mistake taps the bulb again to reconnect. A deliberate hang-up forgets the remembered board (`forgetConnectedBoard`), so that tap opens the board picker.
+A short tap on a lit lightbulb hangs up the board at once. There is no confirm and no Undo, on every bulb (MiniPlayer, toolbar, Android app bar, the header pill, the player). A climber who hangs up by mistake taps the bulb again to reconnect. A deliberate hang-up forgets the remembered board (`forgetConnectedBoard`), so that tap opens the board picker. For a gym or saved board the picker lists that board's own controller first, then controllers it cannot identify (MoonBoards and bare-name boxes advertise no serial, and those boxes are never remembered), and hides only controllers that are positively another board until "Search for any board". The three groups are in `docs/ui/12-bluetooth.md`.
 
 Decided 2026-10-28. #6997 built an 8 s "Board disconnected · Undo" snackbar for every bulb after a slip on the iPhone MiniPlayer, where the bulb now sits beside ⏭. It was declined: we don't want an Undo option here. Don't add a confirm or an Undo to the bulb's short tap. Long-press and the controls sheet's Disconnect stay as they are.
 

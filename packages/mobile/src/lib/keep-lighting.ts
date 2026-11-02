@@ -1,25 +1,30 @@
 /**
- * After Put on board, keep lighting (2.7, preview-first lighting): what a press
- * on Put on board does once its climb is up. Settings › Board holds the two
- * choices, one for every board and one for MoonBoards, plus whether it applies
- * in a crew session.
+ * Stop driving after (2.7, preview-first lighting): how long a drive that Put
+ * on board started keeps lighting. Settings › Board holds the two choices, one
+ * for every board and one for MoonBoards, plus whether it applies in a crew
+ * session. The setting keys keep their first name (`putOnBoardKeepsLighting`)
+ * so stored choices carry over.
  *
- * - `off` — the press lights that one climb. The next pick is a preview.
- * - `30` / `45` / `60` — a keep-lighting window: every pick for that many
- *   seconds lights, and each climb that lights restarts the clock.
- * - `until_stopped` — an open-ended drive, the frost: every pick lights until
- *   the climber taps the button or the link drops. The MoonBoard default, since
- *   most MoonBoard controllers don't like phones switching.
+ * - `off` — Right away: the press lights that one climb and starts no drive.
+ *   The next pick is a preview.
+ * - `30` / `45` / `60` / `120` / `300` — a timed drive: every pick lights for
+ *   that many seconds, and each climb that lights restarts the clock.
+ * - `until_stopped` — Until I stop: an open-ended drive. Every pick lights
+ *   until the climber taps the button or the link drops. The MoonBoard
+ *   default, since most MoonBoard controllers don't like phones switching.
+ *
+ * Only Put on board's drive is timed: a swipe or Light every climb always
+ * starts an open-ended one.
  *
  * Pure, so the Settings model, the board control and the drive store read the
  * same rule.
  */
 
-export const KEEP_LIGHTING_CHOICES = ['off', '30', '45', '60', 'until_stopped'] as const;
+export const KEEP_LIGHTING_CHOICES = ['off', '30', '45', '60', '120', '300', 'until_stopped'] as const;
 
 export type KeepLightingChoice = (typeof KEEP_LIGHTING_CHOICES)[number];
 
-/** Settings › Board's keep-lighting keys. */
+/** Settings › Board's Stop driving after keys. */
 export type KeepLightingSettingKey = 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting';
 
 export const DEFAULT_KEEP_LIGHTING: KeepLightingChoice = '45';
@@ -33,8 +38,9 @@ export function sanitiseKeepLighting(value: unknown, fallback: KeepLightingChoic
 }
 
 /**
- * How long a window lasts: milliseconds for a timed choice, `null` for Until I
- * stop (no end), `undefined` for Off (no window at all).
+ * How long a timed drive lasts after each lit climb: milliseconds for a timed
+ * choice, `null` for Until I stop (no end), `undefined` for Right away (no
+ * drive at all).
  */
 export function keepLightingWindowMs(choice: KeepLightingChoice): number | null | undefined {
   switch (choice) {
@@ -48,18 +54,11 @@ export function keepLightingWindowMs(choice: KeepLightingChoice): number | null 
       return 45_000;
     case '60':
       return 60_000;
+    case '120':
+      return 120_000;
+    case '300':
+      return 300_000;
   }
-}
-
-/**
- * The longest a choice keeps lighting, in seconds: 0 for Off, Infinity for
- * Until I stop. For the Bluetooth footer that says auto-disconnect cuts it short.
- */
-export function keepLightingSeconds(choice: KeepLightingChoice): number {
-  const windowMs = keepLightingWindowMs(choice);
-  if (windowMs === undefined) return 0;
-  if (windowMs === null) return Number.POSITIVE_INFINITY;
-  return windowMs / 1000;
 }
 
 /**
@@ -109,45 +108,41 @@ export function resolveKeepLightingPlan({
 /**
  * What a press on Put on board keeps lighting, as the climber will see it, for
  * the copy that promises it (the first-connect confirmation, the player's
- * preview-first card). It reads the plan against two settings the plan does
- * not take:
- *
- * - Solo with Light the board as I swipe on, the press opens no window (the
- *   wall control's `tapDrive: 'resume'`). The setting lights the swipes and a
- *   climb picked from a list stays a preview, so nothing past the one climb is
- *   promised.
- * - Auto-disconnect lets go of the board its timeout after the last climb that
- *   lit, and lighting stops with the link (`clampWindowEnd`). Each climb that
- *   lights restarts both clocks, so a shorter timeout is the window, and an
- *   Until I stop drive ends there too.
+ * preview-first card). It reads the plan against one setting the plan does not
+ * take: solo with Light the board as I swipe on, the press starts no drive (the
+ * wall control's `tapDrive: 'resume'`). The setting lights the swipes and a
+ * climb picked from a list stays a preview, so nothing past the one climb is
+ * promised.
  *
  * - `one_climb` — the press lights that climb and nothing after it.
  * - `window` — every pick lights for `seconds`.
- * - `until_stop` — every pick lights until the climber taps the button;
- *   `autoDisconnects` when auto-disconnect can end it first.
+ * - `until_stop` — every pick lights until the climber taps the button.
  */
-export type KeepLightingReach =
-  | { kind: 'one_climb' }
-  | { kind: 'window'; seconds: number }
-  | { kind: 'until_stop'; autoDisconnects: boolean };
+export type KeepLightingReach = { kind: 'one_climb' } | { kind: 'window'; seconds: number } | { kind: 'until_stop' };
 
 export function resolveKeepLightingReach({
   plan,
   swipeLightsSolo,
-  autoDisconnectSeconds,
 }: {
   /** `resolveKeepLightingPlan`'s plan, or null where the press lights one climb. */
   plan: KeepLightingPlan | null;
   /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
   swipeLightsSolo: boolean;
-  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
-  autoDisconnectSeconds: number | null;
 }): KeepLightingReach {
   if (plan === null || swipeLightsSolo) return { kind: 'one_climb' };
-  if (plan.windowMs === null) return { kind: 'until_stop', autoDisconnects: autoDisconnectSeconds !== null };
-  const windowSeconds = Math.round(plan.windowMs / 1000);
-  if (autoDisconnectSeconds !== null && autoDisconnectSeconds < windowSeconds) {
-    return { kind: 'window', seconds: autoDisconnectSeconds };
-  }
-  return { kind: 'window', seconds: windowSeconds };
+  if (plan.windowMs === null) return { kind: 'until_stop' };
+  return { kind: 'window', seconds: Math.round(plan.windowMs / 1000) };
+}
+
+/**
+ * A timed drive's length as words take it: whole minutes from one minute up
+ * (`minutes`), seconds below that. The copy that names the length (the
+ * first-connect confirmation, the preview-first card, the drive's start
+ * announcement) reads it, so "2 minutes" is never "120 seconds".
+ */
+export type DriveLengthWords = { unit: 'seconds'; count: number } | { unit: 'minutes'; count: number };
+
+export function driveLengthWords(seconds: number): DriveLengthWords {
+  if (seconds >= 60 && seconds % 60 === 0) return { unit: 'minutes', count: seconds / 60 };
+  return { unit: 'seconds', count: seconds };
 }

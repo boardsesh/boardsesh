@@ -468,9 +468,12 @@ These shots predate the wall button: they show round 2's "Lit on the wall" text.
 
 #### One place says "is it lit" (#7000)
 
-The wall button has three looks. Plain tonal means a preview or a single lit climb. Plain plus a
-short violet drain bar and an m:ss clock means the 45 s keep-lighting window after Put on board.
-Frost means open-ended driving only ("every climb you pick lights up"). Never frost a window.
+The wall button has two looks. Plain tonal means a preview or a single lit climb. Frost means
+driving ("You are driving the wall": every climb you pick lights up). A drive started by Put on board
+is timed, so it also shows a small m:ss clock and the frost shrinks toward the bulb as the time runs out
+(width = remaining fraction), refilling to full on each lit climb. Under Reduce Motion it shrinks in 5 s
+steps. A swipe drive ("Light every climb") is open-ended: full frost, no clock, no shrink. There is no
+separate bar and no "Each pick lights" label; the same frost and label say "driving" for both.
 The preview cue ("Preview · not on the wall") lives in the top bar's second line, not on the art.
 
 Round 2 still answered "is this climb lit?" in up to four places that could disagree: the header face pill, the bulb's

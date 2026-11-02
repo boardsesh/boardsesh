@@ -177,7 +177,7 @@ describe('PlayerPreviewTip', () => {
     renderTip();
     expect(screen.getByRole('heading').textContent).toBe(tips.title);
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(
-      'For 45 seconds after that, each climb you pick lights too.',
+      tips.windowSeconds.replace('{{seconds}}', '45'),
     );
     expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frost);
   });
@@ -225,6 +225,12 @@ describe('PlayerPreviewTip', () => {
     renderTip({ keepLighting: { windowMs: 60_000, setting: 'putOnBoardKeepsLighting' } });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.windowMinute);
     cleanup();
+    // 2 and 5 minutes are said in minutes, never as 120 or 300 seconds.
+    renderTip({ keepLighting: { windowMs: 300_000, setting: 'putOnBoardKeepsLighting' } });
+    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(
+      tips.windowMinutes.replace('{{minutes}}', '5'),
+    );
+    cleanup();
     renderTip({ keepLighting: UNTIL_STOPPED });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStop);
     cleanup();
@@ -238,18 +244,34 @@ describe('PlayerPreviewTip', () => {
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.moonboard);
   });
 
-  // The two settings Put on board's plan does not take (`resolveKeepLightingReach`).
-  it('reads Light the board as I swipe and auto-disconnect the way the press and the link do', () => {
+  // The setting Put on board's plan does not take (`resolveKeepLightingReach`).
+  it('reads Light the board as I swipe the way the press does', () => {
     renderTip({ swipeLightsSolo: true });
     expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
+  });
+
+  // The frost sentence names a clock only where Put on board's drive has one:
+  // never on a MoonBoard's Until I stop, Right away, or where the press starts no drive.
+  it.each([
+    ['Until I stop', { keepLighting: UNTIL_STOPPED }],
+    ['a MoonBoard until stopped', { boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED }],
+    ['Right away, or no drive in a session', { keepLighting: null }],
+    ['Light the board as I swipe, solo', { swipeLightsSolo: true }],
+  ] as const)('says the frost means driving until you stop, with no clock, for %s', (_case, props) => {
+    renderTip(props);
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEnded);
     cleanup();
-    renderTip({ autoDisconnectSeconds: 30 });
-    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(
-      tips.windowSeconds.replace('{{seconds}}', '30'),
-    );
-    cleanup();
-    renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED, autoDisconnectSeconds: 120 });
-    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStopOrDisconnect);
+    screenReader.enabled = true;
+    renderTip(props);
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEndedScreenReader);
+  });
+
+  it("says a MoonBoard's timed drive stops after its time, as any timed drive", () => {
+    renderTip({
+      boardName: 'moonboard',
+      keepLighting: { windowMs: 30_000, setting: 'moonboardPutOnBoardKeepsLighting' },
+    });
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frost);
   });
 
   it('goes on Got it, the close button and Lighting settings, saying which', () => {

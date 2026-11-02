@@ -68,9 +68,8 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={onDisconnect}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -102,9 +101,8 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={vi.fn()}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -116,7 +114,7 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
       onClose={vi.fn()}
     />,
   );
-  expect(queryByText('ble.autoDisconnect.toggleTitle'.repeat(3))).toBeNull();
+  expect(queryByText('ble.lighting.drivingEnds.label'.repeat(3))).toBeNull();
   expect(queryByText('ble.lighting.onTapLabel'.repeat(3))).toBeNull();
   expect(queryByText('ble.lighting.onSwipeLabel'.repeat(3))).toBeNull();
   getByText('lightControl.lightAdjacentHolds'.repeat(3));
@@ -139,9 +137,8 @@ it.each([
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={vi.fn()}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds={false}
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -171,9 +168,8 @@ it('leads with the status line and the keep-lighting row', () => {
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={vi.fn()}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds={false}
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}

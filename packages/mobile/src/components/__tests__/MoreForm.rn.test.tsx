@@ -4,7 +4,6 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MoreFormModel, MoreSelectRow } from '../MoreForm.types';
 import type { AppMenuProps } from '../AppMenu.types';
-import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../lib/ble/auto-disconnect-controller';
 
 const controls = vi.hoisted(() => ({
   contentLayout: null as null | ((event: { nativeEvent: { layout: { height: number } } }) => void),
@@ -131,6 +130,9 @@ describe('MoreFormRN fitted preview', () => {
   });
 });
 
+// Eight choices, so the menu is long enough to test past its first screen.
+const TIMEOUT_SECONDS = [10, 15, 30, 45, 60, 120, 300, 600] as const;
+
 describe('MoreFormRN menu selects', () => {
   function selectModel(row: MoreSelectRow): MoreFormModel {
     return { sections: [{ key: 'settings', rows: [row] }] };
@@ -140,7 +142,7 @@ describe('MoreFormRN menu selects', () => {
       kind: 'select',
       key: 'timeout',
       label: 'Disconnect timeout',
-      options: AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
+      options: TIMEOUT_SECONDS.map((seconds) => ({
         key: String(seconds),
         label: `${seconds} seconds`,
       })),
