@@ -663,7 +663,11 @@ const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
  *
  * An orphan current (not in the queue — the wrong-board view-only preview,
  * whose peeked climbs are never committed) peeks the list predecessor if the
- * climb is in the source, else null.
+ * climb is in the source, else null. The exception is a look off the climb on
+ * the wall that played Up next and went on down the list (#7227): its track's
+ * `detour` names the queue entry it left, so Previous retraces that stretch
+ * from the queue's end, then lands on that entry, never on a peek of its climb
+ * (see {@link retraceDetour}).
  *
  * `activeConfig` and `isReachable` steer which queue entry stands for the
  * list predecessor (see {@link findQueuedListNeighbour}) and which Up next
@@ -744,6 +748,15 @@ export function selectPreviousQueueItemWithSuggestions(
  * back to, when a list-walk entry comes before any queued climb (the walk got
  * here along the list, not out of Up next), or when the entry the detour left
  * from is gone from the queue; Previous then reads History as before.
+ *
+ * An orphan current (`currentIndex` -1) is a look off the climb on the wall
+ * that played Up next and picked the list up as a peek (#7227). None of its
+ * walk sits behind it in the queue, but the stretch it played is Up next after
+ * the entry the detour left from, so this retraces it from the queue's end.
+ * List-walk entries there say nothing about how the look got here, so they are
+ * passed over. With no stretch left (a crewmate cleared Up next), Previous
+ * lands on that entry itself, not on a peek of its climb, so Next from there
+ * plays whatever Up next holds by then.
  */
 function retraceDetour(
   queue: ClimbQueue,
@@ -755,12 +768,16 @@ function retraceDetour(
 ): PreviousQueueItemSelection | null {
   const { detour } = source;
   if (!detour || trackIndexOf(source, detour.climbUuid) !== trackIndex - 1) return null;
+  const orphan = currentIndex < 0;
   let lastPlayed: ClimbQueueItem | null = null;
-  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+  for (let index = (orphan ? queue.length : currentIndex) - 1; index >= 0; index -= 1) {
     const item = queue[index];
-    if (item.uuid === detour.queueItemUuid) return lastPlayed ? { item: lastPlayed, trackResume: detour } : null;
+    if (item.uuid === detour.queueItemUuid) {
+      if (lastPlayed) return { item: lastPlayed, trackResume: detour };
+      return orphan ? { item, trackResume: null } : null;
+    }
     if (isListWalkEntry(item, source)) {
-      if (!lastPlayed) return null;
+      if (!lastPlayed && !orphan) return null;
       continue;
     }
     if (!lastPlayed && !swipeWalksPast(item, activeConfig, isReachable)) lastPlayed = item;

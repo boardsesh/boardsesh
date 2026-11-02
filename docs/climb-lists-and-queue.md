@@ -645,7 +645,10 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    place in Up next (#7227, `resolvePreviewStepSource`): it plays Up next, then goes on down
    the list to its end card, as Next would, and lights nothing. Put on board puts up the climb
    on screen with that list and its place, and a list climb the look reached goes up as a fresh
-   entry, as Next places one. The MiniPlayer's ⏮ ⏭ hand the player the same list. Until #7227
+   entry, as Next places one. A queued climb the look reached goes up leaving the queue as it
+   is, as Next does: solo, without a session, nothing queued after it is dropped, a workout's
+   climbs included (`keepQueue`). A step that lights from such a look, once this phone drives
+   the wall, commits the same way, with the step's own place in Up next. The MiniPlayer's ⏮ ⏭ hand the player the same list. Until #7227
    the look walked the queue with no list of its own (owner decision, 2026-10-25, keeping the
    #5403 rule), so its swipes stopped at the end of Up next, or one climb past the wall's with
    Up next empty; once 2.7 made every pick a preview (#7188), every solo climber hit that. A
@@ -661,7 +664,10 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    back on the list (`PlaylistSuggestionSource.detour`), so Previous follows it even when older entries of list
    climbs sit between them in the queue (a swipe down the list and back leaves them there, and
    a crew keeps every one). Without it, Previous reads the stretch from the queue, and an older
-   entry of the same climb ends it. Owner decision, 2026-10-25 (#6777), reversing the
+   entry of the same climb ends it. A look retraces the same way: its peek of the list climb
+   after Up next is in no queue, so Previous reads that stretch back from the queue's end, then
+   lands on the queue entry of the list climb it left rather than a peek of it, and Next from
+   there plays Up next again (#7227). Owner decision, 2026-10-25 (#6777), reversing the
    list-first walk F1 shipped, where the queue waited behind the end card and the persona panel
    in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,

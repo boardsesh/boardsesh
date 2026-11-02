@@ -225,7 +225,10 @@ entry reaches the server as that entry's uuid (`move-history`). A new uuid that 
 `placement` is one the phone chose to put up fresh, so the server and the reducer place every
 request with `placement` as `fresh` (`historyCopyRuleFor`). Requests without `placement` keep
 `reuse`. On the phone, a list tap, a queue-sheet tap, Put on the wall and Previous resolve with
-`reuse`; Next (the button, a swipe, the rest timer) resolves with `fresh`. A tester on F3 hit
+`reuse`; Next (the button, a swipe, the rest timer) resolves with `fresh`. Put on the wall of a
+list climb a preview reached by walking (a peek) is the exception: it goes up `fresh`, as Next
+places it (#7113 QA, #7227), so a list climb whose only copy sits further back in History gets
+a new entry rather than that old one pulled into Now. A tester on F3 hit
 the reason: Next off a search list whose next page held a climb from an hour earlier pulled
 that climb's old History entry into Now, and each Next after it pulled the next old entry, so
 History was rewritten and the wall replayed the old playlist. `fresh` still reuses History's

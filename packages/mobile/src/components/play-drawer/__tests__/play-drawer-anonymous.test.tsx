@@ -1655,17 +1655,18 @@ describe('PlayDrawer — a look off the climb on the wall keeps walking its list
     return render(drawerElement('member', committedTargetFor(a)));
   }
 
-  /** Presses Next `times` times and says which climb each press left on screen. */
-  function swipeNext(times: number): string[] {
+  /** Presses Next (or Previous) `times` times and says which climb each press left on screen. */
+  function swipeNext(times: number, button: 'onNextClick' | 'onPrevClick' = 'onNextClick'): string[] {
     const shown: string[] = [];
     for (let press = 0; press < times; press += 1) {
       act(() => {
-        (lastActionBarProps().onNextClick as () => void)();
+        (lastActionBarProps()[button] as () => void)();
       });
       shown.push(lastDisplayedClimbUuid());
     }
     return shown;
   }
+  const swipePrevious = (times: number) => swipeNext(times, 'onPrevClick');
 
   function expectNothingWritten() {
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
@@ -1708,9 +1709,67 @@ describe('PlayDrawer — a look off the climb on the wall keeps walking its list
           playlistUuid: 'search',
           resume: { climbUuid: a.uuid, queueItemUuid: onWall.uuid },
         }),
+        // A queued climb goes up as Next puts it up: the queue stays as it is.
+        keepQueue: true,
         trigger: 'put_on_wall',
       },
     );
+  });
+
+  // Previous retraces the look (#6777's rule): the Up next it played, then the
+  // list climb it left, on that climb's own entry, never a peek of it.
+  it('swipes back through the Up next it played to the climb it left', () => {
+    onTheWall([onWall, playNext1, playNext2]);
+    expect(swipeNext(3)).toEqual([playNext1.climb.uuid, playNext2.climb.uuid, b.uuid]);
+    expect(swipePrevious(3)).toEqual([playNext2.climb.uuid, playNext1.climb.uuid, a.uuid]);
+    // Back on A's own entry, Next plays Up next again rather than jumping to B.
+    expect(swipeNext(1)).toEqual([playNext1.climb.uuid]);
+    expect(recorded.listContext.at(-1)?.parts).toMatchObject({ name: 'playView.track.upNext' });
+    expectNothingWritten();
+  });
+
+  // A drive that starts while a look stands on the list climb (Always drive
+  // the wall once the link comes up): the step that lights still keeps the
+  // list's place, or Up next would end the list.
+  it('keeps the list when a drive starts mid-look and the step goes into Up next', () => {
+    onTheWall([onWall, playNext1, playNext2]);
+    swipeNext(1);
+    expect(swipePrevious(1)).toEqual([a.uuid]);
+    act(() => {
+      driveTheWall();
+    });
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ uuid: playNext1.uuid }),
+      expect.objectContaining({
+        playlistSuggestionSource: expect.objectContaining({
+          playlistUuid: 'search',
+          resume: { climbUuid: a.uuid, queueItemUuid: onWall.uuid },
+        }),
+        keepQueue: true,
+        trigger: 'next',
+      }),
+    );
+  });
+
+  it('drops the Up next place when a drive starts mid-look and the step goes back to the list', () => {
+    onTheWall([onWall, playNext1, playNext2]);
+    expect(swipeNext(2)).toEqual([playNext1.climb.uuid, playNext2.climb.uuid]);
+    act(() => {
+      driveTheWall();
+    });
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+    const [[committed, options]] = queueActions.setCurrentClimb.mock.calls as [
+      [{ climb: { uuid: string } }, { playlistSuggestionSource: PlaylistSuggestionSource }],
+    ];
+    expect(committed.climb.uuid).toBe(b.uuid);
+    // Back on the list: no resume left to go stale, the stretch kept for Previous.
+    expect(options.playlistSuggestionSource.resume).toBeUndefined();
+    expect(options.playlistSuggestionSource.detour).toEqual({ climbUuid: a.uuid, queueItemUuid: onWall.uuid });
   });
 
   it('driving, still commits and lights each step', () => {
@@ -1753,6 +1812,8 @@ describe('PlayDrawer — a look off the climb on the wall keeps walking its list
     const view = onTheWall([onWall, itemP, itemC]);
     // The look carries the list: Up next first, from A.
     expect(swipeNext(1)).toEqual([p.uuid]);
+    // Only a look that carries the list counts Up next on it.
+    expect(recorded.listContext.at(-1)?.parts).toMatchObject({ name: 'playView.track.upNext' });
 
     // A list tap pins C, which the carried list holds, with no list of its own.
     view.rerender(drawerElement('member', { climb: c, options: { previewQueueItem: itemC }, nonce: 2 }));

@@ -2765,6 +2765,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       suppliedCorrelationId?: string,
       requestedPlacement?: CurrentClimbPlacement,
       historyCopy: HistoryCopyRule = 'reuse',
+      keepQueue = false,
     ): NowSlotOpen | null => {
       if (credentialGeneration !== getCredentialGeneration()) return null;
       // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
@@ -2785,6 +2786,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       // Skip the broadcast for an unresolved climb (#2527), see below.
       const broadcasts = isClimbResolved(item.climb);
+      // A step along a list onto a climb already queued (`keepQueue`, #7227)
+      // leaves the queue as Next does: no prune after it.
+      const stepsOntoQueuedClimb = keepQueue && stateRef.current.queue.some(({ uuid }) => uuid === item.uuid);
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
@@ -2810,7 +2814,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           correlationId,
           playlistSuggestionSource,
           insertAfterCurrent,
-          pruneSuggestedAfterCurrent: sessionIdRef.current == null,
+          pruneSuggestedAfterCurrent: sessionIdRef.current == null && !stepsOntoQueuedClimb,
           sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
           placement,
           // Solo, the phone trims History itself; in a session only the server
@@ -3093,6 +3097,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         undefined,
         options?.placement,
         options?.historyCopy,
+        options?.keepQueue === true,
       );
       // #4979: opening the climb that is already current (a re-tap, or a list
       // row for the same climb, which now-slot mode dedupes onto it) leaves the

@@ -212,15 +212,20 @@ function useSwipeSelection({
         onNavigationStep({ direction, method, outcome: 'preview', artWait });
         return;
       }
-      // Driving the wall from a preview that walks a list (#7113): the next
-      // climb ON that list goes up, with the list as its track. The queue's own
-      // next would leave the list. It is a step, placed as `nextClimb` places
-      // one: a fresh copy at the Now slot, never a climb pulled out of History.
+      // Driving the wall from a preview that walks a list (#7113): the climb
+      // that walk steps to goes up (the list's next climb, or, for a look off
+      // the climb on the wall, an Up next climb on the way, #7227), with the
+      // list as its track and the step's place in Up next. That place is on the
+      // step's own source (`previewSource`), not the preview's: committing where
+      // the look stands would drop it on a step into Up next, and the list would
+      // go dormant. The queue's own next would leave the list. It is a step,
+      // placed as `nextClimb` places one: a fresh copy at the Now slot, never a
+      // climb pulled out of History.
       if (drawerPreviewItem && drawerPreviewSuggestionSource) {
         if (!targetItem) return;
         clearPreviewCommitOptions();
         const { item, options } = resolvePreviewStepCommit({
-          previewSuggestionSource: drawerPreviewSuggestionSource,
+          previewSuggestionSource: previewSource ?? drawerPreviewSuggestionSource,
           targetItem,
           direction,
         });
@@ -574,7 +579,12 @@ export function usePlaySelectionController({
       //
       // Either way a peek is a list climb the walk reached, minted fresh here.
       // It goes up as Next places a list step: a fresh copy at the Now slot,
-      // never an older entry pulled out of History.
+      // never an older entry pulled out of History. A look that carries a list
+      // and stands on a queued climb (Up next, #7227) puts it up as Next would,
+      // leaving the queue as it is (`keepQueue`): solo, a commit with a list
+      // otherwise drops the suggested climbs after it, a workout's among them.
+      // The provider keeps the queue only for a climb already in it, so a list
+      // tap's own climb still prunes after it as before.
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
       const listStep = converted ? { historyCopy: 'fresh' as const } : {};
       setCurrentClimb(item, {
@@ -586,7 +596,7 @@ export function usePlaySelectionController({
                   drawerPreviewSuggestionSource,
                   item.climb?.uuid,
                 ),
-                ...listStep,
+                ...(converted ? listStep : { keepQueue: true }),
               })),
         // Put on the wall: the deliberate commit at the end of a browse, told apart
         // from a plain list or queue pick so the crew ramp can be measured.

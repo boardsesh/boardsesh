@@ -463,6 +463,29 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     }
   });
 
+  // #7227 review: a pick a look left on the list's climb, with Up next after
+  // it. The step that lights goes into Up next, so it has to store where the
+  // list picks up again, or the list goes dormant at the queued climb.
+  it.each([
+    ['onNext', 'nextTrackResume', 'nextItem', 'next'],
+    ['onPrevious', 'prevTrackResume', 'prevItem', 'previous'],
+  ] as const)('%s while driving keeps the pick’s place in Up next', (button, resumeKey, target, trigger) => {
+    pickWith(track);
+    const resume = { climbUuid: 'climb-pick', queueItemUuid: 'pick' };
+    targets[resumeKey] = resume;
+    driveAlways();
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current[button]());
+    expect(queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      targets[target],
+      expect.objectContaining({
+        playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', resume }),
+        keepQueue: true,
+        trigger,
+      }),
+    );
+  });
+
   // A trackless pick (a queue slot, a look walked along the queue): while
   // driving, its neighbour goes up keeping the walked track.
   it('puts a trackless pick’s neighbour up in Always drive the wall’s drive', () => {

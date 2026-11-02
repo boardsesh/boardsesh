@@ -223,6 +223,18 @@ export type SetCurrentClimbOptions = {
    * deep link) never borrows the track (#5403).
    */
   walkedPeek?: boolean;
+  /**
+   * With `playlistSuggestionSource`: when the climb is already in the queue,
+   * it goes up as Next puts a queued climb up, and the queue stays as it is
+   * (issue #7227). Passed by a step along a list (a preview's step that lights,
+   * Put on board from a look), which can now land on an Up next climb. Without
+   * it, a solo commit with a list drops the `suggested` climbs after the new
+   * current climb, which ends an earlier pass of a list but would also drop a
+   * workout's queued climbs. A climb not yet queued (a list tap, a list's
+   * peek) still prunes as before. Ignored in now-slot mode and in a session,
+   * where nothing is pruned.
+   */
+  keepQueue?: boolean;
   trigger?: SetCurrentClimbTrigger;
   /**
    * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the

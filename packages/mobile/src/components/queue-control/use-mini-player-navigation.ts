@@ -198,9 +198,12 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         return;
       }
       if (pick) {
-        // The neighbour goes up as the player's swipe off the preview puts it up.
+        // The neighbour goes up as the player's swipe off the preview puts it
+        // up, with the pick's list and the step's place in Up next (#7227): a
+        // pick a look left on the list's climb steps into Up next, and without
+        // that place the list would go dormant.
         const { item, options } = resolvePreviewStepCommit({
-          previewSuggestionSource: pick.suggestionSource,
+          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume),
           targetItem,
           direction,
         });

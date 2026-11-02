@@ -13,15 +13,19 @@ import { resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
  * the queue places it. One rule for the player and the bar, so the bar steps
  * exactly as a swipe in the player would.
  *
- * - A preview walking a list (#7113): the next climb ON that list goes up,
- *   with the list as its track, re-anchored on it. The queue's own next would
- *   leave the list.
+ * - A preview walking a list (#7113): the climb that walk steps to goes up
+ *   (the list's next climb, or an Up next climb a look off the climb on the
+ *   wall plays first, #7227), with the list as its track, re-anchored on it.
+ *   `previewSuggestionSource` is the step's own source, carrying its place in
+ *   Up next (`resolvePreviewStepSource`). The queue's own next would leave the
+ *   list.
  * - A trackless preview with a neighbour of its own (a queue slot, a look
  *   walked along the queue): the neighbour goes up, keeping the walked track,
  *   as Put on board commits a look.
  *
  * Either way it is a step, placed as `nextClimb` places one: a fresh copy at
- * the Now slot, never a climb pulled out of History. A list's transient
+ * the Now slot, never a climb pulled out of History, and a queued climb goes
+ * up leaving the queue as it is (`keepQueue`). A list's transient
  * `playlist-peek:` item is laundered first, so no peer sees its uuid.
  */
 export function resolvePreviewStepCommit({
@@ -39,6 +43,8 @@ export function resolvePreviewStepCommit({
       item,
       options: {
         playlistSuggestionSource: reanchorPlaylistSuggestionSource(previewSuggestionSource, item.climb?.uuid),
+        // A step's target that is no peek is a queued climb (#7227).
+        ...(converted ? {} : { keepQueue: true }),
         trigger: direction,
         historyCopy: 'fresh',
       },

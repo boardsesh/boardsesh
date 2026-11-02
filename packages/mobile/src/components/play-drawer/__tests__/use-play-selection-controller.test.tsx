@@ -529,7 +529,10 @@ describe('explicit wall commitment', () => {
     );
   });
 
-  // A list tap's own climb is not a peek: it goes up as a tap does.
+  // A list tap's own climb is not a peek: it goes up as a tap does, with no
+  // fresh copy. It asks to keep the queue as a queued climb would, which the
+  // provider grants only to a climb already in it (#7227), so a list tap's
+  // fresh climb still prunes after it.
   it('puts a tapped list climb up without the step rule', () => {
     const initialProps = inputs();
     initialProps.preview.drawerPreviewItem = item('preview');
@@ -540,6 +543,7 @@ describe('explicit wall commitment', () => {
     });
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), {
       playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }),
+      keepQueue: true,
       trigger: 'put_on_wall',
     });
   });
@@ -819,6 +823,8 @@ describe('driving the wall', () => {
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'next' }) }),
       {
         playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', activatedClimbUuid: 'next' }),
+        // A queued target (no peek) goes up leaving the queue as it is (#7227).
+        keepQueue: true,
         // A step, placed as Next places one: fresh, never pulled out of History.
         trigger: 'next',
         historyCopy: 'fresh',
@@ -832,6 +838,33 @@ describe('driving the wall', () => {
       method: 'swipe',
       outcome: 'moved',
     });
+  });
+
+  // #7227 review: a drive that starts while a look stands on the list climb
+  // (the look came back out of Up next, so its list holds only a detour). The
+  // step into Up next must go up with the step's own place on the list, or the
+  // committed list goes dormant at the queued climb and Up next ends it.
+  it.each([
+    ['handleNext', 'nextItem', 'nextPreviewSource'],
+    ['handlePrev', 'prevItem', 'previousPreviewSource'],
+  ] as const)('%s from a look commits the step with its own place in Up next', (handler, target, stepSource) => {
+    const initialProps = driving();
+    const upNext = initialProps.navigation.navigationState[target]!;
+    const listClimb = item('list-climb');
+    const resume = { climbUuid: 'list-climb', queueItemUuid: 'queue-list-climb' };
+    const lookSource = { ...source([listClimb, item('list-next')]), detour: resume };
+    initialProps.preview.drawerPreviewItem = listClimb;
+    initialProps.preview.drawerPreviewSuggestionSource = lookSource;
+    initialProps.navigation[stepSource] = { ...source([listClimb, item('list-next')]), resume };
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current[handler]('swipe'));
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ uuid: upNext.uuid }),
+      expect.objectContaining({
+        playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', resume }),
+        keepQueue: true,
+      }),
+    );
   });
 
   it('leaves a preview of a climb from another board a preview', () => {
