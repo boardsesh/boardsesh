@@ -41,6 +41,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Swiping keeps going past the end of your queue again. ([#7230](https://github.com/boardsesh/boardsesh/pull/7230))
+  Swipe back after your queue and you retrace it, climb by climb.
 - Tap the glowing bulb on your Lock Screen to stop driving the wall ([#7214](https://github.com/boardsesh/boardsesh/pull/7214))
   Tap to reconnect on the Lock Screen gets your board back, or tells you why it couldn't
 - Swiping to the next climb works even while its holds are still loading. ([#7210](https://github.com/boardsesh/boardsesh/pull/7210))
