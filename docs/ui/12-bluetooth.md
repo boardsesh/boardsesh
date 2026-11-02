@@ -47,11 +47,15 @@ that affects only the UUID or hold sets. The one-shot still expires and fires on
 
 Connecting to a known board sorts each controller into one of three groups
 (`classifyPickerDevice`). **Target**: its serial resolves to that exact board
-UUID. **Other**: its serial resolves to a different board, or its advertised
+UUID, or nothing on record names its board and it is the box this phone
+remembers for that board by BLE device id (`PickerBoardTarget.rememberedDeviceId`:
+a MoonBoard or a serial-less Kilter-built box, unless a hang-up's 10 minutes
+ran out). **Other**: its serial resolves to a different board, or its advertised
 board type is not the target's, since Kilter and Tension serial numbers can
 overlap. **Unknown**: nothing says either way, which covers every stock
-MoonBoard and every bare-name Kilter or Tension box (they advertise no serial),
-a serial nobody has recorded, and a recording that names no board. The picker
+MoonBoard and every bare-name Kilter or Tension box this phone doesn't remember
+(they advertise no serial), a serial nobody has recorded, and a recording that
+names no board. The picker
 lists target rows first, then unknown rows, strongest signal first within each,
 and hides only other rows. #7125 first shipped hiding unknown rows too. In the
 30 days to 2026-10-31 nothing resolved in 2,521 of 2,522 MoonBoard pickers and
@@ -65,7 +69,22 @@ using their search escape also reveals the full list. "Your selected board was
 not found" shows only when every controller heard is another board. That is
 distinct from an empty scan, so it does not trigger location-permission or
 no-lights advice. `BLE Picker Devices Resolved` counts the three groups as
-`targetMatchedDevices`, `targetUnknownDevices` and `targetOtherDevices`.
+`targetMatchedDevices`, `targetUnknownDevices` and `targetOtherDevices`. It
+counts by serial resolution alone, so a box the sheet lists in the target group
+because this phone remembers it by id still counts where its serial puts it.
+
+**Remembered boards.** A connect remembers the box for the board in view: by
+serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less
+Kilter-built box named for that board type (`Kilter Board`, `isKilterBuiltBox`).
+The next tap on the bulb reconnects to it while the picker shows "searching",
+with no board list. A drop, a config switch and Disconnect Bluetooth when
+driving ends keep it with no limit. A hang-up keeps it for 10 minutes, then it
+is forgotten, the iOS native pairing included, unless the Lock Screen bulb
+already reconnected it: that link is kept and the board is remembered again.
+That pairing, which lets the Lock Screen bulb reconnect, goes sooner when the
+route moves to another board.
+A hang-up after a wrong-box connect, and a sign-out, forget it at once. The rules and their reasons are in
+`docs/board-connection-holder.md`.
 
 The simulator comparison uses the same resolved QA gym fixtures with a stronger
 Tension signal. The [expanded list](../images/7125-picker-all.png) follows an
@@ -177,7 +196,8 @@ non-fatal.
 
 - Updates state synchronously for immediate UI feedback.
 - Consumes the active adapter generation exactly once, unsubscribes the adapter disconnect listener, and nulls the adapter ref.
-- Fires `Bluetooth Disconnected` analytics with `reason: 'user'`, a low-cardinality `disconnectTrigger` (`explicit_user`, `config_switch`, or `connection_replacement`), and `connectionDurationSec`.
+- Fires `Bluetooth Disconnected` analytics with `reason: 'user'`, a low-cardinality `disconnectTrigger` (`explicit_user`, `driving_ended`, `config_switch`, or `connection_replacement`), and `connectionDurationSec`.
+- A hang-up (`explicit_user`) keeps the board remembered, and on iOS its native pairing, for 10 minutes. After a wrong-box connect it forgets both at once. `driving_ended` keeps both with no limit; `config_switch` keeps the JS memory and forgets the native pairing.
 - Uses the board config and analytics session state captured when that generation started. Its board ID is attached only through the matching generation's guarded resolve, including cached identities for already-bound reconnects, so every holder is released while a config switch still releases the old wall, never the newly rendered route.
 - Calls session wall-disconnect cleanup unconditionally against the current queue session (a no-op in solo). This safely handles a connection that opened solo and joined later, or moved from one session to another; the snapshotted session boolean remains analytics-only.
 

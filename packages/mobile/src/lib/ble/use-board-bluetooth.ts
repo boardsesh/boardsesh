@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
   getAuroraBluetoothPacket,
+  isKilterBuiltBox,
   parseApiLevel,
   parseSerialNumber,
   type LedColorOverrides,
@@ -33,6 +34,7 @@ import { getHttpClient } from '../graphql/client';
 import { getAuthToken } from '../auth-store';
 import {
   createBluetoothAdapter,
+  forgetNativeKeptBoard,
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
   nativeBleSupportsBoard,
@@ -71,6 +73,13 @@ import {
   setStoredKnownBoardDevices,
   type KnownBoardDevices,
 } from './known-board-devices-store';
+import {
+  HANG_UP_REMEMBER_MS,
+  isLockScreenTakeBack,
+  isRememberedBoardExpired,
+  soonestForgetAfter,
+} from './remembered-board-expiry';
+import { subscribeRememberedBoardsSignOut } from './remembered-boards-sign-out';
 import type { BleWriteActivityStore } from './write-activity-store';
 import { getBleEncodingSignature } from './encoding-signature';
 import type { PickerBoardTarget } from './picker-device-target';
@@ -330,6 +339,22 @@ function adapterOptionsForBoard(boardName: string): BleAdapterOptions {
   return { preferWriteWithResponse: boardName === 'woods', boardName };
 }
 
+// A serial-less Kilter-built box (`Kilter Board`, `isKilterBuiltBox`) of the
+// board in view. It advertises no serial, so it is remembered by its BLE device
+// id, as a MoonBoard is. A bare name of another board type is positively
+// another board and is never remembered for this one.
+function isSerialLessBoxOfBoard(deviceName: string | undefined, boardName: string): boolean {
+  return isKilterBuiltBox(deviceName) && parseAnyBoardTypeFromDeviceName(deviceName) === boardName;
+}
+
+// The connected box says it is another board type than the one in view. A
+// hang-up from it forgets the board at once, as one from the board-config
+// mismatch's "Connect anyway" does.
+function advertisesAnotherBoard(deviceName: string | undefined, boardName: string): boolean {
+  const advertisedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
+  return advertisedBoardType !== undefined && advertisedBoardType !== boardName;
+}
+
 /**
  * Fire-and-forget GraphQL mutation recording the (serial, board config, API
  * level) seen on connect for the authenticated user. Mirrors the web app's
@@ -428,10 +453,13 @@ export type SendFramesToBoard = (
 ) => Promise<boolean | undefined>;
 
 /**
- * Why this phone lets go of the board on purpose. `user`: a disconnect the
- * climber asked for (it forgets the board). `driving_ended`: Disconnect
- * Bluetooth when driving ends (2.7) freed the board as a drive ended; the board
- * stays remembered so the next Put on board reconnects silently.
+ * Why this phone lets go of the board on purpose. `user`: a hang-up the
+ * climber asked for. It keeps the board remembered for HANG_UP_REMEMBER_MS (10
+ * minutes), so a mistaken tap reconnects with one more tap, and forgets it at
+ * once after a wrong-box connect. `driving_ended`: Disconnect Bluetooth when
+ * driving ends (2.7) freed the board as a drive ended; the board stays
+ * remembered with no limit, so the next Put on board reconnects silently.
+ * Both free the board for the next climber.
  */
 export type BluetoothDisconnectReason = 'user' | 'driving_ended';
 
@@ -656,7 +684,9 @@ export function useBoardBluetooth({
   // Remember the board (its reconnect handle + which config it was paired
   // against) so a later involuntary drop can be recovered with a silent reconnect
   // to the same board (the lightbulb tap, native shells). The handle is a serial
-  // for Aurora boards and a BLE peripheral id for MoonBoards. Only valid while the
+  // for Aurora boards and a BLE peripheral id for MoonBoards and serial-less
+  // Kilter-built boxes. A hang-up stamps it to run out after HANG_UP_REMEMBER_MS
+  // (expireRememberedBoards below). Only valid while the
   // current route still points at the same board — switching board/layout/size
   // invalidates it and callers fall back to the picker. Mirrors the web
   // `reconnectSerialForCurrentBoard`.
@@ -685,6 +715,8 @@ export function useBoardBluetooth({
   // Boards remembered or forgotten since mount: the read on mount never
   // overrides them.
   const knownBoardDevicesTouchedRef = useRef(new Set<string>());
+  // A sign-out forgot every board: the read on mount must not bring any back.
+  const knownBoardDevicesSignedOutRef = useRef(false);
   const writeKnownBoardDevices = useCallback((devices: KnownBoardDevices) => {
     if (devices === knownBoardDevicesRef.current) return;
     knownBoardDevicesIntentGenerationRef.current += 1;
@@ -693,8 +725,15 @@ export function useBoardBluetooth({
     void setStoredKnownBoardDevices(devices).catch(() => {});
   }, []);
 
+  // A hang-up's board whose stamp ran out, while native has not yet said
+  // whether the Lock Screen bulb took it back (forgetNativeBoardUnlessTakenBack
+  // below). JS memory already let the board go, so the adoption path reads it
+  // here. Native's answer clears it, and any remember supersedes it.
+  const expiringKeptBoardRef = useRef<StoredLastConnectedBoard | null>(null);
+
   const rememberConnectedBoard = useCallback(
     (board: StoredLastConnectedBoard) => {
+      expiringKeptBoardRef.current = null;
       rememberedBoardIntentGenerationRef.current += 1;
       lastConnectedBoardRef.current = board;
       setRememberedBoardState((current) => ({ ...current, board }));
@@ -710,8 +749,8 @@ export function useBoardBluetooth({
     lastConnectedBoardRef.current = null;
     setRememberedBoardState((current) => ({ ...current, board: null }));
     void clearStoredLastConnectedBoard().catch(() => {});
-    // A deliberate disconnect frees that board for the next climber, so its
-    // per-board handle goes too. Handles for the other boards stay.
+    // Forgetting the board drops its per-board handle too. Handles for the
+    // other boards stay.
     if (forgotten) {
       knownBoardDevicesTouchedRef.current.add(forgotten.configKey);
       writeKnownBoardDevices(forgetKnownBoardDevice(knownBoardDevicesRef.current, forgotten.configKey));
@@ -753,15 +792,136 @@ export function useBoardBluetooth({
   // would otherwise race the in-flight native disconnect and re-establish the
   // connection the user just closed.
   const adoptionSuppressedRef = useRef(false);
-  // Set once a Disconnect Bluetooth when driving ends release has finished:
-  // its native disconnect settled, and no connect or teardown came since.
-  // That release keeps the board's native pairing, so the iOS Live Activity
-  // bulb can reconnect to it while the app sleeps. Such a reconnect (and only
-  // one the bulb started, `connectOrigin: 'liveActivityIntent'`) is adopted
-  // despite adoptionSuppressedRef, or the in-app bulb and the Live Activity
-  // would go on saying disconnected over a lit wall. An explicit Disconnect
-  // forgets the pairing and never sets this.
-  const drivingEndedReleaseSettledRef = useRef(false);
+  // Set once a release that keeps the board has finished: a hang-up of a
+  // remembered board, or Disconnect Bluetooth when driving ends. Its native
+  // disconnect settled, and no connect, teardown or native forget came since.
+  // Such a release keeps the board's native pairing, so the iOS Live Activity
+  // bulb can reconnect to it while the app sleeps. That reconnect (and only one
+  // the bulb started, `connectOrigin: 'liveActivityIntent'`) is adopted despite
+  // adoptionSuppressedRef, or the in-app bulb and the Live Activity would go on
+  // saying disconnected over a lit wall. A hang-up's pairing lasts as long as
+  // its JS stamp, and only while the route shows that board: once either ends,
+  // native forgets it too, unless the bulb already reconnected it
+  // (forgetNativeBoardUnlessTakenBack, which also sets this once native says
+  // the bulb holds that board). A hang-up from a wrong-box connect forgets the
+  // pairing and never sets this.
+  const keptBoardReleaseSettledRef = useRef(false);
+  // The config key whose remembered board a hang-up of the live connection
+  // keeps (stamped for HANG_UP_REMEMBER_MS), or null when it forgets at once:
+  // nothing was remembered for this box, or it was a wrong-box connect (the
+  // board-config mismatch's "Connect anyway", or a box advertising another
+  // board type). Set when a connect or adoption succeeds, cleared when the
+  // connection ends.
+  const hangUpKeepsBoardRef = useRef<string | null>(null);
+
+  // How many times native has forgotten a pairing JS let go of, since mount.
+  // The Live Activity card reads the pairing only when it redraws, so each
+  // forget pushes one update (live-activity-bridge.tsx). Without it the card
+  // goes on offering "Tap to reconnect", and that tap can only fail.
+  const [nativeBoardForgets, setNativeBoardForgets] = useState(0);
+  // The hang-up stamp whose native pairing a board switch already forgot, so
+  // switching on to a third board doesn't forget it again.
+  const nativeForgotForStampRef = useRef<number | null>(null);
+
+  // The iOS native pairing (the board the Live Activity bulb reconnects to)
+  // follows the JS memory: once JS forgets a board it kept, native forgets it
+  // too. Only while JS holds no link and no connect runs: a live link's own
+  // teardown decides, and a connect's preparation already forgets the old
+  // pairing (#7122). A native snapshot asked for before the forget must not be
+  // adopted after it, and a bulb reconnect is no longer a kept board coming back.
+  // Returns whether it asked native to forget.
+  const forgetNativeBoardWhileIdle = useCallback((): boolean => {
+    if (adapterRef.current || connectInFlightRef.current) return false;
+    keptBoardReleaseSettledRef.current = false;
+    nativeReconciliationGenerationRef.current += 1;
+    void forgetNativeKeptBoard().then((forgot) => {
+      if (forgot) setNativeBoardForgets((count) => count + 1);
+    });
+    return true;
+  }, []);
+
+  // The adoption effect's native check, so a Lock Screen take-back found here
+  // is adopted at once rather than on the next foreground.
+  const recheckNativeConnectionRef = useRef<(() => void) | null>(null);
+
+  // A hang-up's stamp ran out, and native has no clock for it: after the app
+  // slept past the 10 minutes, the Lock Screen still offered "Tap to
+  // reconnect", and a tap lit the wall. So ask native what it holds before
+  // forgetting its pairing. The bulb's reconnect of this board is the climber
+  // taking it back (owner's call, 2026-11-02, isLockScreenTakeBack): the board
+  // is remembered again with a fresh stamp, native keeps the link, and the
+  // adoption path takes it, which clears the stamp as any reconnect does. With
+  // nothing like that connected, native forgets the pairing as before.
+  const forgetNativeBoardUnlessTakenBack = useCallback(
+    (expired: StoredLastConnectedBoard) => {
+      if (adapterRef.current || connectInFlightRef.current) return;
+      expiringKeptBoardRef.current = expired;
+      const generation = nativeReconciliationGenerationRef.current;
+      const settle = (device: Awaited<ReturnType<typeof getNativeBleConnectedDevice>>) => {
+        // A remember since (the adoption path took the board back, or a
+        // connect or hang-up) supersedes this expiry.
+        if (expiringKeptBoardRef.current !== expired) return;
+        expiringKeptBoardRef.current = null;
+        // A connect, teardown or native forget since decides the native side.
+        if (generation !== nativeReconciliationGenerationRef.current) return;
+        if (device && isLockScreenTakeBack(device.connectOrigin, device.configKey, expired)) {
+          rememberConnectedBoard({ ...expired, forgetAfter: Date.now() + HANG_UP_REMEMBER_MS });
+          // Native holds the very link adoptsBulbReconnect describes, so let the
+          // recheck through. A hang-up whose native disconnect threw, or a
+          // board switch whose native forget failed, leaves the release
+          // unsettled: without this nothing is adopted, and the board is
+          // renewed every 10 minutes under a lit wall.
+          keptBoardReleaseSettledRef.current = true;
+          recheckNativeConnectionRef.current?.();
+          return;
+        }
+        forgetNativeBoardWhileIdle();
+      };
+      void getNativeBleConnectedDevice().then(settle, () => settle(null));
+    },
+    [forgetNativeBoardWhileIdle, rememberConnectedBoard],
+  );
+
+  // A hang-up's memory runs out (remembered-board-expiry.ts). Drops every
+  // expired record, the single one and the per-board handles, and returns them
+  // so connect() can tell a target read before this ran. The single record is
+  // the board native pairs, so when it expires native forgets it too, unless
+  // the Lock Screen bulb already took it back. connect() skips that question
+  // (`askNative: false`): the climber is connecting anew.
+  const expireRememberedBoards = useCallback(
+    (nowMs: number, { askNative = true }: { askNative?: boolean } = {}): StoredLastConnectedBoard[] => {
+      const expired: StoredLastConnectedBoard[] = [];
+      const last = lastConnectedBoardRef.current;
+      if (last && isRememberedBoardExpired(last, nowMs)) {
+        expired.push(last);
+        forgetConnectedBoard();
+        if (askNative) forgetNativeBoardUnlessTakenBack(last);
+        else forgetNativeBoardWhileIdle();
+      }
+      const known = knownBoardDevicesRef.current;
+      const live = known.filter((device) => !isRememberedBoardExpired(device, nowMs));
+      if (live.length !== known.length) {
+        for (const device of known) {
+          if (live.includes(device)) continue;
+          expired.push(device);
+          knownBoardDevicesTouchedRef.current.add(device.configKey);
+        }
+        writeKnownBoardDevices(live);
+      }
+      return expired;
+    },
+    [forgetConnectedBoard, forgetNativeBoardUnlessTakenBack, forgetNativeBoardWhileIdle, writeKnownBoardDevices],
+  );
+
+  // The handle this phone remembers for one board, unless a hang-up's stamp ran
+  // out: the last board held, else that board's own handle (#7076).
+  const liveRememberedBoardFor = useCallback((configKey: string): StoredLastConnectedBoard | null => {
+    const last = lastConnectedBoardRef.current;
+    const remembered =
+      last?.configKey === configKey ? last : findKnownBoardDevice(knownBoardDevicesRef.current, configKey);
+    return remembered && !isRememberedBoardExpired(remembered, Date.now()) ? remembered : null;
+  }, []);
+
   // Full config identity the live connection was established for. Includes set
   // IDs so a set-only route switch ends the old attribution generation rather
   // than allowing its asynchronous board resolve to bleed into the new setup,
@@ -933,7 +1093,17 @@ export function useBoardBluetooth({
         let settled = false;
         let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
         const targetUuid = boardUuidOrNull(boardUuid);
-        const targetBoard = targetUuid && boardName ? { boardUuid: targetUuid, boardName } : undefined;
+        // The box this phone remembers for the board by its BLE id (a MoonBoard
+        // or a serial-less Kilter-built box) is that board's own, though no
+        // serial says so: it joins the target group, not the unknown one.
+        const rememberedDeviceId =
+          boardName && layoutId !== undefined && sizeId !== undefined
+            ? liveRememberedBoardFor(boardConfigKey(boardName, layoutId, sizeId, boardUuid))?.deviceId
+            : undefined;
+        const targetBoard =
+          targetUuid && boardName
+            ? { boardUuid: targetUuid, boardName, ...(rememberedDeviceId ? { rememberedDeviceId } : {}) }
+            : undefined;
         // Boards heard while `searching`, held back until the list is on screen.
         let latestDevices: DiscoveredDevice[] = [];
         // A connect started with the app in the background (the Android session
@@ -1074,7 +1244,7 @@ export function useBoardBluetooth({
         );
       });
     },
-    [boardName, boardUuid],
+    [boardName, layoutId, sizeId, boardUuid, liveRememberedBoardFor],
   );
 
   const clearConnectionAfterDrop = useCallback(
@@ -1087,6 +1257,7 @@ export function useBoardBluetooth({
       configuredDeviceNameRef.current = undefined;
       configuredDeviceIdRef.current = undefined;
       connectedConfigIdentityRef.current = null;
+      hangUpKeepsBoardRef.current = null;
       backgroundAdoptSendGateRef.current = false;
       writeAbortRef.current?.abort();
       writeAbortRef.current = null;
@@ -1620,12 +1791,24 @@ export function useBoardBluetooth({
       if (connectInFlightRef.current) {
         return false;
       }
+      // A hang-up's 10 minutes may have run out since the caller read its
+      // reconnect target (a render the expiry timer had not reached yet, or
+      // Android's paused JS timers). That target is forgotten: open the list.
+      // Before the in-flight flag, so native forgets the pairing too.
+      const expiredHandles = expireRememberedBoards(Date.now(), { askNative: false });
+      const targetExpired = expiredHandles.some(
+        (handle) =>
+          (targetSerial !== undefined && handle.serial === targetSerial) ||
+          (targetDeviceId !== undefined && handle.deviceId === targetDeviceId),
+      );
+      const reconnectSerial = targetExpired ? undefined : targetSerial;
+      const reconnectDeviceId = targetExpired ? undefined : targetDeviceId;
       connectInFlightRef.current = true;
       nativeReconciliationGenerationRef.current += 1;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
-      drivingEndedReleaseSettledRef.current = false;
+      keptBoardReleaseSettledRef.current = false;
       // The user asked for this link, so the off-screen-adopt gate from any
       // previous connection must not survive into it (#4499).
       backgroundAdoptSendGateRef.current = false;
@@ -1711,6 +1894,7 @@ export function useBoardBluetooth({
           connectedConfigIdentityRef.current = null;
           configuredDeviceNameRef.current = undefined;
           configuredDeviceIdRef.current = undefined;
+          hangUpKeepsBoardRef.current = null;
           try {
             await previousAdapter.disconnect();
           } catch {
@@ -1729,7 +1913,7 @@ export function useBoardBluetooth({
           boardName,
           layoutId,
           sizeId,
-          reconnect: !!targetSerial || !!targetDeviceId,
+          reconnect: !!reconnectSerial || !!reconnectDeviceId,
         });
 
         // Preparation forgets the old native pairing BEFORE staging the new
@@ -1749,7 +1933,7 @@ export function useBoardBluetooth({
           });
         }
 
-        const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
+        const connection = await adapter.requestAndConnect(reconnectSerial, reconnectDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
         configuredDeviceIdRef.current = connection.deviceId;
@@ -1831,8 +2015,9 @@ export function useBoardBluetooth({
 
         // Remember the board (keyed to the config it was paired against) so an
         // involuntary drop can be recovered by a one-tap reconnect. Aurora boards
-        // reconnect by their parseable serial; a MoonBoard has none, so we remember
-        // its BLE peripheral id and reconnect by matching that on the next scan.
+        // reconnect by their parseable serial; a MoonBoard or a serial-less
+        // Kilter-built box (`Kilter Board`) has none, so we remember its BLE
+        // peripheral id and reconnect by matching that on the next scan.
         // Without a full config there is no usable key (the reconnect comparison
         // against currentConfigKey could never match). A fake-Bluetooth
         // screenshot build's pretend board (screenshot-fake-adapter.ts) is never
@@ -1840,14 +2025,24 @@ export function useBoardBluetooth({
         // peripheral that doesn't exist. Inlined so it folds away elsewhere.
         const isScreenshotFakeBoard =
           process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
+        let rememberedConfigKey: string | null = null;
         if (!isScreenshotFakeBoard && layoutId !== undefined && sizeId !== undefined) {
           const configKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
           if (parsedSerial) {
             rememberConnectedBoard({ configKey, serial: parsedSerial });
-          } else if (boardName === 'moonboard') {
+            rememberedConfigKey = configKey;
+          } else if (boardName === 'moonboard' || isSerialLessBoxOfBoard(connection.deviceName, boardName)) {
             rememberConnectedBoard({ configKey, deviceId: connection.deviceId });
+            rememberedConfigKey = configKey;
           }
         }
+        // A hang-up keeps a remembered board for 10 minutes, but not one this
+        // connect knew to be the wrong box: picked through the board-config
+        // mismatch's "Connect anyway", or advertising another board type. The
+        // climber hanging up on it needs the board list, not a silent reconnect.
+        const wrongBoxConnect =
+          (getConnectedViaMismatchOverride?.() ?? false) || advertisesAnotherBoard(connection.deviceName, boardName);
+        hangUpKeepsBoardRef.current = wrongBoxConnect ? null : rememberedConfigKey;
 
         // Send initial frames if provided. `sendSource: 'connect'` makes the
         // resulting Climb Sent to Board Success/Failure/Skipped attributable to
@@ -2111,6 +2306,7 @@ export function useBoardBluetooth({
       onConnectSuccess,
       getConnectedViaMismatchOverride,
       rememberConnectedBoard,
+      expireRememberedBoards,
       sendFramesToBoard,
       sanitizedColorOverrides,
       moonboardLightAdjacentHolds,
@@ -2124,13 +2320,16 @@ export function useBoardBluetooth({
   );
 
   const teardownConnection = useCallback(
-    async (disconnectTrigger: Exclude<BleDisconnectTrigger, 'link_drop'>) => {
+    async (
+      disconnectTrigger: Exclude<BleDisconnectTrigger, 'link_drop'>,
+      { keepBoard = false }: { keepBoard?: boolean } = {},
+    ) => {
       // Suppress native-connection adoption until the next deliberate connect:
       // the native disconnect below is async, so a backgrounding/foregrounding
       // app could otherwise see getConnectedDevice still report the device this
       // teardown is closing and silently re-adopt it.
       adoptionSuppressedRef.current = true;
-      drivingEndedReleaseSettledRef.current = false;
+      keptBoardReleaseSettledRef.current = false;
       nativeReconciliationGenerationRef.current += 1;
       const teardownGeneration = nativeReconciliationGenerationRef.current;
       backgroundAdoptSendGateRef.current = false;
@@ -2145,6 +2344,7 @@ export function useBoardBluetooth({
       configuredDeviceNameRef.current = undefined;
       configuredDeviceIdRef.current = undefined;
       connectedConfigIdentityRef.current = null;
+      hangUpKeepsBoardRef.current = null;
       // Cancel every in-flight and queued write of this connection generation,
       // and unblock the write chain for the next connect.
       writeAbortRef.current?.abort();
@@ -2154,16 +2354,16 @@ export function useBoardBluetooth({
       setIsConnected(false);
       onConnectionChange?.(false);
       clearBleDiagnosticsTags();
-      // Freeing the board as a drive ends keeps its pairing (the board stays
-      // remembered); every other teardown forgets it natively.
-      const keepBoard = disconnectTrigger === 'driving_ended';
+      // A release that keeps the board remembered (a hang-up, or freeing the
+      // board as a drive ends) keeps its native pairing too; every other
+      // teardown forgets it natively.
       await adapter?.disconnect({ keepBoard });
       if (
         keepBoard &&
         adoptionSuppressedRef.current &&
         nativeReconciliationGenerationRef.current === teardownGeneration
       ) {
-        drivingEndedReleaseSettledRef.current = true;
+        keptBoardReleaseSettledRef.current = true;
       }
     },
     [consumeConnectionLifetime, onConnectionChange, writeActivityStore],
@@ -2171,15 +2371,32 @@ export function useBoardBluetooth({
 
   const disconnect = useCallback(
     async (reason: BluetoothDisconnectReason = 'user') => {
-      // A deliberate disconnect forgets the board — only an involuntary drop or a
-      // config switch keeps the silent same-board reconnect memory alive. Clears
-      // the persisted copy too so the next launch doesn't resurrect it.
-      // Disconnect Bluetooth when driving ends also keeps the remembered
-      // handle, so the next Put on board silently reconnects to the same board.
-      if (reason === 'user') forgetConnectedBoard();
-      await teardownConnection(reason === 'user' ? 'explicit_user' : 'driving_ended');
+      // Disconnect Bluetooth when driving ends keeps the remembered handle with
+      // no limit, so the next Put on board silently reconnects to the same board.
+      if (reason === 'driving_ended') {
+        await teardownConnection('driving_ended', { keepBoard: true });
+        return;
+      }
+      // A hang-up frees the board for the next climber but keeps it
+      // remembered for HANG_UP_REMEMBER_MS, natively too: a mistaken tap on a
+      // lit bulb (there is no confirm and no Undo) reconnects with one more
+      // tap, not the board list. The stamp runs out on its own
+      // (expireRememberedBoards). A wrong-box connect, a connection nothing
+      // was remembered for, or a Disconnect with no link held forgets at once,
+      // persisted copy and native pairing included, so the next launch doesn't
+      // resurrect it. (The provider coalesces racing Disconnects, so a second
+      // one never forgets what the first kept.)
+      const keptConfigKey = hangUpKeepsBoardRef.current;
+      const remembered = lastConnectedBoardRef.current;
+      if (adapterRef.current && keptConfigKey !== null && remembered?.configKey === keptConfigKey) {
+        rememberConnectedBoard({ ...remembered, forgetAfter: Date.now() + HANG_UP_REMEMBER_MS });
+        await teardownConnection('explicit_user', { keepBoard: true });
+        return;
+      }
+      forgetConnectedBoard();
+      await teardownConnection('explicit_user');
     },
-    [forgetConnectedBoard, teardownConnection],
+    [forgetConnectedBoard, rememberConnectedBoard, teardownConnection],
   );
 
   // If the active board changes while a connection is live, tear it down.
@@ -2227,11 +2444,11 @@ export function useBoardBluetooth({
     if (!lastConnectedBoardHydrated) return;
     let cancelled = false;
     const supportsPreparedConnections = nativeBleSupportsPreparedConnections();
-    // A native connect the Live Activity bulb made after a settled
-    // driving-ends release: the one connection adoption takes back despite a
-    // deliberate teardown.
+    // A native connect the Live Activity bulb made after a settled release that
+    // kept the board (a hang-up, or a driving-ends release): the one connection
+    // adoption takes back despite a deliberate teardown.
     const adoptsBulbReconnect = (connectOrigin: string | undefined) =>
-      drivingEndedReleaseSettledRef.current && connectOrigin === 'liveActivityIntent';
+      keptBoardReleaseSettledRef.current && connectOrigin === 'liveActivityIntent';
     const adopt = (deviceId: string, rawDeviceName?: string, nativeConfigKey?: string, connectOrigin?: string) => {
       if (cancelled) return;
       // The bridge sends '' for a missing name — normalise so name parsing
@@ -2241,9 +2458,28 @@ export function useBoardBluetooth({
       if (adapterRef.current || connectInFlightRef.current) return;
       // The user explicitly disconnected; don't re-adopt the connection the
       // (possibly still in-flight) native disconnect is tearing down. After a
-      // settled driving-ends release, the Live Activity bulb's own reconnect
-      // is the climber taking the board back, so that one is adopted.
+      // settled release that kept the board, the Live Activity bulb's own
+      // reconnect is the climber taking the board back, so that one is adopted.
       if (adoptionSuppressedRef.current && !adoptsBulbReconnect(connectOrigin)) return;
+      // A hang-up's 10 minutes ran out while JS slept. Native has no clock for
+      // them, so the Lock Screen went on offering "Tap to reconnect". The
+      // bulb's reconnect of that board is the climber taking it back (owner's
+      // call, 2026-11-02): it is remembered again and adopted below, which
+      // clears the stamp. Any other link is not: JS has forgotten that board,
+      // so native forgets it too (which drops the link) and nothing is
+      // adopted. JS memory may have let the board go already, while native's
+      // answer to the expiry is still on its way (expiringKeptBoardRef).
+      const lastRemembered = lastConnectedBoardRef.current;
+      const lastExpired = lastRemembered !== null && isRememberedBoardExpired(lastRemembered, Date.now());
+      const expiredBoard = lastExpired ? lastRemembered : expiringKeptBoardRef.current;
+      if (expiredBoard) {
+        if (!isLockScreenTakeBack(connectOrigin, nativeConfigKey, expiredBoard)) {
+          if (lastExpired) expireRememberedBoards(Date.now(), { askNative: false });
+          else forgetNativeBoardWhileIdle();
+          return;
+        }
+        rememberConnectedBoard({ ...expiredBoard, forgetAfter: Date.now() + HANG_UP_REMEMBER_MS });
+      }
       if (!boardName || layoutId === undefined || sizeId === undefined) return;
       // Only adopt a device positively identified as the active config's board
       // type, or a nameless native reconnect for the exact config we most
@@ -2302,7 +2538,7 @@ export function useBoardBluetooth({
       adapterRef.current = adapter;
       // This phone holds a link JS owns again, as after a connect.
       adoptionSuppressedRef.current = false;
-      drivingEndedReleaseSettledRef.current = false;
+      keptBoardReleaseSettledRef.current = false;
       connectedConfigIdentityRef.current = currentConnectionIdentity;
       unsubDisconnectRef.current = adapter.onDisconnect((info) => {
         handleDisconnection(adapter, connectionGeneration, info);
@@ -2331,11 +2567,22 @@ export function useBoardBluetooth({
         })
         .catch(() => {});
 
+      // A box with no serial (a MoonBoard, or a Kilter-built box named for this
+      // board) is remembered by its peripheral id. A nameless restore is that
+      // box only when its id is the one remembered for this config.
+      const rememberDeviceId =
+        boardName === 'moonboard' ||
+        (deviceName
+          ? isSerialLessBoxOfBoard(deviceName, boardName)
+          : rememberedForCurrentConfig?.deviceId === deviceId);
       if (serial) {
         rememberConnectedBoard({ configKey: currentConfigKey, serial });
-      } else if (boardName === 'moonboard') {
+      } else if (rememberDeviceId) {
         rememberConnectedBoard({ configKey: currentConfigKey, deviceId });
       }
+      // Adoption only takes a box named for this board (or the one paired for
+      // it), so a hang-up keeps whatever was just remembered.
+      hangUpKeepsBoardRef.current = serial || rememberDeviceId ? currentConfigKey : null;
       setIsConnected(true);
       onConnectionChange?.(true);
       onConnectSuccess?.(serial, connectionHandle);
@@ -2377,7 +2624,7 @@ export function useBoardBluetooth({
       // A query begun during permission/availability awaits could capture the
       // old pairing before preparation, then resolve after this attempt fails.
       if (cancelled || connectInFlightRef.current) return;
-      if (adoptionSuppressedRef.current && !drivingEndedReleaseSettledRef.current) return;
+      if (adoptionSuppressedRef.current && !keptBoardReleaseSettledRef.current) return;
       const reconciliationGeneration = nativeReconciliationGenerationRef.current;
       void getNativeBleConnectedDevice().then((device) => {
         if (cancelled || reconciliationGeneration !== nativeReconciliationGenerationRef.current) return;
@@ -2395,12 +2642,14 @@ export function useBoardBluetooth({
     if (!connectedSubscription) return;
 
     checkNativeConnection();
+    recheckNativeConnectionRef.current = checkNativeConnection;
     const appStateSubscription = AppState.addEventListener('change', (appState) => {
       if (appState === 'active') checkNativeConnection();
     });
 
     return () => {
       cancelled = true;
+      if (recheckNativeConnectionRef.current === checkNativeConnection) recheckNativeConnectionRef.current = null;
       connectedSubscription.remove();
       appStateSubscription.remove();
     };
@@ -2415,6 +2664,8 @@ export function useBoardBluetooth({
     boardSerialNumber,
     lastConnectedBoardHydrated,
     devicePicker,
+    expireRememberedBoards,
+    forgetNativeBoardWhileIdle,
     handleDisconnection,
     onConnectionChange,
     onConnectSuccess,
@@ -2461,16 +2712,39 @@ export function useBoardBluetooth({
   // The remembered board only counts while the route still points at the same
   // config; a stored handle for a different board is never offered as a target.
   // The last board held wins; otherwise this board's own handle from an earlier
-  // visit (#7076), so a walk back to it at a gym reconnects.
+  // visit (#7076), so a walk back to it at a gym reconnects. A hang-up's handle
+  // leaves the state when its stamp runs out (the expiry effect below); a tap
+  // in between is caught by connect()'s own expiry check.
   const rememberedForCurrentBoard =
     lastConnectedBoard && currentConfigKey && lastConnectedBoard.configKey === currentConfigKey
       ? lastConnectedBoard
       : findKnownBoardDevice(knownBoardDevices, currentConfigKey);
-  // Aurora reconnects by serial; MoonBoard (no serial) reconnects by BLE device
-  // id. The lightbulb passes whichever is set so the tap reconnects to the same
-  // board (the picker shows "searching" meanwhile) instead of the board list.
+  // Aurora reconnects by serial; a box with no serial (MoonBoard, Kilter-built)
+  // reconnects by BLE device id. The lightbulb passes whichever is set so the
+  // tap reconnects to the same board (the picker shows "searching" meanwhile)
+  // instead of the board list.
   const reconnectSerialForCurrentBoard = rememberedForCurrentBoard?.serial ?? null;
   const reconnectDeviceIdForCurrentBoard = rememberedForCurrentBoard?.deviceId ?? null;
+
+  // A hang-up keeps the iOS native pairing so the Live Activity bulb can take
+  // the board back, but only while the route still shows that board, the same
+  // rule as the JS memory above. Native keeps that board's LED map, and on a
+  // bulb reconnect it lights the queue's current climb, which says nothing
+  // about its board. Once the route shows another board, that tap would light
+  // the old wall with this board's climbs (#7122), so native forgets the
+  // pairing on the switch. The JS handle keeps its stamp: walking back within
+  // the 10 minutes still reconnects silently from the app. Disconnect
+  // Bluetooth when driving ends and a link drop keep the pairing across a
+  // switch; that gap stays with #7122. A switch that lands while a connect runs
+  // is skipped (forgetNativeBoardWhileIdle), so `loading` and `isConnected`
+  // re-run this once it settles: a connect that fails before its preparation
+  // (Bluetooth off, permission denied) leaves the old pairing in place.
+  useEffect(() => {
+    const kept = lastConnectedBoard;
+    if (kept?.forgetAfter === undefined || !currentConfigKey || kept.configKey === currentConfigKey) return;
+    if (nativeForgotForStampRef.current === kept.forgetAfter) return;
+    if (forgetNativeBoardWhileIdle()) nativeForgotForStampRef.current = kept.forgetAfter;
+  }, [currentConfigKey, lastConnectedBoard, loading, isConnected, forgetNativeBoardWhileIdle]);
 
   // Rehydrate the remembered board from storage on mount so a one-tap silent
   // reconnect survives a cold start / provider remount, not just the in-memory
@@ -2484,10 +2758,19 @@ export function useBoardBluetooth({
     const intentGeneration = rememberedBoardIntentGenerationRef.current;
     const settleHydration = (stored: StoredLastConnectedBoard | null) => {
       if (cancelled) return;
-      const board =
-        rememberedBoardIntentGenerationRef.current === intentGeneration ? stored : lastConnectedBoardRef.current;
+      const readWins = rememberedBoardIntentGenerationRef.current === intentGeneration;
+      // A hang-up whose 10 minutes ran out while the app was closed: the board
+      // is forgotten before anything (adoption included) can read it, and
+      // native forgets the pairing it kept for the Live Activity bulb, unless
+      // that bulb already reconnected it (forgetNativeBoardUnlessTakenBack).
+      const storedExpired = readWins && stored !== null && isRememberedBoardExpired(stored, Date.now());
+      const board = readWins ? (storedExpired ? null : stored) : lastConnectedBoardRef.current;
       lastConnectedBoardRef.current = board;
       setRememberedBoardState({ board, hydrated: true });
+      if (storedExpired) {
+        void clearStoredLastConnectedBoard().catch(() => {});
+        forgetNativeBoardUnlessTakenBack(stored);
+      }
     };
     // A rejected read is terminal too: roster identity can still reject a
     // foreign controller, and an unavailable store must not wedge adoption.
@@ -2495,7 +2778,7 @@ export function useBoardBluetooth({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [forgetNativeBoardUnlessTakenBack]);
 
   // The per-board handles (#7076), read once on mount. A remember or forget
   // made during the read wins for its board; the stored handles for every other
@@ -2504,8 +2787,14 @@ export function useBoardBluetooth({
     let cancelled = false;
     const intentGeneration = knownBoardDevicesIntentGenerationRef.current;
     void getStoredKnownBoardDevices().then(
-      (stored) => {
+      (storedDevices) => {
         if (cancelled) return;
+        // A sign-out during the read forgot every board, stored ones included,
+        // and a hang-up's handle whose 10 minutes ran out is forgotten too.
+        const nowMs = Date.now();
+        const stored = knownBoardDevicesSignedOutRef.current
+          ? []
+          : storedDevices.filter((device) => !isRememberedBoardExpired(device, nowMs));
         // Plain read only if this session touched no board yet. A forget on an
         // empty list changes nothing to bump the generation with, and the stored
         // handle for the board just released must still stay gone.
@@ -2529,11 +2818,54 @@ export function useBoardBluetooth({
   }, [writeKnownBoardDevices]);
 
   // Whether this phone has a handle for a board, the one it holds now included.
+  // A hang-up's handle whose stamp ran out does not count.
   const hasRememberedDeviceForConfigKey = useCallback(
-    (configKey: string) =>
-      lastConnectedBoardRef.current?.configKey === configKey ||
-      findKnownBoardDevice(knownBoardDevicesRef.current, configKey) !== null,
-    [],
+    (configKey: string) => liveRememberedBoardFor(configKey) !== null,
+    [liveRememberedBoardFor],
+  );
+
+  // A hang-up's memory runs out after HANG_UP_REMEMBER_MS. The timer covers an
+  // app on screen; JS timers stop while iOS suspends the app or Android pauses
+  // the activity, so coming back to the foreground checks again, and so do
+  // connect() and the native adoption path. A timer that fires early re-arms.
+  useEffect(() => {
+    const soonest = soonestForgetAfter([lastConnectedBoard, ...knownBoardDevices]);
+    if (soonest === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      timer = setTimeout(
+        () => {
+          if (Date.now() < soonest) arm();
+          else expireRememberedBoards(Date.now());
+        },
+        Math.max(0, soonest - Date.now()),
+      );
+    };
+    arm();
+    const appStateSubscription = AppState.addEventListener('change', (appState) => {
+      if (appState === 'active') expireRememberedBoards(Date.now());
+    });
+    return () => {
+      clearTimeout(timer);
+      appStateSubscription.remove();
+    };
+  }, [lastConnectedBoard, knownBoardDevices, expireRememberedBoards]);
+
+  // A sign-out forgets every board this phone remembers, the iOS native pairing
+  // included, so the next account's first tap opens the board list. A live
+  // link is left to its own teardown: sign-out clears the active board, and
+  // that config switch forgets the pairing natively.
+  useEffect(
+    () =>
+      subscribeRememberedBoardsSignOut(() => {
+        forgetConnectedBoard();
+        knownBoardDevicesSignedOutRef.current = true;
+        for (const device of knownBoardDevicesRef.current) knownBoardDevicesTouchedRef.current.add(device.configKey);
+        writeKnownBoardDevices([]);
+        hangUpKeepsBoardRef.current = null;
+        forgetNativeBoardWhileIdle();
+      }),
+    [forgetConnectedBoard, forgetNativeBoardWhileIdle, writeKnownBoardDevices],
   );
 
   // Clean up on unmount
@@ -2591,6 +2923,7 @@ export function useBoardBluetooth({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     hasRememberedDeviceForConfigKey,
+    nativeBoardForgets,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   };

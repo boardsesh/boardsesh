@@ -79,7 +79,10 @@ export type PickerResolutionStats = {
    * devices fell in each group of `groupPickerDevices`: resolved to that board,
    * unidentified (no serial, or an unrecorded one), and positively another
    * board, which waits behind "Search for any board". All three are null when
-   * the picker had no board identity and listed everything.
+   * the picker had no board identity and listed everything. Counted by serial
+   * resolution alone, as since #7202: the box this phone remembers by id
+   * (`rememberedDeviceId`) lists in the sheet's target group but counts where
+   * its serial puts it, so `targetMatchedDevices` still means "resolved".
    */
   targetMatchedDevices: number | null;
   targetUnknownDevices: number | null;
@@ -98,7 +101,12 @@ export function summarizePickerResolution(
   currentBoardConfig: BleBoardConfig | undefined,
   targetBoard?: PickerBoardTarget,
 ): PickerResolutionStats {
-  const targetGroups = targetBoard?.boardUuid ? groupPickerDevices(devices, resolvedBoards, targetBoard) : undefined;
+  const targetGroups = targetBoard?.boardUuid
+    ? groupPickerDevices(devices, resolvedBoards, {
+        boardUuid: targetBoard.boardUuid,
+        boardName: targetBoard.boardName,
+      })
+    : undefined;
   const stats: PickerResolutionStats = {
     devicesTotal: devices.length,
     devicesWithSerial: 0,

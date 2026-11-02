@@ -68,6 +68,12 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     !bluetooth?.reconnectSerialForCurrentBoard &&
     !bluetooth?.reconnectDeviceIdForCurrentBoard;
   const boardConnecting = isAndroidSessionPresence && boardConnectPending;
+  // iOS card footer: it offers "Tap to reconnect" only while native still
+  // pairs a board, and reads that pairing only when it redraws. When the app
+  // forgets the board it kept (a hang-up's 10 minutes ran out, the route moved
+  // to another board, a sign-out), this changes, so the card redraws to "Open
+  // Boardsesh to connect" instead of offering a tap that can only fail.
+  const nativePairingRevision = isAndroidSessionPresence ? 0 : (bluetooth?.nativeBoardForgets ?? 0);
   // The climber's saved board look for the iOS server-rendered thumbnail. The
   // REQUESTED mode, not the device-probed effective one: the server always
   // renders aura. Pre-hydration the store snapshot resolves to the default
@@ -175,6 +181,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     holderDisplayName,
     bulbOpensApp,
     boardConnecting,
+    nativePairingRevision,
     renderMode,
     androidNotification,
     androidThumbnailOverlayPath: overlayUri,

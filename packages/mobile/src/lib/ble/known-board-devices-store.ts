@@ -8,11 +8,14 @@
 // the way the bulb does on a single board.
 //
 // Same rules as the single record:
-//   - A handle is a `serial` (Aurora) or a `deviceId` (MoonBoard), never both.
+//   - A handle is a `serial` (Aurora) or a `deviceId` (MoonBoard or a serial-less
+//     Kilter-built box), never both.
 //   - It is only a reconnect *target* for a deliberate connect (a tap). Nothing
 //     here connects.
-//   - A deliberate disconnect forgets that board (`forgetKnownBoardDevice`): it
-//     frees the board for the next climber.
+//   - A hang-up stamps that board's handle with the same `forgetAfter` as the
+//     single record, and an expired handle counts as forgotten. A hang-up from
+//     a wrong-box connect forgets it at once (`forgetKnownBoardDevice`), and a
+//     sign-out forgets every handle.
 //   - Keyed by `boardConfigKey(boardName, layoutId, sizeId, boardUuid)`, so a
 //     handle is only offered for the board it was recorded against.
 //
@@ -20,6 +23,7 @@
 
 import { getPreference, setPreference } from '../preference-store';
 import type { StoredLastConnectedBoard } from './last-connected-board-store';
+import { hasValidForgetAfter } from './remembered-board-expiry';
 
 const KNOWN_BOARD_DEVICES_KEY = 'boardsesh_known_board_devices_v1';
 
@@ -36,6 +40,7 @@ function isKnownBoardDevice(value: unknown): value is StoredLastConnectedBoard {
   const hasDeviceId = typeof candidate.deviceId === 'string';
   if (candidate.serial !== undefined && !hasSerial) return false;
   if (candidate.deviceId !== undefined && !hasDeviceId) return false;
+  if (!hasValidForgetAfter(candidate)) return false;
   // Exactly one handle, as the single record requires.
   return hasSerial !== hasDeviceId;
 }

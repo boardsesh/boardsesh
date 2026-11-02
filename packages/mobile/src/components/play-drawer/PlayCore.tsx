@@ -2217,7 +2217,7 @@ export function PlayCore({
       // the bulb's own press would connect this phone to its own board.
       toggle: climbOnCrewGymBoard ? handleRelayToHolder : handleLightbulb,
       // Disconnect board: let go of it, as the board sheet's Disconnect does.
-      // That forgets the board on purpose: it frees it for the next climber.
+      // That frees it for the next climber; it stays remembered for 10 minutes.
       disconnect: disconnectAllBluetooth,
       openSheet: openBoardSheet,
       lightAgain: handleLightAgain,

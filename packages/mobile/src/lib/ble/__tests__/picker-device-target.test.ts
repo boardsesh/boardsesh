@@ -147,4 +147,42 @@ describe('groupPickerDevices', () => {
     expect(groups.unknown.map((device) => device.deviceId)).toEqual(['bare', 'unrecorded']);
     expect(groups.other.map((device) => device.deviceId)).toEqual(['tension', 'stranger']);
   });
+
+  // A box with no serial resolves to nothing, so it sat with the unknown rows
+  // even when this phone had connected to it for this very board.
+  it('puts the box this phone remembers for the board in the target group', () => {
+    const bareKilter = { deviceId: 'bare', name: 'Kilter Board', rssi: -45 };
+    const otherBareKilter = { deviceId: 'other-bare', name: 'Kilter Board', rssi: -30 };
+    const groups = groupPickerDevices([otherBareKilter, tension, bareKilter, kilter], new Map(), {
+      ...target,
+      rememberedDeviceId: 'bare',
+    });
+    expect(groups.target.map((device) => device.deviceId)).toEqual(['bare']);
+    expect(groups.unknown.map((device) => device.deviceId)).toEqual(['other-bare', 'kilter']);
+    expect(groups.other.map((device) => device.deviceId)).toEqual(['tension']);
+  });
+});
+
+describe('classifyPickerDevice with a remembered box', () => {
+  it('claims a remembered MoonBoard, which carries no serial, as the target', () => {
+    const moonTarget = { boardUuid: 'qa-moon', boardName: 'moonboard', rememberedDeviceId: 'moon' };
+    expect(classifyPickerDevice({ deviceId: 'moon', name: 'MoonBoard', rssi: -55 }, new Map(), moonTarget)).toBe(
+      'target',
+    );
+    expect(classifyPickerDevice({ deviceId: 'moon-2', name: 'MoonBoard', rssi: -55 }, new Map(), moonTarget)).toBe(
+      'unknown',
+    );
+  });
+
+  it('never lets the remembered id outrank an advertised type or a serial that names another board', () => {
+    const remembered = { ...target, rememberedDeviceId: 'tension' };
+    expect(classifyPickerDevice(tension, new Map(), remembered)).toBe('other');
+    const strangerKilter = { deviceId: 'stranger', name: 'Kilter Board#777@3', rssi: -20 };
+    expect(
+      classifyPickerDevice(strangerKilter, new Map([['777', recorded('other-kilter')]]), {
+        ...target,
+        rememberedDeviceId: 'stranger',
+      }),
+    ).toBe('other');
+  });
 });

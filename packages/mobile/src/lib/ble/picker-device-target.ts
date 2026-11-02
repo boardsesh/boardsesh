@@ -3,18 +3,25 @@ import { configFromResolvedEntry } from './board-config-match';
 import type { ResolvedBoardEntry } from './resolve-serials';
 import type { DiscoveredDevice } from './types';
 
-/** Physical board identity captured when a picker session opens. */
-export type PickerBoardTarget = { boardUuid: string; boardName: string };
+/**
+ * Physical board identity captured when a picker session opens.
+ * `rememberedDeviceId`: the BLE id of the box this phone remembers for that
+ * board, when it is remembered by id (a MoonBoard or a serial-less Kilter-built
+ * box) and a hang-up's 10 minutes have not run out.
+ */
+export type PickerBoardTarget = { boardUuid: string; boardName: string; rememberedDeviceId?: string };
 
 /**
  * How a scanned controller relates to the board a picker session is for.
  *
- * - `target`: its serial resolves to exactly this board.
+ * - `target`: its serial resolves to exactly this board, or nothing on record
+ *   names its board and it is the box this phone remembers for this one
+ *   (`rememberedDeviceId`).
  * - `other`: it is positively a different board. Its serial resolves to
  *   another board, or its advertised board type is not the target's.
  * - `unknown`: nothing says either way. No serial (every stock MoonBoard and
- *   every bare-name Kilter or Tension box), a serial nobody has recorded, or a
- *   recording that names no board.
+ *   every bare-name Kilter or Tension box this phone doesn't remember), a
+ *   serial nobody has recorded, or a recording that names no board.
  *
  * The picker lists `target` then `unknown` and hides only `other` until the
  * climber asks for every board (#7125). Nothing resolved in 2,521 of 2,522
@@ -37,14 +44,18 @@ export function classifyPickerDevice(
 
   const serial = parseSerialNumber(device.name);
   const resolvedEntry = serial ? resolvedBoards.get(serial) : undefined;
-  if (!resolvedEntry) return 'unknown';
-  const resolvedConfig = configFromResolvedEntry(resolvedEntry);
-  if (!resolvedConfig) return 'unknown';
-  if (resolvedConfig.boardName !== target.boardName) return 'other';
-  // A recorded geometry with no board UUID names no physical board, so it
-  // cannot contradict the target. Picking it still runs the geometry check.
-  if (!resolvedConfig.boardUuid) return 'unknown';
-  return resolvedConfig.boardUuid === target.boardUuid ? 'target' : 'other';
+  const resolvedConfig = resolvedEntry ? configFromResolvedEntry(resolvedEntry) : null;
+  if (resolvedConfig) {
+    if (resolvedConfig.boardName !== target.boardName) return 'other';
+    // A recorded geometry with no board UUID names no physical board, so it
+    // cannot contradict the target. Picking it still runs the geometry check.
+    if (resolvedConfig.boardUuid) return resolvedConfig.boardUuid === target.boardUuid ? 'target' : 'other';
+  }
+  // Nothing on record names this box's board. The one this phone remembers
+  // for the target (by BLE id: no serial to resolve) is the target's own.
+  return target.rememberedDeviceId !== undefined && device.deviceId === target.rememberedDeviceId
+    ? 'target'
+    : 'unknown';
 }
 
 export type PickerDeviceGroups = Record<PickerTargetMatch, DiscoveredDevice[]>;

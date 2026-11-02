@@ -149,6 +149,17 @@ describe('summarizePickerResolution for a picker opened for a known board', () =
     expect(stats).toMatchObject({ targetMatchedDevices: 1, targetUnknownDevices: 2, targetOtherDevices: 1 });
   });
 
+  // The sheet lists a box remembered by id in the target group; the event
+  // keeps counting by serial, so `targetMatchedDevices` still means "resolved".
+  it('counts a box remembered by id where its serial puts it, not as matched', () => {
+    const devices = [device('d1', 'Kilter Board#SN-1@3'), device('d2', 'Kilter Board')];
+    const stats = summarizePickerResolution(devices, new Map([['SN-1', savedTargetEntry()]]), KILTER_CONFIG, {
+      ...target,
+      rememberedDeviceId: 'd2',
+    });
+    expect(stats).toMatchObject({ targetMatchedDevices: 1, targetUnknownDevices: 1, targetOtherDevices: 0 });
+  });
+
   it('counts zeros, not nulls, for an empty scan of a known board', () => {
     expect(summarizePickerResolution([], new Map(), KILTER_CONFIG, target)).toMatchObject({
       targetMatchedDevices: 0,
