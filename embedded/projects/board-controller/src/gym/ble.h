@@ -32,6 +32,8 @@ struct QaBoardSnapshot {
     String uuid;
     std::vector<uint16_t> handles;
     unsigned writes = 0, updates = 0, rejected = 0;
+    // True when another phone connecting to this board drops the earlier one.
+    bool lastConnectionWins = false;
     CompletedUpdate latest;
 };
 
@@ -314,6 +316,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             board.writes = _writes[index];
             board.updates = _completed[index];
             board.rejected = _rejected[index];
+            board.lastConnectionWins = lastConnectionWinsLocked(index);
             board.latest = _updates[index];
             board.latest.angle = _boards[index].angle;
             for (const Connection& connection : _connections) {
@@ -511,6 +514,14 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
         _qaHeartbeatAt = 0;
     }
 
+    // Stock Kilter and Tension controllers keep advertising and drop the
+    // earlier phone when another one connects. Current MoonBoard boxes accept
+    // several phones at once, so a MoonBoard keeps concurrent links unless a
+    // QA run owns the fixture, which makes every board last-connection-wins.
+    bool lastConnectionWinsLocked(size_t boardIndex) const {
+        return _boards[boardIndex].family != "moonboard" || _qaRunId.length() != 0;
+    }
+
     bool configureAll() {
         if (!_advertising || !ble_hs_synced())
             return false;
@@ -546,7 +557,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
                 for (size_t index = 0; index < _boardCount && !accepted; ++index) {
                     if (localAddress != _boards[index].address)
                         continue;
-                    if (_qaRunId.length() != 0) {
+                    if (lastConnectionWinsLocked(index)) {
                         for (Connection& connection : _connections) {
                             if (connection.handle != BLE_HS_CONN_HANDLE_NONE && connection.boardIndex == index) {
                                 superseded[supersededCount++] = connection.handle;

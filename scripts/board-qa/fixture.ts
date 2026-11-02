@@ -6,8 +6,11 @@ import type { Led } from './config';
 import { record } from './config';
 import { Evidence, QaFailure, requireRunning, runFailure } from './evidence';
 
+export type ConnectionPolicy = 'concurrent' | 'last-connection-wins';
 export type FixtureBoard = {
   uuid: string;
+  /** Absent on firmware built before each board reported its own policy. */
+  policy?: ConnectionPolicy;
   connections: number;
   handles: number[];
   writes: number;
@@ -28,7 +31,7 @@ export type FixtureStatus = {
   ready: boolean;
   firmware: 'waveshare-amoled-gym';
   firmwareBuild: string;
-  policy: 'concurrent' | 'last-connection-wins';
+  policy: ConnectionPolicy;
   leaseRemainingMs: number;
   boards: FixtureBoard[];
 };
@@ -71,6 +74,10 @@ function decodedCommand(candidate: unknown): Led {
     b: integer(command.b, 'blue channel', 255),
   };
 }
+function connectionPolicy(candidate: unknown, label: string): ConnectionPolicy {
+  if (candidate !== 'concurrent' && candidate !== 'last-connection-wins') return malformed(label);
+  return candidate;
+}
 function parseBoard(candidate: unknown): FixtureBoard {
   const board = object(candidate, 'board');
   const uuid = textField(board.uuid, 'board UUID', 36);
@@ -94,6 +101,7 @@ function parseBoard(candidate: unknown): FixtureBoard {
     angle: integer(board.angle, 'board angle', 90),
     commands: board.commands.map(decodedCommand),
   };
+  if (board.policy !== undefined) parsed.policy = connectionPolicy(board.policy, 'board connection policy');
   if (parsed.updates === 0) {
     if (
       parsed.sequence !== 0 ||
@@ -129,8 +137,7 @@ export function parseStatus(candidate: unknown, expected: ExpectedReply): Fixtur
   const runId = reply.runId;
   if (typeof reply.ready !== 'boolean') malformed('ready flag');
   const leaseRemainingMs = integer(reply.leaseRemainingMs, 'lease duration', 30_000);
-  const policy = reply.policy;
-  if (policy !== 'concurrent' && policy !== 'last-connection-wins') malformed('connection policy');
+  const policy = connectionPolicy(reply.policy, 'connection policy');
   if (policy !== (runId ? 'last-connection-wins' : 'concurrent') || Boolean(runId) !== leaseRemainingMs > 0)
     malformed('ownership/policy/lease mismatch');
   const { request } = expected;
@@ -142,6 +149,7 @@ export function parseStatus(candidate: unknown, expected: ExpectedReply): Fixtur
   if (!reply.ready && request.action !== 'end') throw new QaFailure('Fixture radio is not ready', 'blocked');
   if (!Array.isArray(reply.boards) || reply.boards.length < 1 || reply.boards.length > 3) malformed('board inventory');
   const boards = reply.boards.map(parseBoard);
+  if (runId && boards.some((board) => board.policy === 'concurrent')) malformed('concurrent board during a QA run');
   if (new Set(boards.map((board) => board.uuid)).size !== boards.length) malformed('duplicate board UUID');
   const handles = boards.flatMap((board) => board.handles);
   if (new Set(handles).size !== handles.length || handles.length > 3) malformed('shared or excessive radio handles');
