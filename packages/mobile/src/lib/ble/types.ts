@@ -175,10 +175,10 @@ export type BluetoothAdapter = {
   // with neither, the picker opens straight to the list.
   requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection>;
   /**
-   * `keepBoard`: free the board but keep the native pairing (Disconnect
-   * Bluetooth when driving ends), so the iOS Live Activity bulb can reconnect
-   * to it. Only the native iOS adapter forgets a board on disconnect, so the
-   * others ignore it.
+   * `keepBoard`: free the board but keep the native pairing (a hang-up, for as
+   * long as JS remembers the board, or Disconnect Bluetooth when driving
+   * ends), so the iOS Live Activity bulb can reconnect to it. Only the native
+   * iOS adapter forgets a board on disconnect, so the others ignore it.
    */
   disconnect(options?: BleDisconnectOptions): Promise<void>;
   write(data: Uint8Array, signal?: AbortSignal): Promise<void>;

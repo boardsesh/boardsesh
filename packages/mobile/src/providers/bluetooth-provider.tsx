@@ -2688,9 +2688,10 @@ export function BluetoothProvider({
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
   // generation synchronously before awaiting the native adapter teardown.
-  // Disconnect Bluetooth when driving ends reuses the same release path but
-  // keeps the remembered board handle (the hook only forgets the board on a
-  // 'user' reason), so the next Put on board reconnects silently.
+  // Both reasons keep the remembered board handle: a 'user' hang-up for 10
+  // minutes (at once forgotten after a wrong-box connect), Disconnect
+  // Bluetooth when driving ends with no limit, so the next tap or Put on
+  // board reconnects silently.
   const wrappedDisconnect = useCallback(
     async (reason: BluetoothDisconnectReason = 'user') => {
       const disconnectInFlight = disconnectInFlightRef.current;

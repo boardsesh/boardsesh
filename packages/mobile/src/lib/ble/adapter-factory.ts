@@ -99,3 +99,25 @@ export async function getNativeBleConnectedDevice(): Promise<NativeBleConnectedD
     return null;
   }
 }
+
+/**
+ * Forget the board native still pairs for the Live Activity bulb, while JS
+ * holds no link to it: a hang-up's 10 minutes ran out, or the account signed
+ * out. Native's plain `disconnect` forgets the pairing and settles any
+ * reconnect native started on its own (the bulb, while JS slept).
+ *
+ * Only a binary with `disconnectKeepingBoard` (#7214) ever keeps a board after
+ * letting go of it; on an older one every disconnect already forgot it, so
+ * there is nothing to do. No-op on Android, where nothing native reconnects.
+ * Native errors are swallowed: the caller already forgot the board in JS.
+ */
+export async function forgetNativeKeptBoard(): Promise<void> {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') return;
+  const native = boardBleNative;
+  if (Platform.OS !== 'ios' || !native || typeof native.disconnectKeepingBoard !== 'function') return;
+  try {
+    await native.disconnect();
+  } catch {
+    // Nothing to recover: JS already counts the board as forgotten.
+  }
+}
