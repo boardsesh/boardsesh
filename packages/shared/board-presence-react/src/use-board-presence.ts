@@ -80,6 +80,7 @@ export type UseBoardPresenceResult = {
   undoTarget: BoardPresenceCurrentState['undoTarget'];
   holder: BoardPresenceCurrentState['holder'];
   lastConnectionSeq: BoardPresenceCurrentState['lastConnectionSeq'];
+  lastHolderChangeSeq: BoardPresenceCurrentState['lastHolderChangeSeq'];
   clearedClimbUuid: BoardPresenceCurrentState['clearedClimbUuid'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
@@ -119,8 +120,19 @@ export type BoardPresenceCurrentState = {
    * connection owner, the climb is whatever LEDs are lit.
    */
   holder: BoardConnectionHolder | null;
-  /** Sequence of the latest holder event; initial backfill keeps this at zero. */
+  /**
+   * Sequence of the latest holder event; initial backfill keeps this at zero. A
+   * catch-up moves it up to the newest sequence it repaired through (stats and
+   * history events included) even when it reads back the same holder.
+   */
   lastConnectionSeq: number;
+  /**
+   * Sequence of the latest event that changed who holds the board: a live holder
+   * push, or a catch-up that read a different holder. A catch-up that reads back
+   * the same one leaves it alone. Read this, not `lastConnectionSeq`, to ask
+   * "did someone take the board after sequence N".
+   */
+  lastHolderChangeSeq: number;
   /**
    * The climb a "Turn off all lights" left dark, while nothing has been lit
    * since (#7015); `null` otherwise. Compare it with the climb on screen, never
@@ -594,6 +606,7 @@ export function useBoardPresence(
       undoTarget: visibleUndoTarget,
       holder: visibleState.holder,
       lastConnectionSeq: visibleState.lastConnectionSeq,
+      lastHolderChangeSeq: visibleState.lastHolderChangeSeq,
       clearedClimbUuid,
       history: visibleState.history,
       stats: visibleState.stats,
@@ -612,6 +625,7 @@ export function useBoardPresence(
       visibleUndoTarget,
       visibleState.holder,
       visibleState.lastConnectionSeq,
+      visibleState.lastHolderChangeSeq,
       clearedClimbUuid,
       visibleState.history,
       visibleState.stats,

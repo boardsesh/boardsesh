@@ -42,7 +42,7 @@ export const LETS_GO_STALE_MS = 15_000;
  * Who has the board now, if not this phone's climber, from the board-presence
  * holder. Null: no one else does, or presence can't tell yet.
  *
- * A holder counts only if it changed during the drive (`connectionSeq` past
+ * A holder counts only if it changed during the drive (`holderChangeSeq` past
  * `driveStartSeq`): one left over from before (a crewmate's stale hold) never
  * took anything. Where it could be this phone itself (the climber is signed
  * out and the holder anonymous, or the climber's own id isn't known yet), only
@@ -52,26 +52,26 @@ export const LETS_GO_STALE_MS = 15_000;
  * own account is never a taker, even on another device: presence knows
  * accounts, not phones.
  *
- * Both marks are the highest board sequence this phone had seen then, its
- * climbs' as well as its holder events' (`use-board-lets-go.ts`). A presence
- * catch-up moves `connectionSeq` up to the newest climb with whatever holder
- * the server has, changed or not, so only a sequence past every climb this
- * phone had seen is a holder event it hadn't: someone lit the wall since.
+ * Every sequence here is presence's `lastHolderChangeSeq`, never its
+ * `lastConnectionSeq`: a catch-up (the app coming back to the foreground, a
+ * reconnect) moves the latter past every stats and history event it repaired
+ * through even when it reads back the same holder, which would name a holder
+ * who took nothing. A catch-up that reads a different holder does count.
  */
 export function resolveLetsGoTaker({
   holder,
-  connectionSeq,
+  holderChangeSeq,
   driveStartSeq,
   dropSeq,
   viewerUserId,
   signedIn,
 }: {
   holder: BoardConnectionHolder | null;
-  /** Presence's `lastConnectionSeq` now. */
-  connectionSeq: number;
-  /** The highest board sequence this phone had seen when the drive started. */
+  /** Presence's `lastHolderChangeSeq` now. */
+  holderChangeSeq: number;
+  /** Presence's `lastHolderChangeSeq` when the drive started. */
   driveStartSeq: number;
-  /** The highest board sequence this phone had seen when the link dropped. */
+  /** Presence's `lastHolderChangeSeq` when the link dropped. */
   dropSeq: number;
   /** The signed-in climber's id, or null when signed out or not known yet. */
   viewerUserId: string | null;
@@ -81,7 +81,7 @@ export function resolveLetsGoTaker({
   const holderUserId = holder.userId ?? null;
   if (holderUserId !== null && holderUserId === viewerUserId) return null;
   const surelySomeoneElse = holderUserId !== null ? viewerUserId !== null || !signedIn : signedIn;
-  if (connectionSeq <= (surelySomeoneElse ? driveStartSeq : dropSeq)) return null;
+  if (holderChangeSeq <= (surelySomeoneElse ? driveStartSeq : dropSeq)) return null;
   const name = holderUserId !== null ? holder.displayName?.trim() : undefined;
   return name ? { kind: 'taken_named', name } : { kind: 'taken' };
 }

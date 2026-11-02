@@ -25,7 +25,7 @@ type LostLink = {
   droppedAt: number;
   /** The board presence was bound to at the drop: another board drops the notice. */
   boardId: number | null;
-  /** The highest board sequence this phone had seen when the drive started, and at the drop. */
+  /** Presence's last holder change when the drive started, and at the drop. */
   driveStartSeq: number;
   dropSeq: number;
   /** A wall with no lights another climber took: never "disconnected". */
@@ -76,33 +76,29 @@ export function useBoardLetsGo({
   // Non-throwing: outside the provider there is no holder to name.
   const presence = useContext(BoardPresenceCurrentContext);
   const holder = presence?.holder ?? null;
-  const connectionSeq = presence?.lastConnectionSeq ?? 0;
-  // The highest board sequence this phone has seen: its holder events and its
-  // climbs. A catch-up moves `connectionSeq` up to the newest climb with
-  // whatever holder the server has, so the drive's start and the drop are
-  // marked past every climb seen by then, and only a holder event newer than
-  // that is someone who lit the wall since (`resolveLetsGoTaker`).
-  const seenSeq = Math.max(connectionSeq, presence?.currentClimb?.seq ?? 0, presence?.previousClimb?.seq ?? 0);
+  // Not `lastConnectionSeq`: a catch-up moves that past every event it repaired
+  // through, stats and history included, even when it reads back the same
+  // holder. Only a real change of holder moves this (`resolveLetsGoTaker`).
+  const holderChangeSeq = presence?.lastHolderChangeSeq ?? 0;
   const viewerUserId = useViewerUserId();
   const latestRef = useRef<{
     holder: BoardConnectionHolder | null;
-    connectionSeq: number;
-    seenSeq: number;
+    holderChangeSeq: number;
     viewerUserId: string | null;
     signedIn: boolean;
     linked: boolean;
     pending: boolean;
     boardId: number | null;
     t: TFunction<'session'>;
-  }>({ holder, connectionSeq, seenSeq, viewerUserId, signedIn, linked, pending, boardId, t });
-  latestRef.current = { holder, connectionSeq, seenSeq, viewerUserId, signedIn, linked, pending, boardId, t };
+  }>({ holder, holderChangeSeq, viewerUserId, signedIn, linked, pending, boardId, t });
+  latestRef.current = { holder, holderChangeSeq, viewerUserId, signedIn, linked, pending, boardId, t };
 
-  // The highest sequence seen when each drive started: a holder from before it took nothing.
+  // The holder change seen when each drive started: a holder from before it took nothing.
   const startSeqRef = useRef<{ startedAt: number; seq: number } | null>(null);
   const driveStartedAt = drive?.startedAt ?? null;
   useEffect(() => {
     if (driveStartedAt === null || startSeqRef.current?.startedAt === driveStartedAt) return;
-    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.seenSeq };
+    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.holderChangeSeq };
   }, [driveStartedAt]);
 
   const lostRef = useRef<LostLink | null>(null);
@@ -137,7 +133,7 @@ export function useBoardLetsGo({
       }
       const taker = resolveLetsGoTaker({
         holder: now.holder,
-        connectionSeq: now.connectionSeq,
+        holderChangeSeq: now.holderChangeSeq,
         driveStartSeq: lost.driveStartSeq,
         dropSeq: lost.dropSeq,
         viewerUserId: now.viewerUserId,
@@ -159,7 +155,7 @@ export function useBoardLetsGo({
     }
     const ended = exitDriveMode('link_dropped', { holdReport: true });
     if (!ended) return;
-    const { seenSeq: dropSeq, boardId: droppedOn } = latestRef.current;
+    const { holderChangeSeq: dropSeq, boardId: droppedOn } = latestRef.current;
     const start = startSeqRef.current;
     lostRef.current = {
       droppedAt: Date.now(),
@@ -177,7 +173,7 @@ export function useBoardLetsGo({
   // Each change presence or the link brings can settle a waiting drop.
   useEffect(() => {
     settle();
-  }, [holder, connectionSeq, linked, pending, boardId, drive, settle]);
+  }, [holder, holderChangeSeq, linked, pending, boardId, drive, settle]);
 
   // The caption is about a link that is gone: it goes when the link is back,
   // a drive starts, or the board changes.

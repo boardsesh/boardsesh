@@ -493,8 +493,11 @@ with the drop's own `durationSec`. Before the OTA no end carries the key.
 A `link_dropped` end the phone didn't cause is lost if the app is killed
 inside that 5 s wait, so the dropped link share reads slightly low from this
 OTA on. Switching Bluetooth off mid-drive (iOS reports it as
-`bluetooth_unavailable`) counts as the climber's own end and carries no
-`takenBy`.
+`bluetooth_unavailable` with `central state 4`; 3 is a revoked permission and
+2 a phone without Bluetooth LE) counts as the climber's own end and carries no `takenBy`.
+A Bluetooth stack reset (`central state 1`, or 0) is not theirs: that end
+carries `takenBy` like any other drop. On Android switching Bluetooth off still
+reads as a plain drop.
 
 An OTA keeps `$app_version`, so items that ship by OTA onto the release can't be
 told apart by version. To read one, split a chart by `ota_update_id` (a super

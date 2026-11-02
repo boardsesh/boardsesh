@@ -75,3 +75,26 @@ export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined
 
   return 'unknown';
 }
+
+// CBManagerState raw values. BoardBleManager.swift puts "central state N" in the
+// description of every `bluetooth_unavailable` drop it emits.
+const CENTRAL_STATE_PATTERN = /central state (\d+)/;
+const CB_MANAGER_STATE_UNKNOWN = 0;
+const CB_MANAGER_STATE_RESETTING = 1;
+
+/**
+ * Whether the climber's phone ended this link by turning Bluetooth off (or
+ * taking the app's Bluetooth permission away). Not for a `bluetooth_off` drop
+ * from `.resetting` (the Bluetooth daemon restarting) or `.unknown`: those come
+ * back on their own, and Put on board reconnects once they do, so a drive that
+ * ends on one is said like any other drop (`use-board-lets-go.ts`). A marker
+ * without a readable state counts as switched off, the rule before the state
+ * was read.
+ */
+export function isBluetoothSwitchedOff(info: BleDisconnectInfo | null | undefined): boolean {
+  if (classifyBleDisconnect(info) !== 'bluetooth_off') return false;
+  const stateMatch = CENTRAL_STATE_PATTERN.exec(info?.description ?? '');
+  if (!stateMatch) return true;
+  const centralState = Number(stateMatch[1]);
+  return centralState !== CB_MANAGER_STATE_UNKNOWN && centralState !== CB_MANAGER_STATE_RESETTING;
+}

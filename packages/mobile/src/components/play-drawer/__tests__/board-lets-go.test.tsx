@@ -6,8 +6,18 @@
 import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@boardsesh/board-presence-react';
-import type { BoardConnectionHolder } from '@boardsesh/shared-schema';
+import {
+  BoardPresenceCurrentContext,
+  BoardPresenceProvider,
+  type BoardPresenceClient,
+  type BoardPresenceCurrentState,
+} from '@boardsesh/board-presence-react';
+import type {
+  BoardConnectionHolder,
+  BoardPresenceClimb,
+  BoardPresenceEvent,
+  BoardPresenceStats,
+} from '@boardsesh/shared-schema';
 
 type Reads = {
   isConnected: boolean;
@@ -19,6 +29,11 @@ type Reads = {
   viewerUserId: string | null;
   holder: BoardConnectionHolder | null;
   lastConnectionSeq: number;
+  /**
+   * Presence's last change of holder. Null: every holder change so far was a
+   * live push, so it is `lastConnectionSeq`. Only a catch-up sets it apart.
+   */
+  lastHolderChangeSeq: number | null;
   /** The newest climb presence has for the wall, by its sequence; null for none. */
   wallClimbSeq: number | null;
 };
@@ -33,6 +48,7 @@ const DEFAULT_READS: Reads = {
   // This phone holds the board, as its own sends made it.
   holder: { userId: 'user-me', displayName: 'Me' },
   lastConnectionSeq: 4,
+  lastHolderChangeSeq: null,
   wallClimbSeq: null,
 };
 const reads = vi.hoisted((): { current: Reads } => ({ current: {} as Reads }));
@@ -130,6 +146,7 @@ function tree() {
   const presence = {
     holder: reads.current.holder,
     lastConnectionSeq: reads.current.lastConnectionSeq,
+    lastHolderChangeSeq: reads.current.lastHolderChangeSeq ?? reads.current.lastConnectionSeq,
     currentClimb: wallClimbSeq === null ? null : { climbUuid: `climb-${wallClimbSeq}`, seq: wallClimbSeq },
     previousClimb: null,
   } as unknown as BoardPresenceCurrentState;
@@ -138,12 +155,24 @@ function tree() {
 
 function mount() {
   const view = render(tree());
+  const change = (next: Partial<Reads>) => {
+    // A holder push here is a live one: it changed the holder at its sequence.
+    const livePush = ('holder' in next || 'lastConnectionSeq' in next) && !('lastHolderChangeSeq' in next);
+    act(() => {
+      reads.current = { ...reads.current, ...next, ...(livePush ? { lastHolderChangeSeq: null } : {}) };
+      view.rerender(tree());
+    });
+  };
   return {
-    change(next: Partial<Reads>) {
-      act(() => {
-        reads.current = { ...reads.current, ...next };
-        view.rerender(tree());
-      });
+    change,
+    /**
+     * A presence catch-up that reads back the same holder: it moves
+     * `lastConnectionSeq` up to `upToSeq` and leaves the holder's change where
+     * it was (the reducer's rule; the real provider runs it below).
+     */
+    catchUp(upToSeq: number) {
+      const { lastHolderChangeSeq, lastConnectionSeq } = reads.current;
+      change({ lastConnectionSeq: upToSeq, lastHolderChangeSeq: lastHolderChangeSeq ?? lastConnectionSeq });
     },
     unmount: () => view.unmount(),
   };
@@ -158,7 +187,7 @@ function driveLive() {
 
 /** The Bluetooth provider's note, then the link going: one render, as the hook drops `isConnected` after it. */
 function linkEnds(
-  watcher: ReturnType<typeof mount>,
+  watcher: Pick<ReturnType<typeof mount>, 'change'>,
   end: { deliberate: boolean; takenByPeer?: boolean },
   next: Partial<Reads> = { isConnected: false },
 ) {
@@ -302,8 +331,8 @@ describe('the board lets go mid-drive', () => {
     watcher.change({});
     linkEnds(watcher, { deliberate: false });
     advance(1_000);
-    // The foreground catch-up: the same holder, moved up to the newest climb.
-    watcher.change({ lastConnectionSeq: 12 });
+    // The foreground catch-up: the same holder, read up to past the newest climb.
+    watcher.catchUp(13);
     expect(effects.hapticWarning).not.toHaveBeenCalled();
     advance(LETS_GO_TAKER_WAIT_MS);
     expect(getLetsGo()).toEqual({ kind: 'dropped' });
@@ -373,8 +402,8 @@ describe('the board lets go mid-drive', () => {
     driveLive();
     watcher.change({});
     linkEnds(watcher, { deliberate: false });
-    // A catch-up re-reads the same anonymous hold up to the newest climb.
-    watcher.change({ lastConnectionSeq: 9 });
+    // A catch-up re-reads the same anonymous hold up to past the newest climb.
+    watcher.catchUp(10);
     expect(effects.hapticWarning).not.toHaveBeenCalled();
     advance(LETS_GO_TAKER_WAIT_MS);
     expect(getLetsGo()).toEqual({ kind: 'dropped' });
@@ -597,5 +626,136 @@ describe('the board lets go mid-drive', () => {
       watcher.change({ boardId: 9 });
       expect(getLetsGo()).toBeNull();
     });
+  });
+});
+
+// The real presence provider and reducer under the watcher. A catch-up (the app
+// back in the foreground, a reconnect) moves `lastConnectionSeq` through every
+// stats event it repaired, so a tick on the board since the last catch-up put it
+// one past the newest climb with the holder unchanged.
+describe('the board lets go mid-drive, with presence catching up', () => {
+  const NO_STATS: BoardPresenceStats = {
+    climbsSentCount: 0,
+    distinctClimbersCount: 0,
+    hardestGrade: null,
+    topGrade: null,
+    lastSentAt: null,
+  };
+  const wallClimb = (seq: number): BoardPresenceClimb => ({
+    climbUuid: `climb-${seq}`,
+    seq,
+    sentAt: new Date(Date.UTC(2026, 10, 1, 10, 0, seq)).toISOString(),
+    angle: 40,
+  });
+
+  function presenceServer(server: { holder: BoardConnectionHolder | null; recent: BoardPresenceClimb[] }) {
+    let push: ((event: BoardPresenceEvent) => void) | null = null;
+    let reconnected: (() => void) | null = null;
+    const client: BoardPresenceClient = {
+      subscribeNowPlaying: (_boardId, onEvent) => {
+        push = onEvent;
+        return () => {
+          push = null;
+        };
+      },
+      onReconnect: (callback) => {
+        reconnected = callback;
+        return () => {
+          reconnected = null;
+        };
+      },
+      fetchRecentClimbs: async () => server.recent,
+      fetchStats: async () => NO_STATS,
+      fetchConnection: async () => server.holder,
+      reportClimb: async () => true,
+      resolveBoardForSerial: vi.fn(),
+    };
+    return {
+      client,
+      emit: (event: BoardPresenceEvent) => act(() => push?.(event)),
+      /** A tick on the board: its stats event takes the next sequence. */
+      tick: (seq: number) => act(() => push?.({ __typename: 'BoardStatsUpdated', stats: NO_STATS, seq })),
+      /** The socket came back: presence re-reads recent climbs, stats and the holder. */
+      async catchUp(next: { holder: BoardConnectionHolder | null; recent: BoardPresenceClimb[] }) {
+        Object.assign(server, next);
+        await act(async () => {
+          reconnected?.();
+          await Promise.resolve();
+        });
+      },
+    };
+  }
+
+  async function mountOn(client: BoardPresenceClient) {
+    const element = () =>
+      createElement(BoardPresenceProvider, {
+        boardId: reads.current.boardId,
+        client,
+        children: createElement(DriveModeWatcher),
+      });
+    const view = render(element());
+    // The first backfill, stats and holder seed.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    return {
+      change(next: Partial<Reads>) {
+        act(() => {
+          reads.current = { ...reads.current, ...next };
+          view.rerender(element());
+        });
+      },
+    };
+  }
+
+  it('never reads a catch-up of a signed-out climber’s own hold as another phone', async () => {
+    reads.current = { ...reads.current, isAuthenticated: false, viewerUserId: null };
+    const anonymous: BoardConnectionHolder = { userId: null, displayName: null };
+    const server = presenceServer({ holder: null, recent: [wallClimb(8)] });
+    const watcher = await mountOn(server.client);
+    driveLive();
+    // This phone's climb, and its hold on the board.
+    server.emit({ __typename: 'BoardClimbSet', climb: wallClimb(9) });
+    server.emit({ __typename: 'BoardConnectionChanged', holder: anonymous, seq: 9 });
+    server.tick(10);
+    linkEnds(watcher, { deliberate: false });
+    // Before this phone's let-go reaches the server, a catch-up reads its hold back.
+    await server.catchUp({ holder: anonymous, recent: [wallClimb(9), wallClimb(8)] });
+    expect(effects.hapticWarning).not.toHaveBeenCalled();
+    expect(getLetsGo()).toBeNull();
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ reason: 'link_dropped', takenBy: null });
+  });
+
+  it('never names a holder from before the drive when a catch-up reads them back', async () => {
+    const sam: BoardConnectionHolder = { userId: 'user-sam', displayName: 'Sam' };
+    // Sam lit the wall before this drive, and this phone's reports never moved the slot.
+    const server = presenceServer({ holder: sam, recent: [wallClimb(12)] });
+    const watcher = await mountOn(server.client);
+    driveLive();
+    server.tick(13);
+    linkEnds(watcher, { deliberate: false });
+    await server.catchUp({ holder: sam, recent: [wallClimb(12)] });
+    expect(effects.hapticWarning).not.toHaveBeenCalled();
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: null });
+  });
+
+  it('names a taker only a catch-up reveals', async () => {
+    const server = presenceServer({ holder: null, recent: [wallClimb(4)] });
+    const watcher = await mountOn(server.client);
+    driveLive();
+    server.emit({ __typename: 'BoardClimbSet', climb: wallClimb(5) });
+    server.emit({ __typename: 'BoardConnectionChanged', holder: { userId: 'user-me', displayName: 'Me' }, seq: 5 });
+    linkEnds(watcher, { deliberate: false });
+    // Sam's take was lost with the socket; the reconnect reads it.
+    await server.catchUp({
+      holder: { userId: 'user-sam', displayName: 'Sam' },
+      recent: [{ ...wallClimb(6), sentByUserId: 'user-sam' }, wallClimb(5), wallClimb(4)],
+    });
+    expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: 'named' });
   });
 });

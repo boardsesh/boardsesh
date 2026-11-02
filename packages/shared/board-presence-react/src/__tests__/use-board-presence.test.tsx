@@ -687,6 +687,41 @@ describe('useBoardPresence — reconnect / foreground / manual catch-up', () => 
     expect(onCatchUp).toHaveBeenCalledWith({ reason: 'reconnect', recoveredThroughSeqDelta: 0 });
   });
 
+  // Board plan item 8: the drive's watcher asks "did someone take the board
+  // after sequence N", and a catch-up moves `lastConnectionSeq` through every
+  // stats event it repaired even when the holder is the same.
+  it('moves lastHolderChangeSeq on a holder push and a changed read, never on a catch-up that reads the same holder', async () => {
+    const { harness, view } = await mountSeeded();
+    const current = () => view.result.current;
+    expect(current().lastHolderChangeSeq).toBe(0);
+
+    act(() => harness.emit(connectionEvent(2, holder({ userId: 'sam', displayName: 'Sam' }))));
+    expect(current().lastConnectionSeq).toBe(2);
+    expect(current().lastHolderChangeSeq).toBe(2);
+
+    // A tick on the board: its stats event is one past the newest climb.
+    act(() => harness.emit(statsEvent(3, { climbsSentCount: 2 })));
+    act(() => current().refresh('foreground'));
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 2 });
+      await harness.resolveConnection(1, holder({ userId: 'sam', displayName: 'Sam' }));
+    });
+    expect(current().lastConnectionSeq).toBe(3);
+    expect(current().lastHolderChangeSeq).toBe(2);
+
+    // A missed hand-off that only a catch-up reveals still counts.
+    act(() => harness.emit(statsEvent(4, { climbsSentCount: 3 })));
+    act(() => current().refresh('foreground'));
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats, climbsSentCount: 3 });
+      await harness.resolveConnection(1, holder({ userId: 'alex', displayName: 'Alex' }));
+    });
+    expect(current().holder?.userId).toBe('alex');
+    expect(current().lastHolderChangeSeq).toBe(4);
+  });
+
   it('unsubscribes the reconnect listener on unmount', () => {
     const harness = makeClient();
     const { unmount } = renderHook(() => useBoardPresence(1, harness.client));

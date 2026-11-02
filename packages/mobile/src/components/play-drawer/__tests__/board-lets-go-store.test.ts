@@ -22,31 +22,33 @@ const BASE = { driveStartSeq: 4, dropSeq: 6, viewerUserId: 'user-me', signedIn: 
 describe('resolveLetsGoTaker', () => {
   it('names a signed-in holder who took the board during the drive', () => {
     expect(
-      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName: 'Sam' }, connectionSeq: 5 }),
+      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName: 'Sam' }, holderChangeSeq: 5 }),
     ).toEqual({ kind: 'taken_named', name: 'Sam' });
   });
 
   it('trims the name, and falls back to another phone when there is none', () => {
     const at = (displayName: string | null) =>
-      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName }, connectionSeq: 7 });
+      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName }, holderChangeSeq: 7 });
     expect(at('  Sam ')).toEqual({ kind: 'taken_named', name: 'Sam' });
     expect(at('   ')).toEqual({ kind: 'taken' });
     expect(at(null)).toEqual({ kind: 'taken' });
   });
 
   it('never names an anonymous holder, even one carrying a name', () => {
-    expect(resolveLetsGoTaker({ ...BASE, holder: { userId: null, displayName: 'Ghost' }, connectionSeq: 7 })).toEqual({
-      kind: 'taken',
-    });
+    expect(resolveLetsGoTaker({ ...BASE, holder: { userId: null, displayName: 'Ghost' }, holderChangeSeq: 7 })).toEqual(
+      {
+        kind: 'taken',
+      },
+    );
   });
 
   it('finds no taker with no holder, the climber’s own account, or a holder from before the drive', () => {
-    expect(resolveLetsGoTaker({ ...BASE, holder: null, connectionSeq: 9 })).toBeNull();
+    expect(resolveLetsGoTaker({ ...BASE, holder: null, holderChangeSeq: 9 })).toBeNull();
     expect(
-      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-me', displayName: 'Me' }, connectionSeq: 9 }),
+      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-me', displayName: 'Me' }, holderChangeSeq: 9 }),
     ).toBeNull();
     expect(
-      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName: 'Sam' }, connectionSeq: 4 }),
+      resolveLetsGoTaker({ ...BASE, holder: { userId: 'user-sam', displayName: 'Sam' }, holderChangeSeq: 4 }),
     ).toBeNull();
   });
 
@@ -54,29 +56,29 @@ describe('resolveLetsGoTaker', () => {
     // Signed out: an anonymous holder may be this phone's own last hold.
     const signedOut = { ...BASE, viewerUserId: null, signedIn: false };
     const anonymous = { userId: null, displayName: null };
-    expect(resolveLetsGoTaker({ ...signedOut, holder: anonymous, connectionSeq: 6 })).toBeNull();
-    expect(resolveLetsGoTaker({ ...signedOut, holder: anonymous, connectionSeq: 7 })).toEqual({ kind: 'taken' });
+    expect(resolveLetsGoTaker({ ...signedOut, holder: anonymous, holderChangeSeq: 6 })).toBeNull();
+    expect(resolveLetsGoTaker({ ...signedOut, holder: anonymous, holderChangeSeq: 7 })).toEqual({ kind: 'taken' });
     // Signed in but the climber's id isn't known yet: a named holder may be them.
     const unknownSelf = { ...BASE, viewerUserId: null };
     const sam = { userId: 'user-sam', displayName: 'Sam' };
-    expect(resolveLetsGoTaker({ ...unknownSelf, holder: sam, connectionSeq: 6 })).toBeNull();
-    expect(resolveLetsGoTaker({ ...unknownSelf, holder: sam, connectionSeq: 7 })).toEqual({
+    expect(resolveLetsGoTaker({ ...unknownSelf, holder: sam, holderChangeSeq: 6 })).toBeNull();
+    expect(resolveLetsGoTaker({ ...unknownSelf, holder: sam, holderChangeSeq: 7 })).toEqual({
       kind: 'taken_named',
       name: 'Sam',
     });
     // Signed in: an anonymous holder is never this phone, so the drive's start counts.
-    expect(resolveLetsGoTaker({ ...BASE, holder: anonymous, connectionSeq: 5 })).toEqual({ kind: 'taken' });
+    expect(resolveLetsGoTaker({ ...BASE, holder: anonymous, holderChangeSeq: 5 })).toEqual({ kind: 'taken' });
   });
 
   it('counts a holder with an account from the drive’s start when the climber is signed out', () => {
     // A signed-out phone holds anonymously: Sam is never this phone.
     const signedOut = { ...BASE, viewerUserId: null, signedIn: false };
     const sam = { userId: 'user-sam', displayName: 'Sam' };
-    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, connectionSeq: 5 })).toEqual({
+    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, holderChangeSeq: 5 })).toEqual({
       kind: 'taken_named',
       name: 'Sam',
     });
-    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, connectionSeq: 4 })).toBeNull();
+    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, holderChangeSeq: 4 })).toBeNull();
   });
 });
 

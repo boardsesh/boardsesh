@@ -47,7 +47,7 @@ import {
   type ResolvedBoardEntry,
 } from '../lib/ble/resolve-serials';
 import { advertisedBoardTypesBySerial } from '../lib/ble/advertised-board-type';
-import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
+import { classifyBleDisconnect, isBluetoothSwitchedOff } from '../lib/ble/disconnect-category';
 import { noteLinkEnded } from '../lib/ble/link-end-store';
 import {
   decideBlePickerSelection,
@@ -1496,10 +1496,10 @@ export function BluetoothProvider({
       // Before the hook drops `isConnected`: a drive this link carried ends as
       // `link_dropped`, and only a drop this phone didn't make is said
       // (`use-board-lets-go.ts`). Switching Bluetooth off is the climber's own
-      // doing too, and Put on board can't reconnect until it is back on.
+      // doing too, and Put on board can't reconnect until it is back on. A
+      // Bluetooth stack reset is not: it comes back on its own.
       noteLinkEnded({
-        deliberate:
-          connection.reason === 'user' || classifyBleDisconnect(connection.disconnectInfo) === 'bluetooth_off',
+        deliberate: connection.reason === 'user' || isBluetoothSwitchedOff(connection.disconnectInfo),
       });
       wallOperationEpochRef.current += 1;
       clearPendingWallReportAndUndoToastArm();

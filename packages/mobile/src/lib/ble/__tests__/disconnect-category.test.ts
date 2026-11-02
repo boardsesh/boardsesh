@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyBleDisconnect } from '../disconnect-category';
+import { classifyBleDisconnect, isBluetoothSwitchedOff } from '../disconnect-category';
 
 describe('classifyBleDisconnect', () => {
   it('returns unknown when no info was captured', () => {
@@ -63,5 +63,40 @@ describe('classifyBleDisconnect', () => {
     expect(classifyBleDisconnect({ source: 'ble-plx', androidErrorCode: 8 })).toBe('link_timeout');
     // Unmapped status stays unknown.
     expect(classifyBleDisconnect({ source: 'ble-plx', androidErrorCode: 22 })).toBe('unknown');
+  });
+});
+
+// Board plan item 8: a drive that ends on a Bluetooth drop the climber made is
+// not said; one the phone's Bluetooth stack made on its own is.
+describe('isBluetoothSwitchedOff', () => {
+  const centralState = (state: number) => ({
+    source: 'native-ios' as const,
+    context: 'bluetooth_unavailable',
+    description: `central state ${state}`,
+  });
+
+  it.each([
+    ['poweredOff', 4],
+    ['unauthorized', 3],
+    ['unsupported', 2],
+  ])('is true for %s', (_state, rawValue) => {
+    expect(isBluetoothSwitchedOff(centralState(rawValue))).toBe(true);
+  });
+
+  it.each([
+    ['resetting (the Bluetooth daemon restarting)', 1],
+    ['unknown', 0],
+  ])('is false for %s, which comes back on its own', (_state, rawValue) => {
+    expect(isBluetoothSwitchedOff(centralState(rawValue))).toBe(false);
+  });
+
+  it('reads a marker without a state as switched off', () => {
+    expect(isBluetoothSwitchedOff({ source: 'native-ios', context: 'bluetooth_unavailable' })).toBe(true);
+  });
+
+  it('is false for every other drop', () => {
+    expect(isBluetoothSwitchedOff(undefined)).toBe(false);
+    expect(isBluetoothSwitchedOff({ source: 'native-ios', iosErrorCode: 7, errorDomain: 'CBErrorDomain' })).toBe(false);
+    expect(isBluetoothSwitchedOff({ source: 'native-ios', description: 'central state 4' })).toBe(false);
   });
 });
