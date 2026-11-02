@@ -1328,7 +1328,8 @@ export function BluetoothProvider({
 
   const handleWallConfirmed = useCallback(
     (item: ClimbQueueItem, mirrored: boolean) => {
-      emitWallConfirm(item.climb.uuid);
+      // This phone's own link lit it: the only confirm that can take an arming drive live.
+      emitWallConfirm(item.climb.uuid, 'self');
       if (sessionIdRef.current) {
         void confirmClimbOnWall(item.climb.uuid);
       }
