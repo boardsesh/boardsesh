@@ -20,6 +20,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { ONBOARDING_TIP_PREVIEW_FIRST_KEY } from '@boardsesh/key-value-storage';
+import type { KeepLightingPlan } from '../keep-lighting';
 
 /**
  * `hasSeenTip` / `markTipSeen`, loaded on first use rather than at import: the
@@ -232,17 +233,6 @@ export function previewFirstTipRetiredByDrive({
   return previous !== null && previous.startedAt === drive.startedAt && !previous.openEnded;
 }
 
-/**
- * The keep-lighting choice after Put on board (Settings › Board). Mirrors the
- * settings `putOnBoardKeepsLighting` and `moonboardPutOnBoardKeepsLighting`.
- */
-export type PutOnBoardKeepsLighting = 'off' | '30' | '45' | '60' | 'until_stopped';
-
-/** The default after Put on board: the next climbs light for 45 s. */
-export const DEFAULT_PUT_ON_BOARD_KEEPS_LIGHTING: PutOnBoardKeepsLighting = '45';
-/** Most MoonBoard controllers don't like phones switching, so a MoonBoard keeps lighting until stopped. */
-export const DEFAULT_MOONBOARD_PUT_ON_BOARD_KEEPS_LIGHTING: PutOnBoardKeepsLighting = 'until_stopped';
-
 /** The card's second line: what happens after Put on board, for the board on screen. */
 export type PreviewFirstWindowLine =
   | { key: 'windowSeconds'; seconds: number }
@@ -252,34 +242,20 @@ export type PreviewFirstWindowLine =
   | null;
 
 export function resolvePreviewFirstWindowLine({
-  keepLighting,
-  moonboardKeepsLighting,
+  plan,
   isMoonboard,
 }: {
-  keepLighting: PutOnBoardKeepsLighting;
-  moonboardKeepsLighting: PutOnBoardKeepsLighting;
+  /**
+   * What Put on board keeps lighting here (`resolveKeepLightingPlan`), or null
+   * when it lights one climb: the choice is Off, or the press can't open a
+   * window here (a session with In a session too off, the swipe flag off).
+   */
+  plan: KeepLightingPlan | null;
   isMoonboard: boolean;
 }): PreviewFirstWindowLine {
-  const choice = isMoonboard ? moonboardKeepsLighting : keepLighting;
-  switch (choice) {
-    case 'off':
-      // One climb lights and nothing after it: the headline already says so.
-      return null;
-    case '30':
-      return { key: 'windowSeconds', seconds: 30 };
-    case '45':
-      return { key: 'windowSeconds', seconds: 45 };
-    case '60':
-      return { key: 'windowMinute' };
-    case 'until_stopped':
-      return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
-  }
-}
-
-/**
- * Put on board's own drive has no end: Until I stop, or a MoonBoard's. Such a
- * drive retires the card like a swipe does; a timed window does not.
- */
-export function putOnBoardDriveIsOpenEnded(line: PreviewFirstWindowLine): boolean {
-  return line !== null && (line.key === 'untilStop' || line.key === 'moonboard');
+  // One climb lights and nothing after it: the headline already says so.
+  if (plan === null) return null;
+  if (plan.windowMs === null) return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
+  if (plan.windowMs === 60_000) return { key: 'windowMinute' };
+  return { key: 'windowSeconds', seconds: Math.round(plan.windowMs / 1000) };
 }

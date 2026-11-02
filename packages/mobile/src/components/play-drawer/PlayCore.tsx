@@ -148,6 +148,7 @@ import { getSetting, useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  resolveKeepLightingPlan,
   sanitiseKeepLighting,
   type KeepLightingPlan,
 } from '../../lib/keep-lighting';
@@ -1538,6 +1539,24 @@ export function PlayCore({
     controlsAbove,
     secondaryRow: actionBarLayout.secondaryRow,
   });
+
+  // What the card says Put on board keeps lighting: the board family's choice,
+  // read the way the press reads it (`resolveKeepLightingPlan`), so it never
+  // promises a window where none can start: a crew session with In a session
+  // too off, or the swipe flag (keep-lighting's kill switch) off.
+  const previewFirstKeepLighting = useMemo(
+    () =>
+      swipeToDriveEnabled
+        ? resolveKeepLightingPlan({
+            boardIsMoonboard: isMoonboardBoardName(boardName),
+            keepLighting,
+            moonboardKeepLighting,
+            drivesInSession: putOnBoardDrivesInSession,
+            inSession: isCrewSession,
+          })
+        : null,
+    [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
+  );
 
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
@@ -3264,6 +3283,7 @@ export function PlayCore({
                         <PlayerPreviewTip
                           boardName={boardName}
                           glow={wallGlowInput}
+                          keepLighting={previewFirstKeepLighting}
                           onExit={handlePreviewFirstTipExit}
                           onLayout={handlePreviewFirstTipLayout}
                         />

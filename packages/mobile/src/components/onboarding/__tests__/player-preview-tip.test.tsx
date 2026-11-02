@@ -16,7 +16,7 @@ const recorded = vi.hoisted(() => ({ wallButton: [] as Record<string, unknown>[]
 const screenReader = vi.hoisted(() => ({ enabled: false }));
 const windowSize = vi.hoisted(() => ({ fontScale: 1 }));
 const drive = vi.hoisted(() => {
-  type Drive = { startedAt: number; startedBy: string } | null;
+  type Drive = { startedAt: number; startedBy: string; windowMs: number | null } | null;
   const listeners = new Set<() => void>();
   const store = {
     current: null as Drive,
@@ -151,9 +151,16 @@ const { wallControlUsesFrost } = await import('../../play-drawer/wall-control-fr
 const tips = commonCatalog.mobile.onboarding.tips.previewFirst;
 const GLOW = { key: 'climb-1', holds: [{ x: 10, y: 10, color: '#00DD00' }], boardWidth: 100, boardHeight: 100 };
 
+/** Put on board's plan at the default: a 45 s window. */
+const WINDOW_45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
+const UNTIL_STOPPED = { windowMs: null, setting: 'putOnBoardKeepsLighting' } as const;
+const MOONBOARD_UNTIL_STOPPED = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
+
 function renderTip(props: Partial<Parameters<typeof PlayerPreviewTip>[0]> = {}) {
   const onExit = vi.fn();
-  render(createElement(PlayerPreviewTip, { boardName: 'kilter', glow: GLOW, onExit, ...props }));
+  render(
+    createElement(PlayerPreviewTip, { boardName: 'kilter', glow: GLOW, keepLighting: WINDOW_45, onExit, ...props }),
+  );
   return onExit;
 }
 
@@ -215,18 +222,19 @@ describe('PlayerPreviewTip', () => {
   });
 
   it('says what happens after Put on board for the setting on this board', () => {
-    renderTip({ keepLighting: '60' });
+    renderTip({ keepLighting: { windowMs: 60_000, setting: 'putOnBoardKeepsLighting' } });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.windowMinute);
     cleanup();
-    renderTip({ keepLighting: 'until_stopped' });
+    renderTip({ keepLighting: UNTIL_STOPPED });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStop);
     cleanup();
-    renderTip({ keepLighting: 'off' });
+    // Off, or a press that can't open a window here.
+    renderTip({ keepLighting: null });
     expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
   });
 
-  it('keeps lighting until stopped on a MoonBoard by default', () => {
-    renderTip({ boardName: 'moonboard' });
+  it('says a MoonBoard keeps lighting until stopped', () => {
+    renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED });
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.moonboard);
   });
 
@@ -246,38 +254,52 @@ describe('PlayerPreviewTip', () => {
 
   it('goes once a drive starts: the frost has been learned', () => {
     const onExit = renderTip();
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'swipe' }));
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'swipe', windowMs: null }));
     expect(onExit).toHaveBeenCalledWith('drive');
   });
 
   it("stays through Put on board's own keep-lighting window, which it describes", () => {
     const onExit = renderTip();
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: 45_000 }));
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  // A swipe or Light every climb during the window clears it: the same drive
+  // (same start, still 'tap') now has no end, which is the frost.
+  it('goes when a swipe turns the running window open-ended', () => {
+    const onExit = renderTip();
+    const startedAt = Date.now() + 1;
+    act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: 45_000 }));
+    expect(onExit).not.toHaveBeenCalled();
+    act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: null }));
+    expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');
   });
 
   // Most MoonBoard controllers don't like phones switching, so Put on board
   // starts a drive with no end there: that is the frost the card explains.
   it('goes when Put on board starts a drive with no end on a MoonBoard', () => {
-    const onExit = renderTip({ boardName: 'moonboard' });
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    const onExit = renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED });
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: null }));
     expect(onExit).toHaveBeenCalledWith('drive');
   });
 
   it('goes when Put on board keeps lighting until stopped', () => {
-    const onExit = renderTip({ keepLighting: 'until_stopped' });
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    const onExit = renderTip({ keepLighting: UNTIL_STOPPED });
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: null }));
     expect(onExit).toHaveBeenCalledWith('drive');
   });
 
   it("stays through a MoonBoard's timed window", () => {
-    const onExit = renderTip({ boardName: 'moonboard', moonboardKeepsLighting: '30' });
-    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    const onExit = renderTip({
+      boardName: 'moonboard',
+      keepLighting: { windowMs: 30_000, setting: 'moonboardPutOnBoardKeepsLighting' },
+    });
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap', windowMs: 30_000 }));
     expect(onExit).not.toHaveBeenCalled();
   });
 
   it('ignores a drive that was already on when it showed', () => {
-    drive.current = { startedAt: Date.now() - 60_000, startedBy: 'swipe' };
+    drive.current = { startedAt: Date.now() - 60_000, startedBy: 'swipe', windowMs: null };
     const onExit = renderTip();
     expect(onExit).not.toHaveBeenCalled();
   });

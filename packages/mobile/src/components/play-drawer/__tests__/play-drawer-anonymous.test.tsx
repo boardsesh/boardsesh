@@ -2449,6 +2449,27 @@ describe('PlayDrawer — the preview-first card (2.7)', () => {
     expect(lastActionBarProps().wallGlow).toBeNull();
   });
 
+  // The card's window line reads the same plan the press arms, so it never
+  // promises a window that can't start here.
+  it('tells the card the window Put on board opens here: 45 s at the defaults', async () => {
+    await renderFirstPreview();
+    expect(recorded.previewFirstTip.at(-1)?.keepLighting).toEqual({
+      windowMs: 45_000,
+      setting: 'putOnBoardKeepsLighting',
+    });
+  });
+
+  it.each([
+    [true, { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' }],
+    [false, null],
+  ] as const)('in a crew session with In a session too %s, tells the card %j', async (drivesInSession, plan) => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    setSetting('putOnBoardDrivesInSession', drivesInSession);
+    await renderFirstPreview();
+    expect(recorded.previewFirstTip.at(-1)?.keepLighting).toEqual(plan);
+  });
+
   it('stays away from a climber who saw it before', async () => {
     previewFirstSeen.current = true;
     render(drawerElement('member', openTargetFor(CLIMB)));

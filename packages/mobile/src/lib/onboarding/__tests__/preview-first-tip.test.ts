@@ -23,7 +23,6 @@ const {
   loadPreviewFirstTip,
   previewFirstAnnouncementDue,
   previewFirstTipRetiredByDrive,
-  putOnBoardDriveIsOpenEnded,
   resolvePreviewFirstWindowLine,
   retirePreviewFirstTip,
   shouldShowPreviewFirstTip,
@@ -197,28 +196,37 @@ describe('previewFirstAnnouncementDue', () => {
 });
 
 describe('resolvePreviewFirstWindowLine', () => {
-  const board = (keepLighting: '30' | '45' | '60' | 'off' | 'until_stopped', isMoonboard = false) =>
-    resolvePreviewFirstWindowLine({ keepLighting, moonboardKeepsLighting: 'until_stopped', isMoonboard });
+  const plan = (windowMs: number | null) => ({ windowMs, setting: 'putOnBoardKeepsLighting' as const });
 
   it('says the window in seconds, or as a minute', () => {
-    expect(board('30')).toEqual({ key: 'windowSeconds', seconds: 30 });
-    expect(board('45')).toEqual({ key: 'windowSeconds', seconds: 45 });
-    expect(board('60')).toEqual({ key: 'windowMinute' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(30_000), isMoonboard: false })).toEqual({
+      key: 'windowSeconds',
+      seconds: 30,
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false })).toEqual({
+      key: 'windowSeconds',
+      seconds: 45,
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(60_000), isMoonboard: false })).toEqual({ key: 'windowMinute' });
   });
 
+  // Off, or a press that can't open a window here (a session with In a session
+  // too off): the press lights one climb, which the headline already says.
   it('says nothing more when Put on board lights one climb only', () => {
-    expect(board('off')).toBeNull();
+    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: false })).toBeNull();
+    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: true })).toBeNull();
   });
 
   it('keeps lighting until stopped, and says so for a MoonBoard', () => {
-    expect(board('until_stopped')).toEqual({ key: 'untilStop' });
-    expect(board('45', true)).toEqual({ key: 'moonboard' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: false })).toEqual({ key: 'untilStop' });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true })).toEqual({ key: 'moonboard' });
   });
 
-  it("reads a MoonBoard's own choice", () => {
-    expect(
-      resolvePreviewFirstWindowLine({ keepLighting: 'until_stopped', moonboardKeepsLighting: '30', isMoonboard: true }),
-    ).toEqual({ key: 'windowSeconds', seconds: 30 });
+  it("reads a MoonBoard's timed window as a window", () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(30_000), isMoonboard: true })).toEqual({
+      key: 'windowSeconds',
+      seconds: 30,
+    });
   });
 });
 
@@ -260,15 +268,5 @@ describe('previewFirstTipRetiredByDrive', () => {
         shownAt: SHOWN_AT,
       }),
     ).toBe(false);
-  });
-});
-
-describe('putOnBoardDriveIsOpenEnded', () => {
-  it('is open-ended for Until I stop and a MoonBoard, not for a timed window or Off', () => {
-    expect(putOnBoardDriveIsOpenEnded({ key: 'untilStop' })).toBe(true);
-    expect(putOnBoardDriveIsOpenEnded({ key: 'moonboard' })).toBe(true);
-    expect(putOnBoardDriveIsOpenEnded({ key: 'windowSeconds', seconds: 45 })).toBe(false);
-    expect(putOnBoardDriveIsOpenEnded({ key: 'windowMinute' })).toBe(false);
-    expect(putOnBoardDriveIsOpenEnded(null)).toBe(false);
   });
 });

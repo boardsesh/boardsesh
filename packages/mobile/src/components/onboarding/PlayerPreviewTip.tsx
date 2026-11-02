@@ -38,14 +38,11 @@ import { resolveWallControl, type WallControlFace, type WallControlModel } from 
 import { useDriveMode } from '../play-drawer/drive-mode-store';
 import type { WallGlowInput } from '../play-drawer/use-wall-glow';
 import {
-  DEFAULT_MOONBOARD_PUT_ON_BOARD_KEEPS_LIGHTING,
-  DEFAULT_PUT_ON_BOARD_KEEPS_LIGHTING,
   previewFirstTipRetiredByDrive,
-  putOnBoardDriveIsOpenEnded,
   resolvePreviewFirstWindowLine,
   type PreviewFirstTipDrive,
-  type PutOnBoardKeepsLighting,
 } from '../../lib/onboarding/preview-first-tip';
+import type { KeepLightingPlan } from '../../lib/keep-lighting';
 
 /** Why the card went away. */
 export type PlayerPreviewTipExit = 'got_it' | 'close' | 'settings' | 'drive';
@@ -94,23 +91,18 @@ export type PlayerPreviewTipProps = {
   boardName: string;
   /** The climb on screen's lit holds, for the sample button's frost. */
   glow: WallGlowInput | null;
-  /** Settings › Board: how long Put on board keeps lighting the next climbs. */
-  keepLighting?: PutOnBoardKeepsLighting;
-  /** The same, on a MoonBoard. */
-  moonboardKeepsLighting?: PutOnBoardKeepsLighting;
+  /**
+   * What Put on board keeps lighting here (`resolveKeepLightingPlan`, the
+   * board family's Settings › Board choice), or null when it lights one climb:
+   * Off, or a session with In a session too off, or the swipe flag off.
+   */
+  keepLighting: KeepLightingPlan | null;
   /** The card should go, and why. */
   onExit: (exit: PlayerPreviewTipExit) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
 };
 
-function PlayerPreviewTipComponent({
-  boardName,
-  glow,
-  keepLighting = DEFAULT_PUT_ON_BOARD_KEEPS_LIGHTING,
-  moonboardKeepsLighting = DEFAULT_MOONBOARD_PUT_ON_BOARD_KEEPS_LIGHTING,
-  onExit,
-  onLayout,
-}: PlayerPreviewTipProps) {
+function PlayerPreviewTipComponent({ boardName, glow, keepLighting, onExit, onLayout }: PlayerPreviewTipProps) {
   const { t } = useTranslation('common');
   const { brandColors, systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
@@ -118,20 +110,20 @@ function PlayerPreviewTipComponent({
   const stacked = fontScale >= PLAYER_PREVIEW_TIP_STACK_FONT_SCALE;
 
   const windowLine = resolvePreviewFirstWindowLine({
-    keepLighting,
-    moonboardKeepsLighting,
+    plan: keepLighting,
     isMoonboard: isMoonboardBoardName(boardName),
   });
 
   // A drive that starts while the card is up means the frost has been learned:
   // a swipe, Light every climb, the board sheet's row, or Put on board where it
   // keeps lighting until stopped (Until I stop, a MoonBoard). Put on board's
-  // timed window (`startedBy: 'tap'`) is what the card describes, so it stays
-  // for that until a swipe turns the window open-ended.
+  // timed window (a drive with `windowMs`) is what the card describes, so it
+  // stays for that until a swipe or Light every climb clears the window and the
+  // same drive turns open-ended.
   const drive = useDriveMode();
   const shownAtRef = useRef(Date.now());
   const driveStartedAt = drive?.startedAt ?? null;
-  const driveOpenEnded = drive !== null && (drive.startedBy !== 'tap' || putOnBoardDriveIsOpenEnded(windowLine));
+  const driveOpenEnded = drive !== null && drive.windowMs === null;
   const seenDriveRef = useRef<PreviewFirstTipDrive | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
