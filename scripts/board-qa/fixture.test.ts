@@ -145,12 +145,30 @@ describe('physical fixture evidence validation', () => {
       },
     ],
     ['angle', { angle: 91 }],
+    ['connection policy', { policy: 'exclusive' }],
+    ['concurrent board during a run', { policy: 'concurrent' }],
   ];
   it.each(badBoards)('rejects invalid %s board evidence', (_name, overrides) => {
     const candidate = status();
     expect(() =>
       parseStatus({ ...candidate, boards: [{ ...candidate.boards[0], ...overrides }] }, { request }),
     ).toThrow();
+  });
+
+  it("keeps each board's policy and still reads firmware that reports none", () => {
+    const observe: FixtureRequest = { action: 'status', requestId: 'observe' };
+    const idle = status(observe);
+    const moon = { ...idle.boards[0], uuid: '803099ab-30ae-45e4-82e3-6bb2744af255', policy: 'concurrent' };
+    const kilter = { ...idle.boards[0], policy: 'last-connection-wins' };
+    expect(
+      parseStatus({ ...idle, boards: [kilter, moon] }, { request: observe }).boards.map((board) => board.policy),
+    ).toEqual(['last-connection-wins', 'concurrent']);
+    expect(parseStatus(idle, { request: observe }).boards[0]).not.toHaveProperty('policy');
+    const owned = status();
+    expect(
+      parseStatus({ ...owned, boards: [{ ...owned.boards[0], policy: 'last-connection-wins' }] }, { request }).boards[0]
+        .policy,
+    ).toBe('last-connection-wins');
   });
 
   it('rejects duplicate identities and handles shared across boards', () => {

@@ -232,6 +232,8 @@ int main() {
     CHECK(fixture.takeUpdate(update) && update.boardIndex == 2 && update.connectionHandle == 95);
     CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "" && snapshot.boards[0].handles.size() == 1 &&
           snapshot.boards[0].handles[0] == 91 && snapshot.boards[2].handles.size() == 2);
+    CHECK(snapshot.boards[0].lastConnectionWins && snapshot.boards[1].lastConnectionWins &&
+          !snapshot.boards[2].lastConnectionWins);
     fixture.stop();
 
     // Temporary QA policy starts only without existing clients.
@@ -246,7 +248,8 @@ int main() {
     CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "qa-run" && snapshot.leaseRemainingMs == 30000 &&
           snapshot.boards.size() == 3 && snapshot.ready);
     for (const auto& board : snapshot.boards)
-        CHECK(board.latest.sequence == 0 && board.latest.commands.empty() && board.handles.empty());
+        CHECK(board.latest.sequence == 0 && board.latest.commands.empty() && board.handles.empty() &&
+              board.lastConnectionWins);
     CHECK(!fixture.snapshotQa("wrong-owner", snapshot, error));
     CHECK(!fixture.endQa("wrong-owner", error));
     CHECK(!fixture.dropQa("wrong-owner", "board-kilter", error));
@@ -313,6 +316,8 @@ int main() {
     fixtureBleTestMillis += 1000;
     fixture.loop();
     CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.runId == "" && snapshot.leaseRemainingMs == 0);
+    CHECK(snapshot.boards[0].lastConnectionWins && snapshot.boards[1].lastConnectionWins &&
+          !snapshot.boards[2].lastConnectionWins);
     CHECK(!fixture.endQa("qa-run", error) && !fixture.dropQa("qa-run", "board-tension", error));
     CHECK(fixture.connectionCount() == 2 && fixture_ble_host::peers.count(62) == 1 &&
           fixture_ble_host::peers.count(63) == 1);
@@ -331,7 +336,10 @@ int main() {
     NimBLEDevice::server.connect(2, 70);
     NimBLEDevice::server.connect(2, 71);
     CHECK(fixture.connectionCount() == 1 && fixture_ble_host::peers.count(70) == 0);
+    CHECK(fixture.snapshotQa("next-run", snapshot, error) && snapshot.boards[2].lastConnectionWins);
     CHECK(fixture.endQa("next-run", error));
+    CHECK(fixture.snapshotQa("", snapshot, error) && snapshot.boards[0].lastConnectionWins &&
+          !snapshot.boards[2].lastConnectionWins);
     NimBLEDevice::server.connect(2, 72);
     CHECK(fixture.connectionCount() == 2 && fixture_ble_host::peers.count(71) == 1 &&
           fixture_ble_host::peers.count(72) == 1);

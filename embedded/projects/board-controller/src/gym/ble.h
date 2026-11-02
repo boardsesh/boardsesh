@@ -32,6 +32,8 @@ struct QaBoardSnapshot {
     String uuid;
     std::vector<uint16_t> handles;
     unsigned writes = 0, updates = 0, rejected = 0;
+    // True when another phone connecting to this board drops the earlier one.
+    bool lastConnectionWins = false;
     CompletedUpdate latest;
 };
 
@@ -314,6 +316,7 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             board.writes = _writes[index];
             board.updates = _completed[index];
             board.rejected = _rejected[index];
+            board.lastConnectionWins = lastConnectionWinsLocked(index);
             board.latest = _updates[index];
             board.latest.angle = _boards[index].angle;
             for (const Connection& connection : _connections) {
