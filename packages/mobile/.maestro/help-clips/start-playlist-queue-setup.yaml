@@ -6,8 +6,8 @@ name: help clip setup - playlist tap loads queue
 #
 # With the 2.7 defaults the "Start playlist?" sheet never appears: a tap in a
 # playlist only previews. This turns ON "Tapping a playlist loads it into my
-# queue" in Settings > Board and leaves "Light the board when I tap a climb" at
-# its default (off). Both taps are optional so a re-run on an already-set phone
+# queue" in Settings > Board and leaves "Always drive the wall" at its default
+# (off), so nothing drives the wall. Both taps are optional so a re-run on an already-set phone
 # does not fail; check the switch by eye once, since a re-run flips it back OFF
 # if it was already on. Starting from a fresh install or a reset Settings is the
 # safe path.

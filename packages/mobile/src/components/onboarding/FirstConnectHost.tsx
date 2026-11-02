@@ -4,7 +4,7 @@ import { registerConnectStepArm } from '../../lib/analytics-connect-step-arm';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
 import { useFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
-import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
+import { DEFAULT_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { isConnectStepArm, type ConnectStepArm } from '../../lib/onboarding/connect-step-arm';
@@ -15,6 +15,7 @@ import {
 } from '../../lib/onboarding/connect-step-enrolment';
 import { setFirstConnectConfirmationShowing } from '../../lib/onboarding/first-connect-confirmation-presence';
 import {
+  firstConnectAlwaysDrives,
   firstConnectConfirmationCopy,
   shouldConfirmFirstConnect,
   type FirstConnectConfirmationCopy,
@@ -30,7 +31,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useChoose } from '../../providers/dialog-provider';
 import { useFirstConnectCtaEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
-import { useIsCrewSession, useIsSharedSession } from '../../providers/queue-provider';
+import { useIsCrewSession } from '../../providers/queue-provider';
 import { SHEET_SETTLE_MS } from '../../providers/sheet-presentation-provider';
 import { useOptionalTheme } from '../../providers/theme-provider';
 
@@ -85,24 +86,23 @@ export function FirstConnectHost() {
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   // What the confirmation says lights from here on: read when it is decided,
-  // the way a list tap and Put on board read it (`firstConnectConfirmationCopy`).
-  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  // the way Always drive the wall and Put on board read it
+  // (`firstConnectConfirmationCopy`).
+  const [alwaysDrive] = useSetting('alwaysDrive');
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const inSession = useIsCrewSession();
-  const inSharedSession = useIsSharedSession();
   const keepLightingEnabled = useWallSwipeToDriveEnabled();
   const copyInput: ConfirmationCopyInput = {
-    lightOnClimbTap,
-    lightOnSwipe,
-    inSharedSession,
-    boardName: activeBoard?.boardType ?? null,
+    alwaysDrive: firstConnectAlwaysDrives({
+      alwaysDrive,
+      swipeToDriveEnabled: keepLightingEnabled,
+      drivesInSession,
+      inSession,
+    }),
     keepLighting: keepLightingEnabled
       ? {
           keepLighting: sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING),
-          moonboardKeepLighting: sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING),
           drivesInSession,
           inSession,
         }
@@ -115,8 +115,8 @@ export function FirstConnectHost() {
     (boardName: string | null, copy: FirstConnectConfirmationCopy) => {
       const messageFor = (): string => {
         switch (copy.variant) {
-          case 'tap_lights':
-            return t('mobile.firstConnect.confirm.body');
+          case 'always_drive':
+            return t('mobile.firstConnect.confirm.bodyAlwaysDrive');
           case 'window':
             return t('mobile.firstConnect.confirm.bodyWindow', { seconds: copy.seconds });
           case 'window_minute':

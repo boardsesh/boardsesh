@@ -151,10 +151,10 @@ import {
   useIsCrewSession,
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext, type ReassertWallOptions } from '../../providers/bluetooth-provider';
-import { getSetting, useSetting } from '../../settings';
+import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  alwaysDriveApplies,
   resolveKeepLightingPlan,
   sanitiseKeepLighting,
   type KeepLightingPlan,
@@ -190,7 +190,7 @@ import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticSuccess } from '../../lib/haptics';
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
-import { climbChangeStaysViewOnly, swipeStaysViewOnly } from './play-drawer-navigation';
+import { swipeStaysViewOnly } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
@@ -506,18 +506,21 @@ export function PlayCore({
   // nothing — it flips only across the solo ↔ crew boundary.
   const isSharedSession = useIsSharedSession();
   // The roster's answer, whatever the browse rollout flag says: solo, Put on
-  // board opens a keep-lighting window (a MoonBoard drives); in a crew it stays a
-  // one-off put unless "In a session too" is on. A crewmate's arrival dwell counts as solo until the crew forms;
-  // when it forms, solo driving carries into it (`DriveModeWatcher`).
+  // board opens a keep-lighting window; in a crew it stays a one-off put unless
+  // "In a session too" is on, on every board. A crewmate's arrival dwell
+  // counts as solo until the crew forms; a live drive goes on when it forms.
   const isCrewSession = useIsCrewSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  // Always drive the wall (Settings › Board): this phone drives with no end
+  // whenever its link holds the board (`DriveModeWatcher`), so the wall
+  // control's press only drops a stop where it applies (`alwaysDriveHere`).
+  const [alwaysDrive] = useSetting('alwaysDrive');
   // Driving the wall (#7113): while live, every change of climb lights the
-  // wall, in a crew too (`climbChangeStaysViewOnly`, which every navigation
-  // below reads). A press on the frosted button stops it and keeps the link;
-  // solo swipes then stay previews until the link drops, whatever Light the
-  // board as I swipe says (the setting never flips).
+  // wall, in a crew too; outside a drive every change of climb is a preview.
+  // A press on the frosted button stops it and keeps the link; picks then
+  // stay previews until the link drops or the next Put on board, whatever
+  // Always drive the wall says (the setting never flips).
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
   const drivingLive = driveModePhase === 'live';
@@ -528,10 +531,8 @@ export function PlayCore({
   // Stop driving after (Settings › Board): read here so the wall control's
   // press knows whether its climb going up starts a drive.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
-  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [putOnBoardDrivesInSession] = useSetting('putOnBoardDrivesInSession');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
-  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const [enhancementSnapshot, setEnhancementSnapshot] = usePrivacyScopedState<PlayCoreEnhancementSnapshot>();
   const handleEnhancementSnapshot = useCallback(
     (snapshot: PlayCoreEnhancementSnapshot | null) => setEnhancementSnapshot(snapshot),
@@ -770,6 +771,15 @@ export function PlayCore({
   // the angle sheet drive the wall the climber is standing at, not the picture.
   const { boardName, layoutId, sizeId, setIds, angle } = renderBoardConfig;
   const activeAngle = boardConfig.angle;
+  // Always drive the wall drives on this board and in this session (the read
+  // `DriveModeWatcher` starts its drive on): Put on board then only drops a
+  // stop, and the copy promises driving until the climber stops.
+  const alwaysDriveHere = alwaysDriveApplies({
+    alwaysDrive,
+    swipeToDriveEnabled,
+    drivesInSession: putOnBoardDrivesInSession,
+    inSession: isCrewSession,
+  });
 
   // The play route hosts its OWN BLE controls sheet (below) rather than the
   // app-root one — a native sheet presented from root lands BEHIND this modal
@@ -1069,13 +1079,12 @@ export function PlayCore({
     linked: lightbulbActive,
     presenceFresh: wallPresenceFresh,
   });
-  // Being in a preview is NOT enough to claim browsing. With `lightOnSwipe` on,
-  // no suggestion source and nobody else in the session (the explicit "Preview"
-  // climb action, a deep link, the workout builder) the next swipe falls straight
-  // through to `setCurrentClimb` — it writes the shared queue and re-arms the BLE
-  // auto-sender. So the latch is "a preview whose navigation genuinely stays
-  // view-only", read off the same predicate the swipe handlers use, which is what
-  // stops the chrome from ever promising more than the gesture keeps.
+  // Being in a preview is NOT enough to claim browsing: while driving, the next
+  // swipe falls straight through to `setCurrentClimb` — it writes the shared
+  // queue and re-arms the BLE auto-sender. So the latch is "a preview whose
+  // navigation genuinely stays view-only", read off the same predicate the
+  // swipe handlers use, which is what stops the chrome from ever promising
+  // more than the gesture keeps.
   //
   // Driving the wall (#7113) ignores the crew and the latch: a swipe commits,
   // so no browse chrome claims otherwise. A climb from another board stays a
@@ -1087,22 +1096,16 @@ export function PlayCore({
     swipeStaysViewOnly({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
-      lightOnSwipe,
-      inSharedSession: browseByDefault,
       driving: drivingLive,
-      stoppedForLink: drivingStopped,
       previewOnOtherBoard,
     });
   // Whether a swipe from a NON-preview state would drive the wall — the pill's
-  // `live` claim. Derived from the same predicate rather than restated, so a crew
-  // (where swipes browse) can't be told its next swipe goes up on the wall.
+  // `live` claim. Derived from the same predicate rather than restated, so
+  // nobody outside a drive is told their next swipe goes up on the wall.
   const navigationCommits = !swipeStaysViewOnly({
     previewItem: null,
     previewSuggestionSource: null,
-    lightOnSwipe,
-    inSharedSession: browseByDefault,
     driving: drivingLive,
-    stoppedForLink: drivingStopped,
   });
   // --- Busy-wall confirm -----------------------------------------------------
   //
@@ -1188,9 +1191,9 @@ export function PlayCore({
   }, [busyWallConfirmArmed, wallClimbUuid, displayedClimbUuid]);
 
   const commitBarModel = resolveCommitBarModel({
-    // Wider than the latch on purpose: a `lightOnSwipe`-on preview with no
-    // suggestion source shows no browsing chrome (its swipes commit), but the
-    // pinned climb keeps its activation button — the old banner's contract.
+    // Wider than the latch on purpose: a preview while driving shows no
+    // browsing chrome (its swipes commit), but the pinned climb keeps its
+    // activation button — the old banner's contract.
     previewPinned: isPreview,
     isAnonymous,
     boardMismatch,
@@ -1265,9 +1268,8 @@ export function PlayCore({
     displayedClimbUuid: displayedClimbUuid ?? null,
     wallClimbUuid,
     browseLatchActive,
-    // `lightOnSwipe` off is precisely "the next swipe does NOT drive the wall"
-    // (it's what `getSwipeNavigationTarget` turns into `forceViewOnly`); in a
-    // crew the same answer comes from the browse gate.
+    // Not driving is precisely "the next swipe does NOT drive the wall" (it's
+    // what `getSwipeNavigationTarget` turns into `forceViewOnly`).
     navigationCommits,
     // The lightbulb's own signal: this device's BLE link, or a session member's.
     // Merely being IN a session is not enough — the Start button opens one solo,
@@ -1431,17 +1433,14 @@ export function PlayCore({
         navigationCommits: navigationCommits && !browseLatchActive,
         driveMode: driveModePhase,
         drivingStopped,
-        solo: !isCrewSession && !browseByDefault,
         // Keep-lighting's session read, the roster alone: the one the watcher
         // ends a window on when In a session too turns off.
         crewSession: isCrewSession,
-        lightOnSwipe,
-        // After Put on board, keep lighting (2.7): the board family's choice.
-        // Most MoonBoard controllers don't like phones switching, so a MoonBoard
-        // has its own (Until I stop by default), which applies in a crew too.
-        boardIsMoonboard: isMoonboardBoardName(boardName),
+        // Always drive the wall drives here: the press only drops a stop.
+        alwaysDrive: alwaysDriveHere,
+        // After Put on board, keep lighting (2.7): Stop driving after, the
+        // same choice on every board.
         keepLighting,
-        moonboardKeepLighting,
         drivesInSession: putOnBoardDrivesInSession,
         // The swipe's flag is keep-lighting's kill switch too.
         swipeToDriveEnabled,
@@ -1477,10 +1476,8 @@ export function PlayCore({
       driveModePhase,
       drivingStopped,
       isCrewSession,
-      browseByDefault,
-      lightOnSwipe,
+      alwaysDriveHere,
       keepLighting,
-      moonboardKeepLighting,
       putOnBoardDrivesInSession,
       swipeToDriveEnabled,
       lightWindow,
@@ -1580,8 +1577,8 @@ export function PlayCore({
     secondaryRow: actionBarLayout.secondaryRow,
   });
 
-  // What the card says Put on board's drive does: the board family's Stop
-  // driving after choice, read the way the press reads it
+  // What the card says Put on board's drive does: the Stop driving after
+  // choice, read the way the press reads it
   // (`resolveKeepLightingPlan`), so it never promises a drive where none can
   // start: a crew session with In a session too off, or the swipe flag (the
   // drive's kill switch) off.
@@ -1589,19 +1586,13 @@ export function PlayCore({
     () =>
       swipeToDriveEnabled
         ? resolveKeepLightingPlan({
-            boardIsMoonboard: isMoonboardBoardName(boardName),
             keepLighting,
-            moonboardKeepLighting,
             drivesInSession: putOnBoardDrivesInSession,
             inSession: isCrewSession,
           })
         : null,
-    [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
+    [swipeToDriveEnabled, keepLighting, putOnBoardDrivesInSession, isCrewSession],
   );
-  // The setting the plan doesn't take, read as the press reads it
-  // (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
-  // press starts no drive (the wall control's `solo` and `lightOnSwipe`).
-  const previewFirstSwipeLightsSolo = lightOnSwipe && !isCrewSession && !browseByDefault;
 
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
@@ -1748,33 +1739,17 @@ export function PlayCore({
     { sharesLine: topBarParts !== null },
   );
 
-  // Changing angle keeps a default/private preview pinned and regrades it
-  // below. Dropping it would restore the committed head and could light it
-  // without the board button. Explicit automatic-lighting opt-ins retain the
-  // previous return-to-current behavior, while foreign-board previews stay put.
-  // Read the policy at the angle change without reacting to roster changes.
-  const angleBrowsePolicyRef = useRef({
-    browseByDefault,
-    drivingLive,
-    drivingStopped,
-    isAnonymous,
-    previewOnOtherBoard,
-  });
-  angleBrowsePolicyRef.current = { browseByDefault, drivingLive, drivingStopped, isAnonymous, previewOnOtherBoard };
+  // Changing angle keeps a preview pinned and regrades it below. Dropping it
+  // would restore the committed head and could light it without the board
+  // button. Driving the wall retains the previous return-to-current behavior,
+  // while foreign-board previews stay put. Read the policy at the angle change
+  // without reacting to drive changes.
+  const angleBrowsePolicyRef = useRef({ drivingLive, isAnonymous, previewOnOtherBoard });
+  angleBrowsePolicyRef.current = { drivingLive, isAnonymous, previewOnOtherBoard };
   useEffect(() => {
     setDrawerPreviewIsWallClimb(false);
     const policy = angleBrowsePolicyRef.current;
-    if (
-      policy.isAnonymous ||
-      policy.previewOnOtherBoard ||
-      climbChangeStaysViewOnly({
-        driving: policy.drivingLive,
-        inSharedSession: policy.browseByDefault,
-        lightSetting: getSetting('lightOnClimbTap'),
-        stoppedForLink: policy.drivingStopped,
-      })
-    )
-      return;
+    if (policy.isAnonymous || policy.previewOnOtherBoard || !policy.drivingLive) return;
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
   }, [activeAngle, setDrawerPreviewItem, setDrawerPreviewSuggestionSource]);
@@ -1870,14 +1845,14 @@ export function PlayCore({
           surface: 'player',
           inSharedSession: browseByDefault,
           // The climber's setting, not a stop on this link.
-          lightOnSwipe,
+          alwaysDrive,
           driving: drivingLive,
           boardType: navigationBoardType,
           layoutId: navigationLayoutId,
         },
         actionsAnalytics,
       ),
-    [browseByDefault, lightOnSwipe, drivingLive, navigationBoardType, navigationLayoutId, actionsAnalytics],
+    [browseByDefault, alwaysDrive, drivingLive, navigationBoardType, navigationLayoutId, actionsAnalytics],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   const handleOpenQueueFromBar = useCallback(() => {
@@ -1943,10 +1918,8 @@ export function PlayCore({
     similarTrack,
     navigation: {
       navigationState,
-      lightOnSwipe,
       browseByDefault,
       driving: drivingLive,
-      stoppedForLink: drivingStopped,
       previewOnOtherBoard,
     },
     chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
@@ -3448,10 +3421,9 @@ export function PlayCore({
                     {previewFirstTip.visible ? (
                       <View style={styles.previewFirstTipSlot}>
                         <PlayerPreviewTip
-                          boardName={boardName}
                           glow={wallGlowInput}
                           keepLighting={previewFirstKeepLighting}
-                          swipeLightsSolo={previewFirstSwipeLightsSolo}
+                          alwaysDrive={alwaysDriveHere}
                           onExit={handlePreviewFirstTipExit}
                           onLayout={handlePreviewFirstTipLayout}
                         />

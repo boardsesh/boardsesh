@@ -80,7 +80,7 @@ describe('PreviewFirstSpotlightCard', () => {
     expect((await screen.findByRole('heading')).textContent).toBe(copy.title);
     expect(screen.getByText(copy.tap)).toBeTruthy();
     expect(screen.getByText(copy.swipe)).toBeTruthy();
-    expect(screen.getByText(copy.moonboard)).toBeTruthy();
+    expect(screen.getByText(copy.back)).toBeTruthy();
     await waitFor(() => expect(secure.values.get(KEY)).toMatchObject({ dismissed: false }));
     expect(typeof (secure.values.get(KEY) as { shownAt: unknown }).shownAt).toBe('number');
   });

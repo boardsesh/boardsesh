@@ -11,7 +11,7 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(
 const openPlayDrawer = vi.hoisted(() => vi.fn());
 const lighting = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../../../src/components/play-drawer/use-climb-change-lights', () => ({
-  readClimbChangeLights: () => lighting.enabled,
+  isDrivingWall: () => lighting.enabled,
 }));
 const loadedClimb = vi.hoisted(() => ({ current: undefined as Climb | undefined }));
 const uuidSequence = vi.hoisted(() => ({ current: 0 }));

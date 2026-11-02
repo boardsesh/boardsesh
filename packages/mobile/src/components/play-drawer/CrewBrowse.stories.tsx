@@ -80,11 +80,11 @@ const IN_A_CREW_FLAG_OFF: ScenarioOverrides = {
   queue: { isSharedSession: false, isCrewSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
 };
 
-// In a crew, browsing comes from the session, not from the solo "light on
-// swipe" setting. Pin it on so a simulator that ran a solo preview shot (which
-// turns it off) doesn't fake the crew behaviour.
+// In a crew, browsing comes from the session. Pin Always drive the wall off so a
+// simulator where it was turned on doesn't drive the wall over the crew
+// behaviour these stories draw.
 const asCrewClimber = () => {
-  setSetting('lightOnSwipe', true);
+  setSetting('alwaysDrive', false);
 };
 
 // A real crew always has a climb up. The drawer scenarios open the first climb

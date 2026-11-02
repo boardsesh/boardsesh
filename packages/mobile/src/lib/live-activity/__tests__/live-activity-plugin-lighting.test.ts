@@ -41,7 +41,8 @@ const WINDOW: LiveActivityLightingWindowOptions = {
 
 const CONFIG: LiveActivityKeepLightingConfig = {
   keepLighting: '45',
-  moonboardKeepLighting: 'until_stopped',
+  // JS sends the general choice in the MoonBoard slot too (`buildKeepLightingConfig`).
+  moonboardKeepLighting: '45',
   drivesInSession: true,
   inCrew: false,
   moonboard: false,

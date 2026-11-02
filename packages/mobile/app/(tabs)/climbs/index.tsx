@@ -1324,9 +1324,9 @@ function ClimbListInner() {
       // mount and measure, and this render fits inside that.
       requestPlayBoardPrewarm({ boardName: boardName as BoardName, layoutId, sizeId, setIds }, climb.frames);
       // This tap IS the selection, so it is the one moment the swipe track may be
-      // re-derived. Every tap re-captures it, previews included: in a crew, or
-      // with "Light the board when I tap a climb" off, the activation hook
-      // opens a preview seeded with these results, so swipes walk them (#5157).
+      // re-derived. Every tap re-captures it, previews included: outside a
+      // drive, the activation hook opens a preview seeded with these results,
+      // so swipes walk them (#5157).
       searchBasis.capture();
       void activateClimbListClimb.activate(toQueueClimb(climb), readyBoardArt);
     },
@@ -1477,12 +1477,13 @@ function ClimbListInner() {
     if (!firstClimb) return;
     screenshotPreviewOpenedRef.current = true;
     // The drawer only claims "Browsing" while a swipe genuinely stays view-only,
-    // which for a preview with no suggestion source means lightOnSwipe off. The
-    // capture device is a throwaway simulator, so writing the setting is the
-    // honest way to reach the state — faking the chrome instead would ship a
-    // store screenshot of a promise the app doesn't keep.
+    // which for a preview with no suggestion source means nothing drives the
+    // wall: Always drive the wall off. The capture device is a throwaway
+    // simulator, so writing the setting is the honest way to reach the state —
+    // faking the chrome instead would ship a store screenshot of a promise the
+    // app doesn't keep.
     if (screenshotOpenPreview) {
-      setSetting('lightOnSwipe', false);
+      setSetting('alwaysDrive', false);
       // That same setting is what triggers the one-shot "you're browsing" card.
       // It is real product behaviour on a real first run, but a store screenshot
       // is a portrait of the steady state, not of a climber's first five seconds

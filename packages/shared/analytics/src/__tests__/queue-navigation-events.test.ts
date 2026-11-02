@@ -10,7 +10,7 @@ describe('queueNavigation', () => {
         surface: 'player',
         outcome: 'preview',
         inSharedSession: true,
-        lightOnSwipe: true,
+        alwaysDrive: true,
         boardType: 'kilter',
         layoutId: 1,
       }),
@@ -22,7 +22,7 @@ describe('queueNavigation', () => {
         surface: 'player',
         outcome: 'preview',
         sessionMode: 'party',
-        lightOnSwipe: true,
+        alwaysDrive: true,
         driving: false,
         boardType: 'kilter',
         layoutId: 1,
@@ -37,12 +37,12 @@ describe('queueNavigation', () => {
       surface: 'mini_player',
       outcome: 'moved',
       inSharedSession: false,
-      lightOnSwipe: false,
+      alwaysDrive: false,
       boardType: 'tension',
       layoutId: 9,
     });
     expect(properties.sessionMode).toBe('solo');
-    expect(properties.lightOnSwipe).toBe(false);
+    expect(properties.alwaysDrive).toBe(false);
   });
 
   it('sends no layout id on a spray wall, whose layout id names the wall', () => {
@@ -52,7 +52,7 @@ describe('queueNavigation', () => {
       surface: 'player',
       outcome: 'moved',
       inSharedSession: false,
-      lightOnSwipe: true,
+      alwaysDrive: true,
       boardType: 'spray',
       layoutId: 123456,
     });
@@ -67,7 +67,7 @@ describe('queueNavigation', () => {
       surface: 'player',
       outcome: 'moved',
       inSharedSession: false,
-      lightOnSwipe: true,
+      alwaysDrive: true,
       boardType: 'my-home-wall',
       layoutId: undefined,
     });
@@ -83,7 +83,7 @@ describe('queueNavigation for a swipe that went before its board had painted', (
     surface: 'player',
     outcome: 'moved',
     inSharedSession: false,
-    lightOnSwipe: true,
+    alwaysDrive: true,
     boardType: 'moonboard',
     layoutId: 2,
   } as const;
@@ -122,7 +122,7 @@ describe('queueNavigation while driving the wall (#7113)', () => {
       surface: 'player',
       outcome: 'moved',
       inSharedSession: true,
-      lightOnSwipe: false,
+      alwaysDrive: false,
       driving: true,
       boardType: 'kilter',
       layoutId: 1,
@@ -202,6 +202,22 @@ describe('driveModeEnded', () => {
       boardType: null,
     });
   });
+
+  it("reports Always drive the wall's drive, turned off with the link kept", () => {
+    expect(
+      driveModeEnded({
+        reason: 'always_off',
+        startedBy: 'always',
+        startedAt: 0,
+        endedAt: 90_000,
+        climbsLit: 4,
+        inSession: false,
+        windowRenewals: 0,
+        windowMs: null,
+        boardType: 'kilter',
+      }).properties,
+    ).toMatchObject({ reason: 'always_off', startedBy: 'always', durationSec: 90, climbsLit: 4, windowSec: null });
+  });
 });
 
 describe('driveModeStarted', () => {
@@ -214,6 +230,14 @@ describe('driveModeStarted', () => {
       startedBy: 'swipe',
       inSession: false,
       boardType: null,
+    });
+  });
+
+  it('says Always drive the wall started it', () => {
+    expect(driveModeStarted({ startedBy: 'always', inSession: true, boardType: 'tension' }).properties).toEqual({
+      startedBy: 'always',
+      inSession: true,
+      boardType: 'tension',
     });
   });
 });

@@ -18,11 +18,11 @@ type Reads = {
   sessionId: string | null;
   boardId: number | null;
   isAuthenticated: boolean;
-  lightOnSwipe: boolean;
+  /** Settings › Board's Always drive the wall. */
+  alwaysDrive?: boolean;
   isCrew?: boolean;
   /** Settings › Board's keep-lighting (2.7). */
   keepLighting?: string;
-  moonboardKeepLighting?: string;
   drivesInSession?: boolean;
   /** The swipe flag, keep-lighting's kill switch. */
   swipeToDrive?: boolean;
@@ -42,10 +42,12 @@ const reads = vi.hoisted((): { current: Reads } => ({
     sessionId: null,
     boardId: null,
     isAuthenticated: true,
-    lightOnSwipe: true,
   },
 }));
 const bluetoothDisconnect = vi.hoisted(() => vi.fn(async (_reason?: string) => undefined));
+// Lighting the wall, which the watcher must never do itself: Light
+// automatically's drive starts on whatever connecting already lit.
+const bluetoothLight = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({
     isConnected: reads.current.isConnected,
@@ -53,6 +55,8 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
     loading: reads.current.loading,
     boardName: reads.current.boardName ?? 'moonboard',
     disconnect: bluetoothDisconnect,
+    reassertWall: bluetoothLight,
+    turnOffAllLights: bluetoothLight,
   }),
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -92,14 +96,15 @@ vi.mock('../../../settings', () => ({
     switch (key) {
       case 'putOnBoardKeepsLighting':
         return [reads.current.keepLighting ?? '45', vi.fn()];
-      case 'moonboardPutOnBoardKeepsLighting':
-        return [reads.current.moonboardKeepLighting ?? 'until_stopped', vi.fn()];
+      // The retired MoonBoard choice is not read: asking for it throws below.
       case 'putOnBoardDrivesInSession':
         return [reads.current.drivesInSession ?? true, vi.fn()];
       case 'disconnectWhenDrivingEnds':
         return [reads.current.disconnectWhenDrivingEnds ?? false, vi.fn()];
+      case 'alwaysDrive':
+        return [reads.current.alwaysDrive ?? false, vi.fn()];
       default:
-        return [reads.current.lightOnSwipe, vi.fn()];
+        throw new Error(`unexpected setting ${key}`);
     }
   },
 }));
@@ -151,10 +156,12 @@ import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put
 import { resetLockScreenLightingForTests } from '../lock-screen-lighting';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
+  clearDrivingStopped,
   drivingAtPick,
   enterDriveMode,
   exitDriveMode,
   getDriveMode,
+  getLastDriveEnded,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
   markDriveLive,
@@ -172,7 +179,6 @@ const DEFAULT_READS: Reads = {
   sessionId: 'session-1',
   boardId: 7,
   isAuthenticated: true,
-  lightOnSwipe: true,
 };
 
 function mount() {
@@ -204,6 +210,7 @@ beforeEach(() => {
   clearCrewPutUp();
   for (const effect of Object.values(effects)) effect.mockClear();
   bluetoothDisconnect.mockClear();
+  bluetoothLight.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -339,17 +346,6 @@ describe('DriveModeWatcher', () => {
     watcher.change({ boardId: 9 });
     expect(isDrivingStoppedForLink()).toBe(true);
     watcher.change({ isConnected: false });
-    expect(isDrivingStoppedForLink()).toBe(false);
-  });
-
-  it('lets go of a stop when Light the board as I swipe changes', () => {
-    const watcher = mount();
-    act(() => {
-      stopDrivingForLink();
-    });
-    watcher.change({});
-    expect(isDrivingStoppedForLink()).toBe(true);
-    watcher.change({ lightOnSwipe: false });
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 });
@@ -495,60 +491,285 @@ describe('DriveModeWatcher: the wall confirms', () => {
   });
 });
 
-// #7113 QA (Marco: keep driving): a crew forming carries solo driving into it.
-describe('DriveModeWatcher: a crew forms', () => {
+// Always drive the wall (2026-11): an open-ended drive whenever this phone's own
+// link holds the board. One switch, no other interaction mode: every pick
+// lights the way a swipe drive's does.
+describe('DriveModeWatcher: Always drive the wall', () => {
   beforeEach(() => {
-    resetDriveModeForTests();
-    reads.current = { ...DEFAULT_READS, isCrew: false };
+    reads.current = { ...DEFAULT_READS, alwaysDrive: true, boardName: 'kilter' };
   });
-  afterEach(() => resetDriveModeForTests());
 
-  it('turns solo, setting-driven driving into a live drive', () => {
-    const view = mount();
-    expect(getDriveMode()).toBeNull();
-    view.change({ isCrew: true });
+  it('drives the moment it mounts on a link that is up, live, open-ended, lighting nothing itself', () => {
+    mount();
     expect(getDriveMode()).toMatchObject({
       phase: 'live',
+      startedBy: 'always',
       sessionId: 'session-1',
       boardId: 7,
-      // The linked board's type, for Drive Mode Started / Ended.
-      boardType: 'moonboard',
-      startedBy: 'solo_carry',
+      boardType: 'kilter',
+      windowMs: null,
+      expiresAt: null,
+      climbsLit: 0,
     });
-    // It stays: the same session, the same board.
-    view.change({ boardId: 7 });
-    expect(getDriveMode()?.phase).toBe('live');
+    expect(effects.track).toHaveBeenCalledWith('Drive Mode Started', {
+      startedBy: 'always',
+      inSession: true,
+      boardType: 'kilter',
+    });
+    expect(bluetoothLight).not.toHaveBeenCalled();
   });
 
-  it('leaves a stopped climber previewing', () => {
-    stopDrivingForLink();
-    const view = mount();
-    view.change({ isCrew: true });
+  it('starts when this phone’s link comes up, and ends when it drops', () => {
+    reads.current = { ...reads.current, isConnected: false };
+    const watcher = mount();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ isConnected: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    watcher.change({ isConnected: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('link_dropped');
+    watcher.change({ isConnected: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+  });
+
+  it('never drives without this phone’s own link: a crewmate’s board, or a wall with no lights', () => {
+    reads.current = { ...reads.current, isConnected: false };
+    const watcher = mount();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ virtualWallHeld: true });
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('starts when the switch turns on with the link up, and lights nothing then either', () => {
+    reads.current = { ...reads.current, alwaysDrive: false };
+    const watcher = mount();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    expect(bluetoothLight).not.toHaveBeenCalled();
+  });
+
+  it('every climb that lights counts as one more, as in any drive', () => {
+    mount();
+    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-b'));
+    expect(getDriveMode()?.climbsLit).toBe(2);
+  });
+
+  it('turning the switch off ends its drive and keeps the link, whatever Disconnect says', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    const watcher = mount();
+    expect(getDriveMode()?.startedBy).toBe('always');
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('always_off');
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+    // Off, nothing starts it again.
+    watcher.change({ boardId: 7 });
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('turning the switch off leaves a drive a swipe started', () => {
+    reads.current = { ...reads.current, alwaysDrive: false };
+    const watcher = mount();
+    driveLive();
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()?.startedBy).toBe('swipe');
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'swipe' });
+  });
+
+  it('a tap on You are driving the wall holds it stopped until the link drops', () => {
+    const watcher = mount();
+    act(() => {
+      stopDrivingForLink();
+    });
+    watcher.change({});
+    watcher.change({ boardId: 7 });
     expect(getDriveMode()).toBeNull();
     expect(isDrivingStoppedForLink()).toBe(true);
+    // The switch never flips by itself.
+    expect(reads.current.alwaysDrive).toBe(true);
+    watcher.change({ isConnected: false });
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ isConnected: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
   });
 
-  it('carries nothing without a link, or with Light the board as I swipe off', () => {
-    const unlinked = mount();
-    unlinked.change({ isConnected: false });
-    unlinked.change({ isCrew: true });
-    expect(getDriveMode()).toBeNull();
-    resetDriveModeForTests();
-    reads.current = { ...DEFAULT_READS, isCrew: false, lightOnSwipe: false };
-    const settingOff = mount();
-    settingOff.change({ isCrew: true });
-    expect(getDriveMode()).toBeNull();
-  });
-
-  it('keeps a drive a press started live, as it was', () => {
+  // A flip of the switch is a fresh choice: the stop made before it goes.
+  it('turning the switch off and on again after a stop drives again', () => {
+    const watcher = mount();
     act(() => {
-      enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7 });
+      stopDrivingForLink();
+    });
+    watcher.change({});
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+  });
+
+  // The wall control's `tapDrive: 'resume'` drops the stop at the press.
+  it('Put on board after a stop resumes it, open-ended', () => {
+    const watcher = mount();
+    act(() => {
+      stopDrivingForLink();
+    });
+    watcher.change({});
+    expect(getDriveMode()).toBeNull();
+    act(() => {
+      clearDrivingStopped();
+    });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always', windowMs: null });
+  });
+
+  it('a tapped stop lets go of the board with Disconnect Bluetooth when driving ends on', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    act(() => {
+      stopDrivingForLink();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('drives again in the new session once a change of session ended it, the link still up', () => {
+    const watcher = mount();
+    watcher.change({ sessionId: 'session-2' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always', sessionId: 'session-2' });
+  });
+
+  it('opens up a timed drive already running when the switch turns on', () => {
+    reads.current = { ...reads.current, alwaysDrive: false };
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
       markDriveLive();
     });
-    const startedAt = getDriveMode()?.startedAt;
-    const view = mount();
-    view.change({ isCrew: true });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', startedAt });
+    watcher.change({});
+    expect(getDriveMode()?.windowMs).toBe(45_000);
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'tap',
+      windowMs: null,
+      expiresAt: null,
+      openedByAlways: true,
+    });
+  });
+
+  // The climber's 45 s window went when the switch opened it up: turning the
+  // switch off again ends it rather than leaving a drive with no end.
+  it('ends a timed drive it opened up when the switch goes off again, keeping the link', () => {
+    reads.current = { ...reads.current, alwaysDrive: false, disconnectWhenDrivingEnds: true };
+    const watcher = mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    watcher.change({ alwaysDrive: true });
+    expect(getDriveMode()?.openedByAlways).toBe(true);
+    watcher.change({ alwaysDrive: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('always_off');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // Driving's kill switch: Always drive the wall's drive is a drive like any other.
+  it('starts nothing with the swipe flag off, and ends its drive keeping the link when the flag goes off', () => {
+    reads.current = { ...reads.current, swipeToDrive: false };
+    const watcher = mount();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ swipeToDrive: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    watcher.change({ swipeToDrive: false });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('always_off');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // Signing out drops no link, and Always drive the wall drives signed out too
+  // (as the switches it replaced lit): one drive ends, the next starts at once.
+  it('drives on after a sign-out with the link still up, as a new drive', () => {
+    const watcher = mount();
+    expect(getDriveMode()?.startedBy).toBe('always');
+    effects.track.mockClear();
+    watcher.change({ isAuthenticated: false });
+    expect(effects.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'signed_out', startedBy: 'always' }),
+    );
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+  });
+
+  describe('in a crew', () => {
+    it('drives with In a session too on', () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: true };
+      mount();
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    });
+
+    it('leaves picks previews with In a session too off', () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: false };
+      mount();
+      expect(getDriveMode()).toBeNull();
+    });
+
+    // A MoonBoard follows In a session too like every board.
+    it("leaves a MoonBoard's picks previews with In a session too off", () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: false, boardName: 'moonboard' };
+      mount();
+      expect(getDriveMode()).toBeNull();
+    });
+
+    it('drives a MoonBoard with In a session too on', () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: true, boardName: 'moonboard' };
+      mount();
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always', boardType: 'moonboard' });
+    });
+
+    it('goes on when a crew forms with In a session too on', () => {
+      reads.current = { ...reads.current, drivesInSession: true };
+      const watcher = mount();
+      const startedAt = getDriveMode()?.startedAt;
+      watcher.change({ isCrew: true });
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always', startedAt });
+    });
+
+    it('ends keeping the link when a crew forms with In a session too off, and comes back when it leaves', () => {
+      reads.current = { ...reads.current, drivesInSession: false, disconnectWhenDrivingEnds: true };
+      const watcher = mount();
+      expect(getDriveMode()?.startedBy).toBe('always');
+      watcher.change({ isCrew: true });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveModeExitReason()).toBe('always_off');
+      expect(bluetoothDisconnect).not.toHaveBeenCalled();
+      watcher.change({ isCrew: false });
+      expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'always' });
+    });
+
+    it('In a session too turned off in a crew ends it the same way', () => {
+      reads.current = { ...reads.current, isCrew: true, drivesInSession: true };
+      const watcher = mount();
+      expect(getDriveMode()?.startedBy).toBe('always');
+      watcher.change({ drivesInSession: false });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveModeExitReason()).toBe('always_off');
+    });
   });
 });
 
@@ -561,6 +782,7 @@ describe('DriveModeWatcher: the timed drive', () => {
         startedBy: 'tap',
         sessionId: reads.current.sessionId,
         boardId: reads.current.boardId,
+        boardType: reads.current.boardName ?? 'moonboard',
         windowMs,
         windowSetting: 'putOnBoardKeepsLighting',
       });
@@ -728,27 +950,15 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getDriveMode()?.phase).toBe('live');
   });
 
-  it("takes only its own choice's new length: a MoonBoard window reads the MoonBoard's", () => {
+  // Stop driving after is one choice for every board: a MoonBoard's timed
+  // drive takes its new length too.
+  it("gives a MoonBoard's timed drive the new Stop driving after length", () => {
+    reads.current = { ...reads.current, boardName: 'moonboard' };
     const watcher = mount();
     openWindow();
     act(() => emitWallConfirm('climb-a'));
-    watcher.change({ moonboardKeepLighting: '30' });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
-    act(() => {
-      exitDriveMode('stopped');
-      enterDriveMode({
-        startedBy: 'tap',
-        sessionId: reads.current.sessionId,
-        boardId: reads.current.boardId,
-        windowMs: 30_000,
-        windowSetting: 'moonboardPutOnBoardKeepsLighting',
-      });
-    });
-    act(() => emitWallConfirm('climb-b'));
-    watcher.change({ keepLighting: '60' });
-    expect(getDriveMode()).toMatchObject({ windowMs: 30_000 });
-    watcher.change({ moonboardKeepLighting: '60' });
-    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 60_000 });
+    watcher.change({ keepLighting: '30' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 30_000 });
   });
 
   it('ends the window in a crew when In a session too is turned off, and not solo', () => {
@@ -830,27 +1040,18 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
   });
 
-  it("ends a MoonBoard window on the MoonBoard's own choice only", () => {
+  // In a session too is one rule for every board: a MoonBoard's timed drive
+  // ends keeping the link once a crew forms with it off.
+  it("ends a MoonBoard's timed drive when a crew forms with In a session too off", () => {
+    reads.current = { ...reads.current, boardName: 'moonboard', drivesInSession: false };
     const watcher = mount();
-    act(() => {
-      enterDriveMode({
-        startedBy: 'tap',
-        sessionId: reads.current.sessionId,
-        boardId: reads.current.boardId,
-        windowMs: 30_000,
-        windowSetting: 'moonboardPutOnBoardKeepsLighting',
-      });
-    });
+    openWindow(30_000);
     act(() => emitWallConfirm('climb-a'));
-    watcher.change({ moonboardKeepLighting: '30' });
-    // The general choice and In a session too are not a MoonBoard's.
-    watcher.change({ keepLighting: 'off' });
-    expect(getDriveMode()?.phase).toBe('live');
-    watcher.change({ drivesInSession: false, isCrew: true });
-    expect(getDriveMode()?.phase).toBe('live');
-    watcher.change({ moonboardKeepLighting: 'off' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', boardType: 'moonboard' });
+    watcher.change({ isCrew: true });
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
   });
 
   it('drops its timer once the window ends another way', () => {
@@ -1026,7 +1227,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
 
   it('starts an open-ended drive from nothing when the press drove the wall (Until I stop)', () => {
     mount();
-    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'moonboard' });
+    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'general' });
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen', windowMs: null, expiresAt: null });
   });
@@ -1221,7 +1422,7 @@ describe('DriveModeWatcher: an Android notification press', () => {
 
   beforeEach(() => {
     lockScreen.android = true;
-    reads.current = { ...reads.current, boardName: 'kilter', lightOnSwipe: false, queueLength: 3 };
+    reads.current = { ...reads.current, boardName: 'kilter', queueLength: 3 };
   });
 
   it('arms a window that starts at the wall’s lit confirm, then ends on time', () => {
@@ -1261,8 +1462,8 @@ describe('DriveModeWatcher: an Android notification press', () => {
     expect(getLastDriveModeExitReason()).toBe('arming_timed_out');
   });
 
-  it('arms an open-ended drive for Until I stop (the MoonBoard default)', () => {
-    reads.current = { ...reads.current, boardName: 'moonboard' };
+  it('arms an open-ended drive for Until I stop', () => {
+    reads.current = { ...reads.current, keepLighting: 'until_stopped' };
     mount();
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen', windowMs: null });
@@ -1328,10 +1529,21 @@ describe('DriveModeWatcher: an Android notification press', () => {
     ['without a link', { isConnected: false }],
     ['with Off', { keepLighting: 'off' }],
     ['with the swipe flag off', { swipeToDrive: false }],
-    ['solo with Light the board as I swipe on', { lightOnSwipe: true }],
     ['in a crew with In a session too off', { isCrew: true, drivesInSession: false }],
   ] as const)('lights one climb %s', (_case, change) => {
     reads.current = { ...reads.current, ...change };
+    mount();
+    navigate();
+    expect(getDriveMode()).toBeNull();
+  });
+
+  // Where Always drive the wall drives, a press after a stop lights its climb and
+  // starts nothing: only Put on board resumes the drive.
+  it('lights one climb where Always drive the wall drives, a stop holding its drive off', () => {
+    act(() => {
+      stopDrivingForLink();
+    });
+    reads.current = { ...reads.current, alwaysDrive: true };
     mount();
     navigate();
     expect(getDriveMode()).toBeNull();
@@ -1383,6 +1595,39 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
       vi.advanceTimersByTime(1);
     });
     expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  // A MoonBoard is no exception: the switch frees it like every board, so a
+  // climber who wants to keep the MoonBoard's link leaves the switch off.
+  it.each([
+    ['its time runs out', 'window_ended'],
+    ['the climber stops it', 'stopped'],
+  ] as const)('lets go of a MoonBoard when %s, like every board', (_case, reason) => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true, boardName: 'moonboard' };
+    mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        boardType: 'moonboard',
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    if (reason === 'window_ended') {
+      act(() => {
+        vi.advanceTimersByTime(45_000);
+      });
+    } else {
+      act(() => {
+        stopDrivingForLink();
+      });
+    }
+    expect(getLastDriveEnded()).toMatchObject({ reason, drive: { boardType: 'moonboard' } });
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
   });
 
@@ -1672,7 +1917,6 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
       ...reads.current,
       disconnectWhenDrivingEnds: true,
       boardName: 'kilter',
-      lightOnSwipe: false,
       queueLength: 3,
     };
     mount();

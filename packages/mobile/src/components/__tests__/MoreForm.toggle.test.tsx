@@ -398,10 +398,10 @@ describe('rows with their own accessible name', () => {
   it("names a select row with its value and keeps its subtitle as the row's description", () => {
     renderRows({
       kind: 'select',
-      key: 'moonboard',
-      label: 'On a MoonBoard',
-      accessibilityLabel: 'Keep lighting on a MoonBoard',
-      subtitle: 'MoonBoard controllers work best with one phone.',
+      key: 'stop-driving',
+      label: 'After',
+      accessibilityLabel: 'Stop driving the wall after',
+      subtitle: 'Always drive the wall is on, so this doesn’t apply.',
       options: [
         { key: '45', label: '45 seconds' },
         { key: 'until_stopped', label: 'Until I stop' },
@@ -409,8 +409,8 @@ describe('rows with their own accessible name', () => {
       selectedKey: 'until_stopped',
       onSelect: vi.fn(),
     });
-    const row = screen.getByRole('button', { name: 'Keep lighting on a MoonBoard, Until I stop' });
-    expect(describedText(row)).toBe('MoonBoard controllers work best with one phone.');
+    const row = screen.getByRole('button', { name: 'Stop driving the wall after, Until I stop' });
+    expect(describedText(row)).toBe('Always drive the wall is on, so this doesn’t apply.');
   });
 
   it('keeps a greyed switch row named, and reads its off reason as the description', () => {

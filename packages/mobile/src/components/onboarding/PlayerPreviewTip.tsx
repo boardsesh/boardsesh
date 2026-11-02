@@ -25,7 +25,6 @@ import { memo, useEffect, useMemo, useRef } from 'react';
 import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { PressableSurface } from '../PressableSurface';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
@@ -86,36 +85,33 @@ export function buildDrivingSampleModel(selfFace: WallControlFace | null): WallC
     writing: false,
     navigationCommits: false,
     driveMode: 'live',
-    solo: true,
   });
 }
 
 export type PlayerPreviewTipProps = {
-  /** The board on screen: a MoonBoard keeps lighting until stopped. */
-  boardName: string;
   /** The climb on screen's lit holds, for the sample button's frost. */
   glow: WallGlowInput | null;
   /**
-   * What Put on board's drive does here (`resolveKeepLightingPlan`, the board
-   * family's Stop driving after), or null when it lights one climb: Right
+   * What Put on board's drive does here (`resolveKeepLightingPlan`, Stop
+   * driving after), or null when it lights one climb: Right
    * away, or a session with In a session too off, or the swipe flag off.
    */
   keepLighting: KeepLightingPlan | null;
   /**
-   * Solo with Light the board as I swipe on: Put on board starts no drive
-   * there (the wall control's `tapDrive: 'resume'`), so the card names none.
+   * Always drive the wall drives here (`alwaysDriveApplies`): this phone drives
+   * with no end once it holds the board, so the card promises driving until
+   * the climber stops, whatever Stop driving after says.
    */
-  swipeLightsSolo?: boolean;
+  alwaysDrive?: boolean;
   /** The card should go, and why. */
   onExit: (exit: PlayerPreviewTipExit) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
 };
 
 function PlayerPreviewTipComponent({
-  boardName,
   glow,
   keepLighting,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
   onExit,
   onLayout,
 }: PlayerPreviewTipProps) {
@@ -125,15 +121,11 @@ function PlayerPreviewTipComponent({
   const screenReaderEnabled = useScreenReaderEnabled();
   const stacked = fontScale >= PLAYER_PREVIEW_TIP_STACK_FONT_SCALE;
 
-  const windowLine = resolvePreviewFirstWindowLine({
-    plan: keepLighting,
-    isMoonboard: isMoonboardBoardName(boardName),
-    swipeLightsSolo,
-  });
+  const windowLine = resolvePreviewFirstWindowLine({ plan: keepLighting, alwaysDrive });
 
   // A drive that starts while the card is up means the frost has been learned:
   // a swipe, Light every climb, the board sheet's row, or Put on board where it
-  // drives until stopped (Until I stop, a MoonBoard). Put on board's timed
+  // drives until stopped (Until I stop). Put on board's timed
   // drive (one with `windowMs`) is what the card describes, so it stays for
   // that until a swipe or Light every climb makes the same drive open-ended.
   const drive = useDriveMode();
@@ -164,7 +156,7 @@ function PlayerPreviewTipComponent({
   const windowText = previewFirstWindowText(windowLine, t);
   // The clock and the shrinking frost only where Put on board's drive has one.
   const frostText = previewFirstFrostText(
-    resolvePreviewFirstFrostLine({ plan: keepLighting, swipeLightsSolo }),
+    resolvePreviewFirstFrostLine({ plan: keepLighting, alwaysDrive }),
     screenReaderEnabled,
     t,
   );
@@ -256,8 +248,6 @@ function previewFirstWindowText(line: PreviewFirstWindowLine, t: TFunction): str
       return t('mobile.onboarding.tips.previewFirst.windowMinutes', { minutes: line.minutes });
     case 'untilStop':
       return t('mobile.onboarding.tips.previewFirst.untilStop');
-    case 'moonboard':
-      return t('mobile.onboarding.tips.previewFirst.moonboard');
   }
 }
 

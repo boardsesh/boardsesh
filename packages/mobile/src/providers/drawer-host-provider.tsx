@@ -61,8 +61,8 @@ import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
 import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
 import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
-import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
-import { readClimbChangeLights } from '../components/play-drawer/use-climb-change-lights';
+import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
+import { isDrivingWall } from '../components/play-drawer/use-climb-change-lights';
 import { usePhoneSplit } from '../hooks/use-phone-split';
 import {
   armPlayerScrollHandoff,
@@ -387,7 +387,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // ...but it IS cleared when the queue's committed climb moves on. A preview
   // outlives the drawer as "the climb you last had up" only until something is
   // actually put up after it: a preview of A followed by a swipe that
-  // commits B (solo, `lightOnSwipe` on) must highlight B, not keep pointing at
+  // commits B (driving the wall) must highlight B, not keep pointing at
   // A until the next list tap. Keys on the head CHANGING after mount — a
   // re-render with the same head leaves the highlight alone — and a first
   // commit from an empty queue counts as a change, since "tap a row, then swipe
@@ -507,10 +507,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     clearIfClosed: clearReportClimbSheet,
   } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const { playNext, setSessionBoardPath, setCurrentClimb, getQueueSnapshot } = useQueueActions();
-  // Read at a board-sheet tap, which must not take a crewmate's wall (#6665).
-  const isSharedSession = useIsSharedSession();
-  const isSharedSessionRef = useRef(isSharedSession);
-  isSharedSessionRef.current = isSharedSession;
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
   const setBoardAngle = useSetBoardAngle();
@@ -616,7 +612,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         !requestedOptions.previewQueueItem &&
         !requestedOptions.committedExternally &&
         !requestedOptions.reopensCurrent &&
-        !readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current })
+        !isDrivingWall()
           ? { ...requestedOptions, previewQueueItem: climbToQueueItem(climb) }
           : requestedOptions;
       if (replayFrameRef.current != null) {
@@ -1161,9 +1157,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   // A board-history row (the sheet and the iPad wall column) plays from the
   // wall's history like any list (issue #6665): swipes walk back through what
-  // was lit. Like every list it reads Light the board when I tap a climb, and
-  // in a crew it opens a preview, so looking never takes a crewmate's wall,
-  // unless this phone is driving the wall (#7113).
+  // was lit. Like every list it opens a preview, so looking never takes a
+  // crewmate's wall, unless this phone is driving the wall (#7113: a swipe,
+  // Put on board or Always drive the wall), when it goes up.
   // The queue entry the wall's climb already has is reused either way, so
   // putting it up from the preview doesn't queue a second copy.
   const handleBoardSheetClimbPress = useCallback(
@@ -1173,8 +1169,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         ? undefined
         : action.boardConfig;
       const track = action.track ?? null;
-      // Driving the wall lights it, in a crew too (#7113): the list's one rule.
-      if (!readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current })) {
+      // Only driving the wall lights it, in a crew too (#7113): the list's one
+      // rule. A board-sheet tap never takes a crewmate's wall otherwise (#6665).
+      if (!isDrivingWall()) {
         openPlayDrawer(action.climb, {
           previewQueueItem: item,
           previewIsWallClimb: action.isWallClimb ?? false,

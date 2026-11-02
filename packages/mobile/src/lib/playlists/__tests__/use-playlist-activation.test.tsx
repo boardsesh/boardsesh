@@ -24,6 +24,7 @@ import {
   enterDriveMode,
   markDriveLive,
   resetDriveModeForTests,
+  startAlwaysDrive,
   stopDrivingForLink,
 } from '../../../components/play-drawer/drive-mode-store';
 import { useInfiniteSearchClimbs } from '../../graphql/hooks/use-infinite-search-climbs';
@@ -232,6 +233,12 @@ function captured(): UsePlaylistClimbActivationOptions {
 }
 
 beforeEach(() => {
+  // This phone drives the wall (Always drive the wall's drive): a tap lights.
+  // Cases about a tap outside a drive, or in a crew that isn't driven, end it
+  // first. Started before the mocks clear, so its Drive Mode Started is not
+  // one of the case's events.
+  resetDriveModeForTests();
+  startAlwaysDrive({ sessionId: null, boardId: null });
   vi.clearAllMocks();
   // The canary's once-per-session Set is module state; clear it so a reused
   // sourceId can't make a case pass by reporting nothing.
@@ -255,7 +262,6 @@ beforeEach(() => {
   // Mirror the provider: everything handed over lands, and the count comes back.
   mocks.appendQueueItems.mockImplementation((items: ClimbQueueItem[]) => items.length);
   // The settings store is module state shared by every case.
-  setSetting('lightOnClimbTap', true);
   setSetting('playlistTapLoadsQueue', false);
 });
 
@@ -587,6 +593,9 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
   // the climber is standing at, and seeded with the list they tapped from so the
   // drawer's swipes walk it.
   describe('previewOnly (shared session)', () => {
+    // A crew this phone isn't driving for: a tap is a preview.
+    beforeEach(() => resetDriveModeForTests());
+
     it('opens the tapped climb view-only on the ACTIVE board, seeded with this list', async () => {
       const climbA = makeClimb('a');
       const climbB = makeClimb('b');
@@ -739,7 +748,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('boardConfig', { ...VIEW_ONLY_BOARD, angle: 20 });
     });
 
-    it('leaves the solo tap committing, exactly as before', async () => {
+    it('leaves a solo tap committing while driving, exactly as before', async () => {
+      startAlwaysDrive({ sessionId: null, boardId: null });
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: false });
 
@@ -750,11 +760,14 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
   });
 
-  // Issue #6665: every list reads "Light the board when I tap a climb", not
-  // only search, and with it off a tap is a preview that still walks the list.
-  describe('Light the board when I tap a climb, off', () => {
+  // Issue #6665: every list reads the same rule, not only search: outside a
+  // drive a tap is a preview that still walks the list.
+  describe('outside a drive', () => {
+    // Nothing drives the wall from this phone: no link yet, Always drive the wall
+    // off, or a press stopped it.
+    beforeEach(() => resetDriveModeForTests());
+
     it('opens a preview seeded with this list instead of committing', async () => {
-      setSetting('lightOnClimbTap', false);
       const climbA = makeClimb('a');
       const climbB = makeClimb('b');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climbA, climbB], sourceId: 'logbook:me' });
@@ -775,7 +788,6 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     it('previews a playlist, For You or setter tap like every other list (#6667)', async () => {
-      setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
@@ -790,7 +802,6 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     it('still previews, without a track, when no board is picked', async () => {
-      setSetting('lightOnClimbTap', false);
       mocks.activeBoard = null;
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
@@ -805,8 +816,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.activate).not.toHaveBeenCalled();
     });
 
-    it('previews the Play button when automatic tap lighting is off', async () => {
-      setSetting('lightOnClimbTap', false);
+    it('previews the Play button outside a drive', async () => {
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
@@ -826,13 +836,12 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
     });
 
-    it('reads the setting at the tap, so turning it back on commits the next tap', async () => {
-      setSetting('lightOnClimbTap', false);
+    it('reads the drive at the tap, so a drive starting commits the next tap', async () => {
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), { allClimbs: [climb] });
       const activateBefore = result.current.activate;
 
-      setSetting('lightOnClimbTap', true);
+      startAlwaysDrive({ sessionId: null, boardId: null });
       await result.current.activate(climb);
 
       expect(result.current.activate).toBe(activateBefore);
@@ -840,15 +849,17 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
   });
 
-  // "Tapping a playlist loads it into my queue" with Light the board when I tap
-  // a climb off (the 2.7 default): the list goes into Up next, the wall keeps
-  // its climb, and the tapped climb's new slot opens as a preview.
+  // "Tapping a playlist loads it into my queue" outside a drive (the default:
+  // Always drive the wall off, or no link yet): the list goes into Up next, the
+  // wall keeps its climb, and the tapped climb's new slot opens as a preview.
+  // While driving (Always drive the wall's drive included) the tap lights as any
+  // driven tap does: the 'queue replacement' cases.
   describe('the playlist switch, preview-first', () => {
     const wallClimb = makeQueueItem('q-now', 'now');
     const historyClimb = makeQueueItem('q-history', 'history');
 
     beforeEach(() => {
-      setSetting('lightOnClimbTap', false);
+      resetDriveModeForTests();
       setSetting('playlistTapLoadsQueue', true);
       mocks.queueState = { queue: [historyClimb, wallClimb], currentClimbQueueItem: wallClimb };
     });
@@ -1311,6 +1322,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     it("starts a preview's track at the first climb past the rows", async () => {
+      resetDriveModeForTests();
       const rows = Array.from({ length: 120 }, (_, index) => makeClimb(`row-${index}`));
       const listLoader = vi.fn<LoadedListTrackLoader>(async () => ({ climbs: [], nextOffset: null }));
       const { result } = renderActivation(vi.fn(), {
@@ -1330,6 +1342,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     it('gives a preview no loader when the rows are the whole list', async () => {
+      resetDriveModeForTests();
       const climb = makeClimb('a');
       const { result } = renderActivation(vi.fn(), {
         allClimbs: [climb],
@@ -1358,6 +1371,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     it('draws a preview tap on it too', async () => {
+      resetDriveModeForTests();
       const climb = makeClimb('a', { angle: 25 });
       const { result } = renderActivation(vi.fn(), {
         allClimbs: [climb],
@@ -3739,8 +3753,7 @@ describe('usePlaylistActivation while driving the wall', () => {
     resetDriveModeForTests();
   });
 
-  it('commits a solo tap with Light the board when I tap a climb off', async () => {
-    setSetting('lightOnClimbTap', false);
+  it('commits a solo tap', async () => {
     const climb = makeClimb('a');
     const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: false });
 

@@ -468,8 +468,6 @@
     "relightBoard": "Illumina di nuovo il pannello",
     "lighting": {
       "title": "Illuminazione del pannello",
-      "autoTitle": "Illumina in automatico",
-      "description": "Scegli cosa illumina in automatico il pannello connesso.",
       "keep": {
         "label": "Smetti di guidare dopo",
         "off": "Subito",
@@ -481,14 +479,11 @@
           "300": "5 minuti"
         },
         "untilStopped": "Finché non mi fermo",
-        "moonboardLabel": "Su una MoonBoard",
-        "moonboardAccessibilityLabel": "Smetti di guidare una MoonBoard dopo",
-        "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
-        "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
         "inSessionLabel": "Anche in una session",
-        "inSessionAccessibilityLabel": "Illumina il pannello guida anche in una session",
+        "inSessionAccessibilityLabel": "Illumina il pannello e Guida sempre il pannello valgono anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
         "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
+        "alwaysDriveReason": "Guida sempre il pannello è attivo, quindi questa opzione non si applica.",
         "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, e ognuno fa ripartire il timer. Quando il tempo finisce, il prossimo blocco che scegli si apre in anteprima.",
         "footerUntilStopped": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, finché non tocchi Guidi tu il pannello.",
         "footerOff": "Illumina il pannello illumina in parete il blocco che hai aperto. Il prossimo blocco che scegli si apre in anteprima."
@@ -498,12 +493,11 @@
         "description": "Quando la tua guida finisce, il telefono libera il pannello così il prossimo climber può connettersi: quando ti fermi o spegni tutte le luci, quando il tempo finisce o quando qualcuno della crew illumina un blocco mentre la tua guida ha un limite di tempo. Illumina il pannello si riconnette."
       },
       "drivingHelp": "Come funziona la guida del pannello",
-      "onSwipeLabel": "Illumina il pannello mentre scorro",
-      "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",
-      "onTapLabel": "Illumina il pannello quando tocco un blocco",
-      "onTapDescription": "Ogni tocco in una lista illumina il blocco, senza limite di tempo. Se è disattivato, il tocco apre un'anteprima.",
+      "alwaysDriveLabel": "Guida sempre il pannello",
+      "alwaysDriveDescription": "Ogni blocco che scegli si illumina in parete finché questo telefono ha il pannello. In una session serve Anche in una session.",
+      "alwaysDriveFooter": "Tocca Guidi tu il pannello per smettere. Poi i blocchi che scegli si aprono in anteprima finché non ti disconnetti o tocchi Illumina il pannello.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
-      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se “Illumina il pannello quando tocco un blocco” è attivo, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Se è disattivato, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello."
+      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se guidi tu il pannello, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Altrimenti, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello. In una session la lista non entra mai nella coda condivisa."
     },
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",

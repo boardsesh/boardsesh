@@ -27,11 +27,12 @@ describe('buildLightingWindowPayload', () => {
     expect(
       buildLightingWindowPayload({
         sessionId: 'session-1',
-        drive: drive({ windowSetting: 'moonboardPutOnBoardKeepsLighting' }),
+        // A MoonBoard's timed drive too: Stop driving after is one choice for every board.
+        drive: drive({ boardType: 'moonboard' }),
         // The drive's own end: nothing clamps it since auto-disconnect went (2.7).
         lighting: { mode: 'window', endsAt: 46_000 },
       }),
-    ).toEqual({ sessionId: 'session-1', mode: 'window', endsAtMs: 46_000, windowSeconds: 45, family: 'moonboard' });
+    ).toEqual({ sessionId: 'session-1', mode: 'window', endsAtMs: 46_000, windowSeconds: 45, family: 'general' });
   });
 
   it('sends an open-ended drive with no end', () => {
@@ -68,31 +69,41 @@ describe('buildLightingWindowPayload', () => {
 describe('buildKeepLightingConfig', () => {
   const base = {
     keepLighting: '45' as const,
-    moonboardKeepLighting: 'until_stopped' as const,
     drivesInSession: true,
     isCrewSession: true,
-    boardName: 'kilter',
     swipeToDriveEnabled: true,
-    lightOnSwipe: false,
+    alwaysDrive: false,
   };
 
-  it('mirrors both choices, In a session too, the crew and the board family', () => {
+  it('mirrors the choice, In a session too and the crew', () => {
     expect(buildKeepLightingConfig(base)).toEqual({
       keepLighting: '45',
-      moonboardKeepLighting: 'until_stopped',
+      moonboardKeepLighting: '45',
       drivesInSession: true,
       inCrew: true,
       moonboard: false,
       enabled: true,
       lockScreenStop: true,
     });
-    expect(buildKeepLightingConfig({ ...base, boardName: 'moonboard' }).moonboard).toBe(true);
   });
 
+  // The binary's `SharedKeepLighting.plan(for:)` takes `moonboardKeepLighting`
+  // in a crew too when `moonboard` is true. JS never says MoonBoard and sends
+  // the general choice in that slot, so a press on a MoonBoard's card follows
+  // the general rule, In a session too included, with no native change.
+  it.each(['off', '30', '45', '60', '120', '300', 'until_stopped'] as const)(
+    'never tells the binary the board is a MoonBoard, and sends %s in its slot too',
+    (keepLighting) => {
+      const config = buildKeepLightingConfig({ ...base, keepLighting, isCrewSession: true, drivesInSession: false });
+      expect(config.moonboard).toBe(false);
+      expect(config.moonboardKeepLighting).toBe(keepLighting);
+    },
+  );
+
   it('mirrors Right away and the 2 and 5 minute choices as stored: native reads off as one climb, no drive', () => {
-    expect(buildKeepLightingConfig({ ...base, keepLighting: 'off', moonboardKeepLighting: '300' })).toMatchObject({
+    expect(buildKeepLightingConfig({ ...base, keepLighting: 'off' })).toMatchObject({
       keepLighting: 'off',
-      moonboardKeepLighting: '300',
+      moonboardKeepLighting: 'off',
       enabled: true,
     });
     expect(buildKeepLightingConfig({ ...base, keepLighting: '120' }).keepLighting).toBe('120');
@@ -108,9 +119,14 @@ describe('buildKeepLightingConfig', () => {
   it('is off where a press would not start a drive in the app either', () => {
     // The swipe flag is the drive's kill switch.
     expect(buildKeepLightingConfig({ ...base, swipeToDriveEnabled: false }).enabled).toBe(false);
-    // Solo with Light the board as I swipe, every pick lights already.
-    expect(buildKeepLightingConfig({ ...base, isCrewSession: false, lightOnSwipe: true }).enabled).toBe(false);
-    // In a crew that setting isn't honoured, so the press keeps lighting.
-    expect(buildKeepLightingConfig({ ...base, isCrewSession: true, lightOnSwipe: true }).enabled).toBe(true);
+    // Where Always drive the wall drives, every pick lights already: solo, and
+    // in a crew with In a session too on.
+    expect(buildKeepLightingConfig({ ...base, isCrewSession: false, alwaysDrive: true }).enabled).toBe(false);
+    expect(buildKeepLightingConfig({ ...base, isCrewSession: true, alwaysDrive: true }).enabled).toBe(false);
+    // In a crew with In a session too off it doesn't drive, on any board, so
+    // the press keeps lighting (and native's own crew rule decides it).
+    expect(
+      buildKeepLightingConfig({ ...base, isCrewSession: true, drivesInSession: false, alwaysDrive: true }).enabled,
+    ).toBe(true);
   });
 });

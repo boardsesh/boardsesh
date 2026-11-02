@@ -15,9 +15,10 @@
 // on them plays from the list like any other list tap, unless the climber turned
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
-// so previous/next walk the circuit. With Light the board when I tap a climb
-// off (the 2.7 default) the list goes into Up next instead, the wall keeps its
-// climb, and the tapped climb's slot opens as a preview for Put on board.
+// so previous/next walk the circuit, while this phone drives the wall. Outside
+// a drive (Always drive the wall off is the default) the list goes into Up next
+// instead, the wall keeps its climb, and the tapped climb's slot opens as a
+// preview for Put on board.
 // Because a replace clears any future queue items, a three-way prompt warns
 // first whenever the queue has items after the current: start the playlist
 // (destructive), add it behind what's queued and play from it, or back out to
@@ -71,7 +72,7 @@ import { toSchemaClimb } from '../climb-types';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import type { LoadedListTrackLoader } from './loaded-list-pages';
 import { getSetting } from '../../settings/hooks';
-import { isDrivingWall, readClimbChangeLights } from '../../components/play-drawer/use-climb-change-lights';
+import { isDrivingWall } from '../../components/play-drawer/use-climb-change-lights';
 import { getPlaylistRenderBoardTarget } from './playlist-climb-render-board';
 import { registerPendingTrackLoader, registerTrackPageLoader, type TrackPageLoader } from './track-pager';
 import { sourceIdForReports } from './playlist-view';
@@ -275,7 +276,7 @@ export type UsePlaylistActivationOptions = {
    * climber's "Tapping a playlist loads it into my queue" setting on, a tap
    * replaces the queue with the list instead of playing from it. The setting is
    * read at the tap. Off (the default), the tap plays from the list. Either way
-   * "Light the board when I tap a climb" off makes the tap or Play a preview.
+   * the tap or Play is a preview unless this phone drives the wall.
    */
   honorPlaylistLoadSetting?: boolean;
 };
@@ -1694,27 +1695,21 @@ export function usePlaylistActivation({
       const tapLoadsQueue =
         honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue') && !(previewOnlyRef.current && isDrivingWall());
 
-      // Two reasons to preview, either one enough: there are other climbers in
-      // the session (`previewOnly`), so a tap must not take their wall; or the
-      // climber turned off "Light the board when I tap a climb" (issue #6665:
-      // every list reads it, not only search). The setting is read here, at the
-      // tap, so the callback does not change identity when it flips.
+      // Outside a drive a tap is a preview (issue #6665: every list reads it,
+      // not only search), solo and in a crew alike: a tap must not take a
+      // crew's wall, and solo nothing lights until this phone drives the wall.
+      // Driving it (#7113: a swipe, Put on board, or Always drive the wall)
+      // lights every change of climb, in a crew too, so the tap plays from
+      // the list. Read here, at the tap, so the callback does not change
+      // identity when a drive starts or ends.
       //
-      // The header Play button follows the same lighting preference as a row.
-      // Loading a playlist doesn't bypass preview-first browsing either: it
-      // loads Up next and leaves the wall alone.
+      // The header Play button follows the same rule as a row. Loading a
+      // playlist doesn't bypass preview-first browsing either: it loads Up
+      // next and leaves the wall alone.
       //
       // Ordered ahead of the replace deliberately: replacing a crew's whole
       // queue is the loudest write in the app, and a row tap must never be it.
-      //
-      // Driving the wall (#7113) overrides both: every change of climb lights
-      // it, in a crew too, so the tap plays from the list. One rule for every
-      // change of climb (`climbChangeStaysViewOnly`), read at the tap.
-      if (
-        !readClimbChangeLights('tap', {
-          inSharedSession: previewOnlyRef.current,
-        })
-      ) {
+      if (!isDrivingWall()) {
         // The playlist switch still loads the list, keeping the wall. Never in
         // a crew: the crew's queue is theirs.
         if (tapLoadsQueue && !previewOnlyRef.current && resolveTarget(climb)) return loadIntoUpNextKeepingWall();

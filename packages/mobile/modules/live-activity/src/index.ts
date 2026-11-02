@@ -488,13 +488,19 @@ export type LiveActivityLightingWindowSnapshot = {
 export type LiveActivityKeepLightingConfig = {
   /** The general `KeepLightingChoice` ('off' | '30' | '45' | '60' | '120' | '300' | 'until_stopped'). */
   keepLighting: string;
-  /** The MoonBoard `KeepLightingChoice`. */
+  /**
+   * The MoonBoard `KeepLightingChoice`. A MoonBoard takes the general choice
+   * now, so JS sends `keepLighting` here too; the binary still reads it.
+   */
   moonboardKeepLighting: string;
   /** "In a session too". */
   drivesInSession: boolean;
   /** A crew is in the session (the roster's crew). */
   inCrew: boolean;
-  /** The session's board is a MoonBoard. */
+  /**
+   * The session's board is a MoonBoard, for the binary's MoonBoard rule. JS
+   * sends false on every board, so a press follows the general rule.
+   */
   moonboard: boolean;
   /** False where a press would not start a drive in the app either. */
   enabled: boolean;

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import {
-  climbChangeStaysViewOnly,
   getSimilarClimbTapMode,
   getViewOnlyPreviewNavigationTarget,
   getSwipeNavigationTarget,
@@ -87,7 +86,7 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
     ).toEqual({ viewOnly: false });
   });
 
-  it('forceViewOnly (lightOnSwipe off) goes view-only even with no preview item or source yet', () => {
+  it('forceViewOnly (nothing driving) goes view-only even with no preview item or source yet', () => {
     // The first swipe away from a real committed climb — there is no
     // pre-existing preview to chain from, unlike the wrong-board path above.
     expect(
@@ -124,33 +123,32 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
 
 describe('getSwipeNavigationTarget', () => {
   // This is the exact call PlayDrawer's handlePrev/handleNext make — it exists
-  // so the lightOnSwipe -> forceViewOnly wiring is unit-tested without needing
-  // to render PlayDrawer (impractical; see IpadPlayPane.test.tsx, which mocks
-  // it out).
-  it('goes view-only with lightOnSwipe off, even on the very first swipe (no prior preview)', () => {
+  // so the driving -> forceViewOnly wiring is unit-tested without needing to
+  // render PlayDrawer (impractical; see IpadPlayPane.test.tsx, which mocks it
+  // out).
+  it('goes view-only outside a drive, even on the very first swipe (no prior preview)', () => {
     const nextItem = makeItem('next');
     expect(
       getSwipeNavigationTarget({
         previewItem: null,
         previewSuggestionSource: null,
         targetItem: nextItem,
-        lightOnSwipe: false,
       }),
     ).toEqual({ viewOnly: true, targetItem: nextItem });
   });
 
-  it('stays live with lightOnSwipe on and no wrong-board preview in progress', () => {
+  it('stays live while driving with no wrong-board preview in progress', () => {
     expect(
       getSwipeNavigationTarget({
         previewItem: null,
         previewSuggestionSource: null,
         targetItem: makeItem('next'),
-        lightOnSwipe: true,
+        driving: true,
       }),
     ).toEqual({ viewOnly: false });
   });
 
-  it('still honors the wrong-board preview chain when lightOnSwipe is on', () => {
+  it('keeps a tracked preview a preview outside a drive', () => {
     const currentItem = makeItem('current');
     const nextItem = makeItem('next');
     const previewSource = makePreviewSource(currentItem);
@@ -159,49 +157,8 @@ describe('getSwipeNavigationTarget', () => {
         previewItem: currentItem,
         previewSuggestionSource: previewSource,
         targetItem: nextItem,
-        lightOnSwipe: true,
       }),
     ).toEqual({ viewOnly: true, targetItem: nextItem });
-  });
-
-  // The shared-session half. With a crew present a swipe writes the queue
-  // EVERYONE reads and moves the wall someone may be mid-attempt on, so browsing
-  // must not cost that — regardless of the climber's own lighting setting, which
-  // is about their board, not about the crew's.
-  it('goes view-only in a shared session even with lightOnSwipe on and no preview', () => {
-    const nextItem = makeItem('next');
-    expect(
-      getSwipeNavigationTarget({
-        previewItem: null,
-        previewSuggestionSource: null,
-        targetItem: nextItem,
-        lightOnSwipe: true,
-        inSharedSession: true,
-      }),
-    ).toEqual({ viewOnly: true, targetItem: nextItem });
-  });
-
-  it('leaves a solo swipe live when the shared-session flag is off', () => {
-    expect(
-      getSwipeNavigationTarget({
-        previewItem: null,
-        previewSuggestionSource: null,
-        targetItem: makeItem('next'),
-        lightOnSwipe: true,
-        inSharedSession: false,
-      }),
-    ).toEqual({ viewOnly: false });
-  });
-
-  it('defaults inSharedSession to false, so solo call sites read unchanged', () => {
-    expect(
-      getSwipeNavigationTarget({
-        previewItem: null,
-        previewSuggestionSource: null,
-        targetItem: makeItem('next'),
-        lightOnSwipe: true,
-      }),
-    ).toEqual({ viewOnly: false });
   });
 });
 
@@ -214,70 +171,33 @@ describe('swipeStaysViewOnly', () => {
     const currentItem = makeItem('current');
 
     // The explicit "Preview" climb action, a deep link, the workout builder: a
-    // pinned preview with NO suggestion source. With lightOnSwipe on, the swipe
+    // pinned preview with NO suggestion source. While driving, the swipe
     // handlers fall straight through to setCurrentClimb — the shared-queue write
     // and BLE re-arm the browse chrome would be denying.
-    expect(swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource: null, lightOnSwipe: true })).toBe(
-      false,
-    );
+    expect(swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource: null, driving: true })).toBe(false);
   });
 
-  it('is true when the lightOnSwipe setting is off — no swipe drives the wall', () => {
-    expect(swipeStaysViewOnly({ previewItem: null, previewSuggestionSource: null, lightOnSwipe: false })).toBe(true);
-  });
-
-  it('is true for a suggestion-sourced preview, which navigates within itself', () => {
-    const currentItem = makeItem('current');
-
-    expect(
-      swipeStaysViewOnly({
-        previewItem: currentItem,
-        previewSuggestionSource: makePreviewSource(currentItem),
-        lightOnSwipe: true,
-      }),
-    ).toBe(true);
-  });
-
-  it('is true in a shared session, whatever the lighting setting says', () => {
-    const currentItem = makeItem('current');
-
-    // The one combination that used to commit — a pinned preview, no suggestion
-    // source, lighting on — and the bare committed state before any preview
-    // exists. Both browse once there is an audience.
-    expect(
-      swipeStaysViewOnly({
-        previewItem: currentItem,
-        previewSuggestionSource: null,
-        lightOnSwipe: true,
-        inSharedSession: true,
-      }),
-    ).toBe(true);
-    expect(
-      swipeStaysViewOnly({
-        previewItem: null,
-        previewSuggestionSource: null,
-        lightOnSwipe: true,
-        inSharedSession: true,
-      }),
-    ).toBe(true);
+  it('is true outside a drive — no swipe drives the wall', () => {
+    expect(swipeStaysViewOnly({ previewItem: null, previewSuggestionSource: null })).toBe(true);
+    expect(swipeStaysViewOnly({ previewItem: makeItem('current'), previewSuggestionSource: null })).toBe(true);
   });
 
   it('agrees with the swipe handlers it is derived from, whatever the target', () => {
     const currentItem = makeItem('current');
     const nextItem = makeItem('next');
 
-    for (const lightOnSwipe of [true, false]) {
-      for (const inSharedSession of [true, false]) {
+    for (const driving of [true, false]) {
+      for (const previewOnOtherBoard of [true, false]) {
         for (const previewSuggestionSource of [null, makePreviewSource(currentItem)]) {
           expect(
-            swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource, lightOnSwipe, inSharedSession }),
+            swipeStaysViewOnly({ previewItem: currentItem, previewSuggestionSource, driving, previewOnOtherBoard }),
           ).toBe(
             getSwipeNavigationTarget({
               previewItem: currentItem,
               previewSuggestionSource,
               targetItem: nextItem,
-              lightOnSwipe,
-              inSharedSession,
+              driving,
+              previewOnOtherBoard,
             }).viewOnly,
           );
         }
@@ -320,75 +240,28 @@ describe('getSimilarClimbTapMode', () => {
   });
 });
 
-// #7113: one rule for every change of climb. Driving lights everything, in a
-// crew too; otherwise the setting decides solo, a crew previews, and a press
-// that stopped driving keeps solo changes as previews until the link drops.
-describe('climbChangeStaysViewOnly', () => {
-  const cases: [boolean, boolean, boolean, boolean, boolean][] = [];
-  for (const driving of [false, true]) {
-    for (const inSharedSession of [false, true]) {
-      for (const lightSetting of [false, true]) {
-        for (const stoppedForLink of [false, true]) {
-          // Expected, spelled out: only driving, or solo with the setting on and no stop, lights.
-          const lights = driving || (!inSharedSession && lightSetting && !stoppedForLink);
-          cases.push([driving, inSharedSession, lightSetting, stoppedForLink, !lights]);
-        }
-      }
-    }
-  }
-
-  it.each(cases)(
-    'driving %s, crew %s, setting %s, stopped %s: view-only %s',
-    (driving, inSharedSession, lightSetting, stoppedForLink, viewOnly) => {
-      expect(climbChangeStaysViewOnly({ driving, inSharedSession, lightSetting, stoppedForLink })).toBe(viewOnly);
-    },
-  );
-
-  it('defaults to no stop', () => {
-    expect(climbChangeStaysViewOnly({ driving: false, inSharedSession: false, lightSetting: true })).toBe(false);
-  });
-
-  it('agrees with the swipe rule whenever nobody is driving and nothing is stopped', () => {
-    for (const inSharedSession of [false, true]) {
-      for (const lightOnSwipe of [false, true]) {
-        expect(climbChangeStaysViewOnly({ driving: false, inSharedSession, lightSetting: lightOnSwipe })).toBe(
-          swipeStaysViewOnly({ previewItem: null, previewSuggestionSource: null, lightOnSwipe, inSharedSession }),
-        );
-      }
-    }
-  });
-});
-
 // #7113: the swipe rule while driving the wall.
 describe('getSwipeNavigationTarget while driving', () => {
   const current = makeItem('current');
   const next = makeItem('next');
   const preview = makeItem('preview');
 
-  it('commits in a crew, with Light on swipe off, and from a tracked preview', () => {
-    for (const [lightOnSwipe, inSharedSession] of [
-      [true, true],
-      [false, false],
-      [false, true],
-    ] as const) {
-      expect(
-        getSwipeNavigationTarget({
-          previewItem: null,
-          previewSuggestionSource: null,
-          targetItem: next,
-          lightOnSwipe,
-          inSharedSession,
-          driving: true,
-        }),
-      ).toEqual({ viewOnly: false });
-    }
+  // Always drive the wall's drive is a drive like any other: every change of
+  // climb lights, from no preview and from a tracked one.
+  it('commits from the committed climb and from a tracked preview', () => {
+    expect(
+      getSwipeNavigationTarget({
+        previewItem: null,
+        previewSuggestionSource: null,
+        targetItem: next,
+        driving: true,
+      }),
+    ).toEqual({ viewOnly: false });
     expect(
       getSwipeNavigationTarget({
         previewItem: preview,
         previewSuggestionSource: makePreviewSource(current),
         targetItem: next,
-        lightOnSwipe: true,
-        inSharedSession: true,
         driving: true,
       }),
     ).toEqual({ viewOnly: false });
@@ -400,22 +273,20 @@ describe('getSwipeNavigationTarget while driving', () => {
         previewItem: preview,
         previewSuggestionSource: makePreviewSource(current),
         targetItem: next,
-        lightOnSwipe: true,
-        inSharedSession: true,
         driving: true,
         previewOnOtherBoard: true,
       }),
     ).toEqual({ viewOnly: true, targetItem: next });
   });
 
-  it('a stop on this link keeps solo swipes previews with the setting on', () => {
+  // A stop ends the drive (`stopDrivingForLink`), so the swipe reads not driving.
+  it('a stop on this link leaves swipes previews', () => {
     expect(
       getSwipeNavigationTarget({
         previewItem: null,
         previewSuggestionSource: null,
         targetItem: next,
-        lightOnSwipe: true,
-        stoppedForLink: true,
+        driving: false,
       }),
     ).toEqual({ viewOnly: true, targetItem: next });
   });
@@ -426,8 +297,6 @@ describe('getSwipeNavigationTarget while driving', () => {
       swipeStaysViewOnly({
         previewItem: preview,
         previewSuggestionSource: source,
-        lightOnSwipe: true,
-        inSharedSession: true,
         driving: true,
       }),
     ).toBe(false);
@@ -435,8 +304,6 @@ describe('getSwipeNavigationTarget while driving', () => {
       swipeStaysViewOnly({
         previewItem: preview,
         previewSuggestionSource: source,
-        lightOnSwipe: true,
-        inSharedSession: true,
         driving: false,
       }),
     ).toBe(true);

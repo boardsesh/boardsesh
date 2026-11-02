@@ -22,8 +22,8 @@ name: help clip - browse climbs in the play drawer
 #
 # Before recording, stop any drive by tapping You are driving the wall (a drive
 # from Put on board shows a clock beside the label; a tap stops either kind),
-# then leave Light the board when I tap a climb and Light the board as I swipe
-# off in Settings > Board (the 2.7 default, so a tap previews). Keep the fake
+# then leave Always drive the wall off in Settings > Board (the default, so
+# nothing drives the wall and a tap previews). Keep the fake
 # board connected: Disconnect board, on a plain button, is the stopped state,
 # not a button this flow presses. Do not use screenshotDrive=1 for this take.
 #

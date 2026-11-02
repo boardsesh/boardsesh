@@ -498,8 +498,8 @@ describe('computeNavigationStateWithSuggestions', () => {
   });
 
   it('gives a trackless preview nothing to swipe to, even when its climb is queued', () => {
-    // Settings promises "a preview never lights the board as you swipe". With
-    // Light the board as I swipe on, a trackless preview's swipe is not view-only
+    // Settings promises "a preview never lights the board as you swipe". While
+    // driving, a trackless preview's swipe is not view-only
     // (`getViewOnlyPreviewNavigationTarget`), so the promise rests on this: every
     // trackless preview is a fresh queue item (`climbToQueueItem`), an orphan with
     // no list, and an orphan has nowhere to go. A swipe that could land would

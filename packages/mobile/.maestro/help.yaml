@@ -357,7 +357,7 @@ name: help screenshots
 # screenshotOpenPreview opens visibleClimbs[0], likely the climb 10-board-view
 # just put up, and a preview of the climb up shows none of that chrome. Check the
 # PNG before shipping it; it may need to target another climb. The helper turns
-# lightOnSwipe off and marks the one-shot browse notice
+# Always drive the wall (alwaysDrive) off and marks the one-shot browse notice
 # seen. Driving was stopped above and screenshotDrive is absent here, so this
 # preview cannot silently inherit or restart the preceding still's live drive.
 # Clear whatever overlay the previous shot left up.

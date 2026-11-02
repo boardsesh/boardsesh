@@ -15,8 +15,8 @@ name: help clip - swipe the wall button to drive
 # Before recording, open a tracked climb with screenshotOpenFirst=1 and leave
 # screenshotDrive unset. Start with Put on board and chevrons, with no link, or
 # Disconnect board and chevrons after stopping an earlier drive. Do not tap
-# Put on board first: it starts a timed drive (45 s by default; a MoonBoard drives
-# until you stop), and the button then shows a clock and a shrinking frost instead of the
+# Put on board first: it starts a timed drive (45 s by default), and the button
+# then shows a clock and a shrinking frost instead of the
 # full frost this take teaches. A slower drag keeps the release label readable.
 # While dragging, a flat amber wipe comes in from the trailing edge; the frost
 # appears on release.

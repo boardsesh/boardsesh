@@ -59,7 +59,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
 vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ isDrivingWall: () => false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),

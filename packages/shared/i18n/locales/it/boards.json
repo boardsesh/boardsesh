@@ -112,7 +112,7 @@
         "title": "Illumina i blocchi su {{board}}",
         "titleNoName": "Illumina i blocchi sul tuo pannello",
         "body": "Collega questo telefono al pannello, tocca un blocco e poi Illumina il pannello per illuminarlo.",
-        "bodyTapLights": "Collega questo telefono al pannello, poi tocca un blocco qualsiasi per illuminarlo.",
+        "bodyAlwaysDrive": "Collega questo telefono al pannello e lo guidi tu: ogni blocco che scegli si illumina in parete.",
         "connect": "Connetti",
         "tryAgain": "Riprova",
         "noLights": "Questo pannello non ha luci",
@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",
-        "body": "Ora, toccando un blocco nell'elenco, lo illumini in parete.",
+        "bodyAlwaysDrive": "Guida sempre il pannello è attivo: ogni blocco che scegli si illumina in parete finché non tocchi Guidi tu il pannello per smettere.",
         "bodyWindow": "Con Illumina il pannello guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
         "bodyWindowMinute": "Con Illumina il pannello guidi tu il pannello: per 1 minuto dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
         "bodyWindowMinutes": "Con Illumina il pannello guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",

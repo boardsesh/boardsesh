@@ -535,8 +535,8 @@ export function LogbookTab({
 
   // Tap → the climb opens playing from this logbook (own and another climber's
   // alike, issue #6665): swipes walk the rows on screen, in their order, and
-  // page on through the feed. Light the board when I tap a climb and the crew
-  // rule decide whether it goes up or opens as a preview.
+  // page on through the feed. Driving the wall decides whether it goes up or
+  // opens as a preview.
   const listRowsInputRef = useRef(listRowsInput);
   listRowsInputRef.current = listRowsInput;
   const fetchNextGroupedPage = groupedFeed.fetchNextPage;

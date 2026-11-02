@@ -196,10 +196,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   `wallSwipeToDriveOffered`: unresolved or off means off in a store build; dev
   builds read it as on unless it is set to off; screenshot mode ignores it). It
   gates more than the swipe: the ‹‹ chevrons and the one-time peek, the Light
-  every climb action and sheet row, and since 2.7 Put on board's timed drive.
+  every climb action and sheet row, since 2.7 Put on board's timed drive, and
+  since 2026-11 **Always drive the wall**'s always-on drive (`alwaysDriveApplies`).
   The first-connect confirmation and the player's preview-first card read it
   too. Turned off, Put on board lights one climb and starts no drive, and
-  nothing drives the wall. Check its rollout in PostHog before reading any
+  nothing drives the wall: Always drive the wall's running drive ends keeping the
+  link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
   driving metric.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
   off) that decides whether a crew's swipes and list taps preview instead of
@@ -253,15 +255,16 @@ diagnostic) applies on native. The whole surface lives in three files:
   enrolled account's first connect on the phone, in both arms, whatever **Light
   the board when I tap a climb** says. Until 2.7 it showed only with that switch
   on, and 2.7 turns it off by default, so it would have reached almost nobody.
-  Its body now says what lights from there, read the way a list tap and Put on
-  board read it (`firstConnectConfirmationCopy`): every tap (the switch on,
-  outside a shared session, where a list tap stays a preview), Put on board's
-  timed drive (30 or 45 seconds, or whole minutes from 1 minute up), until the climber
-  stops it (a MoonBoard's default), or the one climb Put on board lights (Stop
-  driving after set to Right away, a crew with In a session too off,
-  `wall-swipe-to-drive` off, or solo with **Light the board as I swipe** on,
-  where the press starts no drive) (`resolveKeepLightingReach`, the same rule
-  the player's preview-first card reads). The Climbs card's body follows the switch and the shared session too.
+  Its body now says what lights from there, read the way Always drive the wall and
+  Put on board read it (`firstConnectConfirmationCopy`): every pick, while **Light
+  automatically** drives there (`firstConnectAlwaysDrives`: the switch on, and in a
+  crew In a session too on, on every board; it replaced the two switches in
+  2026-11), Put on board's timed drive (30 or 45 seconds, or whole minutes from 1
+  minute up), until the climber stops it (Until I stop), or the one climb
+  Put on board lights (Stop driving after set to Right away, a crew with In a
+  session too off, or `wall-swipe-to-drive` off) (`resolveKeepLightingReach`, the
+  same rule the player's preview-first card reads). The Climbs card's body follows
+  Always drive the wall and the crew the same way.
   The host announces the confirmation (`first-connect-confirmation-presence.ts`)
   before it records the connect, since that record hides the Climbs card: from
   then until the dialog closes the Climbs list's board-reveal and quick-actions

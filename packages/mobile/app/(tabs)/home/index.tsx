@@ -279,8 +279,8 @@ export default function HomeTab() {
   );
 
   // A session card's hardest send opens like a row of any list (issue #6665):
-  // Light the board when I tap a climb and the crew rule decide whether it
-  // goes up, and it plays from a one-climb list of its own.
+  // driving the wall (a swipe, Put on board or Always drive the wall) decides
+  // whether it goes up, and it plays from a one-climb list of its own.
   const handleOpenClimb = useTickListActivation<SessionFeedTickHighlight>({
     sourceId: 'home-session-cards',
     label: tSession('playView.track.hardestSend'),

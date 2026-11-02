@@ -5,10 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LEGACY_AUTO_DISCONNECT_KEY,
   LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY,
+  LEGACY_LIGHT_ON_CLIMB_TAP_KEY,
+  LEGACY_LIGHT_ON_SWIPE_KEY,
   migrateAutoDisconnect,
+  migrateLightAutomatically,
+  planAlwaysDriveMigration,
   planAutoDisconnectMigration,
   stopDrivingAfterForTimeout,
-  type AutoDisconnectMigrationStore,
+  type SettingsMigrationStore,
 } from '../migrations';
 import type { SettingsKey } from '../types';
 
@@ -24,7 +28,7 @@ vi.mock('react-native-mmkv', () => ({
 }));
 
 /** An in-memory store over raw JSON strings, as MMKV holds them. */
-function memoryStore(initial: Record<string, unknown>): AutoDisconnectMigrationStore & {
+function memoryStore(initial: Record<string, unknown>): SettingsMigrationStore & {
   raw: Map<string, string>;
   writes: string[];
 } {
@@ -79,14 +83,13 @@ describe('planAutoDisconnectMigration', () => {
     autoDisconnect: true,
     timeoutSeconds: 60,
     keepLightingSet: false,
-    moonboardKeepLightingSet: false,
   };
 
-  it('turns on the disconnect and sets both lengths, then the flag last', () => {
+  // One Stop driving after for every board: no MoonBoard length any more.
+  it('turns on the disconnect and sets the length, then the flag last', () => {
     expect(planAutoDisconnectMigration(ON)).toEqual([
       { key: 'disconnectWhenDrivingEnds', value: true },
       { key: 'putOnBoardKeepsLighting', value: '60' },
-      { key: 'moonboardPutOnBoardKeepsLighting', value: '60' },
       { key: 'autoDisconnectMigrated', value: true },
     ]);
   });
@@ -94,12 +97,6 @@ describe('planAutoDisconnectMigration', () => {
   it('leaves a length the climber already chose', () => {
     expect(planAutoDisconnectMigration({ ...ON, keepLightingSet: true })).toEqual([
       { key: 'disconnectWhenDrivingEnds', value: true },
-      { key: 'moonboardPutOnBoardKeepsLighting', value: '60' },
-      { key: 'autoDisconnectMigrated', value: true },
-    ]);
-    expect(planAutoDisconnectMigration({ ...ON, moonboardKeepLightingSet: true })).toEqual([
-      { key: 'disconnectWhenDrivingEnds', value: true },
-      { key: 'putOnBoardKeepsLighting', value: '60' },
       { key: 'autoDisconnectMigrated', value: true },
     ]);
   });
@@ -129,7 +126,8 @@ describe('migrateAutoDisconnect', () => {
     const store = memoryStore({ [LEGACY_AUTO_DISCONNECT_KEY]: true, [LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY]: seconds });
     expect(migrateAutoDisconnect(store)).toBe(true);
     expect(parsed(store, 'putOnBoardKeepsLighting')).toBe(choice);
-    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBe(choice);
+    // The retired MoonBoard length is never written.
+    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBeUndefined();
     expect(parsed(store, 'disconnectWhenDrivingEnds')).toBe(true);
     expect(parsed(store, 'autoDisconnectMigrated')).toBe(true);
   });
@@ -138,10 +136,9 @@ describe('migrateAutoDisconnect', () => {
     const store = memoryStore({ [LEGACY_AUTO_DISCONNECT_KEY]: true });
     migrateAutoDisconnect(store);
     expect(parsed(store, 'putOnBoardKeepsLighting')).toBe('30');
-    expect(parsed(store, 'moonboardPutOnBoardKeepsLighting')).toBe('30');
   });
 
-  it('keeps the Stop driving after lengths a climber already set', () => {
+  it('keeps the Stop driving after length a climber already set, and leaves the retired MoonBoard one alone', () => {
     const store = memoryStore({
       [LEGACY_AUTO_DISCONNECT_KEY]: true,
       [LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY]: 600,
@@ -187,6 +184,86 @@ describe('migrateAutoDisconnect', () => {
   });
 });
 
+// The two Always drive the wall switches carried into one (alwaysDrive): either
+// one on turns it on; nothing else changes, and a second run writes nothing.
+describe('planAlwaysDriveMigration', () => {
+  it.each([
+    [true, undefined],
+    [undefined, true],
+    [true, true],
+    [true, false],
+    [false, true],
+  ] as const)('tap %s, swipe %s: Always drive the wall on', (lightOnClimbTap, lightOnSwipe) => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([
+      { key: 'alwaysDrive', value: true },
+    ]);
+  });
+
+  it.each([
+    [undefined, undefined],
+    [false, false],
+    [false, undefined],
+    ['true', 1],
+    [null, 'yes'],
+  ] as const)('tap %s, swipe %s: nothing written', (lightOnClimbTap, lightOnSwipe) => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([]);
+  });
+
+  it('writes nothing once Always drive the wall is stored, whatever the old switches say', () => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: true, lightOnClimbTap: true, lightOnSwipe: true })).toEqual([]);
+  });
+});
+
+describe('migrateLightAutomatically', () => {
+  it.each([
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+  ])('%o: Always drive the wall on, and nothing else written', (initial) => {
+    const store = memoryStore(initial);
+    expect(migrateLightAutomatically(store)).toBe(true);
+    expect(parsed(store, 'alwaysDrive')).toBe(true);
+    expect(store.writes).toEqual(['alwaysDrive']);
+  });
+
+  it('changes nothing for a climber with both switches off or never set', () => {
+    for (const initial of [
+      {},
+      { [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false },
+      { [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false, [LEGACY_LIGHT_ON_SWIPE_KEY]: false },
+    ]) {
+      const store = memoryStore(initial);
+      expect(migrateLightAutomatically(store)).toBe(false);
+      expect(store.writes).toEqual([]);
+      expect(parsed(store, 'alwaysDrive')).toBeUndefined();
+    }
+  });
+
+  it('runs once: after the climber turns Always drive the wall off, a second run leaves it off', () => {
+    const store = memoryStore({ [LEGACY_LIGHT_ON_SWIPE_KEY]: true });
+    expect(migrateLightAutomatically(store)).toBe(true);
+    store.set('alwaysDrive', false);
+    store.writes.length = 0;
+    expect(migrateLightAutomatically(store)).toBe(false);
+    expect(store.writes).toEqual([]);
+    expect(parsed(store, 'alwaysDrive')).toBe(false);
+  });
+
+  it('keeps a choice the climber already made', () => {
+    const store = memoryStore({ alwaysDrive: false, [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true });
+    expect(migrateLightAutomatically(store)).toBe(false);
+    expect(parsed(store, 'alwaysDrive')).toBe(false);
+  });
+
+  it('leaves the retired switches on disk for an older bundle', () => {
+    const store = memoryStore({ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true, [LEGACY_LIGHT_ON_SWIPE_KEY]: false });
+    migrateLightAutomatically(store);
+    expect(parsed(store, LEGACY_LIGHT_ON_CLIMB_TAP_KEY)).toBe(true);
+    expect(parsed(store, LEGACY_LIGHT_ON_SWIPE_KEY)).toBe(false);
+  });
+});
+
 // The settings store runs it at its first import, before anything reads a setting.
 describe('at the settings store import', () => {
   beforeEach(() => {
@@ -199,7 +276,6 @@ describe('at the settings store import', () => {
     mockStorage.set(LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY, '15');
     const { getSetting } = await import('../hooks');
     expect(getSetting('putOnBoardKeepsLighting')).toBe('30');
-    expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe('30');
     expect(getSetting('disconnectWhenDrivingEnds')).toBe(true);
     expect(getSetting('autoDisconnectMigrated')).toBe(true);
   });
@@ -208,9 +284,30 @@ describe('at the settings store import', () => {
     mockStorage.set(LEGACY_AUTO_DISCONNECT_KEY, 'false');
     const { getSetting } = await import('../hooks');
     expect(getSetting('putOnBoardKeepsLighting')).toBe('45');
-    expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe('until_stopped');
     expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
     expect([...mockStorage.keys()]).toEqual([LEGACY_AUTO_DISCONNECT_KEY]);
+  });
+
+  it('turns Always drive the wall on for a climber who had Light the board as I swipe on', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_SWIPE_KEY, 'true');
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(true);
+  });
+
+  it('leaves Always drive the wall off with both switches off, and writes nothing', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'false');
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(false);
+    expect([...mockStorage.keys()]).toEqual([LEGACY_LIGHT_ON_CLIMB_TAP_KEY]);
+  });
+
+  it('does not turn Always drive the wall back on at the next launch', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'true');
+    await import('../hooks');
+    mockStorage.set('alwaysDrive', 'false');
+    vi.resetModules();
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(false);
   });
 
   it('does not run again on the next launch', async () => {

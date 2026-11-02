@@ -327,7 +327,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   return (
     <>
       <LiveActivityRestTimerSync sessionId={sessionId} activityStartCount={activityStartCount} />
-      <LiveActivityLightingSync sessionId={sessionId} boardName={boardName} activityStartCount={activityStartCount} />
+      <LiveActivityLightingSync sessionId={sessionId} activityStartCount={activityStartCount} />
     </>
   );
 }

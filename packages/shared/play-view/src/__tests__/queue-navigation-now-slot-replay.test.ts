@@ -146,7 +146,7 @@ function place(
   };
 }
 
-/** A list row tap with Light on tap: Play from the list (`use-playlist-activation`). */
+/** A list row tap while driving the wall: Play from the list (`use-playlist-activation`). */
 function tapListRow(session: Session, list: ClimbList, index: number): Step | null {
   const loaded = session.list?.id === list.id ? session.loaded : Math.min(PAGE_SIZE, list.climbs.length);
   const loadedClimbs = list.climbs.slice(0, loaded);

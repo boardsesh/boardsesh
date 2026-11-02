@@ -112,7 +112,7 @@
         "title": "{{board}}: Boulder beleuchten",
         "titleNoName": "Boulder am Board beleuchten",
         "body": "Verbinde dieses Handy mit dem Board, tipp einen Boulder an und dann auf Am Board beleuchten.",
-        "bodyTapLights": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "bodyAlwaysDrive": "Verbinde dieses Handy mit dem Board und du steuerst es: Jeder Boulder, den du wählst, wird beleuchtet.",
         "connect": "Verbinde das Board",
         "tryAgain": "Nochmal versuchen",
         "noLights": "Diese Wand hat kein Licht",
@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
-        "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "bodyAlwaysDrive": "„Board immer steuern“ ist an: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf „Du steuerst das Board“ tippst, um aufzuhören.",
         "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
         "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
         "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",

@@ -61,7 +61,7 @@ import { BleControlSheet } from '../BleControlSheet';
 it('keeps expanded accessibility labels in a bounded scrollable sheet, with working controls', () => {
   const onDisconnect = vi.fn();
   const onClose = vi.fn();
-  const onToggleLightOnSwipe = vi.fn();
+  const onToggleAlwaysDrive = vi.fn();
   const { container, getByText } = render(
     <BleControlSheet
       visible
@@ -73,10 +73,8 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
-      lightOnSwipe={false}
-      onToggleLightOnSwipe={onToggleLightOnSwipe}
-      lightOnClimbTap={false}
-      onToggleLightOnClimbTap={vi.fn()}
+      alwaysDrive={false}
+      onToggleAlwaysDrive={onToggleAlwaysDrive}
       onClose={onClose}
     />,
   );
@@ -85,8 +83,8 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
     detents: '["90%"]',
     dynamic: 'false',
   });
-  fireEvent.click(getByText('ble.lighting.onSwipeLabel'.repeat(3)));
-  expect(onToggleLightOnSwipe).toHaveBeenCalledWith(true);
+  fireEvent.click(getByText('ble.lighting.alwaysDriveLabel'.repeat(3)));
+  expect(onToggleAlwaysDrive).toHaveBeenCalledWith(true);
   fireEvent.click(getByText('lightControl.disconnect'.repeat(3)));
   expect(onDisconnect).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
@@ -94,7 +92,7 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
 
 // #7000: the player's sheet is just the board's actions (and the
 // MoonBoard-only switch, which lives nowhere else).
-it('drops auto-disconnect and the two lighting switches when asked, keeping the actions', () => {
+it('drops auto-disconnect and Always drive the wall when asked, keeping the actions', () => {
   const { queryByText, getByText } = render(
     <BleControlSheet
       visible
@@ -106,17 +104,14 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
-      lightOnSwipe={false}
-      onToggleLightOnSwipe={vi.fn()}
-      lightOnClimbTap={false}
-      onToggleLightOnClimbTap={vi.fn()}
+      alwaysDrive={false}
+      onToggleAlwaysDrive={vi.fn()}
       showLightingSwitches={false}
       onClose={vi.fn()}
     />,
   );
   expect(queryByText('ble.lighting.drivingEnds.label'.repeat(3))).toBeNull();
-  expect(queryByText('ble.lighting.onTapLabel'.repeat(3))).toBeNull();
-  expect(queryByText('ble.lighting.onSwipeLabel'.repeat(3))).toBeNull();
+  expect(queryByText('ble.lighting.alwaysDriveLabel'.repeat(3))).toBeNull();
   getByText('lightControl.lightAdjacentHolds'.repeat(3));
   getByText('ble.relightBoard'.repeat(3));
   getByText('lightControl.turnOffAll'.repeat(3));
@@ -142,10 +137,8 @@ it.each([
       showLightAdjacentHolds={false}
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
-      lightOnSwipe={false}
-      onToggleLightOnSwipe={vi.fn()}
-      lightOnClimbTap={false}
-      onToggleLightOnClimbTap={vi.fn()}
+      alwaysDrive={false}
+      onToggleAlwaysDrive={vi.fn()}
       showLightingSwitches={false}
       linked={linked}
       onDrive={onDrive}
@@ -173,10 +166,8 @@ it('leads with the status line and the keep-lighting row', () => {
       showLightAdjacentHolds={false}
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
-      lightOnSwipe={false}
-      onToggleLightOnSwipe={vi.fn()}
-      lightOnClimbTap={false}
-      onToggleLightOnClimbTap={vi.fn()}
+      alwaysDrive={false}
+      onToggleAlwaysDrive={vi.fn()}
       showLightingSwitches={false}
       status={<span>On the wall</span>}
       keepLighting={{ label: 'Keep lighting after Put on board', choice: '45', options: [], onChange: vi.fn() }}

@@ -760,7 +760,6 @@
           "windowMinute": "Poi guidi tu il pannello: per 1 minuto dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli.",
           "windowMinutes": "Poi guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli.",
           "untilStop": "Poi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non smetti.",
-          "moonboard": "Su una MoonBoard poi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non smetti.",
           "frost": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo impostato in Smetti di guidare dopo (Impostazioni › Pannello): un cronometro scorre accanto all'etichetta e lo smerigliato si restringe mentre il tempo passa. Scorri il pulsante verso sinistra per guidare senza limiti (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco). Toccalo per smettere.",
           "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo impostato in Smetti di guidare dopo, in Impostazioni › Pannello. Usa l'azione Illumina ogni blocco per guidare senza limiti. Tocca il pulsante per smettere.",
           "frostOpenEnded": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non lo tocchi per smettere. Scorri il pulsante verso sinistra per guidare (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco).",
@@ -843,7 +842,6 @@
         "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e poi guidi tu il pannello: si illuminano anche i blocchi che scegli, finché non finisce il tempo che hai scelto (45 secondi di default). Cambia il tempo in Smetti di guidare dopo, in Impostazioni › Pannello.",
         "swipe": "Scorri verso sinistra il pulsante parete per guidare tu il pannello finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete. Toccalo per smettere. Quando la guida ha un limite di tempo, compare un cronometro accanto all'etichetta e lo smerigliato si restringe mentre il tempo passa.",
         "back": "La freccia in alto a sinistra chiude l'anteprima e ti riporta al tuo blocco, o al blocco in parete. La barra in basso tiene l'ultimo blocco che hai aperto.",
-        "moonboard": "Sulle MoonBoard guidi finché non smetti, di default; scegli il loro tempo in Su una MoonBoard.",
         "cta": "Scopri come funziona",
         "dismiss": "Ok"
       }

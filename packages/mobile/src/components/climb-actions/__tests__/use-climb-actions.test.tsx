@@ -59,7 +59,7 @@ vi.mock('../../../db/queries/get-favorite-status-local', () => ({
 }));
 vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => ctrl.generation }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => ctrl.lightsOn }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ isDrivingWall: () => ctrl.lightsOn }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
   useRouter: () => ({ push: openers.push }),

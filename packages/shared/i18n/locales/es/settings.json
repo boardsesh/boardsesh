@@ -468,8 +468,6 @@
     "relightBoard": "Reiluminar plafón",
     "lighting": {
       "title": "Iluminación del plafón",
-      "autoTitle": "Encender automáticamente",
-      "description": "Elige qué enciende el plafón conectado automáticamente.",
       "keep": {
         "label": "Dejar el mando tras",
         "off": "Enseguida",
@@ -481,14 +479,11 @@
           "300": "5 minutos"
         },
         "untilStopped": "Hasta que pare",
-        "moonboardLabel": "En un MoonBoard",
-        "moonboardAccessibilityLabel": "Dejar el mando de un MoonBoard tras",
-        "moonboardDescription": "La mayoría de los controladores de MoonBoard no llevan bien que se cambie de teléfono, así que esto también se aplica en una sesión.",
-        "sheetMoonboardLabel": "Dejar el mando de este MoonBoard tras",
         "inSessionLabel": "También en una sesión",
-        "inSessionAccessibilityLabel": "Poner en el plafón te da el mando también en una sesión",
+        "inSessionAccessibilityLabel": "Poner en el plafón y Siempre al mando del plafón también se aplican en una sesión",
         "inSessionDescription": "Cuando tu teléfono tiene el plafón de tu crew. Si lo desactivas, los bloques que elijas en una sesión se quedan en vista previa.",
         "inSessionOffReason": "Cambia Dejar el mando tras a algo distinto de Enseguida para usar esto.",
+        "alwaysDriveReason": "Siempre al mando del plafón está activado, así que esto no se aplica.",
         "footer": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, y cada uno reinicia el reloj. Cuando se acaba el tiempo, el siguiente bloque que elijas se abre como vista previa.",
         "footerUntilStopped": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, hasta que toques Estás al mando del plafón.",
         "footerOff": "Poner en el plafón enciende el bloque que tienes abierto. El siguiente bloque que elijas se abre como vista previa."
@@ -498,12 +493,11 @@
         "description": "Cuando se acaba tu turno al mando, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse: al pararlo tú o apagar todas las luces, al acabarse el tiempo, o cuando alguien de tu crew pone un bloque mientras tu mando tiene límite de tiempo. Poner en el plafón vuelve a conectar."
       },
       "drivingHelp": "Cómo funciona el mando del plafón",
-      "onSwipeLabel": "Iluminar el plafón al deslizar",
-      "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
-      "onTapLabel": "Iluminar el plafón al tocar un bloque",
-      "onTapDescription": "Cada toque en una lista enciende el bloque, sin límite de tiempo. Si lo desactivas, el toque abre una vista previa.",
+      "alwaysDriveLabel": "Siempre al mando del plafón",
+      "alwaysDriveDescription": "Cada bloque que elijas se enciende mientras este teléfono tenga el plafón. En una sesión necesita También en una sesión.",
+      "alwaysDriveFooter": "Toca Estás al mando del plafón para parar. Los bloques que elijas se abren en vista previa hasta que te desconectes o pulses Poner en el plafón.",
       "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
-      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter carga esa lista. Con «Iluminar el plafón al tocar un bloque» activado, la lista sustituye tu cola y el bloque que tocaste se enciende. Si lo desactivas, la lista desde el bloque que tocaste pasa a A continuación y ese bloque se abre en vista previa, mientras el plafón conserva su bloque hasta que pulses Poner en el plafón."
+      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter carga esa lista. Si estás al mando del plafón, la lista sustituye tu cola y el bloque que tocaste se enciende. Si no, la lista desde el bloque que tocaste pasa a A continuación y ese bloque se abre en vista previa, mientras el plafón conserva su bloque hasta que pulses Poner en el plafón. En una sesión, la lista nunca entra en la cola compartida."
     },
     "holdForControls": "Mantén pulsado para los controles",
     "boardControls": "Controles del plafón",

@@ -23,12 +23,11 @@ import { trackQueueNavigation } from '../../lib/queue-navigation-analytics';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
 import { getSwipeNavigationTarget, getViewOnlyPreviewNavigationTarget } from '../play-drawer/play-drawer-navigation';
-import { readClimbChangeLights, useClimbChangeLights } from '../play-drawer/use-climb-change-lights';
-import { drivingAtPick, isDrivingStoppedForLink, useDriveModePhase } from '../play-drawer/drive-mode-store';
+import { useDrivingWall } from '../play-drawer/use-climb-change-lights';
+import { drivingAtPick } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { resolvePreviewStepCommit } from '../play-drawer/preview-step-commit';
 import { resolvePickBoard } from './pick-board';
-import { useSharedBrowseLatch } from '../play-drawer/shared-browse-latch';
 import { barOpenOptions, useBarClimb } from './use-bar-climb';
 
 export type MiniPlayerNavigation = {
@@ -42,15 +41,13 @@ export type MiniPlayerNavigation = {
  * ⏮ and ⏭ on the MiniPlayer (#6940), with the player closed.
  *
  * They move the way a swipe in the player would from the climb on the wall:
- * - Solo, with Light on swipe on: the queue's own `previousClimb` / `nextClimb`,
- *   the walk the player, the rest timer and the workout runner all make (Up next
- *   first, then the list). The board lights the new climb.
- * - Driving the wall (#7113): the queue moves and the board lights it, in a
- *   crew too.
- * - In a crew, with Light on swipe off, or after a press on "You are driving
- *   the wall" stopped driving on this link (#7113): the player opens on that
- *   climb as a preview, so one tap never moves anybody's wall
- *   (`useClimbChangeLights('swipe')`, the player's own rule).
+ * - Driving the wall (#7113: a swipe, Put on board, or Always drive the wall):
+ *   the queue's own `previousClimb` / `nextClimb`, the walk the player, the
+ *   rest timer and the workout runner all make (Up next first, then the list).
+ *   The board lights the new climb, in a crew too.
+ * - Outside a drive, solo or in a crew, or after a press on "You are driving
+ *   the wall" stopped it: the player opens on that climb as a preview, so one
+ *   tap never moves anybody's wall (`useDrivingWall`, the player's own rule).
  * - At the end of a list, Next opens the player on the climb, where Next opens
  *   the list's end card ("Keep going with your queue"): that choice needs the
  *   card, which the bar has no room for.
@@ -78,17 +75,11 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // The climber's last pick on the bar, or null while it shows the queue's current.
   const { pick } = useBarClimb();
+  // For Queue Navigation: the session, and Always drive the wall.
   const inSharedSession = useIsSharedSession();
-  // The player's crew latch, for a step from a pick: a crew that just left
-  // (or flapped) keeps a step a look for the same dwell the player's swipe
-  // does, so the bar never lights what the player wouldn't.
-  const [sharedBrowseLatched] = useSharedBrowseLatch(inSharedSession, pick !== null);
-  const pickBrowseByDefault = inSharedSession || sharedBrowseLatched;
-  // The setting, for Queue Navigation; whether a step lights reads the one rule.
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
-  const stepLights = useClimbChangeLights('swipe');
+  const [alwaysDrive] = useSetting('alwaysDrive');
   // Driving the wall (#7113): every step lights it, in a crew too.
-  const driving = useDriveModePhase() === 'live';
+  const driving = useDrivingWall();
   const { openPlayDrawer, boardConfig } = useDrawerHost();
   const { data: activeBoard } = useActiveBoard();
   const reachableBoardKeys = useReachableBoardKeys(activeBoard);
@@ -147,19 +138,15 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       if (!targetItem) return;
       hapticSelection();
       // A keep-lighting window past its end lights nothing, even before the
-      // watcher has tidied it (#7038): the step then reads the rule afresh.
-      const windowLapsed = driving && !drivingAtPick(driving);
-      const lights = windowLapsed ? readClimbChangeLights('swipe', { inSharedSession }) : stepLights;
+      // watcher has tidied it (#7038).
+      const lights = drivingAtPick(driving);
       // From a pick: the player's own rule for a swipe off a preview.
       const target = pick
         ? getSwipeNavigationTarget({
             previewItem: pick.item,
             previewSuggestionSource: pick.suggestionSource,
             targetItem,
-            lightOnSwipe,
-            inSharedSession: pickBrowseByDefault,
-            driving: drivingAtPick(driving),
-            stoppedForLink: isDrivingStoppedForLink(),
+            driving: lights,
             previewOnOtherBoard: pickOnOtherBoard,
           })
         : getViewOnlyPreviewNavigationTarget({
@@ -175,8 +162,8 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           surface: 'mini_player',
           outcome,
           inSharedSession,
-          lightOnSwipe,
-          driving: driving && !windowLapsed,
+          alwaysDrive,
+          driving: lights,
           boardType,
           layoutId,
         });
@@ -207,11 +194,9 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       trackStep('moved');
     },
     [
-      stepLights,
-      lightOnSwipe,
+      alwaysDrive,
       driving,
       inSharedSession,
-      pickBrowseByDefault,
       openPlayDrawer,
       playlistSuggestionSource,
       boardType,

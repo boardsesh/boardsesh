@@ -26,6 +26,11 @@ import type { KeepLightingChoice, KeepLightingSettingKey } from '../../lib/keep-
  * one, and during a timed drive makes it open-ended. `DriveModeWatcher` ends it
  * (`window_ended`) once its time is up.
  *
+ * Always drive the wall (Settings › Board, `alwaysDrive`) keeps an open-ended
+ * drive on whenever this phone's own link holds the board (`startAlwaysDrive`,
+ * from `DriveModeWatcher`): it starts live, since the link is already up and
+ * lights nothing of its own.
+ *
  * Every end is handed on (`subscribeDriveEnded`), so Disconnect Bluetooth when
  * driving ends can let go of the board for the ends the climber or the clock
  * caused (`use-driving-ended-disconnect.ts`).
@@ -61,6 +66,14 @@ export type DriveModeState = {
   expiresAt: number | null;
   /** Lit climbs that renewed the window (the one that opened it not counted), for Drive Mode Ended. */
   windowRenewals: number;
+  /**
+   * Always drive the wall opened this timed drive up (`makeDriveOpenEnded({
+   * byAlways: true })`): the switch turned on while it ran. Light
+   * automatically then ends it where it stops driving (`always_off`), as its
+   * own drive, so turning the switch back off never leaves an open-ended drive
+   * the climber didn't choose. Absent on every other drive.
+   */
+  openedByAlways?: true;
 };
 
 /**
@@ -88,7 +101,14 @@ export type DriveModeExitReason =
    * Put on board's timed drive ran out, its setting was turned to Right away
    * (or In a session too off under a crew), or a crewmate's put-up ended it.
    */
-  | 'window_ended';
+  | 'window_ended'
+  /**
+   * Always drive the wall's drive (or a timed drive it opened up), where it no
+   * longer drives: the switch went off, a crew formed (or In a session too
+   * went off in one) on a board that needs it, or the swipe flag went off. The
+   * link stays.
+   */
+  | 'always_off';
 
 /**
  * How long arming may wait for the wall before it gives up. The Bluetooth scan
@@ -142,25 +162,22 @@ export function resolveDriveModeExit({
 }
 
 /**
- * Whether a timed drive ends because Settings › Board changed under it:
- * its own choice turned Off, or (the general choice, in a crew session) In a
- * session too turned off. A MoonBoard's window ignores In a session too.
+ * Whether a timed drive ends because Settings › Board changed under it: Stop
+ * driving after turned to Right away, or (in a crew session) In a session too
+ * turned off. The same on every board, MoonBoards included.
  */
 export function shouldEndWindowForSettings({
   drive,
   keepLighting,
-  moonboardKeepLighting,
   drivesInSession,
   inSession,
 }: {
   drive: DriveModeState | null;
   keepLighting: KeepLightingChoice;
-  moonboardKeepLighting: KeepLightingChoice;
   drivesInSession: boolean;
   inSession: boolean;
 }): boolean {
   if (!drive || drive.windowMs === null || drive.windowSetting === null) return false;
-  if (drive.windowSetting === 'moonboardPutOnBoardKeepsLighting') return moonboardKeepLighting === 'off';
   return keepLighting === 'off' || (inSession && !drivesInSession);
 }
 
@@ -182,9 +199,10 @@ export function drivingAtPick(rendered: boolean, now = Date.now()): boolean {
 
 let driveMode: DriveModeState | null = null;
 /**
- * A press on the frosted button stopped driving while the link stays up. Solo
- * with Light the board as I swipe on, swipes stay previews until the link drops,
- * so the stop means something; the setting itself never flips.
+ * A press on the frosted button stopped driving while the link stays up. With
+ * Always drive the wall on, nothing drives again until the link drops or the
+ * climber's next Put on board, so the stop means something; the setting itself
+ * never flips.
  */
 let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
@@ -196,8 +214,8 @@ const listeners = new Set<() => void>();
 export type DriveEnded = {
   reason: DriveModeExitReason;
   /**
-   * The drive that ended, or null for a stop on this link while only Light the
-   * board as I swipe drove (solo, no drive in this store).
+   * The drive that ended, or null for a stop on this link whose drive had
+   * already gone by the press.
    */
   drive: DriveModeState | null;
   /**
@@ -465,47 +483,64 @@ export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
 /**
  * A swipe or Light every climb during a timed drive: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
+ *
+ * `byAlways`: Always drive the wall turned on during it, so the drive is now
+ * Always drive the wall's to end (`openedByAlways`).
  */
-export function makeDriveOpenEnded(): boolean {
+export function makeDriveOpenEnded({ byAlways = false }: { byAlways?: boolean } = {}): boolean {
   if (!driveMode || driveMode.windowMs === null) return false;
-  driveMode = { ...driveMode, windowMs: null, windowSetting: null, expiresAt: null };
+  driveMode = {
+    ...driveMode,
+    windowMs: null,
+    windowSetting: null,
+    expiresAt: null,
+    ...(byAlways ? { openedByAlways: true as const } : {}),
+  };
   emit();
   return true;
 }
 
 /**
- * Whether a crew forming carries driving into it (#7113 QA, Marco: keep
- * driving). A climber who drives solo keeps driving when a crew forms: a live
- * drive (from a swipe, Put on board or the action) simply goes on, since only a
- * change of session ends one. The other way to drive solo, Light the board as
- * I swipe with no stop, is a setting that a crew doesn't honour (swipes there
- * open previews), so it turns into a live drive the moment the crew forms. Not
- * after a stop on this link, and not without a link: nothing was driving then.
- *
- * "Forms" is the roster's crew (`useIsCrewSession`) turning true, after its
- * arrival dwell: until then the climber is solo.
+ * Whether this drive is Always drive the wall's to end where it stops driving:
+ * its own (`startedBy: 'always'`), or a timed drive it opened up. A swipe's,
+ * Light every climb's or a running timed drive is left alone.
  */
-export function shouldCarryDriveIntoCrew({
-  crewFormed,
-  drive,
-  linked,
-  stopped,
-  lightOnSwipe,
-}: {
-  /** The roster just turned into a crew. */
-  crewFormed: boolean;
-  drive: DriveModeState | null;
-  /** This phone's link, or its hold on a wall with no lights. */
-  linked: boolean;
-  /** A press on the frosted button stopped driving on this link. */
-  stopped: boolean;
-  lightOnSwipe: boolean;
-}): boolean {
-  return crewFormed && drive === null && linked && !stopped && lightOnSwipe;
+export function isAlwaysDriveOwned(drive: DriveModeState | null): boolean {
+  return drive !== null && (drive.startedBy === 'always' || drive.openedByAlways === true);
 }
 
-/** Carry solo, setting-driven driving into the crew that just formed: a live drive. */
-export function carryDriveIntoCrew({
+/**
+ * Whether Always drive the wall starts its drive now: it drives here
+ * (`alwaysDriveApplies`), this phone's own Bluetooth link holds the board (a
+ * relay, a crewmate's link or a wall with no lights never does), nothing
+ * drives yet, and no press on the frosted button stopped driving on this link.
+ * A crew forming under a live drive leaves it going (only a change of session
+ * ends one), so this is only about starting.
+ */
+export function shouldStartAlwaysDrive({
+  applies,
+  ownLink,
+  drive,
+  stopped,
+}: {
+  /** `alwaysDriveApplies` for this board and session. */
+  applies: boolean;
+  /** This phone's own Bluetooth link is up. */
+  ownLink: boolean;
+  drive: DriveModeState | null;
+  /** A press on the frosted button stopped driving on this link. */
+  stopped: boolean;
+}): boolean {
+  return applies && ownLink && drive === null && !stopped;
+}
+
+/**
+ * Always drive the wall's drive: open-ended and live from the start, since this
+ * phone's link is already up. It lights nothing itself: the climb on the wall
+ * is whatever connecting (or the last pick) put there, and every pick from now
+ * on lights. Refuses (false) while a drive is on or a stop holds this link.
+ */
+export function startAlwaysDrive({
   sessionId,
   boardId,
   boardType = null,
@@ -513,9 +548,11 @@ export function carryDriveIntoCrew({
   sessionId: string | null;
   boardId: number | null;
   boardType?: string | null;
-}): void {
-  enterDriveMode({ sessionId, boardId, boardType, startedBy: 'solo_carry' });
+}): boolean {
+  if (driveMode || stoppedForLink) return false;
+  enterDriveMode({ sessionId, boardId, boardType, startedBy: 'always' });
   markDriveLive({ boardId });
+  return true;
 }
 
 /** End driving. Returns what ended, or null when nobody was driving. */
@@ -532,10 +569,11 @@ export function exitDriveMode(reason: DriveModeExitReason, options: DriveEndOpti
 
 /**
  * The press on the frosted button (or Turn off all lights during a drive):
- * stop driving and keep the link. Swipes stay previews until the link drops,
- * solo with Light the board as I swipe on too. Handed on as a `stopped` end
- * even with no drive in this store, since the climber stopped driving all the
- * same; Disconnect Bluetooth when driving ends then lets go of the board.
+ * stop driving and keep the link. Picks stay previews, and Always drive the wall
+ * starts nothing, until the link drops or the next Put on board. Handed on as
+ * a `stopped` end even when the drive had already gone, since the climber
+ * stopped driving all the same; Disconnect Bluetooth when driving ends then
+ * lets go of the board.
  */
 export function stopDrivingForLink(options: DriveEndOptions = {}): DriveModeState | null {
   const ended = driveMode;
@@ -550,7 +588,10 @@ export function stopDrivingForLink(options: DriveEndOptions = {}): DriveModeStat
   return ended;
 }
 
-/** The link this stop belonged to dropped (or the climber signed out): the setting rules again. */
+/**
+ * The link this stop belonged to dropped (or the climber signed out), or Put
+ * on board resumed Always drive the wall: it may drive again.
+ */
 export function clearDrivingStopped(): void {
   if (!stoppedForLink) return;
   stoppedForLink = false;
@@ -564,7 +605,7 @@ export function getDriveMode(): DriveModeState | null {
 /**
  * What the wall is doing for this phone, as one word:
  *
- * - `off` — nobody drives: picks are previews (unless a setting lights them).
+ * - `off` — nobody drives: picks are previews.
  * - `arming` — a drive (or a window) is on its way to the wall.
  * - `window` — Put on board's timed drive: the frost with a clock, picks light
  *   until its time runs out.

@@ -5,7 +5,6 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { PlayDrawerOpenOptions } from '../play-drawer-types';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { usePlaySelectionController } from '../use-play-selection-controller';
-import { setSetting } from '../../../settings/hooks';
 import { enterDriveMode, getDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
 
 const authority = vi.hoisted(() => ({ uuid: 0, platform: 'ios', announce: vi.fn() }));
@@ -68,10 +67,9 @@ function inputs(): SelectionInputs {
     similarTrack: { boardKey: 'kilter:1:10:1,2', committedBoardKey: 'kilter:1:10:1,2', label: 'Similar climbs' },
     navigation: {
       navigationState: { prevItem: item('previous'), nextItem: item('next') },
-      lightOnSwipe: true,
       browseByDefault: false,
+      // Preview-first: nothing drives the wall until a test says so.
       driving: false,
-      stoppedForLink: false,
       previewOnOtherBoard: false,
     },
     chrome: {
@@ -104,13 +102,14 @@ beforeEach(() => {
   authority.uuid = 0;
   authority.platform = 'ios';
   authority.announce.mockClear();
-  setSetting('lightOnClimbTap', true);
 });
 
 describe('the #4979 hold (section 6, decision A)', () => {
   function heldInputs(): SelectionInputs {
     const held = inputs();
     held.hold.heldQueueItemUuid = held.queue.currentClimbQueueItem!.uuid;
+    // A list pick only lights while this phone drives the wall.
+    held.navigation.driving = true;
     return held;
   }
 
@@ -200,8 +199,9 @@ describe('the #4979 hold (section 6, decision A)', () => {
 });
 
 describe('host target application', () => {
-  it('commits a genuinely new solo open and resets its chrome', () => {
+  it('commits a genuinely new open while driving and resets its chrome', () => {
     const initialProps = { ...inputs(), openTarget: open(item('new')) };
+    initialProps.navigation.driving = true;
     renderHook(usePlaySelectionController, { initialProps });
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
@@ -216,6 +216,7 @@ describe('host target application', () => {
 
   it.each(['already-current', 'committed-externally'] as const)('does not append an %s open', (kind) => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     initialProps.openTarget =
       kind === 'already-current'
         ? open(initialProps.queue.currentClimbQueueItem!)
@@ -254,9 +255,11 @@ describe('host target application', () => {
 
   it('keys target application only on the target and uses latest selection closures for the next nonce', () => {
     const initialProps = { ...inputs(), openTarget: open(item('new')) };
+    initialProps.navigation.driving = true;
     const { rerender } = renderHook(usePlaySelectionController, { initialProps });
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledOnce();
-    const crew = { ...initialProps, navigation: { ...initialProps.navigation, browseByDefault: true } };
+    // The drive ended (a stop, or a crew formed): the next nonce previews.
+    const crew = { ...initialProps, navigation: { ...initialProps.navigation, browseByDefault: true, driving: false } };
     rerender(crew);
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledOnce();
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledTimes(1);
@@ -269,8 +272,9 @@ describe('host target application', () => {
 });
 
 describe('swipe selection callbacks', () => {
-  it.each(['handlePrev', 'handleNext'] as const)('%s preserves the live queue path', (handler) => {
+  it.each(['handlePrev', 'handleNext'] as const)('%s preserves the live queue path while driving', (handler) => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current[handler]('button'));
     expect(
@@ -281,10 +285,9 @@ describe('swipe selection callbacks', () => {
     expect(initialProps.chrome.clearMirror).toHaveBeenCalledOnce();
   });
 
-  it.each(['crew', 'lighting-off', 'tracked-preview'] as const)('keeps %s navigation view-only', (kind) => {
+  it.each(['crew', 'not-driving', 'tracked-preview'] as const)('keeps %s navigation view-only', (kind) => {
     const initialProps = inputs();
     if (kind === 'crew') initialProps.navigation.browseByDefault = true;
-    if (kind === 'lighting-off') initialProps.navigation.lightOnSwipe = false;
     if (kind === 'tracked-preview') {
       initialProps.preview.drawerPreviewItem = item('preview');
       initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), item('next')]);
@@ -312,6 +315,7 @@ describe('swipe selection callbacks', () => {
 
   it('does not churn the previous callback when only the next target changes', () => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
     const previous = result.current.handlePrev;
     const next = result.current.handleNext;
@@ -336,16 +340,16 @@ describe('swipe selection callbacks', () => {
       ['handleNext', 'next', 'swipe'],
     ] as const)('%s reports one moved %s step by %s', (handler, direction, method) => {
       const initialProps = inputs();
+      initialProps.navigation.driving = true;
       const { result } = renderHook(usePlaySelectionController, { initialProps });
       act(() => result.current[handler](method));
       expect(initialProps.onNavigationStep).toHaveBeenCalledOnce();
       expect(initialProps.onNavigationStep).toHaveBeenCalledWith({ direction, method, outcome: 'moved' });
     });
 
-    it.each(['crew', 'lighting-off'] as const)('reports a %s step as a preview', (kind) => {
+    it.each(['crew', 'not-driving'] as const)('reports a %s step as a preview', (kind) => {
       const initialProps = inputs();
       if (kind === 'crew') initialProps.navigation.browseByDefault = true;
-      if (kind === 'lighting-off') initialProps.navigation.lightOnSwipe = false;
       const { result } = renderHook(usePlaySelectionController, { initialProps });
       act(() => result.current.handleNext('swipe'));
       expect(initialProps.onNavigationStep).toHaveBeenCalledOnce();
@@ -363,9 +367,10 @@ describe('swipe selection callbacks', () => {
       (kind) => {
         const artWait = { artState: 'loading' as const, waitedMs: 700 };
         const initialProps = inputs();
+        // A step lights (moves) only while driving; the crew's look previews.
         if (kind === 'crew preview') initialProps.navigation.browseByDefault = true;
+        else initialProps.navigation.driving = true;
         if (kind === 'list preview') {
-          initialProps.navigation.driving = true;
           initialProps.preview.drawerPreviewItem = item('preview');
           initialProps.preview.drawerPreviewSuggestionSource = source([
             item('preview'),
@@ -511,8 +516,8 @@ describe('explicit wall commitment', () => {
   // trackless look at the list's next climb (a peek). Put on board used to send
   // `playlistSuggestionSource: null`, dropping "Search results · 4 of 23".
   it('hands a trackless look at a list peek to the provider to keep the list', () => {
+    // Not driving: the stop ended the drive.
     const initialProps = inputs();
-    initialProps.navigation.stoppedForLink = true;
     const peek = { ...item('next'), uuid: 'playlist-peek:next', suggested: true };
     initialProps.navigation.navigationState.nextItem = peek;
     const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
@@ -566,14 +571,15 @@ describe('explicit wall commitment', () => {
 describe('similar-climb selection', () => {
   const strip = () => [item('similar-a').climb, item('similar').climb, item('similar-b').climb] as Climb[];
 
-  it.each(['anonymous', 'crew', 'light-on-tap off', 'another board'] as const)(
+  it.each(['anonymous, driving', 'a crew', 'solo, not driving', 'another board, driving'] as const)(
     'previews with the strip as its track for %s',
     (kind) => {
       const initialProps = inputs();
-      if (kind === 'anonymous') initialProps.viewer = 'anonymous';
-      if (kind === 'crew') initialProps.navigation.browseByDefault = true;
-      if (kind === 'light-on-tap off') setSetting('lightOnClimbTap', false);
-      if (kind === 'another board') initialProps.showBoardMismatch = true;
+      // The signed-out reader and the other board preview even while driving.
+      if (kind.endsWith('driving') && !kind.includes('not')) initialProps.navigation.driving = true;
+      if (kind.startsWith('anonymous')) initialProps.viewer = 'anonymous';
+      if (kind === 'a crew') initialProps.navigation.browseByDefault = true;
+      if (kind.startsWith('another board')) initialProps.showBoardMismatch = true;
       const { result } = renderHook(usePlaySelectionController, { initialProps });
 
       act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
@@ -594,8 +600,9 @@ describe('similar-climb selection', () => {
     },
   );
 
-  it('puts the climb up solo, playing from the strip, without appending it to the queue', () => {
+  it('puts the climb up while driving, playing from the strip, without appending it to the queue', () => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
 
     act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
@@ -623,6 +630,7 @@ describe('similar-climb selection', () => {
   // dormant at once and swipes would walk the queue.
   it('keys a committed strip to the active board, and a preview to the board the climb is drawn on', () => {
     const committedProps = inputs();
+    committedProps.navigation.driving = true;
     committedProps.similarTrack = {
       boardKey: 'kilter:1:14:1,2',
       committedBoardKey: 'kilter:1:10:1,2',
@@ -650,6 +658,7 @@ describe('similar-climb selection', () => {
 
   it('keeps one handler across player moves and keys the track on the climb shown at tap time', () => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
     const firstHandler = result.current.handleSimilarClimbPress;
 
@@ -666,8 +675,9 @@ describe('similar-climb selection', () => {
 // Issue #6664: the end card's "Keep going with your queue" from a committed
 // climb. It must never take a wall that a swipe from the same state would not.
 describe('continuing into the queue from the end of a list', () => {
-  it('commits the queued climb solo, and leaves the list behind', () => {
+  it('commits the queued climb while driving, and leaves the list behind', () => {
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     const queued = item('queued');
 
@@ -693,9 +703,8 @@ describe('continuing into the queue from the end of a list', () => {
     expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenLastCalledWith(null);
   });
 
-  it('only previews the queued climb with Light on swipe off', () => {
+  it('only previews the queued climb outside a drive, solo too', () => {
     const initialProps = inputs();
-    initialProps.navigation.lightOnSwipe = false;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     const queued = item('queued');
 
@@ -769,9 +778,9 @@ describe('driving the wall', () => {
     expect(initialProps.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
   });
 
-  it('a stop on this link keeps solo swipes previews, Light on swipe on or not', () => {
+  // A stop ends the drive, Always drive the wall's included: swipes preview.
+  it('once a stop ended the drive, solo swipes are previews', () => {
     const initialProps = inputs();
-    initialProps.navigation.stoppedForLink = true;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current.handleNext('swipe'));
     expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
@@ -810,9 +819,9 @@ describe('driving the wall', () => {
     expect(otherBoard.queue.setCurrentClimb).not.toHaveBeenCalled();
   });
 
-  it('a similar climb with Light on tap off still goes up while driving', () => {
-    setSetting('lightOnClimbTap', false);
+  it('a similar climb solo goes up while driving', () => {
     const initialProps = driving();
+    initialProps.navigation.browseByDefault = false;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledOnce();
@@ -842,7 +851,6 @@ describe('driving the wall', () => {
 // never advance; only the clock moves.
 describe('a keep-lighting window past its end', () => {
   beforeEach(() => {
-    setSetting('lightOnClimbTap', false);
     vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
     enterDriveMode({
       startedBy: 'tap',
@@ -858,11 +866,10 @@ describe('a keep-lighting window past its end', () => {
     vi.useRealTimers();
     resetDriveModeForTests();
   });
-  /** What the player rendered while the window was on: driving, Light on swipe off. */
+  /** What the player rendered while the window was on: driving. */
   function windowInputs(): SelectionInputs {
     const props = inputs();
     props.navigation.driving = true;
-    props.navigation.lightOnSwipe = false;
     return props;
   }
   const lapse = () => vi.setSystemTime(46_000);
@@ -931,8 +938,7 @@ describe('preview-first host selections and deferred commits', () => {
     expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
   });
 
-  it('keeps a fresh solo open in preview when automatic tap lighting is off', () => {
-    setSetting('lightOnClimbTap', false);
+  it('keeps a fresh solo open in preview outside a drive', () => {
     const initialProps = { ...inputs(), openTarget: open(item('new')) };
     renderHook(usePlaySelectionController, { initialProps });
     expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
@@ -941,11 +947,10 @@ describe('preview-first host selections and deferred commits', () => {
     );
   });
 
-  it('reopens the committed current slot, not a preview copy, when automatic tap lighting is off', () => {
+  it('reopens the committed current slot, not a preview copy, outside a drive', () => {
     // The mini player and the workout card's current-climb row: the drawer must
     // show the committed queue item, whose uuid the workout stage label and the
     // timed block's Fell / Sent row key on.
-    setSetting('lightOnClimbTap', false);
     const initialProps = inputs();
     initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
     initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
@@ -971,7 +976,7 @@ describe('preview-first host selections and deferred commits', () => {
     }
 
     it.each([
-      ['Light on tap is off', () => setSetting('lightOnClimbTap', false), {}],
+      ['nothing drives the wall', () => {}, {}],
       ['the climb is on another board', () => {}, { showBoardMismatch: true }],
     ])('shows the same browse preview when %s', (_label, arrange, patch) => {
       arrange();
@@ -991,7 +996,6 @@ describe('preview-first host selections and deferred commits', () => {
     });
 
     it('keeps the workout row reopening the committed slot', () => {
-      setSetting('lightOnClimbTap', false);
       const current = inputs().queue.currentClimbQueueItem!;
       const target = sharedTarget(current, { reopensCurrent: true });
       renderHook(usePlaySelectionController, { initialProps: { ...inputs(), openTarget: target } });
@@ -1004,11 +1008,13 @@ describe('preview-first host selections and deferred commits', () => {
     it('never puts the tapped climb up again after the climber moved on', () => {
       const target = sharedTarget(item('new'));
       const first = { ...inputs(), openTarget: target };
+      first.navigation.driving = true;
       renderHook(usePlaySelectionController, { initialProps: first });
       expect(first.queue.setCurrentClimb).toHaveBeenCalledOnce();
 
       // The current climb is still `current` here: the climber swiped on.
       const later = { ...inputs(), openTarget: target };
+      later.navigation.driving = true;
       renderHook(usePlaySelectionController, { initialProps: later });
       expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
       expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
@@ -1016,7 +1022,6 @@ describe('preview-first host selections and deferred commits', () => {
   });
 
   it('does not relight an already-current held climb when it opens as preview', () => {
-    setSetting('lightOnClimbTap', false);
     const initialProps = inputs();
     initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
     initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
@@ -1064,15 +1069,16 @@ describe('preview-first host selections and deferred commits', () => {
     });
   });
 
-  // A queue-sheet row (or Replay from here) opens its slot as a preview. With
-  // Light the board as I swipe on, solo, a swipe from it commits the slot's own
-  // neighbour, the one the peek showed, never the queue's next from the wall.
+  // A queue-sheet row (or Replay from here) opens its slot as a preview. While
+  // driving, solo, a swipe from it commits the slot's own neighbour, the one
+  // the peek showed, never the queue's next from the wall.
   it.each([
     ['handleNext', 'nextItem', 'next'],
     ['handlePrev', 'prevItem', 'previous'],
   ] as const)('%s from a queue-slot preview commits the slot’s neighbour the peek showed', (handler, side, trigger) => {
     const slot = item('slot-d');
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     initialProps.navigation.navigationState = { prevItem: item('slot-c'), nextItem: item('slot-e') };
     initialProps.preview.drawerPreviewItem = slot;
     initialProps.openTarget = open(slot, {
@@ -1098,6 +1104,7 @@ describe('preview-first host selections and deferred commits', () => {
   it('keeps going through the queue from a preview with no neighbour of its own', () => {
     const orphan = item('deep-link');
     const initialProps = inputs();
+    initialProps.navigation.driving = true;
     initialProps.navigation.navigationState = { prevItem: null, nextItem: null };
     initialProps.preview.drawerPreviewItem = orphan;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
@@ -1113,7 +1120,6 @@ describe('preview-first host selections and deferred commits', () => {
     const history = item('history');
     const next = item('next');
     const initialProps = inputs();
-    initialProps.navigation.lightOnSwipe = false;
     initialProps.navigation.navigationState = { prevItem: item('before'), nextItem: next };
     initialProps.preview.drawerPreviewItem = history;
     initialProps.openTarget = open(history, {
@@ -1159,7 +1165,6 @@ describe('preview-first host selections and deferred commits', () => {
   it('does not carry deferred replay placement to a climb reached by Next', () => {
     const selected = item('history');
     const initialProps = inputs();
-    initialProps.navigation.lightOnSwipe = false;
     initialProps.preview.drawerPreviewItem = selected;
     initialProps.openTarget = open(selected, {
       previewQueueItem: selected,

@@ -2,7 +2,7 @@ Boardsesh ora è disponibile in italiano.
 
 Sappi quando illumini il pannello
 
-Toccare un blocco lo mostra senza illuminarlo. «Illumina il pannello» lo illumina e guidi tu il pannello: i blocchi successivi si illuminano finché non scade il tempo impostato (all’inizio 45 s). Una MoonBoard finché non smetti. Scorri il pulsante a sinistra per guidare senza fine; tocca «Guidi tu il pannello» per fermarti.
+Toccare un blocco lo mostra senza illuminarlo. «Illumina il pannello» lo illumina e guidi tu il pannello: i blocchi successivi si illuminano finché non scade il tempo impostato (all’inizio 45 s). Scorri il pulsante a sinistra per guidare senza fine; tocca «Guidi tu il pannello» per fermarti.
 
 iPad e iPhone Duo: più spazio per il pannello
 

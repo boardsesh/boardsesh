@@ -16,8 +16,7 @@ import type {
 import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
 import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
-import { getSetting } from '../../settings/hooks';
-import { climbChangeStaysViewOnly, getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
+import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
 import { drivingAtPick } from './drive-mode-store';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
@@ -40,17 +39,14 @@ type SelectionChrome = {
 };
 type SelectionNavigation = {
   navigationState: Pick<NavigationState, 'prevItem' | 'nextItem'>;
-  /** Light the board as I swipe, the climber's setting. */
-  lightOnSwipe: boolean;
   browseByDefault: boolean;
   /**
-   * Driving the wall (#7113): a live drive on this phone's link. Every change
-   * of climb commits and lights, in a crew too, and the busy-wall question
-   * never asks this climber.
+   * Driving the wall (#7113): a live drive on this phone's link (a swipe on the
+   * wall button, Put on board, or Always drive the wall). Every change of climb
+   * commits and lights, in a crew too, and the busy-wall question never asks
+   * this climber. Outside a drive every change of climb is a preview.
    */
   driving: boolean;
-  /** A press on the frosted button stopped driving on this link (#7113). */
-  stoppedForLink: boolean;
   /** The preview on screen is a climb from another board: driving leaves it a preview. */
   previewOnOtherBoard: boolean;
 };
@@ -133,7 +129,7 @@ type PlaySelectionInputs = {
 };
 
 type SwipeSelectionInputs = PreviewSelection &
-  Omit<SelectionNavigation, 'navigationState'> & {
+  Omit<SelectionNavigation, 'navigationState' | 'browseByDefault'> & {
     targetItem: ClimbQueueItem | null;
     navigateQueue: () => void;
     setCurrentClimb: PlaySelectionInputs['queue']['setCurrentClimb'];
@@ -170,10 +166,7 @@ function useSwipeSelection({
   setDrawerPreviewSuggestionSource,
   setDrawerPreviewIsWallClimb,
   setSharedBrowseLatched,
-  lightOnSwipe,
-  browseByDefault,
   driving,
-  stoppedForLink,
   previewOnOtherBoard,
   targetItem,
   navigateQueue,
@@ -189,11 +182,8 @@ function useSwipeSelection({
         previewItem: drawerPreviewItem,
         previewSuggestionSource: drawerPreviewSuggestionSource,
         targetItem,
-        lightOnSwipe,
-        inSharedSession: browseByDefault,
         // A keep-lighting window past its end lights nothing (#7038).
         driving: drivingAtPick(driving),
-        stoppedForLink,
         previewOnOtherBoard,
       });
       if (previewTarget.viewOnly) {
@@ -257,10 +247,7 @@ function useSwipeSelection({
       targetItem,
       navigateQueue,
       setCurrentClimb,
-      lightOnSwipe,
-      browseByDefault,
       driving,
-      stoppedForLink,
       previewOnOtherBoard,
       setDrawerPreviewItem,
       setDrawerPreviewSuggestionSource,
@@ -293,7 +280,7 @@ export function usePlaySelectionController({
   },
   queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
   similarTrack,
-  navigation: { navigationState, lightOnSwipe, browseByDefault, driving, stoppedForLink, previewOnOtherBoard },
+  navigation: { navigationState, browseByDefault, driving, previewOnOtherBoard },
   chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
   confirmation: {
     busyWallConfirmArmed,
@@ -357,18 +344,11 @@ export function usePlaySelectionController({
       // roster: a peer's phone dropping off the wifi for a moment must not turn
       // the tap the climber is already making into a queue write.
       //
-      // Driving the wall (#7113) is the exception: every change of climb lights
-      // it, in a crew too, so the open puts the climb up.
+      // Solo too, outside a drive: a change of climb lights the wall only while
+      // this phone drives it (#7113: a swipe, Put on board or Light
+      // automatically), in a crew too, so then the open puts the climb up.
       const opensAsBrowse =
-        isFreshActiveOpen &&
-        (viewer === 'anonymous' ||
-          showBoardMismatch ||
-          climbChangeStaysViewOnly({
-            driving: drivingAtPick(driving),
-            inSharedSession: browseByDefault,
-            lightSetting: getSetting('lightOnClimbTap'),
-            stoppedForLink,
-          }));
+        isFreshActiveOpen && (viewer === 'anonymous' || showBoardMismatch || !drivingAtPick(driving));
       // A view-only preview is shown without committing; the browse chrome keys
       // off this. Commit paths (committedExternally) and solo fresh active opens
       // leave it null so the drawer renders the real currentClimbQueueItem.
@@ -432,9 +412,7 @@ export function usePlaySelectionController({
     [
       currentClimbQueueItem,
       setCurrentClimb,
-      browseByDefault,
       driving,
-      stoppedForLink,
       setDrawerPreviewItem,
       setDrawerPreviewSuggestionSource,
       viewer,
@@ -476,10 +454,7 @@ export function usePlaySelectionController({
     setDrawerPreviewSuggestionSource,
     setDrawerPreviewIsWallClimb,
     setSharedBrowseLatched,
-    lightOnSwipe,
-    browseByDefault,
     driving,
-    stoppedForLink,
     previewOnOtherBoard,
     targetItem: navigationState.prevItem,
     navigateQueue: previousClimb,
@@ -496,10 +471,7 @@ export function usePlaySelectionController({
     setDrawerPreviewSuggestionSource,
     setDrawerPreviewIsWallClimb,
     setSharedBrowseLatched,
-    lightOnSwipe,
-    browseByDefault,
     driving,
-    stoppedForLink,
     previewOnOtherBoard,
     targetItem: navigationState.nextItem,
     navigateQueue: nextClimb,
@@ -525,9 +497,9 @@ export function usePlaySelectionController({
       // `wallUuidAtLatchStartRef` mean "the wall as it was when you started
       // looking around"; without one there is no before-and-after to compare. And
       // only with a crew (`browseByDefault`: one is here, or was when the latch
-      // armed): "Someone just lit X" needs a someone. A solo climber with
-      // `lightOnSwipe` off is latched too, and the one way THEIR wall moves under
-      // a preview is their own lightbulb tap — asking them to confirm over their
+      // armed): "Someone just lit X" needs a someone. A solo climber who isn't
+      // driving is latched too, and the one way THEIR wall moves under a
+      // preview is their own lightbulb tap — asking them to confirm over their
       // own climb would be the question asked of nobody.
       if (
         !skipBusyWall &&
@@ -563,8 +535,8 @@ export function usePlaySelectionController({
       // is by construction on this preview's own track, and the lineage rule lives
       // in `resolveNavigationSuggestionSource` — don't re-add a call-site check.
       //
-      // A trackless look (a swipe off the committed climb with Light on swipe
-      // off, after a stop on this link, or in a crew) is Next stepping onward
+      // A trackless look (a swipe off the committed climb outside a drive:
+      // after a stop on this link, in a crew, or with nothing driving) is Next stepping onward
       // once it goes up (#6777): the provider keeps the committed list and where
       // it picks up when the climb is Up next on it, keeps the list when the climb
       // is the walk's own peek of the list's next climb (`walkedPeek`: minted
@@ -632,10 +604,9 @@ export function usePlaySelectionController({
    * leave the list for the climb queued after the current one.
    *
    * It goes the way Next went before the list took over the swipe, so it is
-   * bound by the same rules as a swipe: with Light on swipe off, or with a crew
-   * here, it opens the queued climb as a preview and the wall stays put. Only
-   * where a swipe would commit does it take the wall, exactly as a queue-sheet
-   * tap does. Either way the list's track is left behind, so Next and Previous
+   * bound by the same rules as a swipe: outside a drive it opens the queued
+   * climb as a preview and the wall stays put. Only where a swipe would commit
+   * (driving) does it take the wall, exactly as a queue-sheet tap does. Either way the list's track is left behind, so Next and Previous
    * walk the queue from there.
    */
   const continueIntoQueue = useCallback(
@@ -645,10 +616,7 @@ export function usePlaySelectionController({
         previewItem: drawerPreviewItem,
         previewSuggestionSource: drawerPreviewSuggestionSource,
         targetItem: target,
-        lightOnSwipe,
-        inSharedSession: browseByDefault,
         driving: drivingAtPick(driving),
-        stoppedForLink,
         previewOnOtherBoard,
       });
       setDrawerPreviewSuggestionSource(null);
@@ -664,10 +632,7 @@ export function usePlaySelectionController({
     [
       drawerPreviewItem,
       drawerPreviewSuggestionSource,
-      lightOnSwipe,
-      browseByDefault,
       driving,
-      stoppedForLink,
       previewOnOtherBoard,
       setDrawerPreviewItem,
       setDrawerPreviewSuggestionSource,
@@ -689,14 +654,14 @@ export function usePlaySelectionController({
    *   write and `setCurrentClimb` would re-arm the BLE auto-sender;
    * - a crew is here (also `getSimilarClimbTapMode`): a look must not take
    *   their wall;
-   * - the climber turned off Light the board when I tap a climb, or stopped
-   *   driving on this link with a press on the frosted button;
+   * - nobody drives the wall from this phone (#7113: a swipe, Put on board or
+   *   Always drive the wall), or a press on the frosted button stopped it;
    * - the player is showing a climb from another board, whose similar climbs
    *   are on that board too and can't go up on this one. That used to be the
    *   queue add's cross-board prompt; there is no add any more.
-   * Otherwise the climb goes up, inserted after the current one and flagged
-   * `suggested` like every list play. Driving the wall (#7113) overrides the
-   * crew and the setting (`climbChangeStaysViewOnly`), never the other board.
+   * Otherwise (driving) the climb goes up, inserted after the current one and
+   * flagged `suggested` like every list play. Driving overrides the crew, never
+   * the other board.
    *
    * The displayed climb is read from a ref at tap time, not listed as a dep:
    * it changes on every player move, and a fresh handler each time would
@@ -711,12 +676,7 @@ export function usePlaySelectionController({
       const previewOnly =
         getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving: drivingNow }) === 'preview' ||
         showBoardMismatch ||
-        climbChangeStaysViewOnly({
-          driving: drivingNow,
-          inSharedSession: browseByDefault,
-          lightSetting: getSetting('lightOnClimbTap'),
-          stoppedForLink,
-        });
+        !drivingNow;
       const track = createPlaylistSuggestionSource({
         playlistUuid: `similar:${displayedClimbUuidRef.current ?? similarClimb.uuid}`,
         activatedClimb: toQueueClimb(similarClimb),
@@ -744,7 +704,6 @@ export function usePlaySelectionController({
       viewer,
       browseByDefault,
       driving,
-      stoppedForLink,
       showBoardMismatch,
       similarTrack,
       setDrawerPreviewItem,

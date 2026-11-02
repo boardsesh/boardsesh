@@ -15,6 +15,7 @@ import {
   getDriveLightingSnapshot,
   getDriveMode,
   getLastDriveModeExitReason,
+  isAlwaysDriveOwned,
   isDriveWindowDue,
   isDrivingStoppedForLink,
   makeDriveOpenEnded,
@@ -23,6 +24,8 @@ import {
   resetDriveModeForTests,
   resolveDriveModeExit,
   shouldEndWindowForSettings,
+  shouldStartAlwaysDrive,
+  startAlwaysDrive,
   startLockScreenDrive,
   stopDrivingForLink,
   subscribeDriveEnded,
@@ -109,8 +112,8 @@ describe('drive-mode store', () => {
     expect(isDrivingStoppedForLink()).toBe(false);
   });
 
-  // Solo with Light the board as I swipe on, nothing is in the store: the stop is what matters.
-  it('records a stop with no drive in the store (solo, lighting on swipes)', () => {
+  // A press after the drive had already gone (Turn off all lights, say): the stop is what matters.
+  it('records a stop with no drive in the store', () => {
     expect(stopDrivingForLink()).toBeNull();
     expect(isDrivingStoppedForLink()).toBe(true);
     expect(getLastDriveModeExitReason()).toBeNull();
@@ -175,7 +178,7 @@ describe('Drive Mode Ended', () => {
     );
   });
 
-  it.each(['tap', 'action', 'solo_carry'] as const)('says a drive was started by %s', (startedBy) => {
+  it.each(['tap', 'action', 'always'] as const)('says a drive was started by %s', (startedBy) => {
     enterDriveMode({ startedBy, sessionId: null, boardId: 7 });
     exitDriveMode('link_dropped');
     expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', expect.objectContaining({ startedBy }));
@@ -294,6 +297,99 @@ describe('Drive Mode Started', () => {
       startedBy: 'swipe',
       inSession: false,
       boardType: null,
+    });
+  });
+});
+
+// Always drive the wall (2026-11): an open-ended drive whenever this phone's own
+// link holds the board, live from the start since it lights nothing itself.
+describe("Always drive the wall's drive", () => {
+  it('starts live and open-ended, says so once, and lights nothing of its own', () => {
+    expect(startAlwaysDrive({ sessionId: 'session-1', boardId: 7, boardType: 'tension' })).toBe(true);
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'always',
+      sessionId: 'session-1',
+      boardId: 7,
+      boardType: 'tension',
+      windowMs: null,
+      expiresAt: null,
+      climbsLit: 0,
+    });
+    expect(getDriveLightingSnapshot()).toEqual({ mode: 'driving', endsAt: null });
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith('Drive Mode Started', {
+      startedBy: 'always',
+      inSession: true,
+      boardType: 'tension',
+    });
+  });
+
+  it('refuses while a drive is on, and while a stop holds this link', () => {
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(false);
+    expect(getDriveMode()?.startedBy).toBe('swipe');
+    stopDrivingForLink();
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    // The link dropped, or Put on board resumed it: it may start again.
+    clearDrivingStopped();
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(true);
+  });
+
+  it('ends always_off keeping the link when the switch goes off', () => {
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    startAlwaysDrive({ sessionId: null, boardId: 7 });
+    exitDriveMode('always_off', { keepLink: true });
+    unsubscribe();
+    expect(getDriveMode()).toBeNull();
+    // Not a stop: nothing holds the next drive off.
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(ends).toEqual([expect.objectContaining({ reason: 'always_off', keepLink: true })]);
+    expect(endedCalls()).toEqual([
+      ['Drive Mode Ended', expect.objectContaining({ reason: 'always_off', startedBy: 'always', windowSec: null })],
+    ]);
+  });
+
+  it("owns its own drive's end, never a swipe's, and nothing with no drive", () => {
+    expect(isAlwaysDriveOwned(null)).toBe(false);
+    startAlwaysDrive({ sessionId: null, boardId: 7 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(true);
+    resetDriveModeForTests();
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+  });
+
+  describe('shouldStartAlwaysDrive', () => {
+    const DRIVE: DriveModeState = {
+      phase: 'live',
+      sessionId: null,
+      boardId: 7,
+      boardType: null,
+      startedAt: 0,
+      startedBy: 'swipe',
+      climbsLit: 0,
+      windowMs: null,
+      windowSetting: null,
+      expiresAt: null,
+      windowRenewals: 0,
+    };
+    it.each<[string, Parameters<typeof shouldStartAlwaysDrive>[0], boolean]>([
+      [
+        'applies, own link up, nothing driving, no stop',
+        { applies: true, ownLink: true, drive: null, stopped: false },
+        true,
+      ],
+      ['does not apply here', { applies: false, ownLink: true, drive: null, stopped: false }, false],
+      [
+        'no own link (none, a relay, or a wall with no lights)',
+        { applies: true, ownLink: false, drive: null, stopped: false },
+        false,
+      ],
+      ['a drive already on', { applies: true, ownLink: true, drive: DRIVE, stopped: false }, false],
+      ['a stop on this link', { applies: true, ownLink: true, drive: null, stopped: true }, false],
+    ])('%s', (_name, input, expected) => {
+      expect(shouldStartAlwaysDrive(input)).toBe(expected);
     });
   });
 });
@@ -438,6 +534,24 @@ describe('the timed drive', () => {
     expect(makeDriveOpenEnded()).toBe(false);
   });
 
+  // Always drive the wall turned on during it: the drive is now Always drive the wall's to end.
+  it('turns open-ended for Always drive the wall, which then owns its end', () => {
+    openWindow();
+    markDriveLive({ now: 5_000 });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+    expect(makeDriveOpenEnded({ byAlways: true })).toBe(true);
+    expect(getDriveMode()).toMatchObject({ startedBy: 'tap', windowMs: null, openedByAlways: true });
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(true);
+  });
+
+  it('leaves a swipe-opened window to its climber', () => {
+    openWindow();
+    markDriveLive({ now: 5_000 });
+    makeDriveOpenEnded();
+    expect(getDriveMode()?.openedByAlways).toBeUndefined();
+    expect(isAlwaysDriveOwned(getDriveMode())).toBe(false);
+  });
+
   it('ignores a zero-length window: the drive is open-ended', () => {
     openWindow(0);
     markDriveLive({ now: 5_000 });
@@ -519,7 +633,7 @@ describe('the timed drive', () => {
     it('hands on a press on the frosted button as stopped, with no drive in the store too', () => {
       const ends: DriveEnded[] = [];
       const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
-      // Solo with Light the board as I swipe on: driving, nothing in the store.
+      // Nothing in the store (the drive already gone): still a stop.
       stopDrivingForLink();
       enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
       stopDrivingForLink();
@@ -559,15 +673,13 @@ describe('the timed drive', () => {
     ['its choice turned Off', { keepLighting: 'off' }, true],
     ['In a session too turned off, solo', { drivesInSession: false }, false],
     ['In a session too turned off, in a crew', { drivesInSession: false, inSession: true }, true],
-    ["the MoonBoard's choice turned Off, which isn't its own", { moonboardKeepLighting: 'off' }, false],
-  ])('ends a window from the general choice when %s: %s', (_name, change, ends) => {
+  ])('ends a timed drive when %s: %s', (_name, change, ends) => {
     openWindow();
     markDriveLive({ now: 5_000 });
     expect(
       shouldEndWindowForSettings({
         drive: getDriveMode(),
         keepLighting: '45',
-        moonboardKeepLighting: 'until_stopped',
         drivesInSession: true,
         inSession: false,
         ...change,
@@ -575,26 +687,29 @@ describe('the timed drive', () => {
     ).toBe(ends);
   });
 
-  it("ends a MoonBoard's window only on its own choice, in a crew too", () => {
+  // Stop driving after and In a session too are one rule for every board: a
+  // MoonBoard's timed drive ends in a crew once In a session too goes off.
+  it("ends a MoonBoard's timed drive like any other, in a crew too", () => {
     enterDriveMode({
       startedBy: 'tap',
       sessionId: 's',
       boardId: null,
+      boardType: 'moonboard',
       windowMs: 30_000,
-      windowSetting: 'moonboardPutOnBoardKeepsLighting',
+      windowSetting: 'putOnBoardKeepsLighting',
     });
     const base = {
       drive: getDriveMode(),
-      keepLighting: 'off' as const,
-      moonboardKeepLighting: '30' as const,
-      drivesInSession: false,
+      keepLighting: '30' as const,
+      drivesInSession: true,
       inSession: true,
     };
     expect(shouldEndWindowForSettings(base)).toBe(false);
-    expect(shouldEndWindowForSettings({ ...base, moonboardKeepLighting: 'off' })).toBe(true);
+    expect(shouldEndWindowForSettings({ ...base, drivesInSession: false })).toBe(true);
+    expect(shouldEndWindowForSettings({ ...base, keepLighting: 'off' })).toBe(true);
     // An open-ended drive has no window to end.
-    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
-    expect(shouldEndWindowForSettings({ ...base, drive: getDriveMode(), moonboardKeepLighting: 'off' })).toBe(false);
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null, boardType: 'moonboard' });
+    expect(shouldEndWindowForSettings({ ...base, drive: getDriveMode(), keepLighting: 'off' })).toBe(false);
   });
 });
 

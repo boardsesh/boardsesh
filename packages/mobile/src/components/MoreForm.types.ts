@@ -156,9 +156,9 @@ export type MoreSelectRow = {
   /** The control's name for assistive tech when `label` leans on the row above (see `MoreToggleRow`). */
   accessibilityLabel?: string;
   /**
-   * Secondary text under the row (Settings › Board's MoonBoard keep-lighting
-   * row), so its explanation rides the row a screen reader lands on, not only
-   * the footer.
+   * Secondary text under the row (Settings › Board's Stop driving after row
+   * says why it is greyed), so its explanation rides the row a screen reader
+   * lands on, not only the footer.
    */
   subtitle?: string;
   options: MoreOption[];

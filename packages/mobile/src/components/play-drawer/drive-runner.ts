@@ -14,7 +14,7 @@ export type StartDriveInput = {
   sessionId: string | null;
   /** The board type on screen ('kilter', 'moonboard', ...), for Drive Mode Started / Ended. */
   boardType?: string | null;
-  /** What started it: the swipe, Put on board (a window or MoonBoard drive), or the screen-reader action / sheet row. */
+  /** What started it: the swipe, Put on board (a timed or open-ended drive), or the screen-reader action / sheet row. */
   startedBy: DriveModeStartedBy;
   /** The climb on screen is a preview: it goes up first. */
   committing: boolean;

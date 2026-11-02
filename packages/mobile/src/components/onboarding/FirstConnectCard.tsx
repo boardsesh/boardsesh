@@ -11,7 +11,7 @@ import { track } from '../../lib/analytics';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
 import {
-  firstConnectTapLights,
+  firstConnectAlwaysDrives,
   isConnectStepTreatmentLive,
   shouldShowFirstConnectCard,
 } from '../../lib/onboarding/first-connect-decision';
@@ -24,8 +24,8 @@ import {
   useFirstConnectSnapshot,
 } from '../../lib/onboarding/first-connect-store';
 import { useSetting } from '../../settings';
-import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
-import { useIsSharedSession } from '../../providers/queue-provider';
+import { useFirstConnectCtaEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
+import { useIsCrewSession } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -51,10 +51,11 @@ function trackCardAction(action: FirstRunCardAction): void {
  * climbs on {{board}}", with **Connect**, **This wall has no lights** and an X
  * ("Not now").
  *
- * The body follows Light the board when I tap a climb (`firstConnectTapLights`):
- * off (the 2.7 default) a tap opens a preview, so it names Put on board; on, a
- * tap lights the climb, so it says that, except in a shared session, where a
- * list tap stays a preview. It never promises a tap lights a climb when it won't.
+ * The body follows Always drive the wall (`firstConnectAlwaysDrives`): off (the
+ * default) a tap opens a preview, so it names Put on board; on, this phone
+ * drives the wall once connected and every climb picked lights, so it says
+ * that, except in a crew with In a session too off, where picks stay previews.
+ * It never promises a tap lights a climb when it won't.
  *
  * Shown while a board with lights is bound and this phone has never connected,
  * on at most two launches. The X hides it for this launch; "no lights" hides it
@@ -105,9 +106,16 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
   const { variant, systemColors, brandColors, m3SurfaceContainers } = useTheme();
   const { device, enrolment, cardDismissedThisLaunch } = useFirstConnectSnapshot();
   const enabled = useFirstConnectCtaEnabled();
-  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
-  const inSharedSession = useIsSharedSession();
-  const tapLights = firstConnectTapLights({ lightOnClimbTap, inSharedSession });
+  const [alwaysDrive] = useSetting('alwaysDrive');
+  const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
+  const inSession = useIsCrewSession();
+  const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
+  const alwaysDrives = firstConnectAlwaysDrives({
+    alwaysDrive,
+    swipeToDriveEnabled,
+    drivesInSession,
+    inSession,
+  });
   const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress, connect } = useLightbulbControl({
     surface: 'first_connect_card',
   });
@@ -199,7 +207,7 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
             {title}
           </Text>
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {tapLights ? t('mobile.firstConnect.card.bodyTapLights') : t('mobile.firstConnect.card.body')}
+            {alwaysDrives ? t('mobile.firstConnect.card.bodyAlwaysDrive') : t('mobile.firstConnect.card.body')}
           </Text>
         </View>
         <PressableSurface

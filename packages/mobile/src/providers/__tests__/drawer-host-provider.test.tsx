@@ -430,8 +430,13 @@ import {
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
-import { resetAllSettings, setSetting } from '../../settings/hooks';
-import { enterDriveMode, markDriveLive, resetDriveModeForTests } from '../../components/play-drawer/drive-mode-store';
+import { resetAllSettings } from '../../settings/hooks';
+import {
+  enterDriveMode,
+  markDriveLive,
+  resetDriveModeForTests,
+  startAlwaysDrive,
+} from '../../components/play-drawer/drive-mode-store';
 import {
   publishRoutePlayerBusy,
   registerRoutePlayer,
@@ -844,7 +849,8 @@ describe('DrawerHostProvider queue selection previews', () => {
 describe('DrawerHostProvider board sheet climb actions', () => {
   beforeEach(() => {
     queue.isSharedSession = false;
-    setSetting('lightOnClimbTap', true);
+    // This phone drives the wall (Always drive the wall's drive): a tap lights.
+    startAlwaysDrive({ sessionId: null, boardId: null });
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
@@ -932,40 +938,42 @@ describe('DrawerHostProvider board sheet climb actions', () => {
   });
 
   it.each([
-    ['in a crew', true, true],
-    ['with Light the board when I tap a climb off', false, false],
-  ] as const)('opens a preview with the wall history and leaves the wall alone %s', async (_case, crew, light) => {
-    queue.isSharedSession = crew;
-    setSetting('lightOnClimbTap', light);
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      () => {},
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(boardSheet.props).not.toBeNull());
+    ['in a crew', true],
+    ['solo', false],
+  ] as const)(
+    'opens a preview with the wall history and leaves the wall alone %s, outside a drive',
+    async (_case, crew) => {
+      queue.isSharedSession = crew;
+      resetDriveModeForTests();
+      const routes: Array<RouteValue> = [];
+      renderHost(
+        () => {},
+        (route) => routes.push(route),
+      );
+      await waitFor(() => expect(boardSheet.props).not.toBeNull());
 
-    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
-    act(() => {
-      getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
-    });
+      const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+      act(() => {
+        getBoardSheetProps().onClimbPress(makeBoardSheetAction(climb, { track: wallTrack, isWallClimb: true }));
+      });
 
-    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
-    expect(routes.at(-1)?.playTarget?.options).toEqual({
-      // The wall climb's own queue entry, so putting it up queues no second copy.
-      previewQueueItem: expect.objectContaining({ uuid: 'wall-queue-x', climb }),
-      previewIsWallClimb: true,
-      playlistSuggestionSource: wallTrack,
-    });
-  });
+      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+      await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+      expect(routes.at(-1)?.playTarget?.options).toEqual({
+        // The wall climb's own queue entry, so putting it up queues no second copy.
+        previewQueueItem: expect.objectContaining({ uuid: 'wall-queue-x', climb }),
+        previewIsWallClimb: true,
+        playlistSuggestionSource: wallTrack,
+      });
+    },
+  );
 
   // #7113: driving the wall lights a board-history tap too, in a crew included.
   it.each([
-    ['in a crew', true, true],
-    ['with Light the board when I tap a climb off', false, false],
-  ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew, light) => {
+    ['in a crew', true],
+    ['solo', false],
+  ] as const)('puts a board-sheet climb up %s while driving the wall', async (_case, crew) => {
     queue.isSharedSession = crew;
-    setSetting('lightOnClimbTap', light);
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
     markDriveLive();
     try {
@@ -1347,10 +1355,10 @@ describe('DrawerHostProvider play drawer open target', () => {
     },
   );
 
-  it.each(['saved lighting preference', 'Driver mode'] as const)(
+  it.each(["Always drive the wall's drive", 'Driver mode'] as const)(
     'keeps automatic selection available through %s',
     async (mode) => {
-      if (mode === 'saved lighting preference') setSetting('lightOnClimbTap', true);
+      if (mode === "Always drive the wall's drive") startAlwaysDrive({ sessionId: queue.sessionId, boardId: 7 });
       else {
         enterDriveMode({ startedBy: 'swipe', sessionId: queue.sessionId, boardId: 7 });
         markDriveLive();
@@ -1689,8 +1697,8 @@ describe('DrawerHostProvider play drawer open target', () => {
 
 describe('DrawerHostProvider previewed-climb highlight', () => {
   // A preview outlives the drawer as "the climb you last had up" — until something
-  // is actually put up after it. Solo with `lightOnSwipe` on, an explicit Preview
-  // of A followed by a swipe commits B through the queue; the list must move to B.
+  // is actually put up after it. While driving, an explicit Preview of A
+  // followed by a swipe commits B through the queue; the list must move to B.
   it('yields to the next committed climb', async () => {
     const hosts: Array<HostValue> = [];
     const view = renderHost((host) => hosts.push(host));

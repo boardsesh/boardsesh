@@ -112,7 +112,7 @@
         "title": "Allume les blocs sur {{board}}",
         "titleNoName": "Allume les blocs sur ta board",
         "body": "Connecte ce téléphone à la board, touche un bloc, puis Allumer sur la board pour l'allumer.",
-        "bodyTapLights": "Connecte ce téléphone à la board, puis touche un bloc pour l'allumer.",
+        "bodyAlwaysDrive": "Connecte ce téléphone à la board et tu la pilotes : chaque bloc que tu choisis s'allume.",
         "connect": "Connecte la board",
         "tryAgain": "Réessayer",
         "noLights": "Ce mur n'a pas de LED",
@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
-        "body": "Touche un bloc dans la liste : il s'allume au mur.",
+        "bodyAlwaysDrive": "Toujours piloter la board est activé : chaque bloc que tu choisis s'allume jusqu'à ce que tu touches Tu pilotes la board pour arrêter.",
         "bodyWindow": "Allumer sur la board te fait piloter la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
         "bodyWindowMinute": "Allumer sur la board te fait piloter la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
         "bodyWindowMinutes": "Allumer sur la board te fait piloter la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",

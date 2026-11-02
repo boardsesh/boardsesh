@@ -225,7 +225,7 @@ export type PreviewFirstTipDrive = {
   /**
    * It lights every pick until the climber stops it: a swipe, Light every
    * climb, the board sheet's row, or Put on board set to keep lighting until
-   * stopped (a MoonBoard's default). Not Put on board's timed window.
+   * stopped. Not Put on board's timed window.
    */
   openEnded: boolean;
 };
@@ -259,19 +259,19 @@ export type PreviewFirstWindowLine =
   | { key: 'windowMinute' }
   | { key: 'windowMinutes'; minutes: number }
   | { key: 'untilStop' }
-  | { key: 'moonboard' }
   | null;
 
 /**
  * Read by the same rule as the first-connect confirmation
- * (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
- * press starts no drive, so there is no line. A timed drive says how long it
- * lasts after each climb, in whole minutes from one minute up.
+ * (`resolveKeepLightingReach`): where Always drive the wall drives, every pick
+ * lights until the climber stops, on any board, whatever Stop driving after
+ * says. A timed drive says how long it lasts after each climb, in whole
+ * minutes from one minute up. A MoonBoard reads the same, Stop driving after
+ * being one choice for every board.
  */
 export function resolvePreviewFirstWindowLine({
   plan,
-  isMoonboard,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
 }: {
   /**
    * What Put on board's drive does here (`resolveKeepLightingPlan`), or null
@@ -279,17 +279,16 @@ export function resolvePreviewFirstWindowLine({
    * start a drive here (a session with In a session too off, the swipe flag off).
    */
   plan: KeepLightingPlan | null;
-  isMoonboard: boolean;
-  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
-  swipeLightsSolo?: boolean;
+  /** Always drive the wall drives here (`alwaysDriveApplies`). */
+  alwaysDrive?: boolean;
 }): PreviewFirstWindowLine {
-  const reach = resolveKeepLightingReach({ plan, swipeLightsSolo });
+  const reach = resolveKeepLightingReach({ plan, alwaysDrive });
   switch (reach.kind) {
     // One climb lights and nothing after it: the headline already says so.
     case 'one_climb':
       return null;
     case 'until_stop':
-      return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
+      return { key: 'untilStop' };
     case 'window': {
       const length = driveLengthWords(reach.seconds);
       if (length.unit === 'seconds') return { key: 'windowSeconds', seconds: length.count };
@@ -302,19 +301,19 @@ export function resolvePreviewFirstWindowLine({
  * Which sentence the card says about the frost, read by the same rule as its
  * second line (`resolveKeepLightingReach`): the one about Put on board's drive
  * stopping after the chosen time, and the frost shrinking as it runs out, only
- * where that drive has a clock (`window`). Until I stop (a MoonBoard's
- * default) and Right away (or no drive here at all) say the frost means
+ * where that drive has a clock (`window`). Until I stop and Right away (or no
+ * drive here at all) say the frost means
  * driving until you stop, with nothing about a clock.
  */
 export type PreviewFirstFrostLine = 'timed' | 'open_ended';
 
 export function resolvePreviewFirstFrostLine({
   plan,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
 }: {
   /** As `resolvePreviewFirstWindowLine`'s. */
   plan: KeepLightingPlan | null;
-  swipeLightsSolo?: boolean;
+  alwaysDrive?: boolean;
 }): PreviewFirstFrostLine {
-  return resolveKeepLightingReach({ plan, swipeLightsSolo }).kind === 'window' ? 'timed' : 'open_ended';
+  return resolveKeepLightingReach({ plan, alwaysDrive }).kind === 'window' ? 'timed' : 'open_ended';
 }

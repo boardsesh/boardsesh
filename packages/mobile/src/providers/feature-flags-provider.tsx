@@ -256,7 +256,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'wall-swipe-to-drive',
     label: 'Swipe the wall button to drive',
     description:
-      'Swipe the player\'s wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action "Light every climb" appears, and the board sheet gets a Light every climb row. It also gates Put on board\'s timed drive (2.7): off, Put on board lights one climb and starts no drive. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.',
+      "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.",
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 

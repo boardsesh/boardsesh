@@ -7,11 +7,9 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
   return {
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
     keepLighting: { choice: '45', onChange: vi.fn() },
-    moonboardKeepLighting: null,
     drivesInSession: { enabled: true, onChange: vi.fn() },
     disconnectWhenDrivingEnds: { enabled: false, onChange: vi.fn() },
-    lightOnSwipe: { enabled: true, onChange: vi.fn() },
-    lightOnClimbTap: { enabled: false, onChange: vi.fn() },
+    alwaysDrive: { enabled: false, onChange: vi.fn() },
     playlistTapLoadsQueue: { enabled: false, onChange: vi.fn() },
     moonboardLightAdjacentHolds: null,
     ...overrides,
@@ -31,40 +29,49 @@ function findRow(input: BoardLightingModelInput, key: string): MoreRow {
 }
 
 describe('buildBoardLightingSections', () => {
-  it('lists when Put on board stops driving, what happens then, what lights the board on its own, then what a list tap does', () => {
+  // Always drive the wall leads: it greys the rows under it, so the climber reads the switch first.
+  it('lists Always drive the wall, when Put on board stops driving, what happens then, then what a list tap does', () => {
     const sections = buildBoardLightingSections(makeInput());
     expect(sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
+      ['lightingAuto', ['alwaysDrive']],
       ['keepLighting', ['putOnBoardKeepsLighting', 'putOnBoardDrivesInSession']],
       ['drivingEnds', ['disconnectWhenDrivingEnds']],
-      ['lightingAuto', ['lightOnClimbTap', 'lightOnSwipe']],
       ['lightingMore', ['playlistTapLoadsQueue']],
     ]);
   });
 
-  // Six climbers in six read the old side-by-side pair as two independent
-  // switches. The swipe switch only matters once a climb is on the wall, so it
-  // sits under the tap switch in a group of its own, and its subtitle says so.
-  it('nests the swipe switch under the tap switch, alone in their group, with its caption', () => {
-    const [, , lighting, more] = buildBoardLightingSections(makeInput());
-    expect(lighting.rows.map((row) => row.key)).toEqual(['lightOnClimbTap', 'lightOnSwipe']);
-    const [tap, swipe] = lighting.rows;
-    if (tap.kind !== 'toggle' || swipe.kind !== 'toggle') throw new Error('not toggles');
-    expect(tap.label).toBe('settings:ble.lighting.onTapLabel');
-    expect(tap.subtitle).toBe('settings:ble.lighting.onTapDescription');
-    expect(swipe.label).toBe('settings:ble.lighting.onSwipeLabel');
-    expect(swipe.subtitle).toBe('settings:ble.lighting.onSwipeDescription');
-    // The second card has no header, so it reads as the same lighting page.
+  // One switch (2026-11): Always drive the wall always drives the wall. It
+  // replaced Light the board when I tap a climb and Light the board as I swipe.
+  it('offers one Always drive the wall switch, alone in its group, with its caption and no footer while off', () => {
+    const [lighting, , , more] = buildBoardLightingSections(makeInput());
+    expect(lighting.rows).toHaveLength(1);
+    const [always] = lighting.rows;
+    if (always.kind !== 'toggle') throw new Error('not a toggle');
+    expect(always).toMatchObject({
+      key: 'alwaysDrive',
+      label: 'settings:ble.lighting.alwaysDriveLabel',
+      subtitle: 'settings:ble.lighting.alwaysDriveDescription',
+      value: false,
+    });
+    // The page's lighting title sits on the first card.
+    expect(lighting.title).toBe('settings:ble.lighting.title');
+    // How to stop (and that a stop holds until a disconnect) is only true with it on.
+    expect(lighting.footer).toBeUndefined();
+    expect(buildBoardLightingSections(makeInput({ alwaysDrive: { enabled: true, onChange: vi.fn() } }))[0].footer).toBe(
+      'settings:ble.lighting.alwaysDriveFooter',
+    );
+    // The last card has no header, so it reads as the same lighting page.
     expect(more.title).toBeUndefined();
+    expect(findRowKeys(makeInput())).not.toContain('lightOnClimbTap');
+    expect(findRowKeys(makeInput())).not.toContain('lightOnSwipe');
   });
 
-  it('titles the groups, since they sit on the Board page under the look, and keeps their descriptions as footers', () => {
-    const [keep, drivingEnds, lighting] = buildBoardLightingSections(makeInput());
-    expect(keep.title).toBe('settings:ble.lighting.title');
+  it('keeps Stop driving after untitled under the lighting title, with its description as a footer', () => {
+    const [, keep, drivingEnds] = buildBoardLightingSections(makeInput());
+    expect(keep.title).toBeUndefined();
     expect(keep.footer).toBe('settings:ble.lighting.keep.footer');
     // Stop driving after's second card: no header of its own.
     expect(drivingEnds.title).toBeUndefined();
-    expect(lighting.title).toBe('settings:ble.lighting.autoTitle');
-    expect(lighting.footer).toBe('settings:ble.lighting.description');
   });
 
   // The footer says what the chosen length does: a clock each lit climb
@@ -78,7 +85,7 @@ describe('buildBoardLightingSections', () => {
     ['until_stopped', 'settings:ble.lighting.keep.footerUntilStopped'],
     ['off', 'settings:ble.lighting.keep.footerOff'],
   ] as const)('footers Stop driving after set to %s with what it does', (choice, footer) => {
-    const [keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
+    const [, keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
     expect(keep.footer).toBe(footer);
   });
 
@@ -87,7 +94,7 @@ describe('buildBoardLightingSections', () => {
   it('adds a help row under Disconnect Bluetooth when driving ends when the page can open the help', () => {
     expect(findRowKeys(makeInput())).not.toContain('drivingHelp');
     const onOpenDrivingHelp = vi.fn();
-    const [, drivingEnds] = buildBoardLightingSections(makeInput({ onOpenDrivingHelp }));
+    const [, , drivingEnds] = buildBoardLightingSections(makeInput({ onOpenDrivingHelp }));
     expect(drivingEnds.rows.map((row) => row.key)).toEqual(['disconnectWhenDrivingEnds', 'drivingHelp']);
     const row = drivingEnds.rows[1];
     if (row.kind !== 'nav') throw new Error('not a nav row');
@@ -149,20 +156,61 @@ describe('buildBoardLightingSections', () => {
     expect(row.value).toBe(false);
     row.onValueChange(true);
     expect(input.playlistTapLoadsQueue.onChange).toHaveBeenCalledWith(true);
-    expect(input.lightOnClimbTap.onChange).not.toHaveBeenCalled();
+    expect(input.alwaysDrive.onChange).not.toHaveBeenCalled();
   });
 
-  it('hands each switch flip to its own handler', () => {
+  it('hands the Always drive the wall flip to its own handler', () => {
     const input = makeInput();
-    const swipe = findRow(input, 'lightOnSwipe');
-    if (swipe.kind !== 'toggle') throw new Error('not a toggle');
-    swipe.onValueChange(false);
-    expect(input.lightOnSwipe.onChange).toHaveBeenCalledWith(false);
-    expect(input.lightOnClimbTap.onChange).not.toHaveBeenCalled();
+    const always = findRow(input, 'alwaysDrive');
+    if (always.kind !== 'toggle') throw new Error('not a toggle');
+    always.onValueChange(true);
+    expect(input.alwaysDrive.onChange).toHaveBeenCalledExactlyOnceWith(true);
+    expect(input.playlistTapLoadsQueue.onChange).not.toHaveBeenCalled();
   });
 });
 
-// Stop driving after (2.7, spec B4): the first card.
+// Always drive the wall on: this phone always drives the wall while it holds the
+// board, so Stop driving after doesn't apply. The row stays where it is,
+// greyed, saying why. In a session too still
+// decides a crew session, so it is never greyed then.
+describe('buildBoardLightingSections: Always drive the wall on', () => {
+  const ON = { alwaysDrive: { enabled: true, onChange: vi.fn() } };
+
+  it('greys Stop driving after, says why on the row, and drops the footer about Put on board', () => {
+    const sections = buildBoardLightingSections(makeInput(ON));
+    const row = findRow(makeInput(ON), 'putOnBoardKeepsLighting');
+    if (row.kind !== 'select') throw new Error('not a select');
+    expect(row.disabled).toBe(true);
+    // Where a screen reader lands on it.
+    expect(row.subtitle).toBe('settings:ble.lighting.keep.alwaysDriveReason');
+    // Still shows the climber's choice, for when they turn it off again.
+    expect(row.selectedKey).toBe('45');
+    expect(sections[1].key).toBe('keepLighting');
+    expect(sections[1].footer).toBeUndefined();
+  });
+
+  it('keeps In a session too live, even with Stop driving after at Right away', () => {
+    const row = findRow(
+      makeInput({ ...ON, keepLighting: { choice: 'off', onChange: vi.fn() } }),
+      'putOnBoardDrivesInSession',
+    );
+    if (row.kind !== 'toggle') throw new Error('not a toggle');
+    expect(row.disabled).toBe(false);
+    expect(toggleRowSubtitle(row)).toEqual({
+      text: 'settings:ble.lighting.keep.inSessionDescription',
+      isReason: false,
+    });
+  });
+
+  it('leaves Stop driving after live with it off, with no caption', () => {
+    const row = findRow(makeInput(), 'putOnBoardKeepsLighting');
+    if (row.kind !== 'select') throw new Error('not a select');
+    expect(row.disabled).toBeFalsy();
+    expect(row.subtitle).toBeUndefined();
+  });
+});
+
+// Stop driving after (2.7, spec B4): the card under Always drive the wall.
 describe('buildBoardLightingSections: Stop driving after', () => {
   it('offers Right away, 30 s, 45 s, 1, 2 and 5 minutes, and Until I stop', () => {
     const row = findRow(makeInput(), 'putOnBoardKeepsLighting');
@@ -191,27 +239,15 @@ describe('buildBoardLightingSections: Stop driving after', () => {
     expect(vi.mocked(input.keepLighting.onChange).mock.calls).toEqual([['until_stopped'], ['300']]);
   });
 
-  it("puts the MoonBoard's own choice right under it, with its reason on the row, only where a MoonBoard is in view", () => {
-    const onChange = vi.fn();
-    const input = makeInput({ moonboardKeepLighting: { choice: 'until_stopped', onChange } });
-    expect(buildBoardLightingSections(input)[0].rows.map((row) => row.key)).toEqual([
+  // One choice for every board: no MoonBoard row of its own (2026-11).
+  it('has one Stop driving after row, then In a session too', () => {
+    expect(buildBoardLightingSections(makeInput())[1].rows.map((row) => row.key)).toEqual([
       'putOnBoardKeepsLighting',
-      'moonboardPutOnBoardKeepsLighting',
       'putOnBoardDrivesInSession',
     ]);
-    const row = findRow(input, 'moonboardPutOnBoardKeepsLighting');
-    if (row.kind !== 'select') throw new Error('not a select');
-    expect(row.label).toBe('settings:ble.lighting.keep.moonboardLabel');
-    // Named on its own for the rotor, Voice Control and TalkBack (spec B4).
-    expect(row.accessibilityLabel).toBe('settings:ble.lighting.keep.moonboardAccessibilityLabel');
-    expect(row.subtitle).toBe('settings:ble.lighting.keep.moonboardDescription');
-    expect(row.selectedKey).toBe('until_stopped');
-    row.onSelect('30');
-    expect(onChange).toHaveBeenCalledWith('30');
-    expect(input.keepLighting.onChange).not.toHaveBeenCalled();
   });
 
-  it('greys In a session too with its reason while the general choice is Right away, whatever the MoonBoard says', () => {
+  it('greys In a session too with its reason while Stop driving after is Right away', () => {
     const on = findRow(makeInput(), 'putOnBoardDrivesInSession');
     if (on.kind !== 'toggle') throw new Error('not a toggle');
     expect(on).toMatchObject({
@@ -222,13 +258,7 @@ describe('buildBoardLightingSections: Stop driving after', () => {
       disabled: false,
     });
     expect(toggleRowSubtitle(on)).toEqual({ text: 'settings:ble.lighting.keep.inSessionDescription', isReason: false });
-    const off = findRow(
-      makeInput({
-        keepLighting: { choice: 'off', onChange: vi.fn() },
-        moonboardKeepLighting: { choice: 'until_stopped', onChange: vi.fn() },
-      }),
-      'putOnBoardDrivesInSession',
-    );
+    const off = findRow(makeInput({ keepLighting: { choice: 'off', onChange: vi.fn() } }), 'putOnBoardDrivesInSession');
     if (off.kind !== 'toggle') throw new Error('not a toggle');
     expect(off).toMatchObject({ disabledReason: 'settings:ble.lighting.keep.inSessionOffReason', disabled: true });
     // The reason replaces the description while greyed out.

@@ -1,20 +1,21 @@
 /**
  * Stop driving after (2.7, preview-first lighting): how long a drive that Put
- * on board started keeps lighting. Settings › Board holds the two choices, one
- * for every board and one for MoonBoards, plus whether it applies in a crew
- * session. The setting keys keep their first name (`putOnBoardKeepsLighting`)
- * so stored choices carry over.
+ * on board started keeps lighting. Settings › Board holds one choice for every
+ * board, MoonBoards included, plus whether it applies in a crew session.
+ * The setting key keeps its first name (`putOnBoardKeepsLighting`) so stored
+ * choices carry over.
  *
  * - `off` — Right away: the press lights that one climb and starts no drive.
  *   The next pick is a preview.
  * - `30` / `45` / `60` / `120` / `300` — a timed drive: every pick lights for
  *   that many seconds, and each climb that lights restarts the clock.
  * - `until_stopped` — Until I stop: an open-ended drive. Every pick lights
- *   until the climber taps the button or the link drops. The MoonBoard
- *   default, since most MoonBoard controllers don't like phones switching.
+ *   until the climber taps the button or the link drops.
  *
  * Only Put on board's drive is timed: a swipe or Light every climb always
- * starts an open-ended one.
+ * starts an open-ended one. With Always drive the wall on (`alwaysDrive`), none
+ * of these apply: this phone drives with no end whenever it holds the board
+ * (`alwaysDriveApplies`).
  *
  * Pure, so the Settings model, the board control and the drive store read the
  * same rule.
@@ -24,11 +25,13 @@ export const KEEP_LIGHTING_CHOICES = ['off', '30', '45', '60', '120', '300', 'un
 
 export type KeepLightingChoice = (typeof KEEP_LIGHTING_CHOICES)[number];
 
-/** Settings › Board's Stop driving after keys. */
-export type KeepLightingSettingKey = 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting';
+/**
+ * Settings › Board's Stop driving after key. A drive's `windowSetting` names it
+ * so turning the choice to Right away ends a timed drive it started.
+ */
+export type KeepLightingSettingKey = 'putOnBoardKeepsLighting';
 
 export const DEFAULT_KEEP_LIGHTING: KeepLightingChoice = '45';
-export const DEFAULT_MOONBOARD_KEEP_LIGHTING: KeepLightingChoice = 'until_stopped';
 
 /** A stored value this build doesn't know (an older or newer bundle wrote it) reads as the default. */
 export function sanitiseKeepLighting(value: unknown, fallback: KeepLightingChoice): KeepLightingChoice {
@@ -70,23 +73,16 @@ export function keepLightingWindowMs(choice: KeepLightingChoice): number | null 
 export type KeepLightingPlan = { windowMs: number | null; setting: KeepLightingSettingKey };
 
 /**
- * The plan for one press, or null for one-climb lighting.
- *
- * A MoonBoard takes its own choice, which applies in a crew session too: its
- * controllers don't like phones switching, so the phone that put the climb up
- * keeps the board. Every other board takes the general choice, and in a crew
- * session only while "In a session too" is on.
+ * The plan for one press, or null for one-climb lighting. Every board takes
+ * the one choice, MoonBoards included, and in a crew session only while "In a
+ * session too" is on.
  */
 export function resolveKeepLightingPlan({
-  boardIsMoonboard,
   keepLighting,
-  moonboardKeepLighting,
   drivesInSession,
   inSession,
 }: {
-  boardIsMoonboard: boolean;
   keepLighting: KeepLightingChoice;
-  moonboardKeepLighting: KeepLightingChoice;
   /** Settings › Board's "In a session too". */
   drivesInSession: boolean;
   /**
@@ -96,43 +92,69 @@ export function resolveKeepLightingPlan({
    */
   inSession: boolean;
 }): KeepLightingPlan | null {
-  if (boardIsMoonboard) {
-    const windowMs = keepLightingWindowMs(moonboardKeepLighting);
-    return windowMs === undefined ? null : { windowMs, setting: 'moonboardPutOnBoardKeepsLighting' };
-  }
   if (inSession && !drivesInSession) return null;
   const windowMs = keepLightingWindowMs(keepLighting);
   return windowMs === undefined ? null : { windowMs, setting: 'putOnBoardKeepsLighting' };
 }
 
 /**
- * Whether a Lock Screen, Dynamic Island or Android notification Next /
- * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
- * flag (keep-lighting's kill switch) off, and not solo with Light the board as
- * I swipe on: every pick lights there already, and a press in the app only
- * drops a stop (`wall-control.ts`).
+ * Whether Always drive the wall (Settings › Board, `alwaysDrive`) drives here:
+ * the switch is on and, in a crew session, In a session too is on too. Every
+ * board follows that rule, MoonBoards included.
+ *
+ * Never with the `wall-swipe-to-drive` flag off: it is driving's kill switch
+ * (docs/feature-flags.md), and Always drive the wall's drive is a drive like any
+ * other, so turned off nothing drives the wall and every pick is a preview.
+ *
+ * Whether this phone holds the board (its own Bluetooth link, never a relay)
+ * is the caller's to add: `DriveModeWatcher` starts the drive only then.
+ * While this is true Put on board starts no drive of its own: it resumes this
+ * one after a stop (the wall control's `tapDrive: 'resume'`).
  */
-export function lockScreenPressKeepsLighting({
+export function alwaysDriveApplies({
+  alwaysDrive,
   swipeToDriveEnabled,
-  lightOnSwipe,
+  drivesInSession,
   inSession,
 }: {
+  /** Settings › Board's Always drive the wall. */
+  alwaysDrive: boolean;
+  /** The `wall-swipe-to-drive` flag (`useWallSwipeToDriveEnabled`), driving's kill switch. */
   swipeToDriveEnabled: boolean;
-  lightOnSwipe: boolean;
+  /** Settings › Board's In a session too. */
+  drivesInSession: boolean;
   /** A crew is in this session (the roster's `useIsCrewSession`). */
   inSession: boolean;
 }): boolean {
-  return swipeToDriveEnabled && !(lightOnSwipe && !inSession);
+  if (!alwaysDrive || !swipeToDriveEnabled) return false;
+  return !inSession || drivesInSession;
+}
+
+/**
+ * Whether a Lock Screen, Dynamic Island or Android notification Next /
+ * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
+ * flag (keep-lighting's kill switch) off, and not where Always drive the wall
+ * drives (`alwaysDriveApplies`): every pick lights there already, a stop holds
+ * until the next Put on board, and Stop driving after doesn't apply.
+ */
+export function lockScreenPressKeepsLighting({
+  swipeToDriveEnabled,
+  alwaysDrive,
+}: {
+  swipeToDriveEnabled: boolean;
+  /** `alwaysDriveApplies` for this board and session. */
+  alwaysDrive: boolean;
+}): boolean {
+  return swipeToDriveEnabled && !alwaysDrive;
 }
 
 /**
  * What a press on Put on board keeps lighting, as the climber will see it, for
  * the copy that promises it (the first-connect confirmation, the player's
  * preview-first card). It reads the plan against one setting the plan does not
- * take: solo with Light the board as I swipe on, the press starts no drive (the
- * wall control's `tapDrive: 'resume'`). The setting lights the swipes and a
- * climb picked from a list stays a preview, so nothing past the one climb is
- * promised.
+ * take: where Always drive the wall drives (`alwaysDriveApplies`), this phone
+ * drives with no end once it holds the board, whatever Stop driving after
+ * says, so every pick lights until the climber stops.
  *
  * - `one_climb` — the press lights that climb and nothing after it.
  * - `window` — every pick lights for `seconds`.
@@ -142,14 +164,15 @@ export type KeepLightingReach = { kind: 'one_climb' } | { kind: 'window'; second
 
 export function resolveKeepLightingReach({
   plan,
-  swipeLightsSolo,
+  alwaysDrive,
 }: {
   /** `resolveKeepLightingPlan`'s plan, or null where the press lights one climb. */
   plan: KeepLightingPlan | null;
-  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
-  swipeLightsSolo: boolean;
+  /** `alwaysDriveApplies` for this board and session. */
+  alwaysDrive: boolean;
 }): KeepLightingReach {
-  if (plan === null || swipeLightsSolo) return { kind: 'one_climb' };
+  if (alwaysDrive) return { kind: 'until_stop' };
+  if (plan === null) return { kind: 'one_climb' };
   if (plan.windowMs === null) return { kind: 'until_stop' };
   return { kind: 'window', seconds: Math.round(plan.windowMs / 1000) };
 }

@@ -970,7 +970,7 @@ beside it:
    mini player reopening the current climb pass `reopensCurrent`, which is a look, not an ask:
    the player shows the held climb with Put on the wall and the last-on-the-wall line. So does
    an iPad pane that mounts after the tap (another tab's) and replays the host's kept target.
-   A preview never lights the wall, held climb or not, so a list tap with Light on tap off still
+   A preview never lights the wall, held climb or not, so a list tap outside a drive still
    opens dark. The Bluetooth change
    stays in the send gate. A hold ends once the climb is actually on the wall, so a failed write
    leaves it standing. A disconnect ends the hold too (the next connect evaluates afresh), and

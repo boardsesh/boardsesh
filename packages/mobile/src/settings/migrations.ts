@@ -48,17 +48,16 @@ export type AutoDisconnectMigrationWrite =
  *
  * - Already migrated: nothing, whatever the old keys say now.
  * - Auto-disconnect not on (`=== true`): nothing.
- * - Auto-disconnect on: Disconnect Bluetooth when driving ends on; each Stop
- *   driving after choice the climber never set (the general one and the
- *   MoonBoard's) takes the timeout's drive length; then the one-shot flag,
- *   last, so a launch killed half-way runs the rest again.
+ * - Auto-disconnect on: Disconnect Bluetooth when driving ends on; Stop
+ *   driving after, where the climber never set it, takes the timeout's drive
+ *   length; then the one-shot flag, last, so a launch killed half-way runs the
+ *   rest again.
  */
 export function planAutoDisconnectMigration({
   migrated,
   autoDisconnect,
   timeoutSeconds,
   keepLightingSet,
-  moonboardKeepLightingSet,
 }: {
   /** `autoDisconnectMigrated` is on: it already ran. */
   migrated: boolean;
@@ -68,20 +67,17 @@ export function planAutoDisconnectMigration({
   timeoutSeconds: unknown;
   /** The climber chose a Stop driving after length (the key is stored). */
   keepLightingSet: boolean;
-  /** The climber chose the MoonBoard's Stop driving after length. */
-  moonboardKeepLightingSet: boolean;
 }): AutoDisconnectMigrationWrite[] {
   if (migrated || autoDisconnect !== true) return [];
   const length = stopDrivingAfterForTimeout(timeoutSeconds);
   const writes: AutoDisconnectMigrationWrite[] = [{ key: 'disconnectWhenDrivingEnds', value: true }];
   if (!keepLightingSet) writes.push({ key: 'putOnBoardKeepsLighting', value: length });
-  if (!moonboardKeepLightingSet) writes.push({ key: 'moonboardPutOnBoardKeepsLighting', value: length });
   writes.push({ key: 'autoDisconnectMigrated', value: true });
   return writes;
 }
 
-/** The settings store, as the migration reads and writes it. */
-export type AutoDisconnectMigrationStore = {
+/** The settings store, as the migrations read and write it. */
+export type SettingsMigrationStore = {
   /** A stored key's parsed value, or undefined when absent or unreadable: the retired keys too. */
   read: (key: string) => unknown;
   /** The key is stored (`hasSetting`). */
@@ -90,7 +86,7 @@ export type AutoDisconnectMigrationStore = {
 };
 
 /** Carry auto-disconnect into Stop driving after, once. Returns whether anything was written. */
-export function migrateAutoDisconnect(store: AutoDisconnectMigrationStore): boolean {
+export function migrateAutoDisconnect(store: SettingsMigrationStore): boolean {
   // The flag first: once it is on, the retired keys are never read again.
   if (store.read('autoDisconnectMigrated') === true) return false;
   const writes = planAutoDisconnectMigration({
@@ -98,7 +94,63 @@ export function migrateAutoDisconnect(store: AutoDisconnectMigrationStore): bool
     autoDisconnect: store.read(LEGACY_AUTO_DISCONNECT_KEY),
     timeoutSeconds: store.read(LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY),
     keepLightingSet: store.has('putOnBoardKeepsLighting'),
-    moonboardKeepLightingSet: store.has('moonboardPutOnBoardKeepsLighting'),
+  });
+  for (const write of writes) store.set(write.key, write.value);
+  return writes.length > 0;
+}
+
+// Two switches gave way to one, Always drive the wall (2026-11): Light the
+// board when I tap a climb and Light the board as I swipe each lit picks
+// their own way, outside a drive. Always drive the wall now always drives the
+// wall while this phone holds the board, so every pick lights as after a
+// swipe on the wall button. A climber who had either switch on keeps
+// automatic lighting: Always drive the wall turns on for them.
+//
+// Runs at the settings store's first import, after the auto-disconnect carry.
+// It writes only `alwaysDrive`, and only while that key was never stored, so
+// once it carried (or the climber chose for themselves) it never runs again.
+// The old keys stay on disk, untouched, so an older bundle (an OTA rollback)
+// still finds them.
+
+/** The retired Light the board when I tap a climb. Read only here. */
+export const LEGACY_LIGHT_ON_CLIMB_TAP_KEY = 'lightOnClimbTap';
+/** The retired Light the board as I swipe. Read only here. */
+export const LEGACY_LIGHT_ON_SWIPE_KEY = 'lightOnSwipe';
+
+/** The write the Always drive the wall carry makes. */
+export type AlwaysDriveMigrationWrite = { key: 'alwaysDrive'; value: true };
+
+/**
+ * What the carry writes, or an empty list. Pure, for the table tests.
+ *
+ * - Always drive the wall already stored (carried, or the climber's own
+ *   choice): nothing, whatever the old keys say.
+ * - Either old switch on (`=== true`): Always drive the wall on.
+ * - Otherwise: nothing. The default (off) is what they had.
+ */
+export function planAlwaysDriveMigration({
+  alwaysDriveSet,
+  lightOnClimbTap,
+  lightOnSwipe,
+}: {
+  /** `alwaysDrive` is stored (`hasSetting`). */
+  alwaysDriveSet: boolean;
+  /** The stored `lightOnClimbTap`, as parsed (undefined when absent). */
+  lightOnClimbTap: unknown;
+  /** The stored `lightOnSwipe`, as parsed (undefined when absent). */
+  lightOnSwipe: unknown;
+}): AlwaysDriveMigrationWrite[] {
+  if (alwaysDriveSet) return [];
+  if (lightOnClimbTap !== true && lightOnSwipe !== true) return [];
+  return [{ key: 'alwaysDrive', value: true }];
+}
+
+/** Carry the two retired switches into Always drive the wall, once. Returns whether anything was written. */
+export function migrateLightAutomatically(store: SettingsMigrationStore): boolean {
+  const writes = planAlwaysDriveMigration({
+    alwaysDriveSet: store.has('alwaysDrive'),
+    lightOnClimbTap: store.read(LEGACY_LIGHT_ON_CLIMB_TAP_KEY),
+    lightOnSwipe: store.read(LEGACY_LIGHT_ON_SWIPE_KEY),
   });
   for (const write of writes) store.set(write.key, write.value);
   return writes.length > 0;

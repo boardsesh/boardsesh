@@ -36,7 +36,7 @@ export type ScenarioStory = {
   route: string;
   /**
    * Runs before the overrides go on, for device state the screen reads from
-   * settings rather than context (`setSetting('lightOnSwipe', true)`). It
+   * settings rather than context (`setSetting('alwaysDrive', false)`). It
    * persists on the simulator, so pin every setting the story depends on.
    */
   prepare?: () => void | Promise<void>;

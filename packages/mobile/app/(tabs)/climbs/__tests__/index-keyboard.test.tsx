@@ -128,7 +128,7 @@ const mocks = vi.hoisted(() => ({
   connectCardExpected: false,
   // Mutable per-test setting: false exercises the preview-open branch instead
   // of the committing activateClimb path.
-  lightOnClimbTap: true,
+  alwaysDrive: true,
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
   saveLastSearch: vi.fn(),
@@ -807,7 +807,7 @@ vi.mock('../../../../src/settings', async () => {
       // Read through a store, like the real hook, so a write re-renders the screen.
       const gradeRowShown = useSyncExternalStore(subscribeGradeRow, () => mocks.gradeRow.shown);
       if (key === 'gradeRowShown') return [gradeRowShown, mocks.gradeRow.set];
-      return key === 'lightOnClimbTap' ? [mocks.lightOnClimbTap, vi.fn()] : [false, vi.fn()];
+      return key === 'alwaysDrive' ? [mocks.alwaysDrive, vi.fn()] : [false, vi.fn()];
     },
     setSetting: mocks.setSetting,
   };
@@ -1016,7 +1016,7 @@ beforeEach(() => {
   mocks.activateClimb.mockClear();
   mocks.openPlayDrawer.mockClear();
   mocks.setSetting.mockClear();
-  mocks.lightOnClimbTap = true;
+  mocks.alwaysDrive = true;
   mocks.dismissKeyboard.mockClear();
   mocks.tickBatch.mockClear();
   mocks.holdInteractions = false;
@@ -2113,9 +2113,9 @@ describe('ClimbList shared-session row taps', () => {
     expect(mocks.activationOptions?.previewOnly).toBe(true);
   });
 
-  it('browses in a crew even when the climber has tap-lighting ON', async () => {
+  it('browses in a crew even when the climber has Always drive the wall ON', async () => {
     mocks.isSharedSession = true;
-    mocks.lightOnClimbTap = true;
+    mocks.alwaysDrive = true;
     const { findByText } = render(<ClimbList />);
 
     fireEvent.click(await findByText('Moonage'));
@@ -2134,12 +2134,12 @@ describe('ClimbList shared-session row taps', () => {
   });
 });
 
-describe('ClimbList lightOnClimbTap setting', () => {
-  // The activation hook reads the setting at the tap now, for every list (issue
+describe('ClimbList Always drive the wall setting', () => {
+  // The activation hook reads the drive at the tap now, for every list (issue
   // #6665), so a preview carries the results as its track and swipes walk them
   // (#5157). The screen no longer opens a bare, trackless preview of its own.
   it('routes the tap through the activation hook when the setting is off', async () => {
-    mocks.lightOnClimbTap = false;
+    mocks.alwaysDrive = false;
     const { findByText } = render(<ClimbList />);
 
     fireEvent.click(await findByText('Moonage'));
@@ -2653,7 +2653,7 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       // The drawer only claims "Browsing" while a swipe genuinely stays
       // view-only, so the capture puts the device in that state rather than
       // photographing a promise the app wouldn't keep.
-      expect(mocks.setSetting).toHaveBeenCalledWith('lightOnSwipe', false);
+      expect(mocks.setSetting).toHaveBeenCalledWith('alwaysDrive', false);
       // And the one-shot card that same setting triggers is spent up front: a
       // store shot is the steady state, not a climber's first five seconds.
       expect(mocks.setSetting).toHaveBeenCalledWith('browseNoticeSeen', true);

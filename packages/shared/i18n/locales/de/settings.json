@@ -468,8 +468,6 @@
     "relightBoard": "Board neu beleuchten",
     "lighting": {
       "title": "Board-Beleuchtung",
-      "autoTitle": "Automatisch beleuchten",
-      "description": "Lege fest, was das verbundene Board automatisch beleuchtet.",
       "keep": {
         "label": "Steuern beenden nach",
         "off": "Sofort",
@@ -481,14 +479,11 @@
           "300": "5 Minuten"
         },
         "untilStopped": "Bis ich stoppe",
-        "moonboardLabel": "An einem MoonBoard",
-        "moonboardAccessibilityLabel": "Steuern an einem MoonBoard beenden nach",
-        "moonboardDescription": "Die meisten MoonBoard-Controller vertragen keinen Handywechsel, deshalb gilt das auch in einer Session.",
-        "sheetMoonboardLabel": "Steuern an diesem MoonBoard beenden nach",
         "inSessionLabel": "Auch in einer Session",
-        "inSessionAccessibilityLabel": "„Am Board beleuchten“ steuert auch in einer Session",
+        "inSessionAccessibilityLabel": "„Am Board beleuchten“ und „Board immer steuern“ gelten auch in einer Session",
         "inSessionDescription": "Wenn dein Handy das Board der Crew hat. Ist das aus, bleiben die Boulder, die du in einer Session wählst, Vorschauen.",
         "inSessionOffReason": "Stell dafür „Steuern beenden nach“ auf etwas anderes als „Sofort“.",
+        "alwaysDriveReason": "„Board immer steuern“ ist an, deshalb gilt das nicht.",
         "footer": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, und jeder startet die Uhr neu. Ist die Zeit um, öffnet sich dein nächster Boulder als Vorschau.",
         "footerUntilStopped": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, bis du auf „Du steuerst das Board“ tippst.",
         "footerOff": "„Am Board beleuchten“ beleuchtet den Boulder, den du offen hast. Dein nächster Boulder öffnet sich als Vorschau."
@@ -498,12 +493,11 @@
         "description": "Endet dein Steuern, gibt dein Handy das Board frei, damit sich die nächste Person verbinden kann: wenn du stoppst oder alle Lichter ausschaltest, wenn die Zeit um ist oder wenn jemand aus deiner Crew einen Boulder beleuchtet, während dein Steuern ein Zeitlimit hat. „Am Board beleuchten“ verbindet wieder."
       },
       "drivingHelp": "So funktioniert das Steuern des Boards",
-      "onSwipeLabel": "Board beim Wischen beleuchten",
-      "onSwipeDescription": "Nur wenn schon ein Boulder am Board leuchtet. Eine Vorschau beleuchtet beim Wischen nie das Board.",
-      "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
-      "onTapDescription": "Jedes Antippen in einer Liste beleuchtet den Boulder, ohne Zeitlimit. Ist das aus, öffnet das Antippen eine Vorschau.",
+      "alwaysDriveLabel": "Board immer steuern",
+      "alwaysDriveDescription": "Jeder Boulder, den du wählst, wird beleuchtet, solange dieses Handy das Board hat. In einer Session braucht es „Auch in einer Session“.",
+      "alwaysDriveFooter": "Tippe auf „Du steuerst das Board“, um aufzuhören. Danach öffnen sich die Boulder, die du wählst, als Vorschau, bis du die Verbindung trennst oder auf „Am Board beleuchten“ tippst.",
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
-      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste. Ist „Board beleuchten, wenn ich einen Boulder antippe“ an, ersetzt die Liste deine Warteschlange und der angetippte Boulder wird beleuchtet. Ist es aus, kommt die Liste ab dem angetippten Boulder in Als Nächstes und der Boulder öffnet sich als Vorschau, während das Board seinen Boulder behält, bis du Am Board beleuchten wählst."
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste. Steuerst du das Board, ersetzt die Liste deine Warteschlange und der angetippte Boulder wird beleuchtet. Sonst kommt die Liste ab dem angetippten Boulder in Als Nächstes und der Boulder öffnet sich als Vorschau, während das Board seinen Boulder behält, bis du Am Board beleuchten wählst. In einer Session kommt die Liste nie in die geteilte Warteschlange."
     },
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",

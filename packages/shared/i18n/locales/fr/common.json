@@ -760,7 +760,6 @@
           "windowMinute": "Ensuite, tu pilotes la board : pendant 1 minute après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
           "windowMinutes": "Ensuite, tu pilotes la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
           "untilStop": "Ensuite, tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
-          "moonboard": "Sur un MoonBoard, tu pilotes ensuite la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
           "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après (Paramètres › Board) : un chrono défile à côté du libellé et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
           "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après, dans Paramètres › Board. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
           "frostOpenEnded": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu le touches pour arrêter. Fais glisser le bouton vers la gauche pour piloter (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc).",
@@ -843,7 +842,6 @@
         "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à la fin de la durée choisie (45 secondes par défaut). Change-la dans Arrêter de piloter après, dans Paramètres › Board.",
         "swipe": "Fais glisser le bouton du mur vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Touche-le pour arrêter. Quand le pilotage a une durée limite, un chrono s'affiche à côté du libellé et le givre rétrécit à mesure que le temps passe.",
         "back": "La flèche en haut à gauche ferme l'aperçu et te ramène à ton bloc, ou au bloc allumé au mur. La barre du bas garde le dernier bloc que tu as ouvert.",
-        "moonboard": "Sur un MoonBoard, tu pilotes jusqu'à ce que tu arrêtes, par défaut ; choisis sa durée dans Sur un MoonBoard.",
         "cta": "Voir comment ça marche",
         "dismiss": "C'est noté"
       }

@@ -442,8 +442,8 @@ export function InSessionView({
   // the history lists them (issue #6665). It used to make the climb current for
   // everyone with a fresh queue entry, so in a crew it took a crewmate's wall
   // and queued a second copy of a climb already there. Now it follows every
-  // list's rules: a preview in a crew or with Light the board when I tap
-  // a climb off, otherwise the climb goes up like any list tap.
+  // list's rules: a preview unless this phone drives the wall, and while it
+  // does the climb goes up like any list tap.
   const handlePressHistoryTick = useTickListActivation<SessionDetailTick>({
     sourceId: `session:${sessionId ?? ''}`,
     label: t('playView.track.sessionClimbs'),

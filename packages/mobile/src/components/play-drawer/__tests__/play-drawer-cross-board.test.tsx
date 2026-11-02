@@ -561,8 +561,20 @@ vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 const { PlayDrawer } = await import('../PlayDrawer');
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { resetWallCleared } = await import('../../ble/wall-cleared-store');
-const { getDriveMode, isDrivingStoppedForLink, markDriveLive, enterDriveMode, resetDriveModeForTests } =
-  await import('../drive-mode-store');
+const {
+  getDriveMode,
+  isDrivingStoppedForLink,
+  markDriveLive,
+  enterDriveMode,
+  resetDriveModeForTests,
+  startAlwaysDrive,
+} = await import('../drive-mode-store');
+
+/** Always drive the wall's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
+function driveTheWall(): void {
+  setSetting('alwaysDrive', true);
+  startAlwaysDrive({ sessionId: null, boardId: null });
+}
 
 // The Original 12x12 the climber switched TO.
 const TWELVE_BY_TWELVE = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
@@ -1580,7 +1592,7 @@ describe('PlayDrawer stale-climb hold', () => {
     { label: 'an accessory bar reopen', options: { reopensCurrent: true }, lights: false },
     { label: 'a queue-sheet tap', options: { committedExternally: true }, lights: false },
   ])('$label of the held climb lights=$lights', ({ options, lights }) => {
-    setSetting('lightOnClimbTap', true);
+    driveTheWall();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });
     bluetoothContext.value = bluetooth;
@@ -1704,7 +1716,7 @@ describe('PlayDrawer queue analytics', () => {
   it('reports the action bar ⏮ ⏭ as button steps, once each', () => {
     setSetting('playerPreviousNext', true);
     onTestFinished(() => resetAllSettings());
-    setSetting('lightOnSwipe', true);
+    driveTheWall();
     arrangeNeighbours();
     renderDrawer();
     expect(recorded.actionBar.at(-1)?.previousNext).toBe(true);
@@ -1723,7 +1735,7 @@ describe('PlayDrawer queue analytics', () => {
   });
 
   it('reports a board swipe as a swipe step', () => {
-    setSetting('lightOnSwipe', true);
+    driveTheWall();
     arrangeNeighbours();
     renderDrawer();
     const pager = lastBoardProps().pager as { requestStep: (direction: 1 | -1, step: number) => void };
@@ -1739,7 +1751,7 @@ describe('PlayDrawer queue analytics', () => {
     [1, 'next'],
     [-1, 'previous'],
   ] as const)('says when a board swipe toward %s went before the climb had painted', async (step, direction) => {
-    setSetting('lightOnSwipe', true);
+    driveTheWall();
     arrangeNeighbours();
     renderDrawer();
     const pager = lastBoardProps().pager as SwipePager;
@@ -1888,8 +1900,7 @@ describe('PlayDrawer wall button taps', () => {
     ['the wall button', 'onWallControl', 'button'],
     ['the bulb, back in the first row', 'onLightbulb', 'bulb'],
   ] as const)('a tap on Disconnect board on %s disconnects, and opens no sheet', (_control, prop, control) => {
-    // Not driving: solo with lighting on swipes off.
-    setSetting('lightOnSwipe', false);
+    // Not driving.
     disconnectAllBluetooth.mockClear();
     boardSheet.opened.mockClear();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
@@ -1989,16 +2000,14 @@ describe('PlayDrawer wall button taps', () => {
   });
 
   // #7113: one rule, solo included. A press on the frosted button stops driving
-  // and keeps the link; swipes go back to previews until the link drops.
-  const optIntoSwipeLighting = (): void => {
-    setSetting('lightOnSwipe', true);
-  };
+  // and keeps the link; swipes go back to previews until the link drops or the
+  // next Put on board.
   const startLiveDrive = (): void => {
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
     markDriveLive();
   };
   it.each<[string, () => void]>([
-    ['solo with lighting on swipes', optIntoSwipeLighting],
+    ["Always drive the wall's drive", driveTheWall],
     ['a live drive', startLiveDrive],
   ])('a tap on You are driving the wall (%s) stops driving and keeps the link', (_case, arrange) => {
     disconnectAllBluetooth.mockClear();
@@ -2041,7 +2050,6 @@ describe('PlayDrawer wall button taps', () => {
     const { usePaneWallControl } = await import('../pane-wall-control-store');
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     linkedTo(linkedBluetooth(), true);
-    setSetting('lightOnSwipe', false);
     miniPlayerBeside.mirrors = true;
     onTestFinished(() => {
       miniPlayerBeside.mirrors = false;
@@ -2548,8 +2556,6 @@ describe('PlayDrawer wall button taps', () => {
 
 describe('preview-first angle changes', () => {
   it('keeps a solo preview on screen without reactivating the committed climb', () => {
-    setSetting('lightOnClimbTap', false);
-    setSetting('lightOnSwipe', false);
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-current');
     const previewClimb = { ...TWELVE_CLIMB, uuid: 'angle-preview', frames: 'p1200r15' };
     const previewItem = queueItem(previewClimb, 'preview-slot');

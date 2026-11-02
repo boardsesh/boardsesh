@@ -140,7 +140,7 @@ describe('resolveWallPillState', () => {
     ],
     // Rung 5 — no stakes, so the leading slot stays empty exactly as today.
     ['plain solo: nothing lit, no session, no link', {}, null],
-    ['connected but not committing (lightOnSwipe off, still on the head)', { wallDriven: true }, null],
+    ['connected but not committing (not driving, still on the head)', { wallDriven: true }, null],
     ['committing with nothing at stake', { navigationCommits: true }, null],
     // The regression: the Start button opens a session solo, so "a session
     // exists" used to light the pill on a phone with nothing connected at all.
@@ -350,7 +350,7 @@ describe('resolveCommitBarModel', () => {
   });
 
   // The commit affordance keys on the pinned preview, NOT the browse latch: a
-  // long-press "Preview" with `lightOnSwipe` on has committing swipes (no
+  // long-press "Preview" while driving has committing swipes (no
   // browsing chrome), but the pinned climb must keep its activation button —
   // the old banner's "Set active" contract. The pill for that same state is
   // asserted `live`/null in the resolveWallPillState tables above.
@@ -640,7 +640,7 @@ describe('resolveBrowseCaption', () => {
   /** No link here, no wall driven anywhere. */
   const unlinked: Partial<BrowseCaptionInput> = { holdsLink: false, wallDriven: false };
   const cases: Array<[string, Partial<BrowseCaptionInput>, BrowseCaption]> = [
-    // Confusion 1: Light on tap off opened a preview, and nothing said it was not lit.
+    // Confusion 1: a tap outside a drive opened a preview, and nothing said it was not lit.
     ['solo preview while a board is connected', {}, { kind: 'preview' }],
     ['solo preview, board connected, wall dark', { wallClimbUuid: null }, { kind: 'preview' }],
     // B1: the commonest 2.7 state, a linked phone with a dark wall, even before

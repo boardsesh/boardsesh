@@ -14,9 +14,9 @@ export function getViewOnlyPreviewNavigationTarget({
   previewSuggestionSource: PlaylistSuggestionSource | null;
   targetItem: ClimbQueueItem | null;
   /**
-   * True when a local setting (lightOnSwipe off) says this navigation must
-   * not commit/light the board — the same view-only landing as the
-   * wrong-board path below, just a different reason, and independent of
+   * True when nothing drives the wall, so this navigation must not
+   * commit/light the board — the same view-only landing as the wrong-board
+   * path below, just a different reason, and independent of
    * `previewItem`/`previewSuggestionSource` (it applies on the very first
    * swipe away from a real committed climb, not just mid-preview-chain).
    */
@@ -24,7 +24,7 @@ export function getViewOnlyPreviewNavigationTarget({
 }): ViewOnlyPreviewNavigationTarget {
   if (forceViewOnly) return { viewOnly: true, targetItem };
   // A preview carries the list it came from as previewSuggestionSource (the
-  // wrong board, a crew, Light on tap off, board history, similar climbs), so
+  // wrong board, a crew, a list tap outside a drive, board history, similar climbs), so
   // its swipes stay previews. It is null for a committed climb and for a
   // trackless preview (a deep link, the Home new-climb card, workout rows).
   if (!previewSuggestionSource || !previewItem) return { viewOnly: false };
@@ -32,48 +32,31 @@ export function getViewOnlyPreviewNavigationTarget({
 }
 
 /**
- * The wiring `handlePrev`/`handleNext` actually call: turns the climber's
- * setting, the shared-session browse latch and driving the wall into
- * `forceViewOnly` through {@link climbChangeStaysViewOnly} (the one rule every
- * change of climb reads, #7113), then delegates to
+ * The wiring `handlePrev`/`handleNext` actually call: a change of climb lights
+ * the wall only while this phone drives it (#7113), a swipe on the wall
+ * button, Put on board or Always drive the wall (`alwaysDrive`), in a crew too.
+ * Otherwise it stays view-only (`forceViewOnly`), then delegates to
  * {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
  * (rather than inlining the translation at each call site) so it is directly
  * unit-testable alongside the PlayDrawer render tests.
  *
- * Without driving, the two reasons to stay view-only are independent and either
- * one is enough: the climber turned board lighting off for swipes, or someone
- * else is in the session and a swipe would move THEIR wall and THEIR next-up.
- *
- * Driving the wall overrides both, and the preview's own track too: a swipe
- * from a preview that walks a list commits the next climb on it. A preview of a
- * climb from another board (`previewOnOtherBoard`) stays a preview: the wall
- * this phone drives can't light it.
+ * Driving overrides the preview's own track too: a swipe from a preview that
+ * walks a list commits the next climb on it. A preview of a climb from another
+ * board (`previewOnOtherBoard`) stays a preview: the wall this phone drives
+ * can't light it.
  */
 export function getSwipeNavigationTarget({
   previewItem,
   previewSuggestionSource,
   targetItem,
-  lightOnSwipe,
-  inSharedSession = false,
   driving = false,
-  stoppedForLink = false,
   previewOnOtherBoard = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
   targetItem: ClimbQueueItem | null;
-  lightOnSwipe: boolean;
-  /**
-   * A browse latch is up because there is an audience: a party session with at
-   * least one other climber in it, OR a latch that armed while there was one and
-   * has not been exited or released after the solo dwell. Defaults to
-   * false so the solo call sites read unchanged.
-   */
-  inSharedSession?: boolean;
   /** A live drive on this phone's link (#7113): every change lights the wall. */
   driving?: boolean;
-  /** A press on the frosted button stopped driving on this link (#7113). */
-  stoppedForLink?: boolean;
   /** The preview on screen is a climb from another board. Driving leaves it a preview. */
   previewOnOtherBoard?: boolean;
 }): ViewOnlyPreviewNavigationTarget {
@@ -83,12 +66,7 @@ export function getSwipeNavigationTarget({
     // Driving commits a tracked preview's next climb instead of looking at it.
     previewSuggestionSource: drives ? null : previewSuggestionSource,
     targetItem,
-    forceViewOnly: climbChangeStaysViewOnly({
-      driving: drives,
-      inSharedSession,
-      lightSetting: lightOnSwipe,
-      stoppedForLink,
-    }),
+    forceViewOnly: !drives,
   });
 }
 
@@ -99,9 +77,8 @@ export function getSwipeNavigationTarget({
  * The wall-state pill, the viewfinder brackets and the commit row all say some
  * version of "you're looking, the wall stays where it is". That sentence is only
  * true while navigation itself is view-only, and being in a preview is NOT
- * enough: with `lightOnSwipe` on and no suggestion source (a deep link, the Home
- * new-climb card, the workout builder), the very next swipe falls
- * through to `setCurrentClimb` — it writes the shared queue and re-arms the BLE
+ * enough: while driving, the very next swipe falls through to
+ * `setCurrentClimb` — it writes the shared queue and re-arms the BLE
  * auto-sender. Chrome promising otherwise would be the exact wall-hijack the
  * feature exists to prevent.
  *
@@ -112,28 +89,19 @@ export function getSwipeNavigationTarget({
 export function swipeStaysViewOnly({
   previewItem,
   previewSuggestionSource,
-  lightOnSwipe,
-  inSharedSession = false,
   driving = false,
-  stoppedForLink = false,
   previewOnOtherBoard = false,
 }: {
   previewItem: ClimbQueueItem | null;
   previewSuggestionSource: PlaylistSuggestionSource | null;
-  lightOnSwipe: boolean;
-  inSharedSession?: boolean;
   driving?: boolean;
-  stoppedForLink?: boolean;
   previewOnOtherBoard?: boolean;
 }): boolean {
   return getSwipeNavigationTarget({
     previewItem,
     previewSuggestionSource,
     targetItem: null,
-    lightOnSwipe,
-    inSharedSession,
     driving,
-    stoppedForLink,
     previewOnOtherBoard,
   }).viewOnly;
 }
@@ -178,32 +146,4 @@ export function getSimilarClimbTapMode(
   if (viewer === 'anonymous') return 'preview';
   if (driving) return 'queue';
   return inSharedSession ? 'preview' : 'queue';
-}
-
-/**
- * Whether a change of climb stays a preview instead of lighting the wall
- * (#7113). Every change of climb reads it: the player's swipes, Next and Prev
- * (`getSwipeNavigationTarget`), the end card's Keep going, similar climbs, a
- * fresh open, the MiniPlayer's ⏮ and ⏭ (`useClimbChangeLights('swipe')`), and
- * every list tap (`readClimbChangeLights('tap', …)`). The rule:
- *
- * - driving the wall (a live drive on this phone's link) always lights, in a
- *   crew too;
- * - otherwise the climber's own setting (Light the board as I swipe, or as I
- *   tap a climb) decides solo, and in a crew a change is a preview (#4281);
- * - a press on the frosted button stopped driving on this link: solo changes
- *   stay previews too, until the link drops. The setting itself never flips.
- */
-export function climbChangeStaysViewOnly({
-  driving,
-  inSharedSession,
-  lightSetting,
-  stoppedForLink = false,
-}: {
-  driving: boolean;
-  inSharedSession: boolean;
-  lightSetting: boolean;
-  stoppedForLink?: boolean;
-}): boolean {
-  return !driving && (!lightSetting || inSharedSession || stoppedForLink);
 }

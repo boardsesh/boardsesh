@@ -1,10 +1,10 @@
 // Stop driving after (2.7): the choices, how a stored value reads back, and
-// which choice a press takes on which board.
+// what a press takes, the same on every board.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_KEEP_LIGHTING,
-  DEFAULT_MOONBOARD_KEEP_LIGHTING,
   KEEP_LIGHTING_CHOICES,
+  alwaysDriveApplies,
   driveLengthWords,
   keepLightingWindowMs,
   lockScreenPressKeepsLighting,
@@ -15,14 +15,14 @@ import {
 import { DEFAULT_SETTINGS } from '../../settings/defaults';
 
 describe('keep-lighting choices', () => {
-  it('defaults to a 45 s window, Until I stop on a MoonBoard, and applies in a session', () => {
+  it('defaults to a 45 s window that applies in a session, with no MoonBoard choice of its own', () => {
     expect(DEFAULT_KEEP_LIGHTING).toBe('45');
-    expect(DEFAULT_MOONBOARD_KEEP_LIGHTING).toBe('until_stopped');
     expect(DEFAULT_SETTINGS).toMatchObject({
       putOnBoardKeepsLighting: '45',
-      moonboardPutOnBoardKeepsLighting: 'until_stopped',
       putOnBoardDrivesInSession: true,
     });
+    // The retired MoonBoard choice stays on disk, read by nothing.
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('moonboardPutOnBoardKeepsLighting');
   });
 
   it('reads back a known choice, and anything else as the default', () => {
@@ -52,9 +52,7 @@ describe('keep-lighting choices', () => {
 
 describe('resolveKeepLightingPlan', () => {
   const BASE = {
-    boardIsMoonboard: false,
     keepLighting: '45',
-    moonboardKeepLighting: 'until_stopped',
     drivesInSession: true,
     inSession: false,
   } as const;
@@ -71,38 +69,45 @@ describe('resolveKeepLightingPlan', () => {
         { drivesInSession: false },
         { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
       ],
-      ['MoonBoard', { boardIsMoonboard: true }, { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' }],
-      [
-        'MoonBoard in a session, In a session too off',
-        { boardIsMoonboard: true, inSession: true, drivesInSession: false },
-        { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' },
-      ],
-      [
-        'MoonBoard at 1 minute, the general choice Off',
-        { boardIsMoonboard: true, moonboardKeepLighting: '60', keepLighting: 'off' },
-        { windowMs: 60_000, setting: 'moonboardPutOnBoardKeepsLighting' },
-      ],
-      ['MoonBoard, Off', { boardIsMoonboard: true, moonboardKeepLighting: 'off' }, null],
     ],
   )('%s', (_name, change, plan) => {
     expect(resolveKeepLightingPlan({ ...BASE, ...change })).toEqual(plan);
   });
 });
 
+// Always drive the wall (2026-11): where it drives, and where it leaves a crew alone.
+describe('alwaysDriveApplies', () => {
+  const ON = {
+    alwaysDrive: true,
+    swipeToDriveEnabled: true,
+    drivesInSession: false,
+    inSession: false,
+  };
+
+  it.each<[string, Partial<Parameters<typeof alwaysDriveApplies>[0]>, boolean]>([
+    ['solo', {}, true],
+    ['solo, In a session too off', { drivesInSession: false }, true],
+    ['in a crew with In a session too on', { inSession: true, drivesInSession: true }, true],
+    ['in a crew with In a session too off', { inSession: true }, false],
+    ['switched off', { alwaysDrive: false }, false],
+    ["the swipe flag off (driving's kill switch)", { swipeToDriveEnabled: false }, false],
+    [
+      'switched off, in a crew with In a session too on',
+      { alwaysDrive: false, inSession: true, drivesInSession: true },
+      false,
+    ],
+  ])('%s', (_name, change, expected) => {
+    expect(alwaysDriveApplies({ ...ON, ...change })).toBe(expected);
+  });
+});
+
 describe('lockScreenPressKeepsLighting', () => {
   it.each([
-    ['keeps lighting with the swipe flag on and Light the board as I swipe off', true, false, false, true],
-    ['lights one climb with the swipe flag off (the kill switch)', false, false, false, false],
-    ['lights one climb solo with Light the board as I swipe on: every pick lights already', true, true, false, false],
-    [
-      'keeps lighting in a crew with Light the board as I swipe on, which a crew does not honour',
-      true,
-      true,
-      true,
-      true,
-    ],
-  ])('%s', (_name, swipeToDriveEnabled, lightOnSwipe, inSession, expected) => {
-    expect(lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession })).toBe(expected);
+    ['keeps lighting with the swipe flag on and Always drive the wall not driving here', true, false, true],
+    ['lights one climb with the swipe flag off (the kill switch)', false, false, false],
+    ['lights one climb where Always drive the wall drives: every pick lights already', true, true, false],
+  ])('%s', (_name, swipeToDriveEnabled, alwaysDrive, expected) => {
+    expect(lockScreenPressKeepsLighting({ swipeToDriveEnabled, alwaysDrive })).toBe(expected);
   });
 });
 
@@ -111,25 +116,25 @@ describe('lockScreenPressKeepsLighting', () => {
 describe('resolveKeepLightingReach', () => {
   const window45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
   const window300 = { windowMs: 300_000, setting: 'putOnBoardKeepsLighting' } as const;
-  const untilStopped = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
+  const untilStopped = { windowMs: null, setting: 'putOnBoardKeepsLighting' } as const;
 
-  it('reads the plan as it is with Light the board as I swipe off', () => {
-    expect(resolveKeepLightingReach({ plan: window45, swipeLightsSolo: false })).toEqual({
+  it('reads the plan as it is where Always drive the wall does not drive', () => {
+    expect(resolveKeepLightingReach({ plan: window45, alwaysDrive: false })).toEqual({
       kind: 'window',
       seconds: 45,
     });
-    expect(resolveKeepLightingReach({ plan: window300, swipeLightsSolo: false })).toEqual({
+    expect(resolveKeepLightingReach({ plan: window300, alwaysDrive: false })).toEqual({
       kind: 'window',
       seconds: 300,
     });
-    expect(resolveKeepLightingReach({ plan: untilStopped, swipeLightsSolo: false })).toEqual({ kind: 'until_stop' });
-    expect(resolveKeepLightingReach({ plan: null, swipeLightsSolo: false })).toEqual({ kind: 'one_climb' });
+    expect(resolveKeepLightingReach({ plan: untilStopped, alwaysDrive: false })).toEqual({ kind: 'until_stop' });
+    expect(resolveKeepLightingReach({ plan: null, alwaysDrive: false })).toEqual({ kind: 'one_climb' });
   });
 
-  // The wall control's `tapDrive: 'resume'`: the press starts no drive.
-  it('promises one climb solo with Light the board as I swipe on', () => {
-    expect(resolveKeepLightingReach({ plan: window45, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
-    expect(resolveKeepLightingReach({ plan: untilStopped, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
+  // Always drive the wall drives with no end whatever Stop driving after says.
+  it('promises driving until the climber stops where Always drive the wall drives', () => {
+    expect(resolveKeepLightingReach({ plan: window45, alwaysDrive: true })).toEqual({ kind: 'until_stop' });
+    expect(resolveKeepLightingReach({ plan: null, alwaysDrive: true })).toEqual({ kind: 'until_stop' });
   });
 });
 
