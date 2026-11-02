@@ -54,7 +54,7 @@ import {
   type PickerSelectionDecision,
 } from '../lib/ble/board-config-match';
 import { summarizePickerResolution, type PickerResolutionStats } from '../lib/ble/picker-resolution-stats';
-import { deviceMatchesPickerTarget } from '../lib/ble/picker-device-target';
+import { groupPickerDevices } from '../lib/ble/picker-device-target';
 import { getAndroidLocationPermissionState } from '../lib/ble/android-location-permission';
 import {
   readPhoneNeverConnected,
@@ -321,7 +321,8 @@ function openPickerSessionWatch(picker: PickerState): PickerSessionWatch {
 
 /**
  * Each scan push: whether Search for any board was tapped, and how many boards
- * the list shows (the sheet's own filter, `deviceMatchesPickerTarget`).
+ * the list shows: while filtered, the sheet's target and unknown groups
+ * (`groupPickerDevices`, #7202); otherwise every device heard.
  */
 function updatePickerSessionWatch(
   watch: PickerSessionWatch,
@@ -331,10 +332,12 @@ function updatePickerSessionWatch(
   if (picker.showAllBoards) watch.searchedAnyBoard = true;
   const target = picker.targetBoard;
   const filtering = Boolean(target?.boardUuid) && !picker.showAllBoards;
-  watch.listedCount =
-    filtering && target
-      ? picker.devices.filter((device) => deviceMatchesPickerTarget(device, resolvedBoards, target)).length
-      : picker.devices.length;
+  if (filtering && target) {
+    const groups = groupPickerDevices(picker.devices, resolvedBoards, target);
+    watch.listedCount = groups.target.length + groups.unknown.length;
+  } else {
+    watch.listedCount = picker.devices.length;
+  }
 }
 
 function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfig): string {
@@ -1860,6 +1863,7 @@ export function BluetoothProvider({
         pickerState.devices,
         resolvedPickerBoards,
         currentBoardConfig,
+        pickerState.targetBoard,
       );
       if (pickerSessionWatchRef.current) {
         updatePickerSessionWatch(pickerSessionWatchRef.current, pickerState, resolvedPickerBoards);

@@ -587,6 +587,12 @@ export const SHARED_EVENTS = {
   // phone's history isn't loaded) and `entrySurface` (the last Board Connect
   // Tapped surface within 2 minutes before the list, or null). Older events have
   // none of them.
+  // `targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices`
+  // (2026-11): for a picker opened for a known gym or saved board, how many
+  // devices resolved to it, could not be identified (no serial, or an
+  // unrecorded one), and were positively another board (hidden until "Search
+  // for any board"). All three are null when the picker had no board identity;
+  // older events have none of them.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   // Consent-driven scan recon: fired once per discovered board when a user
   // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw

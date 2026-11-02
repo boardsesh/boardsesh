@@ -50,7 +50,7 @@ The relay suppresses connecting only for a session member identified by the auth
 
 ### No undo on a lightbulb disconnect (product decision)
 
-A short tap on a lit lightbulb hangs up the board at once. There is no confirm and no Undo, on every bulb (MiniPlayer, toolbar, Android app bar, the header pill, the player). A climber who hangs up by mistake taps the bulb again to reconnect. A deliberate hang-up forgets the remembered board (`forgetConnectedBoard`), so that tap opens the board picker.
+A short tap on a lit lightbulb hangs up the board at once. There is no confirm and no Undo, on every bulb (MiniPlayer, toolbar, Android app bar, the header pill, the player). A climber who hangs up by mistake taps the bulb again to reconnect. A deliberate hang-up forgets the remembered board (`forgetConnectedBoard`), so that tap opens the board picker. For a gym or saved board the picker lists that board's own controller first, then controllers it cannot identify (MoonBoards and bare-name boxes advertise no serial, and those boxes are never remembered), and hides only controllers that are positively another board until "Search for any board". The three groups are in `docs/ui/12-bluetooth.md`.
 
 Decided 2026-10-28. #6997 built an 8 s "Board disconnected · Undo" snackbar for every bulb after a slip on the iPhone MiniPlayer, where the bulb now sits beside ⏭. It was declined: we don't want an Undo option here. Don't add a confirm or an Undo to the bulb's short tap. Long-press and the controls sheet's Disconnect stay as they are.
 
