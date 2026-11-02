@@ -258,6 +258,32 @@ describe('Then from rows: parity with the swipe walk', () => {
     expectParity(scenario, { upNext: ['x1'], thenFrom: ['s4', 's5', 's6'] });
   });
 
+  it("after Previous: Next goes back to the list's next climb in History, so it is listed", () => {
+    // Previous from s4 put s3 up right after it: the queue reads s4, s3, and
+    // the next swipe lands on that s4 entry rather than minting a copy.
+    const current = walked('e-s3', S3);
+    const back = walked('e-s4', S4);
+    const scenario: Scenario = {
+      queue: [walked('e-s1', S1), back, current],
+      current,
+      source: projects(S1),
+      historyCount: 2,
+    };
+    expectParity(scenario, { upNext: [], thenFrom: ['s4', 's5', 's6'] });
+    expect(resolveThenFromListItems(scenario.queue, current, scenario.source)[0]).toBe(back);
+  });
+
+  it('lists a climb queued on purpose again where the list reaches it, as a swipe goes there twice', () => {
+    const current = walked('e-s3', S3);
+    const scenario: Scenario = {
+      queue: [current, entry('u1', climb('x1')), entry('q-s5', S5)],
+      current,
+      source: projects(S1),
+      historyCount: 0,
+    };
+    expectParity(scenario, { upNext: ['x1', 's5'], thenFrom: ['s4', 's5', 's6'] });
+  });
+
   it('workout: its queued climbs play as Up next, then the list', () => {
     const current = walked('e-s2', S2);
     const workout = ['w1', 'w2', 'w3'].map((uuid) => walked(`q-${uuid}`, climb(uuid)));

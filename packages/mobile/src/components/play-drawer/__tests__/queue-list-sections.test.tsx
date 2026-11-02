@@ -12,7 +12,7 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { render, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
