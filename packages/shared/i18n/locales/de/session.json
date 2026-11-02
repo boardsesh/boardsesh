@@ -908,7 +908,7 @@
       "backToWall": "Zurück zum Boulder an der Wand",
       "backToCurrent": "Zurück zu meiner Wahl",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
-      "previewNotLit": "Vorschau, nicht beleuchtet",
+      "previewNotOnWall": "Vorschau · nicht am Board",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
@@ -923,10 +923,9 @@
       "a11y": {
         "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
         "backToLive": "Zurück zu live: {{name}}",
-        "committed": "{{name}} ist an der Wand"
+        "committed": "{{name}} ist an der Wand",
+        "previewFirstAnnounce": "Vorschau, nicht am Board beleuchtet. Am Board beleuchten bringt den Boulder zum Leuchten."
       },
-      "backMyPick": "Meine Wahl",
-      "backOnWall": "Am Board",
       "backToMyPickNamed": "Zurück zu meiner Wahl: {{name}}",
       "backToWallNamed": "Zurück zum Boulder am Board: {{name}}"
     },
@@ -960,13 +959,25 @@
       "onWall": "Am Board",
       "lightAgainHint": "Beleuchtet ihn noch mal am Board",
       "putOnGymBoard": "Am {{board}} beleuchten",
-      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder"
+      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder",
+      "pickLightHint": "Öffnet diesen Boulder und beleuchtet ihn",
+      "pickMoveToGymBoardHint": "Öffnet diesen Boulder, wechselt zum {{board}} und beleuchtet ihn",
+      "stopsInSeconds_one": "Endet in {{count}} Sekunde",
+      "stopsInSeconds_other": "Endet in {{count}} Sekunden",
+      "stopsInUnderTen": "Endet in weniger als 10 Sekunden",
+      "stopsInClock": "Endet in {{clock}}",
+      "windowStarted_other": "Du steuerst das Board. Das endet {{count}} Sekunden nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",
+      "windowStartedMinute": "Du steuerst das Board. Das endet eine Minute nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",
+      "windowStartedMinutes_other": "Du steuerst das Board. Das endet {{count}} Minuten nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",
+      "sheetStatusPreview": "Vorschau · nicht am Board",
+      "sheetStatusDriving": "Du steuerst das Board. Jeder Boulder, den du wählst, wird beleuchtet."
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {
       "title": "Wähl einen Boulder",
       "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen.",
-      "unlitHint": "Tipp einen Boulder an, um ihn am Board zu beleuchten"
+      "unlitHint": "Tipp einen Boulder an für die Vorschau",
+      "unlitHintLights": "Tipp einen Boulder an, um ihn am Board zu beleuchten"
     },
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",

@@ -3,6 +3,7 @@ import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { useQueue } from '../../providers/queue-provider';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
+import { useBarClimb } from './use-bar-climb';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 /**
@@ -35,7 +36,9 @@ function useRetainedAccessoryClimb(currentClimb: ClimbQueueItem | null): ClimbQu
 /**
  * iOS 26 tab-bar bottom accessory content. UIKit supplies the outer Liquid Glass
  * platter and swaps this subtree between regular and inline placements as the
- * tab bar minimizes, so the content stays bare: current climb plus tick only.
+ * tab bar minimizes, so the content stays bare: the bar's climb plus its
+ * controls. That climb is the climber's last pick, or the queue's current when
+ * THAT changed after it (`useBarClimb`, owner decision A).
  *
  * This is the single source of truth for the displayed climb and the single
  * render gate. It renders {@link NativeAccessoryClimbRow} directly (no extra
@@ -46,29 +49,34 @@ function useRetainedAccessoryClimb(currentClimb: ClimbQueueItem | null): ClimbQu
 export function QueueBottomAccessory() {
   const placement = NativeTabs.BottomAccessory.usePlacement();
   const { state, sessionId } = useQueue();
-  // The accessory shows the local queue head only — never the wall's lit climb
-  // (that lives in the top "On the wall" strip now). Retained across a presence
+  // The climber's last pick or the queue's current, never the wall's lit climb
+  // (that lives in the top "On the wall" strip). Retained across a presence
   // blip so the live platter never blanks while the host is held open.
-  const resolvedItem = state.currentClimbQueueItem;
-  const currentItem = useRetainedAccessoryClimb(resolvedItem);
+  const bar = useBarClimb();
+  const currentItem = useRetainedAccessoryClimb(bar.item);
 
   if (!currentItem) return null;
-  const currentClimb = currentItem.climb;
+  // The pick's drawn copy (its mirror flip applied) while it is the one shown.
+  const showsBar = currentItem === bar.item;
+  const currentClimb = showsBar && bar.climb ? bar.climb : currentItem.climb;
+  const pick = showsBar ? bar.pick : null;
 
   // A retained row during rehydration cannot prove that the real solo queue
   // currently contains this climb. Capture metadata belongs to the actual head.
+  const head = state.currentClimbQueueItem;
   const testID =
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
     process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
     sessionId === null &&
-    resolvedItem != null &&
-    resolvedItem.uuid === currentItem.uuid
+    head != null &&
+    head.uuid === currentItem.uuid
       ? `cpp-accessory-climb-${currentClimb.uuid}`
       : undefined;
   return (
     <NativeAccessoryClimbRow
       climb={currentClimb}
       queueItemUuid={currentItem.uuid}
+      pick={pick}
       placement={placement}
       testID={testID}
     />

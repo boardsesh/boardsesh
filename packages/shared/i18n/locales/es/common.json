@@ -1025,7 +1025,22 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
+        "accessory": "La barra de abajo guarda el último bloque que abriste, hasta que tu cola pase a otro bloque. Tócala para volver a él.",
+        "previewFirst": {
+          "title": "Un toque abre una vista previa. Poner en el plafón enciende el bloque.",
+          "windowSeconds": "Luego quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "windowMinute": "Luego quedas al mando del plafón: durante 1 minuto después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "windowMinutes": "Luego quedas al mando del plafón: durante {{minutes}} minutos después de cada bloque encendido, cada bloque que elijas también se enciende.",
+          "untilStop": "Luego quedas al mando del plafón: cada bloque que elijas se enciende hasta que pares.",
+          "moonboard": "En un MoonBoard, luego quedas al mando del plafón: cada bloque que elijas se enciende hasta que pares.",
+          "frost": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo que elegiste en los ajustes de iluminación, y el esmerilado se encoge a medida que pasa. Desliza el botón a la izquierda para tener el mando sin límite (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque). Tócalo para parar.",
+          "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. El mando que empieza con Poner en el plafón termina tras el tiempo que elegiste en los ajustes de iluminación. Usa la acción Encender cada bloque para tener el mando sin límite. Toca el botón para parar.",
+          "frostOpenEnded": "El botón esmerilado significa que estás al mando del plafón: cada bloque que elijas se enciende hasta que lo toques para parar. Desliza el botón a la izquierda para tomar el mando (con el plafón conectado, también puedes mantenerlo pulsado y elegir Encender cada bloque).",
+          "frostOpenEndedScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende hasta que toques el botón para parar. Usa la acción Encender cada bloque para tomar el mando.",
+          "settings": "Ajustes de iluminación",
+          "done": "Entendido",
+          "close": "Cerrar consejo"
+        }
       },
       "link": {
         "title": "Trae contigo tus encadenes de {{boardName}}",
@@ -1094,6 +1109,14 @@
         "finishTesting": "Terminar las pruebas de la PR #{{prNumber}}",
         "options": "Opciones de actualización",
         "earlyUpdatesHelp": "Las actualizaciones anticipadas pueden tener fallos. Los cambios se aplican al volver a abrir la app."
+      },
+      "previewFirstSpotlight": {
+        "title": "Explora bloques sin encender el plafón",
+        "tap": "Un toque abre una vista previa. Poner en el plafón enciende el bloque, y luego quedas al mando del plafón: los bloques que elijas también se encienden hasta que se acabe el tiempo que elegiste (45 segundos por defecto).",
+        "swipe": "Desliza el botón del plafón a la izquierda para quedar al mando del plafón hasta que pares. Mientras brilla con los colores del bloque, cada bloque que elijas se enciende.",
+        "moonboard": "En un MoonBoard quedas al mando hasta que pares, por defecto. Elige un tiempo en Dejar el mando tras, en Ajustes › Plafón.",
+        "cta": "Mira cómo funciona",
+        "dismiss": "Entendido"
       }
     },
     "launchUpdate": {

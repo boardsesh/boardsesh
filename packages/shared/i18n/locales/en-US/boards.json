@@ -90,7 +90,7 @@
     "onboardingPrompt": "Follow the wall you climb on — that's what turns its history on.",
     "firstBoard": {
       "title": "Where do you climb?",
-      "body": "Pick your board to load its climbs. When you're connected, tapping a climb lights it on the wall.",
+      "body": "Pick your board to load its climbs. A tap opens a climb as a preview; Put on board lights it on the wall.",
       "gym": "At a gym",
       "gymHint": "Pick your gym's board",
       "own": "My own board",
@@ -111,7 +111,8 @@
       "card": {
         "title": "Light climbs on {{board}}",
         "titleNoName": "Light climbs on your board",
-        "body": "Connect this phone to the board, then tap any climb to light it.",
+        "body": "Connect this phone to the board, then tap a climb and Put on board to light it.",
+        "bodyTapLights": "Connect this phone to the board, then tap any climb to light it.",
         "connect": "Connect",
         "tryAgain": "Try again",
         "noLights": "This wall has no lights",
@@ -125,6 +126,11 @@
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",
         "body": "Tapping a climb in the list now lights it on the wall.",
+        "bodyWindow": "Put on board lets you drive the wall: for {{seconds}} seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyWindowMinute": "Put on board lets you drive the wall: for 1 minute after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyWindowMinutes": "Put on board lets you drive the wall: for {{minutes}} minutes after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyUntilStop": "Put on board lets you drive the wall: every climb you pick lights until you tap the button to stop.",
+        "bodyPutOnBoard": "Tap a climb, then Put on board to light it on the wall.",
         "gotIt": "Got it"
       }
     },

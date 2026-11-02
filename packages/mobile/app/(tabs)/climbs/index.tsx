@@ -172,6 +172,8 @@ import {
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
+import { setListCardShowing } from '../../../src/lib/onboarding/list-card-presence';
+import { useFirstConnectConfirmationShowing } from '../../../src/lib/onboarding/first-connect-confirmation-presence';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -583,7 +585,11 @@ function ClimbListInner() {
   // card's own store, so for everyone outside the treatment this is false.
   const connectCardBoardHasLights = activeBoard != null && activeBoard.hasLeds !== false;
   const connectCardVisible = useFirstConnectCardExpected(connectCardBoardHasLights);
-  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible;
+  // Connecting from that card hides it, and the "Connected to {{board}}" dialog
+  // lands a moment later: the tips wait through that too, so neither shows
+  // under the dialog (and the quick-actions tip is not used up there).
+  const connectConfirmationShowing = useFirstConnectConfirmationShowing();
+  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible && !connectConfirmationShowing;
 
   // One-shot tip teaching the quick-actions menu (long-press or the ⋯ button).
   // Armed on focus if unseen; held back until the board-reveal banner is gone so
@@ -952,11 +958,28 @@ function ClimbListInner() {
     armed: quickActionsTipArmed,
     revealTipShowing: showRevealTip,
     connectCardVisible,
+    connectConfirmationShowing,
     climbCount: visibleClimbs.length,
   });
   useEffect(() => {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
+  // The player's preview-first card waits while any of this list's cards is on
+  // screen: on a tablet the player pane sits beside this list. A phone's player
+  // covers the list, which loses focus, so nothing is published then.
+  useEffect(() => {
+    setListCardShowing('firstConnect', isFocused && connectCardVisible);
+    setListCardShowing('boardReveal', isFocused && showRevealTip);
+    setListCardShowing('quickActions', isFocused && showQuickActionsTip);
+  }, [isFocused, connectCardVisible, showRevealTip, showQuickActionsTip]);
+  useEffect(
+    () => () => {
+      setListCardShowing('firstConnect', false);
+      setListCardShowing('boardReveal', false);
+      setListCardShowing('quickActions', false);
+    },
+    [],
+  );
 
   const firstSearchPage = searchPages?.pages[0];
 
@@ -1414,8 +1437,8 @@ function ClimbListInner() {
 
   // Screenshot mode: open the first climb in one of the drawer's two wall-state
   // shots. `screenshotOpenPreview` is the browse latch — the Browsing pill, the
-  // viewfinder brackets and the commit row — which is the same landing as the
-  // "Preview" climb action. `screenshotOpenWallPreview` adds `previewIsWallClimb`
+  // viewfinder brackets and the commit row — which is the same landing as a
+  // deep-link preview. `screenshotOpenWallPreview` adds `previewIsWallClimb`
   // so the drawer says the displayed climb IS the lit one (the On-the-wall pill,
   // no commit to offer). Declared AFTER the wall-seed effect above so the kiosk
   // seed — which publishes this same first climb at index 0 — is already in the

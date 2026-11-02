@@ -53,7 +53,19 @@ export type BoardLookModelInput = {
   moonboardGridLabels: { enabled: boolean; onChange: (enabled: boolean) => void } | null;
   /** What lights the board and when the phone lets go of it (`useBoardLightingSections`), last on the page. */
   lightingSections: readonly MoreSection[];
+  /**
+   * The page was opened for its lighting group (`?section=lighting`, the
+   * player's preview-first card): that group leads, the looks follow.
+   */
+  leadWithLighting?: boolean;
 };
+
+/**
+ * `/settings/board-look?section=lighting` opens the Board page on its lighting
+ * group. A SwiftUI `Form` can't be scrolled to a section, so the group moves to
+ * the top instead.
+ */
+export const BOARD_LOOK_LIGHTING_SECTION = 'lighting';
 
 export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
   const {
@@ -193,7 +205,9 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
     });
   }
 
-  sections.push(...input.lightingSections);
-
-  return { sections };
+  return {
+    sections: input.leadWithLighting
+      ? [...input.lightingSections, ...sections]
+      : [...sections, ...input.lightingSections],
+  };
 }

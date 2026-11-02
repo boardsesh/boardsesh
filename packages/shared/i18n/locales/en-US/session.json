@@ -908,7 +908,7 @@
       "backToWall": "Back to the climb on the wall",
       "backToCurrent": "Back to my pick",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
-      "previewNotLit": "Preview, not lit",
+      "previewNotOnWall": "Preview · not on the wall",
       "onlyYouSeeThis": "Only you see this",
       "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
@@ -923,10 +923,9 @@
       "a11y": {
         "browseAnnounce": "Browsing. The wall stays where it is.",
         "backToLive": "Back to live: {{name}}",
-        "committed": "{{name}} is on the wall"
+        "committed": "{{name}} is on the wall",
+        "previewFirstAnnounce": "Preview, not on the wall. Put on board lights it."
       },
-      "backMyPick": "My pick",
-      "backOnWall": "On the wall",
       "backToMyPickNamed": "Back to my pick: {{name}}",
       "backToWallNamed": "Back to the climb on the wall: {{name}}"
     },
@@ -960,13 +959,25 @@
       "onWall": "On the wall",
       "lightAgainHint": "Lights it again on the board",
       "putOnGymBoard": "Put on {{board}}",
-      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb"
+      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb",
+      "pickLightHint": "Opens this climb and lights it",
+      "pickMoveToGymBoardHint": "Opens this climb, moves you to {{board}} and lights it",
+      "stopsInSeconds_one": "Stops in {{count}} second",
+      "stopsInSeconds_other": "Stops in {{count}} seconds",
+      "stopsInUnderTen": "Stops in under 10 seconds",
+      "stopsInClock": "Stops in {{clock}}",
+      "windowStarted_other": "You are driving the wall. It stops {{count}} seconds after the last climb lights. Light every climb keeps it going.",
+      "windowStartedMinute": "You are driving the wall. It stops a minute after the last climb lights. Light every climb keeps it going.",
+      "windowStartedMinutes_other": "You are driving the wall. It stops {{count}} minutes after the last climb lights. Light every climb keeps it going.",
+      "sheetStatusPreview": "Preview · not on the wall",
+      "sheetStatusDriving": "You are driving the wall. Every climb you pick lights up."
     },
     "setActive": "Set active",
     "paneEmpty": {
       "title": "Pick a climb",
       "subtitle": "Tap a climb to see it here.",
-      "unlitHint": "Tap a climb to light it"
+      "unlitHint": "Tap a climb to preview it",
+      "unlitHintLights": "Tap a climb to light it"
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",

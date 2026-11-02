@@ -1,3 +1,4 @@
+import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING } from '../lib/keep-lighting';
 import type { AppSettings } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -14,12 +15,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoOfflineBoards: false,
   offlineMode: false,
   autoConnectBle: true,
-  autoDisconnectBle: false,
-  autoDisconnectTimeoutSeconds: 30,
   moonboardLightAdjacentHolds: false,
   moonboardGridLabels: true,
-  lightOnSwipe: true,
-  lightOnClimbTap: true,
+  lightOnSwipe: false,
+  lightOnClimbTap: false,
+  putOnBoardKeepsLighting: DEFAULT_KEEP_LIGHTING,
+  moonboardPutOnBoardKeepsLighting: DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  putOnBoardDrivesInSession: true,
+  disconnectWhenDrivingEnds: false,
+  autoDisconnectMigrated: false,
   playlistTapLoadsQueue: false,
   gradeRowShown: false,
   restTimerTargetSeconds: null,

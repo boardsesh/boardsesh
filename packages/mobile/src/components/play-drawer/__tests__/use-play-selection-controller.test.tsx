@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { PlayDrawerOpenOptions } from '../play-drawer-types';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { usePlaySelectionController } from '../use-play-selection-controller';
 import { setSetting } from '../../../settings/hooks';
+import { enterDriveMode, getDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
 
 const authority = vi.hoisted(() => ({ uuid: 0, platform: 'ios', announce: vi.fn() }));
 vi.mock('react-native', () => ({
@@ -75,6 +76,7 @@ function inputs(): SelectionInputs {
     },
     chrome: {
       clearMirror: vi.fn(),
+      restoreMirror: vi.fn(),
       setIsTickBarActive: vi.fn(),
       setActiveSubDrawer: vi.fn(),
     },
@@ -398,6 +400,34 @@ describe('explicit wall commitment', () => {
     expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
     expect(initialProps.preview.setDrawerPreviewIsWallClimb).toHaveBeenCalledWith(false);
     expect(initialProps.chrome.clearMirror).toHaveBeenCalledOnce();
+  });
+
+  // In a crew a queue row or Replay from here always opens as a preview that
+  // defers its commit, so this is the main path a deferred commit takes there:
+  // the press that only raises the question must keep the slot's options for
+  // Put mine up, or the climb goes up as a plain look and History's order is lost.
+  it('keeps a deferred commit through the busy-wall question, then commits it once with its options', () => {
+    const slot = item('history');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = slot;
+    initialProps.navigation.browseByDefault = true;
+    initialProps.confirmation.browseLatchActive = true;
+    initialProps.confirmation.wallUuidAtLatchStartRef.current = 'old-wall';
+    initialProps.openTarget = open(slot, {
+      previewQueueItem: slot,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.confirmation.setBusyWallConfirmArmed).toHaveBeenCalledWith(true);
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    rerender({ ...initialProps, confirmation: { ...initialProps.confirmation, busyWallConfirmArmed: true } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(slot, {
+      placement: 'STEP',
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
   });
 
   it.each(['ios', 'android'] as const)('leaves the busy-wall question to the question row on %s', (platform) => {
@@ -774,5 +804,419 @@ describe('driving the wall', () => {
       expect(props.confirmation.setBusyWallConfirmArmed).not.toHaveBeenCalledWith(true);
       expect(props.queue.setCurrentClimb).toHaveBeenCalledOnce();
     }
+  });
+});
+
+// Put on board's keep-lighting window (2.7) is a live drive with an end. The
+// player's render read it as driving, but Android pauses JS timers with the
+// activity (#7038), so the watcher may not have ended it yet: every pick reads
+// the wall clock, and a pick past the end stays a preview. The timers here
+// never advance; only the clock moves.
+describe('a keep-lighting window past its end', () => {
+  beforeEach(() => {
+    setSetting('lightOnClimbTap', false);
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: null,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      now: 1_000,
+    });
+    markDriveLive({ now: 1_000 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetDriveModeForTests();
+  });
+  /** What the player rendered while the window was on: driving, Light on swipe off. */
+  function windowInputs(): SelectionInputs {
+    const props = inputs();
+    props.navigation.driving = true;
+    props.navigation.lightOnSwipe = false;
+    return props;
+  }
+  const lapse = () => vi.setSystemTime(46_000);
+
+  it.each(['handlePrev', 'handleNext'] as const)('%s inside the window still moves the wall', (handler) => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    vi.setSystemTime(45_999);
+    act(() => result.current[handler]('swipe'));
+    expect(handler === 'handlePrev' ? props.queue.previousClimb : props.queue.nextClimb).toHaveBeenCalledOnce();
+  });
+
+  it.each(['handlePrev', 'handleNext'] as const)('%s past the end opens a preview, the wall untouched', (handler) => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current[handler]('swipe'));
+    expect(props.queue.previousClimb).not.toHaveBeenCalled();
+    expect(props.queue.nextClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      handler === 'handlePrev' ? props.navigation.navigationState.prevItem : props.navigation.navigationState.nextItem,
+    );
+    expect(props.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
+    // The watcher, not the pick, ends the drive and tidies the button.
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('a fresh open past the end is a preview', () => {
+    const props = windowInputs();
+    lapse();
+    props.openTarget = open(item('new'));
+    renderHook(usePlaySelectionController, { initialProps: props });
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+    );
+  });
+
+  it('a similar climb past the end is a preview', () => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, [item('similar').climb as Climb]));
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'similar' }) }),
+    );
+  });
+
+  it('Keep going with your queue past the end is a preview', () => {
+    const props = windowInputs();
+    const target = item('queued');
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current.continueIntoQueue(target));
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(target);
+  });
+});
+
+describe('preview-first host selections and deferred commits', () => {
+  it('does not reactivate a stale accessory target when the current climb changes before opening', () => {
+    const initialProps = { ...inputs(), openTarget: open(item('old-current'), { reopensCurrent: true }) };
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+  });
+
+  it('keeps a fresh solo open in preview when automatic tap lighting is off', () => {
+    setSetting('lightOnClimbTap', false);
+    const initialProps = { ...inputs(), openTarget: open(item('new')) };
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+    );
+  });
+
+  it('reopens the committed current slot, not a preview copy, when automatic tap lighting is off', () => {
+    // The mini player and the workout card's current-climb row: the drawer must
+    // show the committed queue item, whose uuid the workout stage label and the
+    // timed block's Fell / Sent row key on.
+    setSetting('lightOnClimbTap', false);
+    const initialProps = inputs();
+    initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+  });
+
+  // The iPad host keeps its pane target, and each tab mounts its own pane: the
+  // later pane shows what the first did, without a second pick.
+  describe('a pane that mounts after the tap', () => {
+    function sharedTarget(selected: ClimbQueueItem, options?: PlayDrawerOpenOptions) {
+      let applied = false;
+      return {
+        ...open(selected, options),
+        claimFirstApply: () => {
+          if (applied) return false;
+          applied = true;
+          return true;
+        },
+      };
+    }
+
+    it.each([
+      ['Light on tap is off', () => setSetting('lightOnClimbTap', false), {}],
+      ['the climb is on another board', () => {}, { showBoardMismatch: true }],
+    ])('shows the same browse preview when %s', (_label, arrange, patch) => {
+      arrange();
+      const target = sharedTarget(item('new'));
+      const first = { ...inputs(), ...patch, openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: first });
+      expect(first.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+      );
+
+      const later = { ...inputs(), ...patch, openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+      );
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+    });
+
+    it('keeps the workout row reopening the committed slot', () => {
+      setSetting('lightOnClimbTap', false);
+      const current = inputs().queue.currentClimbQueueItem!;
+      const target = sharedTarget(current, { reopensCurrent: true });
+      renderHook(usePlaySelectionController, { initialProps: { ...inputs(), openTarget: target } });
+      const later = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+    });
+
+    it('never puts the tapped climb up again after the climber moved on', () => {
+      const target = sharedTarget(item('new'));
+      const first = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: first });
+      expect(first.queue.setCurrentClimb).toHaveBeenCalledOnce();
+
+      // The current climb is still `current` here: the climber swiped on.
+      const later = { ...inputs(), openTarget: target };
+      renderHook(usePlaySelectionController, { initialProps: later });
+      expect(later.queue.setCurrentClimb).not.toHaveBeenCalled();
+      expect(later.preview.setDrawerPreviewItem).toHaveBeenCalledExactlyOnceWith(null);
+    });
+  });
+
+  it('does not relight an already-current held climb when it opens as preview', () => {
+    setSetting('lightOnClimbTap', false);
+    const initialProps = inputs();
+    initialProps.hold.heldQueueItemUuid = initialProps.queue.currentClimbQueueItem!.uuid;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: initialProps.queue.currentClimbQueueItem!.climb }),
+    );
+  });
+
+  it('commits the selected duplicate slot and clears the former playlist source', () => {
+    const selected = { ...item('duplicate'), uuid: 'second-duplicate-slot' };
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { playlistSuggestionSource: null },
+    });
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(selected, {
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('keeps deferred replay placement when the same preview is re-anchored at another angle', () => {
+    const selected = item('history');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    const atAnotherAngle = { ...selected, climb: { ...selected.climb, angle: 45 } };
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: atAnotherAngle } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(atAnotherAngle, {
+      placement: 'STEP',
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  // A queue-sheet row (or Replay from here) opens its slot as a preview. With
+  // Light the board as I swipe on, solo, a swipe from it commits the slot's own
+  // neighbour, the one the peek showed, never the queue's next from the wall.
+  it.each([
+    ['handleNext', 'nextItem', 'next'],
+    ['handlePrev', 'prevItem', 'previous'],
+  ] as const)('%s from a queue-slot preview commits the slot’s neighbour the peek showed', (handler, side, trigger) => {
+    const slot = item('slot-d');
+    const initialProps = inputs();
+    initialProps.navigation.navigationState = { prevItem: item('slot-c'), nextItem: item('slot-e') };
+    initialProps.preview.drawerPreviewItem = slot;
+    initialProps.openTarget = open(slot, {
+      previewQueueItem: slot,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current[handler]('swipe'));
+    expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.previousClimb).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+      initialProps.navigation.navigationState[side],
+      { keepWalkedTrack: true, trigger, historyCopy: 'fresh' },
+    );
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(null);
+    expect(initialProps.onNavigationStep).toHaveBeenCalledWith({
+      direction: trigger,
+      method: 'swipe',
+      outcome: 'moved',
+    });
+  });
+
+  it('keeps going through the queue from a preview with no neighbour of its own', () => {
+    const orphan = item('deep-link');
+    const initialProps = inputs();
+    initialProps.navigation.navigationState = { prevItem: null, nextItem: null };
+    initialProps.preview.drawerPreviewItem = orphan;
+    const { result } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    expect(initialProps.queue.nextClimb).toHaveBeenCalledOnce();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  // The deferred options belong to the slot as it was opened: a swipe away and
+  // back to the same slot is an ordinary browse, and Put on board then commits
+  // it plainly, not with Replay from here's STEP.
+  it('drops deferred replay placement after a swipe away and back to the same slot', () => {
+    const history = item('history');
+    const next = item('next');
+    const initialProps = inputs();
+    initialProps.navigation.lightOnSwipe = false;
+    initialProps.navigation.navigationState = { prevItem: item('before'), nextItem: next };
+    initialProps.preview.drawerPreviewItem = history;
+    initialProps.openTarget = open(history, {
+      previewQueueItem: history,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('swipe'));
+    const atNext = {
+      ...initialProps,
+      preview: { ...initialProps.preview, drawerPreviewItem: next },
+      navigation: { ...initialProps.navigation, navigationState: { prevItem: history, nextItem: item('after') } },
+    };
+    rerender(atNext);
+    act(() => result.current.handlePrev('swipe'));
+    expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenLastCalledWith(history);
+    rerender({ ...atNext, preview: { ...atNext.preview, drawerPreviewItem: history } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(history, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('keeps deferred options to their own slot when another climb is on screen', () => {
+    const history = item('history');
+    const other = item('other');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = history;
+    initialProps.openTarget = open(history, {
+      previewQueueItem: history,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: other } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(other, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+
+  it('does not carry deferred replay placement to a climb reached by Next', () => {
+    const selected = item('history');
+    const initialProps = inputs();
+    initialProps.navigation.lightOnSwipe = false;
+    initialProps.preview.drawerPreviewItem = selected;
+    initialProps.openTarget = open(selected, {
+      previewQueueItem: selected,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleNext('button'));
+    const next = initialProps.navigation.navigationState.nextItem;
+    rerender({ ...initialProps, preview: { ...initialProps.preview, drawerPreviewItem: next } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(next, {
+      keepWalkedTrack: true,
+      trigger: 'put_on_wall',
+    });
+  });
+});
+
+// Owner decision A: every open the player applies is reported, so the player
+// can keep the climber's last pick and run the MiniPlayer bulb's Put on board.
+describe('the applied open (the last pick)', () => {
+  it('reports a preview open with its list, its deferred commit and its busy-wall snapshot', () => {
+    const initialProps = inputs();
+    const onOpenApplied = vi.fn();
+    initialProps.onOpenApplied = onOpenApplied;
+    const preview = item('preview');
+    const track = source([preview, item('next')]);
+    const commitOptions = { placement: 'STEP' as const };
+    const latchStart = { wallClimbUuid: 'wall-at-pick', at: 1_000 };
+    initialProps.openTarget = open(preview, {
+      previewQueueItem: preview,
+      playlistSuggestionSource: track,
+      previewCommitOptions: commitOptions,
+      previewLatchStart: latchStart,
+    });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(onOpenApplied).toHaveBeenCalledWith({
+      previewItem: preview,
+      suggestionSource: track,
+      commitOptions,
+      mirrored: false,
+      replay: false,
+      latchStart,
+      putOnBoard: false,
+    });
+  });
+
+  it('reports a committed open as no preview', () => {
+    const initialProps = inputs();
+    const onOpenApplied = vi.fn();
+    initialProps.onOpenApplied = onOpenApplied;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ previewItem: null, putOnBoard: false }));
+  });
+
+  it('puts the pick’s mirror flip back, and only when it differs from the climb’s own', () => {
+    const flipped = inputs();
+    const preview = item('preview');
+    flipped.onOpenApplied = vi.fn();
+    flipped.openTarget = open(preview, { previewQueueItem: preview, previewMirrored: true });
+    renderHook(usePlaySelectionController, { initialProps: flipped });
+    expect(flipped.chrome.restoreMirror).toHaveBeenCalledWith('preview', true);
+    expect(flipped.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ mirrored: true }));
+
+    const straight = inputs();
+    straight.openTarget = open(preview, { previewQueueItem: preview, previewMirrored: false });
+    renderHook(usePlaySelectionController, { initialProps: straight });
+    expect(straight.chrome.restoreMirror).not.toHaveBeenCalled();
+  });
+
+  it('asks for Put on board only on a fresh open of a preview, never on a pane’s replay', () => {
+    const preview = item('preview');
+    const fresh = inputs();
+    fresh.onOpenApplied = vi.fn();
+    fresh.openTarget = open(preview, { previewQueueItem: preview, putOnBoard: true });
+    renderHook(usePlaySelectionController, { initialProps: fresh });
+    expect(fresh.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ putOnBoard: true, replay: false }));
+
+    const replayed = inputs();
+    replayed.onOpenApplied = vi.fn();
+    replayed.openTarget = {
+      ...open(preview, { previewQueueItem: preview, putOnBoard: true }),
+      claimFirstApply: () => false,
+    };
+    renderHook(usePlaySelectionController, { initialProps: replayed });
+    expect(replayed.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ putOnBoard: false, replay: true }));
   });
 });

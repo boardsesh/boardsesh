@@ -90,7 +90,7 @@
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
     "firstBoard": {
       "title": "Wo kletterst du?",
-      "body": "Wähl dein Board, um seine Boulder zu laden. Sobald du verbunden bist, tippst du einen Boulder an und er wird am Board beleuchtet.",
+      "body": "Wähl dein Board, um seine Boulder zu laden. Ein Antippen öffnet einen Boulder als Vorschau; Am Board beleuchten beleuchtet ihn an der Wand.",
       "gym": "In der Halle",
       "gymHint": "Wähl das Board deiner Halle",
       "own": "Mein eigenes Board",
@@ -111,7 +111,8 @@
       "card": {
         "title": "{{board}}: Boulder beleuchten",
         "titleNoName": "Boulder am Board beleuchten",
-        "body": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "body": "Verbinde dieses Handy mit dem Board, tipp einen Boulder an und dann auf Am Board beleuchten.",
+        "bodyTapLights": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
         "connect": "Verbinde das Board",
         "tryAgain": "Nochmal versuchen",
         "noLights": "Diese Wand hat kein Licht",
@@ -125,6 +126,11 @@
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",
         "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "bodyWindow": "Mit „Am Board beleuchten“ steuerst du das Board: {{seconds}} Sekunden lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinute": "Mit „Am Board beleuchten“ steuerst du das Board: 1 Minute lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyWindowMinutes": "Mit „Am Board beleuchten“ steuerst du das Board: {{minutes}} Minuten lang nach jedem beleuchteten Boulder wird jeder Boulder, den du wählst, auch beleuchtet. Danach tippst du wieder auf „Am Board beleuchten“.",
+        "bodyUntilStop": "Mit „Am Board beleuchten“ steuerst du das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du auf den Button tippst, um aufzuhören.",
+        "bodyPutOnBoard": "Tipp einen Boulder an und dann auf „Am Board beleuchten“.",
         "gotIt": "Verstanden"
       }
     },

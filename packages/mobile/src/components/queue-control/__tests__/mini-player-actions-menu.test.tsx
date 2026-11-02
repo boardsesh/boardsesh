@@ -51,6 +51,7 @@ vi.mock('../../AppMenu', () => ({
     );
   },
 }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
@@ -79,6 +80,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: null, sessionId: null }),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  useIsSharedSession: () => false,
   useActiveClimbUuid: () => 'climb-1',
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));

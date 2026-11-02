@@ -1000,6 +1000,7 @@ describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', 
   });
 
   it('walks the queue after "Start playlist" from a climb this board cannot draw, adding no copies', async () => {
+    setSetting('lightOnClimbTap', true);
     // "Start playlist" is the replace, which a tap only does with the switch on.
     setSetting('playlistTapLoadsQueue', true);
     // A smart list is fetched by board name, so a climb from another layout

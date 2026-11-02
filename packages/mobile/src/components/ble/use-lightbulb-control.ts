@@ -207,6 +207,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
         placement,
         boardName: board.boardType,
         reconnect: bluetooth.hasRememberedDeviceForBoard(board),
+        boardUuid: board.uuid,
       });
       return bluetooth.connectAfterBoardSwitch(board);
     },

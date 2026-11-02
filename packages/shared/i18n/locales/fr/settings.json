@@ -466,34 +466,43 @@
     "cancel": "Annuler",
     "connectBoard": "Connecter la board",
     "relightBoard": "Rallumer la board",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
-      "enabledLabel": "Déconnexion automatique",
-      "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
-      "timeoutLabel": "Déconnecter après",
-      "toggleTitle": "Déconnexion automatique",
-      "toggleSubtitle": "Déconnexion après {{timeout}} d'inactivité",
-      "timeoutOptions": {
-        "10": "10 secondes",
-        "15": "15 secondes",
-        "30": "30 secondes",
-        "45": "45 secondes",
-        "60": "1 minute",
-        "120": "2 minutes",
-        "300": "5 minutes",
-        "600": "10 minutes"
-      }
-    },
     "lighting": {
       "title": "Éclairage de la board",
+      "autoTitle": "Allumer automatiquement",
       "description": "Choisissez ce qui allume automatiquement la board connectée.",
+      "keep": {
+        "label": "Arrêter de piloter après",
+        "off": "Tout de suite",
+        "options": {
+          "30": "30 secondes",
+          "45": "45 secondes",
+          "60": "1 minute",
+          "120": "2 minutes",
+          "300": "5 minutes"
+        },
+        "untilStopped": "Jusqu'à ce que j'arrête",
+        "moonboardLabel": "Sur un MoonBoard",
+        "moonboardAccessibilityLabel": "Arrêter de piloter un MoonBoard après",
+        "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
+        "sheetMoonboardLabel": "Arrêter de piloter ce MoonBoard après",
+        "inSessionLabel": "Aussi en session",
+        "inSessionAccessibilityLabel": "Allumer sur la board pilote aussi en session",
+        "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
+        "inSessionOffReason": "Choisissez autre chose que Tout de suite dans Arrêter de piloter après pour utiliser ce réglage.",
+        "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, et chacun relance le chrono. Quand le temps est écoulé, le bloc suivant s'ouvre en aperçu.",
+        "footerUntilStopped": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, jusqu'à ce que vous touchiez le bouton Tu pilotes la board.",
+        "footerOff": "Allumer sur la board allume le bloc affiché. Le bloc suivant que vous choisissez s'ouvre en aperçu."
+      },
+      "drivingEnds": {
+        "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",
+        "description": "Quand vous arrêtez de piloter ou que le temps est écoulé, votre téléphone libère la board pour que le grimpeur suivant puisse se connecter. Allumer sur la board la reconnecte."
+      },
       "onSwipeLabel": "Allumer la board quand je fais défiler",
       "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
       "onTapLabel": "Allumer la board quand je touche un bloc",
-      "onTapDescription": "Toucher un bloc dans une liste l'allume au mur. Désactivé, le toucher ouvre un aperçu.",
+      "onTapDescription": "Chaque toucher dans une liste allume le bloc, sans limite de temps. Désactivé, le toucher ouvre un aperçu.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer la board quand je touche un bloc est désactivé, utilisez Lecture pour la charger."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Si « Allumer la board quand je touche un bloc » est activé, la liste remplace votre file et le bloc touché s'allume. S'il est désactivé, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu, tandis que la board garde son bloc jusqu'à Allumer sur la board."
     },
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",

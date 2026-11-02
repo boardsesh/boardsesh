@@ -26,8 +26,7 @@ export function getViewOnlyPreviewNavigationTarget({
   // A preview carries the list it came from as previewSuggestionSource (the
   // wrong board, a crew, Light on tap off, board history, similar climbs), so
   // its swipes stay previews. It is null for a committed climb and for a
-  // trackless preview (the long-press Preview action, deep links, the new-climb
-  // card, workout rows).
+  // trackless preview (a deep link, the Home new-climb card, workout rows).
   if (!previewSuggestionSource || !previewItem) return { viewOnly: false };
   return { viewOnly: true, targetItem };
 }
@@ -100,8 +99,8 @@ export function getSwipeNavigationTarget({
  * The wall-state pill, the viewfinder brackets and the commit row all say some
  * version of "you're looking, the wall stays where it is". That sentence is only
  * true while navigation itself is view-only, and being in a preview is NOT
- * enough: with `lightOnSwipe` on and no suggestion source (the explicit "Preview"
- * climb action, a deep link, the workout builder), the very next swipe falls
+ * enough: with `lightOnSwipe` on and no suggestion source (a deep link, the Home
+ * new-climb card, the workout builder), the very next swipe falls
  * through to `setCurrentClimb` — it writes the shared queue and re-arms the BLE
  * auto-sender. Chrome promising otherwise would be the exact wall-hijack the
  * feature exists to prevent.

@@ -50,6 +50,17 @@ describe('buildBoardLookModel — what the screen leads with', () => {
     expect(sectionKeys(makeInput())).toEqual(['presets', 'destinations', 'lighting', 'bluetooth']);
   });
 
+  // The player's preview-first card sends a climber here for the keep-lighting
+  // choice, and a SwiftUI Form can't scroll to a section, so the group leads.
+  it('leads with lighting and Bluetooth when opened for them, the looks after', () => {
+    expect(sectionKeys(makeInput({ leadWithLighting: true }))).toEqual([
+      'lighting',
+      'bluetooth',
+      'presets',
+      'destinations',
+    ]);
+  });
+
   it('drops the rail entirely when there is no board to draw', () => {
     expect(sectionKeys(makeInput({ carousel: null }))).toEqual(['destinations', 'lighting', 'bluetooth']);
   });

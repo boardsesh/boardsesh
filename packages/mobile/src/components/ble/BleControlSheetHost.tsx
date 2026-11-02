@@ -1,20 +1,40 @@
-import { useCallback, useContext, useEffect } from 'react';
+import { useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { announceQueued } from '../../lib/announce-queued';
+import { hapticSelection } from '../../lib/haptics';
+import {
+  DEFAULT_KEEP_LIGHTING,
+  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  KEEP_LIGHTING_CHOICES,
+  sanitiseKeepLighting,
+  type KeepLightingChoice,
+} from '../../lib/keep-lighting';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { QueueActiveClimbContext } from '../../providers/queue/queue-contexts';
 import { markWallCleared, resetWallCleared } from './wall-cleared-store';
+import { getDriveMode, stopDrivingForLink } from '../play-drawer/drive-mode-store';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
-import { useAutoDisconnectTimeoutLabels } from './use-auto-disconnect-timeout-labels';
+import { trackSettingChanged } from '../../lib/settings-analytics';
+import { keepLightingLabel } from '../settings/board-lighting/board-lighting-model';
+import type { BleKeepLightingRowModel } from './BleKeepLightingRow';
+
+/**
+ * `Setting Changed`'s page for the switches on this sheet. Not a Settings page,
+ * so the Settings root's ranking leaves it out; the keys are the Board page's.
+ */
+export const BOARD_CONTROLS_SETTINGS_PAGE = 'boardControls';
 
 type BleControlSheetHostProps = {
   visible: boolean;
   onClose: () => void;
   /**
-   * Auto-disconnect and the two lighting switches. Only the player's own sheet
-   * drops them (#7000); the app-wide sheet (toolbar
-   * bulb, Climbs header pill) always keeps them.
+   * Disconnect Bluetooth when driving ends and the two lighting switches. Only
+   * the player's own sheet drops them (#7000); the app-wide sheet (toolbar
+   * bulb, Climbs header pill) always keeps them. Both keep the Stop driving
+   * after row.
    */
   showLightingSwitches?: boolean;
   /**
@@ -30,6 +50,8 @@ type BleControlSheetHostProps = {
    * sheet also opens with no link, showing only that row.
    */
   onDrive?: () => void;
+  /** The player's status line at the top of its sheet (spec B3); the app-wide sheet has none. */
+  status?: ReactNode;
 };
 
 /**
@@ -47,16 +69,43 @@ export function BleControlSheetHost({
   showLightingSwitches = true,
   clearedClimbUuid,
   onDrive,
+  status,
 }: BleControlSheetHostProps) {
+  const { t } = useTranslation('common');
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
-  const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
+  const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
   const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
-  const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
-  const timeoutLabels = useAutoDisconnectTimeoutLabels();
-  const autoDisconnectTimeoutLabel = timeoutLabels[timeoutSeconds] ?? String(timeoutSeconds);
+  // Stop driving after (2.7, spec B4), the sheet's first row on both sheets:
+  // the timer at the wall in two taps (WCAG 2.2.1). On a connected MoonBoard
+  // the MoonBoard's own choice, the one its Put on board takes.
+  const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const onMoonboard = showLightAdjacentHolds;
+  const keepLightingChoice = onMoonboard
+    ? sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING)
+    : sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
+  const setKeepLightingChoice = onMoonboard ? setMoonboardKeepLighting : setKeepLighting;
+  const keepLighting = useMemo<BleKeepLightingRowModel>(
+    () => ({
+      label: onMoonboard ? t('settings:ble.lighting.keep.sheetMoonboardLabel') : t('settings:ble.lighting.keep.label'),
+      choice: keepLightingChoice,
+      options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
+      onChange: (choice: KeepLightingChoice) => {
+        hapticSelection();
+        // Reported like the Board page's row of the same key.
+        trackSettingChanged(
+          BOARD_CONTROLS_SETTINGS_PAGE,
+          onMoonboard ? 'moonboardPutOnBoardKeepsLighting' : 'putOnBoardKeepsLighting',
+          choice,
+        );
+        setKeepLightingChoice(choice);
+      },
+    }),
+    [t, onMoonboard, keepLightingChoice, setKeepLightingChoice],
+  );
 
   // Close if the link drops while the sheet is open — otherwise it lingers
   // showing Re-light / Disconnect actions that no-op on a dead link. A sheet
@@ -75,18 +124,58 @@ export function BleControlSheetHost({
   }, [bluetooth]);
 
   // This phone's wall button reads the local store (#6939); every other viewer
-  // hears it through board presence (#7015).
+  // hears it through board presence (#7015). A dark wall is the climber
+  // stopping: a drive ends here, timed or not, as a press on the wall button
+  // would end it, so the next pick is a preview and the button's Put on board
+  // means what it says. With Disconnect Bluetooth when driving ends on, the
+  // board is let go once the lights are off, never before the write.
   const handleClearLights = useCallback(() => {
+    const drive = getDriveMode();
+    let lightsOff: () => void = () => {};
+    const cleared = new Promise<void>((resolve) => {
+      lightsOff = resolve;
+    });
+    if (drive) {
+      stopDrivingForLink({ disconnectAfter: () => cleared });
+      announceQueued(t('session:playView.wallControl.stoppedDriving'));
+    }
     markWallCleared(clearedClimbUuid === undefined ? activeClimbUuid : clearedClimbUuid);
-    void bluetooth?.turnOffAllLights();
-  }, [bluetooth, activeClimbUuid, clearedClimbUuid]);
+    const write = bluetooth?.turnOffAllLights();
+    if (write) void write.then(lightsOff, lightsOff);
+    else lightsOff();
+  }, [bluetooth, activeClimbUuid, clearedClimbUuid, t]);
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'moonboardLightAdjacentHolds', enabled);
       bluetooth?.setMoonboardLightAdjacentHolds(enabled);
       bluetooth?.reassertWall();
     },
     [bluetooth],
+  );
+
+  // The same `Setting Changed` the Board page's rows send, so a switch flipped
+  // here (the lightbulb's long press) is counted too.
+  const handleToggleDisconnectWhenDrivingEnds = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'disconnectWhenDrivingEnds', enabled);
+      setDisconnectWhenDrivingEnds(enabled);
+    },
+    [setDisconnectWhenDrivingEnds],
+  );
+  const handleToggleLightOnSwipe = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnSwipe', enabled);
+      setLightOnSwipe(enabled);
+    },
+    [setLightOnSwipe],
+  );
+  const handleToggleLightOnClimbTap = useCallback(
+    (enabled: boolean) => {
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnClimbTap', enabled);
+      setLightOnClimbTap(enabled);
+    },
+    [setLightOnClimbTap],
   );
 
   if (!bluetooth) return null;
@@ -97,19 +186,20 @@ export function BleControlSheetHost({
       onReassert={handleReassert}
       onClearLights={handleClearLights}
       onDisconnect={disconnectAllBluetooth}
-      autoDisconnectEnabled={autoDisconnectEnabled}
-      autoDisconnectTimeoutLabel={autoDisconnectTimeoutLabel}
-      onToggleAutoDisconnect={setAutoDisconnectEnabled}
+      disconnectWhenDrivingEnds={disconnectWhenDrivingEnds}
+      onToggleDisconnectWhenDrivingEnds={handleToggleDisconnectWhenDrivingEnds}
       showLightAdjacentHolds={showLightAdjacentHolds}
       lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
       onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
       lightOnSwipe={lightOnSwipe}
-      onToggleLightOnSwipe={setLightOnSwipe}
+      onToggleLightOnSwipe={handleToggleLightOnSwipe}
       lightOnClimbTap={lightOnClimbTap}
-      onToggleLightOnClimbTap={setLightOnClimbTap}
+      onToggleLightOnClimbTap={handleToggleLightOnClimbTap}
       showLightingSwitches={showLightingSwitches}
       linked={isConnected}
       onDrive={onDrive}
+      status={status}
+      keepLighting={keepLighting}
       onClose={onClose}
     />
   );

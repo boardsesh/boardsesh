@@ -30,7 +30,6 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb, QueueAddPlacement } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
-import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -154,11 +153,10 @@ export type PlaylistDetailViewProps = {
   hasNextPage: boolean;
   fetchNextPage: () => void;
   /**
-   * Activate a tapped climb (wires the queue + opens the play drawer). The
-   * header's Play button calls it with the first row and `deliberate` (see
-   * `PlaylistActivationOptions`).
+   * Select a climb using the current lighting preference. The header's Play
+   * button selects the first row through the same callback.
    */
-  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot, options?: PlaylistActivationOptions) => void;
+  onActivateClimb: (climb: Climb, readyBoardArt?: ReadyBoardArtSnapshot) => void;
   /** Already-resolved empty-list copy (callers translate with a static key). */
   emptyMessage: string;
   /** An unavailable climb source keeps the hero while explaining the gap. */
@@ -392,7 +390,7 @@ export function PlaylistDetailView({
   // `showPlayAll` already hides the button behind the board banner.
   const handleActivateAll = useCallback(() => {
     const first = playAllClimbsRef.current[0];
-    if (first) onActivateClimbRef.current(first, undefined, { deliberate: true });
+    if (first) onActivateClimbRef.current(first);
   }, []);
 
   const navigation = useNavigation();

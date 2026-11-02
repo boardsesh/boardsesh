@@ -49,6 +49,7 @@ export {
   historyCopyRuleFor,
   capHistory,
   clampNowSlotPayload,
+  replaceUpNext,
   lineAfterDelta,
   reorderAcrossLine,
   clampInsertPosition,

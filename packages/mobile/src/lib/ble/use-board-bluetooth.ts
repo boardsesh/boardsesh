@@ -427,11 +427,17 @@ export type SendFramesToBoard = (
   sendContext?: BleSendContext,
 ) => Promise<boolean | undefined>;
 
-export type BluetoothDisconnectReason = 'user' | 'auto_disconnect';
+/**
+ * Why this phone lets go of the board on purpose. `user`: a disconnect the
+ * climber asked for (it forgets the board). `driving_ended`: Disconnect
+ * Bluetooth when driving ends (2.7) freed the board as a drive ended; the board
+ * stays remembered so the next Put on board reconnects silently.
+ */
+export type BluetoothDisconnectReason = 'user' | 'driving_ended';
 
 export type BleDisconnectTrigger =
   | 'explicit_user'
-  | 'auto_disconnect'
+  | 'driving_ended'
   | 'config_switch'
   | 'connection_replacement'
   | 'link_drop';
@@ -2146,10 +2152,10 @@ export function useBoardBluetooth({
       // A deliberate disconnect forgets the board — only an involuntary drop or a
       // config switch keeps the silent same-board reconnect memory alive. Clears
       // the persisted copy too so the next launch doesn't resurrect it.
-      // Auto-disconnect also keeps the remembered handle so the lightbulb can
-      // silently reconnect to the same board.
+      // Disconnect Bluetooth when driving ends also keeps the remembered
+      // handle, so the next Put on board silently reconnects to the same board.
       if (reason === 'user') forgetConnectedBoard();
-      await teardownConnection(reason === 'user' ? 'explicit_user' : 'auto_disconnect');
+      await teardownConnection(reason === 'user' ? 'explicit_user' : 'driving_ended');
     },
     [forgetConnectedBoard, teardownConnection],
   );

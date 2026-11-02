@@ -8,3 +8,8 @@
 // (anything with `:` or other punctuation throws at the platform boundary).
 
 export const CHANGELOG_LAST_SEEN_KEY = 'changelog_last_seen';
+
+// The 2.7 "Look through climbs without lighting the board" spotlight pinned above
+// the What's New timeline: when it first showed (ms since epoch) and whether the
+// climber dismissed it. It retires on dismiss, or 30 days after it first showed.
+export const CHANGELOG_PREVIEW_FIRST_SPOTLIGHT_KEY = 'changelog_spotlight_preview_first';

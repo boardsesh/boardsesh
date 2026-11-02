@@ -1,18 +1,20 @@
 import { memo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { useTheme } from '../../providers/theme-provider';
 import { useCappedTextProps } from '../../hooks/use-capped-text-props';
+import { materialSurfaces } from '../../theme/colors';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
-import type { TrackLabelParts } from './track-label-text';
+import { spokenCaption, type TrackLabelParts } from './track-label-text';
 
 type PlayListContextProps = {
   /** Where the player is: a list ("Projects · 4 of 23") or a workout stage ("4x4 · Rep 3 of 4 · Set 2 of 4"). */
   parts: TrackLabelParts | null;
   /**
    * A second, smaller line about the wall rather than the list, such as
-   * "Preview, not lit" (#6745). Here and not at the front of the header's stats
-   * line, where it pushed the sends and stars off the end.
+   * "Preview · not on the wall" (#6745). Here and not at the front of the
+   * header's stats line, where it pushed the sends and stars off the end.
    */
   caption?: string | null;
   style?: StyleProp<ViewStyle>;
@@ -22,7 +24,11 @@ type PlayListContextProps = {
 /**
  * The player's top bar context, under the grabber. The name and the count are
  * two texts on one row, so a long name is cut at its end and the count after it
- * always shows whole. One element for VoiceOver, with the whole name.
+ * always shows whole. One element for VoiceOver, with the whole name, and never
+ * a live region: twenty swipes through previews are not twenty announcements.
+ *
+ * Its text is capped like the rest of the chrome, so on iOS a long press at an
+ * accessibility text size shows both lines in the Large Content Viewer.
  */
 export const PlayListContext = memo(function PlayListContext({
   parts,
@@ -30,60 +36,71 @@ export const PlayListContext = memo(function PlayListContext({
   style,
   testID,
 }: PlayListContextProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   // Capped like the rest of the bar's chrome, line height included, so two
   // lines at the largest Android text still fit under the grabber.
   const lineText = useCappedTextProps('caption1', CHROME_LABEL_MAX_FONT_SCALE);
   const captionText = useCappedTextProps('caption2', CHROME_LABEL_MAX_FONT_SCALE);
   if (!parts && !caption) return null;
   // Two sentences: where the player is, then what the wall is doing.
-  const accessibilityLabel = [parts?.accessibilityLabel, caption].filter(Boolean).join('. ');
+  const accessibilityLabel = [parts?.accessibilityLabel, caption ? spokenCaption(caption) : null]
+    .filter(Boolean)
+    .join('. ');
+  // The words as printed, for the Large Content Viewer: one line of its own
+  // label, so the two lines join as two sentences.
+  const printedLine = parts ? (parts.count ? `${parts.name} · ${parts.count}` : parts.name) : null;
+  const largeContentTitle = [printedLine, caption].filter(Boolean).join('. ');
   return (
-    <View
-      // Two lines start below the grabber; one sits on the buttons' centre line.
-      style={[styles.column, parts && caption ? styles.twoLines : null, style]}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={accessibilityLabel}
-      testID={testID}
-    >
-      {parts ? (
-        <View style={styles.row}>
-          <Text
-            variant="caption1"
-            color={systemColors.secondaryLabel}
-            numberOfLines={1}
-            {...lineText}
-            style={[lineText.style, styles.name]}
-          >
-            {parts.name}
-          </Text>
-          {parts.count ? (
+    <LargeContentViewer title={largeContentTitle} style={style}>
+      <View
+        // Two lines start below the grabber; one sits on the buttons' centre line.
+        style={[styles.column, parts && caption ? styles.twoLines : null]}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={accessibilityLabel}
+        testID={testID}
+      >
+        {parts ? (
+          <View style={styles.row}>
             <Text
               variant="caption1"
               color={systemColors.secondaryLabel}
               numberOfLines={1}
-              numeric
               {...lineText}
-              style={[lineText.style, styles.count]}
+              style={[lineText.style, styles.name]}
             >
-              {` · ${parts.count}`}
+              {parts.name}
             </Text>
-          ) : null}
-        </View>
-      ) : null}
-      {caption ? (
-        <Text
-          variant="caption2"
-          color={systemColors.secondaryLabel}
-          numberOfLines={1}
-          {...captionText}
-          style={[captionText.style, styles.caption]}
-        >
-          {caption}
-        </Text>
-      ) : null}
-    </View>
+            {parts.count ? (
+              <Text
+                variant="caption1"
+                color={systemColors.secondaryLabel}
+                numberOfLines={1}
+                numeric
+                {...lineText}
+                style={[lineText.style, styles.count]}
+              >
+                {` · ${parts.count}`}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {caption ? (
+          <Text
+            variant="caption2"
+            // Velvet's opaque secondary label on both variants (B1): iOS's
+            // translucent secondaryLabel measures 3.44:1 on a white sheet, this
+            // one at least 6.1:1 on every Glass and Material ground.
+            color={materialSurfaces[colorScheme].secondaryLabel}
+            numberOfLines={1}
+            {...captionText}
+            style={[captionText.style, styles.caption]}
+          >
+            {caption}
+          </Text>
+        ) : null}
+      </View>
+    </LargeContentViewer>
   );
 });
 

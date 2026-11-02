@@ -1,5 +1,5 @@
 Novità della 2.7:
-- Leggi il pulsante satinato: Illumina il pannello connette e illumina. Guidi tu il pannello: ogni blocco scelto si illumina; tocca per fermarti senza disconnetterti. Scorri a sinistra per iniziare.
+- Tocca per sfogliare senza illuminare. Illumina il pannello: le tue scelte si illuminano fino al timer (45 s). Scorri a sinistra: senza fine; tocca per fermarti.
 - Ora in italiano. Recupero con conto alla rovescia e suono nella notifica.
 - Allenamenti in fasi. Scorri nella tua lista; metti subito dopo o in fondo.
 - Ordina e filtra playlist, Mi piace e Progetti.

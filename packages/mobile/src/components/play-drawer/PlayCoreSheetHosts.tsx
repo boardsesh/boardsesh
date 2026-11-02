@@ -10,6 +10,8 @@ import { ClimberLogsSheet } from './ClimberLogsSheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
+import { BoardSheetStatusLine } from './BoardSheetStatusLine';
+import type { BoardSheetStatus } from './wall-control';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
 import type { PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
 
@@ -61,6 +63,8 @@ export type PlayCoreSheetHostsProps = {
   handleCloseBleControl: () => void;
   /** The board sheet's Light every climb row (#7113), where the swipe is offered. */
   onBoardSheetDrive?: () => void;
+  /** The board sheet's status line (spec B3): what the wall button says, uncapped. */
+  boardSheetStatus?: BoardSheetStatus | null;
 };
 
 /**
@@ -110,6 +114,7 @@ export function PlayCoreSheetHosts({
   handleTickBarDismiss,
   handleCloseBleControl,
   onBoardSheetDrive,
+  boardSheetStatus = null,
 }: PlayCoreSheetHostsProps) {
   const mountSectionsSettings = useMountedOnFirstOpen(sectionsSettingsOpen);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
@@ -275,6 +280,7 @@ export function PlayCoreSheetHosts({
           showLightingSwitches={false}
           clearedClimbUuid={wallClearedTarget}
           onDrive={onBoardSheetDrive}
+          status={boardSheetStatus ? <BoardSheetStatusLine status={boardSheetStatus} /> : undefined}
         />
       )}
     </>

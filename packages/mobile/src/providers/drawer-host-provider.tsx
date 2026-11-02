@@ -395,7 +395,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const [previewedClimbUuid, setPreviewedClimbUuid] = useState<string | null>(null);
   // ...but it IS cleared when the queue's committed climb moves on. A preview
   // outlives the drawer as "the climb you last had up" only until something is
-  // actually put up after it: an explicit Preview of A followed by a swipe that
+  // actually put up after it: a preview of A followed by a swipe that
   // commits B (solo, `lightOnSwipe` on) must highlight B, not keep pointing at
   // A until the next list tap. Keys on the head CHANGING after mount — a
   // re-render with the same head leaves the highlight alone — and a first
@@ -633,7 +633,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
       if (composerCredentialScope !== getCredentialGeneration()) return;
       // Pull `boardConfig` out so it doesn't reach the open target.
-      const { boardConfig: override, navigate = true, ...openOptions } = options ?? {};
+      const { boardConfig: override, navigate = true, ...requestedOptions } = options ?? {};
+      const openOptions =
+        !requestedOptions.previewQueueItem &&
+        !requestedOptions.committedExternally &&
+        !requestedOptions.reopensCurrent &&
+        !readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current })
+          ? { ...requestedOptions, previewQueueItem: climbToQueueItem(climb) }
+          : requestedOptions;
       if (replayFrameRef.current != null) {
         cancelAnimationFrame(replayFrameRef.current);
         replayFrameRef.current = null;

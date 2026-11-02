@@ -908,7 +908,7 @@
       "backToWall": "Volver al bloque del muro",
       "backToCurrent": "Volver a mi elección",
       "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
-      "previewNotLit": "Vista previa, sin encender",
+      "previewNotOnWall": "Vista previa · no está en el plafón",
       "onlyYouSeeThis": "Solo tú lo ves",
       "onlyYouSeeThisWallOn": "Solo tú lo ves · en el muro: {{name}}",
       "commitOverride": {
@@ -923,10 +923,9 @@
       "a11y": {
         "browseAnnounce": "Explorando. El muro sigue como está.",
         "backToLive": "Volver al muro: {{name}}",
-        "committed": "{{name}} está en el muro"
+        "committed": "{{name}} está en el muro",
+        "previewFirstAnnounce": "Vista previa, no está en el plafón. Poner en el plafón enciende el bloque."
       },
-      "backMyPick": "Mi elección",
-      "backOnWall": "En el plafón",
       "backToMyPickNamed": "Volver a mi elección: {{name}}",
       "backToWallNamed": "Volver al bloque del plafón: {{name}}"
     },
@@ -960,13 +959,25 @@
       "onWall": "En el plafón",
       "lightAgainHint": "Lo vuelve a encender en el plafón",
       "putOnGymBoard": "Ponerlo en el {{board}}",
-      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque"
+      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque",
+      "pickLightHint": "Abre este bloque y lo enciende",
+      "pickMoveToGymBoardHint": "Abre este bloque, te lleva al {{board}} y lo enciende",
+      "stopsInSeconds_one": "Termina en {{count}} segundo",
+      "stopsInSeconds_other": "Termina en {{count}} segundos",
+      "stopsInUnderTen": "Termina en menos de 10 segundos",
+      "stopsInClock": "Termina en {{clock}}",
+      "windowStarted_other": "Estás al mando del plafón. Termina {{count}} segundos después del último bloque encendido. Encender cada bloque lo mantiene.",
+      "windowStartedMinute": "Estás al mando del plafón. Termina un minuto después del último bloque encendido. Encender cada bloque lo mantiene.",
+      "windowStartedMinutes_other": "Estás al mando del plafón. Termina {{count}} minutos después del último bloque encendido. Encender cada bloque lo mantiene.",
+      "sheetStatusPreview": "Vista previa · no está en el plafón",
+      "sheetStatusDriving": "Estás al mando del plafón. Cada bloque que elijas se enciende."
     },
     "setActive": "Activar",
     "paneEmpty": {
       "title": "Elige un bloque",
       "subtitle": "Toca un bloque para verlo aquí.",
-      "unlitHint": "Toca un bloque para encenderlo"
+      "unlitHint": "Toca un bloque para verlo en vista previa",
+      "unlitHintLights": "Toca un bloque para encenderlo"
     },
     "previousFrame": "Fotograma anterior",
     "nextFrame": "Fotograma siguiente",

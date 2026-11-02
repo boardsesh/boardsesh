@@ -466,34 +466,43 @@
     "cancel": "Annulla",
     "connectBoard": "Connetti pannello",
     "relightBoard": "Illumina di nuovo il pannello",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Disconnetti dal pannello quando nessun blocco viene mostrato per il tempo selezionato.",
-      "enabledLabel": "Disconnessione automatica",
-      "enabledDescription": "Lascia connettere gli altri climber allo scadere del timer.",
-      "timeoutLabel": "Disconnetti dopo",
-      "toggleTitle": "Disconnessione automatica",
-      "toggleSubtitle": "Disconnetti dopo {{timeout}} di inattività",
-      "timeoutOptions": {
-        "10": "10 secondi",
-        "15": "15 secondi",
-        "30": "30 secondi",
-        "45": "45 secondi",
-        "60": "1 minuto",
-        "120": "2 minuti",
-        "300": "5 minuti",
-        "600": "10 minuti"
-      }
-    },
     "lighting": {
       "title": "Illuminazione del pannello",
+      "autoTitle": "Illumina in automatico",
       "description": "Scegli cosa illumina in automatico il pannello connesso.",
+      "keep": {
+        "label": "Smetti di guidare dopo",
+        "off": "Subito",
+        "options": {
+          "30": "30 secondi",
+          "45": "45 secondi",
+          "60": "1 minuto",
+          "120": "2 minuti",
+          "300": "5 minuti"
+        },
+        "untilStopped": "Finché non mi fermo",
+        "moonboardLabel": "Su una MoonBoard",
+        "moonboardAccessibilityLabel": "Smetti di guidare una MoonBoard dopo",
+        "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
+        "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
+        "inSessionLabel": "Anche in una session",
+        "inSessionAccessibilityLabel": "Illumina il pannello guida anche in una session",
+        "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
+        "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
+        "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, e ognuno fa ripartire il timer. Quando il tempo finisce, il prossimo blocco che scegli si apre in anteprima.",
+        "footerUntilStopped": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, finché non tocchi Guidi tu il pannello.",
+        "footerOff": "Illumina il pannello illumina in parete il blocco che hai aperto. Il prossimo blocco che scegli si apre in anteprima."
+      },
+      "drivingEnds": {
+        "label": "Disconnetti il Bluetooth quando smetti di guidare",
+        "description": "Quando smetti di guidare o il tempo finisce, il tuo telefono libera il pannello così il prossimo climber può connettersi. Illumina il pannello si riconnette."
+      },
       "onSwipeLabel": "Illumina il pannello mentre scorro",
       "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",
       "onTapLabel": "Illumina il pannello quando tocco un blocco",
-      "onTapDescription": "Un tocco in qualsiasi lista mette il blocco in parete. Se è disattivato, il tocco apre un'anteprima.",
+      "onTapDescription": "Ogni tocco in una lista illumina il blocco, senza limite di tempo. Se è disattivato, il tocco apre un'anteprima.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
-      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore sostituisce la tua coda con quella lista. Con Illumina il pannello quando tocco un blocco disattivato, usa Avvia per caricarla."
+      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se “Illumina il pannello quando tocco un blocco” è attivo, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Se è disattivato, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello."
     },
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",

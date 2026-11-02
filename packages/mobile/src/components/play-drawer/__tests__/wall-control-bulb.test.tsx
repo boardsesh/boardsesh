@@ -52,6 +52,13 @@ vi.mock('../../ble/BleLightbulbButton', () => ({
     }),
 }));
 
+// The ring draws itself from the drive store (wall-window-ring.test.tsx); here
+// only whether the bulb asks for it, and what it says.
+vi.mock('../WallWindowRing', () => ({
+  WallWindowRing: ({ size }: { size: number }) => createElement('s', { 'data-ring': String(size) }),
+  useWindowValueText: (kind: string, active: boolean) => (active ? `window-${kind}` : null),
+}));
+
 import { WallControlBulb } from '../WallControlBulb';
 import { EMPTY_WALL_CONTROL, type WallControlModel } from '../wall-control';
 
@@ -123,6 +130,22 @@ describe('WallControlBulb', () => {
     fireEvent.contextMenu(bulb);
     expect(onPress).toHaveBeenCalledOnce();
     expect(onLongPress).toHaveBeenCalledOnce();
+  });
+
+  it("draws the timed drive's ring and says its time, only during the timed drive", () => {
+    const windowed = renderBulb({
+      ...LIT,
+      lightWindow: true,
+      driving: true,
+      tapAction: 'stop_window',
+      labelKey: 'youAreDriving',
+    });
+    expect(windowed.container.querySelector('[data-ring]')?.getAttribute('data-ring')).toBe('48');
+    expect(windowed.bulb.dataset.value).toBe('window-bulb');
+    cleanup();
+    const plain = renderBulb(LIT);
+    expect(plain.container.querySelector('[data-ring]')).toBeNull();
+    expect(plain.bulb.dataset.value).toBe('playView.wallControl.youHaveBoardLit');
   });
 
   it('shows the scan and the write from the model', () => {

@@ -147,6 +147,14 @@ vi.mock('../../ble/use-board-connection-state', () => ({
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
+  useQueueData: () => queue.state,
+}));
+// The last pick's bulb reads board presence; it has suites of its own.
+vi.mock('../PickPutOnBoardBulb', () => ({
+  PickBulbSlot: () => createElement('span', { 'data-testid': 'pick-bulb-slot' }),
+}));
+vi.mock('../use-pick-bulb', () => ({
+  usePickBulb: (pick: unknown) => (pick ? { kind: 'putOnBoard', gymBoardName: null } : null),
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({

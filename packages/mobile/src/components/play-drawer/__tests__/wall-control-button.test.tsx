@@ -14,6 +14,8 @@ const layoutCtrl = vi.hoisted(() => ({
 }));
 const themeCtrl = vi.hoisted(() => ({ scheme: 'light' as 'light' | 'dark' }));
 const platformCtrl = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
+// Each render of the pressable, so a test can see what re-renders it.
+const pressableCtrl = vi.hoisted(() => ({ renders: 0 }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     onLayout,
@@ -23,11 +25,13 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityLabel,
     accessibilityHint,
     accessibilityState,
+    accessibilityValue,
     accessibilityActions,
     onAccessibilityAction,
     testID,
     style,
   }: Children & {
+    accessibilityValue?: { text?: string };
     accessibilityActions?: { name: string; label?: string }[];
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     onPress?: () => void;
@@ -38,8 +42,9 @@ vi.mock('../../PressableSurface', () => ({
     testID?: string;
     style?: (state: { pressed: boolean }) => unknown;
     onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
-  }) =>
-    createElement(
+  }) => {
+    pressableCtrl.renders += 1;
+    return createElement(
       'button',
       {
         type: 'button',
@@ -47,6 +52,7 @@ vi.mock('../../PressableSurface', () => ({
         onContextMenu: onLongPress,
         'aria-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-value': accessibilityValue?.text,
         'aria-selected': String(Boolean(accessibilityState?.selected)),
         'data-testid': testID,
         'data-long-press': onLongPress ? 'true' : 'false',
@@ -59,7 +65,8 @@ vi.mock('../../PressableSurface', () => ({
         },
       },
       children,
-    ),
+    );
+  },
 }));
 vi.mock('react-native', () => ({
   View: ({ testID, children }: { testID?: string; children?: ReactNode }) =>
@@ -77,10 +84,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
-vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
+vi.mock('../../Text', () => ({
+  Text: ({ children, color }: Children & { color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
+}));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
-    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
+  LargeContentViewer: ({ children, testID, title }: Children & { testID?: string; title: string }) =>
+    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true', 'data-title': title }, children),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -95,6 +105,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     brandColors: {
       primary: '#6D28D9',
       primaryFill: '#6D28D9',
+      primaryStrong: '#5B21B6',
       onPrimary: '#fff',
       onAccent: '#111',
       live: '#B45309',
@@ -158,7 +169,60 @@ vi.mock('../WallSwipeWipe', () => ({
 vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: Children) => createElement('div', { 'data-testid': 'gesture' }, children),
 }));
-vi.mock('../../../lib/wall-swipe-hint', () => ({ useWallSwipePeek: () => 0 }));
+// The peek's triggers (spec B3): which the button hands its hint, and the screen reader read.
+const peekCtrl = vi.hoisted(() => ({
+  triggers: [] as { offered: boolean; windowLive: boolean; screenReaderOn: boolean }[],
+  screenReaderOn: false,
+}));
+vi.mock('../../../lib/wall-swipe-hint', () => ({
+  useWallSwipePeek: (triggers: { offered: boolean; windowLive: boolean; screenReaderOn: boolean }) => {
+    peekCtrl.triggers.push(triggers);
+    return 0;
+  },
+}));
+vi.mock('../../../hooks/use-screen-reader-enabled', () => ({ useScreenReaderEnabled: () => peekCtrl.screenReaderOn }));
+// The timed drive's clock and shrinking frost run on their own
+// (wall-window-clock test); here only whether the button draws them, and the
+// time it says as its value.
+// A store, so a test can tick the clock and see which views re-render for it.
+const windowClock = vi.hoisted(() => ({ secondsLeft: 38 as number | null, listeners: new Set<() => void>() }));
+vi.mock('../WallWindowClock', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    windowClock.listeners.add(listener);
+    return () => {
+      windowClock.listeners.delete(listener);
+    };
+  };
+  const read = () => windowClock.secondsLeft;
+  // The 10 s step's own snapshot, as the real hook's: it changes only on a step.
+  const readStepped = () => {
+    const seconds = windowClock.secondsLeft;
+    if (seconds === null) return null;
+    return seconds < 10 ? 0 : Math.floor(seconds / 10) * 10;
+  };
+  return {
+    useWindowSecondsLeft: (step: 1 | 10) => {
+      const seconds = useSyncExternalStore(subscribe, step === 1 ? read : readStepped);
+      if (seconds === null) return null;
+      return { secondsLeft: seconds, totalMs: 45_000 };
+    },
+    WallWindowDigits: ({ color }: { color: string }) =>
+      createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
+    // Whole outside a timed drive; there it shrinks on its own (wall-window-clock test).
+    WallWindowFrost: ({ children, reduceMotion, timed }: Children & { reduceMotion: boolean; timed: boolean }) =>
+      createElement(
+        'div',
+        { 'data-testid': 'window-frost', 'data-reduce-motion': String(reduceMotion), 'data-timed': String(timed) },
+        children,
+      ),
+  };
+});
+/** The window's clock moves on: every view that reads it hears it. */
+function tickWindow(secondsLeft: number) {
+  windowClock.secondsLeft = secondsLeft;
+  for (const listener of windowClock.listeners) listener();
+}
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 import { act } from '@testing-library/react';
@@ -168,6 +232,9 @@ import { resolveWallControl, type WallControlModel, type WallControlState, type 
 
 afterEach(() => {
   cleanup();
+  peekCtrl.triggers = [];
+  peekCtrl.screenReaderOn = false;
+  windowClock.secondsLeft = 38;
   swipeCtrl.frostArmed = false;
   swipeCtrl.releaseArmed = false;
   swipeCtrl.committed = false;
@@ -183,9 +250,11 @@ type ModelOptions = {
   commitLabel?: 'putOnWall' | 'setActive';
   pending?: boolean;
   writing?: boolean;
-  autoDisconnectWarning?: boolean;
   /** A swipe from here goes up on the wall: solo by default; false in a crew (#7017). */
   navigationCommits?: boolean;
+  /** The drive (#7113), and whether it is Put on board's timed drive (2.7). */
+  driveMode?: 'off' | 'arming' | 'live';
+  lightWindow?: boolean;
 };
 
 /** The model the player builds for one state and holder. */
@@ -219,8 +288,9 @@ function modelFor(state: WallControlState, options: ModelOptions = {}): WallCont
     commitLabel,
     otherClimbLit: false,
     writing: options.writing ?? false,
-    autoDisconnectWarning: options.autoDisconnectWarning ?? false,
     navigationCommits: options.navigationCommits ?? true,
+    driveMode: options.driveMode,
+    lightWindow: options.lightWindow,
   });
 }
 
@@ -233,6 +303,7 @@ function renderButton(
     compact?: boolean;
     spansRow?: boolean;
     glow?: WallGlowInput | null;
+    sample?: boolean;
   } = {},
 ) {
   const onPress = vi.fn();
@@ -247,6 +318,7 @@ function renderButton(
       compact: extra.compact,
       spansRow: extra.spansRow,
       glow: extra.glow,
+      sample: extra.sample,
     }),
   );
   return { ...view, onPress, onLongPress };
@@ -390,6 +462,15 @@ describe('WallControlButton', () => {
     expect(lit.getByTestId('play-drawer-wall-control-holder')).toBeTruthy();
   });
 
+  // The preview-first card draws the real button as a picture beside the real
+  // one: a test or a Maestro `id:` selector must only ever find the real one.
+  it('carries no testIDs as a picture', () => {
+    const picture = renderButton(modelFor('lit', { holder: 'self' }), { sample: true });
+    expect(picture.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
+    expect(picture.container.querySelector('[data-testid^="play-drawer-wall-control"]')).toBeNull();
+    expect(picture.container.querySelector('[data-testid^="wall-control-"]')).toBeNull();
+  });
+
   it('says You are driving the wall while driving, and that a tap stops it', () => {
     const driving = renderButton(modelFor('lit', { holder: 'self' }));
     expect(driving.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
@@ -504,12 +585,8 @@ describe('WallControlButton', () => {
     ).toBe('ble.scanning');
   });
 
-  it('wears the amber ring in auto-disconnect’s last ten seconds', () => {
-    const warned = renderButton(modelFor('lit', { holder: 'self', autoDisconnectWarning: true }))
-      .getByRole('button')
-      .getAttribute('data-style');
-    expect(warned).toContain('"borderColor":"#FBBF24"');
-    cleanup();
+  // 2.7: auto-disconnect and its last-ten-seconds ring are gone.
+  it('never wears a warning ring', () => {
     expect(
       renderButton(modelFor('lit', { holder: 'self' }))
         .getByRole('button')
@@ -643,7 +720,6 @@ describe('WallControlButton', () => {
       commitLabel: 'putOnWall',
       otherClimbLit: false,
       writing: false,
-      autoDisconnectWarning: false,
       navigationCommits: false,
     });
     const { getByRole, container } = renderButton(model);
@@ -806,5 +882,180 @@ describe('WallControlButton', () => {
       fireEvent.click(view.getByRole('button'));
       expect(view.onPress).toHaveBeenCalledOnce();
     });
+  });
+});
+
+// Put on board's timed drive (2.7, Stop driving after): the same frost and
+// You are driving the wall as any drive, a clock beside the words, and the
+// frost shrinking as the time runs out.
+describe('WallControlButton: Put on board’s timed drive', () => {
+  const windowModel = () => modelFor('lit', { holder: 'self', driveMode: 'live', lightWindow: true });
+  const DRIVING_LABEL = 'playView.wallControl.youAreDriving';
+
+  it('reads You are driving the wall, the clock beside it, the time left as its value', () => {
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const button = view.getByRole('button');
+    // The accessible name is the visible words alone, so "Tap You are driving the wall" works by voice.
+    expect(button.getAttribute('aria-label')).toBe(DRIVING_LABEL);
+    expect(button.getAttribute('data-value')).toBe('playView.wallControl.stopsInSeconds:{"count":30}');
+    expect(button.getAttribute('data-hint')).toBe('playView.wallControl.stopDrivingHint');
+    expect(view.getAllByText(DRIVING_LABEL).length).toBeGreaterThan(0);
+    expect(view.getByTestId('window-digits')).not.toBeNull();
+  });
+
+  // W3: the value steps every 10 s. It lives on a leaf around the pressable,
+  // so the pill (its row, frost and swipe) never re-renders for it.
+  it('steps its value on a leaf: the pill itself never re-renders for the clock', () => {
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const pillRenders = swipeCtrl.options.length;
+    act(() => tickWindow(28));
+    expect(view.getByRole('button').getAttribute('data-value')).toBe(
+      'playView.wallControl.stopsInSeconds:{"count":20}',
+    );
+    act(() => tickWindow(7));
+    expect(view.getByRole('button').getAttribute('data-value')).toBe('playView.wallControl.stopsInUnderTen');
+    expect(swipeCtrl.options.length).toBe(pillRenders);
+  });
+
+  // Spec B3: the peek waits for the timed drive, the moment the swipe is news.
+  it('hands the swipe peek the timed drive and the screen reader', () => {
+    peekCtrl.screenReaderOn = true;
+    renderButton(windowModel(), { onSwipe: () => 'started' });
+    expect(peekCtrl.triggers.at(-1)).toEqual({ offered: true, windowLive: true, screenReaderOn: true });
+    cleanup();
+    peekCtrl.screenReaderOn = false;
+    renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(peekCtrl.triggers.at(-1)).toEqual({ offered: false, windowLive: false, screenReaderOn: false });
+  });
+
+  // Spec B3: the Large Content Viewer shows the full label, and in a timed
+  // drive the time left is part of it. The clock ticks on the viewer's own leaf.
+  it('shows the time left in the Large Content Viewer, ticking on its own leaf', () => {
+    windowClock.secondsLeft = 38;
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const viewerTitle = () => view.container.querySelector('[data-native-viewer]')?.getAttribute('data-title');
+    expect(viewerTitle()).toBe(`${DRIVING_LABEL} · 0:38`);
+    const pillRenders = swipeCtrl.options.length;
+    act(() => tickWindow(37));
+    expect(viewerTitle()).toBe(`${DRIVING_LABEL} · 0:37`);
+    expect(swipeCtrl.options.length).toBe(pillRenders);
+    cleanup();
+    const outside = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(outside.container.querySelector('[data-native-viewer]')?.getAttribute('data-title')).not.toContain('0:');
+  });
+
+  // The value steps every 10 s (`useWindowSecondsLeft(10)`): over the ten
+  // 1 Hz ticks from 0:39 to 0:30 the pressable never re-renders, then once at 0:29.
+  it('re-renders its pressable only on the 10 s step, never on the 1 Hz clock', () => {
+    windowClock.secondsLeft = 39;
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const before = pressableCtrl.renders;
+    for (let seconds = 38; seconds >= 30; seconds -= 1) act(() => tickWindow(seconds));
+    expect(pressableCtrl.renders).toBe(before);
+    act(() => tickWindow(29));
+    expect(pressableCtrl.renders).toBe(before + 1);
+    expect(view.getByRole('button').getAttribute('data-value')).toBe(
+      'playView.wallControl.stopsInSeconds:{"count":20}',
+    );
+  });
+
+  it('says under ten seconds without a count', () => {
+    windowClock.secondsLeft = 7;
+    const view = renderButton(windowModel());
+    expect(view.getByRole('button').getAttribute('data-value')).toBe('playView.wallControl.stopsInUnderTen');
+  });
+
+  it('wears the frost a swipe drive wears, inside the shrinking frame, with no chevrons', () => {
+    const view = renderButton(windowModel(), { glow: GLOW, onSwipe: () => 'started' });
+    measure();
+    const frost = view.getByTestId('window-frost');
+    expect(frost.dataset.reduceMotion).toBe('false');
+    // The timed drive's frost is the one that shrinks.
+    expect(frost.dataset.timed).toBe('true');
+    // The glow is the frost, and it is the frame's to shrink.
+    expect(frost.contains(view.getByTestId('wall-glow'))).toBe(true);
+    const style = view.getByRole('button').getAttribute('data-style') ?? '';
+    // The pill under it is the frost's own surface, so the label reads as it shrinks.
+    expect(style).toContain('"backgroundColor":"#F6F3FB"');
+    expect(view.queryByTestId('play-drawer-wall-control-swipe-hint')).toBeNull();
+    expect(view.getByTestId('wall-control-lit-self-driving')).not.toBeNull();
+  });
+
+  it('shrinks the flat amber where there are no holds to frost, over a pill its label reads on', () => {
+    for (const [scheme, track, label] of [
+      ['light', '#0E0D12', '#fff'],
+      ['dark', '#F6F3FB', '#111'],
+    ] as const) {
+      themeCtrl.scheme = scheme;
+      const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+      measure();
+      const frost = view.getByTestId('window-frost');
+      expect(frost.querySelector('div')).not.toBeNull();
+      const style = view.getByRole('button').getAttribute('data-style') ?? '';
+      expect(style).toContain(`"backgroundColor":"${track}"`);
+      expect(view.getAllByText(DRIVING_LABEL)[0].getAttribute('data-color')).toBe(label);
+      cleanup();
+    }
+    themeCtrl.scheme = 'light';
+  });
+
+  // An open-ended drive draws the same frame, whole: a timed drive turning
+  // open-ended (a swipe) keeps the glow mounted rather than starting it again.
+  // The preview-first card's picture (driving, no window) stays whole while a
+  // real timed drive shrinks the player's own button beside it.
+  it('keeps the frost whole on a drive with no clock, a picture of one included', () => {
+    const sample = renderButton(modelFor('lit', { holder: 'self', driveMode: 'live' }), { glow: GLOW, sample: true });
+    measure();
+    expect(sample.getByTestId('window-frost').dataset.timed).toBe('false');
+  });
+
+  it('keeps the frost in the same frame when the drive turns open-ended, with no clock', () => {
+    const handlers = { onPress: vi.fn(), onLongPress: vi.fn(), onSwipe: () => 'started' as const, glow: GLOW };
+    const view = render(createElement(WallControlButton, { model: windowModel(), ...handlers }));
+    measure();
+    const glow = view.getByTestId('wall-glow');
+    view.rerender(
+      createElement(WallControlButton, {
+        model: modelFor('lit', { holder: 'self', driveMode: 'live', lightWindow: false }),
+        ...handlers,
+      }),
+    );
+    expect(view.getByTestId('wall-glow')).toBe(glow);
+    expect(view.queryByTestId('window-digits')).toBeNull();
+    expect(view.getByRole('button').getAttribute('data-value')).toBeNull();
+  });
+
+  // The swipe still makes a timed drive open-ended, so its wipe draws over the frost.
+  it('draws the swipe’s wipe over a timed drive, and its Let go label', () => {
+    swipeCtrl.frostArmed = true;
+    swipeCtrl.releaseArmed = true;
+    const view = renderButton(windowModel(), { glow: GLOW, onSwipe: () => 'started' });
+    measure();
+    expect(view.queryByTestId('wall-swipe-wipe')).not.toBeNull();
+    expect(view.getAllByText('playView.wallControl.releaseToDrive').length).toBeGreaterThan(0);
+    cleanup();
+    // An open-ended drive has nothing to start: no wipe.
+    const driving = renderButton(modelFor('lit', { holder: 'self', driveMode: 'live' }), {
+      glow: GLOW,
+      onSwipe: () => 'started',
+    });
+    measure();
+    expect(driving.queryByTestId('wall-swipe-wipe')).toBeNull();
+  });
+
+  it('draws no clock or value outside a timed drive', () => {
+    windowClock.secondsLeft = 38;
+    const view = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    measure();
+    expect(view.queryByTestId('window-digits')).toBeNull();
+    expect(view.queryByTestId('window-frost')).toBeNull();
+    expect(view.getByRole('button').getAttribute('data-value')).toBeNull();
+  });
+
+  // Spec B2: #6D28D9 measured 4.54:1 on the Material light ground, under the 4.6:1 rule.
+  it('takes the deeper violet for the tonal label in light', () => {
+    const view = renderButton(modelFor('put_on_wall', { holder: 'self' }));
+    const label = view.getAllByText(/playView\.wallControl\.putOnBoard/)[0];
+    expect(label.getAttribute('data-color')).toBe('#5B21B6');
   });
 });

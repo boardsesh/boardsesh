@@ -1,5 +1,5 @@
 Novedades de 2.7:
-- Lee el botón esmerilado: Poner en el plafón conecta y enciende. Estás al mando del plafón: cada bloque elegido se enciende; toca este texto para parar sin desconectarte. Desliza a la izquierda para empezar.
+- Toca para ver sin encender. Poner en el plafón: tus bloques se encienden hasta que acabe el temporizador (45 s). Desliza a la izquierda: sin fin; toca para parar.
 - Italiano. Cuenta atrás y tono de descanso en la notificación.
 - Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
 - Ordena y filtra playlists, Favoritos y Proyectos.

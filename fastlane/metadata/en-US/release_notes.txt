@@ -2,7 +2,7 @@ Boardsesh is now available in Italian.
 
 KNOW WHEN YOU’RE LIGHTING THE WALL
 
-“Put on board” connects and lights your climb. Read the player’s frosted button: “You are driving the wall” means every climb you pick lights up. Swipe it left to start, or tap “You are driving the wall” to stop and browse while staying connected.
+A tap shows a climb without lighting it, so browse freely. “Put on board” lights it and you drive the wall: every climb you pick lights too, until the time you set in Settings runs out (45 seconds to start with). A MoonBoard drives until you stop. Swipe “Put on board” left to drive with no end; tap “You are driving the wall” to stop. Want the board free for the next climber? Turn on “Disconnect Bluetooth when driving ends”.
 
 iPad and iPhone Duo: more room for the board
 

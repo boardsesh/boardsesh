@@ -20,6 +20,8 @@ export {
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
 export { parseAccountCreationReceipt, type AccountCreationReceipt } from './account-creation';
+// Release-watch props on BLE Picker Devices Resolved (2.7): one picker session each.
+export { blePickerSessionProps, type BlePickerSessionInput, type BlePickerSessionProps } from './ble-picker-events';
 // Props shared by more than one event, built in one place so the emitters agree.
 export {
   ANALYTICS_BOARD_TYPES,
@@ -116,10 +118,13 @@ export {
 export {
   queueNavigation,
   driveModeEnded,
+  driveModeStarted,
   type DriveModeEndReason,
   type DriveModeStartedBy,
   type DriveModeEndedInput,
   type DriveModeEndedProps,
+  type DriveModeStartedInput,
+  type DriveModeStartedProps,
   queueSheetOpened,
   type QueueNavigationDirection,
   type QueueNavigationMethod,
@@ -133,6 +138,11 @@ export {
   type QueueSheetOpenedInput,
   type QueueSheetOpenedProps,
 } from './queue-navigation-events';
+export {
+  wallControlPreviewReason,
+  type WallControlPreviewReason,
+  type WallControlPreviewReasonInput,
+} from './wall-control-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,

@@ -5,6 +5,7 @@ import type { PlayerButtonsPosition } from '../lib/player-buttons';
 import type { ClimbListLayoutPreference } from '../components/climb-list-thumbnail-metrics';
 import type { SupportCardRecord } from '../lib/support-asks';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import type { KeepLightingChoice } from '../lib/keep-lighting';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
 export type RememberedSprayWallArchive = {
@@ -101,8 +102,6 @@ export type AppSettings = {
    */
   offlineMode: boolean;
   autoConnectBle: boolean;
-  autoDisconnectBle: boolean;
-  autoDisconnectTimeoutSeconds: number;
   /**
    * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
    * neighbour LED (typically the hold above), dimmer, alongside its role
@@ -121,6 +120,40 @@ export type AppSettings = {
   lightOnSwipe: boolean;
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
+  /**
+   * Stop driving after (2.7): how long a drive Put on board starts keeps
+   * lighting. Right away (`off`, one climb, no drive), a 30 s, 45 s, 1, 2 or
+   * 5 minute drive that each lit climb restarts, or Until I stop (an
+   * open-ended drive). Every board but a MoonBoard. The key keeps its first
+   * name so stored choices carry over. Read through `sanitiseKeepLighting`.
+   */
+  putOnBoardKeepsLighting: KeepLightingChoice;
+  /**
+   * The same choice on a MoonBoard, Until I stop by default: most MoonBoard
+   * controllers don't like phones switching. Applies in a crew session too.
+   */
+  moonboardPutOnBoardKeepsLighting: KeepLightingChoice;
+  /**
+   * "In a session too": Put on board drives in a crew session as well, when
+   * this phone has the crew's board. Off, picks in a session stay previews.
+   * MoonBoards ignore it.
+   */
+  putOnBoardDrivesInSession: boolean;
+  /**
+   * "Disconnect Bluetooth when driving ends": when a drive ends because the
+   * climber stopped it (the button, Turn off all lights), its time ran out, or
+   * a crewmate's put-up ended it, this phone lets go of the board without
+   * forgetting it, so the next Put on board reconnects. Replaced
+   * auto-disconnect in 2.7 (`settings/migrations.ts`). Off by default.
+   */
+  disconnectWhenDrivingEnds: boolean;
+  /**
+   * One-shot: auto-disconnect's choices (the retired `autoDisconnectBle` and
+   * `autoDisconnectTimeoutSeconds` keys) were carried into Stop driving after
+   * and `disconnectWhenDrivingEnds`. Written once by `migrateAutoDisconnect`;
+   * nothing else reads the old keys.
+   */
+  autoDisconnectMigrated: boolean;
   /**
    * A row tap on a playlist, a For You list or a setter's page loads that list
    * into the queue in place of what was there (the behaviour before F4, #6667).

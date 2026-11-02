@@ -2,7 +2,7 @@ Boardsesh gibt es jetzt auch auf Italienisch.
 
 SIEH, WANN DU DAS BOARD BELEUCHTEST
 
-„Am Board beleuchten“ verbindet und beleuchtet deinen Boulder. Lies die mattierte Player-Taste: „Du steuerst das Board“ heißt: Jeder gewählte Boulder leuchtet auf. Wische sie nach links zum Starten; tippe auf „Du steuerst das Board“ zum Stoppen. Du bleibst verbunden und kannst stöbern.
+Antippen zeigt einen Boulder ohne Licht. „Am Board beleuchten“ beleuchtet ihn, und du steuerst das Board: Deine nächsten Boulder leuchten, bis die Zeit um ist (zuerst 45 s). Ein MoonBoard bis zum Stopp. Taste nach links wischen: ohne Ende; „Du steuerst das Board“ antippen stoppt.
 
 iPad und iPhone Duo: mehr Platz fürs Board
 

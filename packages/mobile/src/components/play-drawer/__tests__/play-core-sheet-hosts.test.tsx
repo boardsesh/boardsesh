@@ -52,6 +52,9 @@ vi.mock('../../LogAscentSheet', () => ({
 vi.mock('../../ble/BleControlSheetHost', () => ({
   BleControlSheetHost: (props: Record<string, unknown>) => <SheetStub name="ble" {...props} />,
 }));
+vi.mock('../BoardSheetStatusLine', () => ({
+  BoardSheetStatusLine: ({ status }: { status: string }) => <span>{status}</span>,
+}));
 
 const pinnedClimb: Climb = {
   uuid: 'pinned-climb',
@@ -151,6 +154,15 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
     expect(recorded.mounts).toHaveBeenCalledTimes(9);
     unmount();
     expect(recorded.unmounts).toHaveBeenCalledTimes(9);
+  });
+
+  // Spec B3: the board sheet's status line, from the player's wall control.
+  it('hands the board sheet its status line, and none without a status', () => {
+    const { rerender } = render(<PlayCoreSheetHosts {...props(true)} boardSheetStatus="window" />);
+    const status = recorded.props.get('ble')?.status as { props?: { status?: string } } | undefined;
+    expect(status?.props?.status).toBe('window');
+    rerender(<PlayCoreSheetHosts {...props(true)} boardSheetStatus={null} />);
+    expect(recorded.props.get('ble')?.status).toBeUndefined();
   });
 
   it('remounts only composers for new credentials', () => {

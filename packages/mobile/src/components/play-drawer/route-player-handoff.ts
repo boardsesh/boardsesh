@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
 
 /**
  * What the full-screen `/play` route tells the drawer host when the window grows
@@ -25,6 +25,7 @@ export type RoutePlayerPreview = {
   item: ClimbQueueItem;
   suggestionSource: PlaylistSuggestionSource | null;
   isWallClimb: boolean;
+  previewCommitOptions?: SetCurrentClimbOptions;
 };
 
 export type RoutePlayerSnapshot = {

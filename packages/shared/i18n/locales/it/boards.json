@@ -90,7 +90,7 @@
     "onboardingPrompt": "Segui il pannello su cui arrampichi: così si attiva la sua cronologia.",
     "firstBoard": {
       "title": "Dove arrampichi?",
-      "body": "Scegli il tuo pannello per caricarne i blocchi. Quando sei connesso, toccando un blocco lo illumini in parete.",
+      "body": "Scegli il tuo pannello per caricarne i blocchi. Un tocco apre un blocco in anteprima; Illumina il pannello lo illumina in parete.",
       "gym": "In una palestra",
       "gymHint": "Scegli il pannello della tua palestra",
       "own": "Il mio pannello",
@@ -111,7 +111,8 @@
       "card": {
         "title": "Illumina i blocchi su {{board}}",
         "titleNoName": "Illumina i blocchi sul tuo pannello",
-        "body": "Collega questo telefono al pannello, poi tocca un blocco qualsiasi per illuminarlo.",
+        "body": "Collega questo telefono al pannello, tocca un blocco e poi Illumina il pannello per illuminarlo.",
+        "bodyTapLights": "Collega questo telefono al pannello, poi tocca un blocco qualsiasi per illuminarlo.",
         "connect": "Connetti",
         "tryAgain": "Riprova",
         "noLights": "Questo pannello non ha luci",
@@ -125,6 +126,11 @@
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",
         "body": "Ora, toccando un blocco nell'elenco, lo illumini in parete.",
+        "bodyWindow": "Con Illumina il pannello guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindowMinute": "Con Illumina il pannello guidi tu il pannello: per 1 minuto dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
+        "bodyWindowMinutes": "Con Illumina il pannello guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli. Poi tocca di nuovo Illumina il pannello.",
+        "bodyUntilStop": "Con Illumina il pannello guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere.",
+        "bodyPutOnBoard": "Tocca un blocco e poi Illumina il pannello per illuminarlo in parete.",
         "gotIt": "Ok"
       }
     },

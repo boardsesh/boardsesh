@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -24,8 +24,17 @@ vi.mock('react-native', () => ({
     ),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
+const theme = vi.hoisted(() => ({ colorScheme: 'light' as 'light' | 'dark' }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' }, colorScheme: theme.colorScheme }),
+}));
+vi.mock('../../../theme/colors', () => ({
+  materialSurfaces: { light: { secondaryLabel: '#5B5563' }, dark: { secondaryLabel: '#A9A2B6' } },
+}));
+// The iOS viewer's title, recorded so the test can read what it would show.
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({ title, children }: { title: string; children?: ReactNode }) =>
+    createElement('section', { 'data-large-content-title': title }, children),
 }));
 // Android's answer: font scaling off, the line height scaled by hand (see
 // use-capped-text-props). The label must hand it to every one of its texts.
@@ -39,18 +48,21 @@ vi.mock('../../Text', () => ({
     numberOfLines,
     numeric,
     allowFontScaling,
+    color,
     style,
   }: {
     children?: ReactNode;
     numberOfLines?: number;
     numeric?: boolean;
     allowFontScaling?: boolean;
+    color?: string;
     style?: MockTextStyle | MockTextStyle[];
   }) => {
     const flat: MockTextStyle = Object.assign({}, ...[style].flat().filter(Boolean));
     return createElement(
       'span',
       {
+        'data-color': color,
         'data-lines': numberOfLines,
         'data-numeric': numeric ? 'true' : undefined,
         'data-shrink': flat.flexShrink === undefined ? undefined : flat.flexShrink,
@@ -64,6 +76,10 @@ vi.mock('../../Text', () => ({
 }));
 
 import { PlayListContext } from '../PlayListContext';
+
+beforeEach(() => {
+  theme.colorScheme = 'light';
+});
 
 const texts = (container: HTMLElement) => Array.from(container.querySelectorAll('span'));
 
@@ -122,26 +138,55 @@ describe('PlayListContext', () => {
     );
   });
 
-  // The second line #6745 made room for: #6702's "Preview, not lit" rides it
-  // instead of leading the header's stats line, where it pushed the sends and
-  // stars off.
+  // The second line #6745 made room for: the preview caption rides it instead
+  // of leading the header's stats line, where it pushed the sends and stars off.
+  // A screen reader hears its "·" as a comma, never "middle dot" (B1).
   it('adds the wall caption as a second line, read with the list', () => {
     const { container } = render(
       createElement(PlayListContext, {
         parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
-        caption: 'Preview, not lit',
+        caption: 'Preview · not on the wall',
         testID: 'play-drawer-track-label',
       }),
     );
-    expect(texts(container).map((text) => text.textContent)).toEqual(['Projects', ' · 4 of 23', 'Preview, not lit']);
+    expect(texts(container).map((text) => text.textContent)).toEqual([
+      'Projects',
+      ' · 4 of 23',
+      'Preview · not on the wall',
+    ]);
     expect(container.querySelector('[data-testid="play-drawer-track-label"]')?.getAttribute('aria-label')).toBe(
-      'Playing from Projects, 4 of 23. Preview, not lit',
+      'Playing from Projects, 4 of 23. Preview, not on the wall',
     );
   });
 
   it('shows the caption alone when there is no list', () => {
-    const { container } = render(createElement(PlayListContext, { parts: null, caption: 'Preview, not lit' }));
-    expect(texts(container).map((text) => text.textContent)).toEqual(['Preview, not lit']);
+    const { container } = render(createElement(PlayListContext, { parts: null, caption: 'Preview · not on the wall' }));
+    expect(texts(container).map((text) => text.textContent)).toEqual(['Preview · not on the wall']);
+  });
+
+  // iOS's translucent secondaryLabel is 3.44:1 on a white sheet; Velvet's
+  // opaque one clears 6:1 on every ground (wall-control-button-contrast.test.ts).
+  it.each([
+    ['light', '#5B5563'],
+    ['dark', '#A9A2B6'],
+  ] as const)('draws the caption in Velvet secondary label in %s', (scheme, color) => {
+    theme.colorScheme = scheme;
+    const { container } = render(createElement(PlayListContext, { parts: null, caption: 'Preview · not on the wall' }));
+    expect(texts(container)[0]?.getAttribute('data-color')).toBe(color);
+  });
+
+  // The bar is capped at 1.2x, so the Large Content Viewer is how the words
+  // reach someone who needs them larger.
+  it('hands the Large Content Viewer both lines as printed', () => {
+    const { container } = render(
+      createElement(PlayListContext, {
+        parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
+        caption: 'Preview · not on the wall',
+      }),
+    );
+    expect(container.querySelector('section')?.getAttribute('data-large-content-title')).toBe(
+      'Projects · 4 of 23. Preview · not on the wall',
+    );
   });
 
   it('renders nothing with neither', () => {
@@ -155,7 +200,7 @@ describe('PlayListContext', () => {
     const { container } = render(
       createElement(PlayListContext, {
         parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
-        caption: 'Preview, not lit',
+        caption: 'Preview · not on the wall',
       }),
     );
     const all = texts(container);

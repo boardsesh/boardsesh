@@ -383,6 +383,40 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
   };
 }
 
+/**
+ * Up next swapped for `upNext`, with History and the climb on the wall left
+ * where they are: "Tapping a playlist loads it into my queue" while a tap only
+ * previews (preview-first, 2.7). The wall keeps its climb; the climber previews
+ * the tapped climb's new slot, and Put on board commits it.
+ *
+ * Entries of `upNext` whose uuid History or the Now slot already holds are left
+ * out, so a slot is never stored twice. An orphan current climb stays an orphan,
+ * with nothing current the line is kept. Never trims: the result goes out as a
+ * `setQueue` payload, which {@link clampNowSlotPayload} (or the legacy clamp)
+ * caps like any other.
+ */
+export function replaceUpNext<TItem extends NowSlotQueueItem>(
+  state: NowSlotState<TItem>,
+  upNext: readonly TItem[],
+): NowSlotResolvedState<TItem> {
+  const kept = state.queue.slice(0, upNextStart(state.queue, state.currentClimbQueueItem, state.historyCount));
+  const keptUuids = new Set(kept.map(({ uuid }) => uuid));
+  if (state.currentClimbQueueItem) keptUuids.add(state.currentClimbQueueItem.uuid);
+  const added = new Set<string>();
+  const queue = [...kept];
+  for (const item of upNext) {
+    if (keptUuids.has(item.uuid) || added.has(item.uuid)) continue;
+    added.add(item.uuid);
+    queue.push(item);
+  }
+  const line = historyLine(state);
+  return {
+    queue,
+    currentClimbQueueItem: state.currentClimbQueueItem,
+    historyCount: historyLine({ queue, currentClimbQueueItem: state.currentClimbQueueItem, historyCount: line }),
+  };
+}
+
 export type CappedHistory<TItem extends NowSlotQueueItem> = NowSlotResolvedState<TItem> & {
   /** How many of the oldest History entries were dropped. */
   trimmedCount: number;

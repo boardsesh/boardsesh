@@ -52,6 +52,7 @@ vi.mock('../../AppMenu', () => ({
     );
   },
 }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
@@ -71,6 +72,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     findReplayFromHereItem: queue.findReplayFromHereItem,
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  useIsSharedSession: () => false,
   useActiveClimbUuid: () => queue.activeClimbUuid,
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));

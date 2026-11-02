@@ -14,6 +14,7 @@ const tap = vi.hoisted(() => ({ onEnd: null as ((...args: unknown[]) => unknown)
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state }),
+  useQueueData: () => queue.state,
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -38,6 +39,9 @@ vi.mock('react-native-gesture-handler', () => {
 });
 
 import { useAccessoryClimbTap } from '../use-accessory-climb-tap';
+import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
+import type { PlaylistSuggestionSource } from '@boardsesh/queue';
 
 function makeClimb(uuid: string): Climb {
   return {
@@ -65,6 +69,7 @@ describe('useAccessoryClimbTap', () => {
     queue.state.currentClimbQueueItem = makeItem('head');
     queue.state.queue = [queue.state.currentClimbQueueItem];
     tap.onEnd = null;
+    resetLastPickForTests();
   });
 
   it('exposes the local queue head as currentItem', () => {
@@ -95,5 +100,99 @@ describe('useAccessoryClimbTap', () => {
       navigate: false,
       reopensCurrent: true,
     });
+  });
+});
+
+// Owner decision A: the bar shows the climber's last pick (a preview
+// included) or the queue's current climb when THAT changed after it, and a tap
+// reopens the pick as the same preview with its list, not the committed head.
+describe('useAccessoryClimbTap with a last pick', () => {
+  const track: PlaylistSuggestionSource = {
+    playlistUuid: 'playlist',
+    activatedClimbUuid: 'climb-pick',
+    boardKey: 'kilter:1',
+    climbs: [makeClimb('pick'), makeClimb('after')],
+  };
+  const commitOptions = { placement: 'STEP' as const };
+
+  function pickUnderHead(over: { mirrored?: boolean } = {}) {
+    const item = makeItem('pick');
+    setLastPick({
+      item,
+      suggestionSource: track,
+      commitOptions,
+      mirrored: over.mirrored ?? false,
+      currentAtPick: 'head',
+      wallAtPick: 'climb-wall',
+      pickedAt: 42,
+    });
+    return item;
+  }
+
+  beforeEach(() => {
+    drawer.openPlayDrawer.mockClear();
+    queue.state.currentClimbQueueItem = makeItem('head');
+    queue.state.queue = [queue.state.currentClimbQueueItem];
+    tap.onEnd = null;
+    resetLastPickForTests();
+  });
+
+  it('shows the pick made after the current climb, and reopens it as the same preview with its track', () => {
+    const item = pickUnderHead({ mirrored: true });
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    expect(result.current.currentItem?.uuid).toBe('pick');
+    tap.onEnd?.();
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(item.climb, {
+      previewQueueItem: item,
+      playlistSuggestionSource: track,
+      previewCommitOptions: commitOptions,
+      previewMirrored: true,
+      previewLatchStart: { wallClimbUuid: 'climb-wall', at: 42 },
+    });
+  });
+
+  it('stages the pick the same way for a Link', () => {
+    const item = pickUnderHead();
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    result.current.preparePlay();
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(
+      item.climb,
+      expect.objectContaining({ previewQueueItem: item, playlistSuggestionSource: track, navigate: false }),
+    );
+  });
+
+  it('shows the queue’s current once it changed after the pick', () => {
+    pickUnderHead();
+    queue.state.currentClimbQueueItem = makeItem('crewmate');
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    expect(result.current.currentItem?.uuid).toBe('crewmate');
+    expect(result.current.pick).toBeNull();
+    tap.onEnd?.();
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-crewmate' }), {
+      reopensCurrent: true,
+    });
+  });
+
+  it('shows the pick on an empty queue', () => {
+    queue.state.currentClimbQueueItem = null;
+    queue.state.queue = [];
+    setLastPick({
+      item: makeItem('pick'),
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: null,
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    expect(result.current.currentItem?.uuid).toBe('pick');
+  });
+
+  it('drops a pick made under another account', () => {
+    pickUnderHead();
+    invalidateCredentialSnapshots();
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    expect(result.current.currentItem?.uuid).toBe('head');
   });
 });

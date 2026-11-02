@@ -83,6 +83,7 @@ type PickerSheetProps = {
   targetBoard?: { boardUuid: string; boardName: string };
   showAllBoards?: boolean;
   onSearchAnyBoard?: () => void;
+  onSeen?: (seen: 'target_not_listed' | 'tips') => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -113,7 +114,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
+  useSetting: () => [30, vi.fn()],
 }));
 
 vi.mock('@boardsesh/play-view', () => ({
@@ -223,6 +224,7 @@ vi.mock('../../lib/climb-to-queue-item', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { DevicePickerSheetHost } from '../../components/ble/DevicePickerSheetHost';
+import { resetBoardConnectTapsForTests, trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 let capturedBluetooth: ReturnType<typeof useBluetoothContext> | null = null;
@@ -1023,6 +1025,107 @@ describe('BluetoothProvider mismatch switch', () => {
     expect(analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved')).toHaveLength(1);
   });
 
+  // 2.7 release watch: props on the same one event per session, never a new event.
+  describe('release-watch props', () => {
+    const NOW = Date.parse('2026-11-02T10:00:00Z');
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+      resetBoardConnectTapsForTests();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      resetBoardConnectTapsForTests();
+    });
+    const resolvedCalls = () => analytics.track.mock.calls.filter(([name]) => name === 'BLE Picker Devices Resolved');
+    const closePicker = (rerender: (ui: ReturnType<typeof createElement>) => void) => {
+      bluetooth.state.pickerState = null;
+      rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+    };
+
+    it('says how the list was filtered, searched, what it showed and saw, how long, and the tap behind it', () => {
+      trackBoardConnectTapped({ surface: 'put_on_wall', boardName: 'kilter', reconnect: false });
+      const filtered: PickerState = {
+        ...makeMismatchingPickerState(),
+        targetBoard: { boardUuid: 'board-kilter', boardName: 'kilter' },
+      };
+      bluetooth.state.pickerState = filtered;
+      const { rerender } = renderProvider(KILTER_PROPS);
+      // The Tension box found is not the gym's Kilter: the sheet says so.
+      act(() => pickerSheet.props?.onSeen?.('target_not_listed'));
+      vi.setSystemTime(NOW + 8_000);
+      bluetooth.state.pickerState = { ...filtered, showAllBoards: true };
+      rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+      vi.setSystemTime(NOW + 12_400);
+      closePicker(rerender);
+
+      expect(resolvedCalls()).toHaveLength(1);
+      expect(resolvedCalls()[0]?.[1]).toMatchObject({
+        devicesTotal: 1,
+        targetFiltered: true,
+        searchedAnyBoard: true,
+        // Every board found, once Search for any board showed them all.
+        listedCount: 1,
+        targetNotListedSeen: true,
+        tipsSeen: false,
+        secondsOpen: 12,
+        entrySurface: 'put_on_wall',
+        // The phone's history hasn't loaded in this test.
+        phoneNeverConnected: null,
+      });
+    });
+
+    it('counts only the target board while filtered, and starts the next session clean', () => {
+      const filtered: PickerState = {
+        ...makeMismatchingPickerState(),
+        targetBoard: { boardUuid: 'board-kilter', boardName: 'kilter' },
+      };
+      bluetooth.state.pickerState = filtered;
+      const { rerender } = renderProvider(KILTER_PROPS);
+      act(() => pickerSheet.props?.onSeen?.('tips'));
+      closePicker(rerender);
+      expect(resolvedCalls()[0]?.[1]).toMatchObject({
+        targetFiltered: true,
+        searchedAnyBoard: false,
+        listedCount: 0,
+        targetNotListedSeen: false,
+        tipsSeen: true,
+        entrySurface: null,
+      });
+
+      bluetooth.state.pickerState = { ...makeMismatchingPickerState(), sessionId: 2 };
+      rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+      closePicker(rerender);
+      expect(resolvedCalls()).toHaveLength(2);
+      expect(resolvedCalls()[1]?.[1]).toMatchObject({
+        targetFiltered: false,
+        listedCount: 1,
+        targetNotListedSeen: false,
+        tipsSeen: false,
+      });
+    });
+
+    it('forgets what a picker that never listed anything saw', () => {
+      bluetooth.state.pickerState = { ...makeMismatchingPickerState(), mode: 'searching', devices: [] };
+      const { rerender } = renderProvider(KILTER_PROPS);
+      act(() => pickerSheet.props?.onSeen?.('tips'));
+      closePicker(rerender);
+      bluetooth.state.pickerState = { ...makeMismatchingPickerState(), sessionId: 2 };
+      rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+      closePicker(rerender);
+      expect(resolvedCalls()).toHaveLength(1);
+      expect(resolvedCalls()[0]?.[1]).toMatchObject({ tipsSeen: false });
+    });
+
+    it('names the board a connect tap is for', () => {
+      renderProvider(KILTER_PROPS);
+      trackBoardConnectTapped({ surface: 'play_drawer', boardName: 'kilter', reconnect: false });
+      expect(analytics.track).toHaveBeenCalledWith(
+        'Board Connect Tapped',
+        expect.objectContaining({ surface: 'play_drawer', boardUuid: 'board-kilter' }),
+      );
+    });
+  });
+
   it('flushes the picker groups for a picker opened for a known board (#7125)', () => {
     bluetooth.state.pickerState = {
       ...makeMismatchingPickerState(),
@@ -1260,6 +1363,8 @@ describe('BluetoothProvider picker Scan again', () => {
       surface: 'picker_scan_again',
       boardName: 'kilter',
       reconnect: false,
+      // 2.7: the board the connect is for, from the provider's own board.
+      boardUuid: 'board-kilter',
     });
 
     rerenderSettled(rerender, KILTER_PROPS);

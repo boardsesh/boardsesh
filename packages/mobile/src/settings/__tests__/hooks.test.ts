@@ -42,8 +42,9 @@ describe('settings', () => {
   describe('getSetting', () => {
     it('returns default when no value is stored', () => {
       expect(getSetting('autoConnectBle')).toBe(true);
-      expect(getSetting('autoDisconnectBle')).toBe(false);
-      expect(getSetting('autoDisconnectTimeoutSeconds')).toBe(30);
+      expect(getSetting('lightOnClimbTap')).toBe(false);
+      expect(getSetting('lightOnSwipe')).toBe(false);
+      expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('qaPromptOnLaunch')).toBe(false);
       expect(getSetting('defaultBoardUuid')).toBeNull();
@@ -53,6 +54,13 @@ describe('settings', () => {
     it('returns stored value parsed from JSON', () => {
       mockStorage.set('autoConnectBle', 'false');
       expect(getSetting('autoConnectBle')).toBe(false);
+    });
+
+    it('preserves saved automatic-lighting opt-ins after defaults change', () => {
+      mockStorage.set('lightOnClimbTap', 'true');
+      mockStorage.set('lightOnSwipe', 'true');
+      expect(getSetting('lightOnClimbTap')).toBe(true);
+      expect(getSetting('lightOnSwipe')).toBe(true);
     });
 
     it('returns stored string value parsed from JSON', () => {

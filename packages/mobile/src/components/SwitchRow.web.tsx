@@ -21,6 +21,7 @@ import type { SwitchRowProps } from './SwitchRow.types';
 
 export function SwitchRow({
   label,
+  accessibilityLabel,
   description,
   wrapDescription = false,
   value,
@@ -32,7 +33,7 @@ export function SwitchRow({
   return (
     <PressableSurface
       role="switch"
-      aria-label={label}
+      aria-label={accessibilityLabel ?? label}
       aria-checked={value}
       aria-disabled={disabled}
       accessibilityHint={description}

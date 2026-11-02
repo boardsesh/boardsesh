@@ -12,6 +12,7 @@ import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
+import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
 import { recordDevicePickerNoLights } from '../../lib/onboarding/device-picker-no-lights';
@@ -77,6 +78,12 @@ type DevicePickerSheetProps = {
   onSearchAnyBoard?: () => void;
   /** Another sheet displaced this one. Defaults to `onDismiss`. */
   onDisplaced?: () => void;
+  /**
+   * What this session showed the climber, once each while on screen: "your
+   * board isn't in the list" and the troubleshooting tips. For the release
+   * watch (2.7); no render of the host's rides on it.
+   */
+  onSeen?: (seen: DevicePickerSeen) => void;
 };
 
 export function DevicePickerSheet({
@@ -96,6 +103,7 @@ export function DevicePickerSheet({
   onClosed,
   onSearchAnyBoard,
   onDisplaced,
+  onSeen,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
@@ -238,6 +246,19 @@ export function DevicePickerSheet({
   const showHardwareTips =
     !showLocationHint && !showLocationServicesHint && (showEmptyState || (!filteringTarget && noneMatchedSelectedType));
   const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
+
+  // Report what the climber saw, while the sheet is on screen. Read through a
+  // ref so a host's new callback never re-reports.
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
+  const targetNotListedShown = visible && targetNotListed;
+  const hintsShown = visible && showHints;
+  useEffect(() => {
+    if (targetNotListedShown) onSeenRef.current?.('target_not_listed');
+  }, [targetNotListedShown]);
+  useEffect(() => {
+    if (hintsShown) onSeenRef.current?.('tips');
+  }, [hintsShown]);
 
   // ModalSheet hands the native sheet a single flex child and pads the body for
   // the window bottom inset. Cancel sits in the top bar; the hints that used to

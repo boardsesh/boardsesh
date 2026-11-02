@@ -18,8 +18,17 @@ import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 /**
  * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
  * Tick Opened can be told apart from the JS bars that share `source: 'queue_bar'`.
+ *
+ * `isMirrorOverride` is the flip the bar draws when it shows the climber's last
+ * pick (owner decision A): a preview's own flip, never its queue slot's
+ * committed one, as the player logs a preview's `isMirrored`.
  */
-export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement, queueItemUuid?: string) {
+export function useLogAscentAction(
+  climb: Climb,
+  placement?: AccessoryPlacement,
+  queueItemUuid?: string,
+  isMirrorOverride?: boolean,
+) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
@@ -85,7 +94,7 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement,
     const matchesBoard =
       (climb.boardType == null || climb.boardType === boardConfig.boardName) &&
       (climb.layoutId == null || climb.layoutId === boardConfig.layoutId);
-    const isMirror = resolveTickMirror(getQueueSnapshot(), climb, queueItemUuid, matchesBoard);
+    const isMirror = isMirrorOverride ?? resolveTickMirror(getQueueSnapshot(), climb, queueItemUuid, matchesBoard);
     openLogAscent({
       climb,
       climbUuid: climb.uuid,
@@ -101,7 +110,17 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement,
       sessionId,
       consensusGradeName: climb.difficulty,
     });
-  }, [openLogAscent, boardConfig, sessionId, climb, angle, placement, queueItemUuid, getQueueSnapshot]);
+  }, [
+    openLogAscent,
+    boardConfig,
+    sessionId,
+    climb,
+    angle,
+    placement,
+    queueItemUuid,
+    isMirrorOverride,
+    getQueueSnapshot,
+  ]);
 
   // The tick stays an action in the same label colour, even on a logged climb.
   // Its accessibility label still announces that the climb was already logged.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assignConnectStepArm } from '../connect-step-arm';
+import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING } from '../../keep-lighting';
 import {
   CONNECT_STEP_MIN_NATIVE_VERSION,
   EMPTY_FIRST_CONNECT_DEVICE_STATE,
@@ -7,6 +8,8 @@ import {
   decideConnectStepEnrolment,
   isConnectStepTreatmentLive,
   localDayKey,
+  firstConnectConfirmationCopy,
+  firstConnectTapLights,
   shouldConfirmFirstConnect,
   shouldShowFirstConnectCard,
   type ConnectStepEnrolment,
@@ -235,7 +238,7 @@ describe('shouldShowFirstConnectCard', () => {
 });
 
 describe('shouldConfirmFirstConnect', () => {
-  const base = { enrolment: enrolment(), enabled: true, device: device(), lightOnClimbTap: true };
+  const base = { enrolment: enrolment(), enabled: true, device: device() };
 
   it('confirms the first connect of an enrolled account, in either arm', () => {
     expect(shouldConfirmFirstConnect(base)).toBe(true);
@@ -247,9 +250,141 @@ describe('shouldConfirmFirstConnect', () => {
     ['the kill switch on', { enabled: false }],
     ['a phone that connected before', { device: device({ connectedAt: 1 }) }],
     ['a confirmation already shown', { device: device({ confirmationShownAt: 1 }) }],
-    ['lightOnClimbTap off, since the copy would be wrong', { lightOnClimbTap: false }],
   ] as const)('stays quiet with %s', (_label, overrides) => {
     expect(shouldConfirmFirstConnect({ ...base, ...overrides })).toBe(false);
+  });
+});
+
+describe('firstConnectConfirmationCopy', () => {
+  const defaults = {
+    keepLighting: DEFAULT_KEEP_LIGHTING,
+    moonboardKeepLighting: DEFAULT_MOONBOARD_KEEP_LIGHTING,
+    drivesInSession: true,
+    inSession: false,
+  };
+  const base = {
+    lightOnClimbTap: false,
+    lightOnSwipe: false,
+    inSharedSession: false,
+    boardName: 'kilter',
+    keepLighting: defaults,
+  };
+
+  it('says a tap lights a climb only while Light the board when I tap a climb is on', () => {
+    expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true })).toEqual({ variant: 'tap_lights' });
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnClimbTap: true })).toEqual({
+      variant: 'tap_lights',
+    });
+  });
+
+  // A list tap in a shared session stays a preview whatever Light on tap says
+  // (`climbChangeStaysViewOnly`), so the copy falls through to Put on board's plan.
+  it('never says a tap lights a climb in a shared session', () => {
+    expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true, inSharedSession: true })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+    expect(
+      firstConnectConfirmationCopy({
+        ...base,
+        lightOnClimbTap: true,
+        inSharedSession: true,
+        keepLighting: { ...defaults, inSession: true, drivesInSession: false },
+      }),
+    ).toEqual({ variant: 'put_on_board' });
+  });
+
+  it('agrees with the tap rule the Climbs card reads', () => {
+    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: false })).toBe(true);
+    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: true })).toBe(false);
+    expect(firstConnectTapLights({ lightOnClimbTap: false, inSharedSession: false })).toBe(false);
+  });
+
+  // Solo with Light the board as I swipe on, the press drops a stop and opens
+  // no window (the wall control's `tapDrive: 'resume'`): a list pick stays a
+  // preview, so no window is promised.
+  it('promises no window solo with Light the board as I swipe on', () => {
+    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true })).toEqual({ variant: 'put_on_board' });
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnSwipe: true })).toEqual({
+      variant: 'put_on_board',
+    });
+    // In a crew or a shared session the swipe setting lights nothing, so the window stands.
+    expect(
+      firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, keepLighting: { ...defaults, inSession: true } }),
+    ).toEqual({ variant: 'window', seconds: 45 });
+    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, inSharedSession: true })).toEqual({
+      variant: 'window',
+      seconds: 45,
+    });
+  });
+
+  // 2 and 5 minutes are said in minutes, 1 minute as before.
+  it('names a drive of whole minutes in minutes', () => {
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '60' } })).toEqual({
+      variant: 'window_minute',
+    });
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '120' } })).toEqual({
+      variant: 'window_minutes',
+      minutes: 2,
+    });
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '300' } })).toEqual({
+      variant: 'window_minutes',
+      minutes: 5,
+    });
+  });
+
+  it('names the 45 s window on a Kilter or Tension board with the 2.7 defaults', () => {
+    expect(firstConnectConfirmationCopy(base)).toEqual({ variant: 'window', seconds: 45 });
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'tension' })).toEqual({ variant: 'window', seconds: 45 });
+  });
+
+  it('reads the window from the climber’s keep-lighting choice', () => {
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '30' } })).toEqual({
+      variant: 'window',
+      seconds: 30,
+    });
+    // Worded as the preview-first card words it: "For 1 minute".
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: '60' } })).toEqual({
+      variant: 'window_minute',
+    });
+    expect(
+      firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: 'until_stopped' } }),
+    ).toEqual({ variant: 'until_stop' });
+  });
+
+  it('keeps lighting until stopped on a MoonBoard by default, from the MoonBoard choice alone', () => {
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard' })).toEqual({ variant: 'until_stop' });
+    expect(
+      firstConnectConfirmationCopy({
+        ...base,
+        boardName: 'moonboard',
+        keepLighting: { ...defaults, moonboardKeepLighting: '30', keepLighting: 'until_stopped' },
+      }),
+    ).toEqual({ variant: 'window', seconds: 30 });
+  });
+
+  it('says Put on board lights one climb wherever no window can start', () => {
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, keepLighting: 'off' } })).toEqual({
+      variant: 'put_on_board',
+    });
+    // A crew session with In a session too off: the press lights one climb.
+    expect(
+      firstConnectConfirmationCopy({ ...base, keepLighting: { ...defaults, inSession: true, drivesInSession: false } }),
+    ).toEqual({ variant: 'put_on_board' });
+    // Keep-lighting's kill switch (the swipe flag) is off.
+    expect(firstConnectConfirmationCopy({ ...base, keepLighting: null })).toEqual({ variant: 'put_on_board' });
+    // A board type that is not known yet reads as a Kilter or Tension board.
+    expect(firstConnectConfirmationCopy({ ...base, boardName: null })).toEqual({ variant: 'window', seconds: 45 });
+  });
+
+  it('keeps a MoonBoard lighting in a crew session too', () => {
+    expect(
+      firstConnectConfirmationCopy({
+        ...base,
+        boardName: 'moonboard',
+        keepLighting: { ...defaults, inSession: true, drivesInSession: false },
+      }),
+    ).toEqual({ variant: 'until_stop' });
   });
 });
 

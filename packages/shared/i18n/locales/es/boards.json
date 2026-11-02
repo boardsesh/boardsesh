@@ -90,7 +90,7 @@
     "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
     "firstBoard": {
       "title": "¿Dónde escalas?",
-      "body": "Elige tu plafón para cargar sus bloques. Cuando te conectes, tocar un bloque lo ilumina en el muro.",
+      "body": "Elige tu plafón para cargar sus bloques. Un toque abre un bloque en vista previa; Poner en el plafón lo ilumina en el muro.",
       "gym": "En un rocódromo",
       "gymHint": "Elige el plafón de tu rocódromo",
       "own": "Mi propio plafón",
@@ -111,7 +111,8 @@
       "card": {
         "title": "Ilumina bloques en {{board}}",
         "titleNoName": "Ilumina bloques en tu plafón",
-        "body": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
+        "body": "Conecta este teléfono al plafón, toca un bloque y pulsa Poner en el plafón para iluminarlo.",
+        "bodyTapLights": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
         "connect": "Conecta el plafón",
         "tryAgain": "Reintentar",
         "noLights": "Este muro no tiene luces",
@@ -125,6 +126,11 @@
         "title": "Conectado a {{board}}",
         "titleNoName": "Conectado a tu plafón",
         "body": "Ahora, al tocar un bloque de la lista, se ilumina en el muro.",
+        "bodyWindow": "Con Poner en el plafón quedas al mando del plafón: durante {{seconds}} segundos después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
+        "bodyWindowMinute": "Con Poner en el plafón quedas al mando del plafón: durante 1 minuto después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
+        "bodyWindowMinutes": "Con Poner en el plafón quedas al mando del plafón: durante {{minutes}} minutos después de cada bloque encendido, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
+        "bodyUntilStop": "Con Poner en el plafón quedas al mando del plafón: cada bloque que elijas se enciende hasta que toques el botón para parar.",
+        "bodyPutOnBoard": "Toca un bloque y pulsa Poner en el plafón para encenderlo en el muro.",
         "gotIt": "Entendido"
       }
     },

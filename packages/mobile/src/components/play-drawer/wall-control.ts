@@ -10,6 +10,7 @@
  * rather than rendered through PlayCore.
  */
 
+import { resolveKeepLightingPlan, type KeepLightingChoice, type KeepLightingPlan } from '../../lib/keep-lighting';
 import type { ActionBarLayout } from './action-bar-layout';
 import type { PlayDrawerLightbulbPressAction } from './lightbulb-control';
 
@@ -20,6 +21,15 @@ import type { PlayDrawerLightbulbPressAction } from './lightbulb-control';
  * sheet, light and dark (`wall-control-button-contrast` test).
  */
 export const WALL_CONTROL_TONAL_ALPHA = 0.2;
+
+/**
+ * Put on board's timed drive on a bulb (spec B3: the first row's, and the
+ * MiniPlayer's standing in for a tablet's player), where there is no frost to
+ * shrink: a 2 pt violet arc round its edge that drains from 12 o'clock, on a
+ * track of 16% of its own violet. A shape, never colour alone.
+ */
+export const WINDOW_RING_WIDTH = 2;
+export const WINDOW_RING_TRACK_ALPHA = 0.16;
 
 /**
  * - `connect` — no board linked: a tap connects (and lights the climb).
@@ -159,6 +169,8 @@ export function resolveWallHolder({
  *   sheet instead (the handler's job, not this table's).
  * - `stop_driving` — on You are driving the wall (#7113): stop driving and keep
  *   the link. The next press, on Disconnect board, disconnects.
+ * - `stop_window` — the same press during Put on board's timed drive (2.7):
+ *   the same frost and label, kept apart for Wall Control Tapped.
  * - `connect` — connect, then the connect lights the climb.
  * - `put_on_wall` — make the preview current (connecting first if needed).
  * - `relight` — re-send the current climb to a connected board.
@@ -170,6 +182,7 @@ export function resolveWallHolder({
 export type WallControlAction =
   | 'disconnect'
   | 'stop_driving'
+  | 'stop_window'
   | 'connect'
   | 'put_on_wall'
   | 'relight'
@@ -230,7 +243,7 @@ export function resolveWallControlAction({
   }
 }
 
-/** A tap that connects, puts the climb up, or lights it again (`tapDrive`). */
+/** A tap that connects, puts the climb up, or lights it again (`tapDrive`, keep-lighting). */
 export function isPutUpAction(action: WallControlAction): boolean {
   return action === 'connect' || action === 'put_on_wall' || action === 'relight';
 }
@@ -305,8 +318,9 @@ export type WallControlFace = { name: string | null; avatarUrl: string | null };
  * into words. The label says what a press does (#7113, Marco): the bulb's fill,
  * outline or spinner already shows the connection, and the face whose board it
  * is. Two exceptions say where things stand: You are driving the wall (the
- * frost), and a crewmate's board when a press can't relay (On Sam's board, On
- * your other phone, On your crew's board).
+ * frost, with a clock beside it in Put on board's timed drive, 2.7), and a
+ * crewmate's board when a press can't relay (On Sam's board, On your other
+ * phone, On your crew's board).
  */
 export type WallControlLabelKey =
   | 'putOnBoard'
@@ -378,8 +392,6 @@ export type WallControlInput = WallControlStateInput & {
   otherClimbLit: boolean;
   /** A climb is on its way to the LEDs. */
   writing: boolean;
-  /** Auto-disconnect is in its last ten seconds. */
-  autoDisconnectWarning: boolean;
   /**
    * A swipe or Next from this screen commits to the wall: solo with lighting
    * on swipes, and not a browse (`swipeStaysViewOnly` false). In a crew swipes
@@ -394,38 +406,76 @@ export type WallControlInput = WallControlStateInput & {
   driveMode?: 'off' | 'arming' | 'live';
   /**
    * A press on the frosted button stopped driving on this link: nothing drives
-   * until the link drops, the climber swipes again, or (solo) presses to put a
-   * climb up (`tapDrive`), with Light the board as I swipe on too.
+   * until the link drops, the climber swipes again, or presses to put a climb
+   * up (`tapDrive`).
    */
   drivingStopped?: boolean;
   /**
-   * Not in a crew session (the roster, whatever the browse rollout flag says):
-   * a press that puts the climb up ends in driving (`tapDrive`). In a crew it
-   * stays a one-off put; crews drive by swiping.
+   * Not in a crew session and not in its browse latch (PlayCore's
+   * `!isCrewSession && !browseByDefault`). Solo, a press may resume an
+   * opted-in lighting preference.
    */
   solo?: boolean;
   /**
+   * A crew is in this session: the roster's `useIsCrewSession`, past its
+   * arrival dwell. There keep-lighting needs In a session too
+   * (`drivesInSession`), except on a MoonBoard. The same read
+   * `DriveModeWatcher` ends a running window on, so the press and the watcher
+   * never disagree about a session. Not `solo`, whose browse latch outlives
+   * the crew by a few seconds. Defaults to false.
+   */
+  crewSession?: boolean;
+  /**
    * The climber's Light the board as I swipe. Solo with it on, a lit climb is
-   * already driven by the setting, so a press only has to drop a stop; with it
-   * off, a press starts a live drive.
+   * already driven by the setting, so a press only has to drop a stop.
    */
   lightOnSwipe?: boolean;
+  /**
+   * The climb's board is a MoonBoard: Put on board takes the MoonBoard's Stop
+   * driving after choice (`moonboardKeepLighting`), in a crew session too,
+   * since most MoonBoard controllers don't like phones switching.
+   */
+  boardIsMoonboard?: boolean;
+  /**
+   * Stop driving after (2.7, Settings › Board, `lib/keep-lighting.ts`): every
+   * board but a MoonBoard. Defaults to Right away (`off`): a press lights one
+   * climb.
+   */
+  keepLighting?: KeepLightingChoice;
+  /** The same choice on a MoonBoard. Defaults to Right away here; the setting's own default is Until I stop. */
+  moonboardKeepLighting?: KeepLightingChoice;
+  /** In a session too: Put on board drives in a crew session as well. Defaults to off. */
+  drivesInSession?: boolean;
+  /**
+   * The `wall-swipe-to-drive` flag (at 100%): the swipe's flag and Put on
+   * board's drive's kill switch. Off, a press lights one climb. Defaults to off.
+   */
+  swipeToDriveEnabled?: boolean;
+  /**
+   * The live drive is Put on board's timed drive (`DriveModeState.windowMs`):
+   * the frost with a clock, shrinking as its time runs out.
+   */
+  lightWindow?: boolean;
 };
 
 /**
- * What a press that puts the climb up does about driving (#7113 QA, Marco:
- * "When I'm alone I should just always end up in the driving state when I
- * press the button"). Solo, every press that connects, puts the climb up or
- * lights it again ends in driving:
+ * What a press that puts the climb up does about lighting the next climbs
+ * (2.7, Stop driving after).
  *
- * - `start` — start a live drive (`WallControlRunners.drive`): nothing else
- *   would drive after the press, because Light the board as I swipe is off.
- * - `resume` — drop a stop on this link and light the climb as before: the
- *   setting drives from there, or a drive already does.
- * - null — a crew (a press is a one-off put), Set active (no wall in reach),
- *   or a press that puts nothing up.
+ * - `window` — once the climb is up, a timed drive: every pick lights for the
+ *   board family's choice of 30 s to 5 minutes, each lit climb restarting it
+ *   (`tapKeepLighting`). Only where a swipe could start a drive here
+ *   (`swipeAction`), with nothing driving yet: never on a relay, Set active, a
+ *   wall with no lights, or with the `wall-swipe-to-drive` flag off. In a crew
+ *   only with In a session too on, except on a MoonBoard.
+ * - `drive` — the same where the choice is Until I stop (the MoonBoard
+ *   default): an open-ended drive.
+ * - `resume` — solo, with Light the board as I swipe opted in: drop a stop on
+ *   this link and light the climb as before; the setting lights the next ones.
+ * - null — the press lights this climb once: Right away, Set active, a drive
+ *   already on, or a press that puts nothing up.
  */
-export type WallControlTapDrive = 'start' | 'resume' | null;
+export type WallControlTapDrive = 'window' | 'drive' | 'resume' | null;
 
 /**
  * What a swipe on the wall button does (#7113): `drive` connects (or takes the
@@ -467,6 +517,14 @@ export type WallControlModel = {
   swipeAction: WallControlSwipeAction;
   /** What a press that puts the climb up does about driving (`WallControlTapDrive`). */
   tapDrive: WallControlTapDrive;
+  /** For `window` and `drive`: what the press hands the drive store once its climb is up. */
+  tapKeepLighting: KeepLightingPlan | null;
+  /**
+   * Put on board's timed drive (2.7) on this phone's lit climb. `driving` is
+   * true too: the same frost and You are driving the wall, plus a clock, and
+   * the frost shrinks toward the bulb as its time runs out.
+   */
+  lightWindow: boolean;
   longPress: 'sheet' | null;
   labelKey: WallControlLabelKey | null;
   a11yValueKey: WallControlA11yValueKey | null;
@@ -498,7 +556,6 @@ export type WallControlModel = {
   /** A connect or disconnect in flight: a spinner, and taps wait. */
   pending: boolean;
   writing: boolean;
-  autoDisconnectWarning: boolean;
 };
 
 function labelKeyOf(
@@ -549,6 +606,7 @@ function hintKeyOf(
     case 'disconnect':
       return 'litHint';
     case 'stop_driving':
+    case 'stop_window':
       return 'stopDrivingHint';
     case 'connect':
       return 'connectHint';
@@ -582,9 +640,18 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   // the crewmate's phone lights it) and the crew's own climb is left alone. The
   // bulb's press action describes this phone's board, not theirs.
   const driveMode = input.driveMode ?? 'off';
+  // Put on board's timed drive (2.7) on this phone's lit climb: a drive like
+  // any other (the frost, You are driving the wall), plus its clock.
+  const windowLit =
+    state === 'lit' &&
+    holder === 'self' &&
+    driveMode === 'live' &&
+    input.lightWindow === true &&
+    input.drivingStopped !== true;
   // Driving: lit on this phone's link (or its hold on a wall with no lights),
   // and the next change of climb moves the wall: solo with lighting on swipes,
-  // or a live drive (#7113). A press on the frosted button stops it for this link.
+  // or a live drive (#7113), timed or not. A press on the frosted button stops
+  // it for this link.
   const driving =
     (state === 'lit' || state === 'release_wall') &&
     holder === 'self' &&
@@ -596,8 +663,9 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
   let tapAction: WallControlAction;
   if (onCrewGymBoard) tapAction = input.confirmArmed || state !== 'put_on_wall' ? 'noop' : 'relay';
   // One rule, solo included: a press on the frosted button stops driving and
-  // keeps the link; a press on the plain lit button disconnects (Marco).
-  else if (drivingLit) tapAction = input.confirmArmed ? 'noop' : 'stop_driving';
+  // keeps the link; a press on the plain lit button disconnects (Marco). A
+  // timed drive's press is the same stop, told apart for Wall Control Tapped.
+  else if (drivingLit) tapAction = input.confirmArmed ? 'noop' : windowLit ? 'stop_window' : 'stop_driving';
   else
     tapAction = resolveWallControlAction({
       state,
@@ -613,22 +681,48 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     state === 'connect' ||
     state === 'dark' ||
     state === 'on_wall_unlinked' ||
-    // A crew holder who hasn't started driving swipes from Disconnect board.
+    // A crew holder who hasn't started driving swipes from Disconnect board, and
+    // Put on board's timed drive swipes into an open-ended one.
     state === 'lit' ||
     // A preview on this phone's board, never Set active (no wall to light),
-    // the crew's gym board (a relay), or a crewmate's board (their phone
-    // holds it; Put on board relays the climb to it).
-    (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+    // the crew's gym board (a relay), a crewmate's board (their phone holds
+    // it; Put on board relays the climb to it), or a wall that can't light the
+    // climb (`offWall`: no lights, or another board's climb). Keep-lighting
+    // follows the swipe, so a press there arms no window it can't go live on.
+    (state === 'put_on_wall' && !input.offWall && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+  // Driving already, only a timed drive is offered the swipe: it makes it open-ended.
   const swipeAction: WallControlSwipeAction =
-    swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
-  const bulbTapAction: WallControlAction = tapAction === 'stop_driving' ? 'disconnect' : tapAction;
-  // Solo, a press that puts the climb up ends in driving (#7113 QA). It starts
-  // a live drive only where nothing else would drive: the setting is off and no
-  // drive is on. The swipe's own rule says where a drive can start. Never on
-  // Set active: no wall is in reach, so the press only makes it current.
+    swipeable && (!driving || windowLit) && !input.confirmArmed && !input.pending && driveMode !== 'arming'
+      ? 'drive'
+      : null;
+  const bulbTapAction: WallControlAction =
+    tapAction === 'stop_driving' || tapAction === 'stop_window' ? 'disconnect' : tapAction;
+  // A press puts one climb up. Solo with Light the board as I swipe on, the
+  // setting already lights the next ones, so the press only drops a stop.
+  // Otherwise the board family's Stop driving after choice (2.7) starts a timed
+  // drive, or an open-ended one for Until I stop, once the climb is up: where
+  // the swipe could start a drive (its own rule) and nothing drives yet.
+  const putsUp = isPutUpAction(tapAction) && labelKey !== 'setActive';
+  const keepLightingPlan = resolveKeepLightingPlan({
+    boardIsMoonboard: input.boardIsMoonboard === true,
+    keepLighting: input.keepLighting ?? 'off',
+    moonboardKeepLighting: input.moonboardKeepLighting ?? 'off',
+    drivesInSession: input.drivesInSession === true,
+    inSession: input.crewSession === true,
+  });
   let tapDrive: WallControlTapDrive = null;
-  if (input.solo === true && isPutUpAction(tapAction) && labelKey !== 'setActive') {
-    tapDrive = driveMode === 'off' && input.lightOnSwipe !== true && swipeAction === 'drive' ? 'start' : 'resume';
+  let tapKeepLighting: KeepLightingPlan | null = null;
+  if (putsUp && input.solo === true && input.lightOnSwipe === true) {
+    tapDrive = 'resume';
+  } else if (
+    putsUp &&
+    keepLightingPlan !== null &&
+    input.swipeToDriveEnabled === true &&
+    driveMode === 'off' &&
+    swipeAction === 'drive'
+  ) {
+    tapDrive = keepLightingPlan.windowMs === null ? 'drive' : 'window';
+    tapKeepLighting = keepLightingPlan;
   }
   const a11yHintKey =
     state === 'on_wall_unlinked' && tapAction !== 'noop'
@@ -636,6 +730,8 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
       : hintKeyOf(tapAction, holderName, onOtherPhone);
   let a11yValueKey: WallControlA11yValueKey | null = null;
   if (labelKey === null) a11yValueKey = null;
+  // A timed drive's time left is its value, said by the button on its own 10 s step.
+  else if (windowLit) a11yValueKey = null;
   else if (drivingLit) a11yValueKey = 'drivingEveryClimb';
   else if (state === 'lit') a11yValueKey = 'youHaveBoardLit';
   else if (state === 'on_wall_unlinked') a11yValueKey = 'onWall';
@@ -657,6 +753,8 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     tapAction,
     swipeAction,
     tapDrive,
+    tapKeepLighting,
+    lightWindow: windowLit,
     longPress: input.localConnected && !onCrewGymBoard ? 'sheet' : null,
     labelKey,
     a11yValueKey,
@@ -672,7 +770,6 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     drivePhase: driveMode,
     pending: input.pending,
     writing: input.writing,
-    autoDisconnectWarning: input.autoDisconnectWarning,
   };
 }
 
@@ -687,6 +784,8 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   bulbTapAction: 'noop',
   swipeAction: null,
   tapDrive: null,
+  tapKeepLighting: null,
+  lightWindow: false,
   longPress: null,
   labelKey: null,
   a11yValueKey: null,
@@ -699,5 +798,28 @@ export const EMPTY_WALL_CONTROL: WallControlModel = Object.freeze({
   drivePhase: 'off',
   pending: false,
   writing: false,
-  autoDisconnectWarning: false,
 });
+
+/**
+ * The player's board sheet's status line (spec B3): what the wall button says
+ * about the climb on screen, in full at any text size, since the button's own
+ * label is capped at 1.2x and Android has no Large Content Viewer.
+ *
+ * - `preview` — a preview, not on the wall (Put on board).
+ * - `on_wall` — this phone's link has the climb on screen lit.
+ * - `window` — Put on board's timed drive, with its time left.
+ * - `driving` — an open-ended drive.
+ * - null — anything else (no link, a crewmate's board, a wall with no lights).
+ */
+export type BoardSheetStatus = 'preview' | 'on_wall' | 'window' | 'driving';
+
+export function resolveBoardSheetStatus(
+  model: Pick<WallControlModel, 'state' | 'holder' | 'lightWindow' | 'driving'>,
+): BoardSheetStatus | null {
+  if (model.state === 'lit' && model.holder === 'self') {
+    if (model.lightWindow) return 'window';
+    return model.driving ? 'driving' : 'on_wall';
+  }
+  if (model.state === 'put_on_wall' && model.holder !== 'crew') return 'preview';
+  return null;
+}

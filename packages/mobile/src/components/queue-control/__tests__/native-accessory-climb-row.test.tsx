@@ -232,6 +232,37 @@ vi.mock('../PaneWallControlBulb', () => ({
   PaneWallControlBulb: ({ control }: { control: { model: { state: string | null } } }) =>
     createElement('span', { 'data-pane-wall-control': control.model.state ?? 'none' }),
 }));
+// The last pick's bulb (owner decision A): a marker, with the usual bulb it
+// falls back to while the pick is lit. Its own suite covers what it draws.
+vi.mock('../PickPutOnBoardBulb', () => ({
+  PickBulbSlot: ({
+    pick,
+    bulb,
+    litBulb,
+  }: {
+    pick: { item: { uuid: string } };
+    bulb: { kind: string };
+    litBulb: ReactNode;
+  }) =>
+    // As the real slot: a pick no board here can light draws nothing.
+    bulb.kind === 'none'
+      ? null
+      : createElement(
+          'span',
+          { 'data-pick-bulb': pick.item.uuid, 'data-pick-bulb-kind': bulb.kind },
+          bulb.kind === 'lit' ? litBulb : null,
+        ),
+}));
+// What the pick's bulb is (`resolvePickBulb` has its own suite): null without a pick.
+const pickBulb = vi.hoisted(() => ({
+  value: { kind: 'putOnBoard', gymBoardName: null } as
+    | { kind: 'lit' }
+    | { kind: 'putOnBoard'; gymBoardName: string | null }
+    | { kind: 'none' },
+}));
+vi.mock('../use-pick-bulb', () => ({
+  usePickBulb: (pick: unknown) => (pick ? pickBulb.value : null),
+}));
 vi.mock('../BoardControlIndicator', () => ({
   BoardControlIndicator: ({ solidGlyphs, placement }: { solidGlyphs?: boolean; placement?: string }) =>
     connection.state.bluetooth
@@ -466,14 +497,17 @@ vi.mock('../LogAscentToolbarButton', () => ({
     iconSize,
     placement,
     appearance,
+    isMirror,
   }: {
     size?: number;
     iconSize?: number;
     placement?: string;
     appearance?: string;
+    isMirror?: boolean;
   }) =>
     createElement('button', {
       'data-tick': 'true',
+      'data-is-mirror': isMirror === undefined ? 'unset' : String(isMirror),
       'data-appearance': appearance ?? 'plain',
       'data-placement': placement ?? '',
       'data-tick-size': String(size),
@@ -575,6 +609,7 @@ describe('NativeAccessoryClimbRow', () => {
     miniPlayer.playerRouteUp = false;
     workoutGate.inTimedBlock = false;
     workoutGate.shown = null;
+    pickBulb.value = { kind: 'putOnBoard', gymBoardName: null };
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -695,6 +730,91 @@ describe('NativeAccessoryClimbRow', () => {
 
     expectNumericAttribute(thumbnail, 'data-board-width', 32);
     expectNumericAttribute(thumbnail, 'data-board-height', 17.68);
+  });
+
+  // Owner decision A: on the climber's last pick the bulb is the pick's
+  // (unlit, Put on board), and it keeps the collapsed platter's one slot so
+  // putting the pick up stays one tap away even with the board held.
+  function makePick(mirrored = false) {
+    const climb = queue.state.currentClimbQueueItem?.climb as Climb;
+    return {
+      climb,
+      pick: {
+        item: { uuid: 'queue-pick', climb },
+        suggestionSource: null,
+        commitOptions: undefined,
+        mirrored,
+        currentAtPick: 'queue-current',
+        wallAtPick: null,
+        pickedAt: 0,
+        generation: 0,
+      },
+    };
+  }
+
+  it('hands the bulb slot to the last pick, open or collapsed', () => {
+    connection.state.inAppBoardConnection = 'connectedByMe';
+    const { climb, pick } = makePick();
+    const open = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="regular" />,
+    );
+    expect(open.container.querySelector('[data-pick-bulb="queue-pick"]')).not.toBeNull();
+    open.unmount();
+    const collapsed = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="inline" />,
+    );
+    expect(collapsed.container.querySelector('[data-pick-bulb="queue-pick"]')).not.toBeNull();
+    expect(collapsed.container.querySelector('[data-tick="true"]')).toBeNull();
+  });
+
+  // ✓ logs the shown climb: a lit pick, or one on a board with no lights, has
+  // nothing to put up, so the collapsed platter's one slot stays the tick.
+  it.each([
+    ['lit', { kind: 'lit' as const }, false],
+    ['on a board with no lights', { kind: 'putOnBoard' as const, gymBoardName: null }, true],
+  ])('keeps ✓ in the collapsed platter for a pick that is %s', (_label, bulb, ledless) => {
+    pickBulb.value = bulb;
+    connection.state.ledless = ledless;
+    const { climb, pick } = makePick();
+    const { container } = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="inline" />,
+    );
+    expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-pick-bulb]')).toBeNull();
+  });
+
+  // A climb this wall can't light, with no board at the gym to walk to: the
+  // player has no board control for it, so the bar has no bulb either.
+  it('draws no bulb for a pick no board here can light, and the climb link speaks the board', () => {
+    pickBulb.value = { kind: 'none' };
+    connection.state.inAppBoardConnection = 'connectedByMe';
+    const { climb, pick } = makePick();
+    const { container } = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="regular" />,
+    );
+    expect(container.querySelector('[data-pick-bulb]')).toBeNull();
+    expect(container.querySelector('[data-board-control="true"]')).toBeNull();
+    expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    // No bulb speaks the connection, so the climb link does.
+    expect(container.querySelector('[data-accessory-play-link]')?.getAttribute('data-a11y-value')).toBeTruthy();
+  });
+
+  // The ascent is the flip the bar draws: the pick's own, never its slot's.
+  it("hands ✓ the pick's own flip, and leaves the queue's current to its slot", () => {
+    const { climb, pick } = makePick(true);
+    const picked = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="regular" />,
+    );
+    expect(picked.container.querySelector('[data-tick="true"]')?.getAttribute('data-is-mirror')).toBe('true');
+    picked.unmount();
+    const current = renderRow('regular');
+    expect(current.container.querySelector('[data-tick="true"]')?.getAttribute('data-is-mirror')).toBe('unset');
+  });
+
+  it('keeps the usual bulb with no pick', () => {
+    const { container } = renderRow('regular');
+    expect(container.querySelector('[data-pick-bulb]')).toBeNull();
+    expect(container.querySelector('[data-board-control="true"]')).not.toBeNull();
   });
 
   it('shows the thumbnail, the byline and the tick, but no lightbulb, when collapsed and connected', () => {

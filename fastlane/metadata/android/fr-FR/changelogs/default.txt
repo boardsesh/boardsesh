@@ -1,5 +1,5 @@
 Nouveautés de 2.7 :
-- Lis le bouton givré : Allumer sur la board connecte et allume. Tu pilotes la board : chaque bloc choisi s’allume ; touche ce texte pour arrêter sans te déconnecter. Balaye à gauche pour commencer.
+- Toucher affiche sans allumer. Allumer sur la board : tes choix s’allument jusqu’à la fin du minuteur (45 s). Balaye à gauche : sans limite ; touche pour arrêter.
 - Italien. Compte à rebours et son de repos dans la notification.
 - Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
 - Trie et filtre playlists, Aimées et Projets.

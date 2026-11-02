@@ -39,11 +39,25 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { View } from 'react-native';
 import { spacing } from '../theme/tokens';
-import { assertNeverRow, guardedButtonPress, isButtonRowPressable, useOpensOutsideAppHint } from './MoreForm.logic';
+import {
+  assertNeverRow,
+  guardedButtonPress,
+  isButtonRowPressable,
+  toggleRowSubtitle,
+  useOpensOutsideAppHint,
+} from './MoreForm.logic';
 import { makeSelectHandler } from './SegmentedControl.logic';
 import { useSliderCommit } from './MoreForm.slider';
 import { CHEVRON, FOOTNOTE, PRIMARY_LABEL, ROW_ICON, SECONDARY_LABEL, TERTIARY_LABEL } from './settings-row-styles.ios';
-import type { MoreButtonRow, MoreIconName, MoreNavRow, MoreRow, MoreSliderRow, MoreValueRow } from './MoreForm.types';
+import type {
+  MoreButtonRow,
+  MoreIconName,
+  MoreNavRow,
+  MoreRow,
+  MoreSliderRow,
+  MoreToggleRow,
+  MoreValueRow,
+} from './MoreForm.types';
 
 // Row label colours and glyph sizes live in settings-row-styles.ios: fixed
 // label / secondaryLabel / tertiaryLabel, never the accent (see that file for why).
@@ -180,6 +194,45 @@ function ValueRow({ row }: { row: MoreValueRow }) {
 }
 
 /**
+ * A switch row. Two Text children → title + subtitle (SwiftUI styles the second
+ * secondary and folds both into the VoiceOver label). Control tint on the track.
+ *
+ * With an `accessibilityLabel` the Toggle is named by it instead, and the
+ * subtitle rides as its hint so VoiceOver still reads it. A disabled row's
+ * reason (`disabledReason`) is its own line under the Toggle, at full label
+ * contrast: `.disabled` dims everything inside the control.
+ */
+function ToggleRow({ row, controlTint }: { row: MoreToggleRow; controlTint: string }) {
+  const subtitle = toggleRowSubtitle(row);
+  const toggle = (
+    <Toggle
+      isOn={row.value}
+      onIsOnChange={(next) => {
+        if (!row.disabled) row.onValueChange(next);
+      }}
+      modifiers={[
+        tint(controlTint),
+        disabledModifier(row.disabled ?? false),
+        ...(row.accessibilityLabel ? [accessibilityLabelModifier(row.accessibilityLabel)] : []),
+        ...(row.accessibilityLabel && subtitle.text && !subtitle.isReason
+          ? [accessibilityHintModifier(subtitle.text)]
+          : []),
+      ]}
+    >
+      <Text>{row.label}</Text>
+      {subtitle.text && !subtitle.isReason ? <Text>{subtitle.text}</Text> : null}
+    </Toggle>
+  );
+  if (!subtitle.isReason) return toggle;
+  return (
+    <VStack alignment="leading" spacing={spacing[1]}>
+      {toggle}
+      <Text modifiers={[FOOTNOTE, PRIMARY_LABEL]}>{subtitle.text}</Text>
+    </VStack>
+  );
+}
+
+/**
  * A standalone action. `destructive` colours the label red; any other button
  * takes the control tint explicitly, so it reads the same violet whether the
  * screen sits inside a tab (whose tint is the label colour) or on the root
@@ -217,21 +270,7 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
     case 'nav':
       return <NavRow key={row.key} row={row} />;
     case 'toggle':
-      // Two Text children → title + subtitle (SwiftUI styles the second secondary
-      // and folds both into the VoiceOver label). Control tint on the track.
-      return (
-        <Toggle
-          key={row.key}
-          isOn={row.value}
-          onIsOnChange={(next) => {
-            if (!row.disabled) row.onValueChange(next);
-          }}
-          modifiers={[tint(tints.control), disabledModifier(row.disabled ?? false)]}
-        >
-          <Text>{row.label}</Text>
-          {row.subtitle ? <Text>{row.subtitle}</Text> : null}
-        </Toggle>
-      );
+      return <ToggleRow key={row.key} row={row} controlTint={tints.control} />;
     case 'segmented':
       // Native iOS segmented control; each option's `tag` maps selection to its
       // key. The section header is the visible label, so this only carries an
@@ -262,10 +301,10 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
           ))}
         </Picker>
       );
-    case 'select':
+    case 'select': {
       // Menu-style Picker: a labelled row showing the current value + chevron that
       // pops a menu on tap — the idiomatic iOS Settings language picker.
-      return (
+      const picker = (
         <Picker
           key={row.key}
           label={row.label}
@@ -273,7 +312,12 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
           onSelectionChange={(value) => {
             if (typeof value === 'string' && !row.disabled) row.onSelect(value);
           }}
-          modifiers={[pickerStyle('menu'), tint(tints.control), disabledModifier(row.disabled ?? false)]}
+          modifiers={[
+            pickerStyle('menu'),
+            tint(tints.control),
+            disabledModifier(row.disabled ?? false),
+            ...(row.accessibilityLabel ? [accessibilityLabelModifier(row.accessibilityLabel)] : []),
+          ]}
         >
           {row.options.map((option) => (
             <Text key={option.key} modifiers={[tag(option.key)]}>
@@ -282,6 +326,15 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
           ))}
         </Picker>
       );
+      if (!row.subtitle) return picker;
+      // The explanation sits under the picker, in the same row, in the secondary style.
+      return (
+        <VStack key={row.key} alignment="leading" spacing={spacing[1]}>
+          {picker}
+          <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text>
+        </VStack>
+      );
+    }
     case 'info':
       return (
         <VStack key={row.key} alignment="leading" spacing={spacing[1]}>

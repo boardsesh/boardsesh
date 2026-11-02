@@ -417,6 +417,38 @@ excluded.
 Baseline from the 2026-09-20 audit (2026-08-23 to 2026-09-19 UTC): search to
 send 1,808/2,361 (76.6%); queue adoption 323/2,361 (13.7%).
 
+### Connect release watch (2.7)
+
+The 2.7 phased release is watched on props of two events that already fire,
+never on new events, so 2.6.x and 2.7.x read side by side and the event count
+per session stays the same. Every one of these is absent on 2.6.x.
+
+`BLE Picker Devices Resolved` (once per picker session that showed its list,
+built by `blePickerSessionProps` in `@boardsesh/analytics`):
+
+| Prop                  | Meaning                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `targetFiltered`      | The list first showed filtered to a known gym or saved board.                                             |
+| `searchedAnyBoard`    | The climber tapped Search for any board, in the search or on the filtered list.                          |
+| `listedCount`         | Boards the list showed at close: the target's own while filtered, every board found otherwise.           |
+| `targetNotListedSeen` | "Your board isn't in the list" was on screen: boards were found, none of them the target.                |
+| `tipsSeen`            | The troubleshooting tips (hardware, location permission, Location services) were on screen.               |
+| `secondsOpen`         | Whole seconds from the list showing to the session closing.                                               |
+| `phoneNeverConnected` | True until this phone's first connect; null while the phone's history hasn't loaded.                      |
+| `entrySurface`        | The `Board Connect Tapped` surface within 2 minutes before the list showed, or null.                      |
+
+The empty-or-not-listed share is sessions with `devicesTotal = 0` or
+`targetNotListedSeen = true` over all sessions. The per-group counts
+`targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices` come
+from #7202.
+
+`Board Connect Tapped` gains `boardUuid` (the board the connect is for; the
+board moved to on a move to another gym board) and `phoneNeverConnected`, both
+absent when not known. A newcomer's first connect is `phoneNeverConnected =
+true`. `Drive Mode Ended` already carries `boardType` and `windowSec` for the
+MoonBoard keep-lighting field test, and a window that ran out reports
+`durationSec` to its end even when the app noticed late.
+
 ### Spray-wall activation
 
 A spray wall has no Bluetooth (`docs/spray-walls.md`, "No Bluetooth, and the
@@ -443,7 +475,10 @@ with no light kit.
 Saving a climb also fires `Set Active Climb`, because the create screen puts
 the saved climb on the queue. Those carry `trigger = 'climb_saved'` and are
 left out of step 2. A commit from the Put on the wall button carries
-`trigger = 'put_on_wall'`; it is a real pick and stays in step 2. Every spray wall starts empty and the first thing anyone
+`trigger = 'put_on_wall'`; it is a real pick and stays in step 2. From 2.7
+a tap opens a preview, so `put_on_wall` is the main path by which a climber
+commits a climb (before 2.7 a tap committed it with no trigger); a step 2
+count across the 2.7 line mixes the two, so split it by app version. Every spray wall starts empty and the first thing anyone
 does on one is set a climb, so with saves counted step 2 would read "saved a
 climb" for nearly everyone and could not tell a climber who came back from one
 who did not. Next and Previous steps also fire it, with `trigger` `next`,
@@ -451,7 +486,7 @@ who did not. Next and Previous steps also fire it, with `trigger` `next`,
 In HogQL the filter is
 `coalesce(toString(properties.trigger), '') IN ('', 'put_on_wall')`: `trigger`
 is null on most climbs the climber chose and `put_on_wall` on one put up from a
-browse preview, so the filter keeps both and nothing else.
+browse preview (from 2.7, most of them), so the filter keeps both and nothing else.
 
 `boardType` on both step 2 events is the climb's own board, not the board the
 app has active. A spray climb opened from a shared link by someone whose active
@@ -1214,6 +1249,8 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
 | community-monthly-stats first run (fill in the date when it ships) | `Community Monthly Summary` and `Community Monthly Rank` start. The first Monday run sends the 12 months before it as well, so those months appear on one day; read them by their own `month`, not by when they arrived |
 | 2026-10-19 (crew browse UI, #4281) | `Set Active Climb` gains `trigger = 'put_on_wall'` when a climber commits a pinned preview on purpose: the Put on the wall (or Set active) button, or the lightbulb relaying it. It is a real pick: filters on `trigger != 'climb_saved'` count it unchanged. Crew commits are the ones with `participantCount >= 2` |
+| 2.7.0 store binary (fill in the date when it ships) | The #5654 first-connect confirmation ("Connected to {{board}}") reaches every enrolled account's first connect, in both arms. 2.7.0 is the first binary that enrols, and until this release the confirmation also needed **Light the board when I tap a climb** on, which 2.7 turns off by default: TestFlight or QA-forced readings from earlier 2.7 builds undercount it. It has no event of its own (a one-time dialog, under the gesture rule), so read its reach as the enrolled accounts (`arm_connect_step` set) whose first `Bluetooth Connection Success` comes from 2.7.0 or later. Its body now says what lights next (every tap, Put on board's 45 s window, until stopped on a MoonBoard, or one climb), so a confirmation effect read across builds compares different copy |
+| 2.7 preview-first (fill in the date when it ships) | A tap on a climb opens a preview instead of lighting it, so `Set Active Climb` with `trigger = 'put_on_wall'` becomes the main commit path (Put on board, then the climbs picked while its timed drive runs, 45 s by default, or a MoonBoard drive). Before 2.7 most picks carried a null `trigger`. Counts of climbs picked that keep null and `put_on_wall` stay comparable; a `put_on_wall`-only count jumps and must not be read as growth. Split by app version |
 | Next / Previous telemetry OTA (fill in the date when it ships) | `Set Active Climb` starts firing on every Next and Previous, with `trigger` `next`, `previous` or `rest_timer`. Its volume jumps by about one event per step. A count of climbs picked must keep only `trigger` null or `put_on_wall`; a filter on `trigger != 'climb_saved'` alone counts the steps too from this date |
 | #4415 web deploy (fill in the date when it ships) | `Board QR Scanned` starts on `/b/{slug}/{angle}/list`: kiosk and board-poster scans had no count before it. `Gym QR Scanned` starts waiting for consent to settle; before this it fired too early and was dropped, so its earlier counts are near zero for that reason, not for lack of scans. Store buttons on a Spraywall page start sending `placement: 'spray-wall'`, and a `/b` list page reached by a scan adds the medium to the link id (`spray-wall.board`, `climb-list.kiosk`) |
 | #6940 OTA (fill in the date when it ships) | Mobile starts firing `Queue Navigation` (Next and Previous in the player and the MiniPlayer, with `method`, `surface` and `outcome`) and `Queue Sheet Opened`. www's `Queue Navigation` stopped with W-16; read mobile's on `surface`, which www never sent |

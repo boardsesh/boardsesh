@@ -123,13 +123,26 @@ export const SHARED_EVENTS = {
   // Mobile-only (#7113): driving the wall ended. Props (built by
   // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
-  // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
-  // climb included), inSession, startedBy: 'swipe' (the wall button's swipe) |
-  // 'tap' (a solo press that puts a climb up, #7113 QA) | 'action' (the
+  // 'board_changed' | 'signed_out' | 'window_ended' (2.7: Put on board's
+  // keep-lighting window ran out, or its setting was turned off), durationSec,
+  // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
+  // lit climbs that renewed the keep-lighting window; 0 with no window, and
+  // absent before 2.7), windowSec (2.7: the timed drive's length, 30 | 45 | 60 | 120 | 300, or
+  // null for an open-ended drive), boardType (2.7: 'kilter', 'moonboard', ...,
+  // or null when unknown, for the MoonBoard field test), startedBy: 'swipe' (the wall button's swipe) | 'tap'
+  // (a press on Put on board that keeps lighting: from 2.7 the keep-lighting
+  // window, or an open-ended drive where the setting says Until I stop; before
+  // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
   // screen-reader action or the board sheet's row) | 'solo_carry' (a solo
-  // climber driving by Light the board as I swipe when a crew formed) }.
-  // Fired once per drive by the drive-mode store.
+  // climber driving by Light the board as I swipe when a crew formed) }. A
+  // window that a swipe or Light every climb turned open-ended keeps
+  // startedBy 'tap'. Fired once per drive by the drive-mode store.
   DriveModeEnded: 'Drive Mode Ended',
+  // Mobile-only (2.7): a drive started, before it reached the wall (arming).
+  // Props (built by `driveModeStarted`): { startedBy (as Drive Mode Ended),
+  // inSession, boardType (as Drive Mode Ended) }. Low volume: once per drive, never per climb. Every Drive Mode
+  // Started has one Drive Mode Ended.
+  DriveModeStarted: 'Drive Mode Started',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
   // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button
@@ -246,6 +259,12 @@ export const SHARED_EVENTS = {
   // Props: { page, key, value } — `value` is the boolean or the option key, never
   // free text. Fired by `withSettingTracking` (mobile settings-analytics.ts) so
   // every settings row reports the same way; it is what ranks the Settings root.
+  // From 2.7 the lightbulb's board sheet reports its switches too, under page
+  // 'boardControls' (keys as on the Board page: lightOnClimbTap, lightOnSwipe,
+  // putOnBoardKeepsLighting, moonboardPutOnBoardKeepsLighting,
+  // disconnectWhenDrivingEnds (2.7, replacing autoDisconnectBle, which builds
+  // before it sent), moonboardLightAdjacentHolds). Leave that page out when
+  // ranking the Settings root.
   SettingChanged: 'Setting Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
@@ -457,7 +476,11 @@ export const SHARED_EVENTS = {
   // auto-select), false when the tap opens the device picker. `placement`
   // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
   // bulb (open or collapsed), which shares 'board_control_indicator' with the
-  // floating JS capsule's bulb.
+  // floating JS capsule's bulb. 2.7: `boardUuid` (the board the connect is for:
+  // the selected gym or saved board, or the one a move to another gym board
+  // goes to; absent with no board identity) and `phoneNeverConnected` (true
+  // until this phone's first connect; absent while its history isn't loaded),
+  // to read a newcomer's first connect apart from a regular's.
   BoardConnectTapped: 'Board Connect Tapped',
   // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
   // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |
@@ -485,6 +508,10 @@ export const SHARED_EVENTS = {
   // a preview per time it was offered". Roughly 10-20k per 28 days at today's
   // ~10.6k player sessions. Events from the QA builds of PR #7017 also carry a
   // `variant` ('current' | 'bulb' | 'button'); store builds never sent one.
+  // From 2.7, `previewReason` ('default' | 'session' | 'other_board', see
+  // wall-control-events.ts) says why the climb on screen is a preview, and is
+  // absent while it is the committed climb. 'default' is a solo tap now that
+  // taps preview by default; read it to see how often a preview gets lit.
   WallControlShown: 'Wall Control Shown',
   // Mobile-only (#7000): a tap on any view of the player's board control (one
   // handler, so one event per tap). Props: { state, action, control }. `state`:
@@ -499,12 +526,16 @@ export const SHARED_EVENTS = {
   // tap on Disconnect board, state 'lit', called You have the board before
   // #7113; QA builds before Marco's phone test sent 'open_sheet' there instead;
   // 'stop_driving' (#7113) is a tap on You are driving the wall, state 'lit':
-  // driving stops and the link stays). `control`: 'button' (the wall
+  // driving stops and the link stays; 'stop_window' (2.7) is the same tap during
+  // Put on board's timed drive, state 'lit', which QA builds labelled Each pick
+  // lights: the drive stops and the link stays). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's
   // bulb, back for the busy-wall question or chosen in View options) |
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).
   // QA builds before the one-model refactor sent 'wall_control' for the
   // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
+  // From 2.7 it carries `previewReason` too, as Wall Control Shown does: only
+  // while the climb on screen is a preview.
   WallControlTapped: 'Wall Control Tapped',
   // Mobile-only (#7113): a swipe left on the player's wall button, once per
   // gesture that got going (a drag past 10 pt; a tap never fires it). Props: {
@@ -547,6 +578,15 @@ export const SHARED_EVENTS = {
   // devicesTotal=0 session with location denied is the OS suppressing results,
   // not an absent board. Analyse it by USERS, not events — see
   // posthog-empty-picker-oracle-is-weak.
+  // 2.7 release watch (built by `blePickerSessionProps`, ble-picker-events.ts):
+  // `targetFiltered` (the list first showed filtered to a known gym or saved
+  // board), `searchedAnyBoard` (Search for any board tapped), `listedCount`
+  // (boards the list showed at close), `targetNotListedSeen` ("your board isn't
+  // in the list" showed), `tipsSeen` (the troubleshooting tips showed),
+  // `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
+  // phone's history isn't loaded) and `entrySurface` (the last Board Connect
+  // Tapped surface within 2 minutes before the list, or null). Older events have
+  // none of them.
   // `targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices`
   // (2026-11): for a picker opened for a known gym or saved board, how many
   // devices resolved to it, could not be identified (no serial, or an

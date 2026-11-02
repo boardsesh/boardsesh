@@ -908,7 +908,7 @@
       "backToWall": "Revenir au bloc au mur",
       "backToCurrent": "Revenir à mon choix",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
-      "previewNotLit": "Aperçu, pas allumé",
+      "previewNotOnWall": "Aperçu · pas au mur",
       "onlyYouSeeThis": "Toi seul le vois",
       "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {
@@ -923,10 +923,9 @@
       "a11y": {
         "browseAnnounce": "Exploration. Le mur ne bouge pas.",
         "backToLive": "Retour au mur : {{name}}",
-        "committed": "{{name}} est sur le mur"
+        "committed": "{{name}} est sur le mur",
+        "previewFirstAnnounce": "Aperçu, pas allumé au mur. Touche Allumer sur la board pour l'allumer."
       },
-      "backMyPick": "Mon choix",
-      "backOnWall": "Au mur",
       "backToMyPickNamed": "Revenir à mon choix : {{name}}",
       "backToWallNamed": "Revenir au bloc au mur : {{name}}"
     },
@@ -960,13 +959,25 @@
       "onWall": "Au mur",
       "lightAgainHint": "Le rallume sur la board",
       "putOnGymBoard": "Allumer sur la {{board}}",
-      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc"
+      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc",
+      "pickLightHint": "Ouvre ce bloc et l'allume",
+      "pickMoveToGymBoardHint": "Ouvre ce bloc, passe sur la {{board}} et l'allume",
+      "stopsInSeconds_one": "S'arrête dans {{count}} seconde",
+      "stopsInSeconds_other": "S'arrête dans {{count}} secondes",
+      "stopsInUnderTen": "S'arrête dans moins de 10 secondes",
+      "stopsInClock": "S'arrête dans {{clock}}",
+      "windowStarted_other": "Tu pilotes la board. Le pilotage s'arrête {{count}} secondes après le dernier bloc allumé. Allumer chaque bloc le prolonge.",
+      "windowStartedMinute": "Tu pilotes la board. Le pilotage s'arrête une minute après le dernier bloc allumé. Allumer chaque bloc le prolonge.",
+      "windowStartedMinutes_other": "Tu pilotes la board. Le pilotage s'arrête {{count}} minutes après le dernier bloc allumé. Allumer chaque bloc le prolonge.",
+      "sheetStatusPreview": "Aperçu · pas au mur",
+      "sheetStatusDriving": "Tu pilotes la board. Chaque bloc que tu choisis s'allume."
     },
     "setActive": "Activer",
     "paneEmpty": {
       "title": "Choisis un bloc",
       "subtitle": "Touche un bloc pour le voir ici.",
-      "unlitHint": "Touche un bloc pour l’allumer"
+      "unlitHint": "Touche un bloc pour le voir en aperçu",
+      "unlitHintLights": "Touche un bloc pour l’allumer"
     },
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",

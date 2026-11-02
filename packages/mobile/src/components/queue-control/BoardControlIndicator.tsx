@@ -35,7 +35,7 @@ import {
   getBoardControlIndicatorVisual,
 } from './board-control-indicator-state';
 import { resolveWallBulbLook } from '../play-drawer/wall-control';
-import { useDriveModePhase } from '../play-drawer/drive-mode-store';
+import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
@@ -74,7 +74,10 @@ export function BoardControlIndicator({
   // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
   // the wall button's live fill. The board control's own rule
   // (`resolveWallBulbLook`), fed this phone's link and the drive.
-  const drivePhase = useDriveModePhase();
+  // Put on board's timed drive too (2.7): it is a drive like any other, and
+  // every tap lights until it ends.
+  const lightingMode = useDriveLightingMode();
+  const drivingLive = lightingMode === 'driving' || lightingMode === 'window';
   const { open: openBoardControls } = useBleControlSheet();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   // Shared connect/disconnect path so undo-arming and the press semantics match
@@ -119,7 +122,7 @@ export function BoardControlIndicator({
     heldByMe && !ledless ? 'lit' : null,
     heldByMe && localConnected,
     true,
-    drivePhase === 'live',
+    drivingLive,
   );
 
   const visual = getBoardControlIndicatorVisual({

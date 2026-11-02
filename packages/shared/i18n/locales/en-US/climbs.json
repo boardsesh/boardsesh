@@ -748,7 +748,6 @@
       "editorHint_other": "Remove the grey holds to save"
     },
     "climbActions": {
-      "preview": "Preview",
       "playNext": "Play next",
       "playLast": "Play last",
       "replayFromHere": "Replay from here",

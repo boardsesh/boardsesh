@@ -6,6 +6,7 @@ import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from './playli
 import { tickToClimb, type TickLike } from './tick-to-climb';
 import { buildBoardClimbTarget } from './routing/board-route-target';
 import { createClimbHandoffIntent } from './routing/climb-handoff-intent';
+import { readClimbChangeLights } from '../components/play-drawer/use-climb-change-lights';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -39,7 +40,7 @@ export type OpenClimbArgs =
     };
 
 export type OpenClimbOptions = {
-  /** View-only when true. Direct refs always preview; ticks and loaded climbs default to active. */
+  /** View-only when true. Otherwise ticks and loaded climbs follow the lighting preference. */
   preview?: boolean;
 };
 
@@ -62,7 +63,9 @@ function openModeOptions(climb: Climb, preview: boolean): Pick<OpenPlayDrawerOpt
  */
 export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, options?: OpenClimbOptions): void {
   const { openPlayDrawer, router } = deps;
-  const preview = options?.preview ?? false;
+  // The host applies the crew rule too. Pin the default solo preview here so
+  // its first render, and a missing-frames route handoff, retain the same intent.
+  const preview = options?.preview === true || !readClimbChangeLights('tap', { inSharedSession: false });
 
   if (args.kind === 'climb') {
     openPlayDrawer(args.climb, {

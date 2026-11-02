@@ -1,12 +1,18 @@
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { borderRadius, spacing } from '../../theme/tokens';
+
+/**
+ * The close glyph draws 24 pt (16 pt plus its padding); the slop takes the
+ * target to iOS's 44 pt and Material's 48 dp without growing the banner.
+ */
+const CLOSE_HIT_SLOP = Platform.OS === 'android' ? 12 : 10;
 
 type OnboardingTipBannerProps = {
   /** Already-translated one-line tip copy. */
@@ -88,7 +94,7 @@ function OnboardingTipBannerComponent({
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel={dismissLabel}
-        hitSlop={8}
+        hitSlop={CLOSE_HIT_SLOP}
         style={styles.close}
       >
         <Icon name="close" size={16} color={systemColors.secondaryLabel} />

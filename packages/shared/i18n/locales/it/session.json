@@ -908,7 +908,7 @@
       "backToWall": "Torna al blocco in parete",
       "backToCurrent": "Torna alla mia scelta",
       "joinedBrowseNotice": "Stai sfogliando. La parete resta ferma finché non metti in parete un blocco.",
-      "previewNotLit": "Anteprima, non illuminato",
+      "previewNotOnWall": "Anteprima · non in parete",
       "onlyYouSeeThis": "Lo vedi solo tu",
       "onlyYouSeeThisWallOn": "Lo vedi solo tu · la parete è su {{name}}",
       "commitOverride": {
@@ -923,10 +923,9 @@
       "a11y": {
         "browseAnnounce": "Stai sfogliando. La parete resta com'è.",
         "backToLive": "Torna alla diretta: {{name}}",
-        "committed": "{{name}} è in parete"
+        "committed": "{{name}} è in parete",
+        "previewFirstAnnounce": "Anteprima, non in parete. Illumina il pannello mette il blocco in parete."
       },
-      "backMyPick": "La mia scelta",
-      "backOnWall": "In parete",
       "backToMyPickNamed": "Torna alla mia scelta: {{name}}",
       "backToWallNamed": "Torna al blocco in parete: {{name}}"
     },
@@ -960,13 +959,25 @@
       "onWall": "In parete",
       "lightAgainHint": "Lo illumina di nuovo in parete",
       "putOnGymBoard": "Metti sul {{board}}",
-      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco"
+      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco",
+      "pickLightHint": "Apre questo blocco e lo illumina",
+      "pickMoveToGymBoardHint": "Apre questo blocco, passa al {{board}} e lo illumina",
+      "stopsInSeconds_one": "Finisce tra {{count}} secondo",
+      "stopsInSeconds_other": "Finisce tra {{count}} secondi",
+      "stopsInUnderTen": "Finisce tra meno di 10 secondi",
+      "stopsInClock": "Finisce tra {{clock}}",
+      "windowStarted_other": "Guidi tu il pannello. Finisce {{count}} secondi dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",
+      "windowStartedMinute": "Guidi tu il pannello. Finisce un minuto dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",
+      "windowStartedMinutes_other": "Guidi tu il pannello. Finisce {{count}} minuti dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",
+      "sheetStatusPreview": "Anteprima · non in parete",
+      "sheetStatusDriving": "Guidi tu il pannello. Ogni blocco che scegli si illumina in parete."
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {
       "title": "Scegli un blocco",
       "subtitle": "Tocca un blocco per vederlo qui.",
-      "unlitHint": "Tocca un blocco per illuminarlo"
+      "unlitHint": "Tocca un blocco per vederne l’anteprima",
+      "unlitHintLights": "Tocca un blocco per illuminarlo"
     },
     "previousFrame": "Frame precedente",
     "nextFrame": "Frame successivo",

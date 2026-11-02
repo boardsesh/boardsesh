@@ -156,6 +156,23 @@ describe('iOS SwitchRow', () => {
     expect(hostStyles.every((style) => style.minHeight === undefined)).toBe(true);
   });
 
+  // "In a session too" under Keep lighting: VoiceOver and Voice Control read
+  // the toggle on its own, so it carries the full name (spec B4.1).
+  it('names the toggle with its accessibility label when the visible one leans on a row above', () => {
+    const { getByRole } = render(
+      <SwitchRow
+        label="In a session too"
+        accessibilityLabel="Keep lighting in a session too"
+        description="With a crew in your session"
+        value={false}
+        onValueChange={vi.fn()}
+      />,
+    );
+
+    expect(getByRole('button', { name: 'Keep lighting in a session too, With a crew in your session' })).toBeTruthy();
+    expect(nativeCalls.text[0]?.children).toBe('In a session too');
+  });
+
   it('lets long native text wrap and grow vertically in a leading label stack', () => {
     render(
       <SwitchRow

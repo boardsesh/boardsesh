@@ -1,7 +1,7 @@
 import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource, SetCurrentClimbOptions } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import type { SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
@@ -38,6 +38,8 @@ export type PlayDrawerOpenOptions = {
    * acting on the active climb, not this preview.
    */
   previewQueueItem?: ClimbQueueItem | null;
+  /** Queue selection/replay intent, applied only when this preview is put on the wall. */
+  previewCommitOptions?: SetCurrentClimbOptions;
   /**
    * The preview is the live wall climb behind the accessory bar — a peer (or
    * another climber on this board) is driving the wall and this climb is lit
@@ -53,12 +55,36 @@ export type PlayDrawerOpenOptions = {
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   /**
-   * The accessory bar or the mini player reopening the current climb. Every
-   * other open of the current climb is a pick, which lights a climb the #4979
-   * hold kept dark (docs/current-climb-outside-queue.md, section 6); this one
-   * only shows the climb, so a hold stays and the player offers Put on the wall.
+   * The accessory bar or the mini player reopening the current climb, or a
+   * preview-first pick of the climb already up (a queue sheet row, Replay from
+   * here, the playlist switch). Every other open of the current climb is a
+   * pick, which lights a climb the #4979 hold kept dark
+   * (docs/current-climb-outside-queue.md, section 6); this one only shows the
+   * climb, so a hold stays and the player offers Put on the wall.
    */
   reopensCurrent?: boolean;
+  /**
+   * The MiniPlayer reopening the climber's last pick (`lib/last-pick-store.ts`):
+   * the mirror flip the player showed on that preview, put back. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewMirrored?: boolean;
+  /**
+   * The MiniPlayer reopening the last pick: the wall as it was when the
+   * climber started looking, and when, so the busy-wall question compares
+   * against THAT wall rather than the wall at the reopen. A crewmate who lit
+   * something while the player was closed still gets asked about. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewLatchStart?: { wallClimbUuid: string | null; at: number };
+  /**
+   * The MiniPlayer's bulb on a last pick that isn't lit (owner decision A):
+   * once the preview lands, press Put on board for it, through the wall
+   * button's own handler, so the busy-wall question in a crew and the timed
+   * drive per Stop driving after both apply. A pane's later replay never
+   * presses. Only meaningful alongside `previewQueueItem`.
+   */
+  putOnBoard?: boolean;
 };
 
 /**

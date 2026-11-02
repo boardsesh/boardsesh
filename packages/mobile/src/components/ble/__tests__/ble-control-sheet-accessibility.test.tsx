@@ -52,6 +52,10 @@ vi.mock('../../ListRow', () => ({
     createElement('button', { onClick: onPress }, title),
 }));
 
+vi.mock('../BleKeepLightingRow', () => ({
+  BleKeepLightingRow: ({ model }: { model: { label: string } }) => createElement('button', null, model.label),
+}));
+
 import { BleControlSheet } from '../BleControlSheet';
 
 it('keeps expanded accessibility labels in a bounded scrollable sheet, with working controls', () => {
@@ -64,9 +68,8 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={onDisconnect}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -98,9 +101,8 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={vi.fn()}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -112,7 +114,7 @@ it('drops auto-disconnect and the two lighting switches when asked, keeping the 
       onClose={vi.fn()}
     />,
   );
-  expect(queryByText('ble.autoDisconnect.toggleTitle'.repeat(3))).toBeNull();
+  expect(queryByText('ble.lighting.drivingEnds.label'.repeat(3))).toBeNull();
   expect(queryByText('ble.lighting.onTapLabel'.repeat(3))).toBeNull();
   expect(queryByText('ble.lighting.onSwipeLabel'.repeat(3))).toBeNull();
   getByText('lightControl.lightAdjacentHolds'.repeat(3));
@@ -135,9 +137,8 @@ it.each([
       onReassert={vi.fn()}
       onClearLights={vi.fn()}
       onDisconnect={vi.fn()}
-      autoDisconnectEnabled={false}
-      autoDisconnectTimeoutLabel="30 seconds"
-      onToggleAutoDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
       showLightAdjacentHolds={false}
       lightAdjacentHoldsEnabled={false}
       onToggleLightAdjacentHolds={vi.fn()}
@@ -156,4 +157,32 @@ it.each([
   fireEvent.click(getByText('playView.wallControl.lightEveryClimb'.repeat(3)));
   expect(onDrive).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
+});
+
+// 2.7: the player's status line, then Keep lighting after Put on board, lead
+// the sheet, above the board's actions.
+it('leads with the status line and the keep-lighting row', () => {
+  const { container } = render(
+    <BleControlSheet
+      visible
+      onReassert={vi.fn()}
+      onClearLights={vi.fn()}
+      onDisconnect={vi.fn()}
+      disconnectWhenDrivingEnds={false}
+      onToggleDisconnectWhenDrivingEnds={vi.fn()}
+      showLightAdjacentHolds={false}
+      lightAdjacentHoldsEnabled={false}
+      onToggleLightAdjacentHolds={vi.fn()}
+      lightOnSwipe={false}
+      onToggleLightOnSwipe={vi.fn()}
+      lightOnClimbTap={false}
+      onToggleLightOnClimbTap={vi.fn()}
+      showLightingSwitches={false}
+      status={<span>On the wall</span>}
+      keepLighting={{ label: 'Keep lighting after Put on board', choice: '45', options: [], onChange: vi.fn() }}
+      onClose={vi.fn()}
+    />,
+  );
+  const texts = Array.from(container.querySelectorAll('span, button')).map((node) => node.textContent);
+  expect(texts.slice(0, 3)).toEqual(['On the wall', 'Keep lighting after Put on board', 'ble.relightBoard'.repeat(3)]);
 });

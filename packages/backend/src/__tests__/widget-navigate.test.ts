@@ -139,6 +139,7 @@ vi.mock('../services/queue-navigation', () => ({
 }));
 
 const { handleWidgetNavigate, __resetWidgetRateLimitForTests } = await import('../handlers/widget-navigate');
+const { sessionParticipantId } = await import('../services/board-session-privacy');
 const { roomManager: mockedRoomManager } = await import('../services/room-manager');
 const { pubsub: mockedPubsub } = await import('../pubsub/index');
 
@@ -337,6 +338,22 @@ describe('handleWidgetNavigate', () => {
     });
   });
 
+  // The climber's own Lock Screen Next: the event names their account as the
+  // mover (the participant id their phone joined as), so their phone never
+  // reads the step as a crewmate's put-up and ends its keep-lighting window.
+  it("names the token's account as the mover, as the participant its phone joined as", async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    await handleWidgetNavigate(req as unknown as IncomingMessage, makeResponse() as unknown as ServerResponse);
+    const mover = mockNavigate.mock.calls[0]?.[6];
+    expect(mover).toBe(sessionParticipantId(SESSION_ID, USER_ID));
+    expect(mover).toEqual(expect.any(String));
+  });
+
   it('refuses a revoked session grant even when the token user remains a durable participant', async () => {
     tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
     resourceGrantRows.mockReturnValue([{ status: 'revoked' }]);
@@ -384,6 +401,8 @@ describe('handleWidgetNavigate', () => {
 
     expect(res.statusCode).toBe(200);
     expect(mockNavigate).toHaveBeenCalledOnce();
+    // No account behind the token: the step names nobody, as before.
+    expect(mockNavigate.mock.calls[0]?.[6]).toBeNull();
     expect(trackLiveActivityWidgetNavigationMock).not.toHaveBeenCalled();
     expect(trackLiveActivityWidgetNavigationAttributionGapMock).toHaveBeenCalledWith({
       sessionId: SESSION_ID,
@@ -416,6 +435,7 @@ describe('handleWidgetNavigate', () => {
       mockedPubsub,
       undefined,
       'widget-navigate',
+      sessionParticipantId(SESSION_ID, USER_ID),
     );
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
       sessionId: SESSION_ID,
@@ -504,6 +524,7 @@ describe('handleWidgetNavigate', () => {
       mockedPubsub,
       undefined,
       'widget-navigate',
+      sessionParticipantId(SESSION_ID, USER_ID),
     );
   });
 

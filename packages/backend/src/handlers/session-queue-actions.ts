@@ -3,6 +3,7 @@ import { pubsub } from '../pubsub/index';
 import { historyLine, upNextStart } from '@boardsesh/queue';
 import { navigateToQueueItem, setCurrentClimbAndPublish } from '../services/queue-navigation';
 import { isNowSlotSession } from '../services/queue-now-slot-rollout';
+import { sessionParticipantId } from '../services/board-session-privacy';
 
 export type NavigateAction = 'next' | 'previous';
 
@@ -29,6 +30,13 @@ export type NavigateOutcome =
  * event publish. `correlationId` tags the published event so the originating
  * client can echo-suppress its own change.
  *
+ * `moverUserId` is the account the widget token or watch JWT authorised. The
+ * event names it as the mover (`currentChangedBy`, the same session
+ * participant id a phone joins as), so that account's own phone reads the step
+ * as its own, never as a crewmate's put-up: the climber's Lock Screen Next
+ * must not end the keep-lighting window their phone is running (2.7). A legacy
+ * token with no account names nobody, as before.
+ *
  * F3 (docs/current-climb-outside-queue.md, section 3): Next goes to Up next[0]
  * and Previous to History's last entry, read with `upNextStart` /
  * `historyLine`, so with nothing current Next lands on `queue[historyCount]`
@@ -42,6 +50,7 @@ export async function navigateSessionQueue(
   sessionId: string,
   action: NavigateAction,
   correlationId: string,
+  moverUserId: string | null,
 ): Promise<NavigateOutcome> {
   const queueState = await roomManager.getQueueState(sessionId);
   const queueLength = queueState.queue.length;
@@ -68,7 +77,16 @@ export async function navigateSessionQueue(
     targetIndex = action === 'next' ? 0 : queueLength - 1;
   }
 
-  const result = await navigateToQueueItem(sessionId, targetIndex, roomManager, pubsub, undefined, correlationId);
+  const currentChangedBy = moverUserId ? sessionParticipantId(sessionId, moverUserId) : null;
+  const result = await navigateToQueueItem(
+    sessionId,
+    targetIndex,
+    roomManager,
+    pubsub,
+    undefined,
+    correlationId,
+    currentChangedBy,
+  );
 
   if (!result) {
     return { kind: 'out_of_bounds', queueLength, serverCurrentIndex, targetIndex };
