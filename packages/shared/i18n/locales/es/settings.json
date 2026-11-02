@@ -507,7 +507,7 @@
       "onTapLabel": "Iluminar el plafón al tocar un bloque",
       "onTapDescription": "Cada toque en una lista enciende el bloque, sin límite de tiempo. Si lo desactivas, el toque abre una vista previa.",
       "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
-      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter carga esa lista en tu cola y muestra en vista previa el bloque que tocaste. El plafón conserva su bloque hasta que pulses Poner en el plafón."
+      "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter carga esa lista. Con Iluminar el plafón al tocar un bloque activado, la lista sustituye tu cola y el bloque que tocaste se enciende. Si lo desactivas, la lista desde el bloque que tocaste pasa a A continuación y ese bloque se abre en vista previa. El plafón conserva su bloque hasta que pulses Poner en el plafón."
     },
     "holdForControls": "Mantén pulsado para los controles",
     "boardControls": "Controles del plafón",

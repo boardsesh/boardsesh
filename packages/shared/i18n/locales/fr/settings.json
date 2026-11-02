@@ -507,7 +507,7 @@
       "onTapLabel": "Allumer la board quand je touche un bloc",
       "onTapDescription": "Chaque toucher dans une liste allume le bloc, sans limite de temps. Désactivé, le toucher ouvre un aperçu.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste dans votre file et ouvre en aperçu le bloc touché. La board garde son bloc jusqu'à Allumer sur la board."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Avec Allumer la board quand je touche un bloc activé, la liste remplace votre file et le bloc touché s'allume. Désactivé, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu. La board garde son bloc jusqu'à Allumer sur la board."
     },
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",
