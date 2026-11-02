@@ -13,12 +13,14 @@ import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
+import { useScanTipsDue } from '../../lib/ble/scan-tips';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
 import { recordDevicePickerNoLights } from '../../lib/onboarding/device-picker-no-lights';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
+import { ScanTips } from './ScanTips';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -54,6 +56,14 @@ type DevicePickerSheetProps = {
    * the button is then not rendered.
    */
   onScanAgain?: () => void;
+  /**
+   * "Browse for now", beside the tips: the climber stops waiting for the board
+   * and keeps picking climbs, which open as previews with no board. The sheet
+   * calls this, then `onDismiss` (the same cancel as the top bar's), so the host
+   * only records it. Omitted where no host wires it; the button is then not
+   * rendered.
+   */
+  onBrowseForNow?: () => void;
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
@@ -97,6 +107,7 @@ export function DevicePickerSheet({
   showAllBoards = false,
   onNoLeds,
   onScanAgain,
+  onBrowseForNow,
   mode = 'list',
   open = true,
   closing = false,
@@ -142,12 +153,14 @@ export function DevicePickerSheet({
   // RSSI in place between pushes, so re-sorting on a lookup could swap rows the
   // climber is about to tap. Grouping keeps the sorted order, so a lookup moves
   // a row only when its group changes, and the full list keeps its identity.
+  // `targetCount` is the target group alone: what the tips wait on for a known
+  // board, since an unidentified box listed under it may not be the climber's.
   const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
   const devicesByRssi = useMemo(() => sortByRssi(devices), [devices]);
-  const listedDevices = useMemo(() => {
-    if (!filteringTarget || !targetBoard) return devicesByRssi;
+  const { listedDevices, targetCount } = useMemo(() => {
+    if (!filteringTarget || !targetBoard) return { listedDevices: devicesByRssi, targetCount: devicesByRssi.length };
     const groups = groupPickerDevices(devicesByRssi, resolvedBoards, targetBoard);
-    return [...groups.target, ...groups.unknown];
+    return { listedDevices: [...groups.target, ...groups.unknown], targetCount: groups.target.length };
   }, [devicesByRssi, filteringTarget, resolvedBoards, targetBoard]);
 
   // Pre-compute once per devices update; name is stable for a given device
@@ -198,12 +211,24 @@ export function DevicePickerSheet({
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
 
+  // The tips used to wait for the 30 s scan to end empty. They now come in 5 s
+  // into the scan (the sheet mounts per session, at the tap) while the scan goes
+  // on, and stay once it ends. Not while `searching`: that has no list, and it
+  // hands over to the list at 10 s, where the tips are already due.
+  const tipsDue = useScanTipsDue(isScanning);
+  const tipsTime = !searching && (tipsDue || !isScanning);
+  // Nothing to pick yet: no board heard at all, or for a known board nothing in
+  // its target group (an unidentified box listed under it may not be theirs).
+  const boardNotHeard = filteringTarget ? targetCount === 0 : devices.length === 0;
+
   // On a binary whose manifest declares `BLUETOOTH_SCAN` without
   // `neverForLocation` (before Android versionCode 2000761), an empty list on
   // Android 12+ with location denied is the OS hiding scan results, not a board
   // problem — so replace the hardware troubleshooting with copy that is
-  // actually actionable. See lib/ble/android-scan-location-gate.ts.
-  const locationHint = useAndroidScanLocationHint(showEmptyState);
+  // actually actionable. See lib/ble/android-scan-location-gate.ts. Asked from
+  // the same 5 s as the tips, and only with nothing heard at all: a scan that
+  // heard any board is not being hidden.
+  const locationHint = useAndroidScanLocationHint(tipsTime && devices.length === 0);
   const showLocationHint = locationHint.shouldOfferLocationGrant || locationHint.wasGranted;
   // Same idea, but for Android 11 and below: the permission is fine, the
   // system-wide Location toggle is off. See android-scan-location-gate.ts.
@@ -240,12 +265,25 @@ export function DevicePickerSheet({
     recordDevicePickerNoLights();
   }, [onDismiss, onNoLeds]);
 
+  const handleBrowseForNow = useCallback(() => {
+    // Recorded before the cancel: the host flushes the session when the cancel
+    // clears its picker state.
+    onBrowseForNow?.();
+    onDismiss();
+  }, [onBrowseForNow, onDismiss]);
+
   // The hardware tips only when the board they want may be missing: not when
-  // it's clearly listed, and not while the initial scan is still running
-  // (showEmptyState gates the zero-device path on the scan having finished empty).
+  // it's listed (for a known board, in its target group), and not in the first
+  // 5 s of the scan. Boards of another type listed with no known board in view
+  // say so at once, as before. Never while `searching` (`tipsTime`; its device
+  // list is held back empty, so no type can mismatch).
   const showHardwareTips =
-    !showLocationHint && !showLocationServicesHint && (showEmptyState || (!filteringTarget && noneMatchedSelectedType));
+    !showLocationHint &&
+    !showLocationServicesHint &&
+    ((tipsTime && boardNotHeard) || (!filteringTarget && noneMatchedSelectedType));
   const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
+  // A MoonBoard moves "another phone" up the tips.
+  const tipsBoardName = targetBoard?.boardName ?? currentBoardConfig?.boardName;
 
   // Report what the climber saw, while the sheet is on screen. Read through a
   // ref so a host's new callback never re-reports.
@@ -403,12 +441,7 @@ export function DevicePickerSheet({
 
           {showHardwareTips && (
             <View style={styles.troubleshoot}>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('ble.troubleshootTitle')}
-              </Text>
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
-                {t('ble.troubleshootTips')}
-              </Text>
+              <ScanTips boardName={tipsBoardName} />
               {/* The wall may simply have no light kit. Offer to drive it anyway:
                   everyone on the board feed (and the gym screen) still sees the
                   climb. Session-local — nothing is written to the board record. */}
@@ -431,6 +464,13 @@ export function DevicePickerSheet({
                 </View>
               )}
             </View>
+          )}
+
+          {/* The way on without a board: close the picker and keep picking
+              climbs, which open as previews. Not "This wall has no lights",
+              which takes the wall with no Bluetooth. */}
+          {onBrowseForNow && (
+            <Button title={t('ble.browseForNow')} onPress={handleBrowseForNow} variant="text" size="medium" />
           )}
         </View>
       )}

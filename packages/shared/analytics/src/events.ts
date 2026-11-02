@@ -615,6 +615,10 @@ export const SHARED_EVENTS = {
   // unrecorded one), and were positively another board (hidden until "Search
   // for any board"). All three are null when the picker had no board identity;
   // older events have none of them.
+  // `tipsShownAtMs` (2026-11): milliseconds from the list showing to the tips
+  // first showing, null when they never did. The tips now come in 5 s into the
+  // scan instead of at its end. `browsedForNow` (2026-11): the climber closed the
+  // picker with "Browse for now". Older events have neither.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   // Consent-driven scan recon: fired once per discovered board when a user
   // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw

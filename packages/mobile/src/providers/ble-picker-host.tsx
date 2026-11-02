@@ -38,6 +38,11 @@ export type BlePickerHostValue = {
   onNoLeds: () => void;
   /** Cancel this picker and start the connect over, for "Scan again" after an empty scan. */
   onScanAgain: () => void;
+  /**
+   * The climber tapped "Browse for now". Only recorded, for the picker session's
+   * `browsedForNow`: the sheet cancels the picker itself right after.
+   */
+  onBrowseForNow: () => void;
   /** What the sheet showed the climber, for the picker session's release-watch props (2.7). */
   onSeen: (seen: DevicePickerSeen) => void;
 };
