@@ -50,11 +50,11 @@ export const CREW_PUT_UP_DISCONNECT_WAIT_MS = 5_000;
 
 /**
  * Resolves at the next wall confirm of a climb `matches` accepts, from this
- * phone's link or a relay, or after `timeoutMs`. The confirm bus also replays the session's confirms (any
- * member's relay, or a late echo of this phone's own earlier one), so a wait
- * for one climb names it: another climb's confirm never ends it early. A write
- * of it still in flight on this link is waited for after that
- * (`use-driving-ended-disconnect.ts`).
+ * phone's link or a relay, or after `timeoutMs`. The confirm bus also replays
+ * the session's confirms (any member's relay, or a late echo of this phone's
+ * own earlier one), so a wait for one climb names it: another climb's confirm
+ * never ends it early. A write of it still in flight on this link is waited
+ * for after that (`use-driving-ended-disconnect.ts`).
  */
 export function waitForWallConfirm(timeoutMs: number, matches: (climbUuid: string) => boolean): Promise<void> {
   return new Promise((resolve) => {
