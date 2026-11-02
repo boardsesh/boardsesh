@@ -141,20 +141,19 @@ flat amber fallback; the label still says what the next press does.
   A tap on it stops the window and keeps the link. Frost: open-ended driving only, "You are
   driving the wall". A window never frosts. The top bar's second line says "Preview · not on
   the wall" for a preview while this phone holds the board.
-- **A MoonBoard press always drives (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop).** Most MoonBoard controllers don't like phones switching,
-  so on a MoonBoard (`tapStartsDrive`, set from `isMoonboardBoardName`) a solo press that puts
-  a climb up keeps the #7113 rule: with Light the board as I swipe off and no drive on, the
-  model's `tapDrive` is `start`, and the press starts a live drive through the swipe's runner
-  (`startDrive`: commit, connect, light); otherwise it is `resume`. Where the drive can't start
-  (no swipe offered, the `wall-swipe-to-drive` flag off) the press drops the stop and lights as
-  before. Never on Set active, and in a crew a press stays a one-off put. `Drive Mode Ended`
-  says `startedBy: 'tap'` for these drives. This still needs a field test on real MoonBoard
-  controllers.
+- **A MoonBoard press always drives (2.7: `moonboardPutOnBoardKeepsLighting`, default Until I stop).** Most
+  MoonBoard controllers don't like phones switching, so a MoonBoard has its own keep-lighting choice, and it applies
+  in a crew session too, whatever **In a session too** says (`resolveKeepLightingPlan` in `lib/keep-lighting.ts`).
+  At the default the model's `tapDrive` is `drive`: once the climb is up, the press starts an open-ended drive (the
+  frost). A timed MoonBoard choice gives `window` like any other board. Where no drive can start here (no swipe
+  offered, the `wall-swipe-to-drive` flag off, a drive already on) the press lights one climb. Never on Set active.
+  `Drive Mode Started` and `Drive Mode Ended` say `startedBy: 'tap'` and carry `boardType` for these drives. This
+  still needs a field test on real MoonBoard controllers.
 - **Driving the wall** (#7113) lives in `drive-mode-store.ts`, in memory only: `arming` while a swipe's connect or
   first light is in flight, `live` once every change of climb lights the wall, in a crew too. `DriveModeWatcher`
   (mounted once in the root layout) ends it when this phone's link or hold drops, the swipe's connect fails (or
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
-  nothing. A press's "stopped" lasts until that link drops, or a solo press resumes an explicit Light on swipe opt-in or, on a MoonBoard, starts a drive (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
+  nothing. A press's "stopped" lasts until that link drops, a solo press resumes an explicit Light on swipe opt-in, or Put on board opens a keep-lighting window or drive (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
   (this phone's board) and on Disconnect board while not driving; never on Sam's board (his phone holds it), a relay, Set active, a wall with
   no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
@@ -163,7 +162,9 @@ flat amber fallback; the label still says what the next press does.
   view, in any state, or ⋯ › Board controls opens the board sheet (Re-light, Turn off all lights, Disconnect, plus
   the MoonBoard "Light the hold above") while this phone holds the link; screen readers get the hold as a named
   action, "Board options". Every view runs the same tap. The player's sheet leaves out auto-disconnect and the two lighting switches, which live in Settings ›
-  Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Auto-disconnect still frees the
+  Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets lead with **Keep
+  lighting after Put on board** (the MoonBoard's own choice on a connected MoonBoard), so the window's length is two
+  taps away at the wall, and the player's sheet carries a status line for the climb on screen. Auto-disconnect still frees the
   board.
 - **No control for a climb this wall can't light**: the switch-board overlay, another board's climb, or a board with
   no lights linked (`offWall`). A tap there could only re-send the queue head.
