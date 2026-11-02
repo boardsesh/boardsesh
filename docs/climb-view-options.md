@@ -283,11 +283,13 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   swipe is offered; the flat progress uses its readable amber label colour over them. A 28 pt trailing-edge peek and
   spring-back (about 700 ms; a fade in place under Reduce Motion) plays where the swipe is news (2.7, spec B3): the
   first keep-lighting window in an app session, and one replay that session on the third Put on board within 5
-  minutes. The peek uses the same flat amber progress, with no bokeh before driving. At most 3 sessions on the v2
-  count `wallSwipePeekSessionsV2`, so a climber who used up 2.6's three sees it again for the new meaning; never again
-  once a swipe has driven the wall (`wallSwipeUsed`, kept from 2.6), never in screenshot mode, never with VoiceOver or
-  TalkBack on (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`). A session counts towards the three once a
-  peek runs, however many play in it.
+  minutes. The peek uses the same flat amber progress, with no bokeh before driving. Newcomers get it in at most 3
+  sessions on the v2 count `wallSwipePeekSessionsV2`; a session counts towards the three once a peek runs, however
+  many play in it. A climber who saw 2.6's three peeks (its count `wallSwipePeekSessions` reached 3) gets ONE more
+  peek for the new meaning (owner decision C, 2026-11-02: `UPGRADE_PEEKS`), and the session that plays it plays no
+  replay; a climber 2.6 showed fewer than three gets the normal three (`wallSwipePeekOwed`). Never again once a swipe
+  has driven the wall (`wallSwipeUsed`, kept from 2.6), never in screenshot mode, never with VoiceOver or TalkBack on
+  (`lib/wall-swipe-hint.ts`, built like `reset-zoom-hint.ts`).
 - **Driving frost and flat swipe progress.** PlayCore prepares hold geometry only for confirmed physical driving,
   when the button renders `WallGlow`. Non-driving drags and peeks use the temporary flat `live` amber `WallSwipeWipe`,
   which unmounts when the gesture settles or driving is confirmed. Stopping or browsing removes driving frost
