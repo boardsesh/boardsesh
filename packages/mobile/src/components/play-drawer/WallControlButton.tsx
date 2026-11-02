@@ -40,7 +40,7 @@
 // works there and makes the drive open-ended, which brings the frost. The
 // screen-reader value is the time left on a 10 s step, split from the label.
 
-import { PressableSurface } from '../PressableSurface';
+import { PressableSurface, type PressableSurfaceProps } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
@@ -52,6 +52,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useTheme } from '../../providers/theme-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
 import { useWallSwipePeek } from '../../lib/wall-swipe-hint';
 import {
   LONG_PRESS_ACTION_NAME,
@@ -206,7 +207,14 @@ function WallControlButtonComponent({
       : swipePreview.peek
         ? peekProgress(size.w)
         : (swipePreview.progress ?? 0);
-  const peekToken = useWallSwipePeek(swipeOffered && swipePreview === undefined);
+  // The peek (spec B3): at the first keep-lighting window in a session, and the
+  // session's one replay on a third Put on board within 5 minutes.
+  const screenReaderOn = useScreenReaderEnabled();
+  const peekToken = useWallSwipePeek({
+    offered: swipeOffered && swipePreview === undefined,
+    windowLive: model.lightWindow,
+    screenReaderOn,
+  });
   const swipe = useWallSwipe({
     enabled: swipeOffered,
     driving: model.driving,
@@ -227,10 +235,6 @@ function WallControlButtonComponent({
   const holdsBoard = model.holder === 'self';
   const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const text = useWallControlText(model);
-  // The window's time left, on a 10 s step, as the button's value (spec B2).
-  const { t } = useTranslation('session');
-  const windowClock = useWindowSecondsLeft(10);
-  const windowValue = model.lightWindow && windowClock ? windowTimeValue(windowClock.secondsLeft * 1000, t) : undefined;
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
   // Clear of Android's edge Back, the same on both sides so it stays centred.
@@ -382,7 +386,8 @@ function WallControlButtonComponent({
     </>
   );
   const button = (
-    <PressableSurface
+    <WallControlSurface
+      lightWindow={model.lightWindow}
       testID={sample ? undefined : 'play-drawer-wall-control'}
       onPress={handlePress}
       onLongPress={hold ? handleLongPress : undefined}
@@ -390,7 +395,6 @@ function WallControlButtonComponent({
       onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
-      accessibilityValue={windowValue ? { text: windowValue } : undefined}
       accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy }}
       // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
@@ -439,7 +443,7 @@ function WallControlButtonComponent({
           })}
         </WallSwipeWipe>
       ) : null}
-    </PressableSurface>
+    </WallControlSurface>
   );
   // The pan is enabled only where the swipe is offered (`useWallSwipe`); always
   // wrapped, so the button never remounts as the offer comes and goes. `pan-y`
@@ -452,6 +456,26 @@ function WallControlButtonComponent({
 }
 
 export const WallControlButton = memo(WallControlButtonComponent);
+
+type WallControlSurfaceProps = PressableSurfaceProps & {
+  /** Put on board's keep-lighting window is on: the time left is the value. */
+  lightWindow: boolean;
+};
+
+/**
+ * The button's pressable, which carries the window's time left as its
+ * screen-reader value (spec B2: "Each pick lights", then "30 seconds left").
+ * A leaf of its own because the value steps every 10 s: only this re-renders
+ * for it. The row, the glow and the swipe are the parent's elements, handed in
+ * as children, so React keeps them as they are.
+ */
+function WallControlSurface({ lightWindow, ...pressable }: WallControlSurfaceProps) {
+  const { t } = useTranslation('session');
+  const windowClock = useWindowSecondsLeft(10);
+  const windowValue = lightWindow && windowClock ? windowTimeValue(windowClock.secondsLeft * 1000, t) : null;
+  const accessibilityValue = useMemo(() => (windowValue ? { text: windowValue } : undefined), [windowValue]);
+  return <PressableSurface {...pressable} accessibilityValue={accessibilityValue} />;
+}
 
 const styles = StyleSheet.create({
   // Fills the row, whose own padding matches the Logbook card's edges below it

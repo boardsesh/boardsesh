@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
 import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
+import { noteWallPutOnBoardPress } from '../../lib/wall-swipe-hint';
 import {
   trackWallControlSwiped,
   trackWallControlTapped,
@@ -258,6 +259,8 @@ export function useWallControl({
     // A fresh press: whatever an earlier one left waiting on the question goes.
     pendingKeepLightingRef.current = null;
     const putsUp = isPutUpAction(action);
+    // The swipe peek's replay: a third Put on board within 5 minutes (spec B3).
+    if (putsUp && control === 'button') noteWallPutOnBoardPress();
     // Solo with Light the board as I swipe on, a press drops a stop and the
     // setting lights the next climbs. Otherwise, with keep-lighting on (2.7),
     // the press puts the climb up the ordinary way and, once it went up, arms

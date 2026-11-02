@@ -41,6 +41,7 @@ import {
 } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
 import { registerAutoDisconnectActivity } from '../../../lib/auto-disconnect-deadline';
+import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { startKeepLighting } from '../drive-runner';
 import {
   EMPTY_WALL_CONTROL,
@@ -433,6 +434,25 @@ describe('useWallControl: presses keep auto-disconnect from letting go', () => {
       hook.result.current.press('button');
     });
     expect(activity).toHaveBeenCalledOnce();
+  });
+
+  // Spec B3: the swipe peek's replay counts the presses that put a climb up.
+  it('counts a Put on board on the button towards the swipe peek’s replay, never a bulb or a stop', () => {
+    const presses = vi.spyOn(wallSwipeHint, 'noteWallPutOnBoardPress');
+    try {
+      const putUp = setup(modelFor('put_on_wall', 'put_on_wall'));
+      act(() => {
+        putUp.hook.result.current.press('button');
+        putUp.hook.result.current.press('bulb');
+      });
+      const stop = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => {
+        stop.hook.result.current.press('button');
+      });
+      expect(presses).toHaveBeenCalledOnce();
+    } finally {
+      presses.mockRestore();
+    }
   });
 
   it('counts nothing on a render alone', () => {

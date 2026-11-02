@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MoreFormModel } from '../MoreForm.types';
+import type { MoreFormModel, MoreSelectRow } from '../MoreForm.types';
 
 // MoreForm.android require()s Android vector-drawable .xml assets, which Metro
 // treats as assets; node cannot parse them, so stub the extension to a number.
@@ -17,7 +17,18 @@ vi.hoisted(() => {
 vi.mock('@expo/ui', () => ({
   Host: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'compose-host' }, children),
 }));
-vi.mock('@expo/ui/jetpack-compose', () => {
+// The select row's exposed dropdown, recorded: Compose throws natively unless
+// the anchor and the menu are direct children of the box, so the test reads
+// the box's own children, and each item's modifiers and handlers.
+type RecordedModifier = { name: string; args: unknown[] };
+const compose = vi.hoisted(() => ({
+  boxChildren: [] as { kind: string; modifiers: RecordedModifier[] }[][],
+  boxExpanded: [] as boolean[],
+  onExpandedChange: null as ((expanded: boolean) => void) | null,
+  items: [] as { modifiers: RecordedModifier[]; onClick?: () => void }[],
+}));
+vi.mock('@expo/ui/jetpack-compose', async () => {
+  const { Children, isValidElement } = await import('react');
   const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
   const WithSlots = Object.assign(Container, {
     Trigger: Container,
@@ -25,11 +36,56 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     LeadingIcon: Container,
     Text: Container,
   });
+  const Row = ({ children }: { children?: ReactNode; modifiers?: RecordedModifier[] }) =>
+    createElement('div', null, children);
+  const ExposedDropdownMenu = ({ children }: { children?: ReactNode; expanded: boolean }) =>
+    createElement('div', { 'data-menu': 'true' }, children);
+  const ExposedDropdownMenuBox = ({
+    children,
+    expanded,
+    onExpandedChange,
+  }: {
+    children?: ReactNode;
+    expanded: boolean;
+    onExpandedChange?: (expanded: boolean) => void;
+  }) => {
+    compose.boxExpanded.push(expanded);
+    compose.onExpandedChange = onExpandedChange ?? null;
+    compose.boxChildren.push(
+      Children.toArray(children)
+        .filter(isValidElement)
+        .map((child) => {
+          const props = child.props as { modifiers?: RecordedModifier[] };
+          return {
+            kind: child.type === Row ? 'Row' : child.type === ExposedDropdownMenu ? 'ExposedDropdownMenu' : 'other',
+            modifiers: props.modifiers ?? [],
+          };
+        }),
+    );
+    return createElement('div', null, children);
+  };
+  const DropdownMenuItem = Object.assign(
+    ({
+      children,
+      modifiers,
+      onClick,
+    }: {
+      children?: ReactNode;
+      modifiers?: RecordedModifier[];
+      onClick?: () => void;
+    }) => {
+      compose.items.push({ modifiers: modifiers ?? [], onClick });
+      return createElement('div', null, children);
+    },
+    { LeadingIcon: Container, Text: Container },
+  );
   return {
     LazyColumn: Container,
     Card: Container,
     Column: Container,
-    Row: Container,
+    Row,
+    ExposedDropdownMenuBox,
+    ExposedDropdownMenu,
     Text: Container,
     Switch: Container,
     Button: Container,
@@ -41,7 +97,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     SingleChoiceSegmentedButtonRow: Container,
     SegmentedButton: Container,
     DropdownMenu: WithSlots,
-    DropdownMenuItem: WithSlots,
+    DropdownMenuItem,
     BasicTextField: Container,
     Slider: Container,
     CircularProgressIndicator: Container,
@@ -49,15 +105,19 @@ vi.mock('@expo/ui/jetpack-compose', () => {
   };
 });
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => {
-  const modifier = () => ({});
+  const modifier =
+    (name: string) =>
+    (...args: unknown[]) => ({ name, args });
   return {
-    fillMaxWidth: modifier,
-    padding: modifier,
-    alpha: modifier,
-    weight: modifier,
-    clickable: modifier,
-    size: modifier,
-    semantics: modifier,
+    fillMaxWidth: modifier('fillMaxWidth'),
+    padding: modifier('padding'),
+    alpha: modifier('alpha'),
+    weight: modifier('weight'),
+    clickable: modifier('clickable'),
+    size: modifier('size'),
+    semantics: modifier('semantics'),
+    menuAnchor: modifier('menuAnchor'),
+    selectable: modifier('selectable'),
   };
 });
 vi.mock('react-native', () => ({
@@ -86,7 +146,13 @@ const plainModel: MoreFormModel = {
   sections: [{ key: 'only', rows: [{ kind: 'value', key: 'v', label: 'Label', value: 'x' }] }],
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  compose.boxChildren = [];
+  compose.boxExpanded = [];
+  compose.onExpandedChange = null;
+  compose.items = [];
+});
 
 describe('MoreForm on Android with custom rows', () => {
   it('fails loudly in dev when handed a custom row', () => {
@@ -142,5 +208,72 @@ describe('MoreForm on Android: a select row', () => {
     const text = container.textContent ?? '';
     expect(text.split('✓')).toHaveLength(2);
     expect(text).toContain('✓45 seconds');
+  });
+
+  // TalkBack (spec B4): the row reads as a drop-down list, and the open menu
+  // gives the current choice the selected state as well as the ✓.
+  function renderSelect(row: Partial<MoreSelectRow> = {}) {
+    const onSelect = vi.fn();
+    const view = render(
+      createElement(MoreForm, {
+        model: {
+          sections: [
+            {
+              key: 'keep',
+              rows: [
+                {
+                  kind: 'select',
+                  key: 'keep',
+                  label: 'Keep lighting after Put on board',
+                  selectedKey: '45',
+                  options: [
+                    { key: 'off', label: 'Off' },
+                    { key: '45', label: '45 seconds' },
+                  ],
+                  onSelect,
+                  ...row,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    return { ...view, onSelect };
+  }
+  const named = (modifiers: RecordedModifier[], name: string) => modifiers.find((entry) => entry.name === name);
+
+  it('anchors a drop-down list as a direct child of the box, with the menu beside it', () => {
+    renderSelect();
+    const children = compose.boxChildren.at(-1) ?? [];
+    expect(children.map((child) => child.kind)).toEqual(['Row', 'ExposedDropdownMenu']);
+    expect(named(children[0]?.modifiers ?? [], 'menuAnchor')?.args).toEqual(['primaryNotEditable', true]);
+    // The ripple and the merged label stay.
+    expect(named(children[0]?.modifiers ?? [], 'clickable')).toBeDefined();
+  });
+
+  it('gives only the current choice the selected state, which picks like a tap', () => {
+    const { onSelect } = renderSelect();
+    const items = compose.items.slice(-2);
+    expect(items.map((item) => named(item.modifiers, 'selectable')?.args[0] ?? null)).toEqual([null, true]);
+    const activate = named(items[1]?.modifiers ?? [], 'selectable')?.args[1] as (() => void) | undefined;
+    act(() => activate?.());
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('45');
+    act(() => items[0]?.onClick?.());
+    expect(onSelect).toHaveBeenLastCalledWith('off');
+  });
+
+  it('opens from the box and never for a disabled row', () => {
+    renderSelect();
+    expect(compose.boxExpanded.at(-1)).toBe(false);
+    act(() => compose.onExpandedChange?.(true));
+    expect(compose.boxExpanded.at(-1)).toBe(true);
+    cleanup();
+    renderSelect({ disabled: true });
+    act(() => compose.onExpandedChange?.(true));
+    expect(compose.boxExpanded.at(-1)).toBe(false);
+    const anchor = compose.boxChildren.at(-1)?.[0]?.modifiers ?? [];
+    expect(named(anchor, 'menuAnchor')?.args).toEqual(['primaryNotEditable', false]);
+    expect(named(anchor, 'clickable')).toBeUndefined();
   });
 });
