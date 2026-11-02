@@ -54,19 +54,27 @@ Firmware-level LED maps and 2D matrices are outside this MVP.
 Existing spray-wall BLE capabilities and `user_boards.has_leds` remain unchanged.
 This is independent LAN setup, not a claim that spray walls speak Aurora BLE.
 
-## Testing a fork on Android
+## Testing a contribution on Android
 
-Use a development client and a local/self-hosted backend, as required by
-[the fork policy](../LEGAL.md#hosted-service--api-access). Do not distribute a fork
-pointed at Boardsesh's hosted accounts, backend or update service.
+Follow [the contributor workflow](../CONTRIBUTING.md#contributing-to-the-mobile-app-react-native).
+The mobile app defaults to the official Boardsesh backend for day-to-day
+contributor development, as documented in
+[`packages/mobile/.env.example`](../packages/mobile/.env.example). Use your own
+Boardsesh account. A GitHub fork used to submit a contribution does not by itself
+require changing those development defaults.
+
+For isolated testing, run the local development stack and set the backend URL
+overrides from that template. The seeded `test@boardsesh.com` / `test` account
+belongs to the local development database, not the hosted service. Separately
+distributed apps remain subject to [the hosted-service policy](../LEGAL.md#hosted-service--api-access).
 
 The dev-only component story `spray-wall-led-section--setup` exercises this same
 component with a separate local settings key, without needing an existing wall.
 Open `dev/stories/spray-wall-led-section--setup` in a development build after
-signing in against your own backend; the native app's authentication gate also
-applies to stories. It can
+signing in; the native app's authentication gate also applies to stories. It can
 contact a real WLED device only when you enter its address and press a control.
-Use **Edit spray wall** against your own backend to check full form placement.
+Use **Edit spray wall** to check full form placement. LED settings stay on the
+current device; testing lights does not update shared wall metadata.
 
 Android development clients allow HTTP traffic for Metro/local development.
 Verify the actual installed build with the controller: a release build may
