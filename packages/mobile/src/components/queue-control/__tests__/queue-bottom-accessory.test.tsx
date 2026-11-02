@@ -16,6 +16,7 @@ vi.mock('expo-router/unstable-native-tabs', () => ({
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem }, sessionId: cfg.sessionId }),
+  useQueueData: () => ({ currentClimbQueueItem: cfg.currentClimbQueueItem }),
 }));
 // Stub the row so the test sees exactly what QueueBottomAccessory hands down, and
 // so the row stub is the only node under the accessory (no extra wrapper).
@@ -24,20 +25,28 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
     climb,
     placement,
     testID,
+    pick,
+    queueItemUuid,
   }: {
     climb: Climb;
     placement: 'regular' | 'inline';
     testID?: string;
+    pick?: { item: { uuid: string } } | null;
+    queueItemUuid?: string;
   }) =>
     createElement('div', {
       'data-native-row': 'true',
       'data-climb-name': climb.name,
+      'data-mirrored': String(climb.mirrored === true),
       'data-placement': placement,
       'data-testid': testID,
+      'data-pick': pick?.item.uuid ?? '',
+      'data-queue-item': queueItemUuid ?? '',
     }),
 }));
 import { QueueBottomAccessory } from '../QueueBottomAccessory';
 import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
+import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
 describe('QueueBottomAccessory', () => {
   beforeEach(() => {
@@ -133,5 +142,70 @@ describe('QueueBottomAccessory', () => {
     } as unknown as ClimbQueueItem;
     rerender(<QueueBottomAccessory />);
     expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('Fresh climb');
+  });
+});
+
+// Owner decision A: the platter shows the climber's last pick, or the queue's
+// current when THAT changed after it, whichever happened last.
+describe('QueueBottomAccessory with a last pick', () => {
+  const head = { uuid: 'queue-head', climb: { uuid: 'c1', name: 'Tea Magic', angle: 40 } } as unknown as ClimbQueueItem;
+  const pickItem = {
+    uuid: 'queue-pick',
+    climb: { uuid: 'p1', name: 'The Eyes', angle: 40, mirrored: false },
+  } as unknown as ClimbQueueItem;
+
+  beforeEach(() => {
+    cfg.placement = 'regular';
+    cfg.sessionId = null;
+    cfg.currentClimbQueueItem = head;
+    resetLastPickForTests();
+    setLastPick({
+      item: pickItem,
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: true,
+      currentAtPick: 'queue-head',
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+  });
+  afterEach(() => resetLastPickForTests());
+
+  it('shows the pick, drawn with the player’s mirror flip, and hands the row the pick', () => {
+    const { container } = render(<QueueBottomAccessory />);
+    const row = container.querySelector('[data-native-row]');
+    expect(row?.getAttribute('data-climb-name')).toBe('The Eyes');
+    expect(row?.getAttribute('data-mirrored')).toBe('true');
+    expect(row?.getAttribute('data-pick')).toBe('queue-pick');
+    // ✓ and ⋯ act on the climb shown.
+    expect(row?.getAttribute('data-queue-item')).toBe('queue-pick');
+  });
+
+  it('shows the queue’s current once it changed after the pick, with no pick on the row', () => {
+    const { container, rerender } = render(<QueueBottomAccessory />);
+    cfg.currentClimbQueueItem = {
+      uuid: 'queue-crewmate',
+      climb: { uuid: 'c2', name: 'Crewmate pick', angle: 40 },
+    } as unknown as ClimbQueueItem;
+    rerender(<QueueBottomAccessory />);
+    const row = container.querySelector('[data-native-row]');
+    expect(row?.getAttribute('data-climb-name')).toBe('Crewmate pick');
+    expect(row?.getAttribute('data-pick')).toBe('');
+  });
+
+  it('shows the pick on an empty queue', () => {
+    cfg.currentClimbQueueItem = null;
+    resetLastPickForTests();
+    setLastPick({
+      item: pickItem,
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: null,
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    const { container } = render(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('The Eyes');
   });
 });

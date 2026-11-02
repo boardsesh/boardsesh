@@ -2,8 +2,9 @@
  * PersistentQueueBar — the persistent climb toolbar that mounts at the app root
  * and is visible on every screen while a current climb is set.
  *
- * It is a thin adapter: it decides *whether* the climb bar should show (a current
- * climb exists and the native iOS 26 bottom accessory isn't already owning it),
+ * It is a thin adapter: it decides *whether* the climb bar should show (a climb
+ * to show exists, the climber's last pick or the queue's current, and the
+ * native iOS 26 bottom accessory isn't already owning it),
  * then lays it out per variant via {@link ActiveContextBar}:
  *
  *   Liquid Glass / fallback   [ grade · name ]        [ ✓ tick ]
@@ -19,7 +20,7 @@
 
 import { useSegments } from 'expo-router';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, glassSize } from '../../theme/layout';
-import { useQueue, useQueueSessionId } from '../../providers/queue-provider';
+import { useQueueSessionId } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { isTopLevelTabRoute, tabsActiveSegment } from '../../lib/route-segments';
@@ -29,13 +30,13 @@ import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { ReturnToSessionButton } from './ReturnToSessionButton';
+import { useBarClimb } from './use-bar-climb';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
 export { TOOLBAR_RESERVE, TAB_BAR_HEIGHT };
 
 export function PersistentQueueBar() {
-  const { state } = useQueue();
   const { variant } = useTheme();
   const segments = useSegments();
   const { home } = useCurrentClimbSurface();
@@ -44,8 +45,10 @@ export function PersistentQueueBar() {
   // Record tab.
   const { sessionId } = useQueueSessionId();
 
-  // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
-  const currentClimb = state.currentClimbQueueItem?.climb ?? null;
+  // The climber's last pick, or the queue's current when THAT changed after it
+  // (owner decision A). Never the wall's lit climb: that lives in the top "On
+  // the wall" strip. ✓ logs the climb the bar shows.
+  const currentClimb = useBarClimb().climb;
 
   // One climb, one surface: the JS tablet shell's pane (IpadPlayPane) or the
   // native accessory (iPhone, iPad, and the iPhone Duo's split) already show it,

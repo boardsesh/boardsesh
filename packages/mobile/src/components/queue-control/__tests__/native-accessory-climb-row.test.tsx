@@ -232,6 +232,12 @@ vi.mock('../PaneWallControlBulb', () => ({
   PaneWallControlBulb: ({ control }: { control: { model: { state: string | null } } }) =>
     createElement('span', { 'data-pane-wall-control': control.model.state ?? 'none' }),
 }));
+// The last pick's bulb (owner decision A): a marker, with the usual bulb it
+// falls back to while the pick is lit. Its own suite covers what it draws.
+vi.mock('../PickPutOnBoardBulb', () => ({
+  PickBulbSlot: ({ pick, litBulb }: { pick: { item: { uuid: string } }; litBulb: ReactNode }) =>
+    createElement('span', { 'data-pick-bulb': pick.item.uuid }, litBulb),
+}));
 vi.mock('../BoardControlIndicator', () => ({
   BoardControlIndicator: ({ solidGlyphs, placement }: { solidGlyphs?: boolean; placement?: string }) =>
     connection.state.bluetooth
@@ -695,6 +701,39 @@ describe('NativeAccessoryClimbRow', () => {
 
     expectNumericAttribute(thumbnail, 'data-board-width', 32);
     expectNumericAttribute(thumbnail, 'data-board-height', 17.68);
+  });
+
+  // Owner decision A: on the climber's last pick the bulb is the pick's
+  // (unlit, Put on board), and it keeps the collapsed platter's one slot so
+  // putting the pick up stays one tap away even with the board held.
+  it('hands the bulb slot to the last pick, open or collapsed', () => {
+    connection.state.inAppBoardConnection = 'connectedByMe';
+    const climb = queue.state.currentClimbQueueItem?.climb as Climb;
+    const pick = {
+      item: { uuid: 'queue-pick', climb },
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: 'queue-current',
+      wallAtPick: null,
+      pickedAt: 0,
+      generation: 0,
+    };
+    const open = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="regular" />,
+    );
+    expect(open.container.querySelector('[data-pick-bulb="queue-pick"]')).not.toBeNull();
+    open.unmount();
+    const collapsed = render(
+      <NativeAccessoryClimbRow climb={climb} queueItemUuid="queue-pick" pick={pick} placement="inline" />,
+    );
+    expect(collapsed.container.querySelector('[data-pick-bulb="queue-pick"]')).not.toBeNull();
+  });
+
+  it('keeps the usual bulb with no pick', () => {
+    const { container } = renderRow('regular');
+    expect(container.querySelector('[data-pick-bulb]')).toBeNull();
+    expect(container.querySelector('[data-board-control="true"]')).not.toBeNull();
   });
 
   it('shows the thumbnail, the byline and the tick, but no lightbulb, when collapsed and connected', () => {

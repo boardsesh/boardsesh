@@ -210,6 +210,9 @@ import { useWallHolderIdentity } from './use-wall-holder-name';
 import { track } from '../../lib/analytics';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
+import { useLastPickWriter, type PickLatchStart } from './use-last-pick-writer';
+import { usePutOnBoardIntent } from './use-put-on-board-intent';
+import type { AppliedPlayerOpen } from './use-play-selection-controller';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
 const { GestureDetector, Gesture, ScrollView: DefaultScrollView } = GestureHandler;
@@ -701,6 +704,11 @@ export function PlayCore({
       ? previewMirrorFlip.mirrored
       : displayedClimb?.mirrored === true;
   const clearMirror = useCallback(() => setPreviewMirrorFlip(null), []);
+  // The MiniPlayer reopening the climber's last pick puts its mirror flip back.
+  const restoreMirror = useCallback(
+    (climbUuid: string, mirrored: boolean) => setPreviewMirrorFlip({ climbUuid, mirrored }),
+    [],
+  );
 
   // A climb that lost a hold: the banner's count and its one action, Remix.
   const { lostHoldCount, onRemix: handleRemixLostHolds } = useLostHoldRemix({
@@ -1121,8 +1129,24 @@ export function PlayCore({
   wallClimbUuidRef.current = wallClimbUuid;
   const wallUuidAtLatchStartRef = useRef<string | null>(null);
   const latchStartedAtRef = useRef<number | null>(null);
+  // The MiniPlayer reopening the last pick hands over the wall as it was when
+  // the climber started looking (`previewLatchStart`): the latch starts from
+  // THAT wall, so a crewmate who lit something while the player was closed is
+  // still asked about. Only for the preview it came with.
+  const latchSeedRef = useRef<{ itemUuid: string; start: PickLatchStart } | null>(null);
+  const previewItemUuidRef = useRef(drawerPreviewItem?.uuid ?? null);
+  previewItemUuidRef.current = drawerPreviewItem?.uuid ?? null;
+  const browseLatchActiveRef = useRef(browseLatchActive);
+  browseLatchActiveRef.current = browseLatchActive;
   useEffect(() => {
     if (!browseLatchActive) return;
+    const seed = latchSeedRef.current;
+    latchSeedRef.current = null;
+    if (seed && seed.itemUuid === previewItemUuidRef.current) {
+      wallUuidAtLatchStartRef.current = seed.start.wallClimbUuid;
+      latchStartedAtRef.current = seed.start.at;
+      return;
+    }
     wallUuidAtLatchStartRef.current = wallClimbUuidRef.current;
     latchStartedAtRef.current = Date.now();
   }, [browseLatchActive]);
@@ -1876,6 +1900,26 @@ export function PlayCore({
     onOpenQueue();
   }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
 
+  // The MiniPlayer's bulb on an unlit last pick (owner decision A): once the
+  // preview it opened lands, Put on board is pressed for it (below).
+  const [putOnBoardFor, setPutOnBoardFor] = useState<string | null>(null);
+  // Each open the controller applies: the last pick, the reopened pick's
+  // busy-wall snapshot, and the bulb's Put on board. The writer is built after
+  // the controller (its effect must follow the target effect), so this forwards.
+  const noteOpenAppliedRef = useRef<(applied: AppliedPlayerOpen) => void>(() => {});
+  const handleOpenApplied = useCallback((applied: AppliedPlayerOpen) => {
+    const item = applied.previewItem;
+    if (item && applied.latchStart) {
+      latchSeedRef.current = { itemUuid: item.uuid, start: applied.latchStart };
+      // A latch already up (a crew) took its snapshot on mount: correct it now.
+      if (browseLatchActiveRef.current) {
+        wallUuidAtLatchStartRef.current = applied.latchStart.wallClimbUuid;
+        latchStartedAtRef.current = applied.latchStart.at;
+      }
+    }
+    setPutOnBoardFor(applied.putOnBoard && item ? item.uuid : null);
+    noteOpenAppliedRef.current(applied);
+  }, []);
   const {
     handlePrev,
     handleNext,
@@ -1906,7 +1950,7 @@ export function PlayCore({
       stoppedForLink: drivingStopped,
       previewOnOtherBoard,
     },
-    chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
+    chrome: { clearMirror, restoreMirror, setIsTickBarActive, setActiveSubDrawer },
     confirmation: {
       busyWallConfirmArmed,
       browseLatchActive,
@@ -1921,7 +1965,31 @@ export function PlayCore({
       putHeldClimbOnWall: handlePutHeldClimbOnWall,
     },
     onNavigationStep: handleNavigationStep,
+    onOpenApplied: handleOpenApplied,
   });
+  // The climber's last pick, for the MiniPlayer once this player closes
+  // (owner decision A). Built after the controller so its effect follows the
+  // target effect: an open writes once, its state landing writes nothing.
+  const currentQueueItemUuidRef = useRef(currentClimbQueueItem?.uuid ?? null);
+  currentQueueItemUuidRef.current = currentClimbQueueItem?.uuid ?? null;
+  const getCurrentQueueItemUuid = useCallback(() => currentQueueItemUuidRef.current, []);
+  const getPickLatchStart = useCallback(
+    (): PickLatchStart =>
+      browseLatchActiveRef.current
+        ? { wallClimbUuid: wallUuidAtLatchStartRef.current, at: latchStartedAtRef.current ?? Date.now() }
+        : { wallClimbUuid: wallClimbUuidRef.current, at: Date.now() },
+    [],
+  );
+  const { noteOpenApplied } = useLastPickWriter({
+    enabled: !isAnonymous,
+    previewItem: drawerPreviewItem,
+    previewSuggestionSource: drawerPreviewSuggestionSource,
+    previewMirrored: isMirrored,
+    getCommitOptions: getPreviewCommitOptions,
+    getCurrentItemUuid: getCurrentQueueItemUuid,
+    getLatchStart: getPickLatchStart,
+  });
+  noteOpenAppliedRef.current = noteOpenApplied;
   // The same step, told apart by how it was asked for.
   const handlePrevButton = useCallback(() => handlePrev('button'), [handlePrev]);
   const handleNextButton = useCallback(() => handleNext('button'), [handleNext]);
@@ -2525,6 +2593,21 @@ export function PlayCore({
     }),
   });
   wallControlAnswersRef.current = wallControlHandlers;
+  // The MiniPlayer's bulb on an unlit last pick (owner decision A): the preview
+  // it opened has landed, so press Put on board for it through this handler,
+  // the wall button's own path. In a crew it waits for the browse latch, so
+  // the busy-wall question compares against the wall at the pick; a drive
+  // never asks. Analytics count it as the bar's control (`mini_bar`).
+  const pressWallControl = wallControlHandlers.press;
+  const pressWallControlForBar = useCallback(() => pressWallControl('mini_bar'), [pressWallControl]);
+  const clearPutOnBoard = useCallback(() => setPutOnBoardFor(null), []);
+  usePutOnBoardIntent({
+    intendedFor: putOnBoardFor,
+    clear: clearPutOnBoard,
+    previewItemUuid: drawerPreviewItem?.uuid ?? null,
+    ready: !isSharedSession || browseLatchActive || drivingLive,
+    press: pressWallControlForBar,
+  });
   // The board sheet's Light every climb row (#7113): the sheet closes itself.
   const { drive: driveWallControl } = wallControlHandlers;
   const handleBoardSheetDrive = useCallback(() => {

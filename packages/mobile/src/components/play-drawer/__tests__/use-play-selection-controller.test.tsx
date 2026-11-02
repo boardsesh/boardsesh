@@ -76,6 +76,7 @@ function inputs(): SelectionInputs {
     },
     chrome: {
       clearMirror: vi.fn(),
+      restoreMirror: vi.fn(),
       setIsTickBarActive: vi.fn(),
       setActiveSubDrawer: vi.fn(),
     },
@@ -1145,5 +1146,77 @@ describe('preview-first host selections and deferred commits', () => {
       keepWalkedTrack: true,
       trigger: 'put_on_wall',
     });
+  });
+});
+
+// Owner decision A: every open the player applies is reported, so the player
+// can keep the climber's last pick and run the MiniPlayer bulb's Put on board.
+describe('the applied open (the last pick)', () => {
+  it('reports a preview open with its list, its deferred commit and its busy-wall snapshot', () => {
+    const initialProps = inputs();
+    const onOpenApplied = vi.fn();
+    initialProps.onOpenApplied = onOpenApplied;
+    const preview = item('preview');
+    const track = source([preview, item('next')]);
+    const commitOptions = { placement: 'STEP' as const };
+    const latchStart = { wallClimbUuid: 'wall-at-pick', at: 1_000 };
+    initialProps.openTarget = open(preview, {
+      previewQueueItem: preview,
+      playlistSuggestionSource: track,
+      previewCommitOptions: commitOptions,
+      previewLatchStart: latchStart,
+    });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(onOpenApplied).toHaveBeenCalledWith({
+      previewItem: preview,
+      suggestionSource: track,
+      commitOptions,
+      mirrored: false,
+      replay: false,
+      latchStart,
+      putOnBoard: false,
+    });
+  });
+
+  it('reports a committed open as no preview', () => {
+    const initialProps = inputs();
+    const onOpenApplied = vi.fn();
+    initialProps.onOpenApplied = onOpenApplied;
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ previewItem: null, putOnBoard: false }));
+  });
+
+  it('puts the pick’s mirror flip back, and only when it differs from the climb’s own', () => {
+    const flipped = inputs();
+    const preview = item('preview');
+    flipped.onOpenApplied = vi.fn();
+    flipped.openTarget = open(preview, { previewQueueItem: preview, previewMirrored: true });
+    renderHook(usePlaySelectionController, { initialProps: flipped });
+    expect(flipped.chrome.restoreMirror).toHaveBeenCalledWith('preview', true);
+    expect(flipped.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ mirrored: true }));
+
+    const straight = inputs();
+    straight.openTarget = open(preview, { previewQueueItem: preview, previewMirrored: false });
+    renderHook(usePlaySelectionController, { initialProps: straight });
+    expect(straight.chrome.restoreMirror).not.toHaveBeenCalled();
+  });
+
+  it('asks for Put on board only on a fresh open of a preview, never on a pane’s replay', () => {
+    const preview = item('preview');
+    const fresh = inputs();
+    fresh.onOpenApplied = vi.fn();
+    fresh.openTarget = open(preview, { previewQueueItem: preview, putOnBoard: true });
+    renderHook(usePlaySelectionController, { initialProps: fresh });
+    expect(fresh.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ putOnBoard: true, replay: false }));
+
+    const replayed = inputs();
+    replayed.onOpenApplied = vi.fn();
+    replayed.openTarget = {
+      ...open(preview, { previewQueueItem: preview, putOnBoard: true }),
+      claimFirstApply: () => false,
+    };
+    renderHook(usePlaySelectionController, { initialProps: replayed });
+    expect(replayed.onOpenApplied).toHaveBeenCalledWith(expect.objectContaining({ putOnBoard: false, replay: true }));
   });
 });

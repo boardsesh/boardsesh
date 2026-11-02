@@ -67,10 +67,17 @@ import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { MiniPlayerWorkoutButtons } from './MiniPlayerWorkoutButtons';
 import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
+import type { LastPick } from '../../lib/last-pick-store';
+import { PickBulbSlot } from './PickPutOnBoardBulb';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
   queueItemUuid?: string;
+  /**
+   * The climber's last pick, while the bar shows it rather than the queue's
+   * current (owner decision A). Its bulb, unlit, puts it on the board.
+   */
+  pick?: LastPick | null;
   placement: AccessoryPlacement;
   testID?: string;
 };
@@ -183,7 +190,13 @@ function ClimbLabel({
  * are tuned for the platter, so they intentionally differ from the floating
  * capsule's colorized grade.
  */
-export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testID }: NativeAccessoryClimbRowProps) {
+export function NativeAccessoryClimbRow({
+  climb,
+  queueItemUuid,
+  pick = null,
+  placement,
+  testID,
+}: NativeAccessoryClimbRowProps) {
   const { width: windowWidth } = useWindowDimensions();
   const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
@@ -292,7 +305,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot.
   const bulbAvailable = bluetooth != null;
-  const collapsedSlotShowsBulb = bulbAvailable && inAppBoardConnection === 'disconnected';
+  // A last pick on the bar keeps its bulb one tap away too: unlit, it is Put on board.
+  const collapsedSlotShowsBulb = bulbAvailable && (inAppBoardConnection === 'disconnected' || pick !== null);
   const isDraft = climb.is_draft === true;
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;
@@ -506,6 +520,24 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
                 // player's board control (#7000): its model, its tap and its hold.
                 paneMode === 'mirror' && paneWallControl ? (
                   <PaneWallControlBulb control={paneWallControl} size={glassSize.inline} iconSize={22} solidGlyphs />
+                ) : pick ? (
+                  // The last pick (owner decision A): unlit, the bulb puts it
+                  // on the board through the player's wall button path.
+                  <PickBulbSlot
+                    pick={pick}
+                    size={glassSize.inline}
+                    iconSize={22}
+                    solidGlyphs
+                    litBulb={
+                      <BoardControlIndicator
+                        size={glassSize.inline}
+                        iconSize={22}
+                        enableLongPress
+                        solidGlyphs
+                        placement={placement}
+                      />
+                    }
+                  />
                 ) : (
                   <BoardControlIndicator
                     size={glassSize.inline}

@@ -585,7 +585,14 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 
 ## Mini player
 
-The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap it to open the climb.
+The MiniPlayer is the bar above the tabs: the climb you last opened, a preview included, or the queue's current climb
+when that changed after it, whichever happened last (owner decision A, 2026-11-02; `useBarClimb`, full rules in
+`climb-lists-and-queue.md`, "The MiniPlayer shows your last pick"), then buttons. Tap it to reopen that climb, a pick
+as the same preview with its list. On a pick its controls act on the pick: ✓ logs it, Mirror flips its own flip,
+⏮ ⏭ step along its list by the player's swipe rules, and the bulb, while the pick isn't lit, is Put on board for it
+(the player opens on the pick and presses Put on board through the wall button's handler: the busy-wall question in a
+crew, the timed drive per Stop driving after). The Lock Screen, the Climbs header's wall capsule and the board history
+sheet keep showing the wall.
 
 The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:
 iOS 26 with the Liquid Glass tab bar). On Android, the Material shell and earlier iOS the current climb rides the

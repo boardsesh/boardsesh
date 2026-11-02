@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WidgetMirrorEvent } from '../../../../modules/live-activity/src/index';
 import { LiveActivityBridge } from '../live-activity-bridge';
+import { resetLastPickForTests, setLastPick } from '../../last-pick-store';
 
 type QueueNavigateEvent = {
   action: 'next' | 'previous';
@@ -215,6 +216,28 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     bt.loading = false;
     bleProbe.nativeBleSupportsBoard.mockReturnValue(true);
     renderSettings.mode = 'aura';
+  });
+
+  // Owner decision A: the MiniPlayer shows the climber's last pick, but the
+  // Lock Screen / Live Activity keeps showing the wall's climb (the queue's current).
+  it('keeps the Lock Screen on the queue’s current while the bar shows a last pick', () => {
+    setLastPick({
+      item: threeItemQueue[2],
+      suggestionSource: null,
+      commitOptions: undefined,
+      mirrored: false,
+      currentAtPick: threeItemQueue[0].uuid,
+      wallAtPick: null,
+      pickedAt: 0,
+    });
+    try {
+      renderBridge();
+      expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
+        expect.objectContaining({ currentClimbQueueItem: threeItemQueue[0] }),
+      );
+    } finally {
+      resetLastPickForTests();
+    }
   });
 
   it('passes connectedByMe + enables widget navigation when this device holds the board', () => {

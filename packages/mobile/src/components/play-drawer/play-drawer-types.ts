@@ -63,6 +63,28 @@ export type PlayDrawerOpenOptions = {
    * climb, so a hold stays and the player offers Put on the wall.
    */
   reopensCurrent?: boolean;
+  /**
+   * The MiniPlayer reopening the climber's last pick (`lib/last-pick-store.ts`):
+   * the mirror flip the player showed on that preview, put back. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewMirrored?: boolean;
+  /**
+   * The MiniPlayer reopening the last pick: the wall as it was when the
+   * climber started looking, and when, so the busy-wall question compares
+   * against THAT wall rather than the wall at the reopen. A crewmate who lit
+   * something while the player was closed still gets asked about. Only
+   * meaningful alongside `previewQueueItem`.
+   */
+  previewLatchStart?: { wallClimbUuid: string | null; at: number };
+  /**
+   * The MiniPlayer's bulb on a last pick that isn't lit (owner decision A):
+   * once the preview lands, press Put on board for it, through the wall
+   * button's own handler, so the busy-wall question in a crew and the timed
+   * drive per Stop driving after both apply. A pane's later replay never
+   * presses. Only meaningful alongside `previewQueueItem`.
+   */
+  putOnBoard?: boolean;
 };
 
 /**
