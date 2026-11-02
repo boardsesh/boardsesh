@@ -112,27 +112,37 @@ def editable_app_store_version_present?
   !edit_version.nil? && edit_version != :unknown
 end
 
-# Whether the App Store version has a phased release, so a listing-text push can
-# hand deliver the same answer and leave it as it is (#7225).
+# Settings on an App Store version that deliver's metadata step rewrites from an
+# option, so a listing-text push must hand deliver what App Store Connect already
+# holds (#7225). Each entry: the deliver option, the Spaceship read, what it is
+# called in the run summary, and what it is called in an error.
 #
-# deliver's phased_release option defaults to false, not nil (fastlane 2.241.2,
-# deliver/lib/deliver/options.rb). Its metadata step leaves a phased release
-# alone only when the option is nil: false deletes the version's phased release
-# and true creates one (UploadMetadata#upload, "Update phased release", in
+# deliver's phased_release and reset_ratings options both default to false, not
+# nil (fastlane 2.241.2, deliver/lib/deliver/options.rb). Its metadata step
+# leaves each setting alone only when the option is nil: false deletes the
+# version's phased release or rating reset request, and true creates one
+# (UploadMetadata#upload, "Update phased release" and "Update rating reset", in
 # deliver/lib/deliver/upload_metadata.rb). An explicit nil falls back to that
 # false default (FastlaneCore::Configuration#fetch), so passing what is already
 # there is the only way to keep it. Calls with skip_metadata: true return before
 # that step and need nothing.
+DELIVER_VERSION_SETTINGS = [
+  { option: :phased_release, fetch: :fetch_app_store_version_phased_release, label: "Phased release", noun: "a phased release" },
+  { option: :reset_ratings, fetch: :fetch_reset_ratings_request, label: "Rating reset", noun: "a rating reset request" }
+].freeze
+
+# Whether the App Store version has the given DELIVER_VERSION_SETTINGS entry.
 #
 # App Store Connect answers "none" with `data: null`, which Spaceship raises as a
-# RuntimeError "No data" (Spaceship::ConnectAPI::Models.parse). deliver reads
-# that as none, and so does this. Any other failure stops the push: reading it as
-# none would let deliver delete a phased release its own read can see.
-def app_store_version_phased_release?(version)
-  !version.fetch_app_store_version_phased_release.nil?
+# RuntimeError "No data" (Spaceship::ConnectAPI::Models.parse); an empty answer
+# comes back as nil. deliver reads both as none, and so does this. Any other
+# failure stops the push: reading it as none would let deliver delete a setting
+# its own read can see.
+def app_store_version_setting_on?(version, setting)
+  !version.public_send(setting.fetch(:fetch)).nil?
 rescue => error
   return false if error.instance_of?(RuntimeError) && error.message == "No data"
-  UI.user_error!("Could not read whether App Store version #{version.version_string} has a phased release (#{error.message}); not pushing listing text, because deliver would remove one this lane cannot see. Rerun once App Store Connect answers.")
+  UI.user_error!("Could not read whether App Store version #{version.version_string} has #{setting.fetch(:noun)} (#{error.message}); not pushing listing text, because deliver would remove one this lane cannot see. Rerun once App Store Connect answers.")
 end
 
 # App Store version states in which a version is not out yet: being prepared,
@@ -520,9 +530,10 @@ platform :ios do
           app_identifier: "com.boardsesh.app",
           screenshots_path: staging_dir,
           skip_binary_upload: true,
-          # skip_metadata: true also skips deliver's phased-release step, so this
-          # call cannot remove one. Turning metadata on here needs the
-          # phased_release pass-through the `metadata` lane has (#7225).
+          # skip_metadata: true also skips deliver's phased-release and
+          # rating-reset step, so this call cannot remove either. Turning
+          # metadata on here needs the DELIVER_VERSION_SETTINGS pass-through the
+          # `metadata` lane has (#7225).
           skip_metadata: true,
           skip_app_version_update: true,
           overwrite_screenshots: true,
@@ -581,18 +592,23 @@ platform :ios do
       next
     end
 
-    # Keep the version's phased release as App Store Connect has it. Left out,
-    # phased_release defaults to false and deliver deletes a phased release the
-    # owner turned on (see app_store_version_phased_release?). Do not drop this.
-    keep_phased_release = app_store_version_phased_release?(edit_version)
-    phased_release_note =
-      if keep_phased_release
-        "Phased release: on for #{edit_version.version_string}; the listing push keeps it on."
-      else
-        "Phased release: none on #{edit_version.version_string}; the listing push leaves it off."
-      end
-    UI.message(phased_release_note)
-    emit_step_summary(phased_release_note)
+    # Keep the version's phased release and rating reset request as App Store
+    # Connect has them. Left out, each option defaults to false and deliver
+    # deletes what the owner turned on (see DELIVER_VERSION_SETTINGS). Do not
+    # drop this. Both are read before the upload, so one turned on in App Store
+    # Connect while the push runs is still deleted; the release docs say so.
+    keep_settings = DELIVER_VERSION_SETTINGS.to_h do |setting|
+      on = app_store_version_setting_on?(edit_version, setting)
+      note =
+        if on
+          "#{setting.fetch(:label)}: on for #{edit_version.version_string}; the listing push keeps it on."
+        else
+          "#{setting.fetch(:label)}: none on #{edit_version.version_string}; the listing push leaves it off."
+        end
+      UI.message(note)
+      emit_step_summary(note)
+      [setting.fetch(:option), on]
+    end
 
     upload_to_app_store(
       api_key: api_key,
@@ -601,7 +617,8 @@ platform :ios do
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
-      phased_release: keep_phased_release,
+      phased_release: keep_settings.fetch(:phased_release),
+      reset_ratings: keep_settings.fetch(:reset_ratings),
       # Only edit the current editable version's text; never create or retitle a version.
       skip_app_version_update: true,
       submit_for_review: false,
@@ -681,9 +698,9 @@ platform :ios do
       build_number: build_number,
       skip_binary_upload: true,
       skip_screenshots: true,
-      # Also skips deliver's phased-release step (UploadMetadata#upload returns
-      # first thing), so a draft never removes one; see
-      # app_store_version_phased_release? before turning metadata on here.
+      # Also skips deliver's phased-release and rating-reset step
+      # (UploadMetadata#upload returns first thing), so a draft never removes
+      # either; see DELIVER_VERSION_SETTINGS before turning metadata on here.
       skip_metadata: true,
       submit_for_review: false,
       automatic_release: false,
