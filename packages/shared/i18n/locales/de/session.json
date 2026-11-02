@@ -926,8 +926,6 @@
         "committed": "{{name}} ist an der Wand",
         "previewFirstAnnounce": "Vorschau, nicht am Board beleuchtet. Am Board beleuchten bringt den Boulder zum Leuchten."
       },
-      "backMyPick": "Meine Wahl",
-      "backOnWall": "Am Board",
       "backToMyPickNamed": "Zurück zu meiner Wahl: {{name}}",
       "backToWallNamed": "Zurück zum Boulder am Board: {{name}}"
     },

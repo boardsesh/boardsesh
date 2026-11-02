@@ -230,11 +230,14 @@ While the #4979 hold keeps the current climb dark, the wall button reads Put on 
 changes in the controls. The "Last on the wall …" note that used to sit under it (#7000) was removed: climbers
 didn't find the date useful.
 
-The header has one wall chip left, the back chip during a preview: a back glyph, words that say where back goes
-(QA #147, Marco: "My pick" for the climber's own current climb, "On the wall" for the wall's), and the face of whoever
-lit the wall when back lands on their climb (`resolveHeaderPillState`). Screen readers hear "Back to my pick: The
-Eyes" or "Back to the climb on the wall: The Eyes". It shows only when going back lands somewhere, and DrawerHeader
-floors both flanks; the words cap at 96 pt, so they can't squeeze the climb name.
+The header has one wall chip left, the back chip during a preview: the back arrow, and the face of whoever lit the
+wall when back lands on their climb (`resolveHeaderPillState`); the arrow alone otherwise. It used to carry words
+too ("My pick", "On the wall", QA #147), but DrawerHeader gives both flanks the wider of the two widths, so every
+point of the chip came off the climb name twice; since owner decision B (2026-11-02) the chip is a fixed 56 pt with
+the face and 44 pt without (`BACK_CHIP_WIDTH_WITH_FACE`, `BACK_CHIP_WIDTH_ARROW_ONLY` in `WallStatePill.tsx`), its
+tap target 44 pt tall and never narrower than 44 pt. It doesn't grow under Large Text: no text is left, the arrow
+keeps its point size and the face its 20 pt. Screen readers still hear where back goes, with the climb's name: "Back
+to my pick: The Eyes" or "Back to the climb on the wall: The Eyes". It shows only when going back lands somewhere.
 
 **Trusting board presence without a link (QA #147).** Aurora and MoonBoard boxes keep their LEDs after a phone
 disconnects, so with no live link (this phone's or a crewmate's) presence's wall climb is trusted for an hour after it

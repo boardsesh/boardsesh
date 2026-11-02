@@ -1,7 +1,10 @@
 import { PressableSurface } from '../PressableSurface';
 // The drawer header's leading slot: the back chip, while a browse latch or a
-// pinned preview is up. A back glyph, the word "Back", and the face of whoever
-// lit the wall when going back lands on their climb. Tap it to go back.
+// pinned preview is up. The back arrow, and the face of whoever lit the wall
+// when going back lands on their climb; the arrow alone otherwise. Tap it to
+// go back. It used to carry the words too ("On the wall", "My pick"), which
+// took the climb name's room twice over (DrawerHeader gives both flanks the
+// wider width), so the words now live only in the screen-reader label.
 //
 // There used to be an On the wall chip and a Live chip here too. They went in
 // #7000: the wall button under the board says whether the climb on screen is
@@ -22,9 +25,7 @@ import type { TFunction } from 'i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius, androidRipple } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
-import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useWallDriver } from './use-wall-driver';
@@ -36,8 +37,15 @@ const PILL_HEIGHT = glassSize.mini;
 const BROWSING_GLYPH_SIZE = 14;
 /** Beside the back glyph the face drops to 20pt, so the chip stays the pill's 32pt tall. */
 const BROWSING_AVATAR_SIZE = 20;
-/** The widest the words may get; "My pick" and "On the wall" fit, and German's "An der Wand" too, at the default size. */
-const BACK_WORD_MAX_WIDTH = 96;
+/**
+ * The chip's fixed widths. With the face: 8 + 14 (arrow) + 4 + 20 (face) + 4
+ * of padding, rounded up to 56. The arrow alone: the 44pt touch floor, so the
+ * tap target never narrows below it. Fixed, never measured from content: there
+ * is no text left to grow under Large Text, the glyph and the face keep their
+ * point sizes, and the reserve-only copy holds exactly the same flank.
+ */
+export const BACK_CHIP_WIDTH_WITH_FACE = 56;
+export const BACK_CHIP_WIDTH_ARROW_ONLY = WALL_STATE_PILL_TOUCH_HEIGHT;
 
 /**
  * Two shapes that never mix, so the wrong chip can't be built.
@@ -50,10 +58,10 @@ const BACK_WORD_MAX_WIDTH = 96;
  * header measures the same flank width as the one it slides in behind — the
  * climb name and its attribute glyphs then hold their exact position through a
  * swipe instead of stepping when the two headers disagree about whether a chip
- * exists. It renders the REAL chip rather than a fixed-width spacer because the
- * width is the translated word's ("Back" / "Volver" / "Zurück" all differ) and
- * the face comes and goes — only the real thing measures right. An `onPress`
- * on this shape would promise a tap nothing answers, so the union forbids it.
+ * exists. It renders the REAL chip rather than a spacer because the face comes
+ * and goes with the wall's driver, and the chip's width with it — only the real
+ * thing measures right. An `onPress` on this shape would promise a tap nothing
+ * answers, so the union forbids it.
  */
 type BackChipProps = {
   /**
@@ -164,25 +172,14 @@ function WallStatePillImpl({
       <Animated.View
         // Keyed so a chip that gains or loses its face re-enters rather than
         // cross-mutating styles.
-        key={`${state}-${showFace ? 'face' : 'word'}`}
+        key={`${state}-${showFace ? 'face' : 'arrow'}`}
         entering={reduceMotion || reserveOnly ? undefined : FadeIn.duration(180)}
-        style={[styles.pill, showFace ? styles.pillWithFace : styles.pillWordOnly, containerStyle]}
+        style={[styles.pill, showFace ? styles.pillWithFace : styles.pillArrowOnly, containerStyle]}
       >
-        <Icon name="undo" size={BROWSING_GLYPH_SIZE} color={labelColor} />
-        {/* The word the glyph alone left unsaid. Its label already says where
-            back goes, so screen readers skip it. */}
-        <Text
-          variant="caption1"
-          color={labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-          style={styles.word}
-        >
-          {/* Where back goes, in words (QA #147): your own climb, or the wall's. */}
-          {backTarget === 'wall' ? t('playView.wallState.backOnWall') : t('playView.wallState.backMyPick')}
-        </Text>
+        {/* Where back goes (QA #147: your own climb, or the wall's) is the
+            label's to say, with the climb's name; the arrow and the face are
+            all a sighted climber needs beside the name. */}
+        <Icon name="undo" size={BROWSING_GLYPH_SIZE} color={labelColor} maxFontSizeMultiplier={1} />
         {showFace ? (
           <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <BoardDriverAvatar
@@ -208,7 +205,7 @@ const styles = StyleSheet.create({
   // every ancestor of this chip (the header's measured leading flank) sizes to
   // its content, so slop on a 32pt chip is inert on both platforms.
   touchTarget: {
-    flexShrink: 1,
+    flexShrink: 0,
     height: WALL_STATE_PILL_TOUCH_HEIGHT,
     justifyContent: 'center',
     // The capsule hugs its content; without this it would stretch to whatever
@@ -227,30 +224,24 @@ const styles = StyleSheet.create({
     opacity: 0,
     pointerEvents: 'none',
   },
+  // DrawerHeader gives both flanks the wider of the two widths, so every point
+  // here comes off the climb name twice: a fixed width, never content-sized.
   pill: {
-    flexShrink: 1,
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     height: PILL_HEIGHT,
     borderRadius: borderRadius.full,
     overflow: 'hidden',
     gap: spacing[1],
-    minWidth: WALL_STATE_PILL_TOUCH_HEIGHT,
   },
   // The face brings its own optical padding on the right.
   pillWithFace: {
-    paddingLeft: spacing[2],
-    paddingRight: spacing[1],
+    width: BACK_CHIP_WIDTH_WITH_FACE,
+    justifyContent: 'center',
   },
-  pillWordOnly: {
-    paddingHorizontal: spacing[3],
-  },
-  // DrawerHeader gives both flanks the wider of the two widths, so every point
-  // here comes off the climb name twice. Capped: "Back" (~30 pt) fits, a long
-  // translation truncates rather than squeezing the name further.
-  word: {
-    fontWeight: '600',
-    flexShrink: 1,
-    maxWidth: BACK_WORD_MAX_WIDTH,
+  pillArrowOnly: {
+    width: BACK_CHIP_WIDTH_ARROW_ONLY,
+    justifyContent: 'center',
   },
 });

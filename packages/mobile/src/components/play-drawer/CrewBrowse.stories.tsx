@@ -9,8 +9,8 @@ import { WallControlButton } from './WallControlButton';
 import { WallStatePill } from './WallStatePill';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from './wall-control';
 
-// Browsing in a crew session (#4281): the back chip in the drawer header (a back
-// glyph, "Back", and the face of whoever lit the wall) and the wall button in
+// Browsing in a crew session (#4281): the back chip in the drawer header (the
+// back arrow, and the face of whoever lit the wall) and the wall button in
 // each state (#7000). The busy-wall question has its own file (BusyWall.stories).
 // The scenario stories put the real drawer into the same states with a fake
 // second climber, since a real crew needs two phones.

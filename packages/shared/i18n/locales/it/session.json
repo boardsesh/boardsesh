@@ -926,8 +926,6 @@
         "committed": "{{name}} è in parete",
         "previewFirstAnnounce": "Anteprima, non in parete. Illumina il pannello mette il blocco in parete."
       },
-      "backMyPick": "La mia scelta",
-      "backOnWall": "In parete",
       "backToMyPickNamed": "Torna alla mia scelta: {{name}}",
       "backToWallNamed": "Torna al blocco in parete: {{name}}"
     },

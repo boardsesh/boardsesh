@@ -926,8 +926,6 @@
         "committed": "{{name}} está en el muro",
         "previewFirstAnnounce": "Vista previa, no está en el plafón. Poner en el plafón enciende el bloque."
       },
-      "backMyPick": "Mi elección",
-      "backOnWall": "En el plafón",
       "backToMyPickNamed": "Volver a mi elección: {{name}}",
       "backToWallNamed": "Volver al bloque del plafón: {{name}}"
     },

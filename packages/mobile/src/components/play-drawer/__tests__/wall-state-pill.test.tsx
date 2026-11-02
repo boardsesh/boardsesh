@@ -12,11 +12,10 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-// The header pill is the one place the drawer STATES what the wall is doing, so
-// the assertions below are about truthfulness, not pixels: which state prints
-// which words, that the words it can't print (there's no room beside the climb
-// name) survive in the accessibility label, and that the tap it invites is
-// actually reachable. Narration is the host's job now — see
+// The header chip is the way back from a preview, so the assertions below are
+// about truthfulness and room: it prints no words (the climb name needs the
+// space), the words survive in the accessibility label, its width is fixed
+// (56pt with the face, 44pt without), and the tap it invites is reachable. Narration is the host's job now — see
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
@@ -93,8 +92,12 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name, color }: { name?: string; color?: string }) =>
-    createElement('span', { 'data-icon': name, 'data-color': color }),
+  Icon: ({ name, color, maxFontSizeMultiplier }: { name?: string; color?: string; maxFontSizeMultiplier?: number }) =>
+    createElement('span', {
+      'data-icon': name,
+      'data-color': color,
+      'data-max-font-scale': maxFontSizeMultiplier == null ? undefined : String(maxFontSizeMultiplier),
+    }),
 }));
 // Records what identity + status the pill hands the avatar. `userId` must stay
 // null: a pressable avatar inside a pressable pill is a nested touchable.
@@ -141,7 +144,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}@${alpha}` }));
 vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
-  spacing: { 1: 4, 3: 12 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
   borderRadius: { full: 9999 },
   androidRipple: (color: string, borderless: boolean) => ({ color, borderless }),
 }));
@@ -164,7 +167,7 @@ vi.mock('../../LargeContentViewer', () => ({
   }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
 }));
 
-import { WallStatePill } from '../WallStatePill';
+import { BACK_CHIP_WIDTH_ARROW_ONLY, BACK_CHIP_WIDTH_WITH_FACE, WallStatePill } from '../WallStatePill';
 
 type WallStatePillProps = ComponentProps<typeof WallStatePill>;
 
@@ -189,17 +192,21 @@ const pill = (container: HTMLElement) => container.querySelector('button') as HT
 /** Serialised styles of every view, for the handful of assertions about colour/size. */
 const styles = (container: HTMLElement) =>
   [...container.querySelectorAll('div[data-style]')].map((node) => node.getAttribute('data-style') ?? '');
+/** The visible capsule's serialised style. */
+const capsule = (container: HTMLElement) =>
+  styles(container).find((style) => style.includes('"borderRadius":9999')) ?? '';
 
 beforeEach(() => {
   driverState.value = { driver: null, name: null, litAgo: null };
 });
 
 describe('WallStatePill', () => {
-  // The back chip (#7000): a back glyph, the word "Back", and the face of
-  // whoever lit the wall when back lands on the lit climb. Neutral, because the
-  // loud thing on screen is the wall button, the one control that changes
-  // anything.
-  it('shows a back glyph, "On the wall" and the wall driver’s face when back goes to the wall, on the neutral surface', () => {
+  // The back chip (#7000), compact since 2.7: the back arrow and the face of
+  // whoever lit the wall when back lands on the lit climb. No words: they took
+  // the climb name's room twice over (both header flanks take the wider width).
+  // Neutral, because the loud thing on screen is the wall button, the one
+  // control that changes anything.
+  it('shows the back arrow and the wall driver’s face when back goes to the wall, and no words', () => {
     driverState.value = { driver: { userId: 'u1', avatarUrl: 'https://x/y.png' }, name: 'Sam', litAgo: null };
     const { container } = renderPill({ backTarget: 'wall' });
 
@@ -213,20 +220,42 @@ describe('WallStatePill', () => {
     expect(avatar.getAttribute('data-status')).toBe('none');
     expect(styles(container).some((style) => style.includes('#FF8A3D'))).toBe(false);
     expect(styles(container).some((style) => style.includes('"backgroundColor":"#FFF"'))).toBe(true);
-    // QA #147: the word says where back goes.
-    expect(container.textContent).toBe('playView.wallState.backOnWall');
-    // The label says where back goes; the word is only for sighted climbers.
+    // Nothing visible to read: the label carries where back goes.
+    expect(container.textContent).toBe('');
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToWall');
   });
 
-  it('keeps the glyph and "My pick", at least the 44pt touch width, with nobody to show', () => {
+  it('is the arrow alone, at the 44pt touch width, with nobody to show', () => {
     const { container } = renderPill({ backTarget: 'current' });
 
     expect(container.querySelector('[data-icon="undo"]')).toBeTruthy();
-    expect(container.textContent).toBe('playView.wallState.backMyPick');
+    expect(container.textContent).toBe('');
     expect(container.querySelector('[data-driver-avatar="true"]')).toBeNull();
-    expect(styles(container).some((style) => style.includes('"minWidth":44'))).toBe(true);
+    expect(capsule(container)).toContain(`"width":${BACK_CHIP_WIDTH_ARROW_ONLY}`);
+    expect(BACK_CHIP_WIDTH_ARROW_ONLY).toBe(44);
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
+  });
+
+  // ~56pt with the face: the room it frees is the climb name's.
+  it('is 56pt wide with the face, fixed rather than sized to its content', () => {
+    driverState.value = { driver: { userId: 'u1', avatarUrl: null }, name: 'Sam', litAgo: null };
+    const { container } = renderPill({ backTarget: 'wall', targetName: 'The Eyes' });
+
+    expect(BACK_CHIP_WIDTH_WITH_FACE).toBe(56);
+    expect(capsule(container)).toContain(`"width":${BACK_CHIP_WIDTH_WITH_FACE}`);
+    expect(capsule(container)).not.toContain('minWidth');
+    // The touch box never shrinks under the header's measured flank.
+    expect(pill(container).getAttribute('data-style')).toContain('"flexShrink":0');
+  });
+
+  // Large Text: no text is left to grow, and the arrow keeps its point size, so
+  // the chip (and the flank DrawerHeader mirrors) stays the same width.
+  it('does not grow with Large Text', () => {
+    driverState.value = { driver: { userId: 'u1', avatarUrl: null }, name: 'Sam', litAgo: null };
+    const { container } = renderPill({ backTarget: 'wall' });
+
+    expect(container.querySelector('[data-icon="undo"]')?.getAttribute('data-max-font-scale')).toBe('1');
+    expect(container.querySelector('span[data-color]:not([data-icon])')).toBeNull();
   });
 
   // The face promises "back to what they lit". When back lands on the
@@ -291,10 +320,11 @@ describe('WallStatePill', () => {
   it('gives the tap a real 44pt target rather than a 32pt chip with inert slop', () => {
     const { container } = renderPill({});
     const target = pill(container).getAttribute('data-style') ?? '';
-    const capsule = styles(container).find((style) => style.includes('"borderRadius":9999')) ?? '';
 
     expect(target).toContain('"height":44');
-    expect(capsule).toContain('"height":32');
+    expect(capsule(container)).toContain('"height":32');
+    // Both shapes stay at least 44pt wide, the touch floor.
+    expect(Math.min(BACK_CHIP_WIDTH_ARROW_ONLY, BACK_CHIP_WIDTH_WITH_FACE)).toBeGreaterThanOrEqual(44);
   });
 
   it('answers a press — a ripple on Material, opacity and scale on Liquid Glass', () => {
@@ -316,9 +346,9 @@ describe('WallStatePill', () => {
       const visible = renderPill({});
       const reserved = renderPill({ reserveOnly: true });
 
-      // Same tree, same intrinsic size — a fixed-width spacer could not track a
-      // translated word ("Back" / "Volver" / "Zurück" all differ).
-      expect(reserved.container.textContent).toBe(visible.container.textContent);
+      // Same tree, same width: the face comes and goes with the wall's driver.
+      expect(capsule(reserved.container)).toContain(`"width":${BACK_CHIP_WIDTH_ARROW_ONLY}`);
+      expect(capsule(visible.container)).toContain(`"width":${BACK_CHIP_WIDTH_ARROW_ONLY}`);
       expect(pill(reserved.container).getAttribute('data-style')).toContain('"height":44');
       expect(pill(reserved.container).getAttribute('data-style')).toContain('"opacity":0');
     });

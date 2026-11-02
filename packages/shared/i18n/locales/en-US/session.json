@@ -926,8 +926,6 @@
         "committed": "{{name}} is on the wall",
         "previewFirstAnnounce": "Preview, not on the wall. Put on board lights it."
       },
-      "backMyPick": "My pick",
-      "backOnWall": "On the wall",
       "backToMyPickNamed": "Back to my pick: {{name}}",
       "backToWallNamed": "Back to the climb on the wall: {{name}}"
     },
