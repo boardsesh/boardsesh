@@ -3,7 +3,8 @@
  *
  * The notice explains a rule the climber never opted into: something silently
  * changed what a swipe does — joining a crew, or turning board lighting off for
- * swipes and taps. It has to be shown, and it has to be shown ONCE, because a
+ * swipes and taps (the 2.7 default: a tap opens a preview, and Put on board
+ * lights the climb). It has to be shown, and it has to be shown ONCE, because a
  * card that reappears every time the drawer opens is the thing people remember
  * about a feature instead of the feature.
  *

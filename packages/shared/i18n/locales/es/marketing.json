@@ -50,8 +50,8 @@
       "description": "Conecta Boardsesh a un controlador de Kilter, Tension o MoonBoard, arregla una conexión fallida y manéjalo desde la pantalla de bloqueo con Live Activity."
     },
     "helpClimbActions": {
-      "title": "Vista previa, registro o playlist desde cualquier fila",
-      "description": "El menú de mantener pulsado en la fila de un bloque en la app Boardsesh, desde la vista previa sin encender el plafón hasta registrar un encadene o añadirlo a una playlist."
+      "title": "Toca para ver en vista previa, mantén para registrar o añadir a una playlist",
+      "description": "Cómo un toque en la fila de un bloque en la app Boardsesh abre una vista previa sin encender el plafón, y qué hace el menú de mantener pulsado: registrar un encadene o añadirlo a una playlist."
     },
     "helpBetaVideos": {
       "title": "Comparte un reel de Instagram o TikTok como beta",
@@ -457,7 +457,7 @@
       },
       "climbActions": {
         "title": "Acciones de un bloque",
-        "body": "Mantén pulsado un bloque para verlo sin encender el muro, registrar un encadene o añadirlo a una playlist."
+        "body": "Toca un bloque para verlo en vista previa sin encender el muro. Mantenlo pulsado para registrar un encadene o añadirlo a una playlist."
       },
       "sessions": {
         "title": "Sesiones en directo",
@@ -515,8 +515,8 @@
       },
       "queue": {
         "title": "Escalar la lista entera",
-        "intro": "Toca un bloque de una playlist y recorres esa playlist. Tu cola se queda como está.",
-        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Poner a continuación pone la lista entera al principio de tu cola, y Poner al final, al final. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón.",
+        "intro": "Toca un bloque de una playlist y lo ves en vista previa, recorriendo esa playlist. Tu cola se queda como está.",
+        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Poner a continuación pone la lista entera al principio de tu cola, y Poner al final, al final. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón. El plafón conserva su bloque y ves en vista previa el que tocaste.",
         "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
         "sessionsLink": "Cómo una sesión comparte una sola cola",
         "clipAlt": "La hoja ¿Iniciar playlist?",
@@ -584,8 +584,8 @@
       "crowd": {
         "title": "Cotillear sin mover el muro",
         "p1": "Con alguien más en tu sesión, deslizar permite explorar sin cambiar el plafón, salvo que estés al mando. Toca Poner en el plafón para encender un bloque, o En el plafón arriba para volver al bloque encendido.",
-        "p2": "Si el botón del reproductor dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Si escalas solo, apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar en Ajustes, luego Plafón, para explorar sin encender.",
-        "previewLink": "Vista previa de un bloque desde cualquier lista",
+        "p2": "Si el botón del reproductor dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Un toque abre una vista previa y Poner en el plafón lo enciende, así que explorar no toca el muro salvo que actives Iluminar el plafón al tocar un bloque o Iluminar el plafón al deslizar en Ajustes, luego Plafón.",
+        "previewLink": "Toca un bloque para verlo en vista previa",
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },
       "history": {
@@ -721,7 +721,7 @@
         "p1": "En un bloque, toca el botón grande Poner en el plafón. Se conecta si hace falta y enciende el bloque de la pantalla. Si se abre Seleccionar plafón, toca el tuyo: la señal más fuerte va primero, con el número de serie en cada fila. La bombilla de la barra superior también conecta.",
         "p2": "La primera vez, iOS pide Bluetooth. Android pide dispositivos cercanos, o Ubicación en Android 11 y anteriores.",
         "litShotAlt": "El reproductor con su botón grande del plafón",
-        "litShotCaption": "Lee el botón del muro: Estás al mando del plafón significa que el siguiente bloque que elijas también se enciende.",
+        "litShotCaption": "Lee el botón del muro: Estás al mando del plafón significa que el siguiente bloque que elijas también se enciende, hasta que lo dejes.",
         "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar.",
         "p4": "¿Prefieres la bombilla? En un bloque, toca ⋯, luego Opciones de vista, Botones, y pon Control del plafón en Bombilla. Ocupa el extremo derecho de la fila superior. Los dos controles conectan y encienden bloques; mantenlos pulsados para las opciones del plafón mientras estás conectado. El botón del muro también permite deslizar para tomar el mando y tocar para dejarlo."
       },
@@ -732,8 +732,8 @@
         "row2": "Apagar todas las luces. Tu móvil sigue conectado.",
         "row3": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
         "row4": "Iluminar la presa de arriba. Solo MoonBoard.",
-        "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, luego Plafón, y en el menú de la bombilla superior. La desconexión automática libera el plafón tras 30 segundos sin uso. Para explorar sin encender, deja el mando y apaga ambos interruptores de iluminación. Mientras estás al mando, cada bloque que eliges se enciende aunque estén apagados.",
-        "p3": "Sin plafón conectado, Poner en el plafón conecta y enciende el bloque de la pantalla. Si escalas solo, también tomas el mando. En un grupo, un toque enciende solo ese bloque. La bombilla superior puede reconectar al último plafón que usaste.",
+        "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, luego Plafón, y en el menú de la bombilla superior. Ahí mismo eliges cuánto tiempo sigue encendiendo Poner en el plafón. La desconexión automática libera el plafón tras 30 segundos sin uso. Para explorar sin encender, deja el mando y deja apagados ambos interruptores de iluminación. Mientras estás al mando, cada bloque que eliges se enciende aunque estén apagados.",
+        "p3": "Sin plafón conectado, Poner en el plafón conecta y enciende el bloque de la pantalla. Si escalas solo, los siguientes bloques que elijas se encienden durante 45 segundos tras cada bloque encendido; un MoonBoard sigue encendiendo hasta que lo dejes. En un grupo, hace falta activar También en una sesión. La bombilla superior puede reconectar al último plafón que usaste.",
         "shotAlt": "Controles de un plafón conectado",
         "shotCaption": "Vuelve a iluminar, apaga todas las luces o desconecta. Encender cada bloque toma el mando cuando está disponible."
       },
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Sabe cuándo estás al mando del plafón",
-        "p1": "El botón esmerilado del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla; Estás al mando del plafón significa que cada bloque que elijas se enciende, también en grupo. Si escalas solo, tocar Poner en el plafón toma el mando; en un grupo, un toque enciende un bloque.",
+        "p1": "El botón esmerilado del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla, y los siguientes que elijas también se encienden durante un rato. Estás al mando del plafón, esmerilado y brillante, significa que cada bloque que elijas se enciende hasta que lo dejes, también en grupo. Desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque, para empezar; tócalo para parar.",
         "p2": "Para tomar el mando cuando el botón muestra ‹‹, desliza el botón del muro hacia la izquierda. Suelta cuando diga Suelta para encender cada bloque. Se conecta si hace falta, enciende el bloque de la pantalla y los que elijas después. Deslizar sobre el dibujo del plafón cambia de bloque.",
         "p3": "Toca Estás al mando del plafón para dejar el mando y explorar sin desconectarte. La etiqueta cambia a Desconectar plafón; tocarla desconecta. También puedes tomar el mando con Encender cada bloque en ⋯, luego Controles del plafón, o en las acciones del lector de pantalla del botón.",
         "clipAlt": "Deslizar el botón del muro hacia la izquierda para tomar el mando y tocarlo para dejarlo",
@@ -801,10 +801,10 @@
         "clipCaption": "Mantén pulsada la fila y la tarjeta se levanta sola."
       },
       "preview": {
-        "title": "Mira un bloque sin encender el plafón",
-        "intro": "Vista previa es lo primero de la lista.",
-        "p1": "Vista previa abre el bloque en el reproductor sin tocar tu cola. Si la vista previa viene de una lista, los deslizamientos siguen esa lista. Una vista previa independiente puede no tener otro bloque al que deslizar.",
-        "p2": "Cuando exploras sin encender, el botón de arriba te lleva de vuelta: Mi elección a tu bloque, En el plafón al bloque encendido. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa, sin encender cuando hay un plafón conectado o un bloque encendido. Toca Poner en el plafón (o Activar) cuando quieras encenderlo. Si el botón del reproductor dice Estás al mando del plafón, cambiar de bloque enciende el plafón; tócalo antes para dejar el mando.",
+        "title": "Toca un bloque para verlo en vista previa",
+        "intro": "Un toque en un bloque de una lista lo abre en vista previa, y el plafón se queda como está.",
+        "p1": "La vista previa abre el bloque en el reproductor sin tocar tu cola ni el muro. Si la vista previa viene de una lista, los deslizamientos siguen esa lista. Una vista previa independiente puede no tener otro bloque al que deslizar.",
+        "p2": "Cuando exploras sin encender, el botón de arriba te lleva de vuelta: Mi elección a tu bloque, En el plafón al bloque encendido. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa · no está en el plafón cuando tu teléfono tiene un plafón. Toca Poner en el plafón (o Activar) cuando quieras el bloque. Se enciende, y los siguientes que elijas se encienden durante 45 segundos tras cada uno. Si el botón del reproductor dice Estás al mando del plafón, cambiar de bloque enciende el plafón; tócalo antes para dejar el mando.",
         "sessionsLink": "Cómo una sesión mantiene el muro quieto",
         "clipAlt": "Explorar una lista en el reproductor sin encender sus bloques",
         "clipCaption": "Explora la lista mientras el plafón mantiene su bloque. Poner en el plafón lo enciende cuando tú eliges.",

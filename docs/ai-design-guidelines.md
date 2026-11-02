@@ -468,6 +468,11 @@ These shots predate the wall button: they show round 2's "Lit on the wall" text.
 
 #### One place says "is it lit" (#7000)
 
+The wall button has three looks. Plain tonal means a preview or a single lit climb. Plain plus a
+short violet drain bar and an m:ss clock means the 45 s keep-lighting window after Put on board.
+Frost means open-ended driving only ("every climb you pick lights up"). Never frost a window.
+The preview cue ("Preview · not on the wall") lives in the top bar's second line, not on the art.
+
 Round 2 still answered "is this climb lit?" in up to four places that could disagree: the header face pill, the bulb's
 fill, the "Lit on the wall" text and the purple button. Now one board control says it, drawn from one model
 (`resolveWallControl`, `docs/climb-view-options.md`, "The board control"). By default it is the full-width wall

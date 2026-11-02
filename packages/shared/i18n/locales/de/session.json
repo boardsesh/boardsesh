@@ -978,7 +978,7 @@
     "paneEmpty": {
       "title": "Wähl einen Boulder",
       "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen.",
-      "unlitHint": "Tipp einen Boulder an, um ihn am Board zu beleuchten"
+      "unlitHint": "Tipp einen Boulder an für die Vorschau"
     },
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",

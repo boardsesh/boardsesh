@@ -87,12 +87,15 @@ iOS Alert, so its Cancel button is matched by text.
 ## Per-clip traps
 
 - **`preview-browsing` must not drive.** Tap You are driving the wall to stop
-  first, then turn off both tap and swipe lighting in Settings → Board. A live
-  drive overrides those settings. Open a tracked row and use one illustrative
+  first, wait out any 45 s Put on board window, and leave both tap and swipe
+  lighting off in Settings → Board (the 2.7 default, so a tap previews). A live
+  drive or window overrides those settings. Open a tracked row and use one illustrative
   board swipe; the back chip and Put on board identify the preview. One swipe is
   a teaching choice, not a limit on list navigation.
 - **`wall-swipe-to-drive` starts stopped.** Do not use `screenshotDrive=1` when
   opening the player: that parameter starts driving automatically for stills.
+  Do not press Put on board first either: it opens the 45 s window, whose clock
+  replaces the label this clip teaches.
   The clip needs the chevrons first, then a left swipe on the wall button,
   Let go to light every climb, the You are driving the wall label, a board
   swipe, and a tap on You are driving the wall to stop. Disconnect board at the
@@ -106,7 +109,9 @@ iOS Alert, so its Cancel button is matched by text.
   board, so it is no good for a retake.
 - **`start-playlist-queue` needs a non-empty forward queue.** The confirm only
   appears when `futureQueueCount > 0`. Seed the queue first by swiping two or
-  three climb rows left-to-right, or the tap just opens the climb.
+  three climb rows left-to-right, or the tap just opens the climb. Turn on Tapping a playlist loads it into my
+  queue and leave Light the board when I tap a climb off: the tap then loads
+  the list into Up next, keeps the wall's climb and previews the tapped one.
 - **The reaction menu is a `Modal` above the navigator.** Navigating away does
   not dismiss it; `remove-from-playlist` takes two scrim taps to get from the
   playlist view back to the list.

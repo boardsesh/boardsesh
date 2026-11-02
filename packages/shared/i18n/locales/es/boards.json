@@ -90,7 +90,7 @@
     "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
     "firstBoard": {
       "title": "¿Dónde escalas?",
-      "body": "Elige tu plafón para cargar sus bloques. Cuando te conectes, tocar un bloque lo ilumina en el muro.",
+      "body": "Elige tu plafón para cargar sus bloques. Un toque abre un bloque en vista previa; Poner en el plafón lo ilumina en el muro.",
       "gym": "En un rocódromo",
       "gymHint": "Elige el plafón de tu rocódromo",
       "own": "Mi propio plafón",
@@ -111,7 +111,7 @@
       "card": {
         "title": "Ilumina bloques en {{board}}",
         "titleNoName": "Ilumina bloques en tu plafón",
-        "body": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
+        "body": "Conecta este teléfono al plafón, toca un bloque y pulsa Poner en el plafón para iluminarlo.",
         "connect": "Conecta el plafón",
         "tryAgain": "Reintentar",
         "noLights": "Este muro no tiene luces",

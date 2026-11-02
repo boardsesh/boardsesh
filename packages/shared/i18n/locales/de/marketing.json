@@ -50,8 +50,8 @@
       "description": "Verbinde Boardsesh mit einem Kilter-, Tension- oder MoonBoard-Controller, bring eine fehlgeschlagene Verbindung in Ordnung und steuer alles per Live Activity vom Sperrbildschirm."
     },
     "helpClimbActions": {
-      "title": "Aus jeder Boulder-Zeile heraus ansehen, eintragen oder in eine Playlist legen",
-      "description": "Das Menü hinter dem langen Druck auf eine Boulder-Zeile in der Boardsesh-App: Vorschau ohne das Board zu beleuchten, Eintrag machen, zur Playlist hinzufügen."
+      "title": "Antippen für die Vorschau, gedrückt halten zum Eintragen oder für eine Playlist",
+      "description": "Wie ein Antippen einer Boulder-Zeile in der Boardsesh-App eine Vorschau öffnet, ohne das Board zu beleuchten, und was das Menü beim langen Druck kann: Eintrag machen oder zur Playlist hinzufügen."
     },
     "helpBetaVideos": {
       "title": "Ein Reel von Instagram oder TikTok als Beta teilen",
@@ -457,7 +457,7 @@
       },
       "climbActions": {
         "title": "Boulder-Aktionen",
-        "body": "Halt einen Boulder gedrückt: Vorschau ohne die Wand zu beleuchten, Eintrag machen oder zur Playlist hinzufügen."
+        "body": "Tipp einen Boulder an für die Vorschau, ohne die Wand zu beleuchten. Halt ihn gedrückt, um einen Eintrag zu machen oder ihn zur Playlist hinzuzufügen."
       },
       "sessions": {
         "title": "Live-Sessions",
@@ -515,8 +515,8 @@
       },
       "queue": {
         "title": "Die ganze Liste klettern",
-        "intro": "Tipp einen Boulder in einer Playlist an, und du kletterst diese Playlist durch. Deine Warteschlange bleibt, wie sie ist.",
-        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Als Nächstes dran setzt die ganze Liste an den Anfang deiner Warteschlange, Als Letztes dran ans Ende. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein.",
+        "intro": "Tipp einen Boulder in einer Playlist an, und du siehst ihn in der Vorschau und kletterst diese Playlist durch. Deine Warteschlange bleibt, wie sie ist.",
+        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Als Nächstes dran setzt die ganze Liste an den Anfang deiner Warteschlange, Als Letztes dran ans Ende. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein. Das Board behält seinen Boulder, und du siehst den angetippten in der Vorschau.",
         "p2": "In einer Session öffnet das Antippen den Boulder nur für dich. Die geteilte Warteschlange bleibt, wie sie ist.",
         "sessionsLink": "Wie eine Session eine Warteschlange teilt",
         "clipAlt": "Das Sheet Playlist starten?",
@@ -584,8 +584,8 @@
       "crowd": {
         "title": "Stöbern, ohne die Wand zu bewegen",
         "p1": "Mit jemand anderem in deiner Session stöberst du per Wischen, ohne das Board zu verändern, außer du steuerst es. Tippe auf Am Board beleuchten für einen Boulder oder oben auf Am Board, um zum beleuchteten Boulder zurückzukehren.",
-        "p2": "Sagt der Player-Button Du steuerst das Board, tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Allein schaltest du unter Einstellungen, dann Board, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten aus, um ohne Beleuchten zu stöbern.",
-        "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen",
+        "p2": "Sagt der Player-Button Du steuerst das Board, tippe darauf, um das Steuern zu beenden und verbunden zu bleiben. Ein Antippen öffnet eine Vorschau, Am Board beleuchten beleuchtet ihn. Stöbern bleibt also von der Wand fern, außer du schaltest unter Einstellungen, dann Board, Board beleuchten, wenn ich einen Boulder antippe oder Board beim Wischen beleuchten ein.",
+        "previewLink": "Boulder antippen, um ihn in der Vorschau zu sehen",
         "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
       "history": {
@@ -721,7 +721,7 @@
         "p1": "Tippe in einem Boulder auf den großen Button Am Board beleuchten. Er verbindet sich bei Bedarf und beleuchtet den Boulder auf dem Bildschirm. Öffnet sich Board auswählen, wähle dein Board: Das stärkste Signal steht zuerst, jede Zeile hat eine Seriennummer. Auch die Glühbirne oben kann verbinden.",
         "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
         "litShotAlt": "Der Player mit seinem großen Wand-Button",
-        "litShotCaption": "Lies den Wand-Button: Du steuerst das Board bedeutet, dass auch dein nächster gewählter Boulder beleuchtet wird.",
+        "litShotCaption": "Lies den Wand-Button: Du steuerst das Board bedeutet, dass auch dein nächster gewählter Boulder beleuchtet wird, bis du aufhörst.",
         "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar.",
         "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Sie sitzt rechts außen in der oberen Reihe. Beide Bedienelemente verbinden und beleuchten Boulder; Halten öffnet bei bestehender Verbindung die Board-Optionen. Der Wand-Button bietet zusätzlich Wischen zum Steuern und Tippen zum Beenden."
       },
@@ -732,8 +732,8 @@
         "row2": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
         "row3": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
         "row4": "Griff darüber beleuchten. Nur MoonBoard.",
-        "p2": "Automatisch trennen, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten findest du unter Einstellungen, dann Board, und im Menü der oberen Glühbirne. Automatisch trennen gibt das Board nach 30 Sekunden Leerlauf frei. Beende zum Stöbern ohne Beleuchten zuerst das Steuern und schalte beide Beleuchtungsschalter aus. Solange du steuerst, wird jeder gewählte Boulder auch bei ausgeschalteten Schaltern beleuchtet.",
-        "p3": "Ohne Verbindung verbindet Am Board beleuchten und beleuchtet den Boulder auf dem Bildschirm. Allein beginnst du damit auch zu steuern. In einer Crew beleuchtet ein Tipp nur diesen Boulder. Die obere Glühbirne kann das zuletzt verwendete Board wieder verbinden.",
+        "p2": "Automatisch trennen, Board beleuchten, wenn ich einen Boulder antippe und Board beim Wischen beleuchten findest du unter Einstellungen, dann Board, und im Menü der oberen Glühbirne. Dort stellst du auch ein, wie lange Am Board beleuchten weiter beleuchtet. Automatisch trennen gibt das Board nach 30 Sekunden Leerlauf frei. Beende zum Stöbern ohne Beleuchten zuerst das Steuern und lass beide Beleuchtungsschalter aus. Solange du steuerst, wird jeder gewählte Boulder auch bei ausgeschalteten Schaltern beleuchtet.",
+        "p3": "Ohne Verbindung verbindet Am Board beleuchten und beleuchtet den Boulder auf dem Bildschirm. Allein werden die nächsten gewählten Boulder nach jedem beleuchteten Boulder 45 Sekunden lang beleuchtet; ein MoonBoard beleuchtet weiter, bis du aufhörst. In einer Crew muss Auch in einer Session an sein. Die obere Glühbirne kann das zuletzt verwendete Board wieder verbinden.",
         "shotAlt": "Die Steuerung eines verbundenen Boards",
         "shotCaption": "Beleuchte erneut, schalte alle Lichter aus oder trenne die Verbindung. Jeden Boulder beleuchten startet das Steuern, wenn verfügbar."
       },
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Erkenne, wann du das Board steuerst",
-        "p1": "Der mattierte Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm; Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, auch in einer Crew. Allein beginnt Am Board beleuchten das Steuern; in einer Crew beleuchtet ein Tipp einen Boulder.",
+        "p1": "Der mattierte Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm, und die nächsten gewählten Boulder werden eine Weile ebenfalls beleuchtet. Das mattierte, leuchtende Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, bis du aufhörst, auch in einer Crew. Wisch den Button nach links oder halt ihn gedrückt und wähl Jeden Boulder beleuchten, um zu starten; tipp ihn an, um zu stoppen.",
         "p2": "Zeigt der Button ‹‹, wische den Wand-Button nach links, um zu steuern. Lass los, sobald Loslassen, um jeden Boulder zu beleuchten erscheint. Das verbindet bei Bedarf, beleuchtet den Boulder auf dem Bildschirm und die danach gewählten. Wischen über die Board-Zeichnung wechselt zwischen Bouldern.",
         "p3": "Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden weiterzustöbern. Die Beschriftung wechselt zu Board trennen; ein Tipp darauf trennt die Verbindung. Du kannst auch mit Jeden Boulder beleuchten unter ⋯, dann Board-Steuerung, oder über die Screenreader-Aktionen des Buttons starten.",
         "clipAlt": "Den Wand-Button nach links wischen, um zu steuern, dann zum Beenden antippen",
@@ -801,10 +801,10 @@
         "clipCaption": "Halt die Zeile, und die Karte hebt sich von selbst."
       },
       "preview": {
-        "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
-        "intro": "Vorschau ist der erste Eintrag in der Liste.",
-        "p1": "Vorschau öffnet den Boulder im Player, ohne deine Warteschlange zu ändern. Hat die Vorschau eine Liste, folgen die Wischgesten dieser Liste. Eine einzelne Vorschau kann keinen nächsten Boulder zum Weiterwischen haben.",
-        "p2": "Beim Stöbern ohne Beleuchten bringt dich der obere Button zurück: Meine Wahl zu deinem Boulder, Am Board zum beleuchteten. Unter dem Namen steht in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, wenn ein Board verbunden oder ein Boulder beleuchtet ist. Tippe auf Am Board beleuchten (oder Aktiv setzen), wenn du den Boulder willst. Sagt der Player-Button Du steuerst das Board, beleuchten weitere Boulderwechsel das Board; tippe zuerst darauf, um das Steuern zu beenden.",
+        "title": "Boulder antippen für die Vorschau",
+        "intro": "Ein Antippen eines Boulders in einer Liste öffnet ihn als Vorschau, und das Board bleibt, wie es ist.",
+        "p1": "Die Vorschau öffnet den Boulder im Player, ohne deine Warteschlange oder die Wand anzufassen. Hat die Vorschau eine Liste, folgen die Wischgesten dieser Liste. Eine einzelne Vorschau kann keinen nächsten Boulder zum Weiterwischen haben.",
+        "p2": "Beim Stöbern ohne Beleuchten bringt dich der obere Button zurück: Meine Wahl zu deinem Boulder, Am Board zum beleuchteten. Unter dem Namen steht in einer Session Nur du siehst das, sonst Vorschau · nicht am Board, wenn dein Handy ein Board hält. Tippe auf Am Board beleuchten (oder Aktiv setzen), wenn du den Boulder willst. Er wird beleuchtet, und die nächsten gewählten Boulder werden nach jedem 45 Sekunden lang beleuchtet. Sagt der Player-Button Du steuerst das Board, beleuchten weitere Boulderwechsel das Board; tippe zuerst darauf, um das Steuern zu beenden.",
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
         "clipAlt": "Eine Liste im Player durchsehen, ohne ihre Boulder zu beleuchten",
         "clipCaption": "Stöbere durch die Liste, während das Board seinen Boulder behält. Am Board beleuchten beleuchtet ihn, wenn du es wählst.",

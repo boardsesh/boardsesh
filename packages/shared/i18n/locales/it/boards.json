@@ -90,7 +90,7 @@
     "onboardingPrompt": "Segui il pannello su cui arrampichi: così si attiva la sua cronologia.",
     "firstBoard": {
       "title": "Dove arrampichi?",
-      "body": "Scegli il tuo pannello per caricarne i blocchi. Quando sei connesso, toccando un blocco lo illumini in parete.",
+      "body": "Scegli il tuo pannello per caricarne i blocchi. Un tocco apre un blocco in anteprima; Illumina il pannello lo illumina in parete.",
       "gym": "In una palestra",
       "gymHint": "Scegli il pannello della tua palestra",
       "own": "Il mio pannello",
@@ -111,7 +111,7 @@
       "card": {
         "title": "Illumina i blocchi su {{board}}",
         "titleNoName": "Illumina i blocchi sul tuo pannello",
-        "body": "Collega questo telefono al pannello, poi tocca un blocco qualsiasi per illuminarlo.",
+        "body": "Collega questo telefono al pannello, tocca un blocco e poi Illumina il pannello per illuminarlo.",
         "connect": "Connetti",
         "tryAgain": "Riprova",
         "noLights": "Questo pannello non ha luci",

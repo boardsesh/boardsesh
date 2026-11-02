@@ -1,5 +1,5 @@
 Novità della 2.7:
-- Leggi il pulsante satinato: Illumina il pannello connette e illumina. Guidi tu il pannello: ogni blocco scelto si illumina; tocca per fermarti senza disconnetterti. Scorri a sinistra per iniziare.
+- Tocca per sfogliare senza luce. Illumina il pannello e i prossimi per 45 s; MoonBoard finché non smetti. Scorri a sinistra il pulsante per continuare a guidare; toccalo per fermarti.
 - Ora in italiano. Recupero con conto alla rovescia e suono nella notifica.
 - Allenamenti in fasi. Scorri nella tua lista; metti subito dopo o in fondo.
 - Ordina e filtra playlist, Mi piace e Progetti.

@@ -978,7 +978,7 @@
     "paneEmpty": {
       "title": "Pick a climb",
       "subtitle": "Tap a climb to see it here.",
-      "unlitHint": "Tap a climb to light it"
+      "unlitHint": "Tap a climb to preview it"
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",

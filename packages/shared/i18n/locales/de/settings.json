@@ -505,9 +505,9 @@
       "onSwipeLabel": "Board beim Wischen beleuchten",
       "onSwipeDescription": "Nur wenn schon ein Boulder am Board leuchtet. Eine Vorschau beleuchtet beim Wischen nie das Board.",
       "onTapLabel": "Board beleuchten, wenn ich einen Boulder antippe",
-      "onTapDescription": "Tippst du in einer Liste einen Boulder an, wird er am Board beleuchtet. Ist das aus, öffnet das Antippen eine Vorschau.",
+      "onTapDescription": "Jedes Antippen in einer Liste beleuchtet den Boulder, ohne Zeitlimit. Ist das aus, öffnet das Antippen eine Vorschau.",
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
-      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange. Nur wenn „Board beleuchten, wenn ich einen Boulder antippe“ an ist. Sonst öffnen Antippen und Abspielen eine Vorschau."
+      "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, lädt das diese Liste in deine Warteschlange und zeigt den angetippten Boulder als Vorschau. Das Board behält seinen Boulder, bis du Am Board beleuchten wählst."
     },
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",

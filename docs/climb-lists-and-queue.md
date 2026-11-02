@@ -69,10 +69,15 @@ The two lighting settings, in Settings › Board, are **Light the board when I t
 (`lightOnClimbTap`) and **Light the board as I swipe** (`lightOnSwipe`). Both default to
 **off**. Stored choices are preserved: someone who already saved either switch keeps it.
 With untouched settings, selecting a climb opens a preview without committing it or
-lighting the wall, including playlist **Play** and queue rows. Tap the board button to
-put that climb up once; swipe the button, or use **Light every climb**, to start Driver mode.
-On a MoonBoard a solo tap on the board button still starts Driver mode, because most MoonBoard
-controllers don't like phones switching (still to be tested in the field).
+lighting the wall, including playlist **Play** and queue rows. Tap the board button (**Put on board**) to
+light that climb: from 2.7 it also opens a keep-lighting window, so every climb you pick lights
+until 45 s after the last lit one (renewed by each; 30 s, 45 s, 1 min, Until I stop or Off in
+Settings; in a crew only with **In a session too** on). Swipe the button, or use **Light every
+climb**, to start open-ended Driver mode. On a MoonBoard Put on board always starts Driver mode,
+because most MoonBoard controllers don't like phones switching (still to be tested in the
+field). The top bar's second line says "Preview · not on the wall" for a preview while this
+phone holds the board. A playlist tap with **Tapping a playlist loads it into my queue** on
+loads the list into Up next, keeps the wall's climb and previews the tapped climb.
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -162,8 +167,8 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
 
 - **What stays a preview.** A climb from another board model (a wrong-board tick or
   playlist row, a similar climb from a climb on another board): the wall this phone drives
-  can't light it. The trackless previews (Home's new-climb card, the long-press Preview
-  action, the workout preview) stay as they are. A swipe from a preview that walks a list
+  can't light it. The trackless previews (Home's new-climb card, a deep link, the workout
+  preview) stay as they are. A swipe from a preview that walks a list
   commits the next climb on that list, with the list as its track.
 - **The crew's browse latch** is ignored while driving and comes back when driving ends if
   a crew is still there. The browse chrome ("Only you see this", the back chip) only shows
@@ -183,10 +188,11 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
   the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
 - **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
-  default settings, later taps and swipes preview. A board-button tap puts one climb up;
-  it never starts a live drive, except solo on a MoonBoard (`tapStartsDrive`), where it
-  still does. Solo with Light on swipe explicitly enabled, that tap may resume the saved
-  setting after a stop. The settings themselves never flip.
+  default settings, later taps and swipes preview. A board-button tap (Put on board) lights
+  that climb and opens the keep-lighting window (`startedBy: 'tap'`: 45 s by default, renewed
+  by each lit climb); a MoonBoard tap starts an open-ended drive instead. Solo with Light on
+  swipe explicitly enabled, that tap may resume the saved setting after a stop. The settings
+  themselves never flip.
 - **A crew forms while you drive** (Marco, 2026-10-30: keep driving). A live drive, whatever
   started it (a swipe, a MoonBoard press or the accessible action), goes on into the crew in the same session. Solo
   driving by Light on swipe alone (no stop, a link up) turns into a live drive the moment the
@@ -215,14 +221,16 @@ held link without driving stay plain. A peek, drag or committed swipe awaiting c
 uses flat amber progress; bokeh appears only once driving is confirmed. The label says what
 a tap does. When hold colours are unavailable, driving uses the existing flat amber fallback;
 other states keep their tonal/outline treatment. Stopping or browsing removes frost immediately.
+The keep-lighting window after Put on board is not driving: it stays plain, with a short
+violet bar and an m:ss clock ("Each pick lights · 0:38"). Frost means open-ended driving only.
 
 | State | What you see | What happens next |
 | --- | --- | --- |
-| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb. Solo, it starts driving; in a crew, it is a one-off put. |
+| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then opens the keep-lighting window (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
 | Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
 | Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
-| Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A long-press Preview, deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
+| Standalone preview | The same preview controls, with a back chip when there is a climb to return to | A deep link, Home new-climb card or workout preview may have no list to walk; Next and swipes then do nothing. |
 | A crewmate holds the board | **Put on board**, an outline bulb and their face | A tap relays the climb through their phone. There is no swipe-to-drive on that phone's connection. |
 | Another board | A switch-board overlay when it is unreachable, or **Put on {board}** for another reachable board at the gym | The reachable-board action moves to that board, connects and lights the climb. A crew already on that board relays through its holder instead. |
 
@@ -371,13 +379,13 @@ preview is like this:
 - Search with Light on tap off (#5157): `app/(tabs)/climbs/index.tsx:1313-1318`. Its comment
   promises the back chip and Put on the wall button, which only appear if Light on swipe is off too. With the crew
   flag on, the same tap in a crew does get the results as a track (`:1321-1326`).
-- The long-press **Preview** action, a deep link, the Home new-climb card and workout preview
-  rows.
+- A deep link, the Home new-climb card and workout preview rows.
 - With the crew flag on: logbook, session, profile and similar-climb taps in a crew.
 
 F2 (#6665) gives every list's preview its list as a track, search with Light on tap off
-included, so of the list above only the long-press Preview action, deep links, the Home
-new-climb card and workout preview rows are left trackless.
+included, so of the list above only deep links, the Home
+new-climb card and workout preview rows are left trackless. Climb menus no longer have a
+Preview row; a tap is the preview.
 
 With a board connected or a climb lit and Light on swipe on, such a preview shows the **Live**
 pill ("your next swipe changes the climb on the wall") while swiping and Next are disabled

@@ -90,7 +90,7 @@
     "onboardingPrompt": "Suis le mur où tu grimpes : c'est ça qui active son historique.",
     "firstBoard": {
       "title": "Où grimpes-tu ?",
-      "body": "Choisis ta board pour charger ses blocs. Une fois la board connectée, touche un bloc pour l'allumer au mur.",
+      "body": "Choisis ta board pour charger ses blocs. Un toucher ouvre un bloc en aperçu ; Allumer sur la board l'allume au mur.",
       "gym": "En salle",
       "gymHint": "Choisis la board de ta salle",
       "own": "Ma propre board",
@@ -111,7 +111,7 @@
       "card": {
         "title": "Allume les blocs sur {{board}}",
         "titleNoName": "Allume les blocs sur ta board",
-        "body": "Connecte ce téléphone à la board, puis touche un bloc pour l'allumer.",
+        "body": "Connecte ce téléphone à la board, touche un bloc, puis Allumer sur la board pour l'allumer.",
         "connect": "Connecte la board",
         "tryAgain": "Réessayer",
         "noLights": "Ce mur n'a pas de LED",
