@@ -119,6 +119,14 @@ export const sessionPresenceMirrorsKeepLighting =
   typeof liveActivityNative?.updateKeepLightingConfig === 'function';
 
 /**
+ * Whether the iOS Lock Screen bulb can stop a drive (`StopDrivingIntent`) on
+ * this binary. JS says it adopts that stop through the mirrored settings
+ * (`lockScreenStop`), so the bulb offers it only to a JS that will.
+ */
+export const sessionPresenceSupportsLockScreenDriveStop =
+  sessionPresenceMirrorsKeepLighting && liveActivityNative?.supportsLockScreenDriveStop === true;
+
+/**
  * Mirrors Settings › Board's keep-lighting choices for the iOS lock-screen
  * Next / Previous, which open or renew the window natively. `null` clears
  * them. A silent no-op on Android and on a binary that predates it.
@@ -179,6 +187,18 @@ export function addWidgetQueueNavigateListener(callback: (event: WidgetQueueNavi
     return () => {};
   }
   const subscription = sessionModule.addListener('queueNavigate', callback);
+  return () => subscription.remove();
+}
+
+/**
+ * iOS: the Lock Screen or Dynamic Island bulb stopped this phone's drive and
+ * stored the stop (`getLightingWindow`). The event carries nothing; the
+ * listener adopts the stored stop. A no-op on Android and on a binary without
+ * the stop.
+ */
+export function addLockScreenDriveStopListener(callback: () => void): () => void {
+  if (!sessionPresenceSupportsLockScreenDriveStop || !liveActivityNative) return () => {};
+  const subscription = liveActivityNative.addListener('lockScreenDriveStop', callback);
   return () => subscription.remove();
 }
 

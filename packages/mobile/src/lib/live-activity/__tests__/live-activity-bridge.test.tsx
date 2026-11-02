@@ -5,6 +5,13 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WidgetMirrorEvent } from '../../../../modules/live-activity/src/index';
 import { LiveActivityBridge } from '../live-activity-bridge';
 import { resetLastPickForTests, setLastPick } from '../../last-pick-store';
+import {
+  enterDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../../../components/play-drawer/drive-mode-store';
 
 type QueueNavigateEvent = {
   action: 'next' | 'previous';
@@ -13,7 +20,7 @@ type QueueNavigateEvent = {
 };
 
 type BoardControlEvent = {
-  action: 'reconnect' | 'reassert';
+  action: 'reconnect' | 'reassert' | 'stopDriving';
   correlationId: string;
 };
 
@@ -510,6 +517,8 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
           // The header's line while driving the wall (2.7), timed or
           // open-ended. Left out, Android falls back to English.
           lightDrivingLabel: 'mobile.session.notification.drivingTheWall',
+          // The lit bulb while driving: a tap stops driving.
+          stopDrivingLabel: 'mobile.session.notification.stopDriving',
         }),
       }),
     );
@@ -591,6 +600,51 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     // No connect of its own behind it, so nothing carries to a later link.
     expect(bt.reassertWall).toHaveBeenCalledWith();
     expect(bt.connect).not.toHaveBeenCalled();
+  });
+
+  describe('stopDriving (the lit bulb while this phone drives)', () => {
+    beforeEach(() => resetDriveModeForTests());
+
+    function liveDrive(windowMs: number | null, now = Date.now()) {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs,
+        windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+        now,
+      });
+      markDriveLive({ now });
+    }
+
+    it('stops a live drive as the frosted button does, without re-lighting', () => {
+      liveDrive(45_000);
+      renderBridge();
+      act(() => {
+        widget.boardControlListener?.({ action: 'stopDriving', correlationId: 'bulb-stop' });
+      });
+      expect(getDriveMode()).toBeNull();
+      expect(getLastDriveModeExitReason()).toBe('stopped');
+      expect(bt.reassertWall).not.toHaveBeenCalled();
+      expect(bt.connect).not.toHaveBeenCalled();
+    });
+
+    it('re-lights when the drive was already over: nothing drives, or the time ran out on the wall clock', () => {
+      renderBridge();
+      act(() => {
+        widget.boardControlListener?.({ action: 'stopDriving', correlationId: 'bulb-none' });
+      });
+      expect(bt.reassertWall).toHaveBeenCalledTimes(1);
+      expect(getLastDriveModeExitReason()).toBeNull();
+
+      // Android paused JS timers: the drive's end passed, the watcher never fired.
+      liveDrive(45_000, Date.now() - 60_000);
+      act(() => {
+        widget.boardControlListener?.({ action: 'stopDriving', correlationId: 'bulb-over' });
+      });
+      expect(bt.reassertWall).toHaveBeenCalledTimes(2);
+      expect(getLastDriveModeExitReason()).toBeNull();
+    });
   });
 
   it('is a no-op (no throw) when no board is selected', () => {

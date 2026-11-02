@@ -207,6 +207,13 @@ type BoardBleNativeModule = {
   connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<void>;
   disconnect(): Promise<void>;
   /**
+   * Disconnect Bluetooth when driving ends (2.7): free the board but keep the
+   * pairing, so the Live Activity bulb and the next Put on board reconnect to
+   * it. `disconnect()` forgets it. Only on newer binaries: gate on
+   * `typeof disconnectKeepingBoard === 'function'`.
+   */
+  disconnectKeepingBoard?(): Promise<void>;
+  /**
    * Resolves the write's transport diagnostics on binaries new enough to
    * report them; older binaries resolve nothing. Treat a nullish result as
    * "no diagnostics".
@@ -328,6 +335,12 @@ export type LiveActivityStartSessionOptions = {
      * open-ended drive has no clock. An older binary ignores it.
      */
     lightDrivingLabel?: string;
+    /**
+     * The lit bulb's label while this phone drives: a tap stops driving
+     * (`boardControl` `stopDriving`). Without it (an older bundle) the lit bulb
+     * keeps re-lighting. An older binary ignores it.
+     */
+    stopDrivingLabel?: string;
   };
 };
 
@@ -485,6 +498,11 @@ export type LiveActivityKeepLightingConfig = {
   moonboard: boolean;
   /** False where a press would not start a drive in the app either. */
   enabled: boolean;
+  /**
+   * This JS adopts a lock-screen stop, so the bulb may offer Stop driving
+   * while a drive is on the card. An older binary ignores it.
+   */
+  lockScreenStop?: boolean;
 };
 
 export type WidgetMirrorEvent = {
@@ -507,7 +525,8 @@ export type LiveActivityIntentDiagnosticKind =
   | 'nextClimb'
   | 'previousClimb'
   | 'takeControl'
-  | 'reconnectBoard';
+  | 'reconnectBoard'
+  | 'stopDriving';
 
 export type LiveActivityIntentDiagnosticStage =
   | 'entered'
@@ -531,7 +550,8 @@ export type LiveActivityIntentCompletionClass =
   | 'localNavigationEnabled'
   | 'alreadyAllowed'
   | 'bleFailure'
-  | 'mirrorNotCommitted';
+  | 'mirrorNotCommitted'
+  | 'nothingDriving';
 
 export type InterruptedLiveActivityIntentDiagnostic = {
   schemaVersion: 1;
@@ -551,10 +571,14 @@ export type InterruptedLiveActivityIntentDiagnostic = {
  * - `reconnect`: bulb was out (heldByPeer / disconnected) → reconnect to the
  *   last board, taking it back from a peer (Aurora is last-connection-wins).
  * - `reassert`: bulb was lit (connectedByMe) → re-push the current climb to the
- *   wall. iOS drives the equivalent through App Intents, not this event.
+ *   wall.
+ * - `stopDriving`: bulb was lit and this phone was driving when the
+ *   notification was drawn → stop driving (only sent when JS supplied
+ *   `stopDrivingLabel`).
+ * iOS drives the equivalent through App Intents, not this event.
  */
 export type BoardControlEvent = {
-  action: 'reconnect' | 'reassert';
+  action: 'reconnect' | 'reassert' | 'stopDriving';
   correlationId: string;
 };
 
@@ -584,8 +608,15 @@ type LiveActivityNativeModule = {
   updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
   /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
   getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
+  /**
+   * True on binaries whose Lock Screen bulb can stop a drive
+   * (`StopDrivingIntent`), which then emit `lockScreenDriveStop`.
+   */
+  supportsLockScreenDriveStop?: boolean;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
+  /** A Lock Screen stop was stored: adopt it from `getLightingWindow`. Carries nothing. */
+  addListener(event: 'lockScreenDriveStop', listener: () => void): EventSubscription;
 };
 
 export const liveActivityNative = requireOptionalNativeModule<LiveActivityNativeModule>('LiveActivity');

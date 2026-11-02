@@ -7,6 +7,13 @@
 "Unmirror climb" = "Annuler le miroir";
 "Tap to reconnect" = "Appuie pour te reconnecter";
 "Board disconnected. Tap to reconnect" = "Board déconnectée. Appuie pour te reconnecter";
+/* Disconnected card: the last tap failed, or no board is remembered */
+"Board didn't answer. Tap again" = "La board ne répond pas. Appuie à nouveau";
+"Board didn't answer. Tap to try again" = "La board ne répond pas. Appuie pour réessayer";
+"Turn on Bluetooth, then tap" = "Active le Bluetooth, puis appuie";
+"Bluetooth is off. Turn it on, then tap to reconnect" = "Le Bluetooth est désactivé. Active-le, puis appuie pour te reconnecter";
+"Open Boardsesh to connect" = "Ouvre Boardsesh pour te connecter";
+"Board disconnected. Open Boardsesh to connect" = "Board déconnectée. Ouvre Boardsesh pour te connecter";
 "On the wall" = "Sur le mur";
 "%@ is on the wall" = "%@ est sur le mur";
 "Wall held by another climber" = "Mur piloté par un autre grimpeur";
@@ -34,3 +41,4 @@
 "Driving the wall" = "Tu pilotes la board";
 "Every climb you pick lights up" = "Chaque bloc que tu choisis s'allume";
 "Lights the climb again" = "Rallume le bloc";
+"Stops driving" = "Arrête le pilotage";

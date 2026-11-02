@@ -39,23 +39,31 @@ enum LiveActivityBleBridge {
     /// Reconnect to the last known board for the Live Activity lightbulb's
     /// ReconnectBoardIntent, inside a `beginBackgroundTask` window so the connect
     /// can finish even if the tap arrives while the app is suspended. Returns
-    /// whether the board reconnected; on success BoardBleManager re-lights the
-    /// wall from the shared queue state.
+    /// nil once the board reconnected (BoardBleManager then re-lights the wall
+    /// from the shared queue state), or why it could not.
     @MainActor
-    static func reconnectForIntent() async -> Bool {
+    static func reconnectForIntent() async -> SharedBoardReconnectFailure? {
         let task = BleIntentBackgroundTask()
         task.begin(name: "ble-reconnect-intent")
         defer { task.end() }
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<SharedBoardReconnectFailure?, Never>) in
             BoardBleManager.shared.reconnectToLastKnownBoard(origin: .liveActivityIntent) { result in
                 switch result {
                 case .success:
-                    continuation.resume(returning: true)
-                case .failure:
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: nil)
+                case .failure(let error):
+                    continuation.resume(returning: reconnectFailure(for: error))
                 }
             }
         }
+    }
+
+    /// What the card tells the climber about a failed reconnect. A forgotten
+    /// board needs nothing here: the card already reads the cleared pairing
+    /// and says to open the app.
+    static func reconnectFailure(for error: Error) -> SharedBoardReconnectFailure {
+        if case BoardBleError.bluetoothUnavailable = error { return .bluetoothOff }
+        return .unreachable
     }
 }
 

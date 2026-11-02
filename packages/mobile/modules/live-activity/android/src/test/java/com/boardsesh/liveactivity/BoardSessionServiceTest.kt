@@ -1296,6 +1296,41 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
+    fun `while this phone drives the lit bulb stops driving, and relights once the drive is over`() {
+        val captured = slot<Notification>()
+        var now = restNowMs
+        val service = startLightingService(captured, nowMs = { now }) {
+            putExtra(BoardSessionService.EXTRA_STOP_DRIVING_LABEL, "Stop driving")
+        }
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 2)
+
+        val stop = captured.captured.actions.single()
+        assertEquals("Stop driving", stop.title.toString())
+        val stopIntent = shadowOf(stop.actionIntent).savedIntent
+        assertEquals(BoardSessionService.ACTION_BULB, stopIntent.action)
+        assertTrue(stopIntent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, false))
+
+        // An open-ended drive stops the same way.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 3)
+        assertEquals(listOf("Stop driving"), actionTitles(captured.captured))
+
+        // Off again: the bulb re-lights.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_OFF), 0, 4)
+        val relight = captured.captured.actions.single()
+        assertEquals("Relight wall", relight.title.toString())
+        assertFalse(shadowOf(relight.actionIntent).savedIntent.getBooleanExtra(BoardSessionService.EXTRA_STOPS_DRIVE, true))
+
+        // A timed drive past its end draws as over, so the bulb re-lights too.
+        service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 5)
+        now = restNowMs + 39_000
+        service.onStartCommand(updateIntent("connectedByMe").apply {
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
+        }, 0, 6)
+        assertEquals(listOf("Relight wall"), actionTitles(captured.captured))
+    }
+
+    @Test
+    @Config(sdk = [30])
     fun `an open-ended drive says driving the wall in the header with no clock`() {
         val captured = slot<Notification>()
         val service = startLightingService(captured)

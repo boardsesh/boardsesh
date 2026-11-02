@@ -5942,4 +5942,71 @@ describe('useBoardBluetooth prepared native pairing (#7122)', () => {
     expect(adapter.adoptConnection).not.toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
   });
+
+  // The iOS Live Activity bulb reconnects to the board native still pairs. A
+  // Disconnect Bluetooth when driving ends release keeps that pairing, and the
+  // bulb's reconnect is then the climber taking the board back: the app adopts
+  // it, or its own bulb and the Live Activity go on saying disconnected over a
+  // lit wall. An explicit Disconnect forgets the board and adopts nothing.
+  describe('the Live Activity bulb after a release', () => {
+    async function adoptedThenReleased(reason: 'driving_ended' | 'user') {
+      const adapter = makePreparedAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin: 'userConnect',
+      });
+      const hook = renderHook(() => useBoardBluetooth(currentBoard));
+      await act(async () => {});
+      expect(hook.result.current.isConnected).toBe(true);
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+      await act(async () => {
+        await hook.result.current.disconnect(reason);
+      });
+      expect(hook.result.current.isConnected).toBe(false);
+      return { adapter, result: hook.result };
+    }
+
+    function bulbReconnects(connectOrigin: string) {
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin,
+      });
+      return act(async () => connectedListener?.({ deviceId: 'board-b', deviceName: 'Kilter Board' }));
+    }
+
+    it('keeps the native pairing on a driving-ends release and forgets it on a Disconnect', async () => {
+      const released = await adoptedThenReleased('driving_ended');
+      expect(released.adapter.disconnect).toHaveBeenLastCalledWith({ keepBoard: true });
+      const disconnected = await adoptedThenReleased('user');
+      expect(disconnected.adapter.disconnect).toHaveBeenLastCalledWith({ keepBoard: false });
+    });
+
+    it('adopts the bulb’s reconnect after a driving-ends release', async () => {
+      const { adapter, result } = await adoptedThenReleased('driving_ended');
+      await bulbReconnects('liveActivityIntent');
+      expect(adapter.adoptConnection).toHaveBeenCalledTimes(2);
+      expect(result.current.isConnected).toBe(true);
+    });
+
+    it('adopts no other native connect after a driving-ends release', async () => {
+      const { adapter, result } = await adoptedThenReleased('driving_ended');
+      await bulbReconnects('restored');
+      expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
+      expect(result.current.isConnected).toBe(false);
+    });
+
+    it('adopts nothing after an explicit Disconnect, the bulb included', async () => {
+      const { adapter, result } = await adoptedThenReleased('user');
+      await bulbReconnects('liveActivityIntent');
+      expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
+      expect(result.current.isConnected).toBe(false);
+    });
+  });
 });

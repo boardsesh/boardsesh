@@ -50,12 +50,21 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         // directly. If iOS instead runs the intent in the widget extension — which
         // can't link BoardBleManager — fall back to a Darwin notification so the
         // live main app does the reconnect, mirroring ClimbNavigationIntent.
+        //
+        // The outcome goes to the App Group for the card's next render: on
+        // success the bulb lights now (the app adopts the link when its JS
+        // next runs), on failure the card says why instead of offering the
+        // same tap again. A board the app forgot (an in-app Disconnect) never
+        // gets here from the card: it says to open the app instead.
         #if !WIDGET_EXTENSION
         diagnosticRun.mark(.bleStarted)
-        let reconnected = await LiveActivityBleBridge.reconnectForIntent()
-        diagnosticRun.mark(reconnected ? .bleFinishedSuccess : .bleFinishedFailure)
-        if !reconnected {
+        let failure = await LiveActivityBleBridge.reconnectForIntent()
+        diagnosticRun.mark(failure == nil ? .bleFinishedSuccess : .bleFinishedFailure)
+        if failure != nil {
             completionClass = .bleFailure
+        }
+        if let defaults = SharedConstants.sharedDefaults {
+            SharedBoardReconnect.record(failure, in: defaults)
         }
         #else
         postBleReconnectDarwinNotification()
@@ -88,9 +97,14 @@ struct ReconnectBoardIntent: LiveActivityIntent {
             }
         }
 
-        await refreshActivities()
+        // The app process redraws from the committed queue and the App Group's
+        // board connection, bumping the bulb's redraw trigger so a failure's
+        // message shows even though nothing else on the card changed.
         #if !WIDGET_EXTENSION
+        await LiveActivityManager.shared.rerenderForLightingWindow()
         diagnosticRun.mark(.activityKitUpdated)
+        #else
+        await refreshActivities()
         #endif
         return .result()
     }

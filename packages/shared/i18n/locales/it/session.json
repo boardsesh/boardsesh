@@ -882,7 +882,8 @@
         "reconnect": "Connetti al pannello",
         "connecting": "Connessione…",
         "onWall": "{{name}} è in parete",
-        "drivingTheWall": "Guidi tu il pannello"
+        "drivingTheWall": "Guidi tu il pannello",
+        "stopDriving": "Smetti di guidare"
       },
       "inStatsFlashes": "Flash",
       "inLeaderboardTitle": "Chi sta arrampicando",

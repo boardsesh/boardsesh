@@ -281,4 +281,120 @@ final class BoardBleAssociationTests: XCTestCase {
         XCTAssertFalse(displayed)
         XCTAssertTrue(current.writtenChunks.isEmpty)
     }
+
+    // MARK: - Live Activity reconnect after a release (2.7)
+
+    private func reconnectResults() -> [Result<Void, Error>] {
+        var results: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.reconnectToLastKnownBoard(origin: .liveActivityIntent) { results.append($0) }
+        }
+        return results
+    }
+
+    private func failureDescription(_ result: Result<Void, Error>?) -> String? {
+        guard case .failure(let error)? = result else { return nil }
+        return error.localizedDescription
+    }
+
+    /// Disconnect Bluetooth when driving ends frees the board but keeps its
+    /// pairing, so the Live Activity bulb can still reach it. Before, every
+    /// disconnect forgot it and the bulb's reconnect died at deviceNotFound.
+    func testDrivingEndedReleaseKeepsThePairingTheBulbReconnectsTo() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        XCTAssertTrue(SharedBoardReconnect.hasRememberedBoard(in: defaults))
+
+        manager.testHooks.sync { manager.disconnect(forgetBoard: false) }
+
+        XCTAssertTrue(cancellations.contains(peripheral.identifier))
+        XCTAssertNil(manager.connectedDeviceInfo)
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.boundPeripheralUuid }, peripheral.identifier)
+        XCTAssertTrue(SharedBoardReconnect.hasRememberedBoard(in: defaults))
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .reconnect)
+        // The bulb goes looking for it instead of failing on a forgotten board.
+        XCTAssertTrue(reconnectResults().isEmpty)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isScanRequested })
+        // A restart reads the same pairing.
+        manager = makeManager()
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.boundPeripheralUuid }, peripheral.identifier)
+    }
+
+    /// An in-app Disconnect forgets the board on purpose: the card offers to
+    /// open the app rather than a reconnect that can only fail.
+    func testExplicitDisconnectForgetsThePairingAndTheCardSaysOpenTheApp() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        manager.testHooks.sync { manager.disconnect() }
+        XCTAssertFalse(SharedBoardReconnect.hasRememberedBoard(in: defaults))
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+        assertBulbRefused()
+    }
+
+    /// A cancelled or failed in-app connect also leaves nothing bound.
+    func testAPreparationLeavesNothingForTheCardToReconnectTo() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        _ = prepare(configuration(), key: "wall-a")
+        XCTAssertEqual(SharedBoardReconnect.footer(in: defaults), .openApp)
+    }
+
+    func testAnyConnectClearsTheCardsLastReconnectFailure() {
+        SharedBoardReconnect.recordFailure(.unreachable, in: defaults)
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        XCTAssertNil(defaults.string(forKey: SharedConstants.bleReconnectFailureKey))
+    }
+
+    /// iOS launches the app in the background for the bulb's tap: the central
+    /// it creates at launch reads `.unknown` until its first update, which
+    /// used to fail the tap as Bluetooth off. It now waits for that update.
+    func testBulbReconnectWaitsForAJustCreatedCentralsFirstState() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        manager.testHooks.sync { manager.disconnect(forgetBoard: false) }
+        manager.testHooks.sync {
+            manager.testHooks.setCentralState(.unknown)
+            manager.testHooks.setScanForPeripheralsOverride { _ in }
+        }
+        XCTAssertTrue(reconnectResults().isEmpty)
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.isScanRequested })
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOn)
+
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.isScanRequested })
+    }
+
+    func testBulbReconnectStillFailsWhenBluetoothComesUpOffOrNeverAnswers() {
+        let peripheral = FakeWritablePeripheral(name: "MoonBoard")
+        establish(peripheral, configuration: configuration(), key: "wall-a")
+        manager.testHooks.sync { manager.disconnect(forgetBoard: false) }
+        manager.testHooks.sync { manager.testHooks.setCentralState(.unknown) }
+
+        var results: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.reconnectToLastKnownBoard(origin: .liveActivityIntent) { results.append($0) }
+        }
+        manager.testHooks.fireCentralStateUpdate(.poweredOff)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
+
+        results = []
+        manager.testHooks.sync {
+            manager.reconnectToLastKnownBoard(origin: .liveActivityIntent) { results.append($0) }
+        }
+        manager.testHooks.sync {
+            scheduler.lastOneShot(label: "reconnectAwaitingCentralStateWatchdog")?.fire()
+        }
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(failureDescription(results.first), BoardBleError.bluetoothUnavailable.localizedDescription)
+    }
+
+    func testOnlyAnAnsweredQuestionWaitsForTheCentral() {
+        XCTAssertTrue(BoardBleManager.awaitsFirstCentralState(.unknown, authorization: .allowedAlways))
+        XCTAssertTrue(BoardBleManager.awaitsFirstCentralState(.resetting, authorization: .allowedAlways))
+        XCTAssertFalse(BoardBleManager.awaitsFirstCentralState(.poweredOff, authorization: .allowedAlways))
+        XCTAssertFalse(BoardBleManager.awaitsFirstCentralState(.unknown, authorization: .notDetermined))
+        XCTAssertFalse(BoardBleManager.awaitsFirstCentralState(.unknown, authorization: .denied))
+    }
 }

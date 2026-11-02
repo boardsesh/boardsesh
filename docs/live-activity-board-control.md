@@ -95,7 +95,8 @@ Two more rules keep the bulb honest (#7087):
   connects from the in-app bulb, with the list on screen. It has to be the
   notification's own PendingIntent: Android 12+ does not let a broadcast
   receiver started by a notification tap open an activity. The lit bulb
-  (`connectedByMe`) still re-lights the wall by broadcast.
+  (`connectedByMe`) still re-lights the wall by broadcast, or, while this phone
+  drives, stops driving (see the driving section below).
 - **"Connecting…" while a connect runs.** `connect()` ignores a second tap while
   one is in flight, so the bridge sends `boardConnecting` (the Bluetooth
   context's `loading`) and the outline bulb reads `connectingLabel` until the
@@ -174,7 +175,12 @@ The Live Activity reflects a tri-state `boardConnection`, from **this device's**
 
 - **`connectedByMe`** — this device holds the BLE link → lightbulb lit (warm amber glow), Previous/Next shown and active (they write BLE to the wall).
 - **`heldByPeer`** — a session member I can id-match drives the board → lightbulb out, Previous/Next hidden, card shows the wall climb + "<name> is on the wall". An **anonymous** holder (a `conn:` holder with no `userId`) is treated as `heldByPeer` **only on the foreground/JS derivation** — via the session wall-lit flag in `deriveBoardConnection`. The **APNs push path can't attribute an anonymous holder**: `resolveBoardHolder` normalises it to `null`, so `board-connection.ts` returns no usable state and `sendGroupedNotification` **omits `boardConnection` entirely** (the fallback path below), rather than emitting `heldByPeer`. The device then keeps its last-known App-Group state — which may be a **stale `connectedByMe`** for the previous holder until a foreground update or a re-resolvable push corrects it.
-- **`disconnected`** — nobody we can tie to is driving → lightbulb out (tap to reconnect via `ReconnectBoardIntent`), Previous/Next hidden.
+- **`disconnected`** — nobody we can tie to is driving → lightbulb out, Previous/Next hidden. What the footer offers depends on whether BoardBleManager still pairs a board (`SharedBoardReconnect.footer`, read from the stored pairing `bs_ble_board_config`, the same thing `ReconnectBoardIntent`'s guard reads):
+  - **A board is paired** → "Tap to reconnect" (`ReconnectBoardIntent`). Disconnect Bluetooth when driving ends keeps the pairing (`BoardBleManager.disconnect(forgetBoard: false)`, JS `disconnectKeepingBoard`), and so does an unexpected drop.
+  - **The last tap failed** → "Board didn't answer. Tap again", or "Turn on Bluetooth, then tap" (`bs_ble_reconnect_failure`, written by the intent, cleared by any connect that comes up).
+  - **Nothing is paired** → "Open Boardsesh to connect", with no button: tapping the card opens the app. An in-app Disconnect forgets the board on purpose, and a cancelled or failed in-app connect leaves nothing paired (`prepareBoardConnection` clears it first), so a lock-screen reconnect could only fail there. Before this the card offered "Tap to reconnect" anyway, and the tap did nothing.
+
+  A reconnect that succeeds writes `connectedByMe` to the App Group and redraws, so the bulb lights before the app's JS runs. When it does run, JS adopts the native link (`connectOrigin: 'liveActivityIntent'`) even after its own driving-ends teardown, which otherwise suppresses adoption; it still adopts nothing after an explicit Disconnect. A tap that iOS launches the app for in the background waits for the new central's first state (up to the 8 s connect timeout) rather than failing on `.unknown`.
 
 The derivation is shared with the in-app lightbulb so they can never disagree: `deriveBoardConnection(...)` in `packages/mobile/src/components/play-drawer/lightbulb-control.ts` (the existing `deriveLightbulbLit` is re-expressed as `deriveBoardConnection(...) !== 'disconnected'`), surfaced by the `useBoardConnectionState` hook (`packages/mobile/src/components/ble/use-board-connection-state.ts`), which both `useLightbulbControl` and `LiveActivityBridge` consume.
 
@@ -212,7 +218,7 @@ Put on board's timed drive (Settings › Board › **Stop driving after**: Right
 
 **What the climber sees.**
 
-- iOS Lock Screen and expanded Dynamic Island: during a timed drive an amber ring drains around the bulb (the in-app frost shrinking toward the bulb) with the time left beside it (`Text(timerInterval:)`); during an open-ended drive a full amber disc sits behind the bulb with no time; while picks are previews the bulb stands alone. The bulb, the ring and the digits are one VoiceOver element: the label is "Driving the wall" for either drive or "Wall lit", the value is the live timer (timed), "Every climb you pick lights up" (open-ended) or "Picks are previews", and the hint is "Lights the climb again".
+- iOS Lock Screen and expanded Dynamic Island: during a timed drive an amber ring drains around the bulb (the in-app frost shrinking toward the bulb) with the time left beside it (`Text(timerInterval:)`); during an open-ended drive a full amber disc sits behind the bulb with no time; while picks are previews the bulb stands alone. The bulb, the ring and the digits are one VoiceOver element: the label is "Driving the wall" for either drive or "Wall lit", the value is the live timer (timed), "Every climb you pick lights up" (open-ended) or "Picks are previews", and the hint is "Stops driving" while a drive is on, else "Lights the climb again".
 - Compact Dynamic Island: the ring (or disc) in the leading slot, a timed drive's time left in the trailing slot. An open-ended drive keeps the grade there. The rest timer wins both slots and the minimal view whenever it runs.
 - Android notification: the header's sub-text says "Driving the wall" for either drive. A timed drive adds the system's own countdown chronometer beside it (`setUsesChronometer` + `setChronometerCountDown`, `setWhen(end)`); an open-ended drive has no clock. The small icon becomes the bulb while picks light. The line rides `ACTION_START` from JS (`mobile.session.notification.drivingTheWall`, `lightDrivingLabel`). The rest timer keeps the content Chronometer.
 
@@ -243,7 +249,12 @@ Android lights it through JS: `BoardSessionActionReceiver` only forwards the pre
 
 `SharedLightingWindowStore.clear(unlessSession:in:)` (start), `SharedLightingWindowRuntime.endSession(in:)` (end) and `SharedLightingWindowStore.write(_:to:)` (JS's write, which skips the redraw when the card would draw the same) live in `SharedConstants.swift`, so `ios-tests/LiveActivityWidgetTests.swift` covers them; `LiveActivityModule` only calls them.
 
-Nothing on the Lock Screen or in the notification stops a drive or disconnects, so a pocket tap can't drop the board. This is a native change (new fingerprint, store build) in the live-activity module, so it needs a Fable or Astra review. Push-testing steps: `docs/live-activity-push-testing.md#test-driving-the-wall`.
+**The bulb stops a drive.** While the card draws a drive (the ring or the disc), a tap on the bulb stops driving, as the frosted button does in the app: reason `stopped`, the wall keeps its climb, the next pick is a preview, and the link stays unless **Disconnect Bluetooth when driving ends** is on, which frees the board without forgetting it (so "Tap to reconnect" then works). With previews the bulb re-lights the climb, as before.
+
+- iOS: the widget runs `StopDrivingIntent` instead of `ReconnectBoardIntent` while `LightingRenderPhase` is a drive. The intent needs no Bluetooth: `SharedLightingWindowRuntime.recordStop` stores mode off with `source: 'lockScreen'` (nothing when the drive already ran out), redraws the card, and posts the Darwin `driveStop` notification, which `LiveActivityModule` hands to JS as `lockScreenDriveStop`. JS adopts the stop like a press (`resolveLockScreenAdoption` → `{ kind: 'stop' }` → `stopDrivingForLink()`), with no link needed and only for a drive that started before the tap; the app coming back adopts a stop it slept through. Until then the JS writer never puts the stopped drive back on the card (`isUnsettledLockScreenStop`). The intent waits up to 2 s for JS to write its own "off", so a release of the board runs before iOS suspends the app again. The widget offers the stop only when the mirrored settings say JS takes one (`SharedKeepLightingConfig.lockScreenStop`), so an older bundle keeps re-lighting rather than meet a stop it would undo.
+- Android: while a drive is on, the lit bulb reads `stopDrivingLabel` (`mobile.session.notification.stopDriving`, sent on `ACTION_START`) and its PendingIntent carries `stopsDrive`; the receiver dispatches `boardControl` `stopDriving`. JS reads the drive again (the notification may be older than the drive's end, #7038) and stops it, or re-lights when it is already over. Without the label (an older bundle) the lit bulb keeps re-lighting. The re-post at a timed drive's end, and JS's own "off", turn the bulb back into a relight.
+
+This is a native change (new fingerprint, store build) in the live-activity module, so it needs a Fable or Astra review. Push-testing steps: `docs/live-activity-push-testing.md#test-driving-the-wall`.
 
 ## Architecture Decision: Where Does BLE Live?
 

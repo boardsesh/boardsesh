@@ -84,6 +84,7 @@ describe('buildKeepLightingConfig', () => {
       inCrew: true,
       moonboard: false,
       enabled: true,
+      lockScreenStop: true,
     });
     expect(buildKeepLightingConfig({ ...base, boardName: 'moonboard' }).moonboard).toBe(true);
   });
@@ -95,6 +96,13 @@ describe('buildKeepLightingConfig', () => {
       enabled: true,
     });
     expect(buildKeepLightingConfig({ ...base, keepLighting: '120' }).keepLighting).toBe('120');
+  });
+
+  it('tells the Lock Screen bulb this JS takes a stop, whatever the settings', () => {
+    // Without it the bulb keeps re-lighting during a drive: an older JS would
+    // put the drive straight back on the card.
+    expect(buildKeepLightingConfig(base).lockScreenStop).toBe(true);
+    expect(buildKeepLightingConfig({ ...base, swipeToDriveEnabled: false }).lockScreenStop).toBe(true);
   });
 
   it('is off where a press would not start a drive in the app either', () => {

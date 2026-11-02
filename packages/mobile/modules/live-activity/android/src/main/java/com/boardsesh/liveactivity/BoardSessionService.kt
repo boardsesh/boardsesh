@@ -81,6 +81,10 @@ class BoardSessionService : Service() {
     private var connectingLabel: String = "Connecting…"
     private var onWallTemplate: String = "{{name}} is on the wall"
     private var lightDrivingLabel: String = "Driving the wall"
+    // The lit bulb's label while this phone drives (2.7): a tap stops driving.
+    // Null from an older bundle, which has no stop to take: its lit bulb keeps
+    // re-lighting.
+    private var stopDrivingLabel: String? = null
 
     private var sessionId: String = ""
     private var queueItemUuid: String = ""
@@ -248,6 +252,7 @@ class BoardSessionService : Service() {
                 connectingLabel = intent.getStringExtra(EXTRA_CONNECTING_LABEL) ?: connectingLabel
                 onWallTemplate = intent.getStringExtra(EXTRA_ON_WALL_TEMPLATE) ?: onWallTemplate
                 lightDrivingLabel = intent.getStringExtra(EXTRA_LIGHT_DRIVING_LABEL) ?: lightDrivingLabel
+                stopDrivingLabel = intent.getStringExtra(EXTRA_STOP_DRIVING_LABEL)
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
                 // A new session window starts without a countdown or a lighting
@@ -447,7 +452,17 @@ class BoardSessionService : Service() {
             if (hasPrevious) {
                 builder.addAction(R.drawable.ic_skip_previous, previousLabel, actionPendingIntent(ACTION_NAV_PREVIOUS, REQ_PREVIOUS))
             }
-            builder.addAction(R.drawable.ic_lightbulb_filled, relightLabel, bulbPendingIntent())
+            // While this phone drives, the lit bulb stops driving, as the
+            // frosted button does in the app. The re-post at a timed drive's
+            // end (and JS's own "off") turns it back into a relight.
+            val stopLabel = stopDrivingLabel?.takeIf {
+                resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection) != LightingDisplay.Off
+            }
+            builder.addAction(
+                R.drawable.ic_lightbulb_filled,
+                stopLabel ?: relightLabel,
+                bulbPendingIntent(stopsDrive = stopLabel != null),
+            )
             if (hasNext) {
                 builder.addAction(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
             }
@@ -757,10 +772,13 @@ class BoardSessionService : Service() {
         return bulbPendingIntent()
     }
 
-    private fun bulbPendingIntent(): PendingIntent {
+    // stopsDrive: the lit bulb was drawn as Stop driving, so the receiver
+    // dispatches stopDriving instead of reassert.
+    private fun bulbPendingIntent(stopsDrive: Boolean = false): PendingIntent {
         val intent = Intent(this, BoardSessionActionReceiver::class.java).apply {
             action = ACTION_BULB
             putExtra(EXTRA_BOARD_CONNECTION, boardConnection)
+            putExtra(EXTRA_STOPS_DRIVE, stopsDrive)
             putExtra(EXTRA_CORRELATION_ID, UUID.randomUUID().toString())
         }
         return PendingIntent.getBroadcast(this, REQ_BULB, intent, pendingFlags())
@@ -966,6 +984,10 @@ class BoardSessionService : Service() {
         const val EXTRA_LIGHT_STATE = "lightState"
         const val EXTRA_LIGHT_WINDOW_END_MS = "lightWindowEndMs"
         const val EXTRA_LIGHT_DRIVING_LABEL = "lightDrivingLabel"
+        // The lit bulb's Stop driving label (from JS, on ACTION_START), and the
+        // bulb intent's flag that it was drawn as Stop driving.
+        const val EXTRA_STOP_DRIVING_LABEL = "stopDrivingLabel"
+        const val EXTRA_STOPS_DRIVE = "stopsDrive"
 
         // The same words as LightingWindowStore's modes and the JS
         // LiveActivityLightingMode.
