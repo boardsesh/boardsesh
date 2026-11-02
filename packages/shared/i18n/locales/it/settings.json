@@ -466,44 +466,36 @@
     "cancel": "Annulla",
     "connectBoard": "Connetti pannello",
     "relightBoard": "Illumina di nuovo il pannello",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Disconnetti dal pannello quando nessun blocco viene illuminato o aperto in anteprima per il tempo selezionato.",
-      "cutsLighting": "La disconnessione automatica libera il pannello dopo {{timeout}}, quindi anche l'illuminazione si ferma.",
-      "disconnectedToast": "Pannello disconnesso dopo {{timeout}} senza nuovi blocchi illuminati o aperti in anteprima. Tocca Illumina il pannello per riconnetterti.",
-      "enabledLabel": "Disconnessione automatica",
-      "enabledDescription": "Lascia connettere gli altri climber allo scadere del timer.",
-      "timeoutLabel": "Disconnetti dopo",
-      "toggleTitle": "Disconnessione automatica",
-      "toggleSubtitle": "Disconnetti dopo {{timeout}} di inattività",
-      "timeoutOptions": {
-        "10": "10 secondi",
-        "15": "15 secondi",
-        "30": "30 secondi",
-        "45": "45 secondi",
-        "60": "1 minuto",
-        "120": "2 minuti",
-        "300": "5 minuti",
-        "600": "10 minuti"
-      }
-    },
     "lighting": {
       "title": "Illuminazione del pannello",
       "autoTitle": "Illumina in automatico",
       "description": "Scegli cosa illumina in automatico il pannello connesso.",
       "keep": {
-        "label": "Continua a illuminare dopo Illumina il pannello",
-        "off": "Disattivato",
+        "label": "Smetti di guidare dopo",
+        "off": "Subito",
+        "options": {
+          "30": "30 secondi",
+          "45": "45 secondi",
+          "60": "1 minuto",
+          "120": "2 minuti",
+          "300": "5 minuti"
+        },
         "untilStopped": "Finché non mi fermo",
         "moonboardLabel": "Su una MoonBoard",
-        "moonboardAccessibilityLabel": "Continua a illuminare su una MoonBoard",
+        "moonboardAccessibilityLabel": "Smetti di guidare una MoonBoard dopo",
         "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
-        "sheetMoonboardLabel": "Continua a illuminare su questa MoonBoard",
+        "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
         "inSessionLabel": "Anche in una session",
-        "inSessionAccessibilityLabel": "Continua a illuminare anche in una session",
+        "inSessionAccessibilityLabel": "Illumina il pannello guida anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
-        "inSessionOffReason": "Attiva Continua a illuminare dopo Illumina il pannello per usarlo.",
-        "footer": "Ogni blocco che si illumina fa ripartire il timer. Se riposi più a lungo, il prossimo blocco che scegli si apre in anteprima."
+        "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
+        "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, e ognuno fa ripartire il timer. Quando il tempo finisce, il prossimo blocco che scegli si apre in anteprima.",
+        "footerUntilStopped": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, finché non tocchi Guidi tu il pannello.",
+        "footerOff": "Illumina il pannello illumina in parete il blocco che hai aperto. Il prossimo blocco che scegli si apre in anteprima."
+      },
+      "drivingEnds": {
+        "label": "Disconnetti il Bluetooth quando smetti di guidare",
+        "description": "Quando smetti di guidare o il tempo finisce, il tuo telefono libera il pannello così il prossimo climber può connettersi. Illumina il pannello si riconnette."
       },
       "onSwipeLabel": "Illumina il pannello mentre scorro",
       "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",

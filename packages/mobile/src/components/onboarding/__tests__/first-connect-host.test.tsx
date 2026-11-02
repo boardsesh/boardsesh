@@ -27,8 +27,6 @@ const bluetoothCtrl = vi.hoisted(() => ({
   isConnected: false,
   virtualWallHeld: false,
   ledless: false,
-  autoDisconnectEnabled: false,
-  autoDisconnectTimeoutSeconds: 30,
 }));
 const overridesCtrl = vi.hoisted(() => ({ overrides: {} as Record<string, boolean | string>, loaded: true }));
 const enrolMock = vi.hoisted(() => vi.fn(async () => 'enrolled'));
@@ -137,8 +135,6 @@ describe('FirstConnectHost', () => {
     bluetoothCtrl.isConnected = false;
     bluetoothCtrl.virtualWallHeld = false;
     bluetoothCtrl.ledless = false;
-    bluetoothCtrl.autoDisconnectEnabled = false;
-    bluetoothCtrl.autoDisconnectTimeoutSeconds = 30;
     overridesCtrl.overrides = {};
     overridesCtrl.loaded = true;
     enrolMock.mockClear();
@@ -247,7 +243,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.lightOnClimbTap = false;
 
     expect(await confirmFirstConnect()).toBe(
-      'For 45 seconds after Put on board, every climb you pick lights too. After that, tap Put on board again.',
+      'Put on board lets you drive the wall: for 45 seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
     );
     expect(getFirstConnectSnapshot().device).toMatchObject({ connectedAt: 1_000, confirmationShownAt: 1_000 });
   });
@@ -256,7 +252,9 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.lightOnClimbTap = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '30';
 
-    expect(await confirmFirstConnect()).toMatch(/^For 30 seconds after Put on board/);
+    expect(await confirmFirstConnect()).toMatch(
+      /^Put on board lets you drive the wall: for 30 seconds after each climb/,
+    );
   });
 
   it('says a 60 s window the way the preview-first card does', async () => {
@@ -264,7 +262,7 @@ describe('FirstConnectHost', () => {
     settingsCtrl.values.putOnBoardKeepsLighting = '60';
 
     expect(await confirmFirstConnect()).toBe(
-      'For 1 minute after Put on board, every climb you pick lights too. After that, tap Put on board again.',
+      'Put on board lets you drive the wall: for 1 minute after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
     );
   });
 
@@ -272,7 +270,9 @@ describe('FirstConnectHost', () => {
   it('never says a tap lights a climb in a shared session', async () => {
     sessionCtrl.shared = true;
 
-    expect(await confirmFirstConnect()).toMatch(/^For 45 seconds after Put on board/);
+    expect(await confirmFirstConnect()).toMatch(
+      /^Put on board lets you drive the wall: for 45 seconds after each climb/,
+    );
   });
 
   // Solo with Light the board as I swipe on, Put on board opens no window.
@@ -283,22 +283,12 @@ describe('FirstConnectHost', () => {
     expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
-  it('names auto-disconnect’s timeout when it lets go of the board first', async () => {
+  it('names a 5 minute drive in minutes', async () => {
     settingsCtrl.values.lightOnClimbTap = false;
-    bluetoothCtrl.autoDisconnectEnabled = true;
-    bluetoothCtrl.autoDisconnectTimeoutSeconds = 15;
+    settingsCtrl.values.putOnBoardKeepsLighting = '300';
 
-    expect(await confirmFirstConnect()).toMatch(/^For 15 seconds after Put on board/);
-  });
-
-  it('says auto-disconnect can end a MoonBoard’s drive', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
-    boardCtrl.boardType = 'moonboard';
-    bluetoothCtrl.autoDisconnectEnabled = true;
-    bluetoothCtrl.autoDisconnectTimeoutSeconds = 120;
-
-    expect(await confirmFirstConnect()).toBe(
-      'After Put on board, every climb you pick lights until you tap the button to stop, or until auto-disconnect lets go of the board.',
+    expect(await confirmFirstConnect()).toMatch(
+      /^Put on board lets you drive the wall: for 5 minutes after each climb/,
     );
   });
 
@@ -307,7 +297,7 @@ describe('FirstConnectHost', () => {
     boardCtrl.boardType = 'moonboard';
 
     expect(await confirmFirstConnect()).toBe(
-      'After Put on board, every climb you pick lights until you tap the button to stop.',
+      'Put on board lets you drive the wall: every climb you pick lights until you tap the button to stop.',
     );
   });
 

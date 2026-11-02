@@ -70,10 +70,14 @@ The two lighting settings, in Settings › Board, are **Light the board when I t
 **off**. Stored choices are preserved: someone who already saved either switch keeps it.
 With untouched settings, selecting a climb opens a preview without committing it or
 lighting the wall, including playlist **Play** and queue rows. Tap the board button (**Put on board**) to
-light that climb: from 2.7 it also opens a keep-lighting window, so every climb you pick lights
-until 45 s after the last lit one (renewed by each of your own; 30 s, 45 s, 1 min, Until I stop
-or Off in Settings; in a crew only on the phone that holds the board, with **In a session too** on,
-and a crewmate's put-up ends it; Put on board from any other phone lights that one climb). Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
+light that climb: from 2.7 it also starts a timed drive, so every climb you pick lights
+until 45 s after the last lit one (renewed by each of your own; **Stop driving after** in Settings:
+Right away, 30 s, 45 s, 1, 2 or 5 min, or Until I stop; in a crew only on the phone that holds the
+board, with **In a session too** on, and a crewmate's put-up ends it; Put on board from any other
+phone lights that one climb). Only Put on board's drive is timed: a swipe or **Light every climb**
+drives until you tap the button. With **Disconnect Bluetooth when driving ends** on (off by
+default; it replaced auto-disconnect in 2.7) the phone lets go of the board when you stop driving or
+the time runs out, without forgetting it, so the next Put on board reconnects. Where a swipe lights (driving, or solo with Light on swipe on), a swipe from a preview
 of a queue slot puts up the slot's neighbour the peek shows. Swipe the button, or use **Light every
 climb**, to start open-ended Driver mode. On a MoonBoard Put on board starts Driver mode by
 default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
@@ -83,8 +87,8 @@ depends on Light on tap: off, the list from the tapped climb becomes Up next, th
 its climb and the tapped climb opens as a preview; on, the list replaces the queue and the
 tapped climb lights. A newcomer's first-connect confirmation and the Climbs list's connect card
 read the same settings, so neither promises that a tap lights a climb while Light on tap is off
-or in a shared session: the confirmation names Put on board's window (or Until I stop on a
-MoonBoard) instead, cut to auto-disconnect's timeout when that is shorter.
+or in a shared session: the confirmation names Put on board's drive length (or Until I stop on a
+MoonBoard) instead.
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -215,6 +219,69 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
 - **Not on a crewmate's board**, by design. Their phone holds it and Put on board relays the climb
   to it, so the swipe refuses there and nothing changes.
 
+### The MiniPlayer shows your last pick (owner decision A, 2026-11-02)
+
+Every tap opens a preview since 2.7, and the player is a modal route that unmounts when it
+closes, so a preview used to vanish with it and the bar went back to the queue's current
+climb. Now the MiniPlayer (the iOS 26 bottom accessory, the JS queue bar on Android and older
+iOS, the tablet and Duo bar) keeps the climb you most recently opened, a preview included, or
+the queue's current climb when **that** changes after it, whichever happened last. No extra
+marking: the bulb says whether the climb is lit. The same rule holds solo and in a crew.
+
+- **What counts as a pick.** Every open the player applies (a list row, a search result, a
+  deep link, the wall capsule's climb), and every later change of what the player shows: a
+  swipe to another preview, its mirror flip, a similar climb. Back to my pick and Put on board
+  end the pick. A pane that mounts later and replays another pane's target is a look, never a
+  new pick.
+- **What ends it.** The queue's current changing after the pick: your own Put on board, a
+  crewmate's put-up, the Lock Screen's or the notification's Next and Previous, the rest
+  timer's auto-advance. Also a change of board, a sign-out or another account. The bar stops
+  showing a pick made under another current climb at once (`resolveBarPick`);
+  `LastPickWatcher` then drops it for good, so an Undo that brings the old current back does
+  not bring the pick back.
+- **Tapping the bar** reopens the pick as the same preview: its list, the slot's deferred
+  commit (Replay from here, a History row), its mirror flip, the board it was opened on when
+  that wasn't the active board (a logbook, session or profile row's own board and angle,
+  `pickBoardOverride`), and the wall as it was when you started looking, so the busy-wall
+  question still compares against that wall. That snapshot is for the open it came with: a
+  later open of the same slot reads the wall afresh.
+- **The bulb** (`resolvePickBulb`) on a pick that isn't lit is Put on board for it: the player
+  opens on the pick and presses Put on board through the wall button's own handler
+  (`putOnBoard`, `usePutOnBoardIntent`), so the busy-wall question asks first in a crew, the
+  timed drive starts per Stop driving after, a pick on another board at this gym moves there
+  (the bulb then says "Put on MoonBoard"), and a pick presence says is still up with no link
+  lights again. Its hint says the player opens first, its value keeps saying the board's
+  connection, and its long press opens the board controls over a real link, as the usual
+  bulb's does. The pick counts as lit only when the wall shows it through a live link (this
+  phone's, a crewmate's, or a wall with no lights held here); presence alone is not enough,
+  because the usual bulb would then connect, and a connect lights the queue's current climb,
+  not the pick (QA #147). Lit, it is the bar's usual bulb. A pick this wall can't light, with
+  no board at the gym to walk to, gets no bulb, as the player offers no board control for it.
+  In the collapsed platter the pick's bulb takes the one slot only while the pick is unlit on a
+  board with lights; otherwise ✓ keeps it.
+- **✓** logs the climb the bar shows, in the flip the bar draws: the pick's own, never its
+  queue slot's. **Mirror** flips the pick's own flip, never the queue.
+- **⏮ ⏭** step from the pick along its own list by the player's swipe rules for a preview
+  (`getSwipeNavigationTarget`), on the board the pick was opened on: a look opens the player on
+  the neighbour as a preview with the pick's list; a step that lights puts the neighbour up as
+  the player's swipe does (`resolvePreviewStepCommit`), and the queue's new current takes the
+  bar. A crew that just left keeps a step a look for the player's dwell too
+  (`useSharedBrowseLatch`, 10 s). At the end of the pick's loaded list, Next opens the pick in
+  the player, which pages the list or shows its end card.
+- **Not the wall's surfaces.** The Lock Screen and Live Activity keep showing the wall's
+  climb, as do the Climbs header's wall capsule and the board history sheet.
+- **In memory only**, like the player's own preview: a relaunch starts from the queue's
+  current.
+- **The one-time tip** above the bar (`AccessoryOnboardingTip`, `mobile.onboarding.tips.accessory`)
+  says so: the bar keeps the last climb you opened, until your queue moves on to another climb.
+  It used to say the bar is always what's on the board. "Until another one goes up on the
+  board" was close but not exact: with no board linked, Lock Screen Next or the rest timer
+  moves the queue without lighting anything, and a climb lit from another phone or app moves
+  the wall but not the queue.
+- **Known gap.** A pick made before the queue restores at cold start (a notification or a
+  deep link) ends when the restore sets the queue's current, so the bar shows the restored
+  climb. The queue has no public "restored" signal to tell a restore from a real change.
+
 ## Player states today
 
 The wall button's label says what a press does and whether subsequent climb changes light the wall.
@@ -228,12 +295,13 @@ held link without driving stay plain. A peek, drag or committed swipe awaiting c
 uses flat amber progress; bokeh appears only once driving is confirmed. The label says what
 a tap does. When hold colours are unavailable, driving uses the existing flat amber fallback;
 other states keep their tonal/outline treatment. Stopping or browsing removes frost immediately.
-The keep-lighting window after Put on board is not driving: it stays plain, with a short
-violet bar and an m:ss clock ("Each pick lights · 0:38"). Frost means open-ended driving only.
+Put on board's timed drive is driving too: the same frost and "You are driving the wall", plus an
+m:ss clock beside the label, and the frost shrinks toward the bulb as the time runs out, refilling
+with each climb that lights (in 5 s steps under Reduce Motion).
 
 | State | What you see | What happens next |
 | --- | --- | --- |
-| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then opens the keep-lighting window (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on, except on a MoonBoard. |
+| Not connected, or a dark climb | **Put on board**, with the bulb showing the connection state | A tap connects if needed and lights the displayed climb, then starts a timed drive (45 s by default; a MoonBoard drives until you stop). In a crew it is a one-off put unless In a session too is on, except on a MoonBoard. |
 | Driving | The frosted full-width wall button says **You are driving the wall**; with no hold colours it uses amber | Every supported climb change lights the wall, in a crew too. A tap stops driving and keeps the link. The button becomes **Disconnect board**. |
 | Connected, lit, not driving | **Disconnect board**, a filled bulb and the holder's face on a plain tonal surface | A tap disconnects. Swiping the button left where chevrons appear starts driving. |
 | Browsing a list | A **My pick** or **On the wall** back chip, a preview caption and **Put on board** (or **Set active**) under the board | Swipes walk the preview's source list. Without driving they stay previews. A live drive commits supported climb changes, including a tracked preview's next climb. |
@@ -650,6 +718,8 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `src/lib/playlists/use-board-list-activation.ts`, `use-tick-list-activation.ts`, `loaded-list-pages.ts` | Lists whose rows carry their own board (logbook, sessions, profile climbs, session cards, Record history): the tapped row's board and angle, and paging a track through the screen's own query. |
 | `src/components/play-drawer/use-play-selection-controller.ts`          | Opens without a track (notifications, deep links, the climb route's hand-off) and the similar-climbs tap.    |
 | `src/components/play-drawer/play-drawer-navigation.ts`                 | Whether a swipe stays a preview or commits.                                                                    |
+| `src/components/play-drawer/preview-step-commit.ts`                    | How a step off a preview goes up: the player's swipe and the MiniPlayer's ⏮ ⏭ from a last pick.             |
+| `src/lib/last-pick-store.ts`, `src/components/play-drawer/use-last-pick-writer.ts`, `src/components/queue-control/use-bar-climb.ts`, `LastPickWatcher.tsx` | The MiniPlayer's last pick: the store, the player that writes it, the bar that reads it, and what ends it. |
 | `src/components/play-drawer/wall-state.ts`, `wall-control.ts`            | The header's back chip, preview commit state and current wall-button model.                                 |
 | `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb` and `previousClimb` (which store the track's resume point, `storeTrackResume`), `setQueue`, `appendQueueItems`, and where the prune is switched on. |
 | `src/providers/queue/use-queue-persistence.ts`, `src/lib/queue-snapshot-store.ts` | The solo queue saved across restarts.                                                                |

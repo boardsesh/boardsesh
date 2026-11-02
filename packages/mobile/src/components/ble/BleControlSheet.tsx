@@ -18,9 +18,9 @@ type BleControlSheetProps = {
   onClearLights: () => void;
   /** Drop the BLE connection. */
   onDisconnect: () => void;
-  autoDisconnectEnabled: boolean;
-  autoDisconnectTimeoutLabel: string;
-  onToggleAutoDisconnect: (enabled: boolean) => void;
+  /** Disconnect Bluetooth when driving ends (2.7): let go of the board when a drive ends. */
+  disconnectWhenDrivingEnds: boolean;
+  onToggleDisconnectWhenDrivingEnds: (enabled: boolean) => void;
   /** Show the MoonBoard "light hold above" row — only when the connected
    * board is a MoonBoard. */
   showLightAdjacentHolds: boolean;
@@ -31,9 +31,9 @@ type BleControlSheetProps = {
   lightOnClimbTap: boolean;
   onToggleLightOnClimbTap: (enabled: boolean) => void;
   /**
-   * Auto-disconnect and the two lighting switches. The player's own sheet
-   * (#7000) leaves them to Settings › Board, where they also live, so
-   * the sheet is just the board's actions. Today's bar keeps them.
+   * Disconnect Bluetooth when driving ends and the two lighting switches. The
+   * player's own sheet (#7000) leaves them to Settings › Board, where they
+   * also live, so the sheet is just the board's actions. Today's bar keeps them.
    */
   showLightingSwitches?: boolean;
   /**
@@ -53,8 +53,8 @@ type BleControlSheetProps = {
    */
   status?: ReactNode;
   /**
-   * Keep lighting after Put on board (2.7, spec B4), the first row: the timer
-   * changed or turned off at the wall in two taps. Omitted, no row.
+   * Stop driving after (2.7, spec B4), the first row: the timer changed or set
+   * to Right away at the wall in two taps. Omitted, no row.
    */
   keepLighting?: BleKeepLightingRowModel;
   onClose: () => void;
@@ -68,9 +68,8 @@ function BleControlSheet({
   onReassert,
   onClearLights,
   onDisconnect,
-  autoDisconnectEnabled,
-  autoDisconnectTimeoutLabel,
-  onToggleAutoDisconnect,
+  disconnectWhenDrivingEnds,
+  onToggleDisconnectWhenDrivingEnds,
   showLightAdjacentHolds,
   lightAdjacentHoldsEnabled,
   onToggleLightAdjacentHolds,
@@ -120,13 +119,14 @@ function BleControlSheet({
         {/* The app's native SwitchRow (SwiftUI Toggle / Compose Switch) instead of
             raw RN Switches, which render system green on iOS: HIG Color asks for
             one tint across every control. */}
+        {/* Under Stop driving after, as on Settings › Board: what happens when the drive ends. */}
         {showLightingSwitches && (
           <SwitchRow
-            label={tSettings('ble.autoDisconnect.toggleTitle')}
-            description={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
+            label={tSettings('ble.lighting.drivingEnds.label')}
+            description={tSettings('ble.lighting.drivingEnds.description')}
             wrapDescription
-            value={autoDisconnectEnabled}
-            onValueChange={onToggleAutoDisconnect}
+            value={disconnectWhenDrivingEnds}
+            onValueChange={onToggleDisconnectWhenDrivingEnds}
           />
         )}
         {showLightAdjacentHolds && (

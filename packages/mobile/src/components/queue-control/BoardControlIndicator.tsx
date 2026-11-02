@@ -74,9 +74,10 @@ export function BoardControlIndicator({
   // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
   // the wall button's live fill. The board control's own rule
   // (`resolveWallBulbLook`), fed this phone's link and the drive.
-  // Only an open-ended drive: Put on board's keep-lighting window keeps the
-  // plain lit bulb, so the live fill still means "every tap lights, no end".
-  const drivingOpenEnded = useDriveLightingMode() === 'driving';
+  // Put on board's timed drive too (2.7): it is a drive like any other, and
+  // every tap lights until it ends.
+  const lightingMode = useDriveLightingMode();
+  const drivingLive = lightingMode === 'driving' || lightingMode === 'window';
   const { open: openBoardControls } = useBleControlSheet();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   // Shared connect/disconnect path so undo-arming and the press semantics match
@@ -121,7 +122,7 @@ export function BoardControlIndicator({
     heldByMe && !ledless ? 'lit' : null,
     heldByMe && localConnected,
     true,
-    drivingOpenEnded,
+    drivingLive,
   );
 
   const visual = getBoardControlIndicatorVisual({

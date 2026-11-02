@@ -4,6 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-02
+
+### Improved
+
+- The support page button now reads "Support us". ([#7204](https://github.com/boardsesh/boardsesh/pull/7204))
+
+### Fixed
+
+- Your MoonBoard and older Kilter boxes show up in the board list again. ([#7202](https://github.com/boardsesh/boardsesh/pull/7202))
+  Boards you haven't connected to before are listed too.
+
 ## 2026-11-01
 
 ### New

@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 import {
-  clampWindowEnd,
   clearDrivingStopped,
   drivingAtPick,
   enterDriveMode,
@@ -26,6 +25,8 @@ import {
   shouldEndWindowForSettings,
   startLockScreenDrive,
   stopDrivingForLink,
+  subscribeDriveEnded,
+  getLastDriveEnded,
   subscribeDriveMode,
   useDriveLightingMode,
   useDriveMode,
@@ -33,10 +34,10 @@ import {
   useDriveWindowExpiresAt,
   useDriveWindowMs,
   useDrivingStoppedForLink,
+  type DriveEnded,
   type DriveModeState,
   type DriveWatchSnapshot,
 } from '../drive-mode-store';
-import { registerAutoDisconnectDeadlineReader } from '../../../lib/auto-disconnect-deadline';
 
 /** Only Drive Mode Ended, for the tests about it (Drive Mode Started fires at every enter). */
 const endedCalls = () => analytics.track.mock.calls.filter(([name]) => name === 'Drive Mode Ended');
@@ -297,10 +298,8 @@ describe('Drive Mode Started', () => {
   });
 });
 
-// Put on board's keep-lighting window (2.7): a live drive with an end.
-describe('the keep-lighting window', () => {
-  afterEach(() => registerAutoDisconnectDeadlineReader(() => null)());
-
+// Put on board's timed drive (2.7, Stop driving after): a live drive with an end.
+describe('the timed drive', () => {
   function openWindow(windowMs = 45_000, startedAt = 1_000) {
     enterDriveMode({
       startedBy: 'tap',
@@ -458,7 +457,7 @@ describe('the keep-lighting window', () => {
     expect(mode.result.current).toBe('driving');
   });
 
-  it("hands a bridge { mode, endsAt }, the shown end clamped to auto-disconnect's", () => {
+  it('hands a bridge { mode, endsAt }, the timed drive’s own end', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeDriveMode(listener);
     expect(getDriveLightingSnapshot()).toEqual({ mode: 'off', endsAt: null });
@@ -466,11 +465,6 @@ describe('the keep-lighting window', () => {
     expect(getDriveLightingSnapshot()).toEqual({ mode: 'arming', endsAt: null });
     markDriveLive({ now: 5_000 });
     expect(getDriveLightingSnapshot()).toEqual({ mode: 'window', endsAt: 50_000 });
-    // A 30 s auto-disconnect comes first: the window shows its end.
-    const release = registerAutoDisconnectDeadlineReader(() => 35_000);
-    expect(getDriveLightingSnapshot()).toEqual({ mode: 'window', endsAt: 35_000 });
-    release();
-    expect(getDriveLightingSnapshot().endsAt).toBe(50_000);
     makeDriveOpenEnded();
     expect(getDriveLightingSnapshot()).toEqual({ mode: 'driving', endsAt: null });
     expect(listener).toHaveBeenCalledTimes(3);
@@ -504,10 +498,60 @@ describe('the keep-lighting window', () => {
     expect(renders).toBe(before);
   });
 
-  it('clamps the shown end only when auto-disconnect comes first', () => {
-    expect(clampWindowEnd(50_000, null)).toBe(50_000);
-    expect(clampWindowEnd(50_000, 35_000)).toBe(35_000);
-    expect(clampWindowEnd(50_000, 60_000)).toBe(50_000);
+  // Disconnect Bluetooth when driving ends listens here (2.7).
+  describe('subscribeDriveEnded', () => {
+    it('hands on every end with its reason, the drive, and what a disconnect waits for', () => {
+      const ends: DriveEnded[] = [];
+      const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+      openWindow();
+      markDriveLive({ now: 5_000 });
+      const after = () => Promise.resolve();
+      exitDriveMode('window_ended', { disconnectAfter: after });
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+      exitDriveMode('link_dropped');
+      expect(ends.map(({ reason, drive, disconnectAfter }) => [reason, drive?.startedBy, disconnectAfter])).toEqual([
+        ['window_ended', 'tap', after],
+        ['link_dropped', 'swipe', null],
+      ]);
+      unsubscribe();
+    });
+
+    it('hands on a press on the frosted button as stopped, with no drive in the store too', () => {
+      const ends: DriveEnded[] = [];
+      const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+      // Solo with Light the board as I swipe on: driving, nothing in the store.
+      stopDrivingForLink();
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+      stopDrivingForLink();
+      expect(ends.map(({ reason, drive }) => [reason, drive?.startedBy ?? null])).toEqual([
+        ['stopped', null],
+        ['stopped', 'swipe'],
+      ]);
+      unsubscribe();
+    });
+
+    // Settings › Board's ends keep the link (`keepLink`); the last end stays
+    // readable for a player's render, until a new drive starts.
+    it('hands on whether the end keeps the link, and keeps the last end until a drive starts', () => {
+      openWindow();
+      exitDriveMode('window_ended', { keepLink: true });
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true, disconnectAfter: null });
+      stopDrivingForLink();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'stopped', keepLink: false });
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+      expect(getLastDriveEnded()).toBeNull();
+    });
+
+    it('hands on nothing when nothing was driving, and stops after unsubscribing', () => {
+      const listener = vi.fn();
+      const unsubscribe = subscribeDriveEnded(listener);
+      expect(exitDriveMode('window_ended')).toBeNull();
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+      exitDriveMode('stopped');
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 
   it.each<[string, Partial<Parameters<typeof shouldEndWindowForSettings>[0]>, boolean]>([

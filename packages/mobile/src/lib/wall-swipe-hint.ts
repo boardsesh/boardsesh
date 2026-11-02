@@ -13,19 +13,24 @@ import { getPreference, removePreference, setPreference } from './preference-sto
  * - once more in that session, on the third Put on board within 5 minutes:
  *   a climber putting climbs up one press at a time.
  *
- * In at most `MAX_PEEK_SESSIONS` sessions, counted on a v2 key so a climber who
- * used up 2.6's three gets three fresh ones for the new meaning. Never once a
- * swipe has driven the wall (that key is kept from 2.6: they know the gesture),
- * never in screenshot mode, never with a screen reader on.
+ * In at most `MAX_PEEK_SESSIONS` sessions, counted on a v2 key. A climber who
+ * saw 2.6's three peeks (its count, still on the device) gets ONE more peek for
+ * the new meaning, not three: `UPGRADE_PEEKS`, and not a whole session's worth
+ * either, so the session that plays it plays no replay. Everyone else, a
+ * newcomer or a climber 2.6 showed fewer than three, gets the normal three.
+ * Never once a swipe has driven the wall (that key is kept from 2.6: they know
+ * the gesture), never in screenshot mode, never with a screen reader on.
  *
  * Built like `reset-zoom-hint.ts`: AsyncStorage rather than SecureStore, since
  * this is a device-local UI marker and the keychain outlives an uninstall.
  */
 const SESSIONS_KEY = 'wallSwipePeekSessionsV2';
-/** 2.6's count. Read by nothing; cleared with the rest by the developer reset. */
+/** 2.6's count: at `MAX_PEEK_SESSIONS` the climber is an upgrader owed `UPGRADE_PEEKS`. Never written now. */
 const LEGACY_SESSIONS_KEY = 'wallSwipePeekSessions';
 const USED_KEY = 'wallSwipeUsed';
 export const MAX_PEEK_SESSIONS = 3;
+/** Peeks a climber who saw all of 2.6's gets for 2.7's meaning: one, then never again. */
+export const UPGRADE_PEEKS = 1;
 /** The replay: this many Put on board presses... */
 export const PUT_ON_BOARD_REPLAY_PRESSES = 3;
 /** ...within this long. */
@@ -47,13 +52,45 @@ function emitReplay(): void {
   for (const listener of replayListeners) listener();
 }
 
+/**
+ * How much of the hint a climber may still see, from the two counts:
+ * - an upgrader (2.6's count reached `MAX_PEEK_SESSIONS`) gets `UPGRADE_PEEKS`
+ *   peeks, counted one per session, and none more in the session that played
+ *   one (the replay included);
+ * - anyone else gets `MAX_PEEK_SESSIONS` sessions, every peek of a session
+ *   (its window peek and its replay) included.
+ * Pure, so the rule is pinned by a test of its own.
+ */
+export function wallSwipePeekOwed({
+  used,
+  legacySessions,
+  sessions,
+  countedThisSession: counted,
+}: {
+  used: boolean;
+  legacySessions: number | null;
+  sessions: number | null;
+  countedThisSession: boolean;
+}): boolean {
+  if (used) return false;
+  const shown = sessions ?? 0;
+  if ((legacySessions ?? 0) >= MAX_PEEK_SESSIONS) return !counted && shown < UPGRADE_PEEKS;
+  return counted || shown < MAX_PEEK_SESSIONS;
+}
+
+const countOrNull = (value: number | null): number | null => (typeof value === 'number' ? value : null);
+
 /** A store error reads as "no": a hint that reappears on every open is the nagging it must avoid. */
 async function hintStillOwed(): Promise<boolean> {
   try {
-    if ((await getPreference<boolean>(USED_KEY)) === true) return false;
-    if (countedThisSession) return true;
-    const sessions = await getPreference<number>(SESSIONS_KEY);
-    return typeof sessions !== 'number' || sessions < MAX_PEEK_SESSIONS;
+    const used = (await getPreference<boolean>(USED_KEY)) === true;
+    if (used) return false;
+    return wallSwipePeekOwed({
+      used,
+      legacySessions: countOrNull(await getPreference<number>(LEGACY_SESSIONS_KEY)),
+      sessions: countOrNull(await getPreference<number>(SESSIONS_KEY)),
+      countedThisSession,
+    });
   } catch {
     return false;
   }

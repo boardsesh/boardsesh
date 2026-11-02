@@ -22,6 +22,7 @@ import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
 import { useQueueActions } from '../../providers/queue-provider';
+import { getLastPick, setLastPickMirrored } from '../../lib/last-pick-store';
 
 type MiniPlayerIconButtonProps = {
   iconName: IconName;
@@ -181,7 +182,10 @@ function MiniPlayerShareButton({ climb, climbBoard, size, wideLayout }: ClimbBut
 
 /**
  * Mirror the exact committed occurrence shown by this retained accessory. The
- * bar's button and the bar's ⋯ row both run this toggle.
+ * bar's button and the bar's ⋯ row both run this toggle. On the climber's last
+ * pick (owner decision A) it flips the pick's own mirror instead, the flip the
+ * player puts back when it reopens the pick: a preview's mirror never writes
+ * the queue.
  */
 export function useMiniPlayerMirrorToggle({
   climb,
@@ -197,8 +201,28 @@ export function useMiniPlayerMirrorToggle({
   const toggle = useCallback(() => {
     const snapshot = getQueueSnapshot();
     const headItem = snapshot.currentClimbQueueItem;
-    if (!queueItemUuid || headItem?.uuid !== queueItemUuid || headItem.climb.uuid !== climb.uuid) return;
     const shared = snapshot.sessionId != null;
+    const pick = getLastPick();
+    if (
+      pick &&
+      queueItemUuid &&
+      pick.item.uuid === queueItemUuid &&
+      pick.item.climb.uuid === climb.uuid &&
+      headItem?.uuid !== queueItemUuid
+    ) {
+      hapticSelection();
+      track(SHARED_EVENTS.MirrorClimb, {
+        climbUuid: climb.uuid,
+        boardName: climbBoard.boardName,
+        layoutId: climbBoard.layoutId,
+        isMirrored: !pick.mirrored,
+        surface: 'mini_player',
+        shared,
+      });
+      setLastPickMirrored(!pick.mirrored);
+      return;
+    }
+    if (!queueItemUuid || headItem?.uuid !== queueItemUuid || headItem.climb.uuid !== climb.uuid) return;
     if (
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
       process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') === true &&

@@ -11,7 +11,12 @@
 
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { climbChangeStaysViewOnly } from '../../components/play-drawer/play-drawer-navigation';
-import { resolveKeepLightingPlan, resolveKeepLightingReach, type KeepLightingChoice } from '../keep-lighting';
+import {
+  driveLengthWords,
+  resolveKeepLightingPlan,
+  resolveKeepLightingReach,
+  type KeepLightingChoice,
+} from '../keep-lighting';
 import { isNativeVersionAtLeast } from '../native-version';
 import { isNewAccount } from './first-board-picker-decision';
 import { assignConnectStepArm, type ConnectStepArm } from './connect-step-arm';
@@ -278,27 +283,26 @@ export function firstConnectTapLights({
  * What the confirmation says lights from here on:
  *
  * - `tap_lights` — every tap in a list lights (`firstConnectTapLights`).
- * - `window` — Put on board keeps lighting for `seconds` (Settings › Board's
- *   keep-lighting choice, 45 s by default, or auto-disconnect's timeout when
- *   that is shorter). Never 60: that is `window_minute`, worded as the
- *   preview-first card words it.
- * - `until_stop` — Put on board keeps lighting until the climber taps the
- *   button (Until I stop, a MoonBoard's default); `until_stop_or_disconnect`
- *   when auto-disconnect can end it first.
- * - `put_on_board` — Put on board lights one climb: the choice is Off, no
- *   window can start here (a crew session with In a session too off, or the
- *   keep-lighting flag off), or solo with Light the board as I swipe on, where
- *   the press opens no window.
+ * - `window` — Put on board drives the wall for `seconds` after each climb
+ *   (Settings › Board's Stop driving after, 45 s by default). Never a whole
+ *   minute: that is `window_minute` (one) or `window_minutes`, worded as the
+ *   preview-first card words them.
+ * - `until_stop` — Put on board drives until the climber taps the button
+ *   (Until I stop, a MoonBoard's default).
+ * - `put_on_board` — Put on board lights one climb: the choice is Right away,
+ *   no drive can start here (a crew session with In a session too off, or the
+ *   swipe flag off), or solo with Light the board as I swipe on, where the
+ *   press starts no drive.
  */
 export type FirstConnectConfirmationCopy =
   | { variant: 'tap_lights' }
   | { variant: 'window'; seconds: number }
   | { variant: 'window_minute' }
+  | { variant: 'window_minutes'; minutes: number }
   | { variant: 'until_stop' }
-  | { variant: 'until_stop_or_disconnect' }
   | { variant: 'put_on_board' };
 
-/** Settings › Board's keep-lighting choices and the crew read, as `resolveKeepLightingPlan` takes them. */
+/** Settings › Board's Stop driving after choices and the crew read, as `resolveKeepLightingPlan` takes them. */
 export type FirstConnectKeepLightingInput = {
   keepLighting: KeepLightingChoice;
   moonboardKeepLighting: KeepLightingChoice;
@@ -315,7 +319,6 @@ export function firstConnectConfirmationCopy({
   lightOnClimbTap,
   lightOnSwipe,
   inSharedSession,
-  autoDisconnectSeconds,
   boardName,
   keepLighting,
 }: {
@@ -323,11 +326,9 @@ export function firstConnectConfirmationCopy({
   lightOnSwipe: boolean;
   /** A shared session with someone else in it (`useIsSharedSession`): see `firstConnectTapLights`. */
   inSharedSession: boolean;
-  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
-  autoDisconnectSeconds: number | null;
-  /** The board type (`kilter`, `moonboard`, …): a MoonBoard takes its own keep-lighting choice. */
+  /** The board type (`kilter`, `moonboard`, …): a MoonBoard takes its own Stop driving after choice. */
   boardName: string | null;
-  /** Null when keep-lighting is off for everyone (its `wall-swipe-to-drive` kill switch). */
+  /** Null when Put on board's drive is off for everyone (its `wall-swipe-to-drive` kill switch). */
   keepLighting: FirstConnectKeepLightingInput | null;
 }): FirstConnectConfirmationCopy {
   if (firstConnectTapLights({ lightOnClimbTap, inSharedSession })) return { variant: 'tap_lights' };
@@ -335,15 +336,17 @@ export function firstConnectConfirmationCopy({
   const reach = resolveKeepLightingReach({
     plan: resolveKeepLightingPlan({ boardIsMoonboard: isMoonboardBoardName(boardName), ...keepLighting }),
     swipeLightsSolo: lightOnSwipe && !keepLighting.inSession && !inSharedSession,
-    autoDisconnectSeconds,
   });
   switch (reach.kind) {
     case 'one_climb':
       return { variant: 'put_on_board' };
     case 'until_stop':
-      return { variant: reach.autoDisconnects ? 'until_stop_or_disconnect' : 'until_stop' };
-    case 'window':
-      return reach.seconds === 60 ? { variant: 'window_minute' } : { variant: 'window', seconds: reach.seconds };
+      return { variant: 'until_stop' };
+    case 'window': {
+      const length = driveLengthWords(reach.seconds);
+      if (length.unit === 'seconds') return { variant: 'window', seconds: length.count };
+      return length.count === 1 ? { variant: 'window_minute' } : { variant: 'window_minutes', minutes: length.count };
+    }
   }
 }
 

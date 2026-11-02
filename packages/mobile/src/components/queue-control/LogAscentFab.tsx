@@ -11,11 +11,17 @@ import { useLogAscentAction } from './use-log-ascent-action';
 type LogAscentFabProps = {
   climb: Climb;
   size?: number;
+  /** The flip to log, when the bar shows the climber's last pick: the pick's own (`useLogAscentAction`). */
+  isMirror?: boolean;
 };
 
-export function LogAscentFab({ climb, size = glassSize.hero }: LogAscentFabProps) {
-  const { accessibilityLabel, disabled, fallbackColor, handleLogAscentPress, iconColor, popStyle } =
-    useLogAscentAction(climb);
+export function LogAscentFab({ climb, size = glassSize.hero, isMirror }: LogAscentFabProps) {
+  const { accessibilityLabel, disabled, fallbackColor, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(
+    climb,
+    undefined,
+    undefined,
+    isMirror,
+  );
 
   return (
     <Animated.View style={popStyle}>

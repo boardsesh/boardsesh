@@ -44,8 +44,7 @@ describe('settings', () => {
       expect(getSetting('autoConnectBle')).toBe(true);
       expect(getSetting('lightOnClimbTap')).toBe(false);
       expect(getSetting('lightOnSwipe')).toBe(false);
-      expect(getSetting('autoDisconnectBle')).toBe(false);
-      expect(getSetting('autoDisconnectTimeoutSeconds')).toBe(30);
+      expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('qaPromptOnLaunch')).toBe(false);
       expect(getSetting('defaultBoardUuid')).toBeNull();

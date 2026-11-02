@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { driveLengthWords } from '../../lib/keep-lighting';
 import type {
   WallControlA11yHintKey,
   WallControlA11yValueKey,
@@ -50,8 +51,6 @@ function labelText(
       return t('playView.wallControl.disconnectBoard');
     case 'youAreDriving':
       return t('playView.wallControl.youAreDriving');
-    case 'eachPickLights':
-      return t('playView.wallControl.eachPickLights');
     case 'onBoard':
       return t('playView.wallControl.onBoard', { name });
     case 'onCrewBoard':
@@ -98,8 +97,6 @@ function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null
       return t('playView.wallControl.litHint');
     case 'stopDrivingHint':
       return t('playView.wallControl.stopDrivingHint');
-    case 'stopWindowHint':
-      return t('playView.wallControl.stopWindowHint');
     case 'relayHint':
       return t('playView.wallControl.relayHint', { name });
     case 'relayHintCrew':
@@ -160,17 +157,18 @@ export function useWallControlText(model: WallControlModel): WallControlText {
   return useMemo(() => wallControlText(model, t, tSettings), [model, t, tSettings]);
 }
 
-// Put on board's keep-lighting window (2.7, spec B2). The words and the digits
-// are two runs: "Each pick lights" is the label (and the whole accessible
-// name, so "Tap Each pick lights" works in Voice Control), the clock sits
-// beside it, and the time left is the button's accessibility value.
+// Put on board's timed drive (2.7, Stop driving after). The words and the
+// digits are two runs: "You are driving the wall" is the label (and the whole
+// accessible name, so "Tap You are driving the wall" works in Voice Control),
+// the clock sits beside it, and the time left is the button's accessibility
+// value ("Stops in 30 seconds").
 
-/** Whole seconds left, rounded up, so the clock reads 0:01 until the window is over. */
+/** Whole seconds left, rounded up, so the clock reads 0:01 until the drive is over. */
 export function windowSecondsLeft(remainingMs: number): number {
   return Math.max(0, Math.ceil(remainingMs / 1000));
 }
 
-/** The clock beside Each pick lights: m:ss ("0:38", "1:00"). */
+/** The clock beside You are driving the wall: m:ss ("0:38", "1:00", "4:59"). */
 export function formatWindowClock(remainingMs: number): string {
   const seconds = windowSecondsLeft(remainingMs);
   const minutes = Math.floor(seconds / 60);
@@ -187,25 +185,33 @@ export function windowValueSeconds(remainingMs: number): number {
   return seconds < 10 ? 0 : Math.floor(seconds / 10) * 10;
 }
 
-/** "30 seconds left", then "Under 10 seconds left" (`windowValueSeconds`). */
+/** "Stops in 30 seconds", then "Stops in under 10 seconds" (`windowValueSeconds`). */
 export function windowTimeValue(remainingMs: number, t: TFunction): string {
   const seconds = windowValueSeconds(remainingMs);
-  if (seconds < 10) return t('playView.wallControl.underTenSeconds');
-  return t('playView.wallControl.secondsLeft', { count: seconds });
+  if (seconds < 10) return t('playView.wallControl.stopsInUnderTen');
+  return t('playView.wallControl.stopsInSeconds', { count: seconds });
 }
 
 /**
- * A bulb's value during the window (spec B3): "Each pick lights, 30 seconds
- * left". The bulb's label stays "Board lights", so the window rides its value,
- * on the same 10 s step as the button's.
+ * A bulb's value during the timed drive (spec B3): "You are driving the wall,
+ * stops in 30 seconds". The bulb's label stays "Board lights", so the drive
+ * rides its value, on the same 10 s step as the button's.
  */
 export function windowBulbValue(remainingMs: number, t: TFunction): string {
-  return `${t('playView.wallControl.eachPickLights')}, ${windowTimeValue(remainingMs, t)}`;
+  return `${t('playView.wallControl.youAreDriving')}, ${windowTimeValue(remainingMs, t)}`;
 }
 
-/** Said once when the window opens: how long, and how to keep lighting (WCAG 2.2.1). */
+/**
+ * Said once when the timed drive starts: that the climber drives the wall, for
+ * how long after each climb, and how to keep going (WCAG 2.2.1). Whole
+ * minutes from one minute up (`driveLengthWords`).
+ */
 export function windowStartedAnnouncement(windowMs: number, t: TFunction): string {
-  const seconds = Math.round(windowMs / 1000);
-  if (seconds === 60) return t('playView.wallControl.windowStartedMinute');
-  return t('playView.wallControl.windowStarted', { count: seconds });
+  const length = driveLengthWords(Math.round(windowMs / 1000));
+  if (length.unit === 'minutes') {
+    return length.count === 1
+      ? t('playView.wallControl.windowStartedMinute')
+      : t('playView.wallControl.windowStartedMinutes', { count: length.count });
+  }
+  return t('playView.wallControl.windowStarted', { count: length.count });
 }

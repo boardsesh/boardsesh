@@ -5,17 +5,19 @@ import { materialSurfaces } from '../../theme/colors';
 import { Text } from '../Text';
 import { spokenCaption } from './track-label-text';
 import type { BoardSheetStatus } from './wall-control';
-import { windowTimeValue } from './wall-control-text';
+import { formatWindowClock, windowTimeValue } from './wall-control-text';
 import { useWindowSecondsLeft } from './WallWindowClock';
 
 /**
  * The player's board sheet's status line (spec B3), uncapped at every text
- * size: "Preview · not on the wall", "On the wall", "Each pick lights · 38
- * seconds left", or the open-ended drive's sentence. A leaf, so the window's
- * 1 Hz count re-renders only this line while the sheet is open. It is the
+ * size: "Preview · not on the wall", "On the wall", "You are driving the wall
+ * · Stops in 0:38" (Put on board's timed drive, its clock as the button draws
+ * it, so a 5 minute drive reads 4:47 rather than 287 seconds), or the
+ * open-ended drive's sentence. A leaf, so the timed drive's 1 Hz count re-renders only
+ * this line while the sheet is open. It is the
  * full-size fallback for the capped wall button, so it takes Velvet's opaque
  * secondary label, as the top bar's preview line does, and a screen reader
- * hears the "·" as a pause. The window's spoken form keeps the button's 10 s
+ * hears the "·" as a pause. The timed drive's spoken form keeps the button's 10 s
  * step (spec B2.2): focus lands here when the sheet opens, and TalkBack
  * re-reads a focused node's changed label, so a 1 Hz label would talk over
  * the climber the whole time.
@@ -35,12 +37,12 @@ function BoardSheetStatusLineComponent({ status }: { status: BoardSheetStatus })
       line = t('playView.wallControl.onWall');
       break;
     case 'window':
-      // The button's two runs, the clock in words. Before the clock's first read there is no count yet.
+      // The button's two runs, its clock in m:ss. Before the clock's first read there is no count yet.
       line = clock
-        ? `${t('playView.wallControl.eachPickLights')} · ${t('playView.wallControl.secondsLeft', { count: clock.secondsLeft })}`
+        ? `${t('playView.wallControl.youAreDriving')} · ${t('playView.wallControl.stopsInClock', { clock: formatWindowClock(clock.secondsLeft * 1000) })}`
         : null;
       spoken = spokenClock
-        ? `${t('playView.wallControl.eachPickLights')}, ${windowTimeValue(spokenClock.secondsLeft * 1000, t)}`
+        ? `${t('playView.wallControl.youAreDriving')}, ${windowTimeValue(spokenClock.secondsLeft * 1000, t)}`
         : null;
       break;
     case 'driving':

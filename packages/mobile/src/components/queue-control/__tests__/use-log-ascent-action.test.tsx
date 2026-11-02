@@ -113,6 +113,26 @@ describe('useLogAscentAction orientation', () => {
     expect(openedMirror()).toBe(false);
   });
 
+  // Owner decision A: the bar's ✓ on a last pick that is an Up next slot. The
+  // climber flipped the preview (in the player, or with the bar's Mirror); the
+  // slot itself stays unmirrored. The ascent is the flip the bar draws.
+  it("logs a mirrored pick's own flip, not its queue slot's", () => {
+    session.currentClimbQueueItem = { uuid: 'slot-current', climb: { ...climb, uuid: 'climb-2' } };
+    session.queue = [{ uuid: 'slot-up-next', climb: { ...climb, mirrored: false } }];
+    const { result } = renderHook(() =>
+      useLogAscentAction({ ...climb, mirrored: true }, 'regular', 'slot-up-next', true),
+    );
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(true);
+  });
+
+  it("logs an unflipped pick unmirrored, even on the queue's current climb mirrored", () => {
+    session.currentClimbQueueItem = { uuid: 'slot-current', climb: { ...climb, mirrored: true } };
+    const { result } = renderHook(() => useLogAscentAction(climb, undefined, undefined, false));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(false);
+  });
+
   it('reads an explicit unmirror after rendering without reverting to the supplied true', () => {
     const { result } = renderHook(() => useLogAscentAction({ ...climb, mirrored: true }));
     session.currentClimbQueueItem = { uuid: 'slot-1', climb: { ...climb, mirrored: false } };

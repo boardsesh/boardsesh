@@ -10,7 +10,7 @@ import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
-import { deviceMatchesPickerTarget, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
+import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
@@ -24,6 +24,10 @@ import { spacing } from '../../theme/tokens';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
+
+function sortByRssi(devices: ReadonlyArray<DiscoveredDevice>): DiscoveredDevice[] {
+  return [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi);
+}
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
 // knows, never the serial (#5658). The suffix is the one the board-account card
@@ -129,18 +133,22 @@ export function DevicePickerSheet({
     };
   }, [closing]);
 
+  // A known board (gym or saved) lists its own controller first, then the
+  // controllers nothing identifies (no serial, or a serial nobody recorded),
+  // strongest signal first within each. Only controllers that are positively a
+  // different board wait behind "Search for any board" (#7125).
+  //
+  // Sorted once per scan push, never per serial lookup: the scan cache refreshes
+  // RSSI in place between pushes, so re-sorting on a lookup could swap rows the
+  // climber is about to tap. Grouping keeps the sorted order, so a lookup moves
+  // a row only when its group changes, and the full list keeps its identity.
   const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
-  const listedDevices = useMemo(
-    () =>
-      filteringTarget && targetBoard
-        ? devices.filter((device) => deviceMatchesPickerTarget(device, resolvedBoards, targetBoard))
-        : devices,
-    [devices, filteringTarget, resolvedBoards, targetBoard],
-  );
-  const sortedDevices = useMemo(
-    () => [...listedDevices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi),
-    [listedDevices],
-  );
+  const devicesByRssi = useMemo(() => sortByRssi(devices), [devices]);
+  const listedDevices = useMemo(() => {
+    if (!filteringTarget || !targetBoard) return devicesByRssi;
+    const groups = groupPickerDevices(devicesByRssi, resolvedBoards, targetBoard);
+    return [...groups.target, ...groups.unknown];
+  }, [devicesByRssi, filteringTarget, resolvedBoards, targetBoard]);
 
   // Pre-compute once per devices update; name is stable for a given device
   // throughout a scan session so parsing per renderItem invocation is wasteful.
@@ -185,6 +193,7 @@ export function DevicePickerSheet({
   const { systemColors } = theme;
 
   const searching = mode === 'searching';
+  // "Not found" only when every controller heard is positively another board.
   const targetNotListed = !searching && filteringTarget && listedDevices.length === 0 && devices.length > 0;
   const showScanningState = !searching && isScanning && devices.length === 0;
   const showEmptyState = !searching && !isScanning && devices.length === 0;
@@ -337,7 +346,7 @@ export function DevicePickerSheet({
       {listedDevices.length > 0 && (
         <BottomSheetFlatList
           style={styles.list}
-          data={sortedDevices}
+          data={listedDevices}
           keyExtractor={keyExtractor}
           renderItem={renderDeviceItem}
           contentContainerStyle={styles.listContent}

@@ -127,7 +127,7 @@ export const SHARED_EVENTS = {
   // keep-lighting window ran out, or its setting was turned off), durationSec,
   // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
   // lit climbs that renewed the keep-lighting window; 0 with no window, and
-  // absent before 2.7), windowSec (2.7: the window's length, 30 | 45 | 60, or
+  // absent before 2.7), windowSec (2.7: the timed drive's length, 30 | 45 | 60 | 120 | 300, or
   // null for an open-ended drive), boardType (2.7: 'kilter', 'moonboard', ...,
   // or null when unknown, for the MoonBoard field test), startedBy: 'swipe' (the wall button's swipe) | 'tap'
   // (a press on Put on board that keeps lighting: from 2.7 the keep-lighting
@@ -268,7 +268,9 @@ export const SHARED_EVENTS = {
   // every settings row reports the same way; it is what ranks the Settings root.
   // From 2.7 the lightbulb's board sheet reports its switches too, under page
   // 'boardControls' (keys as on the Board page: lightOnClimbTap, lightOnSwipe,
-  // autoDisconnectBle, moonboardLightAdjacentHolds). Leave that page out when
+  // putOnBoardKeepsLighting, moonboardPutOnBoardKeepsLighting,
+  // disconnectWhenDrivingEnds (2.7, replacing autoDisconnectBle, which builds
+  // before it sent), moonboardLightAdjacentHolds). Leave that page out when
   // ranking the Settings root.
   SettingChanged: 'Setting Changed',
   FavoriteToggle: 'Favorite Toggle',
@@ -531,9 +533,9 @@ export const SHARED_EVENTS = {
   // tap on Disconnect board, state 'lit', called You have the board before
   // #7113; QA builds before Marco's phone test sent 'open_sheet' there instead;
   // 'stop_driving' (#7113) is a tap on You are driving the wall, state 'lit':
-  // driving stops and the link stays; 'stop_window' (2.7) is a tap on Each pick
-  // lights, Put on board's keep-lighting window, state 'lit': the window stops
-  // and the link stays). `control`: 'button' (the wall
+  // driving stops and the link stays; 'stop_window' (2.7) is the same tap during
+  // Put on board's timed drive, state 'lit', which QA builds labelled Each pick
+  // lights: the drive stops and the link stays). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's
   // bulb, back for the busy-wall question or chosen in View options) |
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).
@@ -592,6 +594,12 @@ export const SHARED_EVENTS = {
   // phone's history isn't loaded) and `entrySurface` (the last Board Connect
   // Tapped surface within 2 minutes before the list, or null). Older events have
   // none of them.
+  // `targetMatchedDevices` / `targetUnknownDevices` / `targetOtherDevices`
+  // (2026-11): for a picker opened for a known gym or saved board, how many
+  // devices resolved to it, could not be identified (no serial, or an
+  // unrecorded one), and were positively another board (hidden until "Search
+  // for any board"). All three are null when the picker had no board identity;
+  // older events have none of them.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   // Consent-driven scan recon: fired once per discovered board when a user
   // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw

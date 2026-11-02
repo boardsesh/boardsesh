@@ -131,6 +131,7 @@ vi.mock('../use-mini-player-navigation', () => ({
 }));
 
 import { MiniPlayerLeadingButtons } from '../MiniPlayerButtons';
+import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
 const climb = {
   uuid: 'climb-a',
@@ -379,6 +380,32 @@ describe('MiniPlayerLeadingButtons', () => {
       fireEvent.click(rendered.getByLabelText('playView.actionBar.unmirrorAria'));
       expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(false, 'item-a');
       expect(effects.track).toHaveBeenCalledWith('Mirror Climb', expect.objectContaining({ shared: true }));
+    });
+
+    // Owner decision A: on the climber's last pick (a preview, not the queue's
+    // current) Mirror flips the pick's own flip, the one the player puts back
+    // when it reopens the pick; a preview's mirror never writes the queue.
+    it('flips the last pick’s own mirror, never the queue', () => {
+      resetLastPickForTests();
+      queue.currentClimbQueueItem = { uuid: 'item-current', climb: { uuid: 'climb-current' } };
+      setLastPick({
+        item: { uuid: 'item-a', climb },
+        suggestionSource: null,
+        commitOptions: undefined,
+        mirrored: false,
+        currentAtPick: 'item-current',
+        wallAtPick: null,
+        pickedAt: 0,
+      });
+      try {
+        const rendered = renderButtons(['mirror'], { climbBoard: tension });
+        fireEvent.click(rendered.getByLabelText('playView.actionBar.mirrorAria'));
+        expect(getLastPick()?.mirrored).toBe(true);
+        expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+        expect(effects.track).toHaveBeenCalledWith('Mirror Climb', expect.objectContaining({ isMirrored: true }));
+      } finally {
+        resetLastPickForTests();
+      }
     });
 
     it('rejects a retained occurrence when another copy of the same climb is current', () => {

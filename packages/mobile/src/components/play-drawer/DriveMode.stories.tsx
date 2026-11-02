@@ -62,7 +62,6 @@ function storyModel(
     commitLabel: 'putOnWall',
     otherClimbLit: false,
     writing: false,
-    autoDisconnectWarning: false,
     // In a crew: swipes browse until the climber drives.
     navigationCommits: false,
     driveMode,

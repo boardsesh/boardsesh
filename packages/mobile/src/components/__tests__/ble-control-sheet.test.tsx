@@ -69,9 +69,8 @@ const baseProps = {
   onReassert: vi.fn(),
   onClearLights: vi.fn(),
   onDisconnect: vi.fn(),
-  autoDisconnectEnabled: false,
-  autoDisconnectTimeoutLabel: '30 seconds',
-  onToggleAutoDisconnect: vi.fn(),
+  disconnectWhenDrivingEnds: false,
+  onToggleDisconnectWhenDrivingEnds: vi.fn(),
   showLightAdjacentHolds: false,
   lightAdjacentHoldsEnabled: false,
   onToggleLightAdjacentHolds: vi.fn(),
@@ -86,7 +85,7 @@ beforeEach(() => {
   baseProps.onReassert.mockClear();
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
-  baseProps.onToggleAutoDisconnect.mockClear();
+  baseProps.onToggleDisconnectWhenDrivingEnds.mockClear();
   baseProps.onToggleLightAdjacentHolds.mockClear();
   baseProps.onToggleLightOnSwipe.mockClear();
   baseProps.onToggleLightOnClimbTap.mockClear();
@@ -100,7 +99,7 @@ describe('BleControlSheet', () => {
       row.getAttribute('data-switch-row'),
     );
     expect(rows).toEqual([
-      'ble.autoDisconnect.toggleTitle',
+      'ble.lighting.drivingEnds.label',
       'lightControl.lightAdjacentHolds',
       // Tap first, swipe nested under it: the same pair as Settings › Board.
       'ble.lighting.onTapLabel',
@@ -145,11 +144,16 @@ describe('BleControlSheet', () => {
     expect(baseProps.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('toggles auto-disconnect once from the long-press row', () => {
+  it('toggles Disconnect Bluetooth when driving ends once from the long-press row', () => {
     const { getByText } = render(<BleControlSheet {...baseProps} />);
-    fireEvent.click(getByText('ble.autoDisconnect.toggleTitle'));
-    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledTimes(1);
-    expect(baseProps.onToggleAutoDisconnect).toHaveBeenCalledWith(true);
+    fireEvent.click(getByText('ble.lighting.drivingEnds.label'));
+    expect(baseProps.onToggleDisconnectWhenDrivingEnds).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleDisconnectWhenDrivingEnds).toHaveBeenCalledWith(true);
+  });
+
+  it('leaves Disconnect Bluetooth when driving ends to Settings on the player sheet', () => {
+    const { queryByText } = render(<BleControlSheet {...baseProps} showLightingSwitches={false} />);
+    expect(queryByText('ble.lighting.drivingEnds.label')).toBeNull();
   });
 
   it('renders the board-lighting rows and toggles each independently', () => {

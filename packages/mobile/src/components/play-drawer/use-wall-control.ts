@@ -2,7 +2,6 @@ import type { AnalyticsEventProperties, WallControlPreviewReason } from '@boards
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
-import { noteAutoDisconnectActivity, readAutoDisconnectDeadlineMs } from '../../lib/auto-disconnect-deadline';
 import { noteWallPutOnBoardPress } from '../../lib/wall-swipe-hint';
 import {
   trackWallControlSwiped,
@@ -13,15 +12,17 @@ import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import type { DriveModeStartedBy } from '@boardsesh/analytics';
 import { hapticLight, hapticMedium, hapticSuccess, hapticWarning } from '../../lib/haptics';
 import type { KeepLightingPlan } from '../../lib/keep-lighting';
+import { getSetting } from '../../settings';
 import {
   claimDriveAnnouncement,
-  clampWindowEnd,
   clearDrivingStopped,
   getDriveMode,
+  getLastDriveEnded,
   getLastDriveModeExitReason,
   stopDrivingForLink,
   useDriveLightingMode,
 } from './drive-mode-store';
+import { shouldDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 import { useWallControlShown } from './use-wall-control-shown';
 import { isPutUpAction, type WallControlModel } from './wall-control';
 import { windowStartedAnnouncement } from './wall-control-text';
@@ -65,10 +66,10 @@ export type WallControlRunners = {
    */
   drive: (startedBy: DriveModeStartedBy) => DriveStartOutcome;
   /**
-   * Put on board's climb went up and keep-lighting is on (2.7): arm the
-   * keep-lighting window, or the open-ended drive for Until I stop
-   * (`startKeepLighting`). It goes live, and the window's clock starts, at the
-   * wall's lit confirm.
+   * Put on board's climb went up and Stop driving after is a time or Until I
+   * stop (2.7): arm the timed drive, or the open-ended one for Until I stop
+   * (`startKeepLighting`). It goes live, and the clock starts, at the wall's
+   * lit confirm.
    */
   keepLighting: (plan: KeepLightingPlan) => void;
 };
@@ -100,12 +101,15 @@ export type UseWallControlOptions = {
 export const DISCONNECT_TAP_GUARD_MS = 600;
 
 /**
- * After Put on board's keep-lighting window ends on its own and the label flips
- * to Disconnect board, how long a tap that would disconnect is dropped (spec
- * B2), the button's or a bulb's: a tap aimed at Each pick lights to stop it
- * must not let go of a crew's board instead. Any other tap (Put on board on a
- * preview) goes through. Touch, VoiceOver, Switch Control and Voice Control
- * all arrive as this one press.
+ * After Put on board's timed drive ends on its own and the label flips to
+ * Disconnect board, how long a tap that would disconnect is dropped (spec B2),
+ * the button's or a bulb's: a tap aimed at You are driving the wall to stop it
+ * must not let go of a crew's board instead. With Disconnect Bluetooth when
+ * driving ends on, that end lets go of the board and the label flips to Put
+ * on board instead, so a put-up is dropped too: the stop the climber meant
+ * must not reconnect and start a fresh drive. Otherwise any other tap (Put on
+ * board on a preview) goes through. Touch, VoiceOver, Switch Control and
+ * Voice Control all arrive as this one press.
  */
 export const WINDOW_END_TAP_GRACE_MS = 2_000;
 
@@ -125,11 +129,11 @@ export type WallControlHandlers = {
   /** A swipe let go short of its commit point: Wall Control Swiped `cancelled`. */
   swipeCancelled: (control: WallControlSurface) => void;
   /**
-   * The busy-wall question's Put mine up: put the climb up, and keep lighting
-   * when the press that raised the question would have (2.7).
+   * The busy-wall question's Put mine up: put the climb up, and start the
+   * drive the press that raised the question would have (2.7).
    */
   confirmPut: () => void;
-  /** The busy-wall question's Keep theirs: the press's keep-lighting is dropped. */
+  /** The busy-wall question's Keep theirs: the press's drive is dropped. */
   cancelPut: () => void;
 };
 
@@ -143,12 +147,12 @@ export type WallControlHandlers = {
  * The handlers keep their identity across renders (they read the latest model
  * through a ref), so a memoised bar doesn't re-render for them.
  *
- * Put on board's keep-lighting (2.7): a press that puts the climb up runs the
- * ordinary put-up, and only once it went up arms the window (`keepLighting`),
- * so the busy-wall question still guards it in a crew. When the question took
- * the press, its Put mine up (`confirmPut`) arms it instead. The window's start,
- * its turn to open-ended and its end are said once each, queued, while the
- * player is open; renewals are silent.
+ * Put on board's drive (2.7, Stop driving after): a press that puts the climb
+ * up runs the ordinary put-up, and only once it went up arms the drive
+ * (`keepLighting`), so the busy-wall question still guards it in a crew. When
+ * the question took the press, its Put mine up (`confirmPut`) arms it instead.
+ * A timed drive's start, its turn to open-ended and its end are said once each,
+ * queued, while the player is open; renewals are silent.
  */
 export function useWallControl({
   analyticsContext,
@@ -163,12 +167,10 @@ export function useWallControl({
   const { t: tSettings } = useTranslation('settings');
   const { t } = useTranslation('session');
   const stoppedDrivingLabel = t('playView.wallControl.stoppedDriving');
-  const stoppedWindowLabel = t('playView.wallControl.stoppedWindow');
   const latest = useRef({
     model,
     runners,
     stoppedDrivingLabel,
-    stoppedWindowLabel,
     analyticsContext,
     climbUuid,
     previewReason,
@@ -177,7 +179,6 @@ export function useWallControl({
     model,
     runners,
     stoppedDrivingLabel,
-    stoppedWindowLabel,
     analyticsContext,
     climbUuid,
     previewReason,
@@ -185,9 +186,10 @@ export function useWallControl({
   // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
   const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
-  // When a keep-lighting window last ran out on its own (the 2 s guard).
+  // When a timed drive last ran out on its own (the 2 s guard), and whether that end let go of the board.
   const windowEndedAtRef = useRef<number | null>(null);
-  // A press whose keep-lighting waits on the busy-wall question, for the climb it asked about.
+  const windowEndLetGoRef = useRef(false);
+  // A press whose drive waits on the busy-wall question, for the climb it asked about.
   const pendingKeepLightingRef = useRef<{ plan: KeepLightingPlan; climbUuid: string | null } | null>(null);
 
   useWallControlShown({ state: model.state, climbUuid, playerOpen, visible, previewReason });
@@ -199,10 +201,10 @@ export function useWallControl({
     }
   }, [climbUuid]);
 
-  // The window's start and its end, once each (WCAG 2.2.1: its length and how
-  // to extend it, then that it is over), and a swipe or Light every climb
-  // turning it open-ended, which nothing on the wall shows: the lit climb stays
-  // lit. Renewals say nothing. Each line is claimed once per drive
+  // A timed drive's start and its end, once each (WCAG 2.2.1: its length and
+  // how to keep going, then "Stopped driving the wall"), and a swipe or Light
+  // every climb turning it open-ended, which nothing on the wall shows: the lit
+  // climb stays lit. Renewals say nothing. Each line is claimed once per drive
   // (`claimDriveAnnouncement`), so a phone split with a player in every tab
   // says it once. The 2 s tap guard is each player's own.
   const lightingMode = useDriveLightingMode();
@@ -221,9 +223,7 @@ export function useWallControl({
       if (!drive || drive.expiresAt === null) return;
       windowStartedAtRef.current = drive.startedAt;
       if (!playerOpen || !claimDriveAnnouncement(drive.startedAt, 'window_started')) return;
-      // The length the clock shows: auto-disconnect's end when that comes first.
-      const shownMs = clampWindowEnd(drive.expiresAt, readAutoDisconnectDeadlineMs()) - Date.now();
-      announceQueued(windowStartedAnnouncement(Math.max(0, shownMs), t));
+      announceQueued(windowStartedAnnouncement(drive.windowMs ?? Math.max(0, drive.expiresAt - Date.now()), t));
       return;
     }
     if (previous !== 'window') return;
@@ -237,8 +237,18 @@ export function useWallControl({
     }
     if (lightingMode === 'off' && getLastDriveModeExitReason() === 'window_ended') {
       windowEndedAtRef.current = Date.now();
+      // With Disconnect Bluetooth when driving ends on, this end lets go of the
+      // board too (`DriveModeWatcher`): a screen reader hears it once the link
+      // drops, as after a tap that stopped the drive.
+      const ended = getLastDriveEnded();
+      const letsGo =
+        wasLinkedRef.current &&
+        ended !== null &&
+        shouldDisconnectWhenDrivingEnds(ended, getSetting('disconnectWhenDrivingEnds') === true);
+      windowEndLetGoRef.current = letsGo;
+      if (letsGo) announceDropRef.current = true;
       if (!playerOpen || windowStartedAt === null || !claimDriveAnnouncement(windowStartedAt, 'window_ended')) return;
-      announceQueued(t('playView.wallControl.windowEnded'));
+      announceQueued(t('playView.wallControl.stoppedDriving'));
     }
   }, [lightingMode, playerOpen, t]);
 
@@ -254,8 +264,6 @@ export function useWallControl({
   }, [linked, tSettings]);
 
   const press = useCallback((control: WallControlSurface) => {
-    // Any press is the climber at the wall: auto-disconnect starts over (2.7).
-    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     // A connect in flight: the spinner says so, and a second tap waits.
     if (current.pending) return;
@@ -266,12 +274,13 @@ export function useWallControl({
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
     // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
     const action = control === 'button' ? current.tapAction : current.bulbTapAction;
-    // A keep-lighting window just ran out under the climber's thumb: a stop
-    // aimed at it now reads Disconnect board. Only that is dropped; a Put on
-    // board on another climb still goes up.
+    // A timed drive just ran out under the climber's thumb: a stop aimed at it
+    // now reads Disconnect board, or Put on board once that end let go of the
+    // board. Only that is dropped; with the link kept, a Put on board on
+    // another climb still goes up.
     const windowEndedAt = windowEndedAtRef.current;
-    if (action === 'disconnect' && windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) {
-      return;
+    if (windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) {
+      if (action === 'disconnect' || (windowEndLetGoRef.current && isPutUpAction(action))) return;
     }
     trackWallControlTapped({
       state: current.state,
@@ -288,9 +297,9 @@ export function useWallControl({
     // The swipe peek's replay: a third Put on board within 5 minutes (spec B3).
     if (putsUp && control === 'button') noteWallPutOnBoardPress();
     // Solo with Light the board as I swipe on, a press drops a stop and the
-    // setting lights the next climbs. Otherwise, with keep-lighting on (2.7),
-    // the press puts the climb up the ordinary way and, once it went up, arms
-    // the window (or the open-ended drive for Until I stop).
+    // setting lights the next climbs. Otherwise, with Stop driving after set to
+    // a time or Until I stop (2.7), the press puts the climb up the ordinary
+    // way and, once it went up, arms the drive.
     if (current.tapDrive === 'resume' && putsUp) clearDrivingStopped();
     const keepLighting =
       putsUp && (current.tapDrive === 'window' || current.tapDrive === 'drive') ? current.tapKeepLighting : null;
@@ -317,20 +326,16 @@ export function useWallControl({
         run.disconnect();
         return;
       case 'stop_driving':
-        // Stop driving and keep the link: swipes go back to previews. A light
-        // buzz, since nothing was let go; the next tap disconnects.
+      case 'stop_window':
+        // Stop driving, timed or not, and keep the link: swipes go back to
+        // previews. A light buzz, since nothing was let go; the next tap
+        // disconnects. With Disconnect Bluetooth when driving ends on, the
+        // board is let go too (`DriveModeWatcher`), and said when it drops.
         guardedTapAtRef.current = Date.now();
+        if (wasLinkedRef.current && getSetting('disconnectWhenDrivingEnds')) announceDropRef.current = true;
         hapticLight();
         stopDrivingForLink();
         announceQueued(latest.current.stoppedDrivingLabel);
-        return;
-      case 'stop_window':
-        // Stop the keep-lighting window and keep the link, as You are driving
-        // the wall does: picks go back to previews; the next tap disconnects.
-        guardedTapAtRef.current = Date.now();
-        hapticLight();
-        stopDrivingForLink();
-        announceQueued(latest.current.stoppedWindowLabel);
         return;
       case 'connect':
       case 'put_on_wall':
@@ -353,7 +358,6 @@ export function useWallControl({
   }, []);
 
   const longPress = useCallback((control: WallControlSurface) => {
-    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     if (current.longPress !== 'sheet') return;
     hapticMedium();
@@ -364,7 +368,6 @@ export function useWallControl({
   // The swipe owns its own haptics (the threshold, then an error on a refusal);
   // the lit confirm buzzes success.
   const startDriveBy = useCallback((startedBy: DriveModeStartedBy): DriveStartOutcome => {
-    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     // `swipeAction` is the one rule for where a drive can start: never while a
     // connect is in flight, the busy-wall question is up, or already driving.
@@ -386,7 +389,6 @@ export function useWallControl({
     [startDriveBy],
   );
   const swipeCancelled = useCallback((control: WallControlSurface) => {
-    noteAutoDisconnectActivity();
     trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });
   }, []);
 

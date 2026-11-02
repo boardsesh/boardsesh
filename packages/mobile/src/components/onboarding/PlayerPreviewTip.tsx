@@ -1,10 +1,11 @@
 // The one-shot preview-first card (2.7, brief B5): climbs open as a preview, Put
-// on board lights one, and what the frosted wall button means.
+// on board lights one and drives the wall for a while, and what the frosted
+// wall button means.
 //
 //   [💡 A tap opens a preview. Put on board lights it.        (×)]
-//   [   For 45 seconds after that, each climb you pick lights too. ]
+//   [   Then you drive the wall: each climb you pick lights…   ]
 //   [   [💡   You are driving the wall   (me)]   ← the real button  ]
-//   [   When the button reads You are driving the wall and glows…  ]
+//   [   The frost means you're driving the wall…                  ]
 //   [   [Lighting settings]                         [Got it]       ]
 //
 // The player docks it as the first section under the board, above Logbook: its
@@ -23,6 +24,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { PressableSurface } from '../PressableSurface';
 import { Button } from '../Button';
@@ -39,8 +41,11 @@ import { useDriveMode } from '../play-drawer/drive-mode-store';
 import type { WallGlowInput } from '../play-drawer/use-wall-glow';
 import {
   previewFirstTipRetiredByDrive,
+  resolvePreviewFirstFrostLine,
   resolvePreviewFirstWindowLine,
+  type PreviewFirstFrostLine,
   type PreviewFirstTipDrive,
+  type PreviewFirstWindowLine,
 } from '../../lib/onboarding/preview-first-tip';
 import type { KeepLightingPlan } from '../../lib/keep-lighting';
 
@@ -79,7 +84,6 @@ export function buildDrivingSampleModel(selfFace: WallControlFace | null): WallC
     commitLabel: 'putOnWall',
     otherClimbLit: false,
     writing: false,
-    autoDisconnectWarning: false,
     navigationCommits: false,
     driveMode: 'live',
     solo: true,
@@ -92,18 +96,16 @@ export type PlayerPreviewTipProps = {
   /** The climb on screen's lit holds, for the sample button's frost. */
   glow: WallGlowInput | null;
   /**
-   * What Put on board keeps lighting here (`resolveKeepLightingPlan`, the
-   * board family's Settings › Board choice), or null when it lights one climb:
-   * Off, or a session with In a session too off, or the swipe flag off.
+   * What Put on board's drive does here (`resolveKeepLightingPlan`, the board
+   * family's Stop driving after), or null when it lights one climb: Right
+   * away, or a session with In a session too off, or the swipe flag off.
    */
   keepLighting: KeepLightingPlan | null;
   /**
-   * Solo with Light the board as I swipe on: Put on board opens no window
+   * Solo with Light the board as I swipe on: Put on board starts no drive
    * there (the wall control's `tapDrive: 'resume'`), so the card names none.
    */
   swipeLightsSolo?: boolean;
-  /** Auto-disconnect's timeout, or null while it is off: lighting stops when it lets go of the board. */
-  autoDisconnectSeconds?: number | null;
   /** The card should go, and why. */
   onExit: (exit: PlayerPreviewTipExit) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -114,7 +116,6 @@ function PlayerPreviewTipComponent({
   glow,
   keepLighting,
   swipeLightsSolo = false,
-  autoDisconnectSeconds = null,
   onExit,
   onLayout,
 }: PlayerPreviewTipProps) {
@@ -128,15 +129,13 @@ function PlayerPreviewTipComponent({
     plan: keepLighting,
     isMoonboard: isMoonboardBoardName(boardName),
     swipeLightsSolo,
-    autoDisconnectSeconds,
   });
 
   // A drive that starts while the card is up means the frost has been learned:
   // a swipe, Light every climb, the board sheet's row, or Put on board where it
-  // keeps lighting until stopped (Until I stop, a MoonBoard). Put on board's
-  // timed window (a drive with `windowMs`) is what the card describes, so it
-  // stays for that until a swipe or Light every climb clears the window and the
-  // same drive turns open-ended.
+  // drives until stopped (Until I stop, a MoonBoard). Put on board's timed
+  // drive (one with `windowMs`) is what the card describes, so it stays for
+  // that until a swipe or Light every climb makes the same drive open-ended.
   const drive = useDriveMode();
   const shownAtRef = useRef(Date.now());
   const driveStartedAt = drive?.startedAt ?? null;
@@ -162,23 +161,13 @@ function PlayerPreviewTipComponent({
     [profile],
   );
   const sampleModel = useMemo(() => buildDrivingSampleModel(selfFace), [selfFace]);
-  const windowText =
-    windowLine === null
-      ? null
-      : windowLine.key === 'windowSeconds'
-        ? t('mobile.onboarding.tips.previewFirst.windowSeconds', { seconds: windowLine.seconds })
-        : windowLine.key === 'windowMinute'
-          ? t('mobile.onboarding.tips.previewFirst.windowMinute')
-          : windowLine.key === 'untilStop'
-            ? t('mobile.onboarding.tips.previewFirst.untilStop')
-            : windowLine.key === 'untilStopOrDisconnect'
-              ? t('mobile.onboarding.tips.previewFirst.untilStopOrDisconnect')
-              : t('mobile.onboarding.tips.previewFirst.moonboard');
-  // A screen reader can't see the glow or make the swipe: name the label and
-  // the action that needs no gesture instead.
-  const frostText = screenReaderEnabled
-    ? t('mobile.onboarding.tips.previewFirst.frostScreenReader')
-    : t('mobile.onboarding.tips.previewFirst.frost');
+  const windowText = previewFirstWindowText(windowLine, t);
+  // The clock and the shrinking frost only where Put on board's drive has one.
+  const frostText = previewFirstFrostText(
+    resolvePreviewFirstFrostLine({ plan: keepLighting, swipeLightsSolo }),
+    screenReaderEnabled,
+    t,
+  );
 
   return (
     <View
@@ -254,6 +243,38 @@ function PlayerPreviewTipComponent({
 }
 
 export const PlayerPreviewTip = memo(PlayerPreviewTipComponent);
+
+/** The card's second line in words, each key spelled out so the catalog checks see it. */
+function previewFirstWindowText(line: PreviewFirstWindowLine, t: TFunction): string | null {
+  if (line === null) return null;
+  switch (line.key) {
+    case 'windowSeconds':
+      return t('mobile.onboarding.tips.previewFirst.windowSeconds', { seconds: line.seconds });
+    case 'windowMinute':
+      return t('mobile.onboarding.tips.previewFirst.windowMinute');
+    case 'windowMinutes':
+      return t('mobile.onboarding.tips.previewFirst.windowMinutes', { minutes: line.minutes });
+    case 'untilStop':
+      return t('mobile.onboarding.tips.previewFirst.untilStop');
+    case 'moonboard':
+      return t('mobile.onboarding.tips.previewFirst.moonboard');
+  }
+}
+
+/**
+ * The frost sentence. A screen reader can't see the glow or make the swipe, so
+ * its form names the label and the action that needs no gesture instead.
+ */
+function previewFirstFrostText(line: PreviewFirstFrostLine, screenReader: boolean, t: TFunction): string {
+  if (line === 'timed') {
+    return screenReader
+      ? t('mobile.onboarding.tips.previewFirst.frostScreenReader')
+      : t('mobile.onboarding.tips.previewFirst.frost');
+  }
+  return screenReader
+    ? t('mobile.onboarding.tips.previewFirst.frostOpenEndedScreenReader')
+    : t('mobile.onboarding.tips.previewFirst.frostOpenEnded');
+}
 
 const styles = StyleSheet.create({
   surface: {

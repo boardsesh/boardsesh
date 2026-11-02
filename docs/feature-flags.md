@@ -243,15 +243,13 @@ diagnostic) applies on native. The whole surface lives in three files:
   on, and 2.7 turns it off by default, so it would have reached almost nobody.
   Its body now says what lights from there, read the way a list tap and Put on
   board read it (`firstConnectConfirmationCopy`): every tap (the switch on,
-  outside a shared session, where a list tap stays a preview), the keep-lighting
-  window ("For 45 seconds after Put on board…", "For 1 minute…" at 60 s), until
-  the climber stops it (a MoonBoard's default), or the one climb Put on board
-  lights (keep-lighting Off, a crew with In a session too off,
+  outside a shared session, where a list tap stays a preview), Put on board's
+  timed drive (45 seconds, or whole minutes from 1 minute up), until the climber
+  stops it (a MoonBoard's default), or the one climb Put on board lights (Stop
+  driving after set to Right away, a crew with In a session too off,
   `wall-swipe-to-drive` off, or solo with **Light the board as I swipe** on,
-  where the press opens no window). With auto-disconnect on, a shorter timeout
-  is the window it names and an Until I stop drive says auto-disconnect can end
-  it (`resolveKeepLightingReach`, the same rule the player's preview-first card
-  reads). The Climbs card's body follows the switch and the shared session too.
+  where the press starts no drive) (`resolveKeepLightingReach`, the same rule
+  the player's preview-first card reads). The Climbs card's body follows the switch and the shared session too.
   The host announces the confirmation (`first-connect-confirmation-presence.ts`)
   before it records the connect, since that record hides the Climbs card: from
   then until the dialog closes the Climbs list's board-reveal and quick-actions

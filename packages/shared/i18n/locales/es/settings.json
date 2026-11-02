@@ -466,44 +466,36 @@
     "cancel": "Cancelar",
     "connectBoard": "Conectar plafón",
     "relightBoard": "Reiluminar plafón",
-    "sectionTitle": "Bluetooth",
-    "autoDisconnect": {
-      "description": "Desconecta del plafón cuando no se ha encendido ni previsualizado ningún bloque durante el tiempo elegido.",
-      "cutsLighting": "La desconexión automática suelta el plafón tras {{timeout}}, así que la iluminación también se detiene entonces.",
-      "disconnectedToast": "Plafón desconectado tras {{timeout}} sin encender ni previsualizar ningún bloque nuevo. Toca Poner en el plafón para volver a conectar.",
-      "enabledLabel": "Desconexión automática",
-      "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",
-      "timeoutLabel": "Desconectar después de",
-      "toggleTitle": "Desconexión automática",
-      "toggleSubtitle": "Desconectar después de {{timeout}} de inactividad",
-      "timeoutOptions": {
-        "10": "10 segundos",
-        "15": "15 segundos",
-        "30": "30 segundos",
-        "45": "45 segundos",
-        "60": "1 minuto",
-        "120": "2 minutos",
-        "300": "5 minutos",
-        "600": "10 minutos"
-      }
-    },
     "lighting": {
       "title": "Iluminación del plafón",
       "autoTitle": "Encender automáticamente",
       "description": "Elige qué enciende el plafón conectado automáticamente.",
       "keep": {
-        "label": "Seguir encendiendo tras Poner en el plafón",
-        "off": "Desactivado",
+        "label": "Dejar el mando tras",
+        "off": "Enseguida",
+        "options": {
+          "30": "30 segundos",
+          "45": "45 segundos",
+          "60": "1 minuto",
+          "120": "2 minutos",
+          "300": "5 minutos"
+        },
         "untilStopped": "Hasta que pare",
         "moonboardLabel": "En un MoonBoard",
-        "moonboardAccessibilityLabel": "Seguir encendiendo en un MoonBoard",
+        "moonboardAccessibilityLabel": "Dejar el mando de un MoonBoard tras",
         "moonboardDescription": "La mayoría de los controladores de MoonBoard no llevan bien que se cambie de teléfono, así que esto también se aplica en una sesión.",
-        "sheetMoonboardLabel": "Seguir encendiendo en este MoonBoard",
+        "sheetMoonboardLabel": "Dejar el mando de este MoonBoard tras",
         "inSessionLabel": "También en una sesión",
-        "inSessionAccessibilityLabel": "Seguir encendiendo también en una sesión",
+        "inSessionAccessibilityLabel": "Poner en el plafón te da el mando también en una sesión",
         "inSessionDescription": "Cuando tu teléfono tiene el plafón de tu crew. Si lo desactivas, los bloques que elijas en una sesión se quedan en vista previa.",
-        "inSessionOffReason": "Activa Seguir encendiendo tras Poner en el plafón para usar esto.",
-        "footer": "Cada bloque que se enciende reinicia el reloj. Si descansas más tiempo, el siguiente bloque que elijas se abre como vista previa."
+        "inSessionOffReason": "Cambia Dejar el mando tras a algo distinto de Enseguida para usar esto.",
+        "footer": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, y cada uno reinicia el reloj. Cuando se acaba el tiempo, el siguiente bloque que elijas se abre como vista previa.",
+        "footerUntilStopped": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, hasta que toques Estás al mando del plafón.",
+        "footerOff": "Poner en el plafón enciende el bloque que tienes abierto. El siguiente bloque que elijas se abre como vista previa."
+      },
+      "drivingEnds": {
+        "label": "Desconectar el Bluetooth al dejar el mando",
+        "description": "Cuando dejas el mando o se acaba el tiempo, tu teléfono suelta el plafón para que el siguiente escalador pueda conectarse. Poner en el plafón vuelve a conectar."
       },
       "onSwipeLabel": "Iluminar el plafón al deslizar",
       "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
