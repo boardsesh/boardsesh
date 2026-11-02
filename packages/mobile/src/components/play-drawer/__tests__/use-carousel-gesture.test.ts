@@ -716,6 +716,18 @@ describe('useCarouselGesture', () => {
       expect(pager.translateX.value).toBeCloseTo(-3);
     });
 
+    it('never leaves the board over a side that has lost its page', () => {
+      // A spring back from a drag toward the next climb is still running when
+      // the queue loses that climb, and the climber grabs the board again.
+      const pager = makePager({ hasNext: false });
+      renderCarouselWithPendingReaction(makeOptions({ pager }));
+      const handlers = latestHandlers();
+      pager.translateX.value = -60;
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: 10 });
+      expect(pager.translateX.value).toBe(10);
+    });
+
     it('catches up with the finger, without a jump, when the board it goes toward paints mid-drag', () => {
       const pager = makePager();
       const pageArt = shared<PageArt>({ 0: 'ready', 1: 'loading' });
