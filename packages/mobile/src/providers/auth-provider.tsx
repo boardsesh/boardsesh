@@ -37,6 +37,7 @@ import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screensh
 import { getAnalyticsIdentity, isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { clearRelayReceipt } from '../lib/relay-receipt';
+import { forgetRememberedBoardsOnSignOut } from '../lib/ble/remembered-boards-sign-out';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
@@ -422,6 +423,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       resetOfflineUsageSignal();
       // #7014: a pending relay timing belongs to the account that is leaving.
       clearRelayReceipt();
+      // The boards this phone remembers (a hang-up keeps one for 10 minutes, a
+      // drop keeps it longer): the next account's first bulb tap opens the
+      // board list instead of silently taking the box this one held. Not on a
+      // signed-out cold start: an anonymous climber's board stays remembered.
+      void forgetRememberedBoardsOnSignOut();
       await deactivateNotificationDevice();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);

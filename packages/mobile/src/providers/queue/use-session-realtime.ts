@@ -988,10 +988,12 @@ export function useSessionRealtime({
 
             if (event.__typename === 'WallConfirmedClimb') {
               // A member relayed the current climb to a physical wall — light the
-              // session lightbulb for everyone and replay the local wall-confirm
-              // bus (drives the BLE provider's dedup + confirmation animations).
+              // session lightbulb for everyone and replay it on the local
+              // wall-confirm bus as a relay. It may be a crewmate's confirm or
+              // this phone's own echo, so it never takes this phone's arming
+              // drive live or counts toward its drive (`useDriveWallConfirms`).
               setIsSessionWallLit(true);
-              if (event.climbUuid) emitWallConfirm(event.climbUuid);
+              if (event.climbUuid) emitWallConfirm(event.climbUuid, 'relay');
               return;
             }
 

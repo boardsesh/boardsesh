@@ -87,7 +87,29 @@ end
 FakeBuild = Struct.new(:id, :app_version, :version)
 
 # What the metadata lane's editable-version check reads from Spaceship.
-FakeEditableVersion = Struct.new(:version_string, :app_version_state, :app_store_state)
+# phased_release and reset_ratings_request are what App Store Connect holds: nil
+# for `data: null`, :empty_answer for an empty answer, an exception for a failed
+# read, anything else for an existing phased release or rating reset request.
+FakeEditableVersion = Struct.new(:version_string, :app_version_state, :app_store_state, :phased_release, :reset_ratings_request) do
+  def fetch_app_store_version_phased_release
+    fake_to_one_answer(phased_release)
+  end
+
+  def fetch_reset_ratings_request
+    fake_to_one_answer(reset_ratings_request)
+  end
+
+  private
+
+  def fake_to_one_answer(held)
+    raise held if held.is_a?(Exception)
+    # Spaceship::ConnectAPI::Models.parse raises this when the answer is `data: null`.
+    raise "No data" if held.nil?
+    # An empty body or `data: []` comes back from to_models.first as nil.
+    return nil if held == :empty_answer
+    held
+  end
+end
 
 module BoardseshPlayListing
   class Error < StandardError; end
@@ -312,6 +334,115 @@ class NativeUploadLanesTest < Minitest::Test
     assert_equal 1, @dsl.app_store_uploads.length
     assert_equal true, @dsl.app_store_uploads.first.fetch(:skip_app_version_update)
     assert_equal false, @dsl.app_store_uploads.first.fetch(:submit_for_review)
+  end
+
+  # deliver's phased_release defaults to false, and false deletes the version's
+  # phased release (#7225). The listing push passes what App Store Connect holds.
+  def test_ios_metadata_keeps_an_existing_phased_release
+    summary_path = File.join(@root, "step-summary.md")
+    ENV["GITHUB_STEP_SUMMARY"] = summary_path
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, :inactive_phased_release))
+    assert_equal 1, @dsl.app_store_uploads.length
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:skip_metadata)
+    assert_equal true, @dsl.app_store_uploads.first.fetch(:phased_release)
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+    assert_includes File.read(summary_path), "Phased release: on for 2.7.0; the listing push keeps it on."
+  end
+
+  def test_ios_metadata_passes_no_phased_release_when_there_is_none
+    summary_path = File.join(@root, "step-summary.md")
+    ENV["GITHUB_STEP_SUMMARY"] = summary_path
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil))
+    # Explicit false, not a missing key: false with nothing there is a no-op in deliver.
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
+    assert_includes File.read(summary_path), "Phased release: none on 2.7.0; the listing push leaves it off."
+  end
+
+  # Spaceship returns nil, not "No data", for an empty answer. That is none too.
+  def test_ios_metadata_reads_an_empty_answer_as_none
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, :empty_answer, :empty_answer))
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+  end
+
+  # reset_ratings has the same false default, and false deletes a rating reset
+  # request the owner made for the version.
+  def test_ios_metadata_keeps_an_existing_rating_reset_request
+    summary_path = File.join(@root, "step-summary.md")
+    ENV["GITHUB_STEP_SUMMARY"] = summary_path
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, :reset_ratings_request))
+    assert_equal true, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
+    summary = File.read(summary_path)
+    assert_includes summary, "Rating reset: on for 2.7.0; the listing push keeps it on."
+    assert_includes summary, "Phased release: none on 2.7.0; the listing push leaves it off."
+
+    ENV["GITHUB_STEP_SUMMARY"] = File.join(@root, "step-summary-none.md")
+    @dsl.app_store_uploads.clear
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, nil))
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:reset_ratings)
+    assert_includes File.read(ENV.fetch("GITHUB_STEP_SUMMARY")), "Rating reset: none on 2.7.0; the listing push leaves it off."
+  end
+
+  # Reading a failed lookup as "none" would let deliver delete the setting.
+  def test_ios_metadata_stops_when_a_version_setting_cannot_be_read
+    down = RuntimeError.new("App Store Connect is down")
+    {
+      "a phased release" => FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, down, nil),
+      "a rating reset request" => FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil, down)
+    }.each do |noun, edit_version|
+      [{}, { expected_version: "2.7.0" }].each do |options|
+        error = assert_raises(RuntimeError, "#{noun} #{options.inspect}") { run_ios_metadata(edit_version, options) }
+        assert_includes error.message, "Could not read whether App Store version 2.7.0 has #{noun} (App Store Connect is down)"
+      end
+    end
+    assert_nil @dsl.app_store_uploads
+  end
+
+  # deliver only reaches its phased-release and rating-reset step when
+  # skip_metadata is false (UploadMetadata#upload returns first thing
+  # otherwise). Every App Store upload either skips metadata or passes both.
+  def test_every_app_store_upload_leaves_version_settings_alone
+    run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION")])
+    write_default_screenshot_campaign
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app-1", FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil))
+    Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call }
+    run_ios_metadata(FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil, :inactive_phased_release))
+    assert_equal 3, @dsl.app_store_uploads.length
+    @dsl.app_store_uploads.each do |upload|
+      next if upload.fetch(:skip_metadata) == true
+      [:phased_release, :reset_ratings].each do |option|
+        assert_includes [true, false], upload[option],
+          "upload_to_app_store with skip_metadata: false must pass #{option} explicitly: #{upload.keys.inspect}"
+      end
+    end
+  end
+
+  # The same rule over the Fastfile's text, so a deliver call in a lane the test
+  # above does not run is held to it too.
+  def test_every_deliver_call_in_the_fastfile_skips_metadata_or_passes_version_settings
+    source = File.read(File.expand_path("../Fastfile", __dir__))
+    calls = []
+    source.scan(/^[ \t]*(?:upload_to_app_store|deliver|appstore)\(/) do
+      start = Regexp.last_match.end(0)
+      depth = 1
+      index = start
+      while depth.positive?
+        case source[index]
+        when "(" then depth += 1
+        when ")" then depth -= 1
+        when nil then flunk("Unbalanced parentheses after a deliver call at offset #{start}")
+        end
+        index += 1
+      end
+      calls << source[start...(index - 1)]
+    end
+    assert_operator calls.length, :>=, 3, "expected the screenshots, metadata and draft deliver calls"
+    calls.each do |arguments|
+      next if arguments.match?(/^\s*skip_metadata:\s*true\s*,?\s*$/)
+      assert_match(/^\s*phased_release:/, arguments, "deliver call with metadata on must pass phased_release:\n#{arguments}")
+      assert_match(/^\s*reset_ratings:/, arguments, "deliver call with metadata on must pass reset_ratings:\n#{arguments}")
+    end
   end
 
   # Spaceship's editable-version lookup also returns a version waiting for review.

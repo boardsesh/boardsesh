@@ -129,6 +129,16 @@ describe('getStoredKnownBoardDevices', () => {
     await expect(getStoredKnownBoardDevices()).resolves.toEqual([KILTER]);
   });
 
+  it("keeps a hang-up's forget-after stamp and drops an entry whose stamp is not a number", async () => {
+    const stampedKilter = { ...KILTER, forgetAfter: 1_800_000_000_000 };
+    mockPreferences.stored = [
+      stampedKilter,
+      { ...MOONBOARD, forgetAfter: '2026-11-02' },
+      { ...TENSION, forgetAfter: Number.NaN },
+    ];
+    await expect(getStoredKnownBoardDevices()).resolves.toEqual([stampedKilter]);
+  });
+
   it('keeps the first (newest) entry for a board stored twice', async () => {
     const olderKilter = { configKey: KILTER.configKey, serial: 'K-old' };
     mockPreferences.stored = [KILTER, MOONBOARD, olderKilter];

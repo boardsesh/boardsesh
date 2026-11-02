@@ -502,6 +502,8 @@
       "emptyQueue": "Votre file est vide",
       "toggleHistory": "Afficher l'historique",
       "editQueue": "Modifier la file",
+      "moreActions": "Plus d'actions sur la file",
+      "clearQueue": "Vider la file",
       "doneEditing": "Terminé",
       "cleared": "File vidée",
       "removed_one": "{{count}} bloc retiré",

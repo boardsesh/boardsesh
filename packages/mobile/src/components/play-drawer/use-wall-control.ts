@@ -318,8 +318,9 @@ export function useWallControl({
       case 'disconnect':
         // Letting go of the board is the one tap that ends something, so it
         // buzzes like a warning; a screen reader hears it once the link drops.
-        // It forgets the board on purpose, as the board sheet's Disconnect
-        // does: it frees the board for the next climber.
+        // It frees the board for the next climber, as the board sheet's
+        // Disconnect does, and keeps it remembered for 10 minutes so a slip
+        // reconnects with one more tap.
         guardedTapAtRef.current = Date.now();
         announceDropRef.current = true;
         hapticWarning();

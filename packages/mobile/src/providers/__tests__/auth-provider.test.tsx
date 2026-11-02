@@ -173,6 +173,7 @@ beforeEach(() => {
   clearSessionCommentDraftMock.mockResolvedValue(undefined);
   clearWorkoutRunMock.mockReset();
   clearWorkoutRunMock.mockResolvedValue(undefined);
+  forgetRememberedBoardsOnSignOutMock.mockClear();
 });
 
 afterEach(() => {
@@ -281,6 +282,13 @@ vi.mock('../../lib/session-comment-draft-store', () => ({
 const clearWorkoutRunMock = vi.fn();
 vi.mock('../../lib/workout-run-store', () => ({
   clearWorkoutRun: (...args: unknown[]) => clearWorkoutRunMock(...args),
+}));
+
+// The boards this phone remembers for Bluetooth reconnects (a hang-up keeps
+// one for 10 minutes): a sign-out forgets them, a signed-out cold start doesn't.
+const forgetRememberedBoardsOnSignOutMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../lib/ble/remembered-boards-sign-out', () => ({
+  forgetRememberedBoardsOnSignOut: forgetRememberedBoardsOnSignOutMock,
 }));
 
 vi.mock('../../lib/user-storage-owner', () => ({
@@ -569,6 +577,8 @@ describe('AuthProvider.signOut', () => {
     expect(clearSessionCommentDraftMock).not.toHaveBeenCalled();
     // The workout stage map is new (#5379), so it is cleared on every platform.
     expect(clearWorkoutRunMock).toHaveBeenCalledTimes(1);
+    // The next account's first bulb tap opens the board list, not this one's box.
+    expect(forgetRememberedBoardsOnSignOutMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
     // Offline mode gates the backend, so a phone left signed out with the switch
@@ -2739,6 +2749,8 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+    // An anonymous climber's remembered board survives a relaunch (#3609).
+    expect(forgetRememberedBoardsOnSignOutMock).not.toHaveBeenCalled();
   });
 
   // The identity split. A signed-out cold start used to reset analytics, and it

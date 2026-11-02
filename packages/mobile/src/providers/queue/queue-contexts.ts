@@ -19,6 +19,12 @@ import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
 
+/**
+ * Which queue-sheet control cleared the queue — attribution for
+ * `SHARED_EVENTS.QueueCleared`: the edit mode's Clear, or the header's ⋯ menu.
+ */
+export type QueueClearSource = 'edit' | 'menu';
+
 export type WidgetNavigationOptions = { sendMutation?: boolean };
 
 /** A Next the climber did not press: the rest timer moving the wall on its own. */
@@ -113,7 +119,8 @@ type QueueContextValue = {
   restoreQueueItems: (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => void;
   /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
-  clearQueue: () => void;
+  /** `source` is analytics attribution only — the edit mode's Clear vs the header's ⋯ menu. */
+  clearQueue: (options?: { source?: QueueClearSource }) => void;
   /**
    * Replace the entire queue (optimistic local UPDATE_QUEUE + best-effort party
    * sync). `historyCount` is the History / Up next line while nothing is current
@@ -328,6 +335,20 @@ export const QueueSessionBoardPathContext = createContext<string>('');
 
 export function useSessionBoardPath(): string {
   return useContext(QueueSessionBoardPathContext);
+}
+
+/**
+ * Whether the cold-start queue restore has landed for this viewer: the saved
+ * solo queue came back, or there was nothing to bring back. A bare boolean
+ * that flips once per launch (and again after a sign-in or sign-out), in the
+ * same render as the restored climb, so a reader can tell the restore's change
+ * of current from the climber's own. Read by `LastPickWatcher`. False outside
+ * the provider, where no current change is the restore's.
+ */
+export const QueueRestoredContext = createContext<boolean>(false);
+
+export function useQueueRestored(): boolean {
+  return useContext(QueueRestoredContext);
 }
 
 /**

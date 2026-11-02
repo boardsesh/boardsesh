@@ -73,6 +73,10 @@ type UseQueuePersistenceParams = {
  * Hydration completion is reactive and scoped to the viewer and the sign-in
  * generation, so a pending save resumes after a sign-in or sign-out without
  * overwriting another owner.
+ *
+ * Returns `restored`: the cold-start restore has landed for this scope (the
+ * provider's `QueueRestoredContext`). It turns true in the same render as a
+ * restored climb, and stays false in screenshot mode, where nothing restores.
  */
 export function useQueuePersistence({
   authenticatedUserId,
@@ -91,7 +95,7 @@ export function useQueuePersistence({
   playlistSuggestionSource,
   setPlaylistSuggestionSourceState,
   activeBoardSettled,
-}: UseQueuePersistenceParams): void {
+}: UseQueuePersistenceParams): { restored: boolean } {
   const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
   useEffect(() => {
     if (identityReady) return;
@@ -189,6 +193,11 @@ export function useQueuePersistence({
       // before the async load resolved; never clobber newer state.
       if (sessionIdRef.current !== null) return;
       if (stateRef.current.queue.length > 0 || stateRef.current.currentClimbQueueItem) return;
+      // Marked done in the same tick as the restore's dispatch, so the render
+      // that lands the restored climb is the render that says `restored`; the
+      // `finally` below then changes nothing. LastPickWatcher reads the two
+      // together to tell this change of current from the climber's own.
+      setHydratedScope(hydrationScope);
       restoreQueueSnapshot(snapshot);
     };
     void getStoredSessionId()
@@ -234,6 +243,12 @@ export function useQueuePersistence({
             await hydrateLocalSnapshot();
             return;
           }
+          // `restored` turns true in the `finally` below, before the session's
+          // queue arrives from the server (the rejoin's FullSync). So a last
+          // pick made while launching into an open crew session is cleared
+          // when that queue lands: LastPickWatcher can't tell it from a
+          // crewmate's newer put-up, which must end the pick. Same for the
+          // offline rejoin below.
           setSessionId(storedId);
         } catch (err) {
           if (!isCurrent()) return;
@@ -316,6 +331,8 @@ export function useQueuePersistence({
     hydrationScope,
     hydratedScope,
   ]);
+
+  return { restored: hydratedScope === hydrationScope };
 }
 
 let queueSnapshotRestoreReported = false;

@@ -125,6 +125,7 @@ import {
   QueueSessionControlContext,
   QueueSessionIdContext,
   QueueSessionBoardPathContext,
+  QueueRestoredContext,
   QueueLiveStatsContext,
   QueueSharedSessionContext,
   QueueActiveClimbContext,
@@ -143,6 +144,7 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
   type QueueReorderSource,
+  type QueueClearSource,
   type WidgetNavigationOptions,
   type NextClimbCaller,
 } from './queue/queue-contexts';
@@ -175,9 +177,10 @@ export {
   useHasActiveClimb,
   useQueueData,
   useQueueActions,
+  useQueueRestored,
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
-export type { StartSessionConfig, QueueReorderSource } from './queue/queue-contexts';
+export type { StartSessionConfig, QueueReorderSource, QueueClearSource } from './queue/queue-contexts';
 
 /**
  * The board identity the compatibility helpers need, or undefined when we can't
@@ -1334,7 +1337,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
-  useQueuePersistence({
+  // `queueRestored` is the restore landing, for QueueRestoredContext.
+  const { restored: queueRestored } = useQueuePersistence({
     authenticatedUserId,
     identityReady: !isAuthenticated || !!authenticatedUserId,
     credentialGeneration,
@@ -2156,20 +2160,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
   );
 
-  const clearQueue = useCallback(() => {
-    const itemsToRemove = stateRef.current.queue;
-    // Clear is a new queue intent. Cancel this provider's unsent appends, then
-    // enqueue the removals behind any already-active send so the server observes
-    // the same order as the climber's intent.
-    invalidateQueuedQueueMutations();
-    const origin = captureQueueMutationOrigin();
-    // A whole-queue clear supersedes any deferred current re-broadcast (#3868).
-    pendingUnsyncedCurrentRef.current = null;
-    dispatch({ type: 'CLEAR_QUEUE' });
-    track(SHARED_EVENTS.QueueCleared, { layoutId: activeBoardRef.current?.layoutId, totalCount: itemsToRemove.length });
-    setPlaylistSuggestionSourceState(null);
-    sendRemovalsOnLane(itemsToRemove, origin);
-  }, [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane]);
+  const clearQueue = useCallback(
+    (options?: { source?: QueueClearSource }) => {
+      const itemsToRemove = stateRef.current.queue;
+      // Clear is a new queue intent. Cancel this provider's unsent appends, then
+      // enqueue the removals behind any already-active send so the server observes
+      // the same order as the climber's intent.
+      invalidateQueuedQueueMutations();
+      const origin = captureQueueMutationOrigin();
+      // A whole-queue clear supersedes any deferred current re-broadcast (#3868).
+      pendingUnsyncedCurrentRef.current = null;
+      dispatch({ type: 'CLEAR_QUEUE' });
+      track(SHARED_EVENTS.QueueCleared, {
+        layoutId: activeBoardRef.current?.layoutId,
+        totalCount: itemsToRemove.length,
+        source: options?.source ?? 'edit',
+      });
+      setPlaylistSuggestionSourceState(null);
+      sendRemovalsOnLane(itemsToRemove, origin);
+    },
+    [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane],
+  );
 
   // Remove several climbs at once (the queue sheet's edit-mode bulk remove).
   // Unlike N calls to `removeFromQueue`, the wire sends ride the serialized
@@ -3801,7 +3812,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
                   <QueueActiveClimbContext.Provider value={activeClimbValue}>
                     <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
                       <QueueDataContext.Provider value={queueDataValue}>
-                        <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                        <QueueContext.Provider value={contextValue}>
+                          <QueueRestoredContext.Provider value={queueRestored}>
+                            {children}
+                          </QueueRestoredContext.Provider>
+                        </QueueContext.Provider>
                       </QueueDataContext.Provider>
                     </QueueHasActiveClimbContext.Provider>
                   </QueueActiveClimbContext.Provider>

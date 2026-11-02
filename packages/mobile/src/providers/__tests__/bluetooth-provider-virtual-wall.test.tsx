@@ -361,7 +361,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     await settle();
 
     // The whole confirm fan-out fires — the same three things a BLE write does.
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
     expect(presence.reportClimbForBoard).toHaveBeenCalledWith(

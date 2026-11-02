@@ -3,9 +3,10 @@
 // current when THAT changed after it, whichever happened last; a pick from
 // another account never shows.
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import {
+  carryLastPickOverRestore,
   clearLastPick,
   getLastPick,
   lastPickClimb,
@@ -14,6 +15,7 @@ import {
   resolveBarPick,
   setLastPick,
   setLastPickMirrored,
+  subscribeToLastPick,
   useHasLastPick,
   useLastPick,
   type LastPickInput,
@@ -139,6 +141,38 @@ describe('resolveBarPick: the pick or the queue’s current, whichever happened 
     setLastPick(input());
     const stored = getLastPick();
     expect(resolveBarPick(stored, 'queue-current', getCredentialGeneration() + 1)).toBeNull();
+  });
+});
+
+// Plan item 5: the cold-start restore landing is not a change after the pick.
+describe('carryLastPickOverRestore', () => {
+  it('carries a pick made on the still-empty queue over to the restored current', () => {
+    setLastPick(input({ currentAtPick: null }));
+    const notified = vi.fn();
+    subscribeToLastPick(notified);
+    carryLastPickOverRestore(null, 'queue-restored');
+    expect(getLastPick()?.currentAtPick).toBe('queue-restored');
+    expect(resolveBarPick(getLastPick(), 'queue-restored')).not.toBeNull();
+    expect(notified).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a pick made under another current alone', () => {
+    setLastPick(input({ currentAtPick: 'queue-other' }));
+    const before = getLastPick();
+    carryLastPickOverRestore(null, 'queue-restored');
+    expect(getLastPick()).toBe(before);
+  });
+
+  it('changes nothing when the restore lands the same current, or with no pick', () => {
+    carryLastPickOverRestore(null, 'queue-restored');
+    expect(getLastPick()).toBeNull();
+    setLastPick(input({ currentAtPick: null }));
+    const before = getLastPick();
+    const notified = vi.fn();
+    subscribeToLastPick(notified);
+    carryLastPickOverRestore(null, null);
+    expect(getLastPick()).toBe(before);
+    expect(notified).not.toHaveBeenCalled();
   });
 });
 

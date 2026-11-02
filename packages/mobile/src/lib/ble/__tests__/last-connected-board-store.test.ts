@@ -64,6 +64,17 @@ describe('last-connected-board-store', () => {
     await expect(getStoredLastConnectedBoard()).resolves.toBeNull();
   });
 
+  it("round-trips a hang-up's forget-after stamp and rejects one that is not a number", async () => {
+    const { getStoredLastConnectedBoard, setStoredLastConnectedBoard } = await import('../last-connected-board-store');
+    const stamped = { ...board, forgetAfter: 1_800_000_000_000 };
+    await setStoredLastConnectedBoard(stamped);
+    await expect(getStoredLastConnectedBoard()).resolves.toEqual(stamped);
+
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await asyncStorage.setItem('boardsesh_last_connected_board_v1', JSON.stringify({ ...board, forgetAfter: 'soon' }));
+    await expect(getStoredLastConnectedBoard()).resolves.toBeNull();
+  });
+
   it('rejects a stored payload with both a serial and a device id set', async () => {
     // The two handles are mutually exclusive by board generation — the writer
     // never sets both. A record with both is an unvalidated/foreign write, so

@@ -502,6 +502,8 @@
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
       "editQueue": "Editar cola",
+      "moreActions": "Más acciones de la cola",
+      "clearQueue": "Vaciar cola",
       "doneEditing": "Listo",
       "cleared": "Cola vaciada",
       "removed_one": "{{count}} bloque quitado",

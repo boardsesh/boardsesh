@@ -49,12 +49,12 @@ import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type Dri
 export const CREW_PUT_UP_DISCONNECT_WAIT_MS = 5_000;
 
 /**
- * Resolves at the next wall confirm of a climb `matches` accepts, or after
- * `timeoutMs`. The confirm bus also replays the session's confirms (any
- * member's relay, or a late echo of this phone's own earlier one), so a wait
- * for one climb names it: another climb's confirm never ends it early. A write
- * of it still in flight on this link is waited for after that
- * (`use-driving-ended-disconnect.ts`).
+ * Resolves at the next wall confirm of a climb `matches` accepts, from this
+ * phone's link or a relay, or after `timeoutMs`. The confirm bus also replays
+ * the session's confirms (any member's relay, or a late echo of this phone's
+ * own earlier one), so a wait for one climb names it: another climb's confirm
+ * never ends it early. A write of it still in flight on this link is waited
+ * for after that (`use-driving-ended-disconnect.ts`).
  */
 export function waitForWallConfirm(timeoutMs: number, matches: (climbUuid: string) => boolean): Promise<void> {
   return new Promise((resolve) => {
@@ -137,16 +137,23 @@ export function useDriveCrewPutUp(drivePhase: DriveModePhase | null, beforeCrewM
 }
 
 /**
- * Drive the arming → live step and count the climbs a drive lights, from the
- * wall-confirm bus (`@boardsesh/play-view`): this phone's auto-sender confirms
- * each climb its link actually lit (`handleWallConfirmed` in the Bluetooth
- * provider), and the crew feed replays the same confirm, never a new climb.
+ * Drive the arming → live step and count the climbs a drive lights, from this
+ * phone's own confirms on the wall-confirm bus (`@boardsesh/play-view`): its
+ * auto-sender confirms each climb its link actually lit (`handleWallConfirmed`
+ * in the Bluetooth provider, origin `'self'`).
  *
- * - Arming goes live, with a success buzz, at the first confirm while this
- *   phone holds the link: the swipe's climb is lit. Here at the app root, so
+ * A relay (the session feed's `WallConfirmedClimb`) is ignored. It is a
+ * crewmate's confirm, or an echo of one this phone already counted, so it
+ * never proves this phone's link lit the swipe's climb: a crewmate lighting
+ * their own wall must not take this phone's arming drive live, start its
+ * clock, or renew it. A relay also never marks a climb counted, so this
+ * phone's own confirm of the same climb still counts.
+ *
+ * - Arming goes live, with a success buzz, at this phone's first own confirm
+ *   while it holds the link: the swipe's climb is lit. Here at the app root, so
  *   closing the player mid-connect still goes live.
- * - Each confirm of a climb other than the last one counted is one more climb
- *   lit (a re-send or an echo of the same climb is not), the swipe's own first.
+ * - Each own confirm of a climb other than the last one counted is one more
+ *   climb lit (a re-send of the same climb is not), the swipe's own first.
  */
 export function useDriveWallConfirms(linked: boolean): void {
   const linkedRef = useRef(linked);
@@ -156,7 +163,8 @@ export function useDriveWallConfirms(linked: boolean): void {
 
   useEffect(
     () =>
-      subscribeToWallConfirm((climbUuid) => {
+      subscribeToWallConfirm((climbUuid, origin) => {
+        if (origin !== 'self') return;
         const drive = getDriveMode();
         if (!drive || !linkedRef.current) return;
         if (drive.phase === 'arming') {

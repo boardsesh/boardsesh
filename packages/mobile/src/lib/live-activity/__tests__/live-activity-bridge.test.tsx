@@ -67,6 +67,7 @@ const bt = vi.hoisted(() => ({
   reassertWall: vi.fn(),
   reconnectSerialForCurrentBoard: 'serial-123' as string | null,
   reconnectDeviceIdForCurrentBoard: null as string | null,
+  nativeBoardForgets: 0,
 }));
 
 const boardState = vi.hoisted(() => ({
@@ -224,6 +225,7 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     bt.reconnectSerialForCurrentBoard = 'serial-123';
     bt.reconnectDeviceIdForCurrentBoard = null;
     bt.loading = false;
+    bt.nativeBoardForgets = 0;
     bleProbe.nativeBleSupportsBoard.mockReturnValue(true);
     renderSettings.mode = 'aura';
   });
@@ -372,6 +374,19 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     expect(widget.useLiveActivity).toHaveBeenLastCalledWith(
       expect.objectContaining({ bulbOpensApp: false, boardConnecting: false }),
     );
+  });
+
+  // The iOS card reads native's pairing only when it redraws: each native
+  // forget of the board the app kept must reach useLiveActivity as a change.
+  it('hands iOS the count of native forgets so the card redraws, and Android none', () => {
+    platform.android = false;
+    bt.nativeBoardForgets = 2;
+    renderBridge();
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(expect.objectContaining({ nativePairingRevision: 2 }));
+
+    platform.android = true;
+    renderBridge();
+    expect(widget.useLiveActivity).toHaveBeenLastCalledWith(expect.objectContaining({ nativePairingRevision: 0 }));
   });
 
   it('navigates to the absolute index the widget reports (not a relative step)', () => {

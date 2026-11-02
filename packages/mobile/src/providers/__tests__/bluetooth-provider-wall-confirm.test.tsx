@@ -485,7 +485,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
     });
 
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
@@ -569,7 +569,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
       onTestFinished(() => performanceNow.mockRestore());
       const { rerender } = renderProvider();
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self'));
 
       let finishWrite: (succeeded: boolean) => void = () => {};
       bluetooth.state.sendFramesToBoard.mockImplementationOnce(
@@ -617,7 +617,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
 
     it('reports nothing for a write this phone started itself', async () => {
       const { rerender } = renderProvider();
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self'));
 
       // A receipt for a different item is not this write's relay.
       noteRelayReceipt({
@@ -627,7 +627,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
       queue.currentClimbQueueItem = makeQueueItem('climb-2');
       rerenderKilter(rerender);
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2', 'self'));
 
       expect(relayTimedEvents()).toHaveLength(0);
     });
@@ -640,7 +640,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
       onTestFinished(() => performanceNow.mockRestore());
       const { rerender } = renderProvider(createElement(BluetoothProbe));
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self'));
 
       clock.now = 100;
       noteRelayReceipt({
@@ -673,14 +673,14 @@ describe('BluetoothProvider wall-confirm integration', () => {
       act(() => {
         capturedBluetooth?.reassertWall();
       });
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2', 'self'));
 
       expect(relayTimedEvents()).toHaveLength(0);
     });
 
     it('reports nothing when the relayed write fails', async () => {
       const { rerender } = renderProvider();
-      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self'));
 
       bluetooth.state.sendFramesToBoard.mockResolvedValueOnce(false);
       noteRelayReceipt({
@@ -1337,7 +1337,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     renderProvider();
 
     await waitFor(() => {
-      expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+      expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     });
 
     expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
@@ -1396,7 +1396,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     renderProvider();
 
     await waitFor(() => {
-      expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+      expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     });
 
     expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
@@ -1419,7 +1419,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect.objectContaining({ sendSource: 'auto' }),
       );
     });
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
@@ -1479,7 +1479,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect.objectContaining({ sendSource: 'auto' }),
       );
     });
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
@@ -2789,7 +2789,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       await waitFor(() => {
-        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
       });
       expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
 
@@ -2841,7 +2841,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
         }),
       );
       await waitFor(() => {
-        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
       });
 
       await act(async () => {
@@ -2897,7 +2897,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
         }),
       );
       await waitFor(() => {
-        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
       });
       expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
 
@@ -2960,7 +2960,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       await waitFor(() => {
-        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
       });
       expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
 
@@ -3000,7 +3000,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
 
       await waitFor(() => {
-        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+        expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
       });
       expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
 

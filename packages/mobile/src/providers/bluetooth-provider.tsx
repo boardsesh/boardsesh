@@ -185,6 +185,14 @@ type BluetoothContextValue = {
    * board instead of opening the picker.
    */
   reconnectDeviceIdForCurrentBoard: string | null;
+  /**
+   * iOS: how many times native has forgotten the board it kept for the Live
+   * Activity bulb (a hang-up's 10 minutes ran out, the route moved to another
+   * board, or a sign-out). The card reads that pairing only when it redraws, so
+   * the Live Activity bridge pushes one update each time this changes. Always 0
+   * on Android.
+   */
+  nativeBoardForgets: number;
   /** The board type this provider is scoped to (route-derived), so BLE-controls
    * UI can gate MoonBoard-only affordances. Undefined off a board route. */
   boardName: string | undefined;
@@ -1320,7 +1328,8 @@ export function BluetoothProvider({
 
   const handleWallConfirmed = useCallback(
     (item: ClimbQueueItem, mirrored: boolean) => {
-      emitWallConfirm(item.climb.uuid);
+      // This phone's own link lit it: the only confirm that can take an arming drive live.
+      emitWallConfirm(item.climb.uuid, 'self');
       if (sessionIdRef.current) {
         void confirmClimbOnWall(item.climb.uuid);
       }
@@ -1539,6 +1548,7 @@ export function BluetoothProvider({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     hasRememberedDeviceForConfigKey,
+    nativeBoardForgets,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   } = useBoardBluetooth({
@@ -2688,9 +2698,10 @@ export function BluetoothProvider({
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
   // generation synchronously before awaiting the native adapter teardown.
-  // Disconnect Bluetooth when driving ends reuses the same release path but
-  // keeps the remembered board handle (the hook only forgets the board on a
-  // 'user' reason), so the next Put on board reconnects silently.
+  // Both reasons keep the remembered board handle: a 'user' hang-up for 10
+  // minutes (at once forgotten after a wrong-box connect), Disconnect
+  // Bluetooth when driving ends with no limit, so the next tap or Put on
+  // board reconnects silently.
   const wrappedDisconnect = useCallback(
     async (reason: BluetoothDisconnectReason = 'user') => {
       const disconnectInFlight = disconnectInFlightRef.current;
@@ -2752,6 +2763,7 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      nativeBoardForgets,
       boardName,
       layoutId,
       sizeId,
@@ -2783,6 +2795,7 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      nativeBoardForgets,
       boardName,
       layoutId,
       sizeId,
