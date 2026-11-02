@@ -237,7 +237,17 @@ diagnostic) applies on native. The whole surface lives in three files:
   no new account is enrolled, and every enrolled one stops seeing the Climbs
   card and the first-connect confirmation. (The play view's "Light it on the
   board" pill went in #7000: the player's wall button (Put on board) does that job
-  in both arms.) The test deliberately assigns arms WITHOUT a PostHog flag: a
+  in both arms.) The confirmation ("Connected to {{board}}") shows at every
+  enrolled account's first connect on the phone, in both arms, whatever **Light
+  the board when I tap a climb** says. Until 2.7 it showed only with that switch
+  on, and 2.7 turns it off by default, so it would have reached almost nobody.
+  Its body now says what lights from there, read the way Put on board reads it
+  (`firstConnectConfirmationCopy`): every tap (the switch on), the keep-lighting
+  window ("For 45 seconds after Put on board…"), until the climber stops it (a
+  MoonBoard's default), or the one climb Put on board lights (keep-lighting Off,
+  a crew with In a session too off, or `wall-swipe-to-drive` off). The Climbs
+  card's body follows the switch too. While the confirmation is about to show or
+  up, the player's one-shot preview-first card waits. The test deliberately assigns arms WITHOUT a PostHog flag: a
   first launch has no cached flags, so a flag-driven arm could change under a
   climber the moment it resolved. The arm is
   `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
