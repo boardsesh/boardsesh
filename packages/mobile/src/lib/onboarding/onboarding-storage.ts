@@ -128,3 +128,8 @@ export async function hasSeenTip(key: string): Promise<boolean> {
 export async function markTipSeen(key: string): Promise<void> {
   await secureStorePreferences.set(key, true);
 }
+
+/** Forget that a one-shot tip was shown, so it can fire again (Replay walkthrough). */
+export async function clearTipSeen(key: string): Promise<void> {
+  await secureStorePreferences.remove(key);
+}

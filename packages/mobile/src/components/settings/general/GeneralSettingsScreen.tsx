@@ -20,6 +20,7 @@ import { hapticLight, hapticSelection } from '../../../lib/haptics';
 import { reportError } from '../../../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../../../lib/offline-engine';
 import { replayOnboarding } from '../../../lib/onboarding/onboarding-storage';
+import { forgetPreviewFirstTip } from '../../../lib/onboarding/preview-first-tip';
 import { replayBoardLookStep } from '../../../lib/board-render/replay-board-look-step';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useOutboxSummary } from '../../../offline/outbox-store';
@@ -93,6 +94,10 @@ export function GeneralSettingsScreen() {
     // If the SecureStore clear rejects (keychain locked or unavailable),
     // replayOnboarding never navigates, so surface an error toast instead of the
     // row silently doing nothing. Log and report so a recurring failure shows.
+    // The player's preview-first card (2.7) comes back with the tour: it is the
+    // only in-app explanation of previews and the frost once the What's New
+    // spotlight retires. Best effort: it never holds up or fails the replay.
+    void forgetPreviewFirstTip().catch(() => undefined);
     replayOnboarding(() => router.push('/onboarding')).catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.warn('[onboarding] Failed to replay walkthrough', error);

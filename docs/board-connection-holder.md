@@ -39,7 +39,7 @@ Board presence is **auth-optional** so anonymous web/mobile users are first-clas
 
 The clean release path is the client calling `reportBoardDisconnect` on BLE drop (BLE survives a WS blip). As a backstop for a crashed holder, the WebSocket `onDisconnect` hook (`packages/backend/src/websocket/setup.ts`) calls `roomManager.clearBoardWriterForConnection`, which frees the wall via the emitter-keyed compare-and-delete. It runs at the single WS-close chokepoint (covering both solo `removeClient` and party `disconnectClient` holders) and is recorded per connection by `roomManager.noteBoardWriter` (called from `reportBoardClimb`).
 
-There is no idle timer any more. Bluetooth auto-disconnect (a timeout since 2.6) was replaced in 2.7 by **Disconnect Bluetooth when driving ends** (`disconnectWhenDrivingEnds`, default off). When it is on and a drive ends because the climber or the timer ended it (`stopped`, `window_ended`, Turn off all lights, or a crewmate's put-up taking the board; never a `window_ended` that Settings › Board caused, `keepLink`), the phone lets go of the link with trigger `driving_ended`, once any write in flight on the link has landed (5 s at most) and reports `reportBoardDisconnect`, so the holder frees at once. It keeps the board remembered, so the next Put on board reconnects silently. Link drops, failed connects, session or board changes and sign-out already release the hold and never use this path.
+There is no idle timer any more. Bluetooth auto-disconnect (a timeout since 2.6) was replaced in 2.7 by **Disconnect Bluetooth when driving ends** (`disconnectWhenDrivingEnds`, default off). When it is on and a drive ends because the climber or the timer ended it (`stopped`, `window_ended`, Turn off all lights, or a crewmate's put-up taking the board; never a `window_ended` that Settings › Board caused, `keepLink`), the phone lets go of the link with trigger `driving_ended`, once any write in flight on the link has landed (5 s at most) and reports `reportBoardDisconnect`, so the holder frees at once. It keeps the board remembered, so the next Put on board reconnects silently. Link drops, failed connects, session or board changes and sign-out already release the hold and never use this path. Climbers who had auto-disconnect on were migrated once (`settings/migrations.ts`): the switch turns on and their old timeout becomes Stop driving after; see `docs/climb-view-options.md`.
 
 ## Clients
 
@@ -106,12 +106,17 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 
 ## Driving the wall (#7113)
 
-A swipe on the player's wall button (or its "Light every climb" action, or the board sheet's row) makes this phone
-the one that lights every climb: it connects if needed, lights the climb on screen, and from then on every change
-of climb lights the wall, in a crew too. It changes nothing on the server: the phone holds the board through its
-link like any holder, and each climb it lights is an ordinary `reportBoardClimb`. The drive lives on the phone
-(`drive-mode-store.ts`, in memory) and ends when this phone's link drops, the session or the board changes, or the
-climber signs out or presses the frosted button. A crewmate's board offers no swipe, by design (and a drive the runner can't
+Put on board, a swipe on the player's wall button, its "Light every climb" action or the board sheet's row makes
+this phone drive the wall: it connects if needed, lights the climb on screen, and from then on every change of
+climb lights the wall. Since 2.7 Put on board's drive is timed by Stop driving after (45 s after the last lit climb
+by default; a MoonBoard drives until stopped; in a crew only with In a session too, on by default, except on a
+MoonBoard). A swipe or Light every climb drives with no end, in a crew too. It changes nothing on the server: the
+phone holds the board through its link like any holder, and each climb it lights is an ordinary
+`reportBoardClimb`. The drive lives on the phone (`drive-mode-store.ts`, in memory). It ends when the climber
+presses the frosted button or Turn off all lights, a timed drive's time runs out, a crewmate's put-up ends a timed
+drive, Settings › Board turns the choice to Right away (or In a session too off as a crew forms), this phone's link
+drops, the connect fails or arming times out, the session or the board changes, or the climber signs out
+(`DriveModeExitReason` in `drive-mode-store.ts`). A crewmate's board offers no swipe, by design (and a drive the runner can't
 start answers `held_by_crew`): their phone holds it, and Put on board relays the climb to that phone. See `docs/climb-view-options.md`, "Swipe to drive".
 
 ## Known limitations

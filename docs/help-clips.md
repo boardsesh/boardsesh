@@ -73,19 +73,32 @@ You are driving the wall, swiping the **board** to another climb, and tapping
 with a plain background: the link stays up. Put on board and non-driving
 Disconnect board stay plain. During the gesture the button shows flat amber
 progress; bokeh appears only when driving is confirmed. Review the release
-label, frosting and climb change together.
+label, frosting and climb change together. Before recording, check Settings ›
+Board: Disconnect Bluetooth when driving ends off (a simulator that once had
+Auto-disconnect on was migrated to on, and the take then ends on Put on board),
+and Stop driving after at its default. On a linked board the take opens with the
+preview chrome (the arrow back chip, Preview · not on the wall), which clears
+when the swipe lights the climb.
 `screenshotDrive=1` is for a driving **still**; it starts driving before the
 gesture and would skip the lesson this clip teaches.
 
-For `preview-browsing`, stop driving first, wait out any 45 s Put on board
-window, and leave both tap and swipe lighting off in Settings → Board (the 2.7
-default). Tap a row to establish its list track, then swipe the board once.
-Show the back chip and Put on board without pressing it. A standalone preview
-(a deep link or the Home new-climb card) can have no swipe track; do not use
-one for this take.
+For `preview-browsing`, stop any drive first (tap You are driving the wall; a
+timed one shows a clock), and leave both tap and swipe lighting off in Settings →
+Board (the 2.7 default). Tap a row to establish its list track, then swipe the
+board once. Check for the arrow + face back chip, Preview · not on the wall in
+the top bar and a plain Put on board, without pressing it. Close the player and
+hold on the MiniPlayer, which keeps the previewed climb while the Climbs header
+capsule keeps the wall's. A standalone preview (a deep link or the Home
+new-climb card) can have no swipe track; do not use one for this take.
 
 The release wall-control captures use source `3c4fd3702d` on 2026-10-31, in the
 dedicated simulator `Boardsesh Release Help 20261031`, with Metro on port 8191.
+They are stale since #7170 (frost only while driving) and #7188 (wordless back
+chip, timed drive, last-look MiniPlayer); re-record pending on a build at or
+after `38eecfa2f0`. `start-playlist-queue` predates the three-way prompt, and
+`long-press-climb-actions` and `remove-from-playlist` still show the old reaction
+card with Preview and Add to queue. #7205 (`2315895fb5`) replaced that card with
+the lifted native menu, so re-record those two on a build at or after it.
 Record the source commit
 and capture date again when replacing these takes. Review the button label,
 frost, back chip and unchanged/changed wall climb against each caption before

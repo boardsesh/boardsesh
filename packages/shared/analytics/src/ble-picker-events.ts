@@ -14,7 +14,10 @@ export type BlePickerSessionInput = {
   targetFiltered: boolean;
   /** The climber tapped "Search for any board" (in the search, or on the filtered list). */
   searchedAnyBoard: boolean;
-  /** Boards the list showed when it closed: the target's own while filtered, every board found otherwise. */
+  /**
+   * Boards the list showed when it closed: while filtered, the target's own plus
+   * the unidentified ones of its type (#7202); every board found otherwise.
+   */
   listedCount: number;
   /** "Your board isn't in the list" showed: boards were found, none of them the target. */
   targetNotListedSeen: boolean;

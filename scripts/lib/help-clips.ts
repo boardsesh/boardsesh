@@ -78,6 +78,10 @@ export const HELP_CLIPS = [
   {
     name: 'long-press-climb-actions',
     source: 'long-press-climb-actions',
+    // Recorded 2026-09-20: the old reaction card, still listing Preview (removed
+    // in #7188) and Add to queue (Play next / Play last since #6772). #7205
+    // (2315895fb5) replaced it with the lifted native menu: re-record on a build
+    // at or after it.
     description: 'Press and hold a climb row until the actions sheet rises.',
   },
   {
@@ -92,6 +96,7 @@ export const HELP_CLIPS = [
   {
     name: 'remove-from-playlist',
     source: 'remove-from-playlist',
+    // Same stale card rows as long-press-climb-actions: re-record with it.
     description: 'Take a climb back out of a playlist.',
   },
   {
@@ -119,6 +124,9 @@ export const HELP_CLIPS = [
     source: 'preview-browsing',
     trim: { start: 6.5, end: 18.5 },
     poster: 8,
+    // Captured at 3c4fd3702d, before #7170 and #7188: it shows the worded back
+    // chip, a frosted Put on board at rest and a MiniPlayer that follows the
+    // wall. Re-record pending (docs/help-clips.md).
     description: 'Browse the next climb without losing the one on the wall.',
   },
   {
@@ -126,12 +134,17 @@ export const HELP_CLIPS = [
     source: 'wall-swipe-to-drive',
     trim: { start: 18.5, end: 30.5 },
     poster: 4,
+    // Captured at 3c4fd3702d, before #7170: Put on board and the stopped
+    // Disconnect board are frosted at rest. Re-record pending.
     description: 'Swipe the wall button left to drive, change climbs, then tap to stop driving.',
   },
   {
     name: 'start-playlist-queue',
     source: 'start-playlist-queue',
-    description: 'Start a playlist and watch it fill the queue.',
+    // The take cancels the three-way Start playlist? prompt, which (since 2.7)
+    // opens the tapped climb as a preview; Start playlist would load Up next and
+    // keep the wall's climb. Recorded before both changed: re-record pending.
+    description: 'Tap a playlist climb with Up next filled: the Start playlist? prompt, then Cancel opens a preview.',
   },
 ] as const satisfies readonly HelpClipEntry[];
 

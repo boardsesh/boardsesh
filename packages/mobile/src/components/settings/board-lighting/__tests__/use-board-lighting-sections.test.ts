@@ -14,6 +14,8 @@ const inView = vi.hoisted(() => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+const openExternalUrl = vi.hoisted(() => vi.fn<(url: string, source: string) => Promise<void>>());
+vi.mock('../../../../lib/open-url', () => ({ openExternalUrl }));
 vi.mock('../../../../hooks/use-active-board-is-moonboard', () => ({
   useActiveBoardIsMoonboard: () => inView.activeIsMoonboard,
 }));
@@ -73,5 +75,15 @@ describe('useBoardLightingSections: the MoonBoard keep-lighting row', () => {
     act(() => selectRow(rows, 'putOnBoardKeepsLighting').onSelect('60'));
     expect(getSetting('putOnBoardKeepsLighting')).toBe('60');
     expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe(DEFAULT_SETTINGS.moonboardPutOnBoardKeepsLighting);
+  });
+});
+
+describe('useBoardLightingSections: the driving help row', () => {
+  it('opens the www help on driving the wall', () => {
+    const row = rowsOf().find((candidate) => candidate.key === 'drivingHelp');
+    if (row?.kind !== 'nav') throw new Error('no help row');
+    row.onPress();
+    expect(openExternalUrl).toHaveBeenCalledOnce();
+    expect(openExternalUrl.mock.calls[0][0]).toMatch(/\/help\/board-and-bluetooth#driving$/);
   });
 });

@@ -88,6 +88,9 @@ function PreviewFirstSpotlightCardComponent({ style }: PreviewFirstSpotlightCard
         {t('mobile.changelog.previewFirstSpotlight.swipe')}
       </Text>
       <Text variant="subheadline" color={systemColors.label}>
+        {t('mobile.changelog.previewFirstSpotlight.back')}
+      </Text>
+      <Text variant="subheadline" color={systemColors.label}>
         {t('mobile.changelog.previewFirstSpotlight.moonboard')}
       </Text>
       <Button
