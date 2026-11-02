@@ -2250,6 +2250,180 @@ describe('PlayDrawer wall button taps', () => {
     });
   });
 
+  // #4979: a climb current for 4 h is held dark on the connect's first write.
+  // A press that connects asked for the climb, so it lights through the hold in
+  // ONE press, on every path that connects: Put on board, its keep-lighting
+  // window, and the swipe's drive. Light again is pinned above ("on the wall
+  // per presence, no link"). The provider's half (the reassert that lands with
+  // the link) is pinned in bluetooth-provider-wall-confirm.test.tsx.
+  describe('one press through the #4979 hold', () => {
+    const HELD = { queueItemUuid: 'queue-twelve', lastCurrentChangeAt: Date.parse('2026-10-20T08:00:00Z') };
+    function noLink() {
+      queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+      const bluetooth = { ...linkedBluetooth(), isConnected: false };
+      bluetoothContext.value = bluetooth;
+      lightbulbState.pressAction = 'connect';
+      return bluetooth;
+    }
+    /** The link comes up and the provider's first write meets the hold (or not). */
+    function linkUp(
+      view: ReturnType<typeof renderDrawer>,
+      bluetooth: ReturnType<typeof noLink>,
+      hold: typeof HELD | null,
+    ) {
+      act(() => {
+        bluetoothContext.value = { ...bluetooth, isConnected: true, staleCurrentHold: hold };
+        lightbulbState.localConnected = true;
+        lightbulbState.pressAction = 'disconnect';
+      });
+      view.rerender(drawerElement());
+    }
+    const flush = () =>
+      act(async () => {
+        await Promise.resolve();
+      });
+
+    it('Put on board connects, and the hold it meets is let go at once', async () => {
+      const bluetooth = noLink();
+      const view = renderDrawer();
+      expect(recorded.actionBar.at(-1)?.wallControlState).toBe('connect');
+
+      tap('onWallControl');
+      await flush();
+      expect(lightbulbState.connect).toHaveBeenCalledWith(
+        'play_drawer',
+        expect.objectContaining({ uuid: TWELVE_CLIMB.uuid }),
+      );
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+    });
+
+    it('Put on board opens its keep-lighting window and lights through the hold, still one press', async () => {
+      swipeToDrive.on = true;
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      await flush();
+      // The window arms at the press and goes live at the lit confirm.
+      expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+    });
+
+    // The picker stays open while the climber finds their board: the minute the
+    // relight waits for counts from the connect, not from the press.
+    it('lights through the hold after a picker that stayed open past a minute', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      vi.setSystemTime(Date.parse('2026-11-02T10:00:00Z'));
+      let finishConnect: (connected: boolean) => void = () => undefined;
+      lightbulbState.connect.mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finishConnect = resolve;
+          }),
+      );
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      vi.setSystemTime(Date.parse('2026-11-02T10:01:30Z'));
+      await act(async () => {
+        finishConnect(true);
+        await Promise.resolve();
+      });
+
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+    });
+
+    // iOS links before the connect's promise settles: the hold can land while
+    // the connect is still on its way, however long the picker stayed open.
+    it('lights through a hold that lands while a long connect is still settling', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      vi.setSystemTime(Date.parse('2026-11-02T10:00:00Z'));
+      lightbulbState.connect.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      vi.setSystemTime(Date.parse('2026-11-02T10:01:30Z'));
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+    });
+
+    it('lets a hold that lands more than a minute after the link stand', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      vi.setSystemTime(Date.parse('2026-11-02T10:00:00Z'));
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      await flush();
+      vi.setSystemTime(Date.parse('2026-11-02T10:01:01Z'));
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('lets the hold stand after a connect that failed, when a later link meets it', async () => {
+      lightbulbState.connect.mockImplementationOnce(async () => false);
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      await flush();
+      // Another control (the bulb) connects later: the bulb keeps the hold by design.
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('lets a hold on another climb stand', async () => {
+      const bluetooth = noLink();
+      const view = renderDrawer();
+
+      tap('onWallControl');
+      await flush();
+      linkUp(view, bluetooth, { ...HELD, queueItemUuid: 'queue-other' });
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('lets the hold stand when no press asked for the climb', () => {
+      const bluetooth = noLink();
+      const view = renderDrawer();
+      linkUp(view, bluetooth, HELD);
+      expect(bluetooth.reassertWall).not.toHaveBeenCalled();
+    });
+
+    it('the swipe’s drive connects, then re-asserts the held climb once', async () => {
+      swipeToDrive.on = true;
+      const bluetooth = noLink();
+      renderDrawer();
+      const drive = recorded.actionBar.at(-1)?.onWallControlDrive;
+      if (typeof drive !== 'function') throw new Error('no drive action');
+
+      act(() => {
+        drive('button');
+      });
+      await flush();
+
+      expect(lightbulbState.connect).toHaveBeenCalledOnce();
+      expect(bluetooth.reassertWall).toHaveBeenCalledOnce();
+      expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'action', windowMs: null });
+    });
+  });
+
   it('re-lights the #4979 held climb on a tap, with no Put on the wall beside it', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const bluetooth = linkedBluetooth({

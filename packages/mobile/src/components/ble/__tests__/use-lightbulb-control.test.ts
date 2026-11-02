@@ -29,6 +29,7 @@ type BluetoothCtx = {
   canDriveWall: boolean;
   takeVirtualWall: ReturnType<typeof vi.fn>;
   releaseVirtualWall: ReturnType<typeof vi.fn>;
+  reassertWall: ReturnType<typeof vi.fn>;
 } | null;
 
 const ctrl = vi.hoisted(() => ({
@@ -90,6 +91,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     canDriveWall: false,
     takeVirtualWall: vi.fn(),
     releaseVirtualWall: vi.fn(),
+    reassertWall: vi.fn(),
     ...over,
   };
 }
@@ -248,6 +250,18 @@ describe('useLightbulbControl press action', () => {
       boardName: 'kilter',
       reconnect: true,
     });
+  });
+
+  // #4979: a bulb connects and lets the auto-send decide. A climb current for
+  // 4 h stays dark (the hold), by design: only the wall button's press, which
+  // asked for that climb, lights through it (PlayCore's relight after connect).
+  it('connects with no reassert, so the #4979 hold keeps a stale climb dark', async () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: false, reconnectSerialForCurrentBoard: 'serial-1' });
+    const { result } = renderControl();
+    result.current.onPress();
+    await expect(result.current.connect()).resolves.toBe(true);
+    expect(ctrl.bluetooth?.connect).toHaveBeenCalled();
+    expect(ctrl.bluetooth?.reassertWall).not.toHaveBeenCalled();
   });
 
   it('reconnects a MoonBoard by its remembered device id (no serial)', () => {

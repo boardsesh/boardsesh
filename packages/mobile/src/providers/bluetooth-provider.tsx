@@ -244,6 +244,11 @@ const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
 // without a settle window a five-climb swipe would land five reports (and five
 // durable board_climb_events rows) instead of the two a BLE write produces.
 const VIRTUAL_WALL_SETTLE_MS = 600;
+// A reassert asked for with no link carries to the link that comes up this
+// soon after it: a press that connects re-asserts as its connect resolves,
+// ahead of the link's render. Longer, it was no press (a lighting setting
+// changed with no link), and the next connect keeps the #4979 hold.
+const REASSERT_CARRY_MS = 5_000;
 
 /** Resolves after `ms`, or immediately when the caller's signal aborts. */
 function settleVirtualWallWrite(
@@ -374,6 +379,7 @@ function BluetoothAutoSender({
   onStaleCurrentHeld,
   onStaleCurrentPassed,
   physicalLink,
+  takeCarriedReassert,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -435,6 +441,10 @@ function BluetoothAutoSender({
   // True when this mount writes over Bluetooth, false on a virtual hold, whose
   // "write" is a 600 ms stand-in. Fixed per mount: the mount is keyed on it.
   physicalLink: boolean;
+  // A reassert asked for while this link was still coming up (a press that
+  // connects: Light again, the swipe's drive). Taken once, at mount, by a
+  // physical link: that link owes the climb a write through the #4979 hold.
+  takeCarriedReassert: () => boolean;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -532,6 +542,16 @@ function BluetoothAutoSender({
       controller.abort();
     };
   }, []);
+
+  // Before the first drain (effects run in this order): a press that connects
+  // re-asserts the moment its connect resolves, which on Android is before the
+  // link's render commits, so this mount starts with that nonce already in its
+  // props and the bump alone would read as nothing to do. One press, lit.
+  const takeCarriedReassertRef = useRef(takeCarriedReassert);
+  takeCarriedReassertRef.current = takeCarriedReassert;
+  useEffect(() => {
+    if (physicalLink && takeCarriedReassertRef.current()) reassertPendingRef.current = true;
+  }, [physicalLink]);
 
   useEffect(() => {
     if (!currentClimbQueueItem) {
@@ -2574,10 +2594,21 @@ export function BluetoothProvider({
   // A reassert is the climber asking for the climb on the wall, so it is also
   // what releases a #4979 hold: released here, before the nonce reaches the
   // auto-sender, whose pending reassert then lets the write through.
+  //
+  // With no link up yet, the press that asked for it is connecting: the link it
+  // brings up may mount its auto-sender in the same render as this nonce, so
+  // the ask is also carried to that mount (`takeCarriedReassert`).
+  const carriedReassertAtRef = useRef<number | null>(null);
   const reassertWall = useCallback(() => {
+    if (!bleConnectedRef.current) carriedReassertAtRef.current = nowMs();
     releaseStaleCurrentHold('relight');
     setReassertNonce((nonce) => nonce + 1);
   }, [releaseStaleCurrentHold]);
+  const takeCarriedReassert = useCallback((): boolean => {
+    const askedAt = carriedReassertAtRef.current;
+    carriedReassertAtRef.current = null;
+    return askedAt !== null && nowMs() - askedAt <= REASSERT_CARRY_MS;
+  }, []);
   // The kill switch came on: nothing is held any more, and the climb the hold
   // kept dark goes on the wall now, as it would have without the hold. The
   // drain does not list the flag as a dep, so the nonce is what re-runs it.
@@ -2806,6 +2837,7 @@ export function BluetoothProvider({
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
             physicalLink={isConnected}
+            takeCarriedReassert={takeCarriedReassert}
           />
         )}
         {/* Reconciles a virtual hold with the server's single holder slot, and

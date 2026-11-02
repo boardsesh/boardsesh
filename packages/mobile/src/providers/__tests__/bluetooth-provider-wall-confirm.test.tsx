@@ -796,6 +796,71 @@ describe('BluetoothProvider wall-confirm integration', () => {
       ]);
     });
 
+    // A press that connects (Light again, the swipe's drive) re-asserts the
+    // moment its connect resolves. On Android that is before the link's render
+    // commits, so the auto-sender mounts with the bumped nonce already in its
+    // props: the press must still light the held climb, in one press.
+    it('lights the held climb when the reassert lands in the same render as the link', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      bluetooth.state.isConnected = false;
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      act(() => {
+        bluetooth.state.isConnected = true;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+        capturedBluetooth?.reassertWall();
+      });
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(heldTelemetry()).toEqual([]);
+      await settle();
+      // One write: the carried reassert is spent on this link.
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+
+      // The link drops and a plain connect (the bulb) comes straight back: no
+      // press asked again, so the hold keeps the climb dark this time.
+      act(() => {
+        bluetooth.state.isConnected = false;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+      });
+      act(() => {
+        bluetooth.state.isConnected = true;
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+      });
+      await settle();
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
+    // A reassert with no link and no connect coming (a lighting setting changed
+    // in Settings) is not a press for the next link: a later plain connect (the
+    // bulb) keeps the hold.
+    it('keeps the hold on a plain connect long after a reassert asked for with no link', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      bluetooth.state.isConnected = false;
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+      const realNow = Date.now();
+      act(() => {
+        capturedBluetooth?.reassertWall();
+      });
+      const later = vi.spyOn(Date, 'now').mockReturnValue(realNow + 60_000);
+      try {
+        act(() => {
+          bluetooth.state.isConnected = true;
+          rerenderProvider(rerender, createElement(BluetoothProbe));
+        });
+        await settle();
+      } finally {
+        later.mockRestore();
+      }
+
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
     it('releases when the current climb changes (a tap, Next or a crewmate pick)', async () => {
       queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
       const { rerender } = renderProvider(createElement(BluetoothProbe));
