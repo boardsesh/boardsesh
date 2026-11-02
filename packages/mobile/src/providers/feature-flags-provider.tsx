@@ -138,7 +138,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'shared-session-browse',
     label: 'Preview-first shared sessions',
     description:
-      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on the wall" becomes the one commit. Off = every gesture drives the wall as it always did.',
+      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on board" becomes the one commit. Off = every gesture lights the wall as it always did.',
   },
   {
     key: 'queue-now-slot',
@@ -150,7 +150,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'stale-current-hold-kill',
     label: 'Disable the stale-climb hold',
     description:
-      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
+      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the wall button reads Put on board. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
     key: 'moonboard-wide-angles',
@@ -256,7 +256,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'wall-swipe-to-drive',
     label: 'Swipe the wall button to drive',
     description:
-      'Swipe the player\'s wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action "Light every climb" appears, and the board sheet gets a Light every climb row. A POSITIVE rollout flag: unresolved or off is today\'s button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.',
+      'Swipe the player\'s wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action "Light every climb" appears, and the board sheet gets a Light every climb row. It also gates Put on board\'s timed drive (2.7): off, Put on board lights one climb and starts no drive. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.',
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 

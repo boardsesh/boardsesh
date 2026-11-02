@@ -46,7 +46,7 @@ Fixed, and why:
 | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Log                                      | The core loop. Always the centre of the big row.                            |
 | The board control                        | The one control that says whether the climb is lit, and how to get it lit. The climber picks its look (wall button or bulb), not whether it is there. |
-| Put on the wall, busy-wall question, Fell / Sent | Session states, not preferences. Put on the wall is a wall button state; the busy-wall question takes the wall button's row as a pair; Fell / Sent takes the second row while it needs it. |
+| Put on board, busy-wall question, Fell / Sent | Session states, not preferences. Put on board is a wall button state; the busy-wall question takes the wall button's row as a pair; Fell / Sent takes the second row while it needs it. |
 | Playback slider                          | Belongs to the board, so it always sits next to it.                         |
 | Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. Where you are (the list, "Projects · 4 of 23", or the workout stage, "4x4 · Rep 3 of 4 · Set 2 of 4") sits between ⌄ and the timer and costs the board nothing. A second, smaller line there is for what the wall is doing. |
 
@@ -58,9 +58,27 @@ wall button.
 
 Climbs open in preview by default, including playlist Play and queue selections. Both
 lighting switches default off and preserve stored opt-ins. Tap the board control to light
-the climb and open the keep-lighting window (45 s by default); on a MoonBoard the tap starts
-Driver mode by default, in a crew too (below). Swipe the wall button, or choose **Light every
-climb**, for open-ended Driver mode.
+the climb and start a drive (45 s after the last lit climb by default; the keep-lighting
+window in code); on a MoonBoard the tap drives until you stop by default, in a crew too
+(below). Swipe the wall button, or choose **Light every climb**, to drive with no end
+(`Driver mode` in code).
+
+**Settings › Board**, in order:
+
+1. **Board lighting** card: **Stop driving after** (Right away, 30 s, 45 s, 1, 2 or 5 min, Until
+   I stop; 45 s by default); **On a MoonBoard**, its own choice (Until I stop by default), shown
+   only when a MoonBoard is connected, active or saved; **In a session too** (on by default),
+   greyed with "Change Stop driving after from Right away to use this." while the general choice is
+   Right away. Its footer follows the general choice (`settings.json` `ble.lighting.keep.footer`,
+   `footerUntilStopped`, `footerOff`).
+2. An untitled card: **Disconnect Bluetooth when driving ends** (off by default), then **How
+   driving the wall works**, which opens `/help/board-and-bluetooth#driving` in the browser.
+3. **Light automatically** card: **Light the board when I tap a climb**, then **Light the board
+   as I swipe** (both off by default).
+4. An untitled card: **Tapping a playlist loads it into my queue** (off by default), plus the
+   MoonBoard's Light the hold above on a connected MoonBoard.
+
+(`board-lighting-model.ts`.)
 
 ### One model, several views
 
@@ -204,7 +222,9 @@ flat amber fallback; the label still says what the next press does.
   after the time runs out, a tap that would disconnect is dropped, and so is a put-up when that end let go of the
   board: a tap aimed at the frost never reconnects and starts a fresh drive. Climbers who had auto-disconnect on keep it in
   this form: a one-time migration (`settings/migrations.ts`) turns the switch on and carries their timeout into
-  Stop driving after where they never chose one.
+  Stop driving after where they never chose one. Both the general and the MoonBoard choice take the rounded-up
+  timeout (10 and 15 s become 30 s, 10 min becomes 5 min), so a migrated MoonBoard climber drives for that time
+  rather than until they stop.
 - **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark
   for 4 h in that one press: Put on board re-asserts when its connect's first write meets the hold (any hold while
   the connect is on its way, or within a minute of it linking), and Light again and the swipe's drive re-assert as
@@ -313,6 +333,29 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
   swipe is offered: the visible way in for the bulb view and for Put on board with no link, where a hold opens no
   sheet. ⋯ › Board controls opens the sheet then even with no link, showing only that row.
 
+### Teaching the change (2.7)
+
+Two one-shots explain preview-first lighting. Both retire, so Settings › Board keeps a **How driving the wall
+works** row that opens `/help/board-and-bluetooth#driving`, and Replay walkthrough (Settings › General) brings the
+player's card back (`forgetPreviewFirstTip`).
+
+- **The player's card** (`components/onboarding/PlayerPreviewTip.tsx`, `use-preview-first-tip.ts`,
+  `lib/onboarding/preview-first-tip.ts`). It docks as the first section under the board, above Logbook, never
+  over the climb. It shows the first time a signed-in climber opens a preview on a board with lights, on up to 3
+  player opens in that app run (`PREVIEW_FIRST_TIP_MAX_OPENS`), and draws the real frosted `WallControlButton`.
+  Its window line follows Stop driving after (seconds, 1 minute, N minutes, until you stop, or the MoonBoard
+  line), read through `resolveKeepLightingReach`. It retires on Got it, close, Lighting settings (which opens
+  Settings › Board on its lighting group), or a drive starting, and waits behind the first-connect card and
+  confirmation. Seen flag: `ONBOARDING_TIP_PREVIEW_FIRST_KEY`. Copy: `common` `mobile.onboarding.tips.previewFirst.*`.
+- **The What's New spotlight** (`components/onboarding/PreviewFirstSpotlightCard.tsx`,
+  `lib/preview-first-spotlight.ts`). Pinned above the What's New timeline; See how it works opens
+  `/help/board-and-bluetooth#driving` in the app's language (`buildHelpSectionUrl`). It retires on dismiss or 30
+  days after it first shows (`PREVIEW_FIRST_SPOTLIGHT_DAYS`), and lights the What's New row's New pill until it has
+  shown once. Copy: `common` `mobile.changelog.previewFirstSpotlight.*`.
+- **The MiniPlayer tip** (`AccessoryOnboardingTip`, `common` `mobile.onboarding.tips.accessory`) teaches the last
+  look. Its seen key moved to `onboarding_tip_accessory_v2_seen` in 2.7, because the tip before it taught that the
+  bar mirrors the wall.
+
 ### What we measure
 
 - `Wall Control Shown {state, climbUuid}`: `connect` once per player open, `put_on_wall` once per climb per open, only
@@ -321,7 +364,8 @@ off the button has no chevrons, no peek and no gesture, and the screen-reader ac
 - `Wall Control Tapped {state, action, control}`: every tap on any view, `control` saying which: `button` (the wall
   button, full width or in a workout's top row), `bulb`, or `mini_bar` (the MiniPlayer's bulb standing in for a
   tablet or open-Duo player's). A tap on Disconnect board logs `{state: 'lit', action: 'disconnect'}`; a tap on
-  You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`.
+  You are driving the wall logs `{state: 'lit', action: 'stop_driving'}`, or `stop_window` during Put on board's
+  timed drive, so a query on `stop_driving` alone misses most 2.7 stops.
 - `Wall Control Swiped {state, outcome, control}` (#7113): once per swipe that got going (a drag past 10 pt), with
   the state it began in. `outcome`: `drive` (let go past the commit point and a drive started), `cancelled` (let go
   short of it), `refused` (past it, but nothing could start: presence says another account holds the board). Whether the
@@ -361,7 +405,7 @@ Previous and next on       [⇄] [⏮]  [✓]  [⏭]   [☰]   /  [ 💡        
 
 Lightbulb
 Tension, Decoy, Woods      [⇄]  [♡]  [✓] [Share] [💡]   /  [40°] ······················ [☰]
-A preview                  [⇄]  [♡]  [✓] [Share] [💡]   /  [40°] [ 💡 Put on the wall ] [☰]
+A preview                  [⇄]  [♡]  [✓] [Share] [💡]   /  [40°] [ 💡 Put on board ] [☰]
 Fell / Sent                [⇄]  [♡]  [✓] [Share] [💡]   /  [ Fell              Sent ]
 Busy wall                  [⇄]  [♡]  [✓] [Share] [💡]   /  [ (S) Keep Sam's ] [ 💡 Put mine up ]
 
@@ -414,7 +458,7 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   pair, with the bulb chosen), and otherwise folds so the board gets the height back.
   The MiniPlayer then has no bulb of its own. With the bulb chosen the player has no first row at all, and the
   MiniPlayer's bulb is the player's board control (`PaneWallControlBulb`, `control: 'mini_bar'`, the same model and
-  handler), with a preview's Put on the wall in the player's second row. The signal is one rule in two halves:
+  handler), with a preview's Put on board in the player's second row. The signal is one rule in two halves:
   `playerMirroredByMiniPlayer` for the player (the native accessory is the climb's home, and the player is the
   Duo's pane or a tablet's route) and `miniPlayerPaneMode` returning `mirror` for the bar (the Duo's pane isn't
   taken by a screen, or a tablet's player route is up). The JS tablet shell's pane has no MiniPlayer beside it, and
@@ -424,7 +468,7 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
 - **What may hang below the fold (#6956).** The landscape iPad player fits the board to the screen's height only
   when its second row is plain: every item a player button or the gap (`secondaryRowCanFold`,
   `shouldFitBoardToHeight` in `play-drawer-layout.ts`). The wall button never folds (Marco's call), so with the bulb
-  chosen a preview's Put on the wall stays on screen, and so do the busy-wall question and Fell / Sent. The
+  chosen a preview's Put on board stays on screen, and so do the busy-wall question and Fell / Sent. The
   allow-list ends in a `never` switch, so a new kind of item stays on screen until someone decides otherwise. The
   Duo's pane always fits, since its inset already clears the MiniPlayer.
 - **After a tap-disconnect.** Taps are dropped for 600 ms (`DISCONNECT_TAP_GUARD_MS`): the provider marks the link
@@ -608,8 +652,8 @@ the one slot only while the pick is unlit on a board with lights, otherwise ✓ 
 sheet keep showing the wall.
 
 The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:
-iOS 26 with the Liquid Glass tab bar). On Android, the Material shell and earlier iOS the current climb rides the
-floating bar, which has no such buttons, so the tab and section are left out (a selected tab falls back to Below the
+iOS 26 with the Liquid Glass tab bar). On Android, the Material shell and earlier iOS the bar's climb (your last
+look) rides the floating bar, which has no such buttons, so the tab and section are left out (a selected tab falls back to Below the
 climb).
 
 ### What the climber gets
@@ -622,8 +666,8 @@ climb).
   - **Next / Previous**: step the list. Driving lights each supported climb change, including in a crew.
     Otherwise solo lighting follows Light on swipe; in a crew, with Light on swipe off, or after stopping
     driving, they open the player on a preview. Next at the end of a list opens the player.
-  - **Mirror**: boards that mirror (Tension, Decoy, Woods). In a crew it sets the shared orientation; solo it
-    flips what the wall lights.
+  - **Mirror**: boards that mirror (Tension, Decoy, Woods). On a pick it flips only the pick; otherwise in a
+    crew it sets the shared orientation and solo it flips what the wall lights.
   - **Favorite** and **Queue**: signed in only.
   - **Share**: not on drafts.
   - **Angle**: boards with an adjustable angle. It opens the player's angle sheet and is hidden while the player is

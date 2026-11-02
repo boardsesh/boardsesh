@@ -14,6 +14,13 @@ The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Exp
 - Widget shows current climb name, grade, angle, queue position, and board thumbnail, restyled to the Velvet Send design system (see `docs/ai-design-guidelines.md`) — `targets/BoardseshWidgets/ClimbSessionLiveActivity.swift`.
 - Widget reflects **connection ownership** (see below): the lightbulb is lit and Previous/Next are shown only while _this_ device holds the BLE link; once a peer takes the board the bulb goes out, the controls hide, and the card just shows the climb on the wall ("<name> is on the wall").
 - Next/Previous buttons navigate the queue optimistically (App Group UserDefaults) and POST the backend `/api/widget/navigate` REST endpoint (not the native WS) with the registered Live Activity bearer token. They are only shown when this device holds the board (the App Intent's `navigationAllowed` guard and the widget's `boardConnection == connectedByMe` agree). The endpoint rejects a stale token whose session ended (410) or whose user is no longer a participant (403).
+- The widget always shows the queue's current climb, which is the climb on the wall: never an in-app preview or the
+  MiniPlayer's last look, so since 2.7 the two can differ. `/api/widget/navigate` (and the watch's
+  `/api/session/navigate`) names the token's account as the mover (`currentChangedBy`, via `sessionParticipantId` in
+  `session-queue-actions.ts`), so the climber's own Lock Screen Next is read as their own step and does not end the
+  Put on board drive their phone is running; a legacy token with no account still names nobody. A Lock Screen Next or
+  Previous moves the queue, which ends the MiniPlayer's last pick (`LastPickWatcher`). A driving countdown on the Lock
+  Screen, Dynamic Island and Android notification is not on `main` yet (#7203).
 - Tapping the widget lightbulb POSTs `/api/widget/take-control` with the registered Live Activity bearer token. The endpoint requires the token row to have a bound `userId` and re-asserts (re-broadcasts `CurrentClimbChanged` for) the current climb; it returns 200.
 - All queue delta events (FullSync, ItemAdded, ItemRemoved, CurrentClimbChanged, Reordered) are processed natively and persisted to App Group
 - Message buffering when webview is backgrounded, with flush or resync on foreground

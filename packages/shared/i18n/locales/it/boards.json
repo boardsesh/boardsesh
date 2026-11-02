@@ -184,7 +184,7 @@
       "limitReached": "Hai raggiunto il numero massimo di pannelli per un account. Elimina un pannello che non usi più per aggiungerne un altro.",
       "timer": "Timer degli allenamenti",
       "timerNone": "Nessun timer abbinato",
-      "timerHint": "Abbina un timer da palestra Rogue a questo pannello. Mentre controlli il pannello, il suo cronometro riparte a ogni recupero, oppure a ogni blocco registrato quando il timer di recupero è spento.",
+      "timerHint": "Abbina un timer da palestra Rogue a questo pannello. Mentre questo telefono è connesso al pannello, il suo cronometro riparte a ogni recupero, oppure a ogni blocco registrato quando il timer di recupero è spento.",
       "timerPairCta": "Abbina un timer",
       "timerChangeCta": "Cambia timer",
       "timerRemoveCta": "Rimuovi",

@@ -190,9 +190,21 @@ diagnostic) applies on native. The whole surface lives in three files:
   `stale-current-hold-kill` is a kill switch (read through
   `useStaleCurrentHoldEnabled`, unresolved = enabled) for the #4979 hold: when
   the climb on the wall has not changed for 4 h, connecting a board keeps it
-  dark and the player offers Put on the wall with "Last on the wall …". With it
-  on, connecting lights that climb as before and the line never shows. See
-  `docs/current-climb-outside-queue.md`, section 6.
+  dark and the wall button reads Put on board. With it on, connecting lights
+  that climb as before. See `docs/current-climb-outside-queue.md`, section 6.
+  `wall-swipe-to-drive` is a POSITIVE flag (read through
+  `wallSwipeToDriveOffered`: unresolved or off means off in a store build; dev
+  builds read it as on unless it is set to off; screenshot mode ignores it). It
+  gates more than the swipe: the ‹‹ chevrons and the one-time peek, the Light
+  every climb action and sheet row, and since 2.7 Put on board's timed drive.
+  The first-connect confirmation and the player's preview-first card read it
+  too. Turned off, Put on board lights one climb and starts no drive, and
+  nothing drives the wall. Check its rollout in PostHog before reading any
+  driving metric.
+  `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
+  off) that decides whether a crew's swipes and list taps preview instead of
+  writing the shared queue and lighting the wall; off, every gesture lights the
+  wall as before 2.7. `docs/climb-lists-and-queue.md` records its rollout.
   `active-board-follow-heal-kill` is a kill switch (read through
   `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
   launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).
@@ -244,7 +256,7 @@ diagnostic) applies on native. The whole surface lives in three files:
   Its body now says what lights from there, read the way a list tap and Put on
   board read it (`firstConnectConfirmationCopy`): every tap (the switch on,
   outside a shared session, where a list tap stays a preview), Put on board's
-  timed drive (45 seconds, or whole minutes from 1 minute up), until the climber
+  timed drive (30 or 45 seconds, or whole minutes from 1 minute up), until the climber
   stops it (a MoonBoard's default), or the one climb Put on board lights (Stop
   driving after set to Right away, a crew with In a session too off,
   `wall-swipe-to-drive` off, or solo with **Light the board as I swipe** on,

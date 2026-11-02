@@ -71,7 +71,7 @@ describe('PREFERENCE_SECURE_KEYS', () => {
       'onboarding_tip_workout_seen',
       'onboarding_tip_crew_seen',
       'onboarding_tip_record_seen',
-      'onboarding_tip_accessory_seen',
+      'onboarding_tip_accessory_v2_seen',
       'onboarding_tip_quickactions_seen',
       'onboarding_tip_spray_tap_select_seen',
       'onboarding_tip_spray_maybe_seen',

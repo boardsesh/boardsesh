@@ -8,6 +8,8 @@ import {
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
   sanitiseKeepLighting,
 } from '../../../lib/keep-lighting';
+import { buildHelpSectionUrl } from '../../../lib/help-url';
+import { openExternalUrl } from '../../../lib/open-url';
 import { useOfflineBoards } from '../../../settings/offline-boards';
 import { hapticSelection } from '../../../lib/haptics';
 import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provider';
@@ -19,7 +21,8 @@ import { buildBoardLightingSections } from './board-lighting-model';
  * `Setting Changed` under the page that shows them.
  */
 export function useBoardLightingSections(): MoreSection[] {
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
+  const language = i18n?.language;
   const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession, setDrivesInSession] = useSetting('putOnBoardDrivesInSession');
@@ -109,8 +112,15 @@ export function useBoardLightingSections(): MoreSection[] {
               },
             }
           : null,
+        onOpenDrivingHelp: () => {
+          void openExternalUrl(
+            buildHelpSectionUrl('board-and-bluetooth', 'driving', language),
+            'settings-board-driving-help',
+          );
+        },
       }),
     [
+      language,
       t,
       keepLighting,
       setKeepLighting,

@@ -495,8 +495,9 @@
       },
       "drivingEnds": {
         "label": "Disconnetti il Bluetooth quando smetti di guidare",
-        "description": "Quando smetti di guidare o il tempo finisce, il tuo telefono libera il pannello così il prossimo climber può connettersi. Illumina il pannello si riconnette."
+        "description": "Quando la tua guida finisce, il telefono libera il pannello così il prossimo climber può connettersi: quando ti fermi o spegni tutte le luci, quando il tempo finisce o quando qualcuno della crew illumina un blocco. Illumina il pannello si riconnette."
       },
+      "drivingHelp": "Come funziona la guida del pannello",
       "onSwipeLabel": "Illumina il pannello mentre scorro",
       "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",
       "onTapLabel": "Illumina il pannello quando tocco un blocco",
@@ -540,7 +541,7 @@
       "wallOpenHint": "Prende la parete"
     },
     "relayToWall": "Metti il tuo blocco in parete",
-    "peerDrivingBoard": "Qualcun altro sta controllando il pannello"
+    "peerDrivingBoard": "Qualcun altro ha il pannello"
   },
   "integrations": {
     "title": "App collegate",

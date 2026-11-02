@@ -184,7 +184,7 @@
       "limitReached": "You've reached the maximum number of boards for one account. Delete a board you no longer use to add another.",
       "timer": "Workout timer",
       "timerNone": "No timer paired",
-      "timerHint": "Pair a Rogue gym timer to this board. While you're driving the wall, its stopwatch restarts with each rest, or on every logged climb when the rest timer is off.",
+      "timerHint": "Pair a Rogue gym timer to this board. While this phone is connected to the board, its stopwatch restarts with each rest, or on every logged climb when the rest timer is off.",
       "timerPairCta": "Pair a timer",
       "timerChangeCta": "Change timer",
       "timerRemoveCta": "Remove",

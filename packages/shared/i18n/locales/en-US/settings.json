@@ -495,8 +495,9 @@
       },
       "drivingEnds": {
         "label": "Disconnect Bluetooth when driving ends",
-        "description": "When you stop driving or the time runs out, your phone lets go of the board so the next climber can connect. Put on board reconnects."
+        "description": "When your drive ends, your phone lets go of the board so the next climber can connect: when you stop it or turn off all lights, when its time runs out, or when a crewmate puts a climb up. Put on board reconnects."
       },
+      "drivingHelp": "How driving the wall works",
       "onSwipeLabel": "Light the board as I swipe",
       "onSwipeDescription": "Only once a climb is on the wall. A preview never lights the board as you swipe.",
       "onTapLabel": "Light the board when I tap a climb",
@@ -540,7 +541,7 @@
       "wallOpenHint": "Takes the wall"
     },
     "relayToWall": "Put your climb on the wall",
-    "peerDrivingBoard": "Someone else is driving the board"
+    "peerDrivingBoard": "Someone else has the board"
   },
   "integrations": {
     "title": "Connected apps",

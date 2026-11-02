@@ -30,6 +30,9 @@ for real Board controls (09), then stops driving before the preview (12).
 The filenames are unchanged; the old board-history deep link is not used for 09.
 Simulated-board footage shows the app's actual controls, not a physical BLE test.
 The release wall-control captures use source `3c4fd3702d` on 2026-10-31.
+They are stale since #7170 (frost only while driving) and #7188 (wordless back
+chip, timed drive, last-look MiniPlayer); re-record pending on a build at or
+after `38eecfa2f0`.
 
 The original recordings in this set used a throwaway iPhone 16 Pro Max (iOS 26.5) named
 "Boardsesh Help Clips": dark theme, Aura board drawing, status bar pinned to
@@ -80,18 +83,23 @@ window with ffmpeg and re-encoded to constant 30 fps before conversion, so the
 
 The accessibility tree on this RN Fabric build only exposes native text inputs
 and system dialogs. Nothing in the app is matchable by text or id, so each flow
-targets percentage points and its header lists what each one is. The one
-exception is the delete confirm in `logbook-swipe-edit-delete`: that is a native
-iOS Alert, so its Cancel button is matched by text.
+targets percentage points and its header lists what each one is. The exceptions
+are native: the delete confirm in `logbook-swipe-edit-delete` (an iOS Alert), the
+Start playlist? action sheet in `start-playlist-queue` (both match Cancel by
+text), and the Settings › Board switch label that
+`start-playlist-queue-setup.yaml` taps. That setup step is optional: if the
+SwiftUI switch row is not exposed, it does nothing and the clip records no
+prompt, so check the switch by eye before recording.
 
 ## Per-clip traps
 
-- **`preview-browsing` must not drive.** Tap You are driving the wall to stop
-  first, wait out any 45 s Put on board window, and leave both tap and swipe
-  lighting off in Settings → Board (the 2.7 default, so a tap previews). A live
-  drive or window overrides those settings. Open a tracked row and use one illustrative
-  board swipe; the back chip and Put on board identify the preview. One swipe is
-  a teaching choice, not a limit on list navigation.
+- **`preview-browsing` must not drive.** Stop any drive first (tap You are
+  driving the wall; a timed one shows a clock), and leave both tap and swipe
+  lighting off in Settings → Board (the 2.7 default, so a tap previews). Open a
+  tracked row and use one illustrative board swipe. Check the take for the arrow
+  + face back chip, Preview · not on the wall in the top bar, a plain Put on
+  board, and, after closing, the MiniPlayer showing the previewed climb. One
+  swipe is a teaching choice, not a limit on list navigation.
 - **`wall-swipe-to-drive` starts stopped.** Do not use `screenshotDrive=1` when
   opening the player: that parameter starts driving automatically for stills.
   Do not press Put on board first either: it starts a timed drive, whose clock and
@@ -99,19 +107,21 @@ iOS Alert, so its Cancel button is matched by text.
   The clip needs the chevrons first, then a left swipe on the wall button,
   Let go to light every climb, the You are driving the wall label, a board
   swipe, and a tap on You are driving the wall to stop. Disconnect board at the
-  end confirms the link is retained. It is still frosted: physical-board
-  buttons are frosted at rest too, so frost is not the driving cue. The ordinary
-  physical-board swipe shows the release label without a frost wipe. Never tap
-  Disconnect board during this take.
+  end, on a plain button, confirms the link is retained. Frost means driving:
+  during the swipe a flat amber wipe shows progress, and the frost appears on
+  release. Leave Disconnect Bluetooth when driving ends off, or the stop ends on
+  Put on board. Never tap Disconnect board during this take.
 - **`://climbs?screenshotOpenPreview=1` opens a drawer that cannot swipe** (no
   suggestion source, so no swipe track), which is why this clip taps a row.
   `screenshotOpenFirst=1` lands the same chrome but is one-shot per active
   board, so it is no good for a retake.
-- **`start-playlist-queue` needs a non-empty forward queue.** The confirm only
-  appears when `futureQueueCount > 0`. Seed the queue first by swiping two or
-  three climb rows left-to-right, or the tap just opens the climb. Turn on Tapping a playlist loads it into my
-  queue and leave Light the board when I tap a climb off: the tap then loads
-  the list into Up next, keeps the wall's climb and previews the tapped one.
+- **`start-playlist-queue` needs a non-empty Up next.** The three-way Start
+  playlist? prompt only appears when Up next already has climbs. Seed the queue
+  first by swiping two or three climb rows left-to-right, or the tap loads the
+  list and opens a preview with no prompt. Turn on Tapping a playlist loads it
+  into my queue and leave Light the board when I tap a climb off. Cancel then
+  opens the tapped climb as a preview; Start playlist would load Up next and keep
+  the wall's climb.
 - **The lifted climb menu is a full-window overlay above the navigator.**
   Navigating away does not dismiss it. Add to Playlist closes it and opens the
   playlist sheet, where the old reaction card swapped to an inline picker, so
@@ -140,13 +150,19 @@ A take that stopped part-way leaves it OPEN, and the next take's first tap would
 then hide the row and land the grade taps on the climb list. Check the row is
 hidden before recording that clip, and tap Grade to hide it if not.
 
-Three things change only on the throwaway simulator and go away with it: the
-session queue picks up climbs from the swipe clip, `lightOnSwipe` and
-`browseNoticeSeen` get written by the `://climbs?screenshotOpenPreview=1` deep
-link (deliberately, see the comment in `app/(tabs)/climbs/index.tsx`), and the
-hold filter's paint colour is left on Finish rather than Hand.
+Four things change on the simulator: the session queue picks up climbs from the
+swipe clip, `lightOnSwipe` and `browseNoticeSeen` get written by the
+`://climbs?screenshotOpenPreview=1` deep link (deliberately, see the comment in
+`app/(tabs)/climbs/index.tsx`), the hold filter's paint colour is left on Finish
+rather than Hand, and `start-playlist-queue-setup.yaml` turns on Tapping a
+playlist loads it into my queue (`playlistTapLoadsQueue`), which changes every
+later playlist tap. The throwaway clip simulator takes them with it; the
+wall-control simulator is a named one that gets reused, so reset them there.
 
-The wall-control captures also change this simulator's connection and drive
-state. Stop driving before the preview take; restore the lighting preferences
-after recording. Keep each refreshed take's source commit and capture date in
+The wall-control captures also change that simulator's connection and drive
+state. Stop driving before the preview take. After recording, put Settings ›
+Board back to the 2.7 defaults: Light the board when I tap a climb off, Light
+the board as I swipe off, Stop driving after 45 seconds (On a MoonBoard: Until I
+stop), In a session too on, Disconnect Bluetooth when driving ends off, and
+Tapping a playlist loads it into my queue off. Keep each refreshed take's source commit and capture date in
 [the capture notes](../../../../docs/help-clips.md#capturing-the-wall-controls).

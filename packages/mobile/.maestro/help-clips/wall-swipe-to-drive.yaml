@@ -7,16 +7,19 @@ name: help clip - swipe the wall button to drive
 # the board to another climb while driving, then tap You are driving the wall
 # to stop driving without disconnecting. Review Let go to light every climb,
 # You are driving the wall, and the final Disconnect board label in the take.
-# Put on board and Disconnect board are frosted too: the label identifies
-# driving, not the frost. Expect the stopped button to remain frosted.
+# Put on board and the stopped Disconnect board are plain; the frost appears
+# only once driving is confirmed (frost = driving, wall-control-frost.ts).
+# Leave Disconnect Bluetooth when driving ends off (Settings > Board), or the
+# stop lets go of the board and the take ends on Put on board.
 #
 # Before recording, open a tracked climb with screenshotOpenFirst=1 and leave
 # screenshotDrive unset. Start with Put on board and chevrons, with no link, or
 # Disconnect board and chevrons after stopping an earlier drive. Do not tap
 # Put on board first: it starts a timed drive (45 s by default; a MoonBoard drives
 # until you stop), and the button then shows a clock and a shrinking frost instead of the
-# full frost this take teaches. A slower drag keeps the release label readable. Physical-board buttons are already
-# fully frosted, so the gesture shows no frost wipe; do not wait for one.
+# full frost this take teaches. A slower drag keeps the release label readable.
+# While dragging, a flat amber wipe comes in from the trailing edge; the frost
+# appears on release.
 #
 # Use mobile:ios-shots --backend local. Its existing store-capture environment
 # supplies EXPO_PUBLIC_SCREENSHOT_DRIVING=1 and
@@ -25,7 +28,9 @@ name: help clip - swipe the wall button to drive
 # not physical BLE delivery. The automatic frost peek stays suppressed.
 #
 # Measured on Boardsesh Release Help 20261031, iPhone 16 Pro Max, dark,
-# 1320 x 2868, source 3c4fd3702d, captured 2026-10-31:
+# 1320 x 2868, source 3c4fd3702d, captured 2026-10-31. That take is stale
+# since #7170/#7188 (frost at rest); re-record pending on a build at or after
+# 38eecfa2f0:
 #   86%,90% -> 15%,90%  swipe the wall button left past its commit point
 #   85%,50% -> 18%,50%  swipe the board to the next climb
 #   50%,90%             tap the driving button to stop, retaining the link

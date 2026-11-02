@@ -32,6 +32,13 @@ export type BoardLightingModelInput = {
    * reachable without a live connection.
    */
   moonboardLightAdjacentHolds: Toggle | null;
+  /**
+   * Opens the www help on driving the wall (`/help/board-and-bluetooth#driving`).
+   * The preview-first card and the What's New spotlight both retire, so this
+   * row is where the frost, the clock and Stop driving after stay explained.
+   * No row without it.
+   */
+  onOpenDrivingHelp?: () => void;
 };
 
 /**
@@ -152,6 +159,26 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     onValueChange: input.drivesInSession.onChange,
   });
 
+  const drivingEndsRows: MoreRow[] = [
+    {
+      kind: 'toggle',
+      key: 'disconnectWhenDrivingEnds',
+      label: t('settings:ble.lighting.drivingEnds.label'),
+      subtitle: t('settings:ble.lighting.drivingEnds.description'),
+      value: input.disconnectWhenDrivingEnds.enabled,
+      onValueChange: input.disconnectWhenDrivingEnds.onChange,
+    },
+  ];
+  if (input.onOpenDrivingHelp) {
+    drivingEndsRows.push({
+      kind: 'nav',
+      key: 'drivingHelp',
+      label: t('settings:ble.lighting.drivingHelp'),
+      external: true,
+      onPress: input.onOpenDrivingHelp,
+    });
+  }
+
   const lightingRows: MoreRow[] = [
     {
       kind: 'toggle',
@@ -199,18 +226,10 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       rows: keepRows,
     },
     {
-      // Untitled: Stop driving after's second card, what happens when the drive ends.
+      // Untitled: Stop driving after's second card, what happens when the drive
+      // ends, then how driving works on the www help.
       key: 'drivingEnds',
-      rows: [
-        {
-          kind: 'toggle',
-          key: 'disconnectWhenDrivingEnds',
-          label: t('settings:ble.lighting.drivingEnds.label'),
-          subtitle: t('settings:ble.lighting.drivingEnds.description'),
-          value: input.disconnectWhenDrivingEnds.enabled,
-          onValueChange: input.disconnectWhenDrivingEnds.onChange,
-        },
-      ],
+      rows: drivingEndsRows,
     },
     {
       key: 'lightingAuto',

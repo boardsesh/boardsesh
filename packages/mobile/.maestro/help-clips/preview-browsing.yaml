@@ -5,8 +5,10 @@ name: help clip - browse climbs in the play drawer
 #
 # Records: a tracked climb-row tap opens the play drawer without changing the
 # wall. Swiping across the board opens the next climb as a preview. The back
-# chip returns to the climb on the wall, and Put on board offers to light the
-# preview. The clip closes with the chevron without pressing that button.
+# chip (an arrow, plus the face of whoever lit the wall) returns to the climb on
+# the wall, and a plain Put on board offers to light the preview. The clip
+# closes with the chevron without pressing that button, and holds on the bar at
+# the bottom, which keeps the previewed climb (the last look).
 #
 # Why a row tap rather than ://climbs?screenshotOpenPreview=1: the preview latch
 # opens the drawer with no swipe track ("a preview with no suggestion source"),
@@ -18,13 +20,12 @@ name: help clip - browse climbs in the play drawer
 #
 # One swipe illustrates browsing; it is not a limit on the list's swipe track.
 #
-# Before recording, stop any live drive by tapping You are driving the wall,
+# Before recording, stop any drive by tapping You are driving the wall (a drive
+# from Put on board shows a clock beside the label; a tap stops either kind),
 # then leave Light the board when I tap a climb and Light the board as I swipe
-# off in Settings > Board (the 2.7 default, so a tap previews). Driving and the
-# Put on board window override those settings, so wait out any 45 s window too.
-# Keep the fake board connected: Disconnect board is the stopped state, not a
-# button this flow presses. It remains frosted after stopping; check the label
-# instead of treating frost as driving. Do not use screenshotDrive=1 for this take.
+# off in Settings > Board (the 2.7 default, so a tap previews). Keep the fake
+# board connected: Disconnect board, on a plain button, is the stopped state,
+# not a button this flow presses. Do not use screenshotDrive=1 for this take.
 #
 # Coordinates, not selectors: nothing in the drawer is exposed to Maestro on
 # this RN Fabric build.
@@ -51,7 +52,8 @@ name: help clip - browse climbs in the play drawer
     optional: true
 
 # Drag the board sideways: the next climb slides in while the wall stays put.
-# Its back chip and Put on board button identify the preview.
+# The arrow + face back chip, Preview · not on the wall in the top bar and a
+# plain Put on board identify the preview.
 - swipe:
     start: '85%,50%'
     end: '18%,50%'
@@ -61,7 +63,8 @@ name: help clip - browse climbs in the play drawer
     timeout: 2600
     optional: true
 
-# Close the drawer. Nothing was put on the wall.
+# Close the drawer. Nothing was put on the wall. The bar at the bottom keeps the
+# previewed climb; the Climbs header capsule keeps the wall's climb.
 - tapOn:
     point: '7%,10%'
 - waitForAnimationToEnd

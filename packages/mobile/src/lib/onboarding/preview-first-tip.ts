@@ -134,6 +134,19 @@ export function consumePreviewFirstAnnouncement(): void {
   setState({ ...state, announcePending: false });
 }
 
+/**
+ * Replay walkthrough (Settings › General): the card may show again, on the next
+ * preview. It is the one in-app place that explains previews and the frost, and
+ * the What's New spotlight retires after 30 days, so replaying the tour brings
+ * it back too. Clears the seen flag, then reads it again on the next player open.
+ */
+export async function forgetPreviewFirstTip(): Promise<void> {
+  const { clearTipSeen } = await onboardingStorage();
+  await clearTipSeen(ONBOARDING_TIP_PREVIEW_FIRST_KEY);
+  loading = null;
+  setState(INITIAL_STATE);
+}
+
 /** Test-only: the store outlives an individual test. */
 export function _resetPreviewFirstTipForTests(): void {
   state = INITIAL_STATE;

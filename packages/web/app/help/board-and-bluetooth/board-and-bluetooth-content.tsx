@@ -21,6 +21,11 @@ import { HelpClip, HelpShots } from '../help-clip';
  * Every label, alert text and sheet order quoted here is checked against
  * settings.json / common.json and the BleControlSheet, DevicePickerSheet,
  * use-board-bluetooth and live-activity-bridge sources in packages/mobile.
+ * Since 2.7 (#7188) `#driving` is where the What's New spotlight sends
+ * climbers: a tap previews, Put on board starts a drive timed by Stop driving
+ * after (lib/keep-lighting.ts, the clock and shrinking frost in
+ * play-drawer/wall-control.ts), and Disconnect Bluetooth when driving ends
+ * decides whether a stop keeps the link (use-driving-ended-disconnect.ts).
  */
 export default function BoardAndBluetoothContent() {
   const { t } = useTranslation('marketing');
@@ -56,6 +61,7 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.bluetooth.driving.p1')}</Prose>
         <Prose>{t('help.bluetooth.driving.p2')}</Prose>
         <Prose>{t('help.bluetooth.driving.p3')}</Prose>
+        <Prose>{t('help.bluetooth.driving.p4')}</Prose>
       </PageSection>
 
       <PageSection id="failed" title={t('help.bluetooth.failed.title')} lead={t('help.bluetooth.failed.intro')}>
@@ -79,6 +85,7 @@ export default function BoardAndBluetoothContent() {
         </HelpShots>
         <Prose>{t('help.bluetooth.hidden.p1')}</Prose>
         <ProseList>
+          <li>{t('help.bluetooth.hidden.rowStopDriving')}</li>
           <li>{t('help.bluetooth.hidden.row1')}</li>
           <li>{t('help.bluetooth.hidden.row2')}</li>
           <li>{t('help.bluetooth.hidden.row3')}</li>

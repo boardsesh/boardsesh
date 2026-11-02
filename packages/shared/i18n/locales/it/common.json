@@ -583,7 +583,7 @@
           "label": "Controllo del pannello",
           "wallButton": "Pulsante parete",
           "lightbulb": "Lampadina",
-          "footer": "Entrambi i controlli connettono, illuminano il blocco e mostrano chi tiene il pannello. Quando sei connesso, tieni premuto per le opzioni. Leggi l’etichetta del pulsante parete: Guidi tu il pannello significa che ogni blocco scelto si illumina; tocca quell’etichetta per smettere di guidare restando connesso. La lampadina è in alto a destra."
+          "footer": "Entrambi i controlli connettono, illuminano il blocco e mostrano chi tiene il pannello. Quando sei connesso, tieni premuto per le opzioni. Leggi l’etichetta del pulsante parete: Guidi tu il pannello significa che ogni blocco scelto si illumina; toccala per smettere di guidare. Il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo. Dopo Illumina il pannello, un cronometro accanto all’etichetta e lo smerigliato che si restringe mostrano quando finisce la guida. La lampadina è in alto a destra."
         }
       },
       "climbView": {
@@ -614,7 +614,7 @@
         "modeOnTheMinuteHint": "Finestre fisse dal momento in cui lo attivi. Registrare tentativi o ripetizioni non azzera mai il timer.",
         "autoAdvance": "Passa al blocco successivo",
         "autoAdvanceHint": "Lo illumina in parete per te, solo mentre Boardsesh è aperto.",
-        "autoAdvanceBlocked": "Solo chi gestisce il pannello può far avanzare la coda.",
+        "autoAdvanceBlocked": "Solo chi tiene il pannello può far avanzare la coda.",
         "autoAdvanceNeedsLength": "Scegli la durata del recupero per far avanzare la coda in automatico.",
         "cuesTitle": "Segnali",
         "cuesFooter": "Se sono spenti, senti comunque una vibrazione di preavviso prima che il pannello passi da solo al blocco successivo.",
@@ -637,7 +637,7 @@
       },
       "miniPlayer": {
         "title": "Mini player",
-        "description": "La barra sopra le schede. Toccala per aprire il blocco.",
+        "description": "La barra sopra le schede tiene l'ultimo blocco che hai aperto. Toccala per riaprirlo; Luce del pannello lo illumina in parete.",
         "buttons": {
           "next": "Blocco successivo",
           "previous": "Blocco precedente",
@@ -753,7 +753,7 @@
         "workout": "Crea un allenamento: Volume, Piramide, Scala o Grado fisso. Imposta un grado, guarda in anteprima i blocchi e chiudili uno alla volta.",
         "crew": "Arrampichi con altre persone? Avvia una session e condividete una sola coda. Chiunque può illuminare il blocco successivo, senza passarsi il telefono.",
         "record": "Le tue ripetizioni finiscono nei grafici qui, in Progressi: distribuzione dei gradi e blocco più duro chiuso. Importa il tuo diario Kilter e Tension da Aurora per partire con la tua storia.",
-        "accessory": "La barra in basso tiene l'ultimo blocco che hai aperto, finché la tua coda non passa a un altro blocco. Toccala per riprendere da lì.",
+        "accessory": "La barra in basso tiene l'ultimo blocco che hai aperto, finché la tua coda non va avanti. Toccala per riaprirlo; la sua lampadina lo illumina in parete e ✓ lo registra. Il blocco in parete resta in alto in Blocchi.",
         "previewFirst": {
           "title": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete.",
           "windowSeconds": "Poi guidi tu il pannello: per {{seconds}} secondi dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli.",
@@ -761,8 +761,8 @@
           "windowMinutes": "Poi guidi tu il pannello: per {{minutes}} minuti dopo ogni blocco illuminato, si illumina in parete anche ogni blocco che scegli.",
           "untilStop": "Poi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non smetti.",
           "moonboard": "Su una MoonBoard poi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non smetti.",
-          "frost": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo che hai scelto nelle impostazioni di illuminazione, e lo smerigliato si restringe mentre il tempo passa. Scorri il pulsante verso sinistra per guidare senza limiti (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco). Toccalo per smettere.",
-          "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo che hai scelto nelle impostazioni di illuminazione. Usa l'azione Illumina ogni blocco per guidare senza limiti. Tocca il pulsante per smettere.",
+          "frost": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo impostato in Smetti di guidare dopo (Impostazioni › Pannello): un cronometro scorre accanto all'etichetta e lo smerigliato si restringe mentre il tempo passa. Scorri il pulsante verso sinistra per guidare senza limiti (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco). Toccalo per smettere.",
+          "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo impostato in Smetti di guidare dopo, in Impostazioni › Pannello. Usa l'azione Illumina ogni blocco per guidare senza limiti. Tocca il pulsante per smettere.",
           "frostOpenEnded": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non lo tocchi per smettere. Scorri il pulsante verso sinistra per guidare (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco).",
           "frostOpenEndedScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere. Usa l'azione Illumina ogni blocco per guidare.",
           "settings": "Impostazioni di illuminazione",
@@ -840,9 +840,10 @@
       },
       "previewFirstSpotlight": {
         "title": "Sfoglia i blocchi senza illuminare il pannello",
-        "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e poi guidi tu il pannello: si illuminano anche i blocchi che scegli, finché non finisce il tempo che hai scelto (45 secondi di default).",
-        "swipe": "Scorri verso sinistra il pulsante del pannello per guidare tu il pannello finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete.",
-        "moonboard": "Sulle MoonBoard guidi finché non smetti, di default. Scegli un tempo in Smetti di guidare dopo, in Impostazioni › Pannello.",
+        "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e poi guidi tu il pannello: si illuminano anche i blocchi che scegli, fino a 45 secondi dopo l'ultimo blocco illuminato. Cambia il tempo in Smetti di guidare dopo, in Impostazioni › Pannello.",
+        "swipe": "Scorri verso sinistra il pulsante del pannello per guidare tu il pannello finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete. Toccalo per smettere. Dopo Illumina il pannello compare un cronometro accanto all'etichetta e lo smerigliato si restringe mentre il tempo passa.",
+        "back": "La freccia in alto a sinistra chiude l'anteprima e ti riporta al tuo blocco, o al blocco in parete. La barra in basso tiene l'ultimo blocco che hai aperto.",
+        "moonboard": "Sulle MoonBoard guidi finché non smetti, di default; scegli il loro tempo in Su una MoonBoard.",
         "cta": "Scopri come funziona",
         "dismiss": "Ok"
       }

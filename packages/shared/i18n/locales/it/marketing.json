@@ -47,7 +47,7 @@
     },
     "helpBoardAndBluetooth": {
       "title": "Connettiti al tuo pannello via Bluetooth",
-      "description": "Connetti Boardsesh al controller di un Kilter Board, di un Tension Board o di una MoonBoard, risolvi una connessione fallita e controllalo dalla schermata di blocco con Live Activity."
+      "description": "Connetti Boardsesh al controller di un Kilter Board, di un Tension Board o di una MoonBoard, scegli per quanto guidi il pannello dopo Illumina il pannello, risolvi una connessione fallita e controllalo dalla schermata di blocco con Live Activity."
     },
     "helpClimbActions": {
       "title": "Tocca per l'anteprima, tieni premuto per registrare o aggiungere a una playlist",
@@ -473,7 +473,7 @@
       },
       "bluetooth": {
         "title": "Pannello e Bluetooth",
-        "body": "Connettiti al pannello, risolvi una connessione fallita e controllalo dalla schermata di blocco con Live Activity."
+        "body": "Connettiti al pannello, scegli per quanto Illumina il pannello continua a illuminare, risolvi una connessione fallita e usa la schermata di blocco."
       },
       "betaVideos": {
         "title": "Video della beta",
@@ -516,7 +516,7 @@
       "queue": {
         "title": "Scala tutta la lista",
         "intro": "Tocca un blocco in una playlist e ne vedi l'anteprima, partendo da quella playlist. La tua coda resta com'è.",
-        "p1": "Scorri per percorrere la lista in ordine dal blocco che hai toccato. Il pulsante play in testata parte dall'inizio. Metti subito dopo mette tutta la lista in cima a Prossimi, Metti in fondo la mette in fondo. Per far sì che un tocco carichi la playlist nella tua coda, attiva Toccare una playlist la carica nella mia coda in Impostazioni, poi Pannello. Il pannello tiene il suo blocco e vedi in anteprima quello che hai toccato.",
+        "p1": "Scorri per percorrere la lista in ordine dal blocco che hai toccato. Il pulsante play in testata apre il primo blocco in anteprima. Metti subito dopo mette tutta la lista in cima a Prossimi, Metti in fondo la mette in fondo. Per far sì che un tocco carichi la playlist nella tua coda, attiva Toccare una playlist la carica nella mia coda in Impostazioni, poi Pannello. Il pannello tiene il suo blocco e vedi in anteprima quello che hai toccato.",
         "p2": "In una session, un tocco apre il blocco solo per te. La coda condivisa resta com'è.",
         "sessionsLink": "Come una session condivide una coda",
         "clipAlt": "La finestra Avviare la playlist?",
@@ -572,7 +572,7 @@
       },
       "queue": {
         "title": "Una coda, ogni telefono",
-        "p1": "Chiunque sia nella session può aggiungere, riordinare o rimuovere blocchi. Il tuo avatar segna le tue righe.",
+        "p1": "Chiunque sia nella session può aggiungere, riordinare o rimuovere blocchi. Il tuo avatar segna le tue righe. Tocca un blocco in coda per vederne l’anteprima; lo vedi solo tu finché non tocchi Illumina il pannello.",
         "p2": "Solo il climber che ha avviato la session può terminarla. Tutti gli altri toccano Esci dalla session."
       },
       "wall": {
@@ -583,8 +583,8 @@
       },
       "crowd": {
         "title": "Sfogliare senza cambiare il blocco in parete",
-        "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che il tuo telefono tenga il pannello e tu stia guidando o abbia appena illuminato un blocco. Tocca Illumina il pannello per un blocco, oppure In parete in alto per tornare al blocco illuminato.",
-        "p2": "Se il tuo telefono tiene il pannello, Illumina il pannello illumina il blocco e guidi tu il pannello: anche i blocchi che scegli dopo si illuminano, finché non passa il tempo impostato in Smetti di guidare dopo dall’ultimo blocco (all’inizio 45 secondi), con Anche in una session attivo. Il pulsante dice Guidi tu il pannello con un cronometro, e lo smerigliato si restringe man mano che il tempo scade. Toccalo per fermarti prima; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo. Su una MoonBoard guidi finché non smetti. Se qualcuno della crew illumina un blocco, la tua guida finisce. Sugli altri telefoni, Illumina il pannello illumina solo quel blocco. Altrimenti un tocco apre un’anteprima, quindi sfogliando il blocco in parete non cambia, a meno che attivi Illumina il pannello quando tocco un blocco o Illumina il pannello mentre scorro in Impostazioni, poi Pannello.",
+        "p1": "Con qualcun altro nella tua session, scorrere ti fa sfogliare senza cambiare il blocco in parete, a meno che il tuo telefono tenga il pannello e tu stia guidando o abbia appena illuminato un blocco. Tocca Illumina il pannello per un blocco, oppure la freccia in alto a sinistra, con il volto di chi ha illuminato il pannello, per tornare al blocco illuminato.",
+        "p2": "Se il tuo telefono tiene il pannello, Illumina il pannello illumina il blocco e guidi tu il pannello: anche i blocchi che scegli dopo si illuminano, finché non passa il tempo impostato in Smetti di guidare dopo dall’ultimo blocco (all’inizio 45 secondi), con Anche in una session attivo. Il pulsante dice Guidi tu il pannello con un cronometro, e lo smerigliato si restringe man mano che il tempo scade. Toccalo per fermarti prima; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo. Su una MoonBoard guidi finché non smetti, per impostazione predefinita. Se qualcuno della crew illumina un blocco, una guida con il cronometro finisce; se hai fatto scorrere il pulsante per guidare, continui a guidare e il suo blocco si illumina. Sugli altri telefoni, Illumina il pannello illumina solo quel blocco. Altrimenti un tocco apre un’anteprima, quindi sfogliando il blocco in parete non cambia, a meno che attivi Illumina il pannello quando tocco un blocco o Illumina il pannello mentre scorro in Impostazioni, poi Pannello.",
         "previewLink": "Tocca un blocco per vederne l’anteprima",
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
@@ -668,7 +668,7 @@
       },
       "log": {
         "title": "Registrala al pannello",
-        "p1": "Tocca la grande spunta nel cassetto di riproduzione, o Registra salita nella barra della coda. Data e Ora sono già impostate su adesso, il resto è facoltativo.",
+        "p1": "Tocca la grande spunta nel cassetto di riproduzione, o ✓ sulla barra in basso, che mostra l’ultimo blocco che hai aperto. Data e Ora sono già impostate su adesso, il resto è facoltativo.",
         "p2": "Tentativo registra un giro che non è riuscito. L'altro pulsante dice Flash al tuo primo giro registrato a questa inclinazione, altrimenti Chiuso.",
         "shotAlt": "Il pulsante della spunta",
         "shotCaption": "La spunta apre il foglio di registrazione.",
@@ -714,28 +714,29 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Leggi il pulsante parete: Illumina il pannello illumina questo blocco e per un po’ anche i prossimi che scegli; su una MoonBoard, finché non smetti. Guidi tu il pannello, luminoso, illumina ogni blocco finché non smetti."
+        "subtitle": "Un tocco apre un’anteprima. Illumina il pannello lo illumina e guidi tu il pannello: il pulsante dice Guidi tu il pannello con un cronometro, e ogni blocco che scegli si illumina finché il tempo non finisce (45 secondi per impostazione predefinita; su una MoonBoard, finché non smetti). Senza cronometro, dura finché non lo tocchi."
       },
       "connect": {
         "title": "Connetti",
-        "p1": "In un blocco, tocca il grande pulsante Illumina il pannello. Si connette se serve e illumina il blocco sullo schermo. Se si apre Seleziona pannello, tocca il tuo: il segnale più forte viene prima, con un numero di serie per riga. Anche la lampadina della barra in alto può connettere.",
+        "p1": "In un blocco, tocca il grande pulsante Illumina il pannello. Si connette se serve, illumina il blocco sullo schermo e poi guidi tu il pannello: anche i blocchi che scegli dopo si illuminano (vedi Riconosci quando guidi il pannello). Se si apre Seleziona pannello, il tuo pannello è in cima, poi quelli che l’app non sa riconoscere, come le MoonBoard e le scatole senza numero di serie. Non vedi il tuo? Tocca Cerca qualsiasi pannello. Anche la lampadina della barra in alto può connettere.",
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
         "litShotAlt": "Il lettore con il grande pulsante parete",
-        "litShotCaption": "Leggi il pulsante parete: Guidi tu il pannello significa che anche il prossimo blocco scelto si illumina, finché non smetti.",
+        "litShotCaption": "Leggi il pulsante parete: Guidi tu il pannello significa che anche i blocchi che scegli si illuminano. Con il cronometro finisce da solo; senza, continua finché non lo tocchi.",
         "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
-        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere."
+        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere. La lampadina non è smerigliata: quando guidi dopo Illumina il pannello, un anello viola intorno a lei si svuota man mano che il tempo passa, e toccare la lampadina mentre guidi disconnette."
       },
       "hidden": {
         "title": "Controlli del pannello",
-        "p1": "Quando sei connesso, tieni premuto il pulsante parete per i Controlli del pannello. In un blocco li apri anche da ⋯, poi Controlli del pannello, o tenendo premuta la lampadina in alto. Un tocco breve segue l’etichetta: Guidi tu il pannello smette di guidare mantenendo la connessione; Disconnetti pannello disconnette.",
+        "p1": "Quando sei connesso, tieni premuto il pulsante parete per i Controlli del pannello. In un blocco li apri anche da ⋯, poi Controlli del pannello, o tenendo premuta la lampadina in alto. In un blocco il menu inizia con una riga che dice dove sei: anteprima, illuminato in parete, alla guida, o quanto manca alla fine della guida. Un tocco breve sul pulsante parete segue la sua etichetta: Guidi tu il pannello smette di guidare mantenendo la connessione, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo; allora il telefono libera il pannello e il pulsante torna a dire Illumina il pannello. Disconnetti pannello disconnette.",
+        "rowStopDriving": "Smetti di guidare dopo. Cambia quanto dura la guida di Illumina il pannello, o scegli Subito, senza lasciare la parete. Su una MoonBoard la riga dice Smetti di guidare questa MoonBoard dopo.",
         "row1": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
-        "row2": "Spegni tutte le luci. Il telefono resta connesso.",
+        "row2": "Spegni tutte le luci. Ferma anche la guida. Il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo.",
         "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
         "row4": "Illumina la presa sopra. Solo MoonBoard.",
-        "p2": "Smetti di guidare dopo, Disconnetti il Bluetooth quando smetti di guidare, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu della lampadina in alto. Smetti di guidare dopo sceglie per quanto tempo Illumina il pannello tiene acceso il pannello: Subito, da 30 secondi a 5 minuti, oppure Finché non mi fermo. Scorrere il pulsante a sinistra ti fa guidare senza fine. Disconnetti il Bluetooth quando smetti di guidare libera il pannello per il prossimo climber quando ti fermi o il tempo finisce; Illumina il pannello si riconnette. Per sfogliare senza illuminare, lascia disattivate entrambe le opzioni di illuminazione e prima smetti di guidare (tocca Guidi tu il pannello). Mentre guidi, ogni blocco scelto si illumina anche con queste opzioni disattivate.",
-        "p3": "Senza pannello connesso, Illumina il pannello connette e illumina il blocco sullo schermo. Poi i blocchi che scegli si illuminano fino a 45 secondi dopo l’ultimo blocco illuminato (puoi cambiare il tempo); in una crew, solo sul telefono che tiene il pannello e con Anche in una session attivo. Su una MoonBoard guidi finché non smetti, su quel telefono anche in una crew. La lampadina in alto può riconnettere l’ultimo pannello usato.",
+        "p2": "Il resto è in Impostazioni, poi Pannello. Smetti di guidare dopo sceglie per quanto i blocchi che scegli continuano a illuminarsi dopo l’ultimo blocco illuminato: Subito (Illumina il pannello illumina solo quel blocco), da 30 secondi a 5 minuti (45 secondi per impostazione predefinita), oppure Finché non mi fermo. Con una MoonBoard salvata o connessa, Su una MoonBoard ha un suo tempo: Finché non mi fermo per impostazione predefinita, e vale anche in una session. Anche in una session (attivo per impostazione predefinita) ti fa guidare con Illumina il pannello anche in una crew. Disconnetti il Bluetooth quando smetti di guidare (disattivato per impostazione predefinita) libera il pannello per il prossimo climber quando la guida finisce; Illumina il pannello si riconnette. Ha preso il posto di Disconnessione automatica: se l’avevi attiva, questa è attiva e il tuo vecchio tempo è diventato Smetti di guidare dopo. Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Illumina in automatico e sono disattivate per impostazione predefinita. Mentre guidi, ogni blocco scelto si illumina anche con queste due opzioni disattivate. Il menu della lampadina in alto ha quasi tutte queste opzioni.",
+        "p3": "Senza pannello connesso, Illumina il pannello connette, illumina il blocco sullo schermo e ti fa guidare; in una crew, solo sul telefono che tiene il pannello e con Anche in una session attivo. Su una MoonBoard guidi finché non smetti, per impostazione predefinita (cambialo in Su una MoonBoard), su quel telefono anche in una crew. Dopo Disconnetti il Bluetooth quando smetti di guidare, Illumina il pannello si riconnette allo stesso pannello. Dopo Disconnetti il pannello, l’app dimentica quel pannello e la connessione successiva lo cerca di nuovo.",
         "shotAlt": "I controlli di un pannello connesso",
-        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti. Illumina ogni blocco avvia la guida quando disponibile."
+        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti, e cambia Smetti di guidare dopo senza lasciare la parete. Illumina ogni blocco avvia la guida quando disponibile."
       },
       "failed": {
         "title": "Quando non si connette",
@@ -749,12 +750,12 @@
       },
       "twoBoards": {
         "title": "Due pannelli nel raggio",
-        "p1": "Leggi il numero di serie prima di toccare. Le barre del segnale non si aggiornano mentre stai fermo lì.",
+        "p1": "Quando ti connetti a un pannello che hai già usato o a quello di una palestra, è in cima, poi quelli che l’app non sa riconoscere. I pannelli che l’app sa essere un altro restano nascosti finché non tocchi Cerca qualsiasi pannello. Leggi il numero di serie prima di toccare. Le barre del segnale non si aggiornano mentre stai fermo lì.",
         "p2": "Un avviso La configurazione del pannello non corrisponde significa che il controller appartiene a un'altra configurazione. Scegli Annulla, Connetti comunque o Cambia configurazione del pannello."
       },
       "duplicate": {
         "title": "Lo stesso pannello elencato due volte",
-        "p1": "Due righe con numeri di serie diversi sono due controller. Una riga che dice solo Kilter Board, senza numero di serie, è una scatola LED più recente costruita dal produttore. Due di queste nella stessa palestra compaiono come due righe. Quella con più barre di segnale di solito è il pannello davanti a cui ti trovi. Se si illumina il pannello sbagliato, apri Controlli del pannello, tocca Disconnetti il pannello e riprova.",
+        "p1": "Due righe con numeri di serie diversi sono due controller. Una riga che dice solo Kilter Board, senza numero di serie, è una scatola LED più recente costruita dal produttore. Due di queste nella stessa palestra compaiono come due righe, dopo il tuo pannello. Quella con più barre di segnale di solito è il pannello davanti a cui ti trovi. Se si illumina il pannello sbagliato, apri Controlli del pannello, tocca Disconnetti il pannello e riprova.",
         "p2": "Non esiste una lista per dimenticare un dispositivo. L'app ricorda solo l'ultimo pannello.",
         "p3": "Un pannello che compare due volte sotto I tuoi pannelli è un'altra cosa. Tocca Modifica accanto a I tuoi pannelli, poi Elimina o Smetti di seguire."
       },
@@ -767,7 +768,7 @@
       "liveActivity": {
         "title": "Controlla il pannello dalla schermata di blocco (Live Activity)",
         "intro": "Prima avvia una session o unisciti a una. Una coda personale non ce l'ha.",
-        "p1": "Su iPhone, una session mette una Live Activity nella schermata di blocco e nella Dynamic Island con il blocco, il suo grado e il tuo posto in coda. Mentre il tuo telefono gestisce il pannello ha anche Precedente, Successivo, una lampadina che illumina di nuovo il pannello e Specchia il blocco dove supportato.",
+        "p1": "Su iPhone, una session mette una Live Activity nella schermata di blocco e nella Dynamic Island con il blocco in parete, il suo grado e il tuo posto in coda. Le anteprime che apri nell’app non la cambiano. Mentre il tuo telefono gestisce il pannello ha anche Precedente, Successivo, una lampadina che illumina di nuovo il pannello e Specchia il blocco dove supportato. Qui Precedente e Successivo spostano la coda.",
         "p2": "Android mostra gli stessi controlli in una notifica persistente chiamata Session di arrampicata attiva.",
         "p3": "Bloccare lo schermo non disconnette il pannello."
       },
@@ -778,18 +779,19 @@
       },
       "driving": {
         "title": "Riconosci quando guidi il pannello",
-        "p1": "Il pulsante parete controlla il pannello fisico. Leggi l’etichetta: Illumina il pannello connette se serve e illumina il blocco sullo schermo, e anche i blocchi che scegli dopo si illuminano per un po’. Su una MoonBoard, Illumina il pannello ti fa guidare finché non smetti. Guidi tu il pannello, satinato e luminoso, significa che ogni blocco scelto si illumina finché non smetti, anche in una crew. Scorri il pulsante a sinistra, o tienilo premuto e scegli Illumina ogni blocco, per iniziare; toccalo per fermarti.",
-        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Scorrere sul disegno del pannello cambia blocco.",
-        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare restando connesso. L’etichetta cambia in Disconnetti pannello; toccarla disconnette. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
+        "p1": "Un tocco su un blocco apre un’anteprima, e il blocco in parete resta lo stesso. Illumina il pannello lo illumina e guidi tu il pannello: il pulsante diventa smerigliato e dice Guidi tu il pannello con un cronometro, e anche ogni blocco che scegli si illumina. Ogni blocco illuminato fa ripartire il cronometro, e lo smerigliato si restringe verso la lampadina man mano che il tempo finisce. Quando finisce, il prossimo blocco che scegli si apre di nuovo in anteprima. Il tempo è Smetti di guidare dopo, in Impostazioni, poi Pannello: 45 secondi per impostazione predefinita, e Finché non mi fermo su una MoonBoard. Scorri il pulsante a sinistra, o tienilo premuto e scegli Illumina ogni blocco, per guidare senza cronometro finché non lo tocchi. Smerigliato vuol sempre dire che stai guidando.",
+        "p2": "Per guidare quando il pulsante mostra ‹‹, scorri il pulsante parete verso sinistra. Rilascia quando dice Rilascia per illuminare ogni blocco. Si connette se serve, illumina il blocco sullo schermo e quelli che scegli dopo. Se stai già guidando con il cronometro, lo stesso scorrimento ti fa guidare finché non smetti. Scorrere sul disegno del pannello cambia blocco.",
+        "p3": "Tocca Guidi tu il pannello per smettere di guidare e sfogliare. Il telefono resta connesso e l’etichetta cambia in Disconnetti pannello; toccarla disconnette. Con Disconnetti il Bluetooth quando smetti di guidare attivo, quando ti fermi il telefono libera il pannello e il pulsante torna a dire Illumina il pannello. La guida avviata da Illumina il pannello finisce anche da sola quando scade il cronometro; il prossimo blocco che scegli si apre in anteprima. Puoi iniziare anche con Illumina ogni blocco in ⋯, poi Controlli del pannello, o nelle azioni del lettore di schermo del pulsante.",
+        "p4": "La prima volta che ti connetti, la conferma dice cosa illuminerà Illumina il pannello. La prima volta che apri un’anteprima su un pannello con le luci, una scheda sotto il pulsante parete spiega l’anteprima e lo smerigliato; il suo pulsante Impostazioni di illuminazione apre Impostazioni, poi Pannello.",
         "clipAlt": "Scorrere il pulsante parete a sinistra per guidare, poi toccarlo per smettere",
-        "clipCaption": "Scorri il pulsante a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per smettere di guidare senza disconnetterti."
+        "clipCaption": "Scorri il pulsante a sinistra e rilascia per illuminare ogni blocco. Tocca Guidi tu il pannello per fermarti; il telefono resta connesso, a meno che Disconnetti il Bluetooth quando smetti di guidare sia attivo."
       }
     },
     "climbActions": {
       "breadcrumb": "Azioni sul blocco",
       "hero": {
         "title": "Tieni premuto un blocco",
-        "subtitle": "Ogni azione su un blocco sta dietro una pressione prolungata sulla sua riga."
+        "subtitle": "Tocca un blocco per vederne l’anteprima. Tieni premuta la sua riga per tutto il resto."
       },
       "open": {
         "title": "Apri il menu",
@@ -802,12 +804,13 @@
       },
       "preview": {
         "title": "Tocca un blocco per vederne l'anteprima",
-        "intro": "Un tocco su un blocco di una lista lo apre in anteprima, e il pannello resta com'è.",
-        "p1": "L’anteprima apre il blocco nel lettore senza toccare la tua coda né il blocco in parete. Quando l’anteprima ha una lista, gli scorrimenti seguono quella lista. Un’anteprima singola potrebbe non avere un blocco successivo da raggiungere.",
-        "p2": "Quando sfogli senza illuminare, il pulsante in alto ti riporta indietro: La mia scelta al tuo blocco, In parete al blocco illuminato. Sotto il nome leggi Lo vedi solo tu in una session, oppure Anteprima · non in parete quando il tuo telefono tiene un pannello o un blocco è stato illuminato nell’ultima ora. Tocca Illumina il pannello quando vuoi il blocco: si illumina e guidi tu il pannello: per impostazione predefinita, i blocchi che scegli dopo si illuminano fino a 45 secondi dopo l’ultimo (su una MoonBoard guidi finché non smetti). Imposta attivo lo sceglie senza illuminarlo. Se il pulsante del lettore dice Guidi tu il pannello, i cambi di blocco successivi illuminano il pannello; toccalo prima per smettere di guidare.",
+        "intro": "Un tocco su un blocco lo apre in anteprima: da qualsiasi lista, dal pulsante play di una playlist, dalla coda o con Riparti da qui. Il blocco in parete resta lo stesso.",
+        "p1": "L’anteprima apre il blocco nel lettore senza toccare la tua coda né il blocco in parete. Quando l’anteprima ha una lista, gli scorrimenti seguono quella lista. Un’anteprima singola potrebbe non avere un blocco successivo da raggiungere. Mentre guidi tu il pannello, un tocco illumina invece il blocco. Perché ogni tocco illumini, attiva Illumina il pannello quando tocco un blocco in Impostazioni, poi Pannello.",
+        "p2": "Durante l’anteprima, la freccia in alto a sinistra la chiude e ti riporta indietro: al tuo blocco o, quando mostra un volto, al blocco in parete. Sotto il nome leggi Lo vedi solo tu in una session, oppure Anteprima · non in parete quando il tuo telefono tiene un pannello o un blocco è stato illuminato nell’ultima ora. Tocca Illumina il pannello quando vuoi il blocco. Si illumina e guidi tu il pannello: per impostazione predefinita, i blocchi che scegli dopo si illuminano fino a 45 secondi dopo l’ultimo (su una MoonBoard guidi finché non smetti). Imposta attivo lo sceglie senza illuminarlo. Se il pulsante del lettore dice Guidi tu il pannello, i cambi di blocco successivi illuminano il pannello; toccalo prima per smettere di guidare.",
+        "p3": "La barra in basso tiene l’ultimo blocco che hai aperto, anteprima compresa, finché la tua coda non va avanti. Toccala per riprendere con la sua lista. La sua lampadina illumina quel blocco in parete, e ✓ lo registra. La tua coda cambia solo quando tocchi Illumina il pannello, guidi tu il pannello, qualcuno della crew illumina un blocco o tocchi Successivo nella schermata di blocco. La parte alta di Blocchi, e in una session la schermata di blocco, continuano a mostrare il blocco in parete.",
         "sessionsLink": "Come una session ti fa sfogliare senza cambiare il blocco in parete",
         "clipAlt": "Sfogliare una lista nel lettore senza illuminare i suoi blocchi",
-        "clipCaption": "Sfoglia la lista mentre il blocco in parete resta lo stesso. Illumina il pannello lo illumina quando scegli tu.",
+        "clipCaption": "Sfoglia la lista mentre il blocco in parete resta lo stesso. Illumina il pannello lo illumina, e anche i blocchi che scegli dopo si illuminano finché il tuo tempo non finisce.",
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
       "quick": {
@@ -820,6 +823,7 @@
       "rest": {
         "title": "Il resto della lista",
         "queue": "Metti subito dopo mette il blocco in cima a Prossimi. Metti in fondo lo mette in fondo.",
+        "replay": "Riparti da qui, su un blocco in Cronologia nella tua coda: lo apre in anteprima. Illumina il pannello lo rimette in parete, con i blocchi che venivano dopo di nuovo in Prossimi.",
         "favorite": "Attiva o disattiva il preferito è il cuore. I blocchi con il cuore riempiono Blocchi che ti piacciono.",
         "editEntry": "Modifica la salita, quando arrivi dal tuo diario.",
         "betaVideo": "Aggiungi un video della beta, se hai effettuato l'accesso.",

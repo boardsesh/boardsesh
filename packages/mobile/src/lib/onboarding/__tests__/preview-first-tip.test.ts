@@ -10,15 +10,23 @@ const storage = vi.hoisted(() => {
     markTipSeen: vi.fn(async (key: string) => {
       seen.add(key);
     }),
+    clearTipSeen: vi.fn(async (key: string) => {
+      seen.delete(key);
+    }),
   };
 });
-vi.mock('../onboarding-storage', () => ({ hasSeenTip: storage.hasSeenTip, markTipSeen: storage.markTipSeen }));
+vi.mock('../onboarding-storage', () => ({
+  hasSeenTip: storage.hasSeenTip,
+  markTipSeen: storage.markTipSeen,
+  clearTipSeen: storage.clearTipSeen,
+}));
 
 const {
   PREVIEW_FIRST_TIP_MAX_OPENS,
   _resetPreviewFirstTipForTests,
   claimPreviewFirstTipOpen,
   consumePreviewFirstAnnouncement,
+  forgetPreviewFirstTip,
   getPreviewFirstTipState,
   loadPreviewFirstTip,
   previewFirstAnnouncementDue,
@@ -171,6 +179,19 @@ describe('the seen flag', () => {
     expect(getPreviewFirstTipState()).toMatchObject({ status: 'retired', announcePending: false });
     expect(claimPreviewFirstTipOpen()).toBe(false);
     expect(storage.seen.has(KEY)).toBe(true);
+  });
+
+  it('shows again after Replay walkthrough forgets it', async () => {
+    await loadPreviewFirstTip();
+    expect(claimPreviewFirstTipOpen()).toBe(true);
+    retirePreviewFirstTip();
+    await settle();
+    expect(getPreviewFirstTipState().status).toBe('retired');
+    await forgetPreviewFirstTip();
+    expect(storage.clearTipSeen).toHaveBeenCalledWith(KEY);
+    expect(getPreviewFirstTipState().status).toBe('unknown');
+    await loadPreviewFirstTip();
+    expect(getPreviewFirstTipState().status).toBe('unseen');
   });
 
   it('reads a store that cannot be read as seen, so it never nags', async () => {

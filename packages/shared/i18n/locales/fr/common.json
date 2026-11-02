@@ -583,7 +583,7 @@
           "label": "Commande de la board",
           "wallButton": "Bouton du mur",
           "lightbulb": "Ampoule",
-          "footer": "Les deux commandes connectent, allument le bloc et montrent qui tient la board. Quand la board est connectée, maintiens pour les options. Lis le libellé du bouton du mur : Tu pilotes la board signifie que chaque bloc choisi s’allume ; touche ce libellé pour arrêter de piloter en restant connecté. L’ampoule est en haut à droite."
+          "footer": "Les deux commandes connectent, allument le bloc et montrent qui tient la board. Quand la board est connectée, maintiens pour les options. Lis le libellé du bouton du mur : Tu pilotes la board signifie que chaque bloc choisi s’allume ; touche-le pour arrêter de piloter. Ton téléphone reste connecté, sauf si Déconnecter le Bluetooth quand le pilotage s’arrête est activé. Après Allumer sur la board, un chrono à côté du libellé et le givre qui rétrécit montrent quand le pilotage s’arrête. L’ampoule est en haut à droite."
         }
       },
       "climbView": {
@@ -614,7 +614,7 @@
         "modeOnTheMinuteHint": "Des créneaux fixes dès que tu l’actives. Enregistrer un essai ou une croix ne relance jamais le chrono.",
         "autoAdvance": "Passer au bloc suivant",
         "autoAdvanceHint": "Il s’allume sur le mur pour toi, seulement avec Boardsesh ouvert.",
-        "autoAdvanceBlocked": "Seule la personne qui pilote le mur peut faire avancer la file.",
+        "autoAdvanceBlocked": "Seule la personne qui tient la board peut faire avancer la file.",
         "autoAdvanceNeedsLength": "Choisis une durée de repos pour faire avancer la file automatiquement.",
         "cuesTitle": "Signaux",
         "cuesFooter": "Désactivés, tu reçois quand même une vibration d’alerte avant que le mur avance tout seul.",
@@ -637,7 +637,7 @@
       },
       "miniPlayer": {
         "title": "Mini-lecteur",
-        "description": "La barre au-dessus des onglets. Touche-la pour ouvrir le bloc.",
+        "description": "La barre au-dessus des onglets garde le dernier bloc que tu as ouvert. Touche-la pour le rouvrir ; Éclairage de la board l'allume sur la board.",
         "buttons": {
           "next": "Bloc suivant",
           "previous": "Bloc précédent",
@@ -753,7 +753,7 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce que ta file passe à un autre bloc. Touche-la pour y revenir.",
+        "accessory": "La barre du bas garde le dernier bloc que tu as ouvert, jusqu'à ce que ta file passe à un autre. Touche-la pour le rouvrir ; son ampoule l'allume sur la board et ✓ fait la croix. Le bloc allumé au mur reste en haut de Blocs.",
         "previewFirst": {
           "title": "Toucher un bloc ouvre un aperçu. Touche Allumer sur la board pour l'allumer.",
           "windowSeconds": "Ensuite, tu pilotes la board : pendant {{seconds}} secondes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
@@ -761,8 +761,8 @@
           "windowMinutes": "Ensuite, tu pilotes la board : pendant {{minutes}} minutes après chaque bloc allumé, chaque bloc que tu choisis s'allume aussi.",
           "untilStop": "Ensuite, tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
           "moonboard": "Sur un MoonBoard, tu pilotes ensuite la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
-          "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée choisie dans les paramètres d'éclairage, et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
-          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée choisie dans les paramètres d'éclairage. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
+          "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après (Paramètres › Board) : un chrono défile à côté du libellé et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
+          "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée réglée dans Arrêter de piloter après, dans Paramètres › Board. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
           "frostOpenEnded": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu le touches pour arrêter. Fais glisser le bouton vers la gauche pour piloter (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc).",
           "frostOpenEndedScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter. Utilise l'action Allumer chaque bloc pour piloter.",
           "settings": "Paramètres d'éclairage",
@@ -840,9 +840,10 @@
       },
       "previewFirstSpotlight": {
         "title": "Parcours les blocs sans allumer la board",
-        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à la fin de la durée choisie (45 secondes par défaut).",
-        "swipe": "Fais glisser le bouton de la board vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume.",
-        "moonboard": "Sur un MoonBoard, tu pilotes jusqu'à ce que tu arrêtes, par défaut. Choisis une durée dans Arrêter de piloter après, dans Paramètres › Board.",
+        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à 45 secondes après le dernier bloc allumé. Change la durée dans Arrêter de piloter après, dans Paramètres › Board.",
+        "swipe": "Fais glisser le bouton de la board vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume. Touche-le pour arrêter. Après Allumer sur la board, un chrono s'affiche à côté du libellé et le givre rétrécit à mesure que le temps passe.",
+        "back": "La flèche en haut à gauche ferme l'aperçu et te ramène à ton bloc, ou au bloc allumé au mur. La barre du bas garde le dernier bloc que tu as ouvert.",
+        "moonboard": "Sur un MoonBoard, tu pilotes jusqu'à ce que tu arrêtes, par défaut ; choisis sa durée dans Sur un MoonBoard.",
         "cta": "Voir comment ça marche",
         "dismiss": "C'est noté"
       }
