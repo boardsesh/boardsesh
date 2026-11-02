@@ -42,7 +42,7 @@ import type { BoardArtReadiness } from '../../lib/board-render/ready-board-art';
  * page mount. Either direction still waits for its neighbour’s native artwork.
  * A qualifying release is retained until the mounted neighbour’s background and
  * holds display (#6351), unless another touch or navigation replaces it, for at
- * most `RELEASE_ART_DEADLINE_MS` (700 ms) from finger-up. A board that failed,
+ * most `RELEASE_ART_DEADLINE_MS` (700 ms) from when its page is mounted. A board that failed,
  * or is still painting by then, is stepped onto anyway: waiting on it held the
  * swipe for good, and the player had to be closed to go on.
  *

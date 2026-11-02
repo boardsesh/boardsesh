@@ -52,16 +52,17 @@ export type QueueNavigationOutcome = 'moved' | 'preview';
 
 /**
  * What the next climb's board was doing when a swipe went to it anyway.
- * `loading`: still painting when the release's 700 ms ran out. `failed`: it
+ * `loading`: still painting 700 ms after its page was mounted. `failed`: it
  * never will, so the swipe went at once. `ready`: it had painted, but the
- * release still waited past 700 ms, for the app to mount the climb's page.
+ * release still waited past 700 ms in all, most of it for the app to mount the
+ * climb's page.
  */
 export type QueueNavigationArtState = 'ready' | 'loading' | 'failed';
 
 /** A swipe that went before its board had painted, or after waiting past the deadline. */
 export type QueueNavigationArtWait = {
   artState: QueueNavigationArtState;
-  /** From finger-up to the step, in milliseconds. */
+  /** From finger-up to the step, in milliseconds. A swipe repeated toward the same climb counts from the first. */
   waitedMs: number;
 };
 

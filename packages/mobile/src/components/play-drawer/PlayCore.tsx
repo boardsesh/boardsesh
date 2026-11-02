@@ -1998,9 +1998,13 @@ export function PlayCore({
   // The same step, told apart by how it was asked for.
   const handlePrevButton = useCallback(() => handlePrev('button'), [handlePrev]);
   const handleNextButton = useCallback(() => handleNext('button'), [handleNext]);
-  // The pager hands a swipe step what its board was still doing, if anything.
-  const handlePrevSwipe = useCallback((artWait?: SwipeArtWait) => handlePrev('swipe', artWait), [handlePrev]);
-  const handleNextSwipe = useCallback((artWait?: SwipeArtWait) => handleNext('swipe', artWait), [handleNext]);
+  // The board's VoiceOver / TalkBack adjust action, the swipe's stand-in. It
+  // takes no arguments, so nothing it is called with reaches the analytics.
+  const handlePrevSwipe = useCallback(() => handlePrev('swipe'), [handlePrev]);
+  const handleNextSwipe = useCallback(() => handleNext('swipe'), [handleNext]);
+  // A swipe step: the pager hands it what its board was still doing, if anything.
+  const handlePrevSwipeStep = useCallback((artWait?: SwipeArtWait) => handlePrev('swipe', artWait), [handlePrev]);
+  const handleNextSwipeStep = useCallback((artWait?: SwipeArtWait) => handleNext('swipe', artWait), [handleNext]);
 
   // A current climb unchanged for 4 h is held dark on the connect's first write
   // (#4979). A tap that connects asked for the climb, so the hold it meets right
@@ -2262,7 +2266,7 @@ export function PlayCore({
   );
 
   // A swipe step changes the climb with these, whichever render it follows.
-  useSwipeNavigation(swipePager, handleNextSwipe, handlePrevSwipe);
+  useSwipeNavigation(swipePager, handleNextSwipeStep, handlePrevSwipeStep);
 
   // --- The end of the list (#6664) -------------------------------------------
   //

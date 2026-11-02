@@ -813,7 +813,10 @@ The defaults above were picked without data. Two events (#6940) let them be revi
 - `Queue Navigation`, once per Next or Previous the climber takes: `direction` (`next`, `previous`), `method`
   (`button`, `swipe`; the board's screen-reader adjust action counts as a swipe), `surface` (`player`,
   `mini_player`), `outcome` (`moved`, or `preview` when a crew or Light on swipe off kept the wall still),
-  `sessionMode` (`party`, `solo`), `lightOnSwipe`, `boardType` and `layoutId` (null on a spray wall). The rest
+  `sessionMode` (`party`, `solo`), `lightOnSwipe`, `boardType` and `layoutId` (null on a spray wall). Only a swipe
+  that went before the next climb's board had painted adds `heldArtState` (`loading`: still painting 700 ms after
+  its page was mounted; `failed`: it never will; `ready`: painted, but the swipe waited over 700 ms in all) and
+  `heldMs` (finger-up to the step); every other step sends neither. The rest
   timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
   of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on
   `surface`.

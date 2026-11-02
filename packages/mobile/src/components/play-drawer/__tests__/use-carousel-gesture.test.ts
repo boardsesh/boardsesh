@@ -694,7 +694,7 @@ describe('useCarouselGesture', () => {
       expect(pager.translateX.value).toBe(-direction * 100);
     });
 
-    it('gives with resistance when a displayed neighbour starts a new artwork attempt', () => {
+    it('gives with resistance, never back against the finger, when a displayed neighbour starts a new artwork attempt', () => {
       const pager = makePager();
       const pageArt = shared<PageArt>({ 0: 'ready', 1: 'ready' });
       renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
@@ -703,8 +703,61 @@ describe('useCarouselGesture', () => {
       handlers.onUpdate({ translationX: -30 });
       expect(pager.translateX.value).toBe(-30);
       pageArt.value = { 0: 'ready', 1: 'loading' };
+      // On from where it is, at the resisted rate: 10 more points move it 3.
       handlers.onUpdate({ translationX: -40 });
-      expect(pager.translateX.value).toBeCloseTo(-12);
+      expect(pager.translateX.value).toBeCloseTo(-33);
+      // The finger turns back: the board closes on the resisted offset (-9) at
+      // most twice as fast, then rides it.
+      handlers.onUpdate({ translationX: -30 });
+      expect(pager.translateX.value).toBeCloseTo(-13);
+      handlers.onUpdate({ translationX: -20 });
+      expect(pager.translateX.value).toBeCloseTo(-6);
+      handlers.onUpdate({ translationX: -10 });
+      expect(pager.translateX.value).toBeCloseTo(-3);
+    });
+
+    it('catches up with the finger, without a jump, when the board it goes toward paints mid-drag', () => {
+      const pager = makePager();
+      const pageArt = shared<PageArt>({ 0: 'ready', 1: 'loading' });
+      renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -100 });
+      expect(pager.translateX.value).toBeCloseTo(-30);
+
+      pageArt.value = { 0: 'ready', 1: 'ready' };
+      // 10 more points of finger close 20 of the 80-point gap, not all of it at once.
+      handlers.onUpdate({ translationX: -110 });
+      expect(pager.translateX.value).toBeCloseTo(-50);
+      handlers.onUpdate({ translationX: -150 });
+      expect(pager.translateX.value).toBeCloseTo(-130);
+      handlers.onUpdate({ translationX: -170 });
+      expect(pager.translateX.value).toBe(-170);
+      // Caught up: from here it is under the finger again.
+      handlers.onUpdate({ translationX: -180 });
+      expect(pager.translateX.value).toBe(-180);
+    });
+
+    it('moves with a finger that turns back after the board painted, and never across the middle early', () => {
+      const pager = makePager();
+      const pageArt = shared<PageArt>({ [-1]: 'ready', 0: 'ready', 1: 'loading' });
+      renderCarouselWithPendingReaction(makeOptions({ pager, pageArt }));
+      const handlers = latestHandlers();
+      handlers.onStart({ translationX: 0 });
+      handlers.onUpdate({ translationX: -100 });
+      pageArt.value = { ...pageArt.value, 1: 'ready' };
+
+      // With the finger, not toward where the finger now puts it (-90).
+      handlers.onUpdate({ translationX: -90 });
+      expect(pager.translateX.value).toBeCloseTo(-20);
+      // The finger is still left of where it started: the board waits in the
+      // middle rather than show the previous climb.
+      handlers.onUpdate({ translationX: -50 });
+      expect(pager.translateX.value).toBe(0);
+      handlers.onUpdate({ translationX: -10 });
+      expect(pager.translateX.value).toBe(0);
+      handlers.onUpdate({ translationX: 10 });
+      expect(pager.translateX.value).toBe(10);
     });
 
     it.each([1, -1] as const)('retains a release toward %s without exposing a bare board', (direction) => {
@@ -804,6 +857,103 @@ describe('useCarouselGesture', () => {
       },
     );
 
+    /** How many times the release's clock was stopped: every cancel but the board's own offset. */
+    function clockStops(pager: SwipePager) {
+      return cancelAnimation.mock.calls.filter(([value]) => value !== pager.translateX).length;
+    }
+
+    it.each(['paints', 'fails', 'touch', 'boundary', 'unmount'] as const)(
+      'stops the clock the moment the waiting release %s',
+      (outcome) => {
+        const { pager, pageArt, catchUp, unmount } = releaseOnto({ 0: 'ready', 1: 'loading' });
+        expect(clockStops(pager)).toBe(0);
+        if (outcome === 'paints') pageArt.value = { ...pageArt.value, 1: 'ready' };
+        if (outcome === 'fails') pageArt.value = { ...pageArt.value, 1: 'failed' };
+        if (outcome === 'touch') {
+          latestHandlers().onTouchesDown({ allTouches: [{ absoluteX: 100, absoluteY: 100 }] });
+        }
+        if (outcome === 'boundary') pager.jsState.value = { ...pager.jsState.value, hasNext: false };
+        if (outcome === 'unmount') unmount();
+        else catchUp();
+        expect(clockStops(pager)).toBe(1);
+        // Nothing left to stop: a second delivery stops nothing more.
+        if (outcome !== 'unmount') catchUp();
+        expect(clockStops(pager)).toBe(1);
+      },
+    );
+
+    describe('swiped again toward the same climb while it waits', () => {
+      const touch = { allTouches: [{ absoluteX: 100, absoluteY: 100 }] };
+
+      it('keeps the first release clock: swiping again never makes the wait longer', () => {
+        const { pager, catchUp } = releaseOnto({ 0: 'ready', 1: 'loading' });
+        const handlers = latestHandlers();
+        vi.setSystemTime(10_400);
+        handlers.onTouchesDown(touch);
+        swipe(handlers, -(SWIPE_THRESHOLD + 1));
+        expect(pager.uiSteps.value).toBe(0);
+        // What was left of the first one's 700 ms, not a fresh 700.
+        expect(deadlines.map(({ delayMs }) => delayMs)).toEqual([RELEASE_ART_DEADLINE_MS, 300]);
+
+        vi.setSystemTime(10_000 + RELEASE_ART_DEADLINE_MS);
+        passDeadline();
+        catchUp();
+        expect(pager.uiSteps.value).toBe(1);
+        expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(1, {
+          artState: 'loading',
+          waitedMs: RELEASE_ART_DEADLINE_MS,
+        });
+      });
+
+      it('goes at once when the first release deadline has already passed', () => {
+        const { pager, catchUp } = releaseOnto({ 0: 'ready', 1: 'loading' });
+        const handlers = latestHandlers();
+        vi.setSystemTime(10_800);
+        handlers.onTouchesDown(touch);
+        swipe(handlers, -(SWIPE_THRESHOLD + 1));
+        // No second clock: its time is up already.
+        expect(deadlines).toHaveLength(1);
+        catchUp();
+        expect(pager.uiSteps.value).toBe(1);
+        expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(1, { artState: 'loading', waitedMs: 800 });
+      });
+
+      it('starts a fresh clock for a swipe the other way', () => {
+        const { pager, catchUp } = releaseOnto({ 0: 'ready', 1: 'loading', [-1]: 'loading' });
+        const handlers = latestHandlers();
+        vi.setSystemTime(10_400);
+        handlers.onTouchesDown(touch);
+        swipe(handlers, SWIPE_THRESHOLD + 1);
+        expect(deadlines.map(({ delayMs }) => delayMs)).toEqual([RELEASE_ART_DEADLINE_MS, RELEASE_ART_DEADLINE_MS]);
+        // A stray finish from the first release's clock does not hurry this one.
+        deadlines[0].finish(true);
+        catchUp();
+        expect(pager.uiSteps.value).toBe(0);
+        vi.setSystemTime(10_400 + RELEASE_ART_DEADLINE_MS);
+        passDeadline();
+        catchUp();
+        expect(pager.flingDirection.value).toBe(-1);
+        expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(1, {
+          artState: 'loading',
+          waitedMs: RELEASE_ART_DEADLINE_MS,
+        });
+      });
+
+      it('carries only into the very next release', () => {
+        const { pager, catchUp } = releaseOnto({ 0: 'ready', 1: 'loading' });
+        const handlers = latestHandlers();
+        vi.setSystemTime(10_400);
+        handlers.onTouchesDown(touch);
+        // A short drag let go: no release, and the first one's clock is gone with it.
+        swipe(handlers, -(SWIPE_THRESHOLD - 1));
+        handlers.onTouchesDown(touch);
+        swipe(handlers, -(SWIPE_THRESHOLD + 1));
+        expect(deadlines.map(({ delayMs }) => delayMs)).toEqual([RELEASE_ART_DEADLINE_MS, RELEASE_ART_DEADLINE_MS]);
+        catchUp();
+        expect(pager.uiSteps.value).toBe(0);
+      });
+    });
+
     it('steps at once onto a board that failed, and counts it', () => {
       const { pager, catchUp } = releaseOnto({ 0: 'ready', 1: 'failed' });
       expect(pager.uiSteps.value).toBe(1);
@@ -879,36 +1029,69 @@ describe('useCarouselGesture', () => {
       return { pager, pageArt, catchUp };
     }
 
-    it('never steps onto a page React has not mounted, however long the release waits', () => {
+    it('never steps onto a page React has not mounted, and gives it the whole deadline once it has', () => {
       const { pager, catchUp } = releaseWhileReactIsBehind({ 0: 'ready', 1: 'ready' });
+      // No page, nothing to paint: no clock runs while React is behind.
+      expect(deadlines).toHaveLength(0);
       vi.setSystemTime(10_000 + 2 * RELEASE_ART_DEADLINE_MS);
-      passDeadline();
       catchUp();
       expect(pager.uiSteps.value).toBe(1);
       expect(pager.isAnimating.value).toBe(false);
 
-      // React mounts page 2, whose board has not reported yet: past the
-      // deadline, the release goes at once.
+      // React mounts page 2, whose board has not reported yet: it gets its 700
+      // ms from now, however long the release had already waited.
       pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      expect(deadlines).toEqual([
+        { delayMs: RELEASE_ART_DEADLINE_MS, reduceMotion: 'never', finish: expect.any(Function) },
+      ]);
+      // A second delivery does not start the clock over.
+      catchUp();
+      expect(deadlines).toHaveLength(1);
+
+      vi.setSystemTime(10_000 + 3 * RELEASE_ART_DEADLINE_MS);
+      passDeadline();
       catchUp();
       expect(pager.uiSteps.value).toBe(2);
       expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(2, {
         artState: 'loading',
-        waitedMs: 2 * RELEASE_ART_DEADLINE_MS,
+        waitedMs: 3 * RELEASE_ART_DEADLINE_MS,
       });
       landFling();
       expect(pager.requestStep).toHaveBeenLastCalledWith(1, 2);
     });
 
+    it('waits for a page React mounted late to paint, past 700 ms after finger-up (#6351)', () => {
+      const { pager, pageArt, catchUp } = releaseWhileReactIsBehind({ 0: 'ready', 1: 'ready' });
+      vi.setSystemTime(10_650);
+      pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+      // The full 700 ms from the mount, not the 50 left of 700 from finger-up.
+      expect(deadlines.map(({ delayMs }) => delayMs)).toEqual([RELEASE_ART_DEADLINE_MS]);
+
+      // 700 ms after finger-up, but only 50 since the page was mounted: no bare page.
+      vi.setSystemTime(10_700);
+      catchUp();
+      expect(pager.uiSteps.value).toBe(1);
+
+      vi.setSystemTime(10_750);
+      pageArt.value = { ...pageArt.value, 2: 'ready' };
+      catchUp();
+      expect(pager.uiSteps.value).toBe(2);
+      expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(2, { artState: 'ready', waitedMs: 750 });
+    });
+
     it('counts a release that waited past the deadline for React, even onto a painted board', () => {
       const { pager, pageArt, catchUp } = releaseWhileReactIsBehind({ 0: 'ready', 1: 'ready' });
       vi.setSystemTime(10_900);
-      passDeadline();
       catchUp();
       pageArt.value = { ...pageArt.value, 2: 'ready' };
       pager.jsState.value = { center: 1, hasPrevious: true, hasNext: true, processedStep: 1 };
       catchUp();
       expect(pager.uiSteps.value).toBe(2);
+      expect(deadlines).toHaveLength(0);
       expect(pager.noteStepArtWait).toHaveBeenCalledExactlyOnceWith(2, { artState: 'ready', waitedMs: 900 });
     });
 
