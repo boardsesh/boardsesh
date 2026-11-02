@@ -984,70 +984,44 @@ describe('DevicePickerSheet tips from 5 s into the scan', () => {
     expect(tipsShown(container)).toBe(false);
   });
 
-  it('shows them for a serial-identified board while only a box with an unrecorded serial is listed', () => {
-    // The gym's Kilter advertises a serial on record, so a Kilter box whose
-    // serial nobody recorded is another box: the climber's board is not heard.
-    const unrecorded = { deviceId: 'unrecorded', name: 'Kilter Board#K-9@3', rssi: -45 };
-    const { container } = render(
-      <DevicePickerSheet
-        {...makeProps({
-          isScanning: true,
-          devices: [tension, unrecorded],
-          resolvedBoards: resolutions,
-          targetBoard,
-          onSearchAnyBoard: vi.fn(),
-        })}
-      />,
-    );
-    expect(listedIds(container)).toEqual(['unrecorded']);
-    expect(tipsShown(container)).toBe(false);
-
-    act(() => {
-      vi.advanceTimersByTime(5_000);
-    });
-    expect(tipsShown(container)).toBe(true);
-    // Boards were heard, so Android is not hiding the scan.
-    expect(locationHint.lastActive).toBe(false);
-  });
-
-  // A box with no serial can only be told apart by its BLE id, so on a first
-  // connect nothing puts the climber's own box in the target group. The tips
-  // saying "Don't see your board?" under the row they are about to tap was wrong.
+  // Every unknown box may be the climber's. A box with no serial can only be
+  // told apart by its BLE id; a serial is recorded only on a connect, so on the
+  // first Boardsesh connect at a board its box sits unknown too, and so does any
+  // box while its lookup is still out. "Don't see your board?" under the row
+  // they are about to tap would be wrong in each case.
   it.each([
     [
-      'a MoonBoard',
+      'a MoonBoard, whose box advertises no serial',
       { boardUuid: 'qa-moon', boardName: 'moonboard' },
       { deviceId: 'moon', name: 'MoonBoard', rssi: -60 },
+      new Map<string, ResolvedBoardEntry>(),
     ],
-    ['a Kilter-built box', targetBoard, unknown],
-  ])('keeps them off on the first connect to %s, whose box advertises no serial', (_label, target, box) => {
+    ['a Kilter-built box, which advertises no serial', targetBoard, unknown, new Map<string, ResolvedBoardEntry>()],
+    [
+      'a Kilter box whose serial nobody recorded yet',
+      targetBoard,
+      { deviceId: 'unrecorded', name: 'Kilter Board#K-9@3', rssi: -45 },
+      resolutions,
+    ],
+    ['a Kilter box whose lookup is still out', targetBoard, kilter, new Map<string, ResolvedBoardEntry>()],
+    [
+      'a box that advertises no board type',
+      { boardUuid: 'qa-moon', boardName: 'moonboard' },
+      { deviceId: 'nameless', name: 'LED Controller', rssi: -50 },
+      new Map<string, ResolvedBoardEntry>(),
+    ],
+  ])('keeps them off with only %s listed', (_label, target, box, resolvedBoards) => {
     const { container } = render(
-      <DevicePickerSheet {...makeProps({ isScanning: true, devices: [tension, box], targetBoard: target })} />,
+      <DevicePickerSheet
+        {...makeProps({ isScanning: true, devices: [tension, box], resolvedBoards, targetBoard: target })}
+      />,
     );
     act(() => {
       vi.advanceTimersByTime(30_000);
     });
     expect(listedIds(container)).toEqual([box.deviceId]);
     expect(tipsShown(container)).toBe(false);
-  });
-
-  it('still shows them when the only listed box advertises no board type', () => {
-    // Nothing says it is a MoonBoard at all, so it is no sign the board is heard.
-    const nameless = { deviceId: 'nameless', name: 'LED Controller', rssi: -50 };
-    const { container } = render(
-      <DevicePickerSheet
-        {...makeProps({
-          isScanning: true,
-          devices: [nameless],
-          targetBoard: { boardUuid: 'qa-moon', boardName: 'moonboard' },
-        })}
-      />,
-    );
-    act(() => {
-      vi.advanceTimersByTime(5_000);
-    });
-    expect(listedIds(container)).toEqual(['nameless']);
-    expect(tipsShown(container)).toBe(true);
+    expect(hasText(container, 'ble.searchingForSavedBoard')).toBe(false);
   });
 
   it('never shows them while the target board is listed', () => {
@@ -1069,16 +1043,18 @@ describe('DevicePickerSheet tips from 5 s into the scan', () => {
     expect(browseButton(container)).toBeNull();
   });
 
-  it('takes them down when a lookup claims a listed box for the target', () => {
-    const props = makeProps({ isScanning: true, devices: [kilter], targetBoard });
+  it('brings them when a lookup names the only listed box as another board', () => {
+    const props = makeProps({ isScanning: true, devices: [kilter], targetBoard, onSearchAnyBoard: vi.fn() });
     const { container, rerender } = render(<DevicePickerSheet {...props} />);
     act(() => {
       vi.advanceTimersByTime(5_000);
     });
-    expect(tipsShown(container)).toBe(true);
-
-    rerender(<DevicePickerSheet {...props} resolvedBoards={resolutions} />);
+    expect(listedIds(container)).toEqual(['kilter']);
     expect(tipsShown(container)).toBe(false);
+
+    rerender(<DevicePickerSheet {...props} resolvedBoards={new Map([['K-1', recordedBoard('qa-other-kilter')]])} />);
+    expect(listedIds(container)).toEqual([]);
+    expect(tipsShown(container)).toBe(true);
   });
 
   it('counts a box this phone remembers for the board as its own', () => {

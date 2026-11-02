@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { classifyPickerDevice, groupPickerDevices, isSerialLessBoxOfTargetType } from '../picker-device-target';
+import { classifyPickerDevice, groupPickerDevices } from '../picker-device-target';
 import type { ResolvedBoardEntry } from '../resolve-serials';
 
 const target = { boardUuid: 'qa-kilter', boardName: 'kilter' };
@@ -184,27 +184,5 @@ describe('classifyPickerDevice with a remembered box', () => {
         rememberedDeviceId: 'stranger',
       }),
     ).toBe('other');
-  });
-});
-
-// What the picker's tips count as "your board heard" among the unknown rows.
-describe('isSerialLessBoxOfTargetType', () => {
-  const moonTarget = { boardUuid: 'qa-moon', boardName: 'moonboard' };
-
-  it('counts a stock MoonBoard and a Kilter-built box, which advertise only their type', () => {
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'moon', name: 'MoonBoard', rssi: -55 }, moonTarget)).toBe(true);
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'bare', name: 'Kilter Board', rssi: -45 }, target)).toBe(true);
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'bare', name: 'Kilter Board@3', rssi: -45 }, target)).toBe(true);
-  });
-
-  it('leaves out a box with a serial, which a lookup could name', () => {
-    expect(isSerialLessBoxOfTargetType(kilter, target)).toBe(false);
-  });
-
-  it('leaves out a box of another type, or of no type at all', () => {
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'bare', name: 'Tension Board', rssi: -45 }, target)).toBe(false);
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'moon', name: 'MoonBoard', rssi: -55 }, target)).toBe(false);
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'odd', name: 'LED Controller', rssi: -60 }, moonTarget)).toBe(false);
-    expect(isSerialLessBoxOfTargetType({ deviceId: 'nameless', rssi: -60 }, moonTarget)).toBe(false);
   });
 });

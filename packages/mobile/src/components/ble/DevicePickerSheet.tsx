@@ -10,11 +10,7 @@ import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
-import {
-  groupPickerDevices,
-  isSerialLessBoxOfTargetType,
-  type PickerBoardTarget,
-} from '../../lib/ble/picker-device-target';
+import { groupPickerDevices, type PickerBoardTarget } from '../../lib/ble/picker-device-target';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import type { DevicePickerSeen } from '../../lib/ble/picker-seen';
 import { useScanTipsDue } from '../../lib/ble/scan-tips';
@@ -157,23 +153,12 @@ export function DevicePickerSheet({
   // RSSI in place between pushes, so re-sorting on a lookup could swap rows the
   // climber is about to tap. Grouping keeps the sorted order, so a lookup moves
   // a row only when its group changes, and the full list keeps its identity.
-  // `possibleBoardCount` is what the tips wait on: the listed boxes that may be
-  // the climber's board. For a known board that is its target group, plus the
-  // unknown boxes nothing but a BLE id could ever identify (every MoonBoard, a
-  // Kilter-built box): on a first connect their own box is one of those. An
-  // unknown box with a serial nobody recorded is another box.
   const filteringTarget = Boolean(targetBoard?.boardUuid) && !showAllBoards;
   const devicesByRssi = useMemo(() => sortByRssi(devices), [devices]);
-  const { listedDevices, possibleBoardCount } = useMemo(() => {
-    if (!filteringTarget || !targetBoard) {
-      return { listedDevices: devicesByRssi, possibleBoardCount: devicesByRssi.length };
-    }
+  const listedDevices = useMemo(() => {
+    if (!filteringTarget || !targetBoard) return devicesByRssi;
     const groups = groupPickerDevices(devicesByRssi, resolvedBoards, targetBoard);
-    const serialLessOfType = groups.unknown.filter((device) => isSerialLessBoxOfTargetType(device, targetBoard));
-    return {
-      listedDevices: [...groups.target, ...groups.unknown],
-      possibleBoardCount: groups.target.length + serialLessOfType.length,
-    };
+    return [...groups.target, ...groups.unknown];
   }, [devicesByRssi, filteringTarget, resolvedBoards, targetBoard]);
 
   // Pre-compute once per devices update; name is stable for a given device
@@ -230,9 +215,11 @@ export function DevicePickerSheet({
   // hands over to the list at 10 s, where the tips are already due.
   const tipsDue = useScanTipsDue(isScanning);
   const tipsTime = !searching && (tipsDue || !isScanning);
-  // Nothing to pick yet: no board heard at all, or for a known board nothing
-  // listed that may be theirs (see `possibleBoardCount`).
-  const boardNotHeard = possibleBoardCount === 0;
+  // Nothing to pick yet: nothing listed. For a known board every listed box may
+  // be theirs: the target group, and every unknown box. On a first Boardsesh
+  // connect at a board (serials are recorded on connect) or while the serial
+  // lookup is still out, the climber's own box is one of the unknown ones.
+  const boardNotHeard = listedDevices.length === 0;
 
   // On a binary whose manifest declares `BLUETOOTH_SCAN` without
   // `neverForLocation` (before Android versionCode 2000761), an empty list on
@@ -290,7 +277,7 @@ export function DevicePickerSheet({
   }, [onBrowseForNow, onDismiss]);
 
   // The hardware tips only when the board they want may be missing: not when
-  // it's listed (for a known board, in its target group), and not in the first
+  // any box that may be theirs is listed, and not in the first
   // 5 s of the scan. Boards of another type listed with no known board in view
   // say so at once, as before. Never while `searching` (`tipsTime`; its device
   // list is held back empty, so no type can mismatch).
