@@ -723,6 +723,8 @@
         "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
         "litShotAlt": "Der Player mit seinem großen Wand-Button",
         "litShotCaption": "Lies den Wand-Button: Du steuerst das Board bedeutet, dass die gewählten Boulder auch beleuchtet werden. Mit Uhr endet es von selbst; ohne Uhr läuft es, bis du darauf tippst.",
+        "timedClipAlt": "Ein Tippen auf Am Board beleuchten startet zeitbegrenztes Steuern mit Uhr und schwindendem Frost",
+        "timedClipCaption": "Tippe auf Am Board beleuchten, um das Steuern zu starten. Uhr und Frost nehmen ab; ein Boulderwechsel füllt sie wieder auf. Tippe erneut, um aufzuhören.",
         "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar.",
         "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Sie sitzt rechts außen in der oberen Reihe. Beide Bedienelemente verbinden und beleuchten Boulder; Halten öffnet bei bestehender Verbindung die Board-Optionen. Der Wand-Button bietet zusätzlich Wischen zum Steuern und Tippen zum Beenden. Die Glühbirne hat keine Mattierung: Hat das Steuern ein Zeitlimit, leert sich ein violetter Ring um sie, während die Zeit abläuft, und ein Tipp auf die Glühbirne beim Steuern trennt die Verbindung."
       },
@@ -738,7 +740,9 @@
         "autoLight": "Board immer steuern (standardmäßig aus) hält dich am Steuer, sobald dein Handy das Board hat: Jeder Boulder, den du wählst, wird beleuchtet, ohne Uhr, deshalb gilt Steuern beenden nach dann nicht. In einer Session braucht es Auch in einer Session. Tippe auf Du steuerst das Board, um aufzuhören; danach öffnen sich deine Boulder als Vorschau, bis du die Verbindung trennst oder auf Am Board beleuchten tippst. Das Menü der oberen Glühbirne hat die meisten dieser Einstellungen auch.",
         "p3": "Ohne Verbindung verbindet Am Board beleuchten, beleuchtet den Boulder auf dem Bildschirm und lässt dich steuern; in einer Crew nur auf dem Handy, das das Board hält, und nur, wenn Auch in einer Session an ist. Nach Bluetooth trennen, wenn das Steuern endet verbindet Am Board beleuchten wieder mit demselben Board. Nach Board trennen vergisst die App dieses Board, und die nächste Verbindung sucht neu.",
         "shotAlt": "Die Steuerung eines verbundenen Boards",
-        "shotCaption": "Beleuchte erneut, schalte alle Lichter aus oder trenne die Verbindung, und ändere Steuern beenden nach, ohne die Wand zu verlassen. Jeden Boulder beleuchten startet das Steuern, wenn verfügbar."
+        "shotCaption": "Beleuchte erneut, schalte alle Lichter aus oder trenne die Verbindung, und ändere Steuern beenden nach, ohne die Wand zu verlassen. Jeden Boulder beleuchten startet das Steuern, wenn verfügbar.",
+        "lightingShotAlt": "Beleuchtungseinstellungen des Boards mit Steuerdauer und automatischer Beleuchtung",
+        "lightingShotCaption": "Wähle, wann das Steuern endet, ob es auch in einer Session gilt und ob dabei Bluetooth getrennt wird."
       },
       "failed": {
         "title": "Wenn es nicht verbindet",
@@ -813,6 +817,8 @@
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
         "clipAlt": "Eine Liste im Player durchsehen, ohne ihre Boulder zu beleuchten",
         "clipCaption": "Stöbere durch die Liste, während das Board seinen Boulder behält. Am Board beleuchten beleuchtet ihn, und die danach gewählten Boulder werden auch beleuchtet, bis deine Zeit um ist.",
+        "shotAlt": "Bouldervorschau mit Zurück-Chip, Vorschau · nicht am Board und einer schlichten Beleuchtungstaste",
+        "shotCaption": "Die Vorschau bleibt auf deinem Handy. Der Zurück-Chip bringt dich zum Boulder am Board; die Beleuchtungstaste beleuchtet diesen.",
         "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
       "quick": {

@@ -468,9 +468,11 @@ Allowed over the board, and nothing else:
 
 ![The wall button in each state](images/wall-button-states.png)
 
-The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row.
-
-These shots are out of date and need replacing. They read "Connect board", "Lit on the wall" and "Put on the wall" (now Put on board, Disconnect board and You are driving the wall since #7113), draw a worded back chip (wordless since owner decision B), and have no "Preview · not on the wall" line. None shows a timed drive's clock and shrunk frost. `nothing-over-the-climb-after.png` also shows a "Lit on the wall" button.
+Captured from main `3b1d9be90c` on 2026-11-02: iPhone 16 Pro Max, dark,
+local seeded Tension board and the simulated Bluetooth adapter. Left to right:
+Put on board without a link, connected but stopped, a solo preview, an open-ended
+drive, and a timed drive with its clock and frost part-way down. These show the
+app's controls, not physical Bluetooth delivery. [Capture provenance](help-screenshots.md).
 
 #### One place says "is it lit" (#7000)
 
@@ -537,8 +539,11 @@ way it looks like this:
   28 pt from the trailing edge over 250 ms, holds 150 ms and springs back (damping 20, stiffness 300), about 700 ms
   in all; under Reduce Motion the same strip fades in and out where it stands (200 + 300 + 200 ms). Shimmer was
   rejected (Liquid Glass already has a specular), and so was a draggable knob (it clashes with the face).
-  Shots: `docs/images/7113/`. The hint and drag shots there predate #7170 and still draw the peek and the drag as
-  frost; the flat amber described above is what ships. Re-capture pending, with a timed-drive frame added.
+  Current dark references in `docs/images/7113/` were captured from `3b1d9be90c`
+  on 2026-11-02: `hints-dark` shows the flat amber entering, `drag-dark` the
+  release prompt, `driving-dark` the open-ended frost, and `timed-dark` the
+  draining clock and frost. The older light and workout files are historical;
+  they do not illustrate the current swipe treatment.
 
 A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen
 readers), or on You are driving the wall stops driving and keeps the link (unless Disconnect Bluetooth when driving

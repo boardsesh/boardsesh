@@ -723,6 +723,8 @@
         "p2": "La primera vez, iOS pide Bluetooth. Android pide dispositivos cercanos, o Ubicación en Android 11 y anteriores.",
         "litShotAlt": "El reproductor con su botón grande del plafón",
         "litShotCaption": "Lee el botón del muro: Estás al mando del plafón significa que los bloques que elijas también se encienden. Con reloj, termina solo; sin reloj, sigue hasta que lo toques.",
+        "timedClipAlt": "Un toque en Poner en el plafón inicia un mando con tiempo, un reloj y un fondo esmerilado que se reduce",
+        "timedClipCaption": "Toca Poner en el plafón para tomar el mando. El reloj y el esmerilado se reducen; cambiar de bloque los rellena. Toca otra vez el botón para dejar el mando.",
         "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar.",
         "p4": "¿Prefieres la bombilla? En un bloque, toca ⋯, luego Opciones de vista, Botones, y pon Control del plafón en Bombilla. Ocupa el extremo derecho de la fila superior. Los dos controles conectan y encienden bloques; mantenlos pulsados para las opciones del plafón mientras estás conectado. El botón del muro también permite deslizar para tomar el mando y tocar para dejarlo. La bombilla no se esmerila: si el mando tiene límite de tiempo, un anillo violeta a su alrededor se vacía a medida que pasa el tiempo, y tocar la bombilla mientras tienes el mando desconecta."
       },
@@ -738,7 +740,9 @@
         "autoLight": "Siempre al mando del plafón (desactivado por defecto) te mantiene al mando cada vez que tu teléfono tenga el plafón: cada bloque que elijas se enciende, sin reloj, así que Dejar el mando tras no se aplica. En una sesión necesita También en una sesión. Toca Estás al mando del plafón para parar; los bloques que elijas se abren en vista previa hasta que te desconectes o pulses Poner en el plafón. El menú de la bombilla superior tiene casi todos estos ajustes.",
         "p3": "Sin plafón conectado, Poner en el plafón conecta, enciende el bloque de la pantalla y te da el mando; en grupo, solo en el teléfono que tiene el plafón y con También en una sesión activado. Tras Desconectar el Bluetooth al dejar el mando, Poner en el plafón vuelve a conectar al mismo plafón. Tras Desconectar plafón, la app olvida ese plafón y la siguiente conexión vuelve a buscar.",
         "shotAlt": "Controles de un plafón conectado",
-        "shotCaption": "Vuelve a iluminar, apaga todas las luces o desconecta, y cambia Dejar el mando tras sin salir del muro. Encender cada bloque toma el mando cuando está disponible."
+        "shotCaption": "Vuelve a iluminar, apaga todas las luces o desconecta, y cambia Dejar el mando tras sin salir del muro. Encender cada bloque toma el mando cuando está disponible.",
+        "lightingShotAlt": "Ajustes de iluminación del plafón con duración del mando y controles de iluminación automática",
+        "lightingShotCaption": "Elige cuándo termina el mando, si también se aplica en una sesión y si al terminar se desconecta el Bluetooth."
       },
       "failed": {
         "title": "Cuando no conecta",
@@ -813,6 +817,8 @@
         "sessionsLink": "Cómo una sesión mantiene el muro quieto",
         "clipAlt": "Explorar una lista en el reproductor sin encender sus bloques",
         "clipCaption": "Explora la lista mientras el plafón mantiene su bloque. Poner en el plafón lo enciende, y los bloques que elijas después también se encienden hasta que se acabe tu tiempo.",
+        "shotAlt": "Vista previa de un bloque con el botón de volver, Vista previa · no está en el muro y Poner en el plafón sin esmerilado",
+        "shotCaption": "La vista previa se queda en tu teléfono. El botón de volver regresa al bloque del muro; Poner en el plafón enciende este.",
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },
       "quick": {

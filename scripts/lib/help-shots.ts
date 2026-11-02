@@ -35,9 +35,9 @@ export const HELP_WEBP_DIR = resolve(REPO_ROOT, 'packages/web/public/images/help
  * silently shipping eleven of twelve assets is how a help page ends up with a
  * broken image that nobody notices until it is live.
  *
- * The flow shoots FOURTEEN; this map ships nine. `05-holds-filter`, `06-zone-filter`
- * and `12-preview` photograph the empty state of screens that recorded clips now
- * show in motion (see help-clips.ts), so they are captured but no longer shipped. `13-share-beta` and
+ * The flow shoots FIFTEEN; this map ships eleven. `05-holds-filter` and `06-zone-filter`
+ * photograph the empty state of screens that recorded clips now show in motion
+ * (see help-clips.ts), so they are captured but no longer shipped. `13-share-beta` and
  * `14-beta-shelf` are captured but not published, because the capture account
  * has no beta video attached, so both screens photograph their empty state. The
  * shots are honest — that really is what the app shows with nothing to list —
@@ -54,6 +54,8 @@ export const HELP_SHOTS = [
   { capture: '09-board-sheet', asset: 'board-sheet' },
   { capture: '10-board-view', asset: 'board-view' },
   { capture: '11-climb-actions', asset: 'climb-actions' },
+  { capture: '12-preview', asset: 'preview' },
+  { capture: '15-board-lighting', asset: 'board-lighting' },
 ] as const;
 
 /** Sharp settings are fixed by prior art — see docs/design/marketing-campaign-assets.md. */

@@ -15,6 +15,8 @@ export type HelpShot =
   | 'board-sheet'
   | 'board-view'
   | 'climb-actions'
+  | 'preview'
+  | 'board-lighting'
   | 'spray-editor-select'
   | 'spray-editor-draw'
   | 'spray-editor-corners';

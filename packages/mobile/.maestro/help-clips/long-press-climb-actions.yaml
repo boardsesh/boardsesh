@@ -40,3 +40,14 @@ name: help clip - long press a climb row
     visible: 'zzz-help-clip-pause'
     timeout: 1200
     optional: true
+
+# The row's more button opens the same lifted menu.
+- tapOn:
+    point: '94%,23%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1600
+    optional: true
+- tapOn:
+    point: '50%,7%'

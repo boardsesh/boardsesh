@@ -723,6 +723,8 @@
         "p2": "La première fois, iOS demande le Bluetooth. Android demande les appareils à proximité, ou la localisation sur Android 11 et antérieur.",
         "litShotAlt": "Le lecteur avec son grand bouton du mur",
         "litShotCaption": "Lis le bouton du mur : Tu pilotes la board signifie que les blocs que tu choisis s’allument aussi. Avec un chrono, ça s’arrête tout seul ; sans chrono, ça dure jusqu’à ce que tu le touches.",
+        "timedClipAlt": "Appuyer sur Allumer sur la board lance un pilotage chronométré, avec une horloge et un fond givré qui diminue",
+        "timedClipCaption": "Appuie sur Allumer sur la board pour piloter la board. L’horloge et le givre diminuent ; changer de bloc les remplit. Appuie à nouveau pour arrêter.",
         "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar.",
         "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. Elle prend le bout droit de la rangée du haut. Les deux commandes connectent et allument les blocs ; maintiens-les pour les options quand la board est connectée. Le bouton du mur permet aussi de glisser pour piloter et de toucher pour arrêter. L’ampoule n’a pas de givre : quand le pilotage a une durée limite, un anneau violet autour d’elle se vide à mesure que le temps passe, et toucher l’ampoule pendant que tu pilotes déconnecte."
       },
@@ -738,7 +740,9 @@
         "autoLight": "Toujours piloter la board (désactivé par défaut) te garde aux commandes chaque fois que ton téléphone a la board : chaque bloc que tu choisis s’allume, sans chrono, donc Arrêter de piloter après ne s’applique pas. En session, il faut Aussi en session. Touche Tu pilotes la board pour arrêter ; tes choix s’ouvrent en aperçu jusqu’à ce que tu te déconnectes ou touches Allumer sur la board. Le menu de l’ampoule du haut reprend la plupart de ces réglages.",
         "p3": "Sans board connectée, Allumer sur la board connecte, allume le bloc à l’écran et te fait piloter ; en crew, seulement sur le téléphone qui tient la board, et si Aussi en session est activé. Après Déconnecter le Bluetooth quand le pilotage s’arrête, Allumer sur la board se reconnecte à la même board. Après Déconnecter la board, l’app oublie cette board et la connexion suivante cherche de nouveau.",
         "shotAlt": "Les commandes d’une board connectée",
-        "shotCaption": "Rallume, éteins toutes les lumières ou déconnecte, et change Arrêter de piloter après sans quitter le mur. Allumer chaque bloc commence le pilotage quand l’option est disponible."
+        "shotCaption": "Rallume, éteins toutes les lumières ou déconnecte, et change Arrêter de piloter après sans quitter le mur. Allumer chaque bloc commence le pilotage quand l’option est disponible.",
+        "lightingShotAlt": "Réglages d’éclairage de la board avec durée du pilotage et éclairage automatique",
+        "lightingShotCaption": "Choisis quand le pilotage s’arrête, s’il s’applique aussi en session et si l’arrêt déconnecte le Bluetooth."
       },
       "failed": {
         "title": "Quand ça ne se connecte pas",
@@ -813,6 +817,8 @@
         "sessionsLink": "Comment une session garde le mur tranquille",
         "clipAlt": "Explorer une liste dans le lecteur sans allumer ses blocs",
         "clipCaption": "Explore la liste pendant que le mur garde son bloc. Allumer sur la board l’allume, et les blocs que tu choisis ensuite s’allument aussi jusqu’à la fin de ton temps.",
+        "shotAlt": "Aperçu d’un bloc avec le bouton de retour, Aperçu · pas au mur et un bouton d’éclairage sans givre",
+        "shotCaption": "L’aperçu reste sur ton téléphone. Le bouton de retour revient au bloc sur la board ; le bouton d’éclairage allume celui-ci.",
         "drivingLink": "Comment commencer et arrêter de piloter la board"
       },
       "quick": {

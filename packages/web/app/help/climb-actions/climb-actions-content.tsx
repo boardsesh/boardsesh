@@ -60,6 +60,11 @@ export default function ClimbActionsContent() {
             alt={t('help.climbActions.preview.clipAlt')}
             caption={t('help.climbActions.preview.clipCaption')}
           />
+          <HelpScreenshot
+            shot="preview"
+            alt={t('help.climbActions.preview.shotAlt')}
+            caption={t('help.climbActions.preview.shotCaption')}
+          />
         </HelpShots>
         <Prose>{t('help.climbActions.preview.p1')}</Prose>
         <Prose>
