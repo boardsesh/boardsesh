@@ -112,9 +112,11 @@ iOS Alert, so its Cancel button is matched by text.
   three climb rows left-to-right, or the tap just opens the climb. Turn on Tapping a playlist loads it into my
   queue and leave Light the board when I tap a climb off: the tap then loads
   the list into Up next, keeps the wall's climb and previews the tapped one.
-- **The reaction menu is a `Modal` above the navigator.** Navigating away does
-  not dismiss it; `remove-from-playlist` takes two scrim taps to get from the
-  playlist view back to the list.
+- **The lifted climb menu is a full-window overlay above the navigator.**
+  Navigating away does not dismiss it. Add to Playlist closes it and opens the
+  playlist sheet, where the old reaction card swapped to an inline picker, so
+  `remove-from-playlist`'s menu and playlist coordinates need re-measuring on
+  its next recording.
 - **`logbook-swipe-edit-delete` targets a single-climb day.** `LogbookRow`
   commits past 96 pt of translation, so the two reveal swipes are 79 pt (18 % of
   the 440 pt width) and only the last one crosses. The row at y=35 % is the

@@ -1,4 +1,5 @@
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ReactElement, RefObject } from 'react';
+import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import type { IconName } from './icon-map';
 
 /** A single menu row, neutral across the native iOS `Menu` / Android `DropdownMenu` impls. */
@@ -64,6 +65,8 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
    */
   headline?: string;
   anchorSize?: never;
+  children?: never;
+  trigger?: never;
 };
 
 /** Icon anchor: a bare glyph trigger (the "⋯" overflow button), with no visible text. */
@@ -83,7 +86,43 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
    * IconButton keeps its 48dp target. The glyph keeps its size.
    */
   anchorSize?: number;
+  children?: never;
+  trigger?: never;
 };
 
-/** Exactly one of `label` / `iconName`: a text anchor or a glyph anchor, never both. */
-export type AppMenuProps = AppMenuTextAnchorProps | AppMenuIconAnchorProps;
+/** Opens a long-press menu from a separate control, such as a row's ⋮ button. */
+export type AppMenuHandle = {
+  /** Android and web open the menu under the row. A SwiftUI context menu only
+   *  opens from its hold, so on iOS this does nothing. */
+  open: () => void;
+};
+
+/** A row body keeps its own tap/accessibility behavior while a hold opens its menu. */
+type AppMenuLongPressAnchorProps = AppMenuSharedProps & {
+  children: ReactElement;
+  trigger: 'longPress';
+  menuRef?: RefObject<AppMenuHandle | null>;
+  /**
+   * What the actions act on (climb, board, slot, row set). The anchor and its
+   * children stay mounted when it changes, so a recycled list cell keeps its
+   * row; only the drawn menu is retired: Android and web close an open menu,
+   * and iOS re-keys its items so one still on screen from before runs nothing.
+   */
+  menuKey?: string;
+  /** Lift a list row as an opaque, rounded native preview on iOS. */
+  liftPreview?: boolean;
+  /** The lifted preview's opaque surface; the screen background by default. */
+  previewBackgroundColor?: ColorValue;
+  /** Preserve a selected row's translucent wash over the opaque preview surface. */
+  previewOverlayColor?: ColorValue;
+  accessibilityLabel?: string;
+  label?: never;
+  iconName?: never;
+  iconAppearance?: never;
+  showCaret?: never;
+  headline?: never;
+  anchorSize?: never;
+};
+
+/** A text, icon, or custom long-press anchor. */
+export type AppMenuProps = AppMenuTextAnchorProps | AppMenuIconAnchorProps | AppMenuLongPressAnchorProps;

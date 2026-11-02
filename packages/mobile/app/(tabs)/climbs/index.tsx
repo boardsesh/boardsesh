@@ -278,8 +278,9 @@ function ClimbListInner() {
   // second board-view shot passes 1 to render myBoards[1].
   // screenshotOpenPreview / screenshotOpenWallPreview land the same first climb
   // in the drawer's two wall-state shots — browsing, and on the wall.
-  // screenshotOpenClimbActions opens the long-press reaction menu over the first
-  // row (the help flow's 11-climb-actions shot).
+  // screenshotOpenClimbActions lifts the first row's climb menu, the same
+  // presentation a hold or its ellipsis opens (the help flow's 11-climb-actions
+  // shot).
   const {
     screenshotOpenFirst,
     screenshotDrive,
@@ -337,7 +338,7 @@ function ClimbListInner() {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
-  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
+  const { getClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
@@ -1561,31 +1562,32 @@ function ClimbListInner() {
     handleSheetClearName,
   ]);
 
-  // Screenshot mode: open the long-press reaction menu over the first row. The
-  // gesture behind it is a 400ms `Gesture.LongPress()` on the row itself
-  // (ClimbListRow), and Maestro's accessibility tree on this iOS build doesn't
-  // expose the row at all — there is nothing to long-press — so the deep-link
-  // param is the only route to this screen. Same shape as the preview latch
-  // above: a one-shot ref, gated on the active board plus settled results so the
-  // menu opens over a list that has rows in it rather than skeletons.
-  // Guarded by `isPlaceholderDataRef` the same way every row action is: `searchReady`
-  // only says the filters finished restoring (`hasBoardConfig && restoredKey ===
-  // boardKey`), which is a different signal from React Query's placeholder flag. On
-  // a board or filter swap `visibleClimbs[0]` is still the PREVIOUS board's climb
-  // while placeholder data is showing, and this latch is one-shot — it would open
-  // the menu over the wrong climb and never correct itself. Dead-strips in normal
-  // builds.
-  const screenshotClimbActionsOpenedRef = useRef(false);
+  // Screenshot mode: lift the first row's climb menu. Maestro's accessibility
+  // tree on this iOS build doesn't expose the rows, so there is nothing to hold,
+  // and a coordinate moves with the list header; the param names the row
+  // instead and the row opens its own menu (`ClimbListRow`'s
+  // `screenshotOpenMenu`). Same shape as the preview latch above: one shot,
+  // gated on the active board plus settled results so the menu opens over a
+  // list that has rows in it rather than skeletons. Gated on placeholder data
+  // too: on a board or filter swap `visibleClimbs[0]` is still the PREVIOUS
+  // board's climb while placeholder data shows, and a one-shot latch would lift
+  // the wrong row and never correct itself. Dead-strips in normal builds.
+  const [screenshotMenuClimbUuid, setScreenshotMenuClimbUuid] = useState<string | null>(null);
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenClimbActions) return;
     if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    if (!activeBoard || !searchReady || screenshotClimbActionsOpenedRef.current) return;
-    if (isPlaceholderDataRef.current) return;
+    if (!activeBoard || !searchReady || isPlaceholderData || screenshotMenuClimbUuid !== null) return;
     const firstClimb = visibleClimbs[0];
-    if (!firstClimb) return;
-    screenshotClimbActionsOpenedRef.current = true;
-    openClimbActions(firstClimb);
-  }, [screenshotOpenClimbActions, screenshotTargetBoard, activeBoard, searchReady, visibleClimbs, openClimbActions]);
+    if (firstClimb) setScreenshotMenuClimbUuid(firstClimb.uuid);
+  }, [
+    screenshotOpenClimbActions,
+    screenshotTargetBoard,
+    activeBoard,
+    searchReady,
+    isPlaceholderData,
+    screenshotMenuClimbUuid,
+    visibleClimbs,
+  ]);
 
   // Row actions ignore stale placeholder rows, same as handleClimbPress. The
   // right swipe is Play next: the top of Up next, so a climber with a long queue
@@ -1598,12 +1600,16 @@ function ClimbListInner() {
     [playNext],
   );
 
+  // The row builds its menu while it renders, so the stale-row guard runs when
+  // a command is picked, not here: a dep on the placeholder flag would rebuild
+  // every visible row's menu twice per search.
   const handleOpenClimbActions = useCallback(
     (climb: Climb) => {
-      if (isPlaceholderDataRef.current) return;
-      openClimbActions(climb);
+      const target = getClimbActions(climb);
+      if (!target) return target;
+      return { ...target, resolveClimb: async () => (isPlaceholderDataRef.current ? null : climb) };
     },
-    [openClimbActions],
+    [getClimbActions],
   );
 
   const handleOpenAddToPlaylist = useCallback(
@@ -2189,9 +2195,11 @@ function ClimbListInner() {
         showMoreButton
         // Grid cells fill the row height FlashList gives them.
         fillCell={listColumns > 1}
+        screenshotOpenMenu={screenshotMenuClimbUuid !== null && climb.uuid === screenshotMenuClimbUuid}
       />
     ),
     [
+      screenshotMenuClimbUuid,
       listColumns,
       boardName,
       layoutId,

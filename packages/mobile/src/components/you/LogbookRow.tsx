@@ -22,7 +22,6 @@ import Animated, {
 import {
   GestureDetector,
   useTapGesture,
-  useLongPressGesture,
   useExclusiveGestures,
   useSimultaneousGestures,
 } from 'react-native-gesture-handler';
@@ -52,14 +51,16 @@ import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import { resolveCrowdDifficultyId, getBoulderGradeById, clampDifficultyId } from '../../lib/boardsesh-grade-display';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection, hapticMedium, hapticLight, hapticSuccess } from '../../lib/haptics';
+import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
+import { ClimbMenu, useClimbMenu } from '../climb-actions/ClimbActionsMenu';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS } from '../../lib/row-accessibility-actions';
 
 type LogbookRowProps = {
   ascent: AscentFeedItem;
   /** Tap → the row's primary action (logbook: activate + open play drawer). */
   onActivate: (ascent: AscentFeedItem) => void;
-  /** Long press → open the climb actions sheet. Omit to disable long-press on a
-   *  host that wants the row to be a plain selector. */
-  onOpenActions?: (ascent: AscentFeedItem) => void;
+  /** Resolve the native menu's target; omit for a plain selector. */
+  onOpenActions?: (ascent: AscentFeedItem) => ClimbActionsTarget | null | undefined;
   /** Swipe left-to-right → edit the logbook entry. Owner-only; when omitted the
    *  left swipe action is disabled (you can't edit another climber's ticks). */
   onEdit?: (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => void;
@@ -190,7 +191,6 @@ export const LogbookRow = memo(function LogbookRow({
   const { t, i18n } = useTranslation('you');
   const editActionLabel = t('mobile.logbook.row.editAction');
   const deleteActionLabel = t('mobile.logbook.row.deleteAction');
-  const moreActionsLabel = t('mobile.logbook.row.moreActions');
   const { systemColors, brandColors: brand } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
@@ -300,8 +300,6 @@ export const LogbookRow = memo(function LogbookRow({
   // Stable refs so gesture/worklet callbacks never close over stale props.
   const onActivateRef = useRef(onActivate);
   onActivateRef.current = onActivate;
-  const onOpenActionsRef = useRef(onOpenActions);
-  onOpenActionsRef.current = onOpenActions;
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
   const onDeleteRequestRef = useRef(onDeleteRequest);
@@ -316,12 +314,9 @@ export const LogbookRow = memo(function LogbookRow({
     onActivateRef.current(ascentRef.current);
   }, []);
 
-  const handleLongPress = useCallback(() => {
-    const openActions = onOpenActionsRef.current;
-    if (!openActions) return;
-    hapticMedium();
-    openActions(ascentRef.current);
-  }, []);
+  // Memoized: a fresh target rebuilds the native menu's rows on every render.
+  const menuTarget = useMemo(() => onOpenActions?.(ascent) ?? null, [onOpenActions, ascent]);
+  const menu = useClimbMenu(menuTarget);
 
   const handleEdit = useCallback(() => {
     const edit = onEditRef.current;
@@ -379,17 +374,9 @@ export const LogbookRow = memo(function LogbookRow({
       runOnJS(handleRowPress)();
     },
   });
-  const longPressGesture = useLongPressGesture({
-    minDuration: 400,
-    onActivate: () => {
-      'worklet';
-      runOnJS(handleLongPress)();
-    },
-  });
-  const exclusiveTapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
   // Mount the lock on the row and make the full-swipe tracker wait for it too.
   const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
-  const rowGestures = useSimultaneousGestures(onOpenActions ? exclusiveTapGesture : singleTapGesture, guardedFullSwipe);
+  const rowGestures = useSimultaneousGestures(singleTapGesture, guardedFullSwipe);
 
   // Read dragArmedRef.current rather than the armed state directly so these stay
   // dep-free: a changed render-callback reference makes ReanimatedSwipeable
@@ -456,19 +443,22 @@ export const LogbookRow = memo(function LogbookRow({
     .join(', ');
 
   const accessibilityActions = useMemo(() => {
-    const actions: { name: string; label: string }[] = [];
-    if (onEdit) actions.push({ name: 'edit', label: editActionLabel });
-    if (onDeleteRequest) actions.push({ name: 'delete', label: deleteActionLabel });
-    if (onOpenActions) actions.push({ name: 'more', label: moreActionsLabel });
-    return actions;
-  }, [onEdit, onDeleteRequest, onOpenActions, editActionLabel, deleteActionLabel, moreActionsLabel]);
+    const actions: { name: string; label?: string }[] = [...(ACTIVATE_ACCESSIBILITY_ACTIONS ?? [])];
+    if (onEdit) actions.push({ name: 'editEntry', label: editActionLabel });
+    if (onDeleteRequest) actions.push({ name: 'deleteEntry', label: deleteActionLabel });
+    return [...actions, ...menu.accessibilityActions.filter((action) => !onEdit || action.name !== 'editEntry')];
+  }, [onEdit, onDeleteRequest, editActionLabel, deleteActionLabel, menu.accessibilityActions]);
 
-  const handleAccessibilityAction = useCallback((event: AccessibilityActionEvent) => {
-    const actionName = event.nativeEvent.actionName;
-    if (actionName === 'edit') onEditRef.current?.(ascentRef.current, 'a11y');
-    else if (actionName === 'delete') onDeleteRequestRef.current?.(ascentRef.current, 'a11y');
-    else if (actionName === 'more') onOpenActionsRef.current?.(ascentRef.current);
-  }, []);
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      const actionName = event.nativeEvent.actionName;
+      if (actionName === 'activate') handleRowPress();
+      else if (actionName === 'editEntry') onEditRef.current?.(ascentRef.current, 'a11y');
+      else if (actionName === 'deleteEntry') onDeleteRequestRef.current?.(ascentRef.current, 'a11y');
+      else menu.onAccessibilityAction(event);
+    },
+    [handleRowPress, menu.onAccessibilityAction],
+  );
 
   return (
     <View style={styles.outerContainer}>
@@ -494,116 +484,119 @@ export const LogbookRow = memo(function LogbookRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={rowGestures} touchAction="pan-y">
-          <View
-            testID={`logbook-entry-${ascent.uuid}`}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={accessibilityLabel}
-            accessibilityActions={accessibilityActions}
-            onAccessibilityAction={handleAccessibilityAction}
-            style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
-          >
-            {/* Status — the hero of a log entry. Shape carries the meaning. */}
-            <View style={styles.statusSlot}>
-              <Icon name={STATUS_ICON[ascent.status]} size={STATUS_GLYPH_SIZE} color={statusColor} />
-            </View>
+        <ClimbMenu rows={menu.rows} menuKey={menu.menuKey}>
+          <GestureDetector gesture={rowGestures} touchAction="pan-y">
+            <View
+              testID={`logbook-entry-${ascent.uuid}`}
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={accessibilityLabel}
+              onAccessibilityTap={handleRowPress}
+              accessibilityActions={accessibilityActions}
+              onAccessibilityAction={handleAccessibilityAction}
+              style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
+            >
+              {/* Status — the hero of a log entry. Shape carries the meaning. */}
+              <View style={styles.statusSlot}>
+                <Icon name={STATUS_ICON[ascent.status]} size={STATUS_GLYPH_SIZE} color={statusColor} />
+              </View>
 
-            {/* Name + intrinsic attributes, then the review meta line(s). */}
-            <View style={styles.centerColumn}>
-              <View style={styles.nameRow}>
-                <Text variant="body" numberOfLines={1} style={styles.climbName}>
-                  {ascent.climbName}
-                </Text>
-                {/* ClimbAttributeIcons keys the © glyph on Number(value) > 0 and
+              {/* Name + intrinsic attributes, then the review meta line(s). */}
+              <View style={styles.centerColumn}>
+                <View style={styles.nameRow}>
+                  <Text variant="body" numberOfLines={1} style={styles.climbName}>
+                    {ascent.climbName}
+                  </Text>
+                  {/* ClimbAttributeIcons keys the © glyph on Number(value) > 0 and
                       never renders the value itself, so the '1' fallback only
                       forces the glyph on for a benchmark tick whose grade names
                       are missing — isBenchmark is authoritative here (the old
                       null fallback silently hid the glyph on those rows). */}
-                <ClimbAttributeIcons
-                  benchmarkDifficulty={
-                    ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
-                  }
-                  isNoMatch={ascent.isNoMatch}
-                />
-                {ascent.isMirror ? (
-                  <View style={styles.mirrorIcon}>
-                    <Icon name="mirror" size={12} color={systemColors.secondaryLabel} />
+                  <ClimbAttributeIcons
+                    benchmarkDifficulty={
+                      ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
+                    }
+                    isNoMatch={ascent.isNoMatch}
+                  />
+                  {ascent.isMirror ? (
+                    <View style={styles.mirrorIcon}>
+                      <Icon name="mirror" size={12} color={systemColors.secondaryLabel} />
+                    </View>
+                  ) : null}
+                </View>
+                <Text
+                  testID={`logbook-board-${ascent.boardType}`}
+                  variant="footnote"
+                  color={systemColors.secondaryLabel}
+                  style={styles.boardIdentity}
+                >
+                  {boardAngleLabel}
+                </Text>
+                {wallContext ? (
+                  <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+                    {wallContext}
+                  </Text>
+                ) : null}
+                {notePreview ? (
+                  <View style={styles.metaRow}>
+                    <Icon name="edit" size={11} color={systemColors.secondaryLabel} />
+                    <Text
+                      variant="caption1"
+                      color={systemColors.secondaryLabel}
+                      numberOfLines={1}
+                      style={styles.metaText}
+                    >
+                      {notePreview}
+                    </Text>
                   </View>
                 ) : null}
               </View>
-              <Text
-                testID={`logbook-board-${ascent.boardType}`}
-                variant="footnote"
-                color={systemColors.secondaryLabel}
-                style={styles.boardIdentity}
-              >
-                {boardAngleLabel}
-              </Text>
-              {wallContext ? (
-                <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                  {wallContext}
-                </Text>
-              ) : null}
-              {notePreview ? (
-                <View style={styles.metaRow}>
-                  <Icon name="edit" size={11} color={systemColors.secondaryLabel} />
-                  <Text
-                    variant="caption1"
-                    color={systemColors.secondaryLabel}
-                    numberOfLines={1}
-                    style={styles.metaText}
-                  >
-                    {notePreview}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
 
-            {/* Grade column — your grade big; the crowd's as a small secondary
+              {/* Grade column — your grade big; the crowd's as a small secondary
                   with the disagreement direction. flexShrink:0 so the title never
                   squeezes the grade. */}
-            <View style={styles.trailing}>
-              {gradeLabel || starsLabel || hasBetaVideo ? (
-                <View style={styles.iconGradeRow}>
-                  {/* Your rating + beta marker sit LEFT of the grade (review
+              <View style={styles.trailing}>
+                {gradeLabel || starsLabel || hasBetaVideo ? (
+                  <View style={styles.iconGradeRow}>
+                    {/* Your rating + beta marker sit LEFT of the grade (review
                         feedback: the meta line was too crowded to scan them).
                         Camera keeps its filled brand-violet emphasis. */}
-                  {starsLabel ? (
-                    <Text variant="caption1" color={systemColors.secondaryLabel}>
-                      {starsLabel}
+                    {starsLabel ? (
+                      <Text variant="caption1" color={systemColors.secondaryLabel}>
+                        {starsLabel}
+                      </Text>
+                    ) : null}
+                    {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
+                    {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
+                    {gradeLabel ? (
+                      <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
+                        {gradeLabel}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+                {consensusGradeLabel ? (
+                  <View style={styles.iconGradeRow}>
+                    <Icon name="people" size={11} color={systemColors.secondaryLabel} />
+                    <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+                      {consensusGradeLabel}
                     </Text>
-                  ) : null}
-                  {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
-                  {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-                  {gradeLabel ? (
-                    <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-                      {gradeLabel}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-              {consensusGradeLabel ? (
-                <View style={styles.iconGradeRow}>
-                  <Icon name="people" size={11} color={systemColors.secondaryLabel} />
-                  <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
-                    {consensusGradeLabel}
-                  </Text>
-                  {deltaDirection ? (
-                    <Icon
-                      name={deltaDirection === 'up' ? 'chevron.up' : 'chevron.down'}
-                      size={9}
-                      color={systemColors.secondaryLabel}
-                    />
-                  ) : null}
-                </View>
-              ) : null}
-              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
-                {resultMetaText}
-              </Text>
+                    {deltaDirection ? (
+                      <Icon
+                        name={deltaDirection === 'up' ? 'chevron.up' : 'chevron.down'}
+                        size={9}
+                        color={systemColors.secondaryLabel}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
+                  {resultMetaText}
+                </Text>
+              </View>
             </View>
-          </View>
-        </GestureDetector>
+          </GestureDetector>
+        </ClimbMenu>
       </ReanimatedSwipeable>
       <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
     </View>

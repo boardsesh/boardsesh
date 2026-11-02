@@ -23,6 +23,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { track } from '../../lib/analytics';
 import { spacing } from '../../theme/tokens';
+import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 export type PlayerSidePanelSegment = 'upNext' | 'logbook' | 'beta';
 
@@ -33,7 +34,7 @@ export type PlayerSidePanelHandle = {
 
 type QueueRowHandlers = {
   onClimbPress: (item: ClimbQueueItem) => void;
-  onOpenActions: (item: ClimbQueueItem) => void;
+  onOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
   onSuggestionPress: (climb: Climb, source: PlaylistSuggestionSource) => void;
   onTickHistory: (item: ClimbQueueItem) => void;
 };

@@ -793,12 +793,12 @@
       },
       "open": {
         "title": "Das Menü öffnen",
-        "p1": "Halt eine Boulder-Zeile gedrückt. Sie hebt sich zu einer Karte, oben Eintrag machen, Zur Playlist hinzufügen und Teilen, der Rest darunter.",
-        "p2": "Lieber tippen? Unter Einstellungen, dann Boulder & Grade und Boulderliste, schaltest du Schnellaktionen-Button anzeigen ein und bekommst ein ⋮ auf jeder Zeile im Tab Boulder.",
-        "shotAlt": "Die Karte mit den Boulder-Aktionen",
-        "shotCaption": "Oben drei Schnell-Buttons, darunter die volle Liste.",
+        "p1": "Halt eine Boulder-Zeile gedrückt, und ihre Aktionen öffnen sich in einem Menü. Auf dem iPhone hebt sich die Zeile über die abgedunkelte Liste, das Menü darunter. Tippe auf eine Aktion oder daneben, um es zu schließen.",
+        "p2": "Lieber tippen? Unter Einstellungen, dann Boulder & Grade und Boulderliste, schaltest du Schnellaktionen-Button anzeigen ein und bekommst ein ⋮ auf jeder Zeile im Tab Boulder. Es öffnet dasselbe Menü.",
+        "shotAlt": "Eine Boulder-Zeile über der Liste, darunter ihre Aktionen",
+        "shotCaption": "Oben die Zeile, darunter ihre Aktionen in Gruppen.",
         "clipAlt": "Eine Boulder-Zeile gedrückt halten",
-        "clipCaption": "Halt die Zeile, und die Karte hebt sich von selbst."
+        "clipCaption": "Halt die Zeile, und das Menü öffnet sich von selbst."
       },
       "preview": {
         "title": "Boulder antippen für die Vorschau",
@@ -811,11 +811,11 @@
         "drivingLink": "So beginnst und beendest du das Steuern des Boards"
       },
       "quick": {
-        "title": "Die drei Buttons oben",
+        "title": "Die Aktionen, die du am häufigsten brauchst",
         "tick": "Eintrag machen öffnet das Begehungs-Sheet.",
-        "playlist": "Zur Playlist hinzufügen ist eine Checkliste. Haken setzen legt rein, Haken wegnehmen nimmt raus.",
+        "playlist": "Zur Playlist hinzufügen öffnet eine Checkliste deiner Playlists. Haken setzen legt rein, Haken wegnehmen nimmt raus.",
         "share": "Teilen gibt einen Link an das Teilen-Menü deines Handys.",
-        "p1": "Die Karte schließt sich, sobald eine Aktion losgeht. Ausnahme: Zur Playlist hinzufügen."
+        "p1": "Das Menü schließt sich, sobald du eine Aktion wählst."
       },
       "rest": {
         "title": "Der Rest der Liste",

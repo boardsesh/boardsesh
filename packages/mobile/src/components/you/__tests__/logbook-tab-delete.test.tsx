@@ -160,7 +160,7 @@ vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEf
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }),
+  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), getClimbActions: vi.fn() }),
 }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => dialog.confirm }));
 // Pin the flags explicitly: kill switch off, filters off — the suite must

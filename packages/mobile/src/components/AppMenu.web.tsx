@@ -13,8 +13,17 @@ import { PressableSurface } from './PressableSurface';
 // `systemIcon` (an iOS SF Symbol name) is ignored here — it isn't a Material glyph
 // name, matching Android, which also drops it.
 
-import { Fragment, useMemo, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
+import { StyleSheet, View, type PointerEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { Divider, Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -31,12 +40,101 @@ const CARET = '▾';
 // narrower toolbar slot passes `anchorSize`, as on iOS.
 const ICON_ANCHOR_SIZE = 44;
 
+function LongPressMenuAnchor({
+  children,
+  enabled,
+  onOpen,
+  style,
+}: {
+  children: ReactElement;
+  enabled: boolean;
+  onOpen: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const consumedHoldRef = useRef(false);
+  const cancelLongPress = useCallback(() => {
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pointerStartRef.current = null;
+  }, []);
+  useEffect(() => cancelLongPress, [cancelLongPress]);
+
+  const startLongPress = (event: PointerEvent) => {
+    cancelLongPress();
+    consumedHoldRef.current = false;
+    if (!enabled || event.nativeEvent.button !== 0) return;
+    pointerStartRef.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      pointerStartRef.current = null;
+      consumedHoldRef.current = true;
+      onOpen();
+    }, 400);
+  };
+  const movePointer = (event: PointerEvent) => {
+    const start = pointerStartRef.current;
+    if (start && Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 15) {
+      cancelLongPress();
+    }
+  };
+  // React Native Web forwards this DOM handler, although the native View type
+  // intentionally omits the browser-only contextmenu event.
+  const browserHandlers = {
+    onContextMenu: (event: { preventDefault: () => void }) => {
+      if (!enabled) return;
+      event.preventDefault();
+      cancelLongPress();
+      consumedHoldRef.current = true;
+      onOpen();
+    },
+    onClickCapture: (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+      if (!consumedHoldRef.current) return;
+      consumedHoldRef.current = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+  };
+
+  return (
+    <View
+      {...browserHandlers}
+      style={style}
+      accessible={false}
+      onPointerDown={startLongPress}
+      onPointerMove={movePointer}
+      onPointerUp={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+      onPointerLeave={cancelLongPress}
+    >
+      {children}
+    </View>
+  );
+}
+
 export function AppMenu(props: AppMenuProps) {
   const styles = useTypographyStyles(createStyles);
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { m3, systemColors } = useTheme();
   const [visible, setVisible] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
+  const longPressMenuKey = props.trigger === 'longPress' ? props.menuKey : undefined;
+  const hasRows = resolved.length > 0;
+  useImperativeHandle(
+    props.trigger === 'longPress' ? props.menuRef : undefined,
+    () => ({
+      open: () => {
+        if (hasRows) setVisible(true);
+      },
+    }),
+    [hasRows],
+  );
+  // The rows now act on something else: close the open menu rather than let a
+  // click land on a row drawn for the old target.
+  useEffect(() => {
+    setVisible(false);
+  }, [longPressMenuKey]);
 
   const labelColor = systemColors.label as string;
   const caretColor = systemColors.secondaryLabel as string;
@@ -45,51 +143,60 @@ export function AppMenu(props: AppMenuProps) {
   const disabledColor = systemColors.tertiaryLabel as string;
   const headline = props.iconName == null ? props.headline : undefined;
 
-  const anchor = (
-    <PressableSurface
-      onPress={() => setVisible(true)}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
-      accessibilityHint={accessibilityHint}
-      style={[
-        styles.anchor,
-        props.iconName != null
-          ? [
-              styles.iconAnchor,
-              props.anchorSize != null
-                ? { width: props.anchorSize, height: props.anchorSize, borderRadius: props.anchorSize / 2 }
-                : null,
-              props.iconAppearance !== 'plain' ? { backgroundColor: systemColors.fill as string } : null,
-            ]
-          : null,
-        headline != null ? styles.headlineAnchor : null,
-        maxWidth != null ? { maxWidth } : null,
-        style,
-      ]}
-    >
-      {headline != null ? (
-        // The Material title-menu: the app bar's title over the active scope.
-        <>
-          <Text numberOfLines={1} variant="title2" color={labelColor}>
-            {headline}
-          </Text>
-          <Text numberOfLines={1} variant="subheadline" color={caretColor}>
+  const anchor =
+    props.trigger === 'longPress' ? (
+      <LongPressMenuAnchor
+        enabled={resolved.length > 0}
+        onOpen={() => setVisible(true)}
+        style={[maxWidth != null ? { maxWidth } : null, style]}
+      >
+        {props.children}
+      </LongPressMenuAnchor>
+    ) : (
+      <PressableSurface
+        onPress={() => setVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
+        accessibilityHint={accessibilityHint}
+        style={[
+          styles.anchor,
+          props.iconName != null
+            ? [
+                styles.iconAnchor,
+                props.anchorSize != null
+                  ? { width: props.anchorSize, height: props.anchorSize, borderRadius: props.anchorSize / 2 }
+                  : null,
+                props.iconAppearance !== 'plain' ? { backgroundColor: systemColors.fill as string } : null,
+              ]
+            : null,
+          headline != null ? styles.headlineAnchor : null,
+          maxWidth != null ? { maxWidth } : null,
+          style,
+        ]}
+      >
+        {headline != null ? (
+          // The Material title-menu: the app bar's title over the active scope.
+          <>
+            <Text numberOfLines={1} variant="title2" color={labelColor}>
+              {headline}
+            </Text>
+            <Text numberOfLines={1} variant="subheadline" color={caretColor}>
+              {props.label}
+              {props.showCaret !== false ? ` ${CARET}` : ''}
+            </Text>
+          </>
+        ) : props.iconName != null ? (
+          <Text style={[styles.anchorLabel, { color: labelColor }]}>{anchorGlyphForIcon(props.iconName)}</Text>
+        ) : (
+          <Text numberOfLines={1} style={[styles.anchorLabel, { color: labelColor }]}>
             {props.label}
-            {props.showCaret !== false ? ` ${CARET}` : ''}
           </Text>
-        </>
-      ) : props.iconName != null ? (
-        <Text style={[styles.anchorLabel, { color: labelColor }]}>{anchorGlyphForIcon(props.iconName)}</Text>
-      ) : (
-        <Text numberOfLines={1} style={[styles.anchorLabel, { color: labelColor }]}>
-          {props.label}
-        </Text>
-      )}
-      {props.iconName == null && headline == null && props.showCaret !== false ? (
-        <Text style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
-      ) : null}
-    </PressableSurface>
-  );
+        )}
+        {props.iconName == null && headline == null && props.showCaret !== false ? (
+          <Text style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
+        ) : null}
+      </PressableSurface>
+    );
 
   return (
     <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>

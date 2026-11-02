@@ -72,7 +72,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
   const { t } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
@@ -107,14 +107,14 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
     loadMore: loadMoreClimbs,
   });
 
-  // Long press → reaction menu. Resolves the same per-climb board config handlePress
+  // Long press → climb menu. Resolves the same per-climb board config handlePress
   // uses (the userClimbs payload carries no size/sets).
   const handleOpenActions = useCallback(
     (climb: Climb) => {
       if (!climb.boardType) return;
       const config = renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard);
       if (!config) return;
-      openClimbActions(climb, {
+      return getClimbActions(climb, {
         boardName: config.boardName,
         layoutId: config.layoutId,
         sizeId: config.sizeId,
@@ -122,7 +122,7 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
         angle: climb.angle,
       });
     },
-    [openClimbActions],
+    [getClimbActions],
   );
 
   const handleEndReached = useCallback(() => {

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../climb-actions/ClimbActionsMenu', () => import('../../../test/climb-menu-stub'));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
@@ -286,6 +287,7 @@ const bareClimb = { ...climb, quality_average: '0', ascensionist_count: 0, sette
 const kilter = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
 // A board that mirrors: the row tracks each direction.
 const tension = { ...kilter, boardName: 'tension' as const };
+const resolveClimbActions = (selectedClimb: Climb) => ({ climb: selectedClimb, boardConfig: kilter });
 
 const ALL_ON: ClimbRowDisplay = {
   thumbnail: true,
@@ -328,16 +330,19 @@ function store(display: ClimbRowDisplay) {
  * takes one token out of it reads as one entry gone.
  */
 function outline(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('[data-thumbnail], [data-variant], [data-icon], [data-testid]')].flatMap(
-    (node) => {
-      if (node.hasAttribute('data-thumbnail')) return ['thumbnail'];
-      if (node.hasAttribute('data-icon')) return [`icon:${node.getAttribute('data-icon')}`];
-      if (node.hasAttribute('data-testid')) return [`#${node.getAttribute('data-testid')}`];
-      const variant = node.getAttribute('data-variant');
-      const text = node.textContent ?? '';
-      return variant === 'footnote' ? text.split(' · ').map((token) => `footnote:${token}`) : [`${variant}:${text}`];
-    },
-  );
+  return [
+    ...container.querySelectorAll(
+      '[data-thumbnail], [data-variant], [data-icon], [data-testid], [data-native-climb-menu="icon"]',
+    ),
+  ].flatMap((node) => {
+    if (node.hasAttribute('data-thumbnail')) return ['thumbnail'];
+    if (node.getAttribute('data-native-climb-menu') === 'icon') return ['native-menu:more'];
+    if (node.hasAttribute('data-icon')) return [`icon:${node.getAttribute('data-icon')}`];
+    if (node.hasAttribute('data-testid')) return [`#${node.getAttribute('data-testid')}`];
+    const variant = node.getAttribute('data-variant');
+    const text = node.textContent ?? '';
+    return variant === 'footnote' ? text.split(' · ').map((token) => `footnote:${token}`) : [`${variant}:${text}`];
+  });
 }
 
 function styleOf(node: Element | null | undefined): Record<string, unknown> {
@@ -405,7 +410,7 @@ const SURFACES: Surface[] = [
         <ClimbListRow
           climb={climb as unknown as Climb}
           {...kilter}
-          onOpenActions={vi.fn()}
+          onOpenActions={vi.fn(resolveClimbActions)}
           showPlaylistChips
           showFavorite
           showMoreButton
@@ -1184,7 +1189,7 @@ describe('what a screen reader hears follows what is drawn', () => {
       <ClimbListRow
         climb={climb as unknown as Climb}
         {...kilter}
-        onOpenActions={vi.fn()}
+        onOpenActions={vi.fn(resolveClimbActions)}
         showPlaylistChips
         showFavorite
         showMoreButton
@@ -1218,23 +1223,34 @@ describe('what a screen reader hears follows what is drawn', () => {
     }
   });
 
-  it('keeps "more actions" published on the row when the ⋮ button is hidden', () => {
+  it('keeps climb commands published on the row when the ⋮ button is hidden', () => {
     const { container, queryByTestId } = render(
-      <ClimbListRow climb={climb as unknown as Climb} {...kilter} onOpenActions={vi.fn()} showMoreButton />,
+      <ClimbListRow
+        climb={climb as unknown as Climb}
+        {...kilter}
+        onOpenActions={vi.fn(resolveClimbActions)}
+        showMoreButton
+      />,
     );
     expect(queryByTestId('climb-row-more-button')).not.toBeNull();
 
     act(() => setClimbRowField('quickActions', false));
 
     expect(queryByTestId('climb-row-more-button')).toBeNull();
-    expect(container.querySelector('[data-testid="climb-row"]')?.getAttribute('data-actions')).toContain('moreActions');
+    expect(container.querySelector('[data-testid="climb-row"]')?.getAttribute('data-actions')).toContain('share');
   });
 });
 
 describe('the Climbs list row around a row without a thumbnail', () => {
   const drawRow = (props: Partial<Parameters<typeof ClimbListRow>[0]> = {}) =>
     render(
-      <ClimbListRow climb={climb as unknown as Climb} {...kilter} onOpenActions={vi.fn()} showMoreButton {...props} />,
+      <ClimbListRow
+        climb={climb as unknown as Climb}
+        {...kilter}
+        onOpenActions={vi.fn(resolveClimbActions)}
+        showMoreButton
+        {...props}
+      />,
     );
   const separatorOf = (container: HTMLElement) =>
     [...container.querySelectorAll('[data-style]')].map(styleOf).find((style) => style.height === 0.5);

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import type { QueryClient } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbActionId } from '../use-climb-actions';
 
@@ -8,6 +9,7 @@ import type { ClimbActionId } from '../use-climb-actions';
 // one-action and injected-dismiss handoff end to end.
 const ctrl = vi.hoisted(() => ({
   lightsOn: false,
+  generation: 0,
   wallArchived: false,
   sessionId: null as string | null,
   moderationEnabled: true,
@@ -16,8 +18,14 @@ const ctrl = vi.hoisted(() => ({
   queueItems: [] as Array<{ uuid: string; climb: Climb }>,
   boardMatches: false,
   inSharedSession: false,
+  database: null as object | null,
   // The History row Replay from here would replay; null hides the row (F3).
   replayItem: null as { uuid: string; climb: unknown } | null,
+}));
+const favoriteReads = vi.hoisted(() => ({
+  queryClient: null as QueryClient | null,
+  pendingOverrides: vi.fn(async () => new Map<string, boolean>()),
+  request: vi.fn(async () => ({ favorites: [] as string[] })),
 }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
@@ -36,6 +44,21 @@ const openers = vi.hoisted(() => ({
   requestDelete: vi.fn(async (_climb: unknown, _boardName: string, _onDeleted?: () => void) => {}),
 }));
 
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@tanstack/react-query')>();
+  const client = new original.QueryClient({ defaultOptions: { queries: { retry: false } } });
+  favoriteReads.queryClient = client;
+  return { ...original, useQueryClient: () => client };
+});
+vi.mock('../../../lib/graphql/offline-request', () => ({
+  offlineAwareRequest: favoriteReads.request,
+}));
+vi.mock('../../../db', () => ({ getDatabaseHandle: () => ctrl.database }));
+vi.mock('../../../db/queries/get-favorite-status-local', () => ({
+  getPendingFavoriteOverridesLocal: favoriteReads.pendingOverrides,
+}));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => ctrl.generation }));
+vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => ctrl.lightsOn }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
@@ -143,16 +166,22 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.lightsOn = false;
+  ctrl.generation = 0;
   ctrl.wallArchived = false;
   ctrl.sessionId = null;
   ctrl.currentItem = null;
   ctrl.queueItems = [];
   ctrl.boardMatches = false;
   ctrl.inSharedSession = false;
+  ctrl.database = null;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
   bluetoothCtrl.connected = false;
   Object.values(openers).forEach((fn) => fn.mockClear?.());
+  openers.toggleFavoriteMutate.mockReset();
+  favoriteReads.queryClient?.clear();
+  favoriteReads.pendingOverrides.mockReset().mockResolvedValue(new Map());
+  favoriteReads.request.mockReset().mockResolvedValue({ favorites: [] });
 });
 
 describe('useClimbActions gating', () => {
@@ -578,6 +607,7 @@ describe('useClimbActions colours and dispatch', () => {
   });
 
   it('playNext.run forwards the queue slot when the menu came from a queue row', () => {
+    ctrl.queueItems = [{ uuid: 'queue-slot-7', climb }];
     const onAfterAction = vi.fn();
     const { result } = renderActions({
       climb,
@@ -594,6 +624,23 @@ describe('useClimbActions colours and dispatch', () => {
     // Fire-and-forget: the cross-board prompt sits above the dismissed sheet, so
     // the dismiss must not wait on the promise.
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('playNext.run matches by climb when the slot is not in this queue', () => {
+    // A board-sheet row carries the slot from the wall's session, which may be
+    // another climber's. planPlayNext would insert a second copy for it.
+    ctrl.queueItems = [{ uuid: 'local-copy', climb }];
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      queueItemUuid: 'their-session-slot',
+    });
+    result.current.find((action) => action.id === 'playNext')?.run();
+    expect(openers.playNext).toHaveBeenCalledWith({
+      item: { uuid: 'queue-uuid', climb },
+      queueItemUuid: undefined,
+    });
   });
 
   describe('Replay from here (F3)', () => {
@@ -1112,6 +1159,244 @@ describe('useClimbActions for the player menu', () => {
     const longPress = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
     act(() => longPress.result.current.find((action) => action.id === 'share')?.run());
     expect(track).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ source: 'climb_actions_menu' }));
+  });
+});
+
+describe('native menu favorite resolution', () => {
+  const queryKey = ['favoriteStatus', 'kilter', 'climb-1', 40];
+  const args = {
+    climb,
+    boardConfig: kilterBoard,
+    isAuthenticated: true,
+    currentUserId: 'user-1',
+    resolveFavoriteOnAction: true,
+  };
+  const client = () => {
+    if (!favoriteReads.queryClient) throw new Error('Favorite query client was not initialized');
+    return favoriteReads.queryClient;
+  };
+
+  it.each([true, false])(
+    'keeps a stale cached %s instead of replacing queued intent with server state',
+    async (favorited) => {
+      client().setQueryData(queryKey, { favorites: favorited ? [climb.uuid] : [] });
+      await client().invalidateQueries({ queryKey, refetchType: 'none' });
+      const { result } = renderActions(args);
+
+      act(() => result.current.find((action) => action.id === 'favorite')?.run());
+
+      await waitFor(() =>
+        expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(
+          expect.objectContaining({ currentlyFavorited: favorited }),
+        ),
+      );
+      expect(favoriteReads.request).not.toHaveBeenCalled();
+      expect(favoriteReads.pendingOverrides).not.toHaveBeenCalled();
+      expect(client().getQueryData(queryKey)).toEqual({ favorites: favorited ? [climb.uuid] : [] });
+    },
+  );
+
+  it('removes a favorite on the next menu tap while its first add is still queued', async () => {
+    client().setQueryData(queryKey, { favorites: [] });
+    openers.toggleFavoriteMutate.mockImplementation(({ currentlyFavorited }: { currentlyFavorited: boolean }) => {
+      client().setQueryData(queryKey, { favorites: currentlyFavorited ? [] : [climb.uuid] });
+    });
+    const { result } = renderActions(args);
+    const toggle = () => result.current.find((action) => action.id === 'favorite')?.run();
+
+    act(toggle);
+    await waitFor(() => expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(1));
+    act(toggle);
+    await waitFor(() => expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(2));
+
+    expect(openers.toggleFavoriteMutate.mock.calls.map(([variables]) => variables.currentlyFavorited)).toEqual([
+      false,
+      true,
+    ]);
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: [] });
+    expect(favoriteReads.request).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('uses owned cold-cache pending intent %s without a stale server read', async (favorited) => {
+    ctrl.database = {};
+    favoriteReads.pendingOverrides.mockResolvedValueOnce(new Map([[climb.uuid, favorited]]));
+    const { result } = renderActions(args);
+
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+
+    await waitFor(() =>
+      expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ currentlyFavorited: favorited }),
+      ),
+    );
+    expect(favoriteReads.pendingOverrides).toHaveBeenCalledWith(ctrl.database, [climb.uuid], 'user-1');
+    expect(favoriteReads.request).not.toHaveBeenCalled();
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: favorited ? [climb.uuid] : [] });
+  });
+
+  it('loads a cold favorite from the server when no local intent is pending', async () => {
+    ctrl.database = {};
+    favoriteReads.request.mockResolvedValueOnce({ favorites: [climb.uuid] });
+    const { result } = renderActions(args);
+
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+
+    await waitFor(() =>
+      expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(expect.objectContaining({ currentlyFavorited: true })),
+    );
+    expect(favoriteReads.request).toHaveBeenCalledOnce();
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: [climb.uuid] });
+  });
+
+  it.each([true, false])('replaces an existing cold server read with owned pending intent %s', async (favorited) => {
+    ctrl.database = {};
+    favoriteReads.pendingOverrides.mockResolvedValueOnce(new Map([[climb.uuid, favorited]]));
+    let finishExistingRead = (_response: { favorites: string[] }) => {};
+    const existingQueryFn = vi.fn(
+      () =>
+        new Promise<{ favorites: string[] }>((resolve) => {
+          finishExistingRead = resolve;
+        }),
+    );
+    const existingRead = client()
+      .fetchQuery({ queryKey, queryFn: existingQueryFn })
+      .catch(() => undefined);
+    await waitFor(() => expect(existingQueryFn).toHaveBeenCalledOnce());
+    const { result } = renderActions(args);
+
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+
+    await waitFor(() =>
+      expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ currentlyFavorited: favorited }),
+      ),
+    );
+    expect(favoriteReads.pendingOverrides).toHaveBeenCalledWith(ctrl.database, [climb.uuid], 'user-1');
+    expect(favoriteReads.request).not.toHaveBeenCalled();
+    await act(async () => {
+      finishExistingRead({ favorites: favorited ? [] : [climb.uuid] });
+      await existingRead;
+    });
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: favorited ? [climb.uuid] : [] });
+    expect(openers.toggleFavoriteMutate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps both cold menu toggles while sharing their pending lookup', async () => {
+    let finishRead = (_response: { favorites: string[] }) => {};
+    favoriteReads.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    openers.toggleFavoriteMutate.mockImplementation(({ currentlyFavorited }: { currentlyFavorited: boolean }) => {
+      void client().cancelQueries({ queryKey });
+      client().setQueryData(queryKey, { favorites: currentlyFavorited ? [] : [climb.uuid] });
+    });
+    const { result } = renderActions(args);
+    const toggle = () => result.current.find((action) => action.id === 'favorite')?.run();
+
+    act(toggle);
+    await waitFor(() => expect(favoriteReads.request).toHaveBeenCalledOnce());
+    act(toggle);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(favoriteReads.request).toHaveBeenCalledOnce();
+    await act(async () => finishRead({ favorites: [] }));
+
+    await waitFor(() => expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(2));
+    expect(openers.toggleFavoriteMutate.mock.calls.map(([variables]) => variables.currentlyFavorited)).toEqual([
+      false,
+      true,
+    ]);
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: [] });
+  });
+
+  it('keeps a newer heart write made while the cold server read is pending', async () => {
+    let finishRead = (_response: { favorites: string[] }) => {};
+    favoriteReads.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const { result } = renderActions(args);
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+    await waitFor(() => expect(favoriteReads.request).toHaveBeenCalledOnce());
+
+    void client().cancelQueries({ queryKey });
+    client().setQueryData(queryKey, { favorites: [climb.uuid] });
+    await act(async () => finishRead({ favorites: [] }));
+
+    await waitFor(() =>
+      expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(expect.objectContaining({ currentlyFavorited: true })),
+    );
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: [climb.uuid] });
+  });
+
+  it('keeps a newer cached write made while pending local intent is being read', async () => {
+    ctrl.database = {};
+    let finishRead = (_overrides: Map<string, boolean>) => {};
+    favoriteReads.pendingOverrides.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const { result } = renderActions(args);
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+    await waitFor(() => expect(favoriteReads.pendingOverrides).toHaveBeenCalledOnce());
+
+    void client().cancelQueries({ queryKey });
+    client().setQueryData(queryKey, { favorites: [climb.uuid] });
+    await act(async () => finishRead(new Map([[climb.uuid, false]])));
+
+    await waitFor(() =>
+      expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(expect.objectContaining({ currentlyFavorited: true })),
+    );
+    expect(favoriteReads.request).not.toHaveBeenCalled();
+    expect(client().getQueryData(queryKey)).toEqual({ favorites: [climb.uuid] });
+  });
+
+  it('does not request, cache or toggle after credentials change during the outbox read', async () => {
+    ctrl.database = {};
+    let finishRead = (_overrides: Map<string, boolean>) => {};
+    favoriteReads.pendingOverrides.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const { result } = renderActions(args);
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+    await waitFor(() => expect(favoriteReads.pendingOverrides).toHaveBeenCalledOnce());
+
+    ctrl.generation += 1;
+    await act(async () => finishRead(new Map([[climb.uuid, true]])));
+
+    expect(favoriteReads.request).not.toHaveBeenCalled();
+    expect(openers.toggleFavoriteMutate).not.toHaveBeenCalled();
+    expect(client().getQueryData(queryKey)).toBeUndefined();
+  });
+
+  it('does not cache or toggle after credentials change during the server read', async () => {
+    let finishRead = (_response: { favorites: string[] }) => {};
+    favoriteReads.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const { result } = renderActions(args);
+    act(() => result.current.find((action) => action.id === 'favorite')?.run());
+    await waitFor(() => expect(favoriteReads.request).toHaveBeenCalledOnce());
+
+    ctrl.generation += 1;
+    await act(async () => finishRead({ favorites: [climb.uuid] }));
+
+    expect(openers.toggleFavoriteMutate).not.toHaveBeenCalled();
+    expect(client().getQueryData(queryKey)).toBeUndefined();
   });
 });
 

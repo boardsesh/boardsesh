@@ -14,7 +14,18 @@
 // and a `headline` anchor (Material's title-menu) draws as flat title text.
 
 import { Host } from '@expo/ui';
-import { Menu, Button, ControlGroup, Divider, HStack, VStack, Text, Image } from '@expo/ui/swift-ui';
+import {
+  Menu,
+  ContextMenu,
+  RNHostView,
+  Button,
+  ControlGroup,
+  Divider,
+  HStack,
+  VStack,
+  Text,
+  Image,
+} from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
@@ -32,9 +43,10 @@ import {
   accessibilityHint as a11yHint,
 } from '@expo/ui/swift-ui/modifiers';
 import { Fragment, useMemo, type ComponentProps } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import { useTheme } from '../providers/theme-provider';
-import { spacing } from '../theme/tokens';
+import { borderRadius, spacing } from '../theme/tokens';
 import { topBarByVariant } from '../theme/top-bar';
 import { isMenuActionSelectable, paletteRowCount, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
@@ -76,6 +88,13 @@ export function AppMenu(props: AppMenuProps) {
     [anchorSize],
   );
 
+  // The system lifts this trigger as the menu preview. Without an opaque
+  // surface, its thumbnail and text float over the dimmed rows underneath.
+  const rowPreviewModifiers = useMemo(() => {
+    const shape = shapes.roundedRectangle({ cornerRadius: borderRadius.lg, roundedCornerStyle: 'continuous' });
+    return [contentShape(shape, 'contextMenuPreview')];
+  }, []);
+
   // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
   // modifier array (avoids redundant SwiftUI diffs).
   const menuModifiers = useMemo(
@@ -116,9 +135,14 @@ export function AppMenu(props: AppMenuProps) {
     [iconName, headline, anchorSize, plainIcon, fillColor, maxWidth, resolvedLabel, accessibilityHint],
   );
 
+  // A long-press anchor stays mounted while its target changes, and an open
+  // SwiftUI context menu keeps the items it was drawn with. Keying the items on
+  // the target retires those: a stale item belongs to an unmounted Button, so a
+  // tap on it runs nothing rather than the new target's row at that index.
+  const itemKeyPrefix = props.trigger === 'longPress' && props.menuKey != null ? `${props.menuKey}|` : '';
   const renderButton = (action: (typeof resolved)[number], index: number) => (
     <Button
-      key={`${index}-${action.label}`}
+      key={`${itemKeyPrefix}${index}-${action.label}`}
       label={action.label}
       // `iosSystemImage` is a plain string; the Button's `systemImage` is the
       // SFSymbol literal union. Derive the cast target from Button itself rather
@@ -133,6 +157,82 @@ export function AppMenu(props: AppMenuProps) {
       }}
     />
   );
+
+  // Both trigger styles draw the same native actions, including their guarded
+  // indices. The custom anchor adds no minimum height, glass, or extra label:
+  // the hosted row keeps its existing layout and accessibility nodes.
+  const menuItems = (
+    <>
+      {paletteCount > 0 ? (
+        <ControlGroup>
+          {resolved.slice(0, paletteCount).map((action, index) => renderButton(action, index))}
+        </ControlGroup>
+      ) : null}
+      {resolved.slice(paletteCount).map((action, offset) => {
+        const index = paletteCount + offset;
+        return (
+          <Fragment key={`${itemKeyPrefix}${index}-${action.label}`}>
+            {action.dividerBefore ? <Divider /> : null}
+            {renderButton(action, index)}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+
+  if (props.trigger === 'longPress') {
+    // The SwiftUI context menu lifts its trigger, so the row has to live inside
+    // the Host. The bridge keeps the width it first measured, so the Host waits
+    // for one RN layout pass and then moves the row inside it: one remount per
+    // new cell. It is not keyed on the target, so a recycled cell keeps its
+    // Host and its row; only a width change (rotation, a fold) remounts again.
+    return (
+      <MeasuredMenuAnchor style={style}>
+        {(width) => {
+          if (width === undefined) return props.children;
+          const row = (
+            <RNHostView matchContents>
+              <View
+                style={{
+                  width,
+                  flexDirection: 'row',
+                  backgroundColor: props.liftPreview
+                    ? (props.previewBackgroundColor ?? systemColors.background)
+                    : undefined,
+                }}
+              >
+                {props.liftPreview && props.previewOverlayColor ? (
+                  <View
+                    pointerEvents="none"
+                    style={[StyleSheet.absoluteFill, { backgroundColor: props.previewOverlayColor }]}
+                  />
+                ) : null}
+                {props.children}
+              </View>
+            </RNHostView>
+          );
+          return (
+            <Host key={width} matchContents={{ vertical: true }} ignoreSafeArea="all" style={{ width }}>
+              <ContextMenu>
+                <ContextMenu.Trigger>
+                  {props.liftPreview ? (
+                    <VStack spacing={0} modifiers={rowPreviewModifiers}>
+                      {row}
+                    </VStack>
+                  ) : (
+                    row
+                  )}
+                </ContextMenu.Trigger>
+                {/* No items slot with no rows: SwiftUI shows no menu for a
+                    hold, and the row stays in the same Host. */}
+                {resolved.length > 0 ? <ContextMenu.Items>{menuItems}</ContextMenu.Items> : null}
+              </ContextMenu>
+            </Host>
+          );
+        }}
+      </MeasuredMenuAnchor>
+    );
+  }
 
   // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
   // mounts while it is scrolled up under the status bar takes the screen's
@@ -198,25 +298,7 @@ export function AppMenu(props: AppMenuProps) {
           )
         }
       >
-        {paletteCount > 0 ? (
-          // One icon-over-label row (UIKit's medium element size). Its rows keep their
-          // place in `resolved`, so `onSelectIndex` counts exactly as without it.
-          <ControlGroup>
-            {resolved.slice(0, paletteCount).map((action, index) => renderButton(action, index))}
-          </ControlGroup>
-        ) : null}
-        {resolved.slice(paletteCount).map((action, offset) => {
-          const index = paletteCount + offset;
-          return (
-            // Composite key: scope entries can share a display name (two gyms named
-            // the same), so the label alone isn't unique — pair it with the position.
-            <Fragment key={`${index}-${action.label}`}>
-              {/* A UIMenu separator. Not a Button, so it takes no index. */}
-              {action.dividerBefore ? <Divider /> : null}
-              {renderButton(action, index)}
-            </Fragment>
-          );
-        })}
+        {menuItems}
       </Menu>
     </Host>
   );

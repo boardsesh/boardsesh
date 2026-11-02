@@ -64,7 +64,7 @@ function PlayScreen() {
     onPlayDrawerTargetConsumed,
     playTarget,
   } = usePlayDrawerRoute();
-  const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { boardConfig: storedBoardConfig, openPlayDrawer, getClimbActions } = useDrawerHost();
   const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
@@ -126,15 +126,15 @@ function PlayScreen() {
     () => dismissAndWait(waitForPlayerDismiss),
     [dismissAndWait, waitForPlayerDismiss],
   );
-  // A reaction menu opened from this route's QueueSheet (a row long-press)
-  // receives the route-owned transition waiter: the root FullWindowOverlay can't
+  // A climb menu opened from this route's QueueSheet (a row long-press)
+  // carries the route-owned transition waiter: the root command host can't
   // safely discover the native-stack navigation object itself. The player's own
   // ⋯ is a native menu inside PlayDrawer and needs none of this.
   const openPlayerClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
-      openClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
+      return getClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
     },
-    [openClimbActions, dismissPlayerAndWait],
+    [getClimbActions, dismissPlayerAndWait],
   );
 
   // Drop the board override + open target when the route unmounts (any dismiss:
@@ -186,7 +186,7 @@ function PlayScreen() {
   const { handleClimbPress, handleOpenActions, handleSuggestionPress, handleTickHistory } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    openClimbActions: openPlayerClimbActions,
+    getClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,
@@ -201,7 +201,7 @@ function PlayScreen() {
   } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    openClimbActions: openPlayerClimbActions,
+    getClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,

@@ -152,6 +152,13 @@ A preview walks only its list.
 
 ### Crew, swipes and long-press
 
+Long-press and the list/player ellipsis share grouped core actions. On the main iOS climb
+list, holding a row or tapping its ellipsis opens the same lifted row and menu above the
+dimmed list. Other surfaces keep their native menus. Logbook Edit entry and player controls
+stay contextual; the player omits actions already shown as buttons. Menu descriptors stay
+bound to the climb and exact queue slot. No menu offers Preview: a list tap already opens one.
+The old enlarged-board reaction overlay is removed.
+
 | Surface | Legacy fallback (browse flag off) | In a crew (browse flag on) | Driving the wall (#7113), crew or solo | Row swipes | Long-press |
 | --- | --- | --- | --- | --- | --- |
 | Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Commits and lights it | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
@@ -161,7 +168,7 @@ A preview walks only its list.
 | Home new-climb card | Trackless preview | Trackless preview | Trackless preview | None | None |
 | Board history sheet, iPad wall column | Commits for the whole room | Preview with the wall's history as the track (F2) | Commits and lights it | As search | Climb menu |
 | Record in-session history | Commits for the whole room | Preview with the session's ticks as the track (F2) | Commits and lights it | None | Climb menu |
-| Queue sheet | Preview by default; commits with automatic lighting opted in | Preview of the exact queue slot; a pick of the climb already up reopens it and never writes the crew's queue | Commits and lights it | Left only: delete | Climb menu |
+| Queue sheet | Preview by default; commits with automatic lighting opted in | Preview of the exact queue slot; a pick of the climb already up reopens it and never writes the crew's queue | Commits and lights it | Left only: delete | Native climb menu |
 | Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | Commits and lights it; from a climb on another board, a preview | None | None |
 | Workout preview | No session yet | No session yet | Trackless preview | None | None |
 | Wall display kiosk | Lights the board; the room's current climb doesn't move | Same | Same | None | None |

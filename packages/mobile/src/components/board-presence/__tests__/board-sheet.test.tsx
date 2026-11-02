@@ -66,7 +66,19 @@ const managedSheet = vi.hoisted(() => ({
   lastOnFullyDismissed: null as (() => void) | null,
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
-const climbRows = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+// `renderTargets`: when set, the row builds its menu during render, as the real
+// ClimbListRow does in a useMemo, and keeps the first one per climb.
+const climbRows = vi.hoisted(() => ({
+  props: [] as Record<string, unknown>[],
+  renderTargets: null as Map<string, unknown> | null,
+}));
+const menuViewability = vi.hoisted(() => ({
+  changed: null as
+    | ((input: {
+        viewableItems: { item: BoardPresenceClimb; isViewable: boolean; key: string; index: number }[];
+      }) => void)
+    | null,
+}));
 const thumbnails = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 // Mutable safe-area inset so a test can simulate an Android 3-button nav bar
 // (a non-zero bottom inset) and assert the last history row stays above it.
@@ -174,6 +186,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl,
     onEndReached,
     onScrollBeginDrag,
+    onViewableItemsChanged,
     contentContainerStyle,
   }: {
     data: BoardPresenceClimb[];
@@ -185,9 +198,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     refreshControl?: ReactNode;
     onEndReached?: () => void;
     onScrollBeginDrag?: () => void;
+    onViewableItemsChanged?: typeof menuViewability.changed;
     contentContainerStyle?: { paddingBottom?: number };
-  }) =>
-    createElement(
+  }) => {
+    menuViewability.changed = onViewableItemsChanged ?? null;
+    return createElement(
       'div',
       { 'data-list': 'true', 'data-padding-bottom': contentContainerStyle?.paddingBottom },
       refreshControl,
@@ -198,7 +213,8 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
       ListFooterComponent,
       createElement('button', { 'aria-label': 'begin scroll', onClick: () => onScrollBeginDrag?.() }),
       createElement('button', { 'aria-label': 'reach list end', onClick: () => onEndReached?.() }),
-    ),
+    );
+  },
 }));
 
 // Isolate from the real coordinator (covered by sheet-presentation-provider.test):
@@ -303,6 +319,11 @@ vi.mock('../../ActivityIndicator', () => ({
 vi.mock('../../ClimbListRow', () => ({
   ClimbListRow: (props: ClimbListRowMockProps) => {
     climbRows.props.push(props);
+    const renderTargets = climbRows.renderTargets;
+    const renderClimbUuid = props.climb?.uuid;
+    if (renderTargets && renderClimbUuid && !renderTargets.has(renderClimbUuid)) {
+      renderTargets.set(renderClimbUuid, props.onOpenActions?.(props.climb));
+    }
     const content = props.renderContent
       ? props.renderContent({
           climb: props.climb,
@@ -376,7 +397,8 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { md: 8, lg: 12 },
 }));
 
-import { BoardSheet, type BoardSheetHandle } from '../BoardSheet';
+import { BoardSheet, type BoardSheetHandle, type BoardSheetClimbAction } from '../BoardSheet';
+import type { ClimbActionsTarget } from '../../../providers/drawer-host-provider';
 import {
   clearSprayWallRegistry,
   LIVE_SPRAY_WALL_ARCHIVE_STATE,
@@ -472,6 +494,7 @@ describe('BoardSheet', () => {
     managedSheet.lastOnFullyDismissed = null;
     managedSheet.dismissAndWait.mockClear();
     climbRows.props = [];
+    climbRows.renderTargets = null;
     thumbnails.props = [];
     safeArea.bottom = 0;
   });
@@ -1058,25 +1081,20 @@ describe('BoardSheet', () => {
     });
   });
 
-  it('hydrates action-sheet actions on a cold cache', async () => {
+  it('offers the menu on the wall snapshot at once, then on the full climb once the bounded load lands', async () => {
     presence.history = [
-      makeClimb('old-climb', 2, {
-        frames: 'old-frames',
-        grade: 'V4',
-        angle: 30,
-        queueItemUuid: 'queue-old',
-      }),
+      makeClimb('old-climb', 2, { frames: 'old-frames', grade: 'V4', angle: 30, queueItemUuid: 'queue-old' }),
     ];
-    const onOpenActions = vi.fn();
-    const oldDetail = makeFullClimb('old-climb', {
-      name: 'Hydrated Old',
-      angle: 30,
-      difficulty: 'V5',
-    });
-    graphql.request.mockResolvedValueOnce({ climb: oldDetail });
-
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+      queueItemUuid: action.queueItemUuid ?? undefined,
+    }));
+    const oldDetail = makeFullClimb('old-climb', { name: 'Hydrated Old', angle: 30, difficulty: 'V5' });
+    const climbRequest = createDeferred<{ climb: Climb | null }>();
+    graphql.request.mockReturnValueOnce(climbRequest.promise);
     const ref = createRef<BoardSheetHandle>();
-    const { getByLabelText } = render(
+    render(
       createElement(BoardSheet, {
         ref,
         boardLabel: 'Garage Wall',
@@ -1088,19 +1106,7 @@ describe('BoardSheet', () => {
       }),
     );
     act(() => ref.current?.present());
-
-    fireEvent.click(getByLabelText('actions old-climb'));
-
-    await waitFor(() =>
-      expect(onOpenActions).toHaveBeenCalledWith({
-        climb: oldDetail,
-        queueItemUuid: 'queue-old',
-        boardConfig: { ...boardConfig, angle: 30 },
-      }),
-    );
-    expect(onOpenActions).toHaveBeenCalledTimes(1);
-    expect(graphql.request).toHaveBeenCalledTimes(1);
-    expect(graphql.request).toHaveBeenCalledWith(GET_CLIMB, {
+    expect(graphql.request).toHaveBeenCalledExactlyOnceWith(GET_CLIMB, {
       boardName: 'kilter',
       layoutId: 1,
       sizeId: 10,
@@ -1108,6 +1114,193 @@ describe('BoardSheet', () => {
       angle: 30,
       climbUuid: 'old-climb',
     });
+    // Before the load lands, a hold still has a menu: the wall's own snapshot
+    // of the climb. A selection then waits on the same in-flight load.
+    const pendingResolver = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
+    const snapshotTarget = pendingResolver?.();
+    expect(snapshotTarget?.climb.uuid).toBe('old-climb');
+    expect(snapshotTarget?.climb).not.toBe(oldDetail);
+    expect(onOpenActions).toHaveBeenCalledExactlyOnceWith({
+      climb: expect.objectContaining({ uuid: 'old-climb' }),
+      queueItemUuid: 'queue-old',
+      boardConfig: { ...boardConfig, angle: 30 },
+    });
+    const pendingSelection = snapshotTarget?.resolveClimb?.();
+    expect(graphql.request).toHaveBeenCalledOnce();
+    await act(async () => {
+      climbRequest.resolve({ climb: oldDetail });
+      await climbRequest.promise;
+    });
+    expect(await pendingSelection).toBe(oldDetail);
+    const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
+    const target = resolveMenu?.();
+    expect(onOpenActions).toHaveBeenLastCalledWith({
+      climb: oldDetail,
+      queueItemUuid: 'queue-old',
+      boardConfig: { ...boardConfig, angle: 30 },
+    });
+    expect(await target?.resolveClimb?.()).toBe(oldDetail);
+    expect(graphql.request).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a menu on a row whose load failed, and fetches the climb when an action is picked', async () => {
+    presence.history = [makeClimb('flaky-climb', 2, { frames: 'flaky-frames', grade: 'V4', angle: 30 })];
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    const detail = makeFullClimb('flaky-climb', { angle: 30 });
+    graphql.request.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ climb: detail });
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    await act(async () => {
+      ref.current?.present();
+    });
+    expect(graphql.request).toHaveBeenCalledOnce();
+    const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
+    const target = resolveMenu?.();
+    expect(target?.climb.uuid).toBe('flaky-climb');
+    await expect(target?.resolveClimb?.()).resolves.toBe(detail);
+    expect(graphql.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs a command from a menu built on the first render, before the bounded load lands', async () => {
+    presence.history = [makeClimb('first-climb', 2, { frames: 'first-frames', angle: 30 })];
+    climbRows.renderTargets = new Map();
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    const detail = makeFullClimb('first-climb', { angle: 30 });
+    const climbRequest = createDeferred<{ climb: Climb | null }>();
+    graphql.request.mockReturnValueOnce(climbRequest.promise);
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    act(() => ref.current?.present());
+    // Built while the row rendered, before the panel's mount effects ran.
+    const firstTarget = climbRows.renderTargets.get('first-climb') as ClimbActionsTarget | null | undefined;
+    expect(firstTarget?.climb.uuid).toBe('first-climb');
+    const pendingClimb = firstTarget?.resolveClimb?.();
+    await act(async () => {
+      climbRequest.resolve({ climb: detail });
+      await climbRequest.promise;
+    });
+    expect(await pendingClimb).toBe(detail);
+  });
+
+  it('says the action failed when a menu command cannot load its climb', async () => {
+    presence.history = [makeClimb('lost-climb', 2, { frames: 'lost-frames', angle: 30 })];
+    climbRows.renderTargets = new Map();
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    graphql.request.mockRejectedValue(new Error('offline'));
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    await act(async () => {
+      ref.current?.present();
+    });
+    const firstTarget = climbRows.renderTargets.get('lost-climb') as ClimbActionsTarget | null | undefined;
+    await expect(firstTarget?.resolveClimb?.()).resolves.toBeNull();
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.actionFailed', 'error');
+  });
+
+  it('hydrates only the initial bounded rows, then the newly visible history row', async () => {
+    presence.history = Array.from({ length: 20 }, (_, index) => makeClimb(`history-${index}`, index + 1));
+    graphql.request.mockImplementation(async (_query: unknown, variables: { climbUuid: string }) => ({
+      climb: makeFullClimb(variables.climbUuid),
+    }));
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    act(() => ref.current?.present());
+    await waitFor(() => expect(graphql.request).toHaveBeenCalledTimes(8));
+    expect(historyPagination.loadOlder).not.toHaveBeenCalled();
+    const newlyVisible = presence.history[15];
+    act(() =>
+      menuViewability.changed?.({
+        viewableItems: [{ item: newlyVisible, isViewable: true, key: 'visible', index: 15 }],
+      }),
+    );
+    await waitFor(() => expect(graphql.request).toHaveBeenCalledTimes(9));
+    expect(graphql.request.mock.calls.at(-1)?.[1]).toMatchObject({ climbUuid: newlyVisible.climbUuid });
+    expect(historyPagination.loadOlder).not.toHaveBeenCalled();
+  });
+
+  it.each(['dismiss', 'board-change'] as const)('cancels an awaiting native-menu command after %s', async (cancel) => {
+    presence.history = [makeClimb('old-climb', 2, { frames: 'old-frames', angle: 30 })];
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    graphql.request.mockResolvedValue({ climb: makeFullClimb('old-climb') });
+    const ref = createRef<BoardSheetHandle>();
+    const element = (selectedBoardConfig: typeof boardConfig) =>
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig: selectedBoardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      });
+    const view = render(element(boardConfig));
+    act(() => ref.current?.present());
+    let target: ClimbActionsTarget | null | undefined;
+    await waitFor(() => {
+      const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
+      target = resolveMenu?.();
+      expect(target).toBeTruthy();
+    });
+    const pendingClimb = target?.resolveClimb?.();
+    if (cancel === 'dismiss') act(() => ref.current?.dismiss());
+    else view.rerender(element({ ...boardConfig, sizeId: boardConfig.sizeId + 1 }));
+    expect(await pendingClimb).toBeNull();
   });
 
   it('shows loading feedback and ignores repeat taps while a climb action is resolving', async () => {

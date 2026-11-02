@@ -3657,12 +3657,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       currentClimbMover:
         currentMoverName === null ? null : { username: currentMoverName, avatarUrl: currentMoverAvatarUrl },
       historyCount: state.historyCount ?? null,
+      nowSlotMode: state.nowSlotMode ?? false,
     }),
     [
       state.queue,
       state.currentClimbQueueItem,
       state.currentChangedBy,
       state.historyCount,
+      state.nowSlotMode,
       currentMoverName,
       currentMoverAvatarUrl,
     ],

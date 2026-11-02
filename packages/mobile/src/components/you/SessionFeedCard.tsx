@@ -1,4 +1,5 @@
-import { memo, useCallback, useState } from 'react';
+import { ClimbActionsPressable } from '../climb-actions/ClimbActionsPressable';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +31,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useToast } from '../../providers/toast-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { hapticLight, hapticMedium } from '../../lib/haptics';
+import { hapticLight } from '../../lib/haptics';
 import { getSoleBoardType } from '../../lib/grade-label';
 import { WorkoutHeadlineChip } from '../session/workout/WorkoutHeadlineChip';
 import { workoutHeadlineText } from '../session/workout/workout-summary-format';
@@ -87,7 +88,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   const { systemColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { showToast } = useToast();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
 
   const names = session.participants
     .map((participant) => participant.displayName)
@@ -144,21 +145,20 @@ export const SessionFeedCard = memo(function SessionFeedCard({
     handleCardPress();
   }, [handleCardPress, hardestSend, onOpenClimb]);
 
-  // Long press the hardest-send hero → open the climb reaction menu.
-  const handleHeroLongPress = useCallback(() => {
-    if (!hardestSend) return;
+  const heroMenuTarget = useMemo(() => {
+    if (!hardestSend) return null;
     const climb = tickToClimb(hardestSend);
     const config = renderBoardToPlaylistConfig(hardestSend.boardType, hardestSend.layoutId, hardestSend.renderBoard);
-    if (!climb || !config) return;
-    hapticMedium();
-    openClimbActions(climb, {
-      boardName: config.boardName,
-      layoutId: config.layoutId,
-      sizeId: config.sizeId,
-      setIds: config.setIds.join(','),
-      angle: hardestSend.angle,
-    });
-  }, [hardestSend, openClimbActions]);
+    return climb && config
+      ? getClimbActions(climb, {
+          boardName: config.boardName,
+          layoutId: config.layoutId,
+          sizeId: config.sizeId,
+          setIds: config.setIds.join(','),
+          angle: hardestSend.angle,
+        })
+      : null;
+  }, [hardestSend, getClimbActions]);
 
   const handleOpenBeta = useCallback(async () => {
     if (!betaUrl) return;
@@ -251,17 +251,16 @@ export const SessionFeedCard = memo(function SessionFeedCard({
             <BetaHero betaLink={betaLink} tick={featuredBeta.tick} uploaderName={betaUploaderName} />
           </PressableSurface>
         ) : hardestSend ? (
-          <PressableSurface
+          <ClimbActionsPressable
+            target={heroMenuTarget}
             onPress={handleHeroPress}
-            onLongPress={handleHeroLongPress}
-            feedback="opacity"
             accessibilityRole="button"
             accessibilityLabel={heroClimbLabel}
             accessibilityHint={t('sessionFeedCard.openHint')}
             style={styles.heroPressable}
           >
             <HeroSend tick={hardestSend} />
-          </PressableSurface>
+          </ClimbActionsPressable>
         ) : null}
 
         <View style={[styles.divider, { backgroundColor: systemColors.separator }]} />

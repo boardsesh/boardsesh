@@ -14,6 +14,7 @@ import type {
   LogAscentInput,
   OpenClimbActionsOptions,
   OpenPlayDrawerOptions,
+  ClimbActionsTarget,
 } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { readQueuePickLanding } from './queue-pick-landing';
@@ -21,7 +22,11 @@ import { readQueuePickLanding } from './queue-pick-landing';
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   openPlayDrawer: (climb: Climb, options?: OpenPlayDrawerOptions) => void;
-  openClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
+  getClimbActions: (
+    climb: Climb,
+    boardConfigOverride?: BoardConfig,
+    options?: OpenClimbActionsOptions,
+  ) => ClimbActionsTarget | null;
   openLogAscent: (input: LogAscentInput) => void;
   /** The user's STORED active board (never a drawer override) — the queue renders
    *  against it, and a tick-history log is filed against it. */
@@ -41,7 +46,7 @@ export type QueueHistoryTickHandler = (
 
 type QueueSheetHandlers = {
   handleClimbPress: (item: ClimbQueueItem) => void;
-  handleOpenActions: (item: ClimbQueueItem) => void;
+  handleOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null;
   handleSuggestionPress: (climb: QueueClimb, source: PlaylistSuggestionSource) => void;
   handleTickHistory: QueueHistoryTickHandler;
 };
@@ -50,14 +55,14 @@ type QueueSheetHandlers = {
  * The four QueueSheet row handlers, shared by the two QueueSheet instances: the
  * host's (snackbar / closed-player) and the play-route's (open-player, so the
  * sheet stacks above the player VC). Extracted so the two can't drift — both
- * present the same climb in the play drawer, open the same reaction menu, and
+ * present the same climb in the play drawer, resolve the same climb menu, and
  * file the same tick. The only difference is `requestCloseQueueSheet`, which
  * dismisses whichever instance the caller owns.
  */
 export function useQueueSheetHandlers({
   setCurrentClimb,
   openPlayDrawer,
-  openClimbActions,
+  getClimbActions,
   openLogAscent,
   storedBoardConfig,
   sessionId,
@@ -105,19 +110,21 @@ export function useQueueSheetHandlers({
     [landingOf, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
-  // Long-press a queue row → open the climb reaction menu over the queue sheet.
-  // The queue renders against the active board, so the default boardConfig is
-  // correct.
+  // A queue row's climb menu: the target a hold resolves, bound to that exact
+  // slot, on the stored active board. QueueItemRow swaps in the board it draws
+  // the row on, which is that same board except for a slot from another wall:
+  // that slot's commands file against the climb's own board, as a mixed-board
+  // playlist row's do.
   const handleOpenActions = useCallback(
     (item: ClimbQueueItem) => {
       // `queueItemUuid` names the exact row that was long-pressed, so "Play next"
       // moves that slot instead of the first copy of a twice-queued climb.
-      openClimbActions(item.climb, undefined, {
+      return getClimbActions(item.climb, undefined, {
         dismissSourceSheet: dismissQueueSheetAndWait,
         queueItemUuid: item.uuid,
       });
     },
-    [openClimbActions, dismissQueueSheetAndWait],
+    [getClimbActions, dismissQueueSheetAndWait],
   );
 
   // Tap a suggestion → activate it with a suggestion source built from the

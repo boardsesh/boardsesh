@@ -793,12 +793,12 @@
       },
       "open": {
         "title": "Abre el menú",
-        "p1": "Mantén pulsada la fila de un bloque. Se levanta en una tarjeta con Registrar un encadene, Añadir a la playlist y Compartir arriba, y el resto debajo.",
-        "p2": "¿Prefieres tocar? En Ajustes, luego Bloques y grados y Lista de bloques, activa Mostrar botón de acciones rápidas para tener un ⋮ en cada fila de Bloques.",
-        "shotAlt": "La tarjeta de acciones del bloque",
-        "shotCaption": "Tres botones rápidos arriba, la lista completa debajo.",
+        "p1": "Mantén pulsada la fila de un bloque y sus acciones se abren en un menú. En iPhone, la fila se levanta sobre la lista atenuada con el menú debajo. Toca una acción, o toca fuera para cerrarlo.",
+        "p2": "¿Prefieres tocar? En Ajustes, luego Bloques y grados y Lista de bloques, activa Mostrar botón de acciones rápidas para tener un ⋮ en cada fila de Bloques. Abre el mismo menú.",
+        "shotAlt": "La fila de un bloque levantada sobre la lista, con sus acciones debajo",
+        "shotCaption": "La fila arriba, sus acciones en grupos debajo.",
         "clipAlt": "Mantener pulsada la fila de un bloque",
-        "clipCaption": "Mantén pulsada la fila y la tarjeta se levanta sola."
+        "clipCaption": "Mantén pulsada la fila y el menú se abre solo."
       },
       "preview": {
         "title": "Toca un bloque para verlo en vista previa",
@@ -811,11 +811,11 @@
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },
       "quick": {
-        "title": "Los tres botones de arriba",
+        "title": "Las acciones que más usarás",
         "tick": "Registrar un encadene abre la hoja de ascenso.",
-        "playlist": "Añadir a la playlist es una lista de casillas. Marca para añadir, desmarca para quitar.",
+        "playlist": "Añadir a la playlist abre una lista de casillas con tus playlists. Marca para añadir, desmarca para quitar.",
         "share": "Compartir pasa un enlace a la hoja de compartir de tu móvil.",
-        "p1": "La tarjeta se cierra al lanzar una acción, menos con Añadir a la playlist."
+        "p1": "El menú se cierra en cuanto eliges una acción."
       },
       "rest": {
         "title": "El resto de la lista",

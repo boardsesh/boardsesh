@@ -4,6 +4,7 @@ import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
+import type { ClimbActionsTarget } from '../drawer-host-provider';
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
@@ -30,16 +31,12 @@ const queueSheet = vi.hoisted(() => ({
     };
     onClose: () => void;
     onClimbPress: (item: ClimbQueueItem) => void;
-    onOpenActions: (item: ClimbQueueItem) => void;
+    onOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
     onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
   },
   present: vi.fn(),
   dismiss: vi.fn(),
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
-}));
-
-const climbActions = vi.hoisted(() => ({
-  props: null as null | Record<string, unknown>,
 }));
 
 const playlistSheet = vi.hoisted(() => ({
@@ -208,7 +205,7 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
           };
           onClose: () => void;
           onClimbPress: (item: ClimbQueueItem) => void;
-          onOpenActions: (item: ClimbQueueItem) => void;
+          onOpenActions: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
           onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
         },
         ref,
@@ -237,11 +234,8 @@ vi.mock('../../components/LogAscentSheet', () => ({
     });
   },
 }));
-vi.mock('../../components/climb-actions/ClimbReactionMenu', () => ({
-  ClimbReactionMenu: (props: Record<string, unknown>) => {
-    climbActions.props = props;
-    return createElement('div', { 'data-climb-actions': 'true' });
-  },
+vi.mock('../../components/climb-actions/ClimbActionsMenu', () => ({
+  ClimbMenusProvider: ({ children }: { children?: ReactNode }) => children,
 }));
 vi.mock('../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('../../components/AddToPlaylistSheet', () => ({
@@ -714,7 +708,7 @@ type BoardSheetTestProps = {
   onClimbPress: (action: BoardSheetClimbAction) => void;
   onPlayNext: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
-  onOpenActions: (action: BoardSheetClimbAction) => void;
+  onOpenActions: (action: BoardSheetClimbAction) => ClimbActionsTarget | null | undefined;
   onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'resetWall') => void;
   onShareSprayWall: (wallUuid: string) => void;
 };
@@ -752,7 +746,6 @@ describe('DrawerHostProvider queue selection previews', () => {
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
     queueSheet.dismissAndWait.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -838,10 +831,10 @@ describe('DrawerHostProvider queue selection previews', () => {
     await waitFor(() => expect(queueSheet.props).not.toBeNull());
 
     const item = makeQueueItem('queue-actions', 'climb-actions');
-    act(() => queueSheet.props?.onOpenActions(item));
-    await waitFor(() => expect(climbActions.props).not.toBeNull());
-
-    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    const target = queueSheet.props?.onOpenActions(item);
+    expect(target).toMatchObject({ climb: item.climb, queueItemUuid: item.uuid });
+    expect(queueSheet.dismissAndWait).not.toHaveBeenCalled();
+    const dismissSourceSheet = target?.dismissSourceSheet;
     if (!dismissSourceSheet) throw new Error('queue dismiss callback was not forwarded');
     await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
     expect(queueSheet.dismissAndWait).toHaveBeenCalledTimes(1);
@@ -856,7 +849,6 @@ describe('DrawerHostProvider board sheet climb actions', () => {
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
     queue.playNext.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -1019,15 +1011,13 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       angle: 30,
     });
 
-    act(() => {
-      getBoardSheetProps().onOpenActions(action);
-    });
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
-    expect(climbActions.props).toMatchObject({
+    const target = getBoardSheetProps().onOpenActions(action);
+    expect(target).toMatchObject({
       climb,
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 30 },
     });
-    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    expect(boardSheet.dismissAndWait).not.toHaveBeenCalled();
+    const dismissSourceSheet = target?.dismissSourceSheet;
     if (!dismissSourceSheet) throw new Error('board dismiss callback was not forwarded');
     await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
     expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
@@ -1161,7 +1151,6 @@ describe('DrawerHostProvider queue sheet open / re-open', () => {
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
     queueSheet.dismissAndWait.mockClear();
-    climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
@@ -1219,7 +1208,6 @@ describe('DrawerHostProvider climb actions', () => {
   beforeEach(() => {
     queue.sessionId = 'session-1';
     queueSheet.props = null;
-    climbActions.props = null;
     playlistSheet.props = null;
     betaVideoSheet.props = null;
     boardSheet.props = null;
@@ -1227,7 +1215,7 @@ describe('DrawerHostProvider climb actions', () => {
     boardSheet.dismiss.mockClear();
   });
 
-  it('opens the climb reaction menu for a climb against the active board, then closes it', async () => {
+  it('resolves a native menu snapshot without presenting a surface', async () => {
     const hosts: Array<HostValue> = [];
     const { container } = renderHost((host) => hosts.push(host));
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
@@ -1235,22 +1223,42 @@ describe('DrawerHostProvider climb actions', () => {
     expect(container.querySelector('[data-climb-actions]')).toBeNull();
 
     const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openClimbActions(climb);
-    });
-
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
-    // Snapshots the active board config (kilter / 1 / 10 / 1,2 / 40) at open time and
-    // forwards it to the reaction menu so the preview + actions resolve.
-    expect(climbActions.props).toMatchObject({
+    const target = hosts.at(-1)?.getClimbActions(climb);
+    expect(target).toMatchObject({
       climb,
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
     });
 
-    act(() => {
-      hosts.at(-1)?.closeClimbActions();
+    expect(container.querySelector('[data-climb-actions]')).toBeNull();
+    expect(routerNavigate).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('preserves the explicit board, duplicate queue slot, and source callbacks in its target', async () => {
+    const hosts: HostValue[] = [];
+    renderHost((host) => hosts.push(host));
+    const climb = makeQueueItem('second-copy', 'same-climb').climb as Climb;
+    const boardConfig = { boardName: 'tension', layoutId: 9, sizeId: 12, setIds: '3', angle: 35 };
+    const onEditEntry = vi.fn();
+    const dismissSourceSheet = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const target = hosts.at(-1)?.getClimbActions(climb, boardConfig, {
+      queueItemUuid: 'second-copy',
+      onEditEntry,
+      dismissSourceSheet,
     });
-    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).toBeNull());
+
+    expect(target).toEqual({ climb, boardConfig, queueItemUuid: 'second-copy', onEditEntry, dismissSourceSheet });
+    expect(onEditEntry).not.toHaveBeenCalled();
+    expect(dismissSourceSheet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a menu resolver captured before the credential scope changed', async () => {
+    const hosts: HostValue[] = [];
+    renderHost((host) => hosts.push(host));
+    const resolve = hosts.at(-1)!.getClimbActions;
+    const climb = makeQueueItem('private-climb').climb as Climb;
+    act(() => invalidateCredentialSnapshots());
+    expect(resolve(climb)).toBeNull();
   });
 
   it('opens add-to-playlist against the active board snapshot', async () => {
@@ -2081,7 +2089,6 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     // drawer's job (via openTarget.options), so the host never calls
     // setCurrentClimb on a pane open.
     layoutCfg.widthClass = 'regular';
-    climbActions.props = null;
     boardSheet.dismissAndWait.mockClear();
   });
 
@@ -2091,10 +2098,9 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     await waitFor(() => expect(hosts.at(-1)?.boardPanelProps).not.toBeNull());
 
     const climb = makeQueueItem('queue-pane-actions', 'climb-pane-actions').climb as unknown as Climb;
-    act(() => hosts.at(-1)?.boardPanelProps?.onOpenActions(makeBoardSheetAction(climb)));
-    await waitFor(() => expect(climbActions.props).not.toBeNull());
-
-    expect(climbActions.props?.dismissSourceSheet).toBeUndefined();
+    const target = hosts.at(-1)?.boardPanelProps?.onOpenActions(makeBoardSheetAction(climb));
+    expect(target).toMatchObject({ climb });
+    expect(target?.dismissSourceSheet).toBeUndefined();
     expect(boardSheet.dismissAndWait).not.toHaveBeenCalled();
   });
 

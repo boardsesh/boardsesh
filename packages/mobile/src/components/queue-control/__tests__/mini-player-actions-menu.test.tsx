@@ -51,6 +51,14 @@ vi.mock('../../AppMenu', () => ({
     );
   },
 }));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@tanstack/react-query')>();
+  const client = new original.QueryClient();
+  return { ...original, useQueryClient: () => client };
+});
+vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
+vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({

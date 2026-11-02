@@ -16,7 +16,7 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import type { Proposal } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, Proposal } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -24,6 +24,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { SegmentedControl } from '../SegmentedControl';
 import type { SegmentOption } from '../SegmentedControl.types';
+import { AddToPlaylistSheet } from '../AddToPlaylistSheet';
 import { ModerationProposalCard } from './ModerationProposalCard';
 import { proposalToClimb } from './proposal-presenters';
 import { useBrowseProposals, useClimbProposalsPinned } from '../../lib/graphql/hooks/use-browse-proposals';
@@ -32,10 +33,12 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useAuthToken } from '../../lib/graphql/use-auth-token';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useDeferredSheetData } from '../../hooks/use-deferred-sheet-data';
+import { usePrivacyCredentialScope } from '../../hooks/use-privacy-scoped-state';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { defaultAngle } from '../../lib/boards/default-angle';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
@@ -66,7 +69,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
   const { systemColors, brandColors } = useTheme();
   const router = useRouter();
   const bottomChrome = useBottomChromeMetrics();
-  const { openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { openPlayDrawer, getClimbActions } = useDrawerHost();
   const { data: authToken } = useAuthToken();
   const { data: activeBoard } = useActiveBoard();
   const activeBoardType = activeBoard?.boardType ?? null;
@@ -200,20 +203,40 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
     [openPlayDrawer, router],
   );
 
+  // A card menu's Add to playlist presents HERE, inside this modal route: the
+  // root sheet would open under the modal and vanish (docs/mobile-sheets-vs-routes.md,
+  // rule 1). Kept mounted through its dismiss animation, like the root host.
+  const credentialScope = usePrivacyCredentialScope();
+  const {
+    data: playlistTarget,
+    visible: playlistVisible,
+    open: openPlaylistSheet,
+    close: closePlaylistSheet,
+    clearIfClosed: clearPlaylistSheet,
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
+  const openPlaylistInRoute = useCallback(
+    (climb: Climb, boardConfig: BoardConfig) => openPlaylistSheet({ climb, boardConfig }),
+    [openPlaylistSheet],
+  );
+
   const handleLongPressClimb = useCallback(
     (proposal: Proposal) => {
       const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
       const climb = proposalToClimb(proposal);
       if (!climb || !boardConfig) return;
-      openClimbActions(climb, {
-        boardName: boardConfig.boardName,
-        layoutId: boardConfig.layoutId,
-        sizeId: boardConfig.sizeId,
-        setIds: boardConfig.setIds.join(','),
-        angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
-      });
+      return getClimbActions(
+        climb,
+        {
+          boardName: boardConfig.boardName,
+          layoutId: boardConfig.layoutId,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds.join(','),
+          angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
+        },
+        { openPlaylistInRoute },
+      );
     },
-    [openClimbActions],
+    [getClimbActions, openPlaylistInRoute],
   );
 
   const renderItem = useCallback(
@@ -394,6 +417,20 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
           />
         }
       />
+      {playlistTarget ? (
+        <AddToPlaylistSheet
+          key={credentialScope}
+          visible={playlistVisible}
+          climb={playlistTarget.climb}
+          boardName={playlistTarget.boardConfig.boardName as BoardName}
+          layoutId={playlistTarget.boardConfig.layoutId}
+          sizeId={playlistTarget.boardConfig.sizeId}
+          setIds={playlistTarget.boardConfig.setIds}
+          angle={playlistTarget.boardConfig.angle}
+          onClose={closePlaylistSheet}
+          onFullyDismissed={clearPlaylistSheet}
+        />
+      ) : null}
     </View>
   );
 }

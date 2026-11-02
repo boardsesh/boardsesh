@@ -14,13 +14,14 @@ import { HelpScreenshot } from '../help-screenshot';
  * The least-found interaction in the app. `Climb Actions Opened` has fired for
  * 837 people since it started recording on 2026-07-21, against 3,936 who opened
  * a climb in the same window — about one in five. Most of what Discord asks for
- * is already a row in this menu, and Preview answers the loudest request of all:
- * browsing a shared session without lighting the wall for everyone.
+ * is already a row in this menu, and a tap's preview answers the loudest request
+ * of all: browsing a shared session without lighting the wall for everyone.
  *
- * The action list, its order and every gate (signed in, own climb, moderation
- * flag, Aurora boards) come from packages/mobile/src/components/climb-actions/
- * use-climb-actions.ts; the three quick buttons from PRIMARY_ACTION_IDS in
- * ClimbReactionMenu.tsx; the Preview chrome from play-drawer/wall-state.ts.
+ * The action list and every gate (signed in, own climb, moderation flag, Aurora
+ * boards) come from packages/mobile/src/components/climb-actions/
+ * climb-menu-items.ts; the list menu's groups from LIST_GROUPS in
+ * ClimbActionsMenu.tsx; the Preview chrome from play-drawer/wall-state.ts. The
+ * menu offers no Preview row: a tap on the row already opens one.
  */
 export default function ClimbActionsContent() {
   const { t } = useTranslation('marketing');

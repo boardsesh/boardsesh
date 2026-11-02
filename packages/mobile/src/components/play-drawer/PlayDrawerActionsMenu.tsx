@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/shared-schema';
-import { AppMenu } from '../AppMenu';
+import { ClimbMenu } from '../climb-actions/ClimbMenu';
 import {
   useClimbActions,
   type ClimbActionsFavoriteControl,
@@ -86,8 +86,11 @@ export type PlayDrawerActionsMenuProps = {
  * A menu row reports a position, so a row set that changes while the menu is
  * open (a crew member moves the wall, commit mode flips, the scrim comes up)
  * would land a tap on whatever row has moved into that slot. The menu is keyed
- * on the climb and its row set instead: any such change remounts it, which closes
- * it, and a tap always resolves against the rows it was drawn from.
+ * on the climb, its board and its row set instead: any such change remounts it,
+ * which closes it, and a tap always resolves against the rows it was drawn from.
+ * The angle is left out of the key on purpose: a crew member moving the wall
+ * changes no row, so the menu stays open and the picked row runs at the new
+ * angle, the one the wall is now at.
  */
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
@@ -169,25 +172,13 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     () => buildPlayDrawerMenuRows(menuItems, { hidden, boardMismatch, isActiveClimb }),
     [menuItems, hidden, boardMismatch, isActiveClimb],
   );
-  // Disabled rows are refused here as well as by the platform menus: the row set
-  // is data, and the next row added to it may not guard itself.
-  const handleSelectIndex = useCallback(
-    (index: number) => {
-      const row = rows[index];
-      if (!row || row.disabled) return;
-      row.run();
-    },
-    [rows],
-  );
   const rowSignature = rows.map((row) => (row.disabled ? `${row.id}:off` : row.id)).join(',');
 
   return (
-    <AppMenu
-      key={`${climb.uuid}|${rowSignature}`}
-      iconName="more"
+    <ClimbMenu
+      menuKey={`${currentUserId}|${climb.uuid}|${boardConfig.boardName}|${boardConfig.layoutId}|${boardConfig.sizeId}|${boardConfig.setIds}|${queueItemUuid}|${rowSignature}`}
       accessibilityLabel={t('playView.actionBar.climbActionsAria')}
-      actions={rows}
-      onSelectIndex={handleSelectIndex}
+      rows={rows}
     />
   );
 });

@@ -13,8 +13,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
-  StyleSheet,
   Platform,
+  StyleSheet,
   type AccessibilityActionEvent,
   type StyleProp,
   type ViewStyle,
@@ -39,6 +39,9 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
+import { useClimbMenu } from './climb-actions/ClimbActionsMenu';
+import { ClimbListRowMenu, type ClimbListRowMenuHandle } from './climb-actions/ClimbListRowMenu';
+import type { ClimbActionsTarget } from '../providers/drawer-host-provider';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles, climbRowSeparatorInsetStyle } from './climb-list-row-styles';
 import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
@@ -46,11 +49,12 @@ import { CLIMB_ROW_VERTICAL_PADDING } from './climb-row-layout';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
+import { spacing } from '../theme/tokens';
 import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
-import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS } from '../lib/row-accessibility-actions';
 import {
   isReadyBoardArtCurrent,
   type ReadyBoardArtSnapshot,
@@ -63,10 +67,9 @@ const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
 // A partial swipe reveals a labelled action; releasing past COMMIT_THRESHOLD
 // commits it and closes the row. friction=1 keeps finger tracking direct.
 
-// The ⋮ button is nested inside the row's `accessible` container, so it needs both
-// its own props (TalkBack focuses it) and a labelled custom action published on the
-// row (VoiceOver does not) — see lib/row-accessibility-actions.
-const MORE_ACTIONS_ACTION_NAME = 'moreActions';
+// The ⋮ button is a sibling of the row's `accessible` body (ClimbListRowMenu
+// renders it), so a screen reader focuses it on its own. The row body also
+// publishes every menu action as a labelled custom action.
 
 // Per-row swipe perf: the panels below split into a cheap always-mounted shell
 // (just the coloured panel + its resting-state icon, zero shared values /
@@ -252,7 +255,7 @@ type ClimbListRowProps = {
   /** Right swipe: put the climb at the top of Up next (the menu's Play next). */
   onPlayNext?: (climb: Climb) => void;
   onOpenPlaylist?: (climb: Climb, anchor?: WindowAnchorPoint) => void;
-  onOpenActions?: (climb: Climb) => void;
+  onOpenActions?: (climb: Climb) => ClimbActionsTarget | null | undefined;
   selected?: boolean;
   unsupported?: boolean;
   renderContent?: (args: ClimbListRowRenderContentArgs) => ReactNode;
@@ -283,7 +286,7 @@ type ClimbListRowProps = {
    */
   showFavorite?: boolean;
   /**
-   * Let this surface show a trailing ⋮ button that opens the reaction menu on tap
+   * Let this surface show a trailing ⋮ button that opens the row's menu on tap
    * — a visible, discoverable entry point beside the long-press. Only the climbs
    * list opts in; other surfaces keep long-press only. The button also needs the
    * climber's "Show quick-actions button" setting (on by default), which the row
@@ -298,6 +301,13 @@ type ClimbListRowProps = {
    * an unrelated climb list on the same screen.
    */
   testID?: string;
+  /**
+   * Screenshot mode only: lift this row's menu once it has rows, as a hold or
+   * the ⋮ does. The Climbs list sets it on its first row for the help flow's
+   * climb-actions shot (`screenshotOpenClimbActions`), since Maestro can't see
+   * the rows to hold one. Ignored in normal builds.
+   */
+  screenshotOpenMenu?: boolean;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -324,6 +334,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showFavorite = false,
   showMoreButton = false,
   testID = 'climb-row',
+  screenshotOpenMenu = false,
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
@@ -367,9 +378,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onPlayNextRef.current = onPlayNext;
   const onOpenPlaylistRef = useRef(onOpenPlaylist);
   onOpenPlaylistRef.current = onOpenPlaylist;
-  const onOpenActionsRef = useRef(onOpenActions);
-  onOpenActionsRef.current = onOpenActions;
   const contentViewRef = useRef<ViewInstance | null>(null);
+  const rowFocusRef = useRef<ViewInstance | null>(null);
+  const rowMenuRef = useRef<ClimbListRowMenuHandle | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
   const readyBoardArtRef = useRef<ReadyBoardArtSource | null>(null);
@@ -377,15 +388,11 @@ const ClimbListRow = React.memo(function ClimbListRow({
   readyScopeRef.current = { boardName, layoutId, sizeId, setIds };
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
-  // One place that opens the reaction menu, whether it was reached by long press
-  // or by the ⋮ button.
-  const openActions = useCallback(() => {
-    if (unsupportedRef.current) return;
-    const openActionsMenu = onOpenActionsRef.current;
-    if (!openActionsMenu) return;
-    hapticMedium();
-    openActionsMenu(climbRef.current);
-  }, []);
+  const menuTarget = useMemo(
+    () => (unsupported ? null : (onOpenActions?.(climb) ?? null)),
+    [unsupported, onOpenActions, climb, boardName, layoutId, sizeId, setIds, angle],
+  );
+  const menu = useClimbMenu(menuTarget);
 
   const handleRowPress = useCallback(() => {
     if (unsupportedRef.current) return;
@@ -406,47 +413,18 @@ const ClimbListRow = React.memo(function ClimbListRow({
     else press(currentClimb);
   }, []);
 
-  const handleLongPress = useCallback(() => {
-    openActions();
-  }, [openActions]);
-
-  // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
-  // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
-  const handleOpenActions = useCallback(() => {
-    openActions();
-  }, [openActions]);
-
-  // Screen-reader activate → the same handlers the RNGH taps call. Branch on the
-  // action name so a future custom action on these rows can't turn every action
-  // into a row press / menu open.
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handleRowPress();
-      if (event.nativeEvent.actionName === MORE_ACTIONS_ACTION_NAME) handleOpenActions();
+      else menu.onAccessibilityAction(event);
     },
-    [handleRowPress, handleOpenActions],
+    [handleRowPress, menu.onAccessibilityAction],
   );
-
-  const handleMoreButtonAccessibilityAction = useCallback(
-    (event: AccessibilityActionEvent) => {
-      if (event.nativeEvent.actionName === 'activate') handleOpenActions();
-    },
-    [handleOpenActions],
-  );
-
-  const canOpenActions = !!onOpenActions && !unsupported;
-  // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
-  // `t` identity on plenty of renders, which would rebuild this array every time
-  // and churn the row element's props.
-  const moreActionsLabel = t('mobile.climbRow.moreActions');
   const playNextActionLabel = t('mobile.climbActions.playNext');
   const playlistActionLabel = t('actions.playlist.popover.title');
   const rowAccessibilityActions = useMemo(
-    () =>
-      canOpenActions
-        ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
-        : ACTIVATE_ACCESSIBILITY_ACTIONS,
-    [canOpenActions, moreActionsLabel],
+    () => [...(ACTIVATE_ACCESSIBILITY_ACTIONS ?? []), ...menu.accessibilityActions],
+    [menu.accessibilityActions],
   );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
@@ -522,27 +500,32 @@ const ClimbListRow = React.memo(function ClimbListRow({
       runOnJS(handleRowPress)();
     },
   });
+  const prepareLiftedMenu = useCallback(() => {
+    swipeableRef.current?.reset();
+    disarm();
+  }, [disarm]);
+  const openLiftedMenu = useCallback(() => rowMenuRef.current?.open(), []);
+  // Dead-strips in normal builds. The menu opens once its rows exist; a second
+  // open while it is up is a no-op.
+  const screenshotMenuReady = screenshotOpenMenu && menu.rows.length > 0;
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotMenuReady) return;
+    openLiftedMenu();
+  }, [screenshotMenuReady, openLiftedMenu]);
   const longPressGesture = useLongPressGesture({
+    enabled: Platform.OS === 'ios' && showMoreButton && menu.rows.length > 0,
     minDuration: 400,
-    onActivate: () => {
-      'worklet';
-      runOnJS(handleLongPress)();
-    },
-  });
-  const tapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
-  // Mount the lock on the row and make the full-swipe tracker wait for it too.
-  const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
-  const rowGestures = useSimultaneousGestures(tapGesture, guardedFullSwipe);
-  // The menu tap blocks the row so only the menu opens when its button wins.
-  const moreButtonGesture = useTapGesture({
-    maxDuration: 400,
     maxDistance: 15,
-    block: [singleTapGesture, longPressGesture],
     onActivate: () => {
       'worklet';
-      runOnJS(handleOpenActions)();
+      runOnJS(openLiftedMenu)();
     },
   });
+  // A successful hold suppresses the tap on release. Other surfaces retain
+  // their platform menu's own hold recognizer.
+  const rowActivation = useExclusiveGestures(longPressGesture, singleTapGesture);
+  const guardedFullSwipe = useExclusiveGestures(swipeDirectionLock, fullSwipe.gesture);
+  const rowGestures = useSimultaneousGestures(rowActivation, guardedFullSwipe);
 
   // Left actions (revealed by a left-to-right swipe) = Play next; right actions
   // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
@@ -590,6 +573,21 @@ const ClimbListRow = React.memo(function ClimbListRow({
       showFavorite={showFavorite}
     />
   );
+  const rowBody = (
+    <View
+      ref={rowFocusRef}
+      testID={testID}
+      style={styles.menuBody}
+      accessible
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      onAccessibilityTap={handleRowPress}
+      accessibilityActions={rowAccessibilityActions}
+      onAccessibilityAction={handleRowAccessibilityAction}
+    >
+      {rowContent}
+    </View>
+  );
 
   return (
     <View
@@ -619,64 +617,42 @@ const ClimbListRow = React.memo(function ClimbListRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={rowGestures} touchAction="pan-y">
-          <View
-            ref={contentViewRef}
-            collapsable={false}
-            testID={testID}
-            style={[
-              climbListRowStyles.contentRow,
-              fillCell && styles.fillCell,
-              { backgroundColor: systemColors.background },
-              contentRowStyle,
-            ]}
-            accessible
-            accessibilityRole="button"
-            // Let React Native compose the name, grade and status from the
-            // content labels instead of replacing them with just the name.
-            accessibilityState={{ selected: !!selected }}
-            onAccessibilityTap={handleRowPress}
-            // Keep the menu reachable through screen-reader actions even when
-            // the climber hides its visible quick-actions button.
-            accessibilityActions={rowAccessibilityActions}
-            onAccessibilityAction={handleRowAccessibilityAction}
+        <View
+          ref={contentViewRef}
+          collapsable={false}
+          style={[
+            climbListRowStyles.contentRow,
+            fillCell && styles.fillCell,
+            { backgroundColor: systemColors.background },
+            contentRowStyle,
+          ]}
+        >
+          {selected ? (
+            <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
+          ) : null}
+          {selected ? (
+            <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
+          ) : null}
+          <ClimbListRowMenu
+            ref={rowMenuRef}
+            onBeforeOpen={prepareLiftedMenu}
+            enabled={showMoreButton}
+            rows={menu.rows}
+            menuKey={menu.menuKey}
+            title={climb.name}
+            accessibilityLabel={t('mobile.climbRow.moreActions')}
+            bodyStyle={styles.menuBody}
+            moreButtonStyle={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
+            showMoreButton={showMoreButton && quickActionsEnabled}
+            preview={rowBody}
+            focusRef={rowFocusRef}
+            previewOverlayColor={selected ? highlight.fill : undefined}
           >
-            {/* Active-climb highlight: violet wash + left accent bar */}
-            {selected ? (
-              <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
-            ) : null}
-            {selected ? (
-              <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
-            ) : null}
-
-            {rowContent}
-
-            {showMoreButton && quickActionsEnabled && onOpenActions ? (
-              <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
-                <View
-                  testID="climb-row-more-button"
-                  style={hasThumbnail ? styles.moreButton : [styles.moreButton, styles.moreButtonWithoutThumbnail]}
-                  accessible
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.climbRow.moreActions')}
-                  // iOS reaches this menu through the row's custom action;
-                  // exclude its button label from the composed row description.
-                  // Android retains the separately focusable button.
-                  accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
-                  onAccessibilityTap={handleOpenActions}
-                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
-                  onAccessibilityAction={handleMoreButtonAccessibilityAction}
-                >
-                  {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
-                        Android's dots-vertical is already vertical (no rotation). */}
-                  <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
-                    <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
-                  </View>
-                </View>
-              </GestureDetector>
-            ) : null}
-          </View>
-        </GestureDetector>
+            <GestureDetector gesture={rowGestures} touchAction="pan-y">
+              {rowBody}
+            </GestureDetector>
+          </ClimbListRowMenu>
+        </View>
       </ReanimatedSwipeable>
 
       {/* Separator — inset to start at the text column (after the thumbnail, when there is one) */}
@@ -698,6 +674,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
 export { ClimbListRow };
 
 const styles = StyleSheet.create({
+  menuBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   outerContainer: {
     position: 'relative',
     overflow: 'hidden',
@@ -771,9 +748,6 @@ const styles = StyleSheet.create({
   // overlap with the row above or below.
   moreButtonWithoutThumbnail: {
     marginVertical: -CLIMB_ROW_VERTICAL_PADDING,
-  },
-  moreIconRotate: {
-    transform: [{ rotate: '90deg' }],
   },
   swipeIcon: {
     width: 28,

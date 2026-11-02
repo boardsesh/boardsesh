@@ -42,8 +42,7 @@ import { NAME_MAX } from './playlist-form-values';
 
 // One-tap emoji shortcuts for the compact inline create form. The full emoji
 // picker (system keyboard + description field) lives on the playlist edit
-// screen; the inline form stays lightweight so it fits the reaction overlay's
-// floating card.
+// screen; the inline form stays lightweight so it fits a sheet or a popover.
 const QUICK_EMOJI = ['🔥', '💪', '🎯', '⭐', '🧗', '🪨', '🏆'] as const;
 
 // The subset of TextInput props the create form actually drives. Typing the
@@ -112,7 +111,7 @@ const playlistKey = (playlist: Playlist) => playlist.id;
 /**
  * Membership-aware "add to playlist" body: a toggle list (checkmark = the climb
  * is in that playlist; tap to add or remove) plus an inline create form. Shared
- * by the reaction overlay (`ClimbReactionMenu`) and the add-to-playlist
+ * by the add-to-playlist
  * `ModalSheet` (`AddToPlaylistSheet`).
  *
  * Feedback is inline *while the picker is on screen*: a toast fired while a

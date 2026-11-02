@@ -494,7 +494,7 @@ export function PlaylistDetailView({
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
-  const { openClimbActions, openAddToPlaylist } = useDrawerHost();
+  const { getClimbActions, openAddToPlaylist } = useDrawerHost();
   const { playNext } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
   // A row's right swipe is Play next, the same as in search (#6772).
@@ -573,16 +573,16 @@ export function PlaylistDetailView({
     return targets;
   }, [resolvedRowsByClimbUuid]);
 
-  // Long press → reaction menu, using the row's resolved render board (a playlist can
+  // Long press → climb menu, using the row's resolved render board (a playlist can
   // mix boards, so this isn't always the active board).
   const handleOpenActions = useCallback(
     (tapped: SchemaClimb) => {
       const resolved = resolvedRowsByClimbUuid.get(tapped.uuid);
       if (!resolved || resolved.kind !== 'renderable') return;
       const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
-      openClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
+      return getClimbActions(tapped, { boardName, layoutId, sizeId, setIds, angle });
     },
-    [openClimbActions, resolvedRowsByClimbUuid],
+    [getClimbActions, resolvedRowsByClimbUuid],
   );
   const handleOpenPlaylist = useCallback(
     (climb: SchemaClimb, anchorPoint?: WindowAnchorPoint) => {
