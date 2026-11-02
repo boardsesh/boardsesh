@@ -47,6 +47,8 @@ function mockReactNative(platformOS: 'ios' | 'android') {
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+// The drive's ring draws itself from the drive store (board-control-indicator-drive.test.tsx).
+vi.mock('../../play-drawer/WallWindowRing', () => ({ WallWindowRing: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({

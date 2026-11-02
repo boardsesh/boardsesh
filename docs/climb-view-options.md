@@ -183,8 +183,31 @@ flat amber fallback; the label still says what the next press does.
   Driver mode instead, which also ends a window's clock. Where **Always drive the wall** drives,
   Put on board starts no timed drive: `tapDrive: 'resume'` clears a stop on this link and its
   open-ended drive comes back. Turning it on during a timed drive makes that drive open-ended.
+- **Driving on the MiniPlayer (owner decision, 2026-11-02).** Every MiniPlayer bulb shows how long the wall keeps
+  lighting picks, the Live Activity's pattern (`BulbDriveCue` in `queue-control/bulb-drive-cue.ts`): during Put on
+  board's timed drive the amber bulb sits in an amber ring (`WallWindowRing`, the theme's `warning`) that drains
+  from full to nothing at the drive's end and fills again each time a climb lights; an open-ended drive keeps the
+  amber disc; nobody driving, nothing extra. That covers the bar's own bulb (`BoardControlIndicator`), the last
+  pick's Put on board bulb (`PickPutOnBoardBulb`, where an open-ended drive is a whole ring, since a disc would
+  say the pick is lit) and the tablet or open-Duo bulb (`PaneWallControlBulb`). The ring has no track and no halo
+  under it, so it meets the bar itself: at least 3:1 on Liquid Glass and Material, light and dark (3.06:1 at worst,
+  the held Material bar in light; a 16% track behind the arc's end left that end at 2.6:1 there). One case is not
+  covered: iOS 26 glass can turn dark over dark content while the app stays in light mode, and the light amber is
+  then 2.8:1 on it; the bar's amber bulb glyph has always had the same limit, since the app can't read the
+  platter's own appearance. The drain is one Reanimated `withTiming` from the store's `expiresAt` on the UI thread
+  (5 s steps under Reduce Motion, from a timer that only writes the shared value), so the bar never re-renders on
+  a tick. A screen reader hears "Driving the wall" as the bulb's value, with no number: a value stepping every
+  10 s would re-render the bar and could be read again while focus rests there, and the drive's start
+  announcement already says how long it lasts. The open Duo's bulb is already labelled "You are driving the
+  wall", so it adds no value. Taps and holds are unchanged. A one-slot bar (the collapsed iOS platter, the closed
+  Duo, a 320 pt Display Zoom iPhone) keeps the bulb in its slot for the whole timed drive, even with the board held,
+  so the ring stays in sight while you scroll the Climbs list; ✓ takes the slot back when the drive ends. An
+  open-ended drive has no end to show, so ✓ keeps the slot then (an unlit last pick's bulb keeps it as before), and
+  a timed workout block's one slot stays Sent. Wherever the bulb is hidden, the climb link adds "Driving the wall"
+  to its spoken value. The first row's bulb in the player draws the same amber ring, drops its halo for the timed
+  drive as the bar's bulbs do, and keeps its 10 s spoken value.
 - **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
-  ring that drains around the bulb for a timed drive, and a full amber disc for an open-ended one; Android's header
+  ring that drains around the bulb for a timed drive, with no digits, and a full amber disc for an open-ended one; Android's header
   says "Driving the wall", with the system countdown for a timed drive and no clock for an open-ended one. Both keep
   showing the wall's climb, never the MiniPlayer's last pick. Lock-screen and notification **Next** / **Previous**
   light the wall and start or renew a timed drive once it is lit; under **Right away** they light that one climb and
@@ -690,7 +713,7 @@ as the same preview with its list. On a pick its controls act on the pick: ✓ l
 (the player opens on the pick and presses Put on board through the wall button's handler: the busy-wall question in a
 crew, the timed drive per Stop driving after, Put on {board} for a pick on another board at this gym). A pick counts as
 lit only through a live link, and one this wall can't light gets no bulb; in the collapsed platter the pick's bulb takes
-the one slot only while the pick is unlit on a board with lights, otherwise ✓ keeps it. The Lock Screen, the Climbs header's wall capsule and the board history
+the one slot only while the pick is unlit on a board with lights or this phone's timed drive runs, otherwise ✓ keeps it. The Lock Screen, the Climbs header's wall capsule and the board history
 sheet keep showing the wall.
 
 The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:
@@ -736,7 +759,8 @@ climb).
   - inline (tab bar minimized): 1;
   - iPhone: `min(3, floor((w − 68 − 140) / 44))`, at least 1, where `w` is the platter width and 68 pt is the
     insets, artwork and label padding. 343 pt and up gives 3; Duo closed (~290 pt) and a 320 pt Display Zoom
-    iPhone give 1. With one slot the bar keeps the bulb while the board is free, otherwise Log;
+    iPhone give 1. With one slot the bar keeps the bulb while the board is free or this phone's timed drive
+    runs (its ring is the time left), otherwise Log;
   - iPad and the open Duo: `floor((w − b − 160) / 44)`, which fits every button. `b` is 68 pt on a 48 pt platter and
     74 pt on iPad's ~62 pt one (below);
   - before the first layout: 3 on an iPhone, everything when wide, so the common bar doesn't redraw.

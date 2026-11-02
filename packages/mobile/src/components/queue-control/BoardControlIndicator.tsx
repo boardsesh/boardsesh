@@ -18,6 +18,12 @@ import { PressableSurface } from '../PressableSurface';
 // off / Disconnect), gated on a real BLE link. State is read from the single
 // `useBoardConnectionState` source, so the bar can never disagree with the drawer
 // bulb; the Live Activity keeps reading the narrower BLE-only value.
+//
+// While this phone drives the wall the bulb says so, as the Live Activity's
+// bulb does (owner decision 2026-11-02, `BulbDriveCue`): Put on board's timed
+// drive rings it with an amber arc that drains to the drive's end and fills
+// again with each lit climb; an open-ended drive fills it amber. Its value
+// says "Driving the wall", with no number, so the bar never re-renders on a tick.
 
 import { useCallback } from 'react';
 import { Platform, StyleSheet, type AccessibilityActionEvent } from 'react-native';
@@ -36,8 +42,10 @@ import {
 } from './board-control-indicator-state';
 import { resolveWallBulbLook } from '../play-drawer/wall-control';
 import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
+import { WallWindowRing } from '../play-drawer/WallWindowRing';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { bulbHaloFor, resolveBulbDriveCue } from './bulb-drive-cue';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type BoardControlIndicatorProps = {
@@ -124,6 +132,12 @@ export function BoardControlIndicator({
     true,
     drivingLive,
   );
+  // The bar's usual bulb stands for the lit climb, so an open-ended drive is the disc.
+  const driveCue = resolveBulbDriveCue({
+    mode: lightingMode,
+    drivesTheWall: bulbLook === 'driving',
+    showsLitClimb: true,
+  });
 
   const visual = getBoardControlIndicatorVisual({
     boardConnection: inAppBoardConnection,
@@ -133,8 +147,11 @@ export function BoardControlIndicator({
     ledless,
     wallHeldColor: brandColors.primary,
     solidGlyphs: solidGlyphs && differentiateWithoutColor !== 'on',
-    driving: bulbLook === 'driving' ? drivingBulbColors(brandColors, colorScheme) : null,
+    // A timed drive is ringed instead: the amber disc would hide the arc.
+    driving: driveCue === 'disc' ? drivingBulbColors(brandColors, colorScheme) : null,
   });
+
+  const haloColor = bulbHaloFor(driveCue, visual.haloColor);
 
   const accessibilityLabel = getBoardConnectionLabel(t, {
     boardConnection: inAppBoardConnection,
@@ -163,6 +180,7 @@ export function BoardControlIndicator({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      accessibilityValue={driveCue ? { text: t('ble.barControl.drivingValue') } : undefined}
       accessibilityState={{ selected: heldByMe }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={accessibilityActions ? handleAccessibilityAction : undefined}
@@ -170,12 +188,13 @@ export function BoardControlIndicator({
       style={({ pressed }) => [
         styles.container,
         { width: size, height: size, borderRadius: size / 2 },
-        visual.haloColor ? { backgroundColor: visual.haloColor, shadowColor: visual.iconColor as string } : null,
-        visual.haloColor ? styles.connected : null,
+        haloColor ? { backgroundColor: haloColor, shadowColor: visual.iconColor as string } : null,
+        haloColor ? styles.connected : null,
         pressed ? styles.pressed : null,
       ]}
     >
       <Icon maxFontSizeMultiplier={1} name={visual.iconName} size={iconSize} color={visual.iconColor} />
+      {driveCue === 'drain' ? <WallWindowRing size={size} /> : null}
     </PressableSurface>
   );
 }

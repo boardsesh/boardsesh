@@ -532,7 +532,8 @@
       "wallHeldWithClimb": "You have the wall: {{name}}, {{grade}}",
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
-      "wallOpenHint": "Takes the wall"
+      "wallOpenHint": "Takes the wall",
+      "drivingValue": "Driving the wall"
     },
     "relayToWall": "Put your climb on the wall",
     "peerDrivingBoard": "Someone else has the board"

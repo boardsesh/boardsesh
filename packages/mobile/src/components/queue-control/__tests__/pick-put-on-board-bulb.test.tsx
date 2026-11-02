@@ -4,7 +4,7 @@
 // puts the pick on the board through the player's wall button path. What the
 // bulb is (`resolvePickBulb`) has its own suite in use-pick-bulb.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
@@ -82,8 +82,18 @@ vi.mock('../../../providers/ble-control-sheet-provider', () => ({
   useBleControlSheet: () => ({ open: state.openBoardControls }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+// The ring itself (drain, refill, Reduce Motion) has its own suites; here, which one the bulb asks for.
+vi.mock('../../play-drawer/WallWindowRing', () => ({
+  WallWindowRing: ({ kind = 'drain' }: { kind?: string }) => createElement('s', { 'data-ring': kind }),
+}));
 
 import { PickBulbSlot } from '../PickPutOnBoardBulb';
+import {
+  enterDriveMode,
+  makeDriveOpenEnded,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../../play-drawer/drive-mode-store';
 import type { PickBulb } from '../use-pick-bulb';
 import { getLastPick, resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
 
@@ -138,6 +148,7 @@ function renderSlot(bulb: PickBulb = { kind: 'putOnBoard', gymBoardName: null })
 
 beforeEach(() => {
   resetLastPickForTests();
+  resetDriveModeForTests();
   state.bluetooth = {};
   state.ledless = false;
   state.localConnected = false;
@@ -145,7 +156,103 @@ beforeEach(() => {
   state.openPlayDrawer.mockClear();
   state.openBoardControls.mockClear();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  resetDriveModeForTests();
+});
+
+function startDrive(windowMs: number | null) {
+  act(() => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: null,
+      windowMs,
+      windowSetting: windowMs === null ? null : 'putOnBoardKeepsLighting',
+    });
+    markDriveLive();
+  });
+}
+
+const ringOf = (view: ReturnType<typeof render>) =>
+  view.container.querySelector('[data-ring]')?.getAttribute('data-ring') ?? null;
+const valueOf = (view: ReturnType<typeof render>) =>
+  view.getByTestId('mini-player-pick-put-on-board').getAttribute('data-value');
+
+// Owner decision 2026-11-02: every MiniPlayer bulb shows how long the wall keeps
+// lighting picks, the Live Activity's pattern. An unlit pick never gets the
+// amber disc (that says lit), so an open-ended drive is a whole ring.
+describe('PickBulbSlot while this phone drives the wall', () => {
+  beforeEach(() => {
+    state.localConnected = true;
+    state.inAppBoardConnection = 'connectedByMe';
+  });
+
+  it("drains the timed drive's ring round the unlit pick and says Driving the wall", () => {
+    startDrive(45_000);
+    const view = renderSlot();
+    expect(ringOf(view)).toBe('drain');
+    expect(valueOf(view)).toBe('ble.barControl.connectedLabel, ble.barControl.drivingValue');
+    // Still the off bulb: the pick itself isn't lit.
+    expect(view.container.querySelector('[data-icon="lightbulb.fill"]')).not.toBeNull();
+  });
+
+  it('keeps the ring whole for an open-ended drive', () => {
+    startDrive(45_000);
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    const view = renderSlot();
+    expect(ringOf(view)).toBe('whole');
+    expect(valueOf(view)).toBe('ble.barControl.connectedLabel, ble.barControl.drivingValue');
+  });
+
+  it('draws nothing extra with nobody driving, while arming, or off this phone’s lit link', () => {
+    const idle = renderSlot();
+    expect(ringOf(idle)).toBeNull();
+    expect(valueOf(idle)).toBe('ble.barControl.connectedLabel');
+    idle.unmount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    const arming = renderSlot();
+    expect(ringOf(arming)).toBeNull();
+    arming.unmount();
+    act(() => {
+      markDriveLive();
+    });
+    state.localConnected = false;
+    const unlinked = renderSlot();
+    expect(ringOf(unlinked)).toBeNull();
+    unlinked.unmount();
+    state.localConnected = true;
+    state.ledless = true;
+    const noLights = renderSlot();
+    expect(ringOf(noLights)).toBeNull();
+    noLights.unmount();
+    state.ledless = false;
+    state.inAppBoardConnection = 'heldByPeer';
+    const crew = renderSlot();
+    expect(ringOf(crew)).toBeNull();
+  });
+
+  it('takes the ring off when the drive ends, with the bulb still mounted', () => {
+    startDrive(45_000);
+    const view = renderSlot();
+    expect(ringOf(view)).toBe('drain');
+    act(() => {
+      resetDriveModeForTests();
+    });
+    expect(ringOf(view)).toBeNull();
+    expect(valueOf(view)).toBe('ble.barControl.connectedLabel');
+  });
+});
 
 describe('PickBulbSlot', () => {
   it('reads off on a pick that isn’t lit, and puts it on the board through the player', () => {

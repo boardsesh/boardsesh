@@ -23,13 +23,13 @@ import type { PlayDrawerLightbulbPressAction } from './lightbulb-control';
 export const WALL_CONTROL_TONAL_ALPHA = 0.2;
 
 /**
- * Put on board's timed drive on a bulb (spec B3: the first row's, and the
- * MiniPlayer's standing in for a tablet's player), where there is no frost to
- * shrink: a 2 pt violet arc round its edge that drains from 12 o'clock, on a
- * track of 16% of its own violet. A shape, never colour alone.
+ * Put on board's timed drive on a bulb (spec B3: the first row's, and every
+ * MiniPlayer bulb), where there is no frost to shrink: a 2 pt amber arc round
+ * its edge that drains from 12 o'clock, as the Live Activity's ring does
+ * (owner decision 2026-11-02). No track and no halo under it, so the arc meets
+ * the bar itself (`WallWindowRing`). A shape, never colour alone.
  */
 export const WINDOW_RING_WIDTH = 2;
-export const WINDOW_RING_TRACK_ALPHA = 0.16;
 
 /**
  * - `connect` — no board linked: a tap connects (and lights the climb).

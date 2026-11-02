@@ -125,6 +125,46 @@ module.exports = {
     },
     {
       type: 'dir',
+      filePath: 'targets',
+      reasons: ['iosAppleTargets'],
+      overrideHashKey: 'iosAppleTargets',
+      // @bacons/apple-targets compiles every file under targets/<name>/ into its
+      // own Xcode target: today the BoardseshWidgets Live Activity extension's
+      // Swift, Info.plist and Localizable.strings. The plugin finds those files by
+      // PATH at prebuild, so the fingerprint only saw expo-target.config.js (a
+      // module the config plugin require()s). A widget-only Swift edit therefore
+      // resolved an unchanged runtimeVersion: PR CI skipped the iOS build, Main
+      // Native Release cut no binary, and the OTA check said "Ships over-the-air"
+      // for code no OTA can deliver (#7215). Dedup folds the expo-target.config.js
+      // file source into this dir source.
+      //
+      // Scope: hashed for BOTH platforms, so a widget-only change also moves
+      // Android's runtimeVersion and costs an Android build plus an Android OTA
+      // cut-off it doesn't need (Android's prebuild never reads targets/). This
+      // file can't scope a source to one platform: @expo/fingerprint require()s
+      // it once with no platform argument, extraSources has no platform field,
+      // and fileHookTransform isn't told the platform. Reading `--platform` off
+      // argv would break for resolvers that pass it differently (the Xcode phase,
+      // eoas) and for a process that resolves both platforms from one cached
+      // require(). Like `../../patches` below, it over-triggers: the safe
+      // direction.
+      //
+      // Nothing under targets/ is written at prebuild with today's config:
+      // apple-targets 5 writes entitlements to ios/.targets/, writes Info.plist
+      // only when it is missing, and writes Assets.xcassets only for
+      // `icon`/`colors`/`images` in expo-target.config.js (none are set). The
+      // widget's entitlements come from the `entitlements` object in
+      // expo-target.config.js. Don't add a generated.entitlements here: the
+      // plugin ignores it while that object exists (and warns in red at every
+      // prebuild), yet it would still be hashed. .DS_Store and .swiftpm are in
+      // @expo/fingerprint's default ignores; editor and patch leftovers are
+      // covered by `ignorePaths` below.
+      //
+      // probe: appending a comment line to ClimbSessionLiveActivity.swift moves
+      // the resolved iOS and Android runtimeVersions.
+    },
+    {
+      type: 'dir',
       filePath: '../../patches',
       reasons: ['rootPatchedDependencies'],
       overrideHashKey: 'rootPatchedDependencies',
@@ -134,6 +174,15 @@ module.exports = {
       // become common, narrow this to the mobile-reachable patch files.
     },
   ],
+  // Dir sources hash every file on disk, tracked or not: @expo/fingerprint does
+  // not read .gitignore and skips only its DEFAULT_IGNORE_PATHS (.DS_Store,
+  // .swiftpm, build dirs). An open vim buffer under targets/, plugins/,
+  // modules/ or locales/ would otherwise move a local resolve, and a manual
+  // `vp run mobile:publish` from that tree would mint a runtimeVersion no binary
+  // carries. None of these files is ever compiled. CI resolves from clean
+  // checkouts, so this only guards local trees. collectIgnorePathsAsync in
+  // Options.js APPENDS these to the defaults; it does not replace them.
+  ignorePaths: ['**/*.swp', '**/*.swo', '**/*~', '**/*.orig', '**/*.rej'],
   // Keep the marketing version and the build numbers out of the fingerprint.
   // `ExpoConfigVersions` drops `version`, `android.versionCode` and
   // `ios.buildNumber` from the hashed Expo config (sourcer/Expo.js), so a
