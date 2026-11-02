@@ -28,6 +28,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Swiping to the next climb works even while its holds are still loading. ([#7210](https://github.com/boardsesh/boardsesh/pull/7210))
 - Your MoonBoard and older Kilter boxes show up in the board list again. ([#7202](https://github.com/boardsesh/boardsesh/pull/7202))
   Boards you haven't connected to before are listed too.
 
