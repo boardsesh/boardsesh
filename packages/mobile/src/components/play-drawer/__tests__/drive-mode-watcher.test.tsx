@@ -113,7 +113,7 @@ vi.mock('react-native', () => ({
     },
   },
 }));
-// The stored keep-lighting window an iOS lock-screen press writes natively
+// The stored drive an iOS lock-screen press writes natively
 // (2.7), the press's queueNavigate event, and which platform hears it.
 const lockScreen = vi.hoisted(() => ({
   snapshot: null as LiveActivityLightingWindowSnapshot | null,
@@ -544,9 +544,9 @@ describe('DriveModeWatcher: a crew forms', () => {
   });
 });
 
-// Put on board's keep-lighting window (2.7): one timeout to its end, re-keyed by
+// Put on board's timed drive (2.7, Stop driving after): one timeout to its end, re-keyed by
 // each renewal, a catch-up on the foreground, and its setting turned off.
-describe('DriveModeWatcher: the keep-lighting window', () => {
+describe('DriveModeWatcher: the timed drive', () => {
   function openWindow(windowMs = 45_000) {
     act(() => {
       enterDriveMode({
@@ -864,7 +864,7 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
 
 // A Lock Screen, Dynamic Island or Android notification Next / Previous lit the
 // wall and opened or renewed the window natively while JS slept (2.7).
-describe('DriveModeWatcher: a window opened from the Lock Screen', () => {
+describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
   function lockScreenWrite(snapshot: Partial<LiveActivityLightingWindowSnapshot>): void {
     lockScreen.snapshot = {
       sessionId: 'session-1',
@@ -1489,6 +1489,57 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
       vi.advanceTimersByTime(CREW_PUT_UP_DISCONNECT_WAIT_MS);
       await Promise.resolve();
     });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // A press on the Lock Screen or the notification after a timed drive ran out
+  // (the app was suspended, so its timer never fired) is the climber at the
+  // wall lighting a climb: the old drive ends at its end, but the board stays.
+  it('keeps the board when an iOS Lock Screen press finds the timed drive over and starts its own', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    openTimedDrive();
+    vi.setSystemTime(Date.now() + 60_000);
+    lockScreen.snapshot = {
+      sessionId: 'session-1',
+      mode: 'window',
+      endsAtMs: Date.now() + 35_000,
+      windowSeconds: 45,
+      family: 'general',
+      source: 'lockScreen',
+      updatedAtMs: Date.now() - 10_000,
+    };
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(effects.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'window_ended', startedBy: 'tap' }),
+    );
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen' });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the board when an Android notification press finds the timed drive over', () => {
+    vi.useFakeTimers();
+    lockScreen.android = true;
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      boardName: 'kilter',
+      lightOnSwipe: false,
+      queueLength: 3,
+    };
+    mount();
+    openTimedDrive();
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => {
+      for (const listener of lockScreen.navigateListeners) {
+        listener({ action: 'next', currentIndex: 1, correlationId: 'corr-1' });
+      }
+    });
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen' });
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 });

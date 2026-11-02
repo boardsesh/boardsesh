@@ -30,8 +30,8 @@ import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type Dri
  * board is let go once their climb is on the wall (`waitForWallConfirm`, for
  * that climb only), so it isn't dropped before it lights.
  *
- * A window a Lock Screen press opened while JS was suspended (2.7) is this
- * phone's window too, so `beforeCrewMove` adopts it first
+ * A timed drive a Lock Screen press started while JS was suspended (2.7) is
+ * this phone's drive too, so `beforeCrewMove` adopts it first
  * (`adoptLockScreenLighting`) and the put-up ends it like any other. Left
  * unadopted, the next adoption (the app coming back) would bring it back after
  * the put-up. The climber's own Lock Screen press is never a crewmate's move:

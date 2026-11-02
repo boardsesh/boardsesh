@@ -1,5 +1,5 @@
-// A Lock Screen or Dynamic Island Next / Previous opens or renews the
-// keep-lighting window natively on iOS (2.7); this is how the drive store takes
+// A Lock Screen or Dynamic Island Next / Previous starts or renews Put on
+// board's timed drive natively on iOS (2.7); this is how the drive store takes
 // it on. An Android notification press arms the drive from JS instead.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveActivityLightingWindowSnapshot } from '../../../../modules/live-activity/src/index';
@@ -14,9 +14,12 @@ vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
 import {
   enterDriveMode,
   getDriveMode,
+  getLastDriveEnded,
   getLastDriveModeExitReason,
   markDriveLive,
   resetDriveModeForTests,
+  subscribeDriveEnded,
+  type DriveEnded,
 } from '../drive-mode-store';
 import {
   adoptLockScreenLighting,
@@ -175,6 +178,19 @@ describe('adoptLockScreenLighting', () => {
     });
   });
 
+  // Disconnect Bluetooth when driving ends: the press is the climber lighting
+  // a climb, so the old drive's end must keep the board. And the press's own
+  // drive starts with no end on record, like any new drive.
+  it('ends the timed drive the press found over keeping the link, and starts with no end on record', () => {
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    liveWindow(-20_000);
+    adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 10_000 }) });
+    unsubscribe();
+    expect(ends).toEqual([expect.objectContaining({ reason: 'window_ended', keepLink: true })]);
+    expect(getLastDriveEnded()).toBeNull();
+  });
+
   it('leaves a write it cannot judge for the next try', () => {
     const read = () => snapshot();
     expect(adoptLockScreenLighting({ ...context, linked: false, read })).toBeNull();
@@ -269,6 +285,17 @@ describe('armNotificationPressDrive', () => {
     expect(armNotificationPressDrive({ ...press, plan: null, now: NOW })).toBe(false);
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     expect(getDriveMode()).toBeNull();
+    // The press is lighting a climb: Disconnect Bluetooth when driving ends keeps the board.
+    expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+  });
+
+  it('keeps the link when it ends a timed drive past its end and arms its own', () => {
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    liveWindow(-1_000);
+    armNotificationPressDrive({ ...press, now: NOW });
+    unsubscribe();
+    expect(ends).toEqual([expect.objectContaining({ reason: 'window_ended', keepLink: true })]);
   });
 
   it('arms nothing without a link, for one-climb lighting, or with a drive on', () => {

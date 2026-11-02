@@ -209,8 +209,10 @@ export type DriveEnded = {
   /**
    * Settings › Board ended it, not the climber at the wall or the clock: Stop
    * driving after turned to Right away, or In a session too off as a crew
-   * formed. The link stays, whatever Disconnect Bluetooth when driving ends
-   * says: a settings change, or a crewmate joining, never frees the board.
+   * formed. Or a lock-screen press found a timed drive already over and is
+   * lighting a climb of its own (`lock-screen-lighting.ts`). The link stays,
+   * whatever Disconnect Bluetooth when driving ends says: a settings change,
+   * a crewmate joining, or a press that wants the wall never frees the board.
    */
   keepLink: boolean;
 };
@@ -375,13 +377,14 @@ export function noteDriveClimbLit({ now = Date.now() }: { now?: number } = {}): 
 }
 
 /**
- * An iOS Lock Screen or Dynamic Island Next / Previous lit the wall and opened
- * a keep-lighting window (or, for Until I stop, an open-ended drive) natively
- * while this JS may have been suspended (2.7): adopt it as a live drive. (An
- * Android notification press arms a drive in JS instead,
- * `armNotificationPressDrive`.) The press already lit its climb, so there is no arming, and the
- * window ends where native said (`expiresAt`), not a full length from now.
- * `startedAt` is the press. Refuses (false) while a drive is on.
+ * An iOS Lock Screen or Dynamic Island Next / Previous lit the wall and started
+ * Put on board's timed drive (or, for Until I stop, an open-ended drive)
+ * natively while this JS may have been suspended (2.7): adopt it as a live
+ * drive. (An Android notification press arms a drive in JS instead,
+ * `armNotificationPressDrive`.) The press already lit its climb, so there is
+ * no arming, and a timed drive ends where native said (`expiresAt`), not a
+ * full length from now. `startedAt` is the press. Refuses (false) while a
+ * drive is on.
  *
  * `climbsLit` starts at 0: the climb the press lit is counted when this
  * phone's auto-sender confirms it, like every other.
@@ -398,10 +401,10 @@ export function startLockScreenDrive({
   sessionId: string | null;
   boardId: number | null;
   boardType?: string | null;
-  /** The window's length, or null for an open-ended drive. */
+  /** The timed drive's length, or null for an open-ended drive. */
   windowMs: number | null;
   windowSetting: KeepLightingSettingKey | null;
-  /** When the native window ends; null for an open-ended drive. */
+  /** When the native timed drive ends; null for an open-ended drive. */
   expiresAt: number | null;
   startedAt: number;
 }): boolean {
@@ -422,6 +425,7 @@ export function startLockScreenDrive({
   };
   stoppedForLink = false;
   lastExitReason = null;
+  lastEnded = null;
   claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy: 'lock_screen', inSession: sessionId !== null, boardType });
@@ -429,7 +433,7 @@ export function startLockScreenDrive({
 }
 
 /**
- * An iOS lock-screen press renewed the live keep-lighting window past the end this
+ * An iOS lock-screen press renewed the live timed drive past the end this
  * JS knows (2.7): take the later end, counted as one renewal. Returns whether
  * it moved.
  */
