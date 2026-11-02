@@ -84,10 +84,10 @@ export function shortCaptionName(name: string): string {
 }
 
 /**
- * The top bar's words for the browse caption: "Preview, not lit" solo, "Only
- * you see this" in a crew, with "· the wall is on Crimp Ladder" when the room
- * has a climb lit. It shares the narrow top bar with the list, so the climb name
- * is cut short.
+ * The top bar's words for the browse caption: "Preview · not on the wall" solo,
+ * "Only you see this" in a crew, with "· the wall is on Crimp Ladder" when the
+ * room has a climb lit. It shares the narrow top bar with the list, so the climb
+ * name is cut short. A screen reader hears it through {@link spokenCaption}.
  *
  * `sharesLine` is true when the top bar's first line also names a list or a
  * workout stage. The wall climb's name is then left out: the top bar sits
@@ -101,8 +101,17 @@ export function formatBrowseCaption(
   { sharesLine = false }: { sharesLine?: boolean } = {},
 ): string | null {
   if (caption === null) return null;
-  if (caption.kind === 'preview') return t('playView.wallState.previewNotLit');
+  if (caption.kind === 'preview') return t('playView.wallState.previewNotOnWall');
   const wallClimbName = caption.wallClimbName?.trim();
   if (!wallClimbName || sharesLine) return t('playView.wallState.onlyYouSeeThis');
   return t('playView.wallState.onlyYouSeeThisWallOn', { name: shortCaptionName(wallClimbName) });
+}
+
+/**
+ * The caption as a screen reader says it: the "·" between its parts is for the
+ * eye, so it is read as a comma rather than "middle dot". Every locale writes
+ * the separator the same way, a space on each side.
+ */
+export function spokenCaption(caption: string): string {
+  return caption.replace(/\s+·\s+/g, ', ');
 }

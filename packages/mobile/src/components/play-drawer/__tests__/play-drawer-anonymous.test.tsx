@@ -3037,13 +3037,38 @@ describe('PlayDrawer — the browse caption', () => {
     return recorded.listContext.at(-1)?.caption ?? null;
   }
 
-  it('says a solo preview is not lit while a climb is on the wall', () => {
+  it('says a solo preview is not on the wall while a climb lit under an hour ago is up', () => {
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     wall.uuid = SIMILAR_CLIMB.uuid;
     wall.name = SIMILAR_CLIMB.name;
+    wall.sentAt = new Date(Date.now() - 10 * 60_000).toISOString();
     render(drawerElement('member', openTargetFor(CLIMB)));
 
-    expect(lastCaption()).toBe('playView.wallState.previewNotLit');
+    expect(lastCaption()).toBe('playView.wallState.previewNotOnWall');
+  });
+
+  // B1: the commonest 2.7 state. The wall button draws its own state, and the
+  // board art glows lit or not, so before this the line was hidden on every
+  // board with lights.
+  it('says a solo preview is not on the wall on a linked phone with a dark wall', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    ble.current = { isConnected: true, sendFramesToBoard: vi.fn(async () => true) };
+    lightbulb.lit = true;
+    lightbulb.localConnected = true;
+    lightbulb.pressAction = 'disconnect';
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBe('playView.wallState.previewNotOnWall');
+  });
+
+  it('says nothing about a climb lit hours ago with no link', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = SIMILAR_CLIMB.uuid;
+    wall.name = SIMILAR_CLIMB.name;
+    wall.sentAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(lastCaption()).toBeNull();
   });
 
   it('says nothing solo with no board connected and nothing lit', () => {

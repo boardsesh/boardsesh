@@ -909,6 +909,7 @@
       "backToCurrent": "Torna alla mia scelta",
       "joinedBrowseNotice": "Stai sfogliando. La parete resta ferma finché non metti in parete un blocco.",
       "previewNotLit": "Anteprima, non illuminato",
+      "previewNotOnWall": "Anteprima · non in parete",
       "onlyYouSeeThis": "Lo vedi solo tu",
       "onlyYouSeeThisWallOn": "Lo vedi solo tu · la parete è su {{name}}",
       "commitOverride": {

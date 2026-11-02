@@ -1555,12 +1555,14 @@ export function PlayCore({
   const headerBackTargetName = currentClimbQueueItem?.climb.name ?? null;
 
   // What looking at this climb does to the wall, while it is only a preview
-  // (`resolveBrowseCaption`): "Preview, not lit", or in a crew "Only you see
-  // this · the wall is on Crimp Ladder". It rides the top bar's second line
-  // (#6745), not the stats line, so it never pushes the sends and stars off;
-  // the top bar does not swipe, so the peeks carry none of their own. Under a
-  // list or a workout stage it takes the short crew form, which fits there.
-  // With the lit label resolved, the solo "Preview, not lit" steps aside; the crew form stays, since it names the climb on the wall.
+  // (`resolveBrowseCaption`): "Preview · not on the wall", or in a crew "Only
+  // you see this · the wall is on Crimp Ladder". It rides the top bar's second
+  // line (#6745), not the stats line, so it never pushes the sends and stars
+  // off; the top bar does not swipe, so the peeks carry none of their own.
+  // Under a list or a workout stage it takes the short crew form, which fits
+  // there. The board art draws the same glowing holds whether they are lit or
+  // not, so on a linked phone this line is what says a preview isn't up (B1);
+  // only a lit climb on screen leaves the saying to the wall button.
   const browseCaptionModel = resolveBrowseCaption({
     isAnonymous,
     isPreview,
@@ -1570,9 +1572,11 @@ export function PlayCore({
     wallClimbName: wallClimb.name,
     inCrew: isSharedSession,
     wallDriven: lightbulbActive,
+    holdsLink: bluetoothConnected,
+    wallPresenceTrusted,
   });
   const browseCaption = formatBrowseCaption(
-    wallLit !== null && browseCaptionModel?.kind === 'preview' ? null : browseCaptionModel,
+    displayedLit && browseCaptionModel?.kind === 'preview' ? null : browseCaptionModel,
     t,
     { sharesLine: topBarParts !== null },
   );
