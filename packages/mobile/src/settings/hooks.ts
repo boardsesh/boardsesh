@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { createMMKV } from 'react-native-mmkv';
 import type { AppSettings, SettingsKey } from './types';
 import { DEFAULT_SETTINGS } from './defaults';
-import { migrateAutoDisconnect } from './migrations';
+import { migrateAutoDisconnect, migrateLightAutomatically } from './migrations';
 
 const storage = createMMKV({ id: 'boardsesh-settings' });
 
@@ -133,4 +133,9 @@ try {
   migrateAutoDisconnect({ read: readStoredValue, has: hasSetting, set: writeSetting });
 } catch {
   // The new defaults stay usable if the old keys can't be read.
+}
+try {
+  migrateLightAutomatically({ read: readStoredValue, has: hasSetting, set: writeSetting });
+} catch {
+  // Light automatically stays off if the old switches can't be read.
 }

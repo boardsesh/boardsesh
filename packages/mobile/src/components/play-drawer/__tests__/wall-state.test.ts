@@ -140,7 +140,7 @@ describe('resolveWallPillState', () => {
     ],
     // Rung 5 — no stakes, so the leading slot stays empty exactly as today.
     ['plain solo: nothing lit, no session, no link', {}, null],
-    ['connected but not committing (lightOnSwipe off, still on the head)', { wallDriven: true }, null],
+    ['connected but not committing (not driving, still on the head)', { wallDriven: true }, null],
     ['committing with nothing at stake', { navigationCommits: true }, null],
     // The regression: the Start button opens a session solo, so "a session
     // exists" used to light the pill on a phone with nothing connected at all.
@@ -350,7 +350,7 @@ describe('resolveCommitBarModel', () => {
   });
 
   // The commit affordance keys on the pinned preview, NOT the browse latch: a
-  // long-press "Preview" with `lightOnSwipe` on has committing swipes (no
+  // long-press "Preview" while driving has committing swipes (no
   // browsing chrome), but the pinned climb must keep its activation button —
   // the old banner's "Set active" contract. The pill for that same state is
   // asserted `live`/null in the resolveWallPillState tables above.

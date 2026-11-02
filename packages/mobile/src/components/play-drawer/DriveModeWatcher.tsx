@@ -9,6 +9,7 @@ import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  alwaysDriveApplies,
   keepLightingWindowMs,
   lockScreenPressKeepsLighting,
   resolveKeepLightingPlan,
@@ -18,7 +19,6 @@ import { useIsCrewSession, useQueueActions, useQueueSessionControls } from '../.
 import { addWidgetQueueNavigateListener, isAndroidSessionPresence } from '../../lib/live-activity/live-activity-plugin';
 import { adoptLockScreenLighting, armNotificationPressDrive, endTimedDriveOverAtPress } from './lock-screen-lighting';
 import {
-  carryDriveIntoCrew,
   clearDrivingStopped,
   isDrivingStoppedForLink,
   DRIVE_ARMING_TIMEOUT_MS,
@@ -29,9 +29,11 @@ import {
   markDriveLive,
   resolveDriveModeExit,
   retimeDriveWindow,
-  shouldCarryDriveIntoCrew,
   shouldEndWindowForSettings,
+  shouldStartAlwaysDrive,
+  startAlwaysDrive,
   useDriveMode,
+  useDrivingStoppedForLink,
   type DriveWatchSnapshot,
 } from './drive-mode-store';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
@@ -41,16 +43,24 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * Ends driving the wall (#7113) when the wall stops being this phone's to
  * drive: the link drops, the swipe's connect fails (or never comes), the
  * session or the board changes, or the climber signs out. It also lets go of
- * a press's "stopped" once that link drops, or once the climber changes Light
- * the board as I swipe (the setting speaks for itself again). Going to the
- * background ends nothing.
+ * a press's "stopped" once that link drops. Going to the background ends
+ * nothing.
  *
  * It also takes an arming drive live once this phone's link lights the climb
  * (here, so closing the player mid-connect still goes live), counts the climbs
  * lit for Drive Mode Ended, and says when a crewmate put a climb up
- * (`use-drive-follow.ts`). And when a crew forms while this climber drives
- * solo by Light the board as I swipe (no stop, a link up), it carries that into
- * the crew as a live drive (`shouldCarryDriveIntoCrew`, #7113 QA).
+ * (`use-drive-follow.ts`).
+ *
+ * Light automatically (Settings › Board, `alwaysDrive`) drives from here: while
+ * it applies (`alwaysDriveApplies`: in a crew only with In a session too on,
+ * except on a MoonBoard) and this phone's own Bluetooth link holds the board,
+ * an open-ended drive is on (`startAlwaysDrive`), started live when the link
+ * comes up, when the switch turns on, or when a drive ends with the link still
+ * up. It lights nothing as it starts. A stop on this link holds it off until
+ * the link drops or the next Put on board (`tapDrive: 'resume'`). Where it
+ * stops applying (the switch off, or a crew forming where In a session too is
+ * off) its drive ends keeping the link (`always_off`). A drive another way
+ * started (a swipe, Light every climb) is left as it is.
  *
  * Put on board's timed drive (2.7, Stop driving after) ends here too
  * (`window_ended`): one timeout to its end, re-keyed by each climb that renews
@@ -89,11 +99,9 @@ export function DriveModeWatcher(): null {
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   useDisconnectWhenDrivingEnds(bluetooth);
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
-  const lightOnSwipeRef = useRef(lightOnSwipe);
   // The roster's crew, after its arrival dwell: until it forms, the climber is solo.
   const isCrewSession = useIsCrewSession();
-  const wasCrewRef = useRef(isCrewSession);
+  const drivingStopped = useDrivingStoppedForLink();
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
   // The arming drive (by its start) whose connect was seen in flight.
   const connectSeenForRef = useRef<number | null>(null);
@@ -107,12 +115,21 @@ export function DriveModeWatcher(): null {
   const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const swipeToDriveEnabled = useWallSwipeToDriveEnabled();
   const { getQueueSnapshot } = useQueueActions();
+  const boardType = bluetooth?.boardName ?? null;
+  // Light automatically: whether it drives on this board and in this session.
+  const [alwaysDrive] = useSetting('alwaysDrive');
+  const alwaysApplies = alwaysDriveApplies({
+    alwaysDrive,
+    boardIsMoonboard: isMoonboardBoardName(boardType),
+    drivesInSession,
+    inSession: isCrewSession,
+  });
 
   // A lock-screen press's drive, adopted (iOS) or armed (Android) with the
   // latest reads. Stable, so the listeners below subscribe once and the
-  // timed-drive end check can call it first.
-  const boardType = bluetooth?.boardName ?? null;
-  const pressPlan = lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession: isCrewSession })
+  // timed-drive end check can call it first. Where Light automatically drives,
+  // a press lights its climb and starts nothing: every pick lights already.
+  const pressPlan = lockScreenPressKeepsLighting({ swipeToDriveEnabled, alwaysDrive: alwaysApplies })
     ? resolveKeepLightingPlan({
         boardIsMoonboard: isMoonboardBoardName(boardType),
         keepLighting,
@@ -185,29 +202,31 @@ export function DriveModeWatcher(): null {
     }
   }, [linked, pending, sessionId, boardId, isAuthenticated, drive]);
 
-  // A crew formed while this climber drove solo by Light the board as I swipe:
-  // keep driving, as a live drive (#7113 QA, Marco). A live drive already goes on.
+  // Light automatically. Where it no longer applies (the switch off, or a
+  // crew formed with In a session too off) its own drive ends and the link
+  // stays: a settings change or a crewmate joining never frees the board.
+  // Where it applies, a timed drive already running goes on with no end, as a
+  // swipe would make it; and with this phone's own link up, nothing driving
+  // and no stop on this link, its drive starts: at the link coming up, the
+  // switch turning on, a stop let go (the link dropped, or Put on board
+  // resumed it), or any other drive ending with the link still up. Read live
+  // from the store, so a drive ended earlier in this commit counts as gone.
+  const ownLink = bluetooth?.isConnected ?? false;
+  const driveActive = drive !== null;
+  const windowed = drive?.windowMs != null;
   useEffect(() => {
-    const crewFormed = isCrewSession && !wasCrewRef.current;
-    wasCrewRef.current = isCrewSession;
-    if (
-      shouldCarryDriveIntoCrew({
-        crewFormed,
-        drive: getDriveMode(),
-        linked,
-        stopped: isDrivingStoppedForLink(),
-        lightOnSwipe,
-      })
-    ) {
-      carryDriveIntoCrew({ sessionId, boardId, boardType: bluetooth?.boardName ?? null });
+    const latest = getDriveMode();
+    if (!alwaysApplies) {
+      if (latest?.startedBy === 'always') exitDriveMode('always_off', { keepLink: true });
+      return;
     }
-  }, [isCrewSession, linked, lightOnSwipe, sessionId, boardId, bluetooth?.boardName]);
-
-  useEffect(() => {
-    if (lightOnSwipeRef.current === lightOnSwipe) return;
-    lightOnSwipeRef.current = lightOnSwipe;
-    clearDrivingStopped();
-  }, [lightOnSwipe]);
+    if (latest?.windowMs != null) {
+      makeDriveOpenEnded();
+      return;
+    }
+    if (!shouldStartAlwaysDrive({ applies: true, ownLink, drive: latest, stopped: isDrivingStoppedForLink() })) return;
+    startAlwaysDrive({ sessionId, boardId, boardType });
+  }, [alwaysApplies, ownLink, driveActive, windowed, drivingStopped, sessionId, boardId, boardType]);
 
   // Settings › Board changed under a timed drive: its choice turned to Right
   // away, or In a session too turned off in a crew (or a crew formed with it
@@ -223,7 +242,6 @@ export function DriveModeWatcher(): null {
   // (or adopted from the Lock Screen) keeps its length until its choice moves.
   // The settings are read above, with what a lock-screen press keeps lighting.
   const choicesRef = useRef({ keepLighting, moonboardKeepLighting });
-  const windowed = drive?.windowMs != null;
   useEffect(() => {
     const previous = choicesRef.current;
     choicesRef.current = { keepLighting, moonboardKeepLighting };

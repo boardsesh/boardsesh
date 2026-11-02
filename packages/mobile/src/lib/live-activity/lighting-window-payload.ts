@@ -1,6 +1,11 @@
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { DriveLightingSnapshot, DriveModeState } from '../../components/play-drawer/drive-mode-store';
-import { lockScreenPressKeepsLighting, type KeepLightingChoice, type KeepLightingSettingKey } from '../keep-lighting';
+import {
+  alwaysDriveApplies,
+  lockScreenPressKeepsLighting,
+  type KeepLightingChoice,
+  type KeepLightingSettingKey,
+} from '../keep-lighting';
 import type {
   LiveActivityKeepLightingConfig,
   LiveActivityLightingFamily,
@@ -55,7 +60,8 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
  * starts the drive itself (`armNotificationPressDrive`).
  *
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
- * start a drive in the app either.
+ * start a drive in the app either, Light automatically's board and session
+ * included (`alwaysDriveApplies`): every pick lights there already.
  */
 export function buildKeepLightingConfig({
   keepLighting,
@@ -64,7 +70,7 @@ export function buildKeepLightingConfig({
   isCrewSession,
   boardName,
   swipeToDriveEnabled,
-  lightOnSwipe,
+  alwaysDrive,
 }: {
   keepLighting: KeepLightingChoice;
   moonboardKeepLighting: KeepLightingChoice;
@@ -73,14 +79,24 @@ export function buildKeepLightingConfig({
   isCrewSession: boolean;
   boardName: string;
   swipeToDriveEnabled: boolean;
-  lightOnSwipe: boolean;
+  /** Settings › Board's Light automatically. */
+  alwaysDrive: boolean;
 }): LiveActivityKeepLightingConfig {
+  const moonboard = isMoonboardBoardName(boardName);
   return {
     keepLighting,
     moonboardKeepLighting,
     drivesInSession,
     inCrew: isCrewSession,
-    moonboard: isMoonboardBoardName(boardName),
-    enabled: lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession: isCrewSession }),
+    moonboard,
+    enabled: lockScreenPressKeepsLighting({
+      swipeToDriveEnabled,
+      alwaysDrive: alwaysDriveApplies({
+        alwaysDrive,
+        boardIsMoonboard: moonboard,
+        drivesInSession,
+        inSession: isCrewSession,
+      }),
+    }),
   };
 }

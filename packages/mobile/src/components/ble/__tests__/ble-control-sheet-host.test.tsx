@@ -35,8 +35,8 @@ const mockBleControlSheet = vi.hoisted(() => ({
       onChange: (choice: string) => void;
     };
     onToggleDisconnectWhenDrivingEnds: (enabled: boolean) => void;
-    onToggleLightOnSwipe: (enabled: boolean) => void;
-    onToggleLightOnClimbTap: (enabled: boolean) => void;
+    onToggleAlwaysDrive: (enabled: boolean) => void;
+    alwaysDrive: boolean;
   } | null,
 }));
 const settingsAnalytics = vi.hoisted(() => ({ trackSettingChanged: vi.fn() }));
@@ -95,7 +95,7 @@ import {
   subscribeDriveEnded,
   type DriveEnded,
 } from '../../play-drawer/drive-mode-store';
-import { readClimbChangeLights } from '../../play-drawer/use-climb-change-lights';
+import { isDrivingWall } from '../../play-drawer/use-climb-change-lights';
 
 describe('BleControlSheetHost', () => {
   beforeEach(() => {
@@ -152,6 +152,15 @@ describe('BleControlSheetHost', () => {
     expect(mockSettings.setters.putOnBoardKeepsLighting).not.toHaveBeenCalled();
   });
 
+  // Light automatically drives with no end: no timer applies, so no row.
+  it('leaves Stop driving after out while Light automatically is on', () => {
+    mockBluetooth.boardName = 'kilter';
+    mockSettings.values = { alwaysDrive: true, putOnBoardKeepsLighting: '30' };
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+    expect(mockBleControlSheet.props?.keepLighting).toBeUndefined();
+    expect(mockBleControlSheet.props?.alwaysDrive).toBe(true);
+  });
+
   it('reads an unknown stored choice as the default: 45 s, Until I stop on a MoonBoard', () => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
     expect(mockBleControlSheet.props?.keepLighting?.choice).toBe('until_stopped');
@@ -168,7 +177,7 @@ describe('BleControlSheetHost', () => {
   });
 
   // #7000: only the player's sheet drops Disconnect Bluetooth when driving
-  // ends and the two lighting switches; the app-wide sheet keeps them whatever the QA switch says.
+  // ends and Light automatically; the app-wide sheet keeps them whatever the QA switch says.
   it.each([
     ['the app-wide sheet', undefined, true],
     ['the player’s sheet', false, false],
@@ -195,11 +204,10 @@ describe('BleControlSheetHost', () => {
     );
   });
 
-  // 2.7: the lightbulb's sheet is the quickest place to turn Light on tap
-  // back on, so its switches report like the Board page's rows.
+  // 2.7: the lightbulb's sheet is the quickest place to turn Light
+  // automatically on, so its switches report like the Board page's rows.
   it.each([
-    ['onToggleLightOnClimbTap', 'lightOnClimbTap'],
-    ['onToggleLightOnSwipe', 'lightOnSwipe'],
+    ['onToggleAlwaysDrive', 'alwaysDrive'],
     ['onToggleDisconnectWhenDrivingEnds', 'disconnectWhenDrivingEnds'],
   ] as const)('%s reports Setting Changed and saves the setting', (handler, key) => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
@@ -271,14 +279,14 @@ describe('BleControlSheetHost', () => {
     mockBluetooth.boardName = 'kilter';
     enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: null, windowMs, windowSetting: null });
     markDriveLive();
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(true);
+    expect(isDrivingWall()).toBe(true);
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
     mockBleControlSheet.props?.onClearLights();
 
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('stopped');
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
+    expect(isDrivingWall()).toBe(false);
     expect(announceQueued).toHaveBeenCalledExactlyOnceWith('session:playView.wallControl.stoppedDriving');
     expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
   });
@@ -320,13 +328,13 @@ describe('BleControlSheetHost', () => {
 
   it('Turn off all lights with nothing driving leaves the lighting settings alone', () => {
     resetDriveModeForTests();
-    mockSettings.values = { lightOnClimbTap: true };
+    mockSettings.values = { alwaysDrive: true };
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
     mockBleControlSheet.props?.onClearLights();
 
     expect(announceQueued).not.toHaveBeenCalled();
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(true);
+    expect(mockSettings.setters.alwaysDrive).not.toHaveBeenCalled();
     expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
   });
 

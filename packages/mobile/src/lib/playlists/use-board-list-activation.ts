@@ -25,7 +25,7 @@ import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { boardLooselyMatches } from '../boards/board-matches';
 import { toQueueClimb } from '../climb-types';
-import { readClimbChangeLights } from '../../components/play-drawer/use-climb-change-lights';
+import { isDrivingWall } from '../../components/play-drawer/use-climb-change-lights';
 import type { ReadyBoardArtSnapshot } from '../board-render/ready-board-art';
 import { usePlaylistActivation } from './use-playlist-activation';
 import {
@@ -177,8 +177,6 @@ export function useBoardListActivation<Row>({
   // A stable tap handler, so a memoised row keeps its props as pages land.
   const activateRef = useRef(activation.activate);
   activateRef.current = activation.activate;
-  const isSharedSessionRef = useRef(isSharedSession);
-  isSharedSessionRef.current = isSharedSession;
   const openFallbackRef = useRef(openFallback);
   openFallbackRef.current = openFallback;
 
@@ -186,11 +184,9 @@ export function useBoardListActivation<Row>({
     (row: Row, readyBoardArt?: ReadyBoardArtSnapshot) => {
       const { climb, board } = describeRow(row);
       if (!climb || !board) {
-        // The list's own rule (`climbChangeStaysViewOnly`): driving the wall
-        // lights it, in a crew too (#7113).
-        openFallbackRef.current?.(row, {
-          preview: !readClimbChangeLights('tap', { inSharedSession: isSharedSessionRef.current }),
-        });
+        // The list's own rule: only driving the wall lights it, in a crew too
+        // (#7113); otherwise the row opens as a preview.
+        openFallbackRef.current?.(row, { preview: !isDrivingWall() });
         return;
       }
       tappedBoardRef.current = { key: climbBoardKey(climb), board };

@@ -3,7 +3,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 
 const lighting = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../../components/play-drawer/use-climb-change-lights', () => ({
-  readClimbChangeLights: () => lighting.enabled,
+  isDrivingWall: () => lighting.enabled,
 }));
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));

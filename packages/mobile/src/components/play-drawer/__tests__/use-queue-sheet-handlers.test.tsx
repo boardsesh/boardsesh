@@ -9,7 +9,7 @@ import type {
 } from '../../../providers/drawer-host-provider';
 
 const lighting = vi.hoisted(() => ({ enabled: true }));
-vi.mock('../use-climb-change-lights', () => ({ readClimbChangeLights: () => lighting.enabled }));
+vi.mock('../use-climb-change-lights', () => ({ isDrivingWall: () => lighting.enabled }));
 
 // The climb up on the wall, as the provider's live snapshot reads it at the tap.
 const queueState = vi.hoisted(() => ({ current: null as ClimbQueueItem | null, inSharedSession: false }));
@@ -383,8 +383,8 @@ describe('every queue pick reaches a commit', () => {
 });
 
 describe('opted-in suggestion taps', () => {
-  // Light on tap on, or this phone driving: both reach the handler as
-  // `readClimbChangeLights('tap') === true`.
+  // This phone driving the wall (Light automatically's drive included) reaches the handler as
+  // `isDrivingWall() === true`.
   it('commit with the suggestion list and open the committed climb', () => {
     lighting.enabled = true;
     queueState.current = { ...queueItemWithCount(null), uuid: 'now-slot' };

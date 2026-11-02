@@ -31,10 +31,10 @@ type BleControlSheetHostProps = {
   visible: boolean;
   onClose: () => void;
   /**
-   * Disconnect Bluetooth when driving ends and the two lighting switches. Only
-   * the player's own sheet drops them (#7000); the app-wide sheet (toolbar
-   * bulb, Climbs header pill) always keeps them. Both keep the Stop driving
-   * after row.
+   * Disconnect Bluetooth when driving ends and Light automatically. Only the
+   * player's own sheet drops them (#7000); the app-wide sheet (toolbar bulb,
+   * Climbs header pill) always keeps them. Both keep the Stop driving after
+   * row, unless Light automatically is on.
    */
   showLightingSwitches?: boolean;
   /**
@@ -76,11 +76,11 @@ export function BleControlSheetHost({
   const isConnected = bluetooth?.isConnected ?? false;
   const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
   const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
-  const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
-  const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
+  const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
   // Stop driving after (2.7, spec B4), the sheet's first row on both sheets:
   // the timer at the wall in two taps (WCAG 2.2.1). On a connected MoonBoard
-  // the MoonBoard's own choice, the one its Put on board takes.
+  // the MoonBoard's own choice, the one its Put on board takes. Left out while
+  // Light automatically is on: it drives with no end, so no timer applies.
   const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const onMoonboard = showLightAdjacentHolds;
@@ -163,19 +163,12 @@ export function BleControlSheetHost({
     },
     [setDisconnectWhenDrivingEnds],
   );
-  const handleToggleLightOnSwipe = useCallback(
+  const handleToggleAlwaysDrive = useCallback(
     (enabled: boolean) => {
-      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnSwipe', enabled);
-      setLightOnSwipe(enabled);
+      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'alwaysDrive', enabled);
+      setAlwaysDrive(enabled);
     },
-    [setLightOnSwipe],
-  );
-  const handleToggleLightOnClimbTap = useCallback(
-    (enabled: boolean) => {
-      trackSettingChanged(BOARD_CONTROLS_SETTINGS_PAGE, 'lightOnClimbTap', enabled);
-      setLightOnClimbTap(enabled);
-    },
-    [setLightOnClimbTap],
+    [setAlwaysDrive],
   );
 
   if (!bluetooth) return null;
@@ -191,15 +184,13 @@ export function BleControlSheetHost({
       showLightAdjacentHolds={showLightAdjacentHolds}
       lightAdjacentHoldsEnabled={bluetooth.moonboardLightAdjacentHolds}
       onToggleLightAdjacentHolds={handleToggleLightAdjacentHolds}
-      lightOnSwipe={lightOnSwipe}
-      onToggleLightOnSwipe={handleToggleLightOnSwipe}
-      lightOnClimbTap={lightOnClimbTap}
-      onToggleLightOnClimbTap={handleToggleLightOnClimbTap}
+      alwaysDrive={alwaysDrive}
+      onToggleAlwaysDrive={handleToggleAlwaysDrive}
       showLightingSwitches={showLightingSwitches}
       linked={isConnected}
       onDrive={onDrive}
       status={status}
-      keepLighting={keepLighting}
+      keepLighting={alwaysDrive ? undefined : keepLighting}
       onClose={onClose}
     />
   );

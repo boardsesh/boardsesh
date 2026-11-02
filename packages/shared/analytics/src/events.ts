@@ -113,9 +113,10 @@ export const SHARED_EVENTS = {
   // MiniPlayer's ⏮ ⏭. Props (built by `queueNavigation`,
   // queue-navigation-events.ts): { direction: 'next' | 'previous', method:
   // 'button' | 'swipe', surface: 'player' | 'mini_player', outcome: 'moved' |
-  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, driving, boardType, layoutId
-  // (null on a spray wall) }. `preview` is a step that only looked: in a crew or
-  // with Light on swipe off the wall stays put. `driving` (#7113, false before
+  // 'preview', sessionMode: 'party' | 'solo', alwaysDrive (2026-11, Light
+  // automatically; lightOnSwipe before it), driving, boardType, layoutId
+  // (null on a spray wall) }. `preview` is a step that only looked: outside a
+  // drive the wall stays put. `driving` (#7113, false before
   // it) says the climber was driving the wall, so the step lit it in a crew too.
   // `heldArtState` ('ready' | 'loading' | 'failed') and `heldMs` (November 2026) ride
   // only on a swipe that went before the next climb's board had painted, or
@@ -127,7 +128,9 @@ export const SHARED_EVENTS = {
   // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
   // 'board_changed' | 'signed_out' | 'window_ended' (2.7: Put on board's
-  // keep-lighting window ran out, or its setting was turned off), durationSec,
+  // keep-lighting window ran out, or its setting was turned off) |
+  // 'always_off' (2026-11: Light automatically went off, or a crew formed where
+  // it doesn't drive; the link stays), durationSec,
   // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
   // lit climbs that renewed the keep-lighting window; 0 with no window, and
   // absent before 2.7), windowSec (2.7: the timed drive's length, 30 | 45 | 60 | 120 | 300, or
@@ -136,8 +139,11 @@ export const SHARED_EVENTS = {
   // (a press on Put on board that keeps lighting: from 2.7 the keep-lighting
   // window, or an open-ended drive where the setting says Until I stop; before
   // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
-  // screen-reader action or the board sheet's row) | 'solo_carry' (a solo
-  // climber driving by Light the board as I swipe when a crew formed) |
+  // screen-reader action or the board sheet's row) | 'solo_carry' (until
+  // 2026-11: a solo climber driving by Light the board as I swipe when a crew
+  // formed) | 'always' (2026-11: Light automatically drives the wall while this
+  // phone's own link holds it: the link came up, the switch turned on, or a
+  // Put on board resumed it after a stop) |
   // 'lock_screen' (2.7: a Lock Screen, Dynamic Island or Android notification
   // Next / Previous opened the window, or a drive. iOS opens it natively once
   // the press lit the wall and the app adopts it when it next runs: durationSec
@@ -270,7 +276,8 @@ export const SHARED_EVENTS = {
   // free text. Fired by `withSettingTracking` (mobile settings-analytics.ts) so
   // every settings row reports the same way; it is what ranks the Settings root.
   // From 2.7 the lightbulb's board sheet reports its switches too, under page
-  // 'boardControls' (keys as on the Board page: lightOnClimbTap, lightOnSwipe,
+  // 'boardControls' (keys as on the Board page: alwaysDrive (2026-11, Light
+  // automatically; lightOnClimbTap and lightOnSwipe before it),
   // putOnBoardKeepsLighting, moonboardPutOnBoardKeepsLighting,
   // disconnectWhenDrivingEnds (2.7, replacing autoDisconnectBle, which builds
   // before it sent), moonboardLightAdjacentHolds). Leave that page out when

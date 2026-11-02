@@ -14,7 +14,7 @@ function buildModel(handlers: { toggle: (next: boolean) => void; select: (key: s
         rows: [
           {
             kind: 'toggle',
-            key: 'lightOnSwipe',
+            key: 'alwaysDrive',
             label: 'Light on swipe',
             value: false,
             onValueChange: handlers.toggle,
@@ -50,7 +50,7 @@ describe('withSettingTracking', () => {
 
     expect(trackMock).toHaveBeenCalledWith('Setting Changed', {
       page: 'board',
-      key: 'lightOnSwipe',
+      key: 'alwaysDrive',
       value: true,
     });
     expect(toggle).toHaveBeenCalledWith(true);
@@ -73,7 +73,7 @@ describe('withSettingTracking', () => {
   it('leaves navigation rows and skipped keys untouched', () => {
     const toggle = vi.fn();
     const original = buildModel({ toggle, select: vi.fn() });
-    const model = withSettingTracking(original, 'privacy', { skipKeys: new Set(['lightOnSwipe']) });
+    const model = withSettingTracking(original, 'privacy', { skipKeys: new Set(['alwaysDrive']) });
 
     expect(model.sections[0]?.rows[0]).toBe(original.sections[0]?.rows[0]);
     expect(model.sections[0]?.rows[2]).toBe(original.sections[0]?.rows[2]);

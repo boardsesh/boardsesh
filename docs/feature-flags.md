@@ -253,15 +253,16 @@ diagnostic) applies on native. The whole surface lives in three files:
   enrolled account's first connect on the phone, in both arms, whatever **Light
   the board when I tap a climb** says. Until 2.7 it showed only with that switch
   on, and 2.7 turns it off by default, so it would have reached almost nobody.
-  Its body now says what lights from there, read the way a list tap and Put on
-  board read it (`firstConnectConfirmationCopy`): every tap (the switch on,
-  outside a shared session, where a list tap stays a preview), Put on board's
-  timed drive (30 or 45 seconds, or whole minutes from 1 minute up), until the climber
-  stops it (a MoonBoard's default), or the one climb Put on board lights (Stop
-  driving after set to Right away, a crew with In a session too off,
-  `wall-swipe-to-drive` off, or solo with **Light the board as I swipe** on,
-  where the press starts no drive) (`resolveKeepLightingReach`, the same rule
-  the player's preview-first card reads). The Climbs card's body follows the switch and the shared session too.
+  Its body now says what lights from there, read the way Light automatically and
+  Put on board read it (`firstConnectConfirmationCopy`): every pick, while **Light
+  automatically** drives there (`firstConnectAlwaysDrives`: the switch on, and in a
+  crew In a session too on, except on a MoonBoard; it replaced the two switches in
+  2026-11), Put on board's timed drive (30 or 45 seconds, or whole minutes from 1
+  minute up), until the climber stops it (a MoonBoard's default), or the one climb
+  Put on board lights (Stop driving after set to Right away, a crew with In a
+  session too off, or `wall-swipe-to-drive` off) (`resolveKeepLightingReach`, the
+  same rule the player's preview-first card reads). The Climbs card's body follows
+  Light automatically and the crew the same way.
   The host announces the confirmation (`first-connect-confirmation-presence.ts`)
   before it records the connect, since that record hides the Climbs card: from
   then until the dialog closes the Climbs list's board-reveal and quick-actions

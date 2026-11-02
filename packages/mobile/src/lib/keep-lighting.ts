@@ -14,7 +14,9 @@
  *   default, since most MoonBoard controllers don't like phones switching.
  *
  * Only Put on board's drive is timed: a swipe or Light every climb always
- * starts an open-ended one.
+ * starts an open-ended one. With Light automatically on (`alwaysDrive`), none
+ * of these apply: this phone drives with no end whenever it holds the board
+ * (`alwaysDriveApplies`).
  *
  * Pure, so the Settings model, the board control and the drive store read the
  * same rule.
@@ -106,33 +108,60 @@ export function resolveKeepLightingPlan({
 }
 
 /**
- * Whether a Lock Screen, Dynamic Island or Android notification Next /
- * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
- * flag (keep-lighting's kill switch) off, and not solo with Light the board as
- * I swipe on: every pick lights there already, and a press in the app only
- * drops a stop (`wall-control.ts`).
+ * Whether Light automatically (Settings › Board, `alwaysDrive`) drives here:
+ * the switch is on and, in a crew session, In a session too is on too. A
+ * MoonBoard drives in a crew session whatever In a session too says, as its
+ * Stop driving after choice does: most MoonBoard controllers don't like phones
+ * switching, so the phone that has the board keeps it.
+ *
+ * Whether this phone holds the board (its own Bluetooth link, never a relay)
+ * is the caller's to add: `DriveModeWatcher` starts the drive only then.
+ * While this is true Put on board starts no drive of its own: it resumes this
+ * one after a stop (the wall control's `tapDrive: 'resume'`).
  */
-export function lockScreenPressKeepsLighting({
-  swipeToDriveEnabled,
-  lightOnSwipe,
+export function alwaysDriveApplies({
+  alwaysDrive,
+  boardIsMoonboard,
+  drivesInSession,
   inSession,
 }: {
-  swipeToDriveEnabled: boolean;
-  lightOnSwipe: boolean;
+  /** Settings › Board's Light automatically. */
+  alwaysDrive: boolean;
+  boardIsMoonboard: boolean;
+  /** Settings › Board's In a session too. */
+  drivesInSession: boolean;
   /** A crew is in this session (the roster's `useIsCrewSession`). */
   inSession: boolean;
 }): boolean {
-  return swipeToDriveEnabled && !(lightOnSwipe && !inSession);
+  if (!alwaysDrive) return false;
+  return boardIsMoonboard || !inSession || drivesInSession;
+}
+
+/**
+ * Whether a Lock Screen, Dynamic Island or Android notification Next /
+ * Previous keeps lighting the way Put on board would (2.7). Not with the swipe
+ * flag (keep-lighting's kill switch) off, and not where Light automatically
+ * drives (`alwaysDriveApplies`): every pick lights there already, a stop holds
+ * until the next Put on board, and Stop driving after doesn't apply.
+ */
+export function lockScreenPressKeepsLighting({
+  swipeToDriveEnabled,
+  alwaysDrive,
+}: {
+  swipeToDriveEnabled: boolean;
+  /** `alwaysDriveApplies` for this board and session. */
+  alwaysDrive: boolean;
+}): boolean {
+  return swipeToDriveEnabled && !alwaysDrive;
 }
 
 /**
  * What a press on Put on board keeps lighting, as the climber will see it, for
  * the copy that promises it (the first-connect confirmation, the player's
  * preview-first card). It reads the plan against one setting the plan does not
- * take: solo with Light the board as I swipe on, the press starts no drive (the
- * wall control's `tapDrive: 'resume'`). The setting lights the swipes and a
- * climb picked from a list stays a preview, so nothing past the one climb is
- * promised.
+ * take: where Light automatically drives (`alwaysDriveApplies`), this phone
+ * drives with no end once it holds the board, whatever Stop driving after
+ * says, so every pick lights until the climber stops.
  *
  * - `one_climb` — the press lights that climb and nothing after it.
  * - `window` — every pick lights for `seconds`.
@@ -142,14 +171,15 @@ export type KeepLightingReach = { kind: 'one_climb' } | { kind: 'window'; second
 
 export function resolveKeepLightingReach({
   plan,
-  swipeLightsSolo,
+  alwaysDrive,
 }: {
   /** `resolveKeepLightingPlan`'s plan, or null where the press lights one climb. */
   plan: KeepLightingPlan | null;
-  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
-  swipeLightsSolo: boolean;
+  /** `alwaysDriveApplies` for this board and session. */
+  alwaysDrive: boolean;
 }): KeepLightingReach {
-  if (plan === null || swipeLightsSolo) return { kind: 'one_climb' };
+  if (alwaysDrive) return { kind: 'until_stop' };
+  if (plan === null) return { kind: 'one_climb' };
   if (plan.windowMs === null) return { kind: 'until_stop' };
   return { kind: 'window', seconds: Math.round(plan.windowMs / 1000) };
 }

@@ -116,10 +116,19 @@ export type AppSettings = {
    * (issue #6234). Display only; no effect on other boards or on the LEDs.
    */
   moonboardGridLabels: boolean;
-  /** Light the connected board when swiping to the next/previous climb in the play view. */
-  lightOnSwipe: boolean;
-  /** Light the connected board when tapping a climb to select it from a climbs list. */
-  lightOnClimbTap: boolean;
+  /**
+   * Light automatically: always drive the wall. While this phone's own
+   * Bluetooth link holds the board (never a relay, never a wall with no
+   * lights), it drives with no end (`DriveModeWatcher`, `startedBy: 'always'`),
+   * so every climb picked lights, as after a swipe on the wall button. In a
+   * crew only with In a session too on, except on a MoonBoard. A tap on You
+   * are driving the wall stops it until the link drops or the next Put on
+   * board; the switch itself never flips. Stop driving after doesn't apply
+   * while it is on. Replaced the two switches Light the board when I tap a
+   * climb and Light the board as I swipe (`settings/migrations.ts`). Off by
+   * default.
+   */
+  alwaysDrive: boolean;
   /**
    * Stop driving after (2.7): how long a drive Put on board starts keeps
    * lighting. Right away (`off`, one climb, no drive), a 30 s, 45 s, 1, 2 or

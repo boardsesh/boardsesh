@@ -151,7 +151,7 @@ then hide the row and land the grade taps on the climb list. Check the row is
 hidden before recording that clip, and tap Grade to hide it if not.
 
 Four things change on the simulator: the session queue picks up climbs from the
-swipe clip, `lightOnSwipe` and `browseNoticeSeen` get written by the
+swipe clip, `alwaysDrive` and `browseNoticeSeen` get written by the
 `://climbs?screenshotOpenPreview=1` deep link (deliberately, see the comment in
 `app/(tabs)/climbs/index.tsx`), the hold filter's paint colour is left on Finish
 rather than Hand, and `start-playlist-queue-setup.yaml` turns on Tapping a
@@ -161,8 +161,7 @@ wall-control simulator is a named one that gets reused, so reset them there.
 
 The wall-control captures also change that simulator's connection and drive
 state. Stop driving before the preview take. After recording, put Settings ›
-Board back to the 2.7 defaults: Light the board when I tap a climb off, Light
-the board as I swipe off, Stop driving after 45 seconds (On a MoonBoard: Until I
+Board back to the defaults: Light automatically off, Stop driving after 45 seconds (On a MoonBoard: Until I
 stop), In a session too on, Disconnect Bluetooth when driving ends off, and
 Tapping a playlist loads it into my queue off. Keep each refreshed take's source commit and capture date in
 [the capture notes](../../../../docs/help-clips.md#capturing-the-wall-controls).

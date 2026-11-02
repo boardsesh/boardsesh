@@ -264,14 +264,15 @@ export type PreviewFirstWindowLine =
 
 /**
  * Read by the same rule as the first-connect confirmation
- * (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
- * press starts no drive, so there is no line. A timed drive says how long it
- * lasts after each climb, in whole minutes from one minute up.
+ * (`resolveKeepLightingReach`): where Light automatically drives, every pick
+ * lights until the climber stops, on any board, whatever Stop driving after
+ * says. A timed drive says how long it lasts after each climb, in whole
+ * minutes from one minute up.
  */
 export function resolvePreviewFirstWindowLine({
   plan,
   isMoonboard,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
 }: {
   /**
    * What Put on board's drive does here (`resolveKeepLightingPlan`), or null
@@ -280,16 +281,18 @@ export function resolvePreviewFirstWindowLine({
    */
   plan: KeepLightingPlan | null;
   isMoonboard: boolean;
-  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
-  swipeLightsSolo?: boolean;
+  /** Light automatically drives here (`alwaysDriveApplies`). */
+  alwaysDrive?: boolean;
 }): PreviewFirstWindowLine {
-  const reach = resolveKeepLightingReach({ plan, swipeLightsSolo });
+  const reach = resolveKeepLightingReach({ plan, alwaysDrive });
   switch (reach.kind) {
     // One climb lights and nothing after it: the headline already says so.
     case 'one_climb':
       return null;
     case 'until_stop':
-      return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
+      // The MoonBoard line gives the MoonBoard's own reason; Light
+      // automatically's drive has none to give.
+      return isMoonboard && !alwaysDrive ? { key: 'moonboard' } : { key: 'untilStop' };
     case 'window': {
       const length = driveLengthWords(reach.seconds);
       if (length.unit === 'seconds') return { key: 'windowSeconds', seconds: length.count };
@@ -310,11 +313,11 @@ export type PreviewFirstFrostLine = 'timed' | 'open_ended';
 
 export function resolvePreviewFirstFrostLine({
   plan,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
 }: {
   /** As `resolvePreviewFirstWindowLine`'s. */
   plan: KeepLightingPlan | null;
-  swipeLightsSolo?: boolean;
+  alwaysDrive?: boolean;
 }): PreviewFirstFrostLine {
-  return resolveKeepLightingReach({ plan, swipeLightsSolo }).kind === 'window' ? 'timed' : 'open_ended';
+  return resolveKeepLightingReach({ plan, alwaysDrive }).kind === 'window' ? 'timed' : 'open_ended';
 }

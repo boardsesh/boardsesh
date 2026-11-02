@@ -23,6 +23,8 @@ import {
   resetDriveModeForTests,
   resolveDriveModeExit,
   shouldEndWindowForSettings,
+  shouldStartAlwaysDrive,
+  startAlwaysDrive,
   startLockScreenDrive,
   stopDrivingForLink,
   subscribeDriveEnded,
@@ -175,7 +177,7 @@ describe('Drive Mode Ended', () => {
     );
   });
 
-  it.each(['tap', 'action', 'solo_carry'] as const)('says a drive was started by %s', (startedBy) => {
+  it.each(['tap', 'action', 'always'] as const)('says a drive was started by %s', (startedBy) => {
     enterDriveMode({ startedBy, sessionId: null, boardId: 7 });
     exitDriveMode('link_dropped');
     expect(analytics.track).toHaveBeenCalledWith('Drive Mode Ended', expect.objectContaining({ startedBy }));
@@ -294,6 +296,90 @@ describe('Drive Mode Started', () => {
       startedBy: 'swipe',
       inSession: false,
       boardType: null,
+    });
+  });
+});
+
+// Light automatically (2026-11): an open-ended drive whenever this phone's own
+// link holds the board, live from the start since it lights nothing itself.
+describe("Light automatically's drive", () => {
+  it('starts live and open-ended, says so once, and lights nothing of its own', () => {
+    expect(startAlwaysDrive({ sessionId: 'session-1', boardId: 7, boardType: 'tension' })).toBe(true);
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'always',
+      sessionId: 'session-1',
+      boardId: 7,
+      boardType: 'tension',
+      windowMs: null,
+      expiresAt: null,
+      climbsLit: 0,
+    });
+    expect(getDriveLightingSnapshot()).toEqual({ mode: 'driving', endsAt: null });
+    expect(analytics.track).toHaveBeenCalledExactlyOnceWith('Drive Mode Started', {
+      startedBy: 'always',
+      inSession: true,
+      boardType: 'tension',
+    });
+  });
+
+  it('refuses while a drive is on, and while a stop holds this link', () => {
+    enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(false);
+    expect(getDriveMode()?.startedBy).toBe('swipe');
+    stopDrivingForLink();
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    // The link dropped, or Put on board resumed it: it may start again.
+    clearDrivingStopped();
+    expect(startAlwaysDrive({ sessionId: null, boardId: 7 })).toBe(true);
+  });
+
+  it('ends always_off keeping the link when the switch goes off', () => {
+    const ends: DriveEnded[] = [];
+    const unsubscribe = subscribeDriveEnded((ended) => ends.push(ended));
+    startAlwaysDrive({ sessionId: null, boardId: 7 });
+    exitDriveMode('always_off', { keepLink: true });
+    unsubscribe();
+    expect(getDriveMode()).toBeNull();
+    // Not a stop: nothing holds the next drive off.
+    expect(isDrivingStoppedForLink()).toBe(false);
+    expect(ends).toEqual([expect.objectContaining({ reason: 'always_off', keepLink: true })]);
+    expect(endedCalls()).toEqual([
+      ['Drive Mode Ended', expect.objectContaining({ reason: 'always_off', startedBy: 'always', windowSec: null })],
+    ]);
+  });
+
+  describe('shouldStartAlwaysDrive', () => {
+    const DRIVE: DriveModeState = {
+      phase: 'live',
+      sessionId: null,
+      boardId: 7,
+      boardType: null,
+      startedAt: 0,
+      startedBy: 'swipe',
+      climbsLit: 0,
+      windowMs: null,
+      windowSetting: null,
+      expiresAt: null,
+      windowRenewals: 0,
+    };
+    it.each<[string, Parameters<typeof shouldStartAlwaysDrive>[0], boolean]>([
+      [
+        'applies, own link up, nothing driving, no stop',
+        { applies: true, ownLink: true, drive: null, stopped: false },
+        true,
+      ],
+      ['does not apply here', { applies: false, ownLink: true, drive: null, stopped: false }, false],
+      [
+        'no own link (none, a relay, or a wall with no lights)',
+        { applies: true, ownLink: false, drive: null, stopped: false },
+        false,
+      ],
+      ['a drive already on', { applies: true, ownLink: true, drive: DRIVE, stopped: false }, false],
+      ['a stop on this link', { applies: true, ownLink: true, drive: null, stopped: true }, false],
+    ])('%s', (_name, input, expected) => {
+      expect(shouldStartAlwaysDrive(input)).toBe(expected);
     });
   });
 });

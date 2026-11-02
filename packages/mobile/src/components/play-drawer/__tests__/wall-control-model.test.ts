@@ -758,10 +758,10 @@ describe('resolveWallControl: driving the wall', () => {
   const cases: [string, Partial<WallControlInput>, boolean, boolean, DriveMode, boolean][] = [];
   for (const [name, input] of STATES) {
     for (const inCrew of [false, true]) {
-      for (const lightOnSwipe of [true, false]) {
+      for (const swipesCommit of [true, false]) {
         for (const driveMode of ['off', 'arming', 'live'] as const) {
           for (const stopped of [false, true]) {
-            cases.push([name, input, inCrew, lightOnSwipe, driveMode, stopped]);
+            cases.push([name, input, inCrew, swipesCommit, driveMode, stopped]);
           }
         }
       }
@@ -769,13 +769,13 @@ describe('resolveWallControl: driving the wall', () => {
   }
 
   it.each(cases)(
-    '%s, crew %s, light on swipe %s, drive %s, stopped %s',
-    (name, input, inCrew, lightOnSwipe, driveMode, stopped) => {
+    '%s, crew %s, swipes commit %s, drive %s, stopped %s',
+    (name, input, inCrew, swipesCommit, driveMode, stopped) => {
       const model = resolveWallControl({
         ...FREE,
         ...input,
-        // The browse rule PlayCore feeds in: solo with lighting on swipes.
-        navigationCommits: lightOnSwipe && !inCrew,
+        // Whatever the browse rule says (PlayCore feeds in a live drive).
+        navigationCommits: swipesCommit && !inCrew,
         driveMode,
         drivingStopped: stopped,
       });
@@ -796,7 +796,7 @@ describe('resolveWallControl: driving the wall', () => {
   );
 
   // Lit on this phone's link: whether it drives, row by row.
-  // [crew, light on swipe, drive phase, stopped, driving]
+  // [crew, swipes commit, drive phase, stopped, driving]
   it.each<[boolean, boolean, DriveMode, boolean, boolean]>([
     [false, true, 'off', false, true],
     [false, true, 'off', true, false],
@@ -823,13 +823,13 @@ describe('resolveWallControl: driving the wall', () => {
     [true, false, 'live', false, true],
     [true, false, 'live', true, false],
   ])(
-    'lit on your link, crew %s, light on swipe %s, drive %s, stopped %s: driving %s',
-    (inCrew, lightOnSwipe, driveMode, stopped, driving) => {
+    'lit on your link, crew %s, swipes commit %s, drive %s, stopped %s: driving %s',
+    (inCrew, swipesCommit, driveMode, stopped, driving) => {
       const model = resolveWallControl({
         ...FREE,
         ...MINE,
         displayedLit: true,
-        navigationCommits: lightOnSwipe && !inCrew,
+        navigationCommits: swipesCommit && !inCrew,
         driveMode,
         drivingStopped: stopped,
       });
@@ -943,10 +943,10 @@ describe('resolveWallControl: driving the wall', () => {
   });
 });
 
-// Preview-first lighting: a press lights one climb. Solo it only resumes an
-// opted-in Light the board as I swipe; in a crew it stays a one-off put. The
-// MoonBoard keeps #7113's "a solo press ends in driving" (below).
-describe('resolveWallControl: a press only resumes opted-in automatic lighting', () => {
+// Light automatically (2026-11): where it drives, a press that puts a climb up
+// only drops a stop (`resume`); its open-ended drive lights the next ones once
+// this phone's link holds the board. Stop driving after doesn't apply.
+describe('resolveWallControl: a press resumes Light automatically', () => {
   const PUT_UP: readonly [string, Partial<WallControlInput>][] = [
     ['connect', {}],
     ['put_on_wall', { commitButton: 'putOnWall' }],
@@ -955,81 +955,66 @@ describe('resolveWallControl: a press only resumes opted-in automatic lighting',
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
   ];
 
-  // [solo, light on swipe, stopped, tapDrive]
-  const RULES: [boolean, boolean, boolean, 'resume' | null][] = [
-    [true, true, false, 'resume'],
-    [true, true, true, 'resume'],
-    [true, false, false, null],
-    [true, false, true, null],
-    [false, true, false, null],
-    [false, true, true, null],
-    [false, false, false, null],
-    [false, false, true, null],
+  // [always drive, stopped, tapDrive]
+  const RULES: [boolean, boolean, 'resume' | null][] = [
+    [true, false, 'resume'],
+    [true, true, 'resume'],
+    [false, false, null],
+    [false, true, null],
   ];
   const cases = PUT_UP.flatMap(([name, input]) => RULES.map((rule) => [name, input, ...rule] as const));
 
-  it.each(cases)(
-    '%s, solo %s, light on swipe %s, stopped %s: %s',
-    (_name, input, solo, lightOnSwipe, stopped, tapDrive) => {
-      const model = resolveWallControl({
-        ...FREE,
-        ...input,
-        navigationCommits: lightOnSwipe && solo && !stopped,
-        drivingStopped: stopped,
-        solo,
-        lightOnSwipe,
-      });
-      expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
-      expect(model.tapDrive).toBe(tapDrive);
-    },
-  );
-
-  it('never asks a press that puts nothing up, or one while a drive is on, to start one', () => {
-    const solo = { solo: true, lightOnSwipe: false };
-    // Disconnect board, and You are driving the wall.
-    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, displayedLit: true }).tapDrive).toBeNull();
-    expect(
-      resolveWallControl({ ...FREE, ...MINE, ...solo, displayedLit: true, driveMode: 'live' }).tapDrive,
-    ).toBeNull();
-    // Arming already: the press lights as before.
-    expect(resolveWallControl({ ...FREE, ...MINE, ...solo, driveMode: 'arming' }).tapDrive).toBeNull();
-    // A connect in flight offers no drive.
-    expect(resolveWallControl({ ...FREE, ...solo, pending: true }).tapDrive).toBeNull();
-    // Set active: no wall in reach, so the press only makes the climb current.
-    expect(resolveWallControl({ ...FREE, ...solo, commitButton: 'putOnWall', commitLabel: 'setActive' })).toMatchObject(
-      { tapAction: 'put_on_wall', labelKey: 'setActive', tapDrive: null },
-    );
+  it.each(cases)('%s, always drive %s, stopped %s: %s', (_name, input, alwaysDrive, stopped, tapDrive) => {
+    const model = resolveWallControl({
+      ...FREE,
+      ...input,
+      navigationCommits: false,
+      drivingStopped: stopped,
+      alwaysDrive,
+    });
+    expect(['connect', 'put_on_wall', 'relight']).toContain(model.tapAction);
+    expect(model.tapDrive).toBe(tapDrive);
+    // It never times a drive of its own.
+    expect(model.tapKeepLighting).toBeNull();
   });
 
-  // What the climber sees after the press: the model once the handler ran.
-  // [case, solo, light on swipe, driving after]
-  it.each<[string, boolean, boolean, boolean]>([
-    ['solo, stopped, Light on swipe on', true, true, true],
-    ['solo, Light on swipe off', true, false, false],
-    ['a crew, stopped', false, true, false],
-    ['a crew, Light on swipe off', false, false, false],
-  ])('%s: a press ends driving %s', (_name, solo, lightOnSwipe, drivingAfter) => {
+  it('never asks a press that puts nothing up to resume', () => {
+    const always = { alwaysDrive: true };
+    // Disconnect board, and You are driving the wall.
+    expect(resolveWallControl({ ...FREE, ...MINE, ...always, displayedLit: true }).tapDrive).toBeNull();
+    expect(
+      resolveWallControl({ ...FREE, ...MINE, ...always, displayedLit: true, driveMode: 'live' }).tapDrive,
+    ).toBeNull();
+    // Set active: no wall in reach, so the press only makes the climb current.
+    expect(
+      resolveWallControl({ ...FREE, ...always, commitButton: 'putOnWall', commitLabel: 'setActive' }),
+    ).toMatchObject({ tapAction: 'put_on_wall', labelKey: 'setActive', tapDrive: null });
+  });
+
+  // What the climber sees after the press: the model once the handler ran and
+  // the watcher brought the drive back (`resume` drops the stop).
+  it.each<[string, boolean, boolean]>([
+    ['Light automatically on', true, true],
+    ['Light automatically off', false, false],
+  ])('%s: a press after a stop ends driving %s', (_name, alwaysDrive, drivingAfter) => {
     const before = resolveWallControl({
       ...FREE,
       ...MINE,
       commitButton: 'putOnWall',
       drivingStopped: true,
-      solo,
-      lightOnSwipe,
+      alwaysDrive,
       navigationCommits: false,
     });
     expect(before.tapAction).toBe('put_on_wall');
-    // `resume` drops the stop; null leaves it in place. A tap starts no drive.
-    const stopped = before.tapDrive === null;
+    const resumed = before.tapDrive === 'resume';
     const after = resolveWallControl({
       ...FREE,
       ...MINE,
       displayedLit: true,
-      drivingStopped: stopped,
-      driveMode: 'off',
-      solo,
-      lightOnSwipe,
-      navigationCommits: solo && lightOnSwipe && !stopped,
+      drivingStopped: !resumed,
+      driveMode: resumed ? 'live' : 'off',
+      alwaysDrive,
+      navigationCommits: resumed,
     });
     expect(after.driving).toBe(drivingAfter);
     expect(after.labelKey).toBe(drivingAfter ? 'youAreDriving' : 'disconnectBoard');
@@ -1050,10 +1035,9 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['dark', MINE],
     ['on_wall_unlinked', { displayedIsWallClimb: true, presenceFresh: true }],
   ];
-  /** Solo, the flag on, both choices at their defaults, Light the board as I swipe off. */
+  /** Solo, the flag on, both choices at their defaults, Light automatically off. */
   const ON: Partial<WallControlInput> = {
-    solo: true,
-    lightOnSwipe: false,
+    alwaysDrive: false,
     navigationCommits: false,
     swipeToDriveEnabled: true,
     keepLighting: '45',
@@ -1076,13 +1060,13 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['solo, 5 minutes', { keepLighting: '300' }, 'window', 300_000, 'putOnBoardKeepsLighting'],
     ['solo, Until I stop', { keepLighting: 'until_stopped' }, 'drive', null, 'putOnBoardKeepsLighting'],
     ['solo, Off', { keepLighting: 'off' }, null, null, null],
-    ['a crew, In a session too on', { solo: false, crewSession: true }, 'window', 45_000, 'putOnBoardKeepsLighting'],
-    ['a crew, In a session too off', { solo: false, crewSession: true, drivesInSession: false }, null, null, null],
+    ['a crew, In a session too on', { crewSession: true }, 'window', 45_000, 'putOnBoardKeepsLighting'],
+    ['a crew, In a session too off', { crewSession: true, drivesInSession: false }, null, null, null],
     // The crew left seconds ago: the browse latch still holds, but the roster
     // (the watcher's read too) says solo, so In a session too has no say.
     [
       'the browse latch with no crew, In a session too off',
-      { solo: false, crewSession: false, drivesInSession: false },
+      { crewSession: false, drivesInSession: false },
       'window',
       45_000,
       'putOnBoardKeepsLighting',
@@ -1090,7 +1074,7 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['MoonBoard, solo, Until I stop', { boardIsMoonboard: true }, 'drive', null, 'moonboardPutOnBoardKeepsLighting'],
     [
       'MoonBoard, a crew with In a session too off',
-      { boardIsMoonboard: true, solo: false, crewSession: true, drivesInSession: false },
+      { boardIsMoonboard: true, crewSession: true, drivesInSession: false },
       'drive',
       null,
       'moonboardPutOnBoardKeepsLighting',
@@ -1103,8 +1087,10 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
       'moonboardPutOnBoardKeepsLighting',
     ],
     ['MoonBoard, Off', { boardIsMoonboard: true, moonboardKeepLighting: 'off' }, null, null, null],
-    // Solo with Light the board as I swipe on, the setting lights the next climbs already.
-    ['solo, Light the board as I swipe on', { lightOnSwipe: true }, 'resume', null, null],
+    // Where Light automatically drives, its own drive lights the next climbs:
+    // the timed choice doesn't apply, on a MoonBoard neither.
+    ['Light automatically on', { alwaysDrive: true }, 'resume', null, null],
+    ['Light automatically on, a MoonBoard', { alwaysDrive: true, boardIsMoonboard: true }, 'resume', null, null],
     ['the swipe flag off', { swipeToDriveEnabled: false }, null, null, null],
   ];
   const cases = PUT_UP.flatMap(([name, state]) =>
@@ -1127,7 +1113,7 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
 
   it('never keeps lighting from a relay, Set active, a wall with no lights, or a press that puts nothing up', () => {
     // A crewmate's board: the press relays the climb to their phone.
-    const relay = resolveWallControl({ ...FREE, ...SAMS, ...ON, solo: false, commitButton: 'putOnWall' });
+    const relay = resolveWallControl({ ...FREE, ...SAMS, ...ON, commitButton: 'putOnWall' });
     expect(relay).toMatchObject({ holder: 'crew', tapDrive: null, tapKeepLighting: null });
     expect(relay.tapAction).not.toBe('connect');
     // Set active: no wall in reach.

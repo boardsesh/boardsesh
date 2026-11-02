@@ -477,8 +477,10 @@ The wall button has two looks. Plain tonal means a preview or a single lit climb
 driving ("You are driving the wall": every climb you pick lights up). A drive started by Put on board
 is timed, so it also shows a small m:ss clock and the frost shrinks toward the bulb as the time runs out
 (width = remaining fraction), refilling to full on each lit climb. Under Reduce Motion it shrinks in 5 s
-steps. A swipe drive ("Light every climb") is open-ended: full frost, no clock, no shrink. There is no
-separate bar and no "Each pick lights" label; the same frost and label say "driving" for both.
+steps. A swipe drive ("Light every climb") is open-ended: full frost, no clock, no shrink. So is Light
+automatically's drive (Settings › Board), which keeps the phone driving whenever its link holds the board:
+it is the same frost and label, not a look of its own. There is no separate bar and no "Each pick lights"
+label; the same frost and label say "driving" for every drive.
 The preview cue ("Preview · not on the wall") lives in the top bar's second line, not on the art.
 
 Round 2 still answered "is this climb lit?" in up to four places that could disagree: the header face pill, the bulb's

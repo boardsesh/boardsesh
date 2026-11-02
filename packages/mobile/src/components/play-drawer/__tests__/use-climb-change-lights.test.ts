@@ -1,65 +1,52 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
 import { resetAllSettings, setSetting } from '../../../settings';
 
-const drive = vi.hoisted(() => ({ phase: 'off' as 'off' | 'arming' | 'live', stopped: false, windowLapsed: false }));
-vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));
+const drive = vi.hoisted(() => ({ phase: 'off' as 'off' | 'arming' | 'live', windowLapsed: false }));
 vi.mock('../drive-mode-store', () => ({
   getDriveMode: () => (drive.phase === 'off' ? null : { phase: drive.phase }),
   // The store's at-pick read: a keep-lighting window past its end is no drive (#7038).
   drivingAtPick: (rendered: boolean) => rendered && !drive.windowLapsed,
-  isDrivingStoppedForLink: () => drive.stopped,
   useDriveModePhase: () => drive.phase,
-  useDrivingStoppedForLink: () => drive.stopped,
 }));
 
-import { readClimbChangeLights } from '../use-climb-change-lights';
+import { isDrivingWall, useDrivingWall } from '../use-climb-change-lights';
 
 beforeEach(() => {
   resetAllSettings();
   drive.phase = 'off';
-  drive.stopped = false;
   drive.windowLapsed = false;
 });
 
+// Preview-first: a change of climb lights the wall only while this phone
+// drives it. Light automatically is a drive like any other, so no setting is
+// read here.
 describe('the live preview-first lighting policy', () => {
-  it('keeps taps and navigation in preview with untouched settings', () => {
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
-    expect(readClimbChangeLights('swipe', { inSharedSession: false })).toBe(false);
+  it('keeps taps and navigation in preview outside a drive', () => {
+    expect(isDrivingWall()).toBe(false);
+    expect(renderHook(() => useDrivingWall()).result.current).toBe(false);
   });
 
-  it('reads each saved opt-in independently when the selection happens', () => {
-    setSetting('lightOnClimbTap', true);
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(true);
-    expect(readClimbChangeLights('swipe', { inSharedSession: false })).toBe(false);
-    setSetting('lightOnClimbTap', false);
-    setSetting('lightOnSwipe', true);
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
-    expect(readClimbChangeLights('swipe', { inSharedSession: false })).toBe(true);
+  it('reads no setting: Light automatically on with no drive still previews', () => {
+    setSetting('alwaysDrive', true);
+    expect(isDrivingWall()).toBe(false);
+    expect(renderHook(() => useDrivingWall()).result.current).toBe(false);
   });
 
-  it('keeps opted-in selections private in a crew until Driver mode is live', () => {
-    setSetting('lightOnClimbTap', true);
-    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(false);
+  it('lights only once the drive is live', () => {
     drive.phase = 'arming';
-    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(false);
+    expect(isDrivingWall()).toBe(false);
+    expect(renderHook(() => useDrivingWall()).result.current).toBe(false);
     drive.phase = 'live';
-    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(true);
-    expect(readClimbChangeLights('swipe', { inSharedSession: true })).toBe(true);
+    expect(isDrivingWall()).toBe(true);
+    expect(renderHook(() => useDrivingWall()).result.current).toBe(true);
   });
 
   it('reads a keep-lighting window past its end as no drive at the tap', () => {
     drive.phase = 'live';
-    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(true);
+    expect(isDrivingWall()).toBe(true);
     drive.windowLapsed = true;
-    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(false);
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
-  });
-
-  it('honors a stop on the current link even when both lighting settings are on', () => {
-    setSetting('lightOnClimbTap', true);
-    setSetting('lightOnSwipe', true);
-    drive.stopped = true;
-    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
-    expect(readClimbChangeLights('swipe', { inSharedSession: false })).toBe(false);
+    expect(isDrivingWall()).toBe(false);
   });
 });

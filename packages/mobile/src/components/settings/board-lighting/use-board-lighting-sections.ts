@@ -29,8 +29,7 @@ export function useBoardLightingSections(): MoreSection[] {
   const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
   const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
-  const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
-  const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
+  const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
   const [playlistTapLoadsQueue, setPlaylistTapLoadsQueue] = useSetting('playlistTapLoadsQueue');
   // MoonBoard "V2" additional-LED feature: same setting and toggle handler as the
   // BLE control sheet (BleControlSheetHost), so it is reachable without opening a
@@ -81,18 +80,11 @@ export function useBoardLightingSections(): MoreSection[] {
             setDisconnectWhenDrivingEnds(enabled);
           },
         },
-        lightOnSwipe: {
-          enabled: lightOnSwipe,
+        alwaysDrive: {
+          enabled: alwaysDrive,
           onChange: (enabled) => {
             hapticSelection();
-            setLightOnSwipe(enabled);
-          },
-        },
-        lightOnClimbTap: {
-          enabled: lightOnClimbTap,
-          onChange: (enabled) => {
-            hapticSelection();
-            setLightOnClimbTap(enabled);
+            setAlwaysDrive(enabled);
           },
         },
         playlistTapLoadsQueue: {
@@ -131,10 +123,8 @@ export function useBoardLightingSections(): MoreSection[] {
       setDrivesInSession,
       disconnectWhenDrivingEnds,
       setDisconnectWhenDrivingEnds,
-      lightOnSwipe,
-      setLightOnSwipe,
-      lightOnClimbTap,
-      setLightOnClimbTap,
+      alwaysDrive,
+      setAlwaysDrive,
       playlistTapLoadsQueue,
       setPlaylistTapLoadsQueue,
       showMoonboardLightAdjacentHolds,

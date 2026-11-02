@@ -112,7 +112,7 @@
         "title": "Light climbs on {{board}}",
         "titleNoName": "Light climbs on your board",
         "body": "Connect this phone to the board, then tap a climb and Put on board to light it.",
-        "bodyTapLights": "Connect this phone to the board, then tap any climb to light it.",
+        "bodyAlwaysDrive": "Connect this phone to the board and you drive the wall: every climb you pick lights.",
         "connect": "Connect",
         "tryAgain": "Try again",
         "noLights": "This wall has no lights",
@@ -125,7 +125,7 @@
       "confirm": {
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",
-        "body": "Tapping a climb in the list now lights it on the wall.",
+        "bodyAlwaysDrive": "Light automatically is on, so you drive the wall: every climb you pick lights until you tap the button to stop.",
         "bodyWindow": "Put on board lets you drive the wall: for {{seconds}} seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
         "bodyWindowMinute": "Put on board lets you drive the wall: for 1 minute after each climb lights, every climb you pick lights too. After that, tap Put on board again.",
         "bodyWindowMinutes": "Put on board lets you drive the wall: for {{minutes}} minutes after each climb lights, every climb you pick lights too. After that, tap Put on board again.",

@@ -6,7 +6,7 @@ import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from './playli
 import { tickToClimb, type TickLike } from './tick-to-climb';
 import { buildBoardClimbTarget } from './routing/board-route-target';
 import { createClimbHandoffIntent } from './routing/climb-handoff-intent';
-import { readClimbChangeLights } from '../components/play-drawer/use-climb-change-lights';
+import { isDrivingWall } from '../components/play-drawer/use-climb-change-lights';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -63,9 +63,10 @@ function openModeOptions(climb: Climb, preview: boolean): Pick<OpenPlayDrawerOpt
  */
 export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, options?: OpenClimbOptions): void {
   const { openPlayDrawer, router } = deps;
-  // The host applies the crew rule too. Pin the default solo preview here so
-  // its first render, and a missing-frames route handoff, retain the same intent.
-  const preview = options?.preview === true || !readClimbChangeLights('tap', { inSharedSession: false });
+  // Outside a drive an open is a preview; the host applies the same rule. Pin
+  // it here so its first render, and a missing-frames route handoff, retain
+  // the same intent.
+  const preview = options?.preview === true || !isDrivingWall();
 
   if (args.kind === 'climb') {
     openPlayDrawer(args.climb, {

@@ -107,7 +107,7 @@ beforeEach(() => {
     putOnBoardKeepsLighting: '45',
     moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
-    lightOnSwipe: false,
+    alwaysDrive: false,
   };
   resetLockScreenLightingForTests();
 });
@@ -216,6 +216,16 @@ describe('LiveActivityLightingSync', () => {
     const sends = harness.configs.length;
     view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="moonboard" activityStartCount={0} />);
     expect(harness.configs).toHaveLength(sends);
+  });
+
+  // Light automatically drives every pick already: a lock-screen press lights
+  // its climb and starts no drive, so native is told to keep none.
+  it('mirrors Light automatically turning on as a press that keeps nothing lighting', () => {
+    const view = renderSync();
+    expect(harness.configs.at(-1)).toMatchObject({ enabled: true });
+    harness.settings.alwaysDrive = true;
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="kilter" activityStartCount={0} />);
+    expect(harness.configs.at(-1)).toMatchObject({ enabled: false });
   });
 
   it('clears both outside a session', () => {

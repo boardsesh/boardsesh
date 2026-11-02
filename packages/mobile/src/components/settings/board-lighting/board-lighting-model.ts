@@ -18,12 +18,16 @@ export type BoardLightingModelInput = {
   drivesInSession: Toggle;
   /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
   disconnectWhenDrivingEnds: Toggle;
-  lightOnSwipe: Toggle;
-  lightOnClimbTap: Toggle;
+  /**
+   * Light automatically: always drive the wall while this phone holds the
+   * board. On, Stop driving after (and the MoonBoard's) shows greyed with its
+   * reason, and In a session too applies whatever Stop driving after says.
+   */
+  alwaysDrive: Toggle;
   /**
    * Whether a playlist, For You or setter-page tap loads that list into the
-   * queue (F4, #6667). Leads the group after the two lighting switches: like
-   * Light the board when I tap a climb, it says what a list tap does.
+   * queue (F4, #6667). Under Light automatically: like it, it says what a
+   * list tap does.
    */
   playlistTapLoadsQueue: Toggle;
   /**
@@ -89,7 +93,7 @@ function keepLightingRow(
   key: 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting',
   label: string,
   picker: KeepLightingPicker,
-  extra: { subtitle?: string; accessibilityLabel?: string } = {},
+  extra: { subtitle?: string; accessibilityLabel?: string; disabled?: boolean } = {},
 ): MoreSelectRow {
   return {
     kind: 'select',
@@ -97,6 +101,7 @@ function keepLightingRow(
     label,
     ...(extra.accessibilityLabel ? { accessibilityLabel: extra.accessibilityLabel } : {}),
     ...(extra.subtitle ? { subtitle: extra.subtitle } : {}),
+    ...(extra.disabled ? { disabled: true } : {}),
     options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
     selectedKey: picker.choice,
     onSelect: (selected) => {
@@ -114,22 +119,25 @@ function keepLightingRow(
  * state follows only the general choice; a MoonBoard's applies in a session
  * anyway). Under that card, what happens when a drive ends: Disconnect
  * Bluetooth when driving ends, which frees the board for the next climber (it
- * replaced auto-disconnect). Then what lights the connected board on its own
- * (Light automatically), then what a list tap does (and the MoonBoard's extra
- * LEDs).
+ * replaced auto-disconnect). Then Light automatically, then what a list tap
+ * does (and the MoonBoard's extra LEDs).
  *
- * The two lighting switches get a group of their own, tap first and swipe
- * under it, because swipe only matters once tap (or Put on the wall) has a
- * climb on the wall: a preview never lights the board as you swipe, whatever
- * the swipe switch says (`swipeStaysViewOnly`). The swipe row's subtitle says
- * so, since six climbers in six read the old side-by-side pair as independent.
+ * Light automatically is one switch (it replaced Light the board when I tap a
+ * climb and Light the board as I swipe): on, this phone always drives the
+ * wall while it holds the board, so Stop driving after and the MoonBoard's
+ * choice don't apply. They stay in place, greyed, and the card's footer says
+ * why; In a session too still decides a crew session, so it is never greyed
+ * then.
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
   const { t } = input;
 
+  const alwaysDrive = input.alwaysDrive.enabled;
   const keepOff = input.keepLighting.choice === 'off';
   const keepRows: MoreRow[] = [
-    keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting),
+    keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting, {
+      disabled: alwaysDrive,
+    }),
   ];
   if (input.moonboardKeepLighting) {
     keepRows.push(
@@ -139,9 +147,13 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
         t('settings:ble.lighting.keep.moonboardLabel'),
         input.moonboardKeepLighting,
         {
-          subtitle: t('settings:ble.lighting.keep.moonboardDescription'),
+          // Greyed, the row says why where a screen reader lands on it.
+          subtitle: alwaysDrive
+            ? t('settings:ble.lighting.keep.alwaysDriveReason')
+            : t('settings:ble.lighting.keep.moonboardDescription'),
           // Named on its own (spec B4): the rotor and Voice Control read it without the row above.
           accessibilityLabel: t('settings:ble.lighting.keep.moonboardAccessibilityLabel'),
+          disabled: alwaysDrive,
         },
       ),
     );
@@ -152,10 +164,12 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     label: t('settings:ble.lighting.keep.inSessionLabel'),
     accessibilityLabel: t('settings:ble.lighting.keep.inSessionAccessibilityLabel'),
     subtitle: t('settings:ble.lighting.keep.inSessionDescription'),
-    // Greyed with the general choice Off: the reason replaces the description, at full contrast.
+    // Greyed with the general choice Off: the reason replaces the description,
+    // at full contrast. Light automatically drives in a session only with it
+    // on, so it is never greyed then.
     disabledReason: t('settings:ble.lighting.keep.inSessionOffReason'),
     value: input.drivesInSession.enabled,
-    disabled: keepOff,
+    disabled: keepOff && !alwaysDrive,
     onValueChange: input.drivesInSession.onChange,
   });
 
@@ -182,19 +196,11 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
   const lightingRows: MoreRow[] = [
     {
       kind: 'toggle',
-      key: 'lightOnClimbTap',
-      label: t('settings:ble.lighting.onTapLabel'),
-      subtitle: t('settings:ble.lighting.onTapDescription'),
-      value: input.lightOnClimbTap.enabled,
-      onValueChange: input.lightOnClimbTap.onChange,
-    },
-    {
-      kind: 'toggle',
-      key: 'lightOnSwipe',
-      label: t('settings:ble.lighting.onSwipeLabel'),
-      subtitle: t('settings:ble.lighting.onSwipeDescription'),
-      value: input.lightOnSwipe.enabled,
-      onValueChange: input.lightOnSwipe.onChange,
+      key: 'alwaysDrive',
+      label: t('settings:ble.lighting.alwaysDriveLabel'),
+      subtitle: t('settings:ble.lighting.alwaysDriveDescription'),
+      value: alwaysDrive,
+      onValueChange: input.alwaysDrive.onChange,
     },
   ];
   const moreLightingRows: MoreRow[] = [
@@ -222,7 +228,10 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     {
       key: 'keepLighting',
       title: t('settings:ble.lighting.title'),
-      footer: keepLightingFooter(t, input.keepLighting.choice),
+      // Greyed under Light automatically: the footer says why instead.
+      footer: alwaysDrive
+        ? t('settings:ble.lighting.keep.alwaysDriveReason')
+        : keepLightingFooter(t, input.keepLighting.choice),
       rows: keepRows,
     },
     {
@@ -233,12 +242,11 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     },
     {
       key: 'lightingAuto',
-      title: t('settings:ble.lighting.autoTitle'),
-      footer: t('settings:ble.lighting.description'),
+      footer: t('settings:ble.lighting.alwaysDriveFooter'),
       rows: lightingRows,
     },
     {
-      // Untitled: Light automatically's second card, so the pair above stays a pair.
+      // Untitled: Light automatically's second card, so its footer stays with it.
       key: 'lightingMore',
       rows: moreLightingRows,
     },

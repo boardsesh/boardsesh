@@ -14,14 +14,13 @@ const profileCtrl = vi.hoisted(() => ({ id: 'user-1' as string | undefined }));
 const flagsCtrl = vi.hoisted(() => ({ enabled: true, keepLighting: true }));
 const settingsCtrl = vi.hoisted(() => ({
   values: {
-    lightOnClimbTap: true,
-    lightOnSwipe: false,
+    alwaysDrive: true,
     putOnBoardKeepsLighting: '45',
     moonboardPutOnBoardKeepsLighting: 'until_stopped',
     putOnBoardDrivesInSession: true,
   } as Record<string, unknown>,
 }));
-const sessionCtrl = vi.hoisted(() => ({ crew: false, shared: false }));
+const sessionCtrl = vi.hoisted(() => ({ crew: false }));
 const boardCtrl = vi.hoisted(() => ({ boardType: 'kilter' }));
 const bluetoothCtrl = vi.hoisted(() => ({
   isConnected: false,
@@ -77,7 +76,6 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 vi.mock('../../../settings', () => ({ useSetting: (key: string) => [settingsCtrl.values[key], vi.fn()] }));
 vi.mock('../../../providers/queue-provider', () => ({
   useIsCrewSession: () => sessionCtrl.crew,
-  useIsSharedSession: () => sessionCtrl.shared,
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -120,14 +118,12 @@ describe('FirstConnectHost', () => {
     flagsCtrl.enabled = true;
     flagsCtrl.keepLighting = true;
     settingsCtrl.values = {
-      lightOnClimbTap: true,
-      lightOnSwipe: false,
+      alwaysDrive: true,
       putOnBoardKeepsLighting: '45',
       moonboardPutOnBoardKeepsLighting: 'until_stopped',
       putOnBoardDrivesInSession: true,
     };
     sessionCtrl.crew = false;
-    sessionCtrl.shared = false;
     boardCtrl.boardType = 'kilter';
     chooseMock.mockImplementation(async () => 'got_it');
     settleCtrl.ms = 5;
@@ -184,7 +180,8 @@ describe('FirstConnectHost', () => {
     await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
     expect(chooseMock).toHaveBeenCalledWith({
       title: 'Connected to Kilter at Blocs',
-      message: 'Tapping a climb in the list now lights it on the wall.',
+      message:
+        'Light automatically is on, so you drive the wall: every climb you pick lights until you tap the button to stop.',
       options: [{ value: 'got_it', label: 'Got it' }],
       cancelValue: 'got_it',
     });
@@ -237,10 +234,10 @@ describe('FirstConnectHost', () => {
     return request.message;
   }
 
-  // With Light on tap off (the 2.7 default) it still confirms, and says what
-  // Put on board keeps lighting instead of promising a tap lights a climb.
-  it('confirms with Light on tap off too, naming Put on board’s window', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+  // With Light automatically off (the default) it still confirms, and says what
+  // Put on board keeps lighting instead of promising every pick lights.
+  it('confirms with Light automatically off too, naming Put on board’s window', async () => {
+    settingsCtrl.values.alwaysDrive = false;
 
     expect(await confirmFirstConnect()).toBe(
       'Put on board lets you drive the wall: for 45 seconds after each climb lights, every climb you pick lights too. After that, tap Put on board again.',
@@ -249,7 +246,7 @@ describe('FirstConnectHost', () => {
   });
 
   it('reads the window from the climber’s keep-lighting choice', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '30';
 
     expect(await confirmFirstConnect()).toMatch(
@@ -258,7 +255,7 @@ describe('FirstConnectHost', () => {
   });
 
   it('says a 60 s window the way the preview-first card does', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '60';
 
     expect(await confirmFirstConnect()).toBe(
@@ -266,25 +263,38 @@ describe('FirstConnectHost', () => {
     );
   });
 
-  // A list tap in a shared session stays a preview whatever Light on tap says.
-  it('never says a tap lights a climb in a shared session', async () => {
-    sessionCtrl.shared = true;
+  // In a crew, Light automatically drives only with In a session too on.
+  it('says every pick lights in a crew with In a session too on', async () => {
+    sessionCtrl.crew = true;
 
-    expect(await confirmFirstConnect()).toMatch(
-      /^Put on board lets you drive the wall: for 45 seconds after each climb/,
-    );
+    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
   });
 
-  // Solo with Light the board as I swipe on, Put on board opens no window.
-  it('promises no window solo with Light the board as I swipe on', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
-    settingsCtrl.values.lightOnSwipe = true;
+  it('falls back to Put on board in a crew with In a session too off', async () => {
+    settingsCtrl.values.putOnBoardDrivesInSession = false;
+    sessionCtrl.crew = true;
 
     expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
+  // A MoonBoard drives in a crew whatever In a session too says.
+  it('says every pick lights on a MoonBoard in a crew with In a session too off', async () => {
+    settingsCtrl.values.putOnBoardDrivesInSession = false;
+    sessionCtrl.crew = true;
+    boardCtrl.boardType = 'moonboard';
+
+    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
+  });
+
+  // Light automatically isn't Put on board's drive: its kill switch doesn't apply.
+  it('says every pick lights with the swipe flag off too', async () => {
+    flagsCtrl.keepLighting = false;
+
+    expect(await confirmFirstConnect()).toMatch(/^Light automatically is on, so you drive the wall/);
+  });
+
   it('names a 5 minute drive in minutes', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardKeepsLighting = '300';
 
     expect(await confirmFirstConnect()).toMatch(
@@ -293,7 +303,7 @@ describe('FirstConnectHost', () => {
   });
 
   it('says a MoonBoard keeps lighting until the climber stops it', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     boardCtrl.boardType = 'moonboard';
 
     expect(await confirmFirstConnect()).toBe(
@@ -302,14 +312,14 @@ describe('FirstConnectHost', () => {
   });
 
   it('promises one climb where no window can start', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     flagsCtrl.keepLighting = false;
 
     expect(await confirmFirstConnect()).toBe('Tap a climb, then Put on board to light it on the wall.');
   });
 
   it('honours In a session too in a crew session', async () => {
-    settingsCtrl.values.lightOnClimbTap = false;
+    settingsCtrl.values.alwaysDrive = false;
     settingsCtrl.values.putOnBoardDrivesInSession = false;
     sessionCtrl.crew = true;
 

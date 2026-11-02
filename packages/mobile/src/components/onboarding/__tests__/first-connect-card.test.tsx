@@ -40,8 +40,8 @@ const storeCtrl = vi.hoisted(() => ({
   },
 }));
 const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
-const settingsCtrl = vi.hoisted(() => ({ lightOnClimbTap: false }));
-const sessionCtrl = vi.hoisted(() => ({ shared: false }));
+const settingsCtrl = vi.hoisted(() => ({ alwaysDrive: false, drivesInSession: true }));
+const sessionCtrl = vi.hoisted(() => ({ crew: false }));
 const bluetoothMocks = vi.hoisted(() => ({
   // The hook's own connect (`useLightbulbControl().connect`): it logs Board
   // Connect Tapped, arms the undo toast and relights the remembered board; its
@@ -146,11 +146,12 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 }));
 vi.mock('../../../settings', () => ({
   useSetting: (key: string) => {
-    if (key !== 'lightOnClimbTap') throw new Error(`unexpected setting ${key}`);
-    return [settingsCtrl.lightOnClimbTap, vi.fn()];
+    if (key === 'alwaysDrive') return [settingsCtrl.alwaysDrive, vi.fn()];
+    if (key === 'putOnBoardDrivesInSession') return [settingsCtrl.drivesInSession, vi.fn()];
+    throw new Error(`unexpected setting ${key}`);
   },
 }));
-vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => sessionCtrl.shared }));
+vi.mock('../../../providers/queue-provider', () => ({ useIsCrewSession: () => sessionCtrl.crew }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
@@ -192,8 +193,9 @@ describe('FirstConnectCard', () => {
       cardDismissedThisLaunch: false,
     };
     flagsCtrl.enabled = true;
-    settingsCtrl.lightOnClimbTap = false;
-    sessionCtrl.shared = false;
+    settingsCtrl.alwaysDrive = false;
+    settingsCtrl.drivesInSession = true;
+    sessionCtrl.crew = false;
     lightbulbCtrl.pressAction = 'connect';
     lightbulbCtrl.pending = false;
     lightbulbCtrl.holderIsAuthoritative = false;
@@ -225,24 +227,41 @@ describe('FirstConnectCard', () => {
     expect(screen.getByLabelText('Not now')).toBeTruthy();
   });
 
-  // A tap lights a climb only with Light the board when I tap a climb on; off
-  // (the 2.7 default) it opens a preview, so the card names Put on board.
-  it('says a tap lights a climb only while Light on tap is on', () => {
-    settingsCtrl.lightOnClimbTap = true;
-    renderCard();
-
-    expect(screen.getByText('Connect this phone to the board, then tap any climb to light it.')).toBeTruthy();
-    expect(screen.queryByText(/Put on board/)).toBeNull();
-  });
-
-  // A list tap in a shared session stays a preview whatever the setting says.
-  it('names Put on board in a shared session even with Light on tap on', () => {
-    settingsCtrl.lightOnClimbTap = true;
-    sessionCtrl.shared = true;
+  // Light automatically on: this phone drives the wall once connected, so every
+  // pick lights; off (the default) a tap opens a preview, so the card names Put
+  // on board.
+  it('says every pick lights while Light automatically is on', () => {
+    settingsCtrl.alwaysDrive = true;
     renderCard();
 
     expect(
-      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
+      screen.getByText('Connect this phone to the board and you drive the wall: every climb you pick lights.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Put on board/)).toBeNull();
+  });
+
+  // In a crew Light automatically drives only with In a session too on.
+  it.each([
+    [false, 'Connect this phone to the board, then tap a climb and Put on board to light it.'],
+    [true, 'Connect this phone to the board and you drive the wall: every climb you pick lights.'],
+  ])('in a crew with In a session too %s, says what lights', (drivesInSession, body) => {
+    settingsCtrl.alwaysDrive = true;
+    settingsCtrl.drivesInSession = drivesInSession;
+    sessionCtrl.crew = true;
+    renderCard();
+
+    expect(screen.getByText(body)).toBeTruthy();
+  });
+
+  // A MoonBoard drives in a crew whatever In a session too says.
+  it('says every pick lights on a MoonBoard in a crew with In a session too off', () => {
+    settingsCtrl.alwaysDrive = true;
+    settingsCtrl.drivesInSession = false;
+    sessionCtrl.crew = true;
+    render(<FirstConnectCard boardName="MoonBoard at home" boardType="moonboard" boardHasLights />);
+
+    expect(
+      screen.getByText('Connect this phone to the board and you drive the wall: every climb you pick lights.'),
     ).toBeTruthy();
   });
 

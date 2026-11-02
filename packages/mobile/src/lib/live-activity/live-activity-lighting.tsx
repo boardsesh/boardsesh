@@ -54,7 +54,7 @@ export function useLiveActivityLighting({
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
-  const [lightOnSwipe] = useSetting('lightOnSwipe');
+  const [alwaysDrive] = useSetting('alwaysDrive');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
   const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   // The roster's crew, as Put on board and DriveModeWatcher read it.
@@ -76,7 +76,7 @@ export function useLiveActivityLighting({
           isCrewSession,
           boardName,
           swipeToDriveEnabled,
-          lightOnSwipe,
+          alwaysDrive,
         })
       : null;
     const serialized = JSON.stringify(config);
@@ -93,7 +93,7 @@ export function useLiveActivityLighting({
     isCrewSession,
     boardName,
     swipeToDriveEnabled,
-    lightOnSwipe,
+    alwaysDrive,
     activityStartCount,
   ]);
 

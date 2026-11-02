@@ -1,6 +1,6 @@
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { readHeldQueueItemUuid } from '../../lib/held-climb-reader';
-import { readClimbChangeLights } from './use-climb-change-lights';
+import { isDrivingWall } from './use-climb-change-lights';
 import { isCommittedHeadClimb } from './wall-state';
 
 /**
@@ -15,8 +15,8 @@ import { isCommittedHeadClimb } from './wall-state';
 export type QueuePickLanding = 'commit' | 'reopen' | 'preview';
 
 /**
- * With automatic lighting opted in, or this phone driving, every pick commits.
- * Otherwise (preview-first, the 2.7 default) a pick previews, except a pick of
+ * While this phone drives the wall (a swipe, Put on board, or Light
+ * automatically), every pick commits. Otherwise (preview-first) a pick previews, except a pick of
  * the climb already up: the commit bar compares climbs, not entries
  * (`isCommittedHeadClimb`), so its preview would show no Put on board and the
  * pick could never land. That pick:
@@ -51,7 +51,7 @@ export function resolveQueuePickLanding({
   return 'commit';
 }
 
-/** `resolveQueuePickLanding` as it reads at the tap: the lighting rule and the hold right now. */
+/** `resolveQueuePickLanding` as it reads at the tap: driving and the hold right now. */
 export function readQueuePickLanding(
   picked: ClimbQueueItem,
   { current, inSharedSession }: { current: ClimbQueueItem | null; inSharedSession: boolean },
@@ -59,7 +59,7 @@ export function readQueuePickLanding(
   return resolveQueuePickLanding({
     picked,
     current,
-    lightsOnPick: readClimbChangeLights('tap', { inSharedSession }),
+    lightsOnPick: isDrivingWall(),
     inSharedSession,
     heldQueueItemUuid: readHeldQueueItemUuid(),
   });

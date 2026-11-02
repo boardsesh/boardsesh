@@ -223,6 +223,7 @@ vi.mock('@boardsesh/playlists-react', async () => ({
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
 import { SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../queue/use-queue-persistence';
 import { setSetting } from '../../settings/hooks';
+import { resetDriveModeForTests, startAlwaysDrive } from '../../components/play-drawer/drive-mode-store';
 import {
   usePlaylistActivation,
   type PlaylistActivationResult,
@@ -307,6 +308,7 @@ afterEach(() => {
   vi.useRealTimers();
   // Settings are module state; a case that turns one on must not leak it.
   setSetting('playlistTapLoadsQueue', false);
+  resetDriveModeForTests();
 });
 
 describe('QueueProvider board switch (#5099)', () => {
@@ -1000,7 +1002,8 @@ describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', 
   });
 
   it('walks the queue after "Start playlist" from a climb this board cannot draw, adding no copies', async () => {
-    setSetting('lightOnClimbTap', true);
+    // Driving the wall (Light automatically's drive): a tap lights.
+    startAlwaysDrive({ sessionId: null, boardId: null });
     // "Start playlist" is the replace, which a tap only does with the switch on.
     setSetting('playlistTapLoadsQueue', true);
     // A smart list is fetched by board name, so a climb from another layout

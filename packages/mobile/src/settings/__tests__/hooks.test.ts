@@ -42,8 +42,7 @@ describe('settings', () => {
   describe('getSetting', () => {
     it('returns default when no value is stored', () => {
       expect(getSetting('autoConnectBle')).toBe(true);
-      expect(getSetting('lightOnClimbTap')).toBe(false);
-      expect(getSetting('lightOnSwipe')).toBe(false);
+      expect(getSetting('alwaysDrive')).toBe(false);
       expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('qaPromptOnLaunch')).toBe(false);
@@ -56,11 +55,9 @@ describe('settings', () => {
       expect(getSetting('autoConnectBle')).toBe(false);
     });
 
-    it('preserves saved automatic-lighting opt-ins after defaults change', () => {
-      mockStorage.set('lightOnClimbTap', 'true');
-      mockStorage.set('lightOnSwipe', 'true');
-      expect(getSetting('lightOnClimbTap')).toBe(true);
-      expect(getSetting('lightOnSwipe')).toBe(true);
+    it('preserves a saved Light automatically opt-in', () => {
+      mockStorage.set('alwaysDrive', 'true');
+      expect(getSetting('alwaysDrive')).toBe(true);
     });
 
     it('returns stored string value parsed from JSON', () => {

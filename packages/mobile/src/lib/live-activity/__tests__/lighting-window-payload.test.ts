@@ -73,7 +73,7 @@ describe('buildKeepLightingConfig', () => {
     isCrewSession: true,
     boardName: 'kilter',
     swipeToDriveEnabled: true,
-    lightOnSwipe: false,
+    alwaysDrive: false,
   };
 
   it('mirrors both choices, In a session too, the crew and the board family', () => {
@@ -100,9 +100,23 @@ describe('buildKeepLightingConfig', () => {
   it('is off where a press would not start a drive in the app either', () => {
     // The swipe flag is the drive's kill switch.
     expect(buildKeepLightingConfig({ ...base, swipeToDriveEnabled: false }).enabled).toBe(false);
-    // Solo with Light the board as I swipe, every pick lights already.
-    expect(buildKeepLightingConfig({ ...base, isCrewSession: false, lightOnSwipe: true }).enabled).toBe(false);
-    // In a crew that setting isn't honoured, so the press keeps lighting.
-    expect(buildKeepLightingConfig({ ...base, isCrewSession: true, lightOnSwipe: true }).enabled).toBe(true);
+    // Where Light automatically drives, every pick lights already: solo, and
+    // in a crew with In a session too on.
+    expect(buildKeepLightingConfig({ ...base, isCrewSession: false, alwaysDrive: true }).enabled).toBe(false);
+    expect(buildKeepLightingConfig({ ...base, isCrewSession: true, alwaysDrive: true }).enabled).toBe(false);
+    // In a crew with In a session too off it doesn't drive, so the press keeps lighting.
+    expect(
+      buildKeepLightingConfig({ ...base, isCrewSession: true, drivesInSession: false, alwaysDrive: true }).enabled,
+    ).toBe(true);
+    // A MoonBoard drives in a crew whatever In a session too says.
+    expect(
+      buildKeepLightingConfig({
+        ...base,
+        boardName: 'moonboard',
+        isCrewSession: true,
+        drivesInSession: false,
+        alwaysDrive: true,
+      }).enabled,
+    ).toBe(false);
   });
 });

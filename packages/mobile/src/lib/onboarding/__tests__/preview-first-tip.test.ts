@@ -246,11 +246,19 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true })).toEqual({ key: 'moonboard' });
   });
 
-  // Solo with Light the board as I swipe on, the press opens no window (the
-  // wall control's `tapDrive: 'resume'`), so the card promises none.
-  it('names no window solo with Light the board as I swipe on', () => {
-    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, swipeLightsSolo: true })).toBeNull();
-    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, swipeLightsSolo: true })).toBeNull();
+  // Where Light automatically drives, Put on board resumes its drive with no
+  // end (the wall control's `tapDrive: 'resume'`), whatever Stop driving after
+  // says, on a MoonBoard too: the card promises driving until you stop.
+  it('names driving until you stop where Light automatically drives', () => {
+    expect(resolvePreviewFirstWindowLine({ plan: plan(45_000), isMoonboard: false, alwaysDrive: true })).toEqual({
+      key: 'untilStop',
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: null, isMoonboard: false, alwaysDrive: true })).toEqual({
+      key: 'untilStop',
+    });
+    expect(resolvePreviewFirstWindowLine({ plan: plan(null), isMoonboard: true, alwaysDrive: true })).toEqual({
+      key: 'untilStop',
+    });
   });
 
   it('says whole minutes in minutes', () => {
@@ -284,10 +292,10 @@ describe('resolvePreviewFirstFrostLine', () => {
     }
   });
 
-  it('names none for Until I stop, Right away, or solo with Light the board as I swipe on', () => {
+  it('names none for Until I stop, Right away, or where Light automatically drives', () => {
     expect(resolvePreviewFirstFrostLine({ plan: plan(null) })).toBe('open_ended');
     expect(resolvePreviewFirstFrostLine({ plan: null })).toBe('open_ended');
-    expect(resolvePreviewFirstFrostLine({ plan: plan(45_000), swipeLightsSolo: true })).toBe('open_ended');
+    expect(resolvePreviewFirstFrostLine({ plan: plan(45_000), alwaysDrive: true })).toBe('open_ended');
   });
 });
 

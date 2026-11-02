@@ -86,7 +86,6 @@ export function buildDrivingSampleModel(selfFace: WallControlFace | null): WallC
     writing: false,
     navigationCommits: false,
     driveMode: 'live',
-    solo: true,
   });
 }
 
@@ -102,10 +101,11 @@ export type PlayerPreviewTipProps = {
    */
   keepLighting: KeepLightingPlan | null;
   /**
-   * Solo with Light the board as I swipe on: Put on board starts no drive
-   * there (the wall control's `tapDrive: 'resume'`), so the card names none.
+   * Light automatically drives here (`alwaysDriveApplies`): this phone drives
+   * with no end once it holds the board, so the card promises driving until
+   * the climber stops, whatever Stop driving after says.
    */
-  swipeLightsSolo?: boolean;
+  alwaysDrive?: boolean;
   /** The card should go, and why. */
   onExit: (exit: PlayerPreviewTipExit) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -115,7 +115,7 @@ function PlayerPreviewTipComponent({
   boardName,
   glow,
   keepLighting,
-  swipeLightsSolo = false,
+  alwaysDrive = false,
   onExit,
   onLayout,
 }: PlayerPreviewTipProps) {
@@ -128,7 +128,7 @@ function PlayerPreviewTipComponent({
   const windowLine = resolvePreviewFirstWindowLine({
     plan: keepLighting,
     isMoonboard: isMoonboardBoardName(boardName),
-    swipeLightsSolo,
+    alwaysDrive,
   });
 
   // A drive that starts while the card is up means the frost has been learned:
@@ -164,7 +164,7 @@ function PlayerPreviewTipComponent({
   const windowText = previewFirstWindowText(windowLine, t);
   // The clock and the shrinking frost only where Put on board's drive has one.
   const frostText = previewFirstFrostText(
-    resolvePreviewFirstFrostLine({ plan: keepLighting, swipeLightsSolo }),
+    resolvePreviewFirstFrostLine({ plan: keepLighting, alwaysDrive }),
     screenReaderEnabled,
     t,
   );

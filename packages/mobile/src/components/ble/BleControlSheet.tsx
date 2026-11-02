@@ -26,12 +26,11 @@ type BleControlSheetProps = {
   showLightAdjacentHolds: boolean;
   lightAdjacentHoldsEnabled: boolean;
   onToggleLightAdjacentHolds: (enabled: boolean) => void;
-  lightOnSwipe: boolean;
-  onToggleLightOnSwipe: (enabled: boolean) => void;
-  lightOnClimbTap: boolean;
-  onToggleLightOnClimbTap: (enabled: boolean) => void;
+  /** Light automatically: always drive the wall while this phone holds the board. */
+  alwaysDrive: boolean;
+  onToggleAlwaysDrive: (enabled: boolean) => void;
   /**
-   * Disconnect Bluetooth when driving ends and the two lighting switches. The
+   * Disconnect Bluetooth when driving ends and Light automatically. The
    * player's own sheet (#7000) leaves them to Settings › Board, where they
    * also live, so the sheet is just the board's actions. Today's bar keeps them.
    */
@@ -54,7 +53,8 @@ type BleControlSheetProps = {
   status?: ReactNode;
   /**
    * Stop driving after (2.7, spec B4), the first row: the timer changed or set
-   * to Right away at the wall in two taps. Omitted, no row.
+   * to Right away at the wall in two taps. Omitted, no row: the host leaves it
+   * out while Light automatically drives, where it doesn't apply.
    */
   keepLighting?: BleKeepLightingRowModel;
   onClose: () => void;
@@ -73,10 +73,8 @@ function BleControlSheet({
   showLightAdjacentHolds,
   lightAdjacentHoldsEnabled,
   onToggleLightAdjacentHolds,
-  lightOnSwipe,
-  onToggleLightOnSwipe,
-  lightOnClimbTap,
-  onToggleLightOnClimbTap,
+  alwaysDrive,
+  onToggleAlwaysDrive,
   showLightingSwitches = true,
   linked = true,
   onDrive,
@@ -138,25 +136,14 @@ function BleControlSheet({
             onValueChange={onToggleLightAdjacentHolds}
           />
         )}
+        {/* As on Settings › Board: one switch that always drives the wall. */}
         {showLightingSwitches && (
           <SwitchRow
-            label={tSettings('ble.lighting.onTapLabel')}
-            description={tSettings('ble.lighting.onTapDescription')}
+            label={tSettings('ble.lighting.alwaysDriveLabel')}
+            description={tSettings('ble.lighting.alwaysDriveDescription')}
             wrapDescription
-            value={lightOnClimbTap}
-            onValueChange={onToggleLightOnClimbTap}
-          />
-        )}
-        {/* Under the tap switch, the same pair and order as Settings › Board:
-            swiping only lights the board once a climb is on the wall, and its
-            description says so. Not indented, so both toggles stay aligned. */}
-        {showLightingSwitches && (
-          <SwitchRow
-            label={tSettings('ble.lighting.onSwipeLabel')}
-            description={tSettings('ble.lighting.onSwipeDescription')}
-            wrapDescription
-            value={lightOnSwipe}
-            onValueChange={onToggleLightOnSwipe}
+            value={alwaysDrive}
+            onValueChange={onToggleAlwaysDrive}
           />
         )}
         {showLightingSwitches || showLightAdjacentHolds || keepLighting ? <Separator /> : null}

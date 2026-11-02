@@ -45,7 +45,7 @@ vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: 
 vi.mock('../../../hooks/use-privacy-scoped-state', () => ({ usePrivacyScopedState: useState }));
 vi.mock('../../../hooks/use-is-climb-favorited', () => ({ useIsClimbFavorited: () => false }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
+vi.mock('../../play-drawer/use-climb-change-lights', () => ({ isDrivingWall: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));

@@ -444,11 +444,18 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
 
   // [case, model input, control, drive runner called, light runner called, stopped after]
   it.each<[string, Partial<WallControlInput>, 'button' | 'bulb', boolean, boolean, boolean]>([
-    ['solo, stopped, Light on swipe on', { solo: true, lightOnSwipe: true }, 'button', false, true, false],
-    ['solo, stopped, Light on swipe on, the bulb', { solo: true, lightOnSwipe: true }, 'bulb', false, true, false],
-    ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', false, true, true],
-    ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', false, true, true],
-    ['a crew', { solo: false, lightOnSwipe: true }, 'button', false, true, true],
+    ['stopped, Light automatically on', { alwaysDrive: true }, 'button', false, true, false],
+    ['stopped, Light automatically on, the bulb', { alwaysDrive: true }, 'bulb', false, true, false],
+    ['Light automatically off', { alwaysDrive: false }, 'button', false, true, true],
+    ['Light automatically off, the bulb', { alwaysDrive: false }, 'bulb', false, true, true],
+    [
+      'a crew, In a session too off (it does not drive here)',
+      { alwaysDrive: false, crewSession: true },
+      'button',
+      false,
+      true,
+      true,
+    ],
   ])('%s', (_name, input, control, drives, lights, stoppedAfter) => {
     stopDrivingForLink();
     const run = runners();
@@ -472,7 +479,7 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     stopDrivingForLink();
     const run = runners();
     run.drive.mockReturnValue('unavailable');
-    const { hook } = setup(previewAfterStop({ solo: true, lightOnSwipe: false }), run);
+    const { hook } = setup(previewAfterStop({ alwaysDrive: false }), run);
     act(() => hook.result.current.press('button'));
     expect(run.drive).not.toHaveBeenCalled();
     expect(run.light).toHaveBeenCalledOnce();
@@ -489,8 +496,7 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
       displayedIsWallClimb: true,
       presenceFresh: true,
       displayedIsOwnCurrent: true,
-      solo: true,
-      lightOnSwipe: false,
+      alwaysDrive: false,
     });
     expect(model.state).toBe('on_wall_unlinked');
     const { hook } = setup(model, run);
@@ -531,8 +537,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
     otherClimbLit: false,
     writing: false,
     navigationCommits: false,
-    solo: true,
-    lightOnSwipe: false,
+    alwaysDrive: false,
     swipeToDriveEnabled: true,
     keepLighting: '45',
     moonboardKeepLighting: 'until_stopped',
@@ -564,12 +569,12 @@ describe('useWallControl: Put on board keeps lighting', () => {
     realKeepLighting(run);
     // The question took the press: nothing went up.
     run.light.mockReturnValueOnce(false);
-    const { hook } = setup(preview({ solo: false, crewSession: true }), run);
+    const { hook } = setup(preview({ crewSession: true }), run);
     act(() => hook.result.current.press('button'));
     expect(run.keepLighting).not.toHaveBeenCalled();
     expect(getDriveMode()).toBeNull();
     // The question is up: the button waits.
-    hook.rerender({ model: preview({ solo: false, crewSession: true, confirmArmed: true }) });
+    hook.rerender({ model: preview({ crewSession: true, confirmArmed: true }) });
     act(() => hook.result.current.confirmPut());
     expect(run.light).toHaveBeenCalledTimes(2);
     expect(run.keepLighting).toHaveBeenCalledOnce();
@@ -604,10 +609,10 @@ describe('useWallControl: Put on board keeps lighting', () => {
     const run = runners();
     realKeepLighting(run);
     run.light.mockReturnValueOnce(false);
-    const { hook } = setup(preview({ solo: false, crewSession: true }), run);
+    const { hook } = setup(preview({ crewSession: true }), run);
     act(() => hook.result.current.press('button'));
     // The question holds the second row: the first-row bulb and the MiniPlayer's do nothing.
-    const asking = preview({ solo: false, crewSession: true, confirmArmed: true });
+    const asking = preview({ crewSession: true, confirmArmed: true });
     expect(asking.bulbTapAction).toBe('noop');
     hook.rerender({ model: asking });
     act(() => hook.result.current.press('bulb'));
@@ -672,9 +677,9 @@ describe('useWallControl: Put on board keeps lighting', () => {
     expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: 45_000, setting: 'putOnBoardKeepsLighting' });
   });
 
-  it('only drops a stop solo with Light the board as I swipe on: the setting lights the next climbs', () => {
+  it('only drops a stop where Light automatically drives: its own drive lights the next climbs', () => {
     stopDrivingForLink();
-    const { hook, run } = setup(preview({ lightOnSwipe: true, drivingStopped: true }));
+    const { hook, run } = setup(preview({ alwaysDrive: true, drivingStopped: true }));
     act(() => hook.result.current.press('button'));
     expect(run.light).toHaveBeenCalledOnce();
     expect(run.keepLighting).not.toHaveBeenCalled();

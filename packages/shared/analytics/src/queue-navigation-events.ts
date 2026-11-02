@@ -45,8 +45,8 @@ export type QueueNavigationSurface = 'player' | 'mini_player';
 
 /**
  * What the step did. `moved` put the next climb on the wall. `preview` showed it
- * without moving the wall: in a crew, or with Light on swipe off, a step only
- * looks (the MiniPlayer opens the player on the climb as a preview).
+ * without moving the wall: outside a drive a step only looks (the MiniPlayer
+ * opens the player on the climb as a preview).
  */
 export type QueueNavigationOutcome = 'moved' | 'preview';
 
@@ -80,11 +80,12 @@ export type QueueNavigationInput = QueueNavigationBoard & {
   outcome: QueueNavigationOutcome;
   /** Someone else is in the session with this climber. */
   inSharedSession: boolean;
-  /** The Light on swipe setting at the time of the step. */
-  lightOnSwipe: boolean;
+  /** Light automatically (always drive the wall) at the time of the step. */
+  alwaysDrive: boolean;
   /**
-   * The climber was driving the wall (#7113): a swipe on the wall button made
-   * every change of climb light it, in a crew too. Defaults to false.
+   * The climber was driving the wall (#7113): a swipe on the wall button, Put
+   * on board or Light automatically made every change of climb light it, in a
+   * crew too. Defaults to false.
    */
   driving?: boolean;
   /** Set only on a swipe that went before its board had painted. Absent on every other step. */
@@ -98,8 +99,9 @@ export type QueueNavigationProps = BoardTypeProperty & {
   outcome: QueueNavigationOutcome;
   /** www's name and values, kept so the two platforms read alike. */
   sessionMode: 'party' | 'solo';
-  lightOnSwipe: boolean;
-  /** Driving the wall (#7113): the step lit the wall whatever the session or the setting said. */
+  /** Light automatically was on. Replaced `lightOnSwipe` (Light the board as I swipe) in 2026-11. */
+  alwaysDrive: boolean;
+  /** Driving the wall (#7113): the step lit the wall whatever the session said. */
   driving: boolean;
   /** Null on a spray wall (its layout id names the wall) and with no board. */
   layoutId: number | null;
@@ -147,7 +149,7 @@ export function queueNavigation(
       surface: input.surface,
       outcome: input.outcome,
       sessionMode: input.inSharedSession ? 'party' : 'solo',
-      lightOnSwipe: input.lightOnSwipe,
+      alwaysDrive: input.alwaysDrive,
       driving: input.driving ?? false,
       ...boardTypeProperty(input.boardType),
       layoutId: layoutIdProperty(input),
@@ -165,7 +167,9 @@ export function queueNavigation(
  * swipe (or Put on board) never reached the wall. `session_changed`,
  * `board_changed`, `signed_out`: the drive's session, board or account went away.
  * `window_ended`: Put on board's keep-lighting window ran out with no climb lit
- * in it, or its setting was turned off.
+ * in it, or its setting was turned off. `always_off`: Light automatically's
+ * drive ended because the switch went off, or a crew formed (or In a session
+ * too went off in one) where it doesn't drive; the link stays.
  */
 export type DriveModeEndReason =
   | 'stopped'
@@ -176,19 +180,22 @@ export type DriveModeEndReason =
   | 'session_changed'
   | 'board_changed'
   | 'signed_out'
-  | 'window_ended';
+  | 'window_ended'
+  | 'always_off';
 
 /**
  * What started the drive (#7113): the wall button's swipe, a press on Put on
  * board that keeps lighting (the keep-lighting window, or an open-ended drive
  * where the setting says Until I stop, the MoonBoard default), the
- * screen-reader action or the board sheet's row, a solo climber driving by
- * Light the board as I swipe when a crew formed, or (2.7) a Lock Screen,
+ * screen-reader action or the board sheet's row, (2.7) a Lock Screen,
  * Dynamic Island or Android notification Next / Previous that opened the
  * window: natively on iOS, adopted once the app ran again, and in the app on
- * Android, armed at the press like Put on board.
+ * Android, armed at the press like Put on board, or (2026-11) Light
+ * automatically: this phone's own link came up, the switch turned on, or a
+ * Put on board resumed it after a stop. `solo_carry` (a solo climber driving
+ * by Light the board as I swipe when a crew formed) went with that switch.
  */
-export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry' | 'lock_screen';
+export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'lock_screen' | 'always';
 
 export type DriveModeStartedInput = {
   startedBy: DriveModeStartedBy;

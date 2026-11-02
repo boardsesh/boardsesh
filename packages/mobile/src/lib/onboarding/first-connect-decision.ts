@@ -10,8 +10,8 @@
 //   phone's first successful connect, saying what lights from here on.
 
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { climbChangeStaysViewOnly } from '../../components/play-drawer/play-drawer-navigation';
 import {
+  alwaysDriveApplies,
   driveLengthWords,
   resolveKeepLightingPlan,
   resolveKeepLightingReach,
@@ -249,8 +249,8 @@ export function shouldShowFirstConnectCard(input: FirstConnectCardInput): boolea
  * Nothing about the lighting settings gates it: its body says what lights
  * under them (`firstConnectConfirmationCopy`). The host records the connect
  * BEFORE it asks, so a gate here that the climber could later change (it was
- * `lightOnClimbTap` until 2.7) would use the confirmation up for good on the
- * first connect it turned away.
+ * Light the board when I tap a climb until 2.7) would use the confirmation up
+ * for good on the first connect it turned away.
  */
 export function shouldConfirmFirstConnect(input: {
   enrolment: ConnectStepEnrolment | null;
@@ -263,26 +263,40 @@ export function shouldConfirmFirstConnect(input: {
 }
 
 /**
- * Whether a tap on a climb in a list lights it, as the Climbs card and the
- * confirmation promise it: Light the board when I tap a climb on, outside a
- * shared session, where a list tap stays a preview whatever the setting says
- * (`climbChangeStaysViewOnly`). Nothing drives the wall before a first connect.
+ * Whether this phone drives the wall once it connects, as the Climbs card and
+ * the confirmation promise it: Light automatically on, for this board and
+ * session (`alwaysDriveApplies`: in a crew only with In a session too on,
+ * except on a MoonBoard). Then every climb picked lights, from a list or a
+ * swipe. Nothing drives the wall before a first connect.
  */
-export function firstConnectTapLights({
-  lightOnClimbTap,
-  inSharedSession,
+export function firstConnectAlwaysDrives({
+  alwaysDrive,
+  boardType,
+  drivesInSession,
+  inSession,
 }: {
-  lightOnClimbTap: boolean;
-  /** A shared session with someone else in it (`useIsSharedSession`). */
-  inSharedSession: boolean;
+  /** Settings › Board's Light automatically. */
+  alwaysDrive: boolean;
+  /** The board type (`kilter`, `moonboard`, …), or null while it isn't known. */
+  boardType: string | null;
+  /** Settings › Board's In a session too. */
+  drivesInSession: boolean;
+  /** A crew is in this session (the roster's `useIsCrewSession`), as `DriveModeWatcher` reads it. */
+  inSession: boolean;
 }): boolean {
-  return !climbChangeStaysViewOnly({ driving: false, inSharedSession, lightSetting: lightOnClimbTap });
+  return alwaysDriveApplies({
+    alwaysDrive,
+    boardIsMoonboard: isMoonboardBoardName(boardType),
+    drivesInSession,
+    inSession,
+  });
 }
 
 /**
  * What the confirmation says lights from here on:
  *
- * - `tap_lights` — every tap in a list lights (`firstConnectTapLights`).
+ * - `always_drive` — Light automatically drives the wall: every climb picked
+ *   lights until the climber stops (`firstConnectAlwaysDrives`).
  * - `window` — Put on board drives the wall for `seconds` after each climb
  *   (Settings › Board's Stop driving after, 45 s by default). Never a whole
  *   minute: that is `window_minute` (one) or `window_minutes`, worded as the
@@ -290,12 +304,11 @@ export function firstConnectTapLights({
  * - `until_stop` — Put on board drives until the climber taps the button
  *   (Until I stop, a MoonBoard's default).
  * - `put_on_board` — Put on board lights one climb: the choice is Right away,
- *   no drive can start here (a crew session with In a session too off, or the
- *   swipe flag off), or solo with Light the board as I swipe on, where the
- *   press starts no drive.
+ *   or no drive can start here (a crew session with In a session too off, or
+ *   the swipe flag off).
  */
 export type FirstConnectConfirmationCopy =
-  | { variant: 'tap_lights' }
+  | { variant: 'always_drive' }
   | { variant: 'window'; seconds: number }
   | { variant: 'window_minute' }
   | { variant: 'window_minutes'; minutes: number }
@@ -311,31 +324,28 @@ export type FirstConnectKeepLightingInput = {
 };
 
 /**
- * The confirmation's body, read by the rules a tap and Put on board follow
- * (`firstConnectTapLights`, `resolveKeepLightingPlan`, `resolveKeepLightingReach`),
- * so it never promises lighting the climber won't get.
+ * The confirmation's body, read by the rules the drive and Put on board follow
+ * (`firstConnectAlwaysDrives`, `resolveKeepLightingPlan`,
+ * `resolveKeepLightingReach`), so it never promises lighting the climber won't
+ * get.
  */
 export function firstConnectConfirmationCopy({
-  lightOnClimbTap,
-  lightOnSwipe,
-  inSharedSession,
+  alwaysDrive,
   boardName,
   keepLighting,
 }: {
-  lightOnClimbTap: boolean;
-  lightOnSwipe: boolean;
-  /** A shared session with someone else in it (`useIsSharedSession`): see `firstConnectTapLights`. */
-  inSharedSession: boolean;
+  /** Light automatically drives here (`firstConnectAlwaysDrives`). */
+  alwaysDrive: boolean;
   /** The board type (`kilter`, `moonboard`, …): a MoonBoard takes its own Stop driving after choice. */
   boardName: string | null;
   /** Null when Put on board's drive is off for everyone (its `wall-swipe-to-drive` kill switch). */
   keepLighting: FirstConnectKeepLightingInput | null;
 }): FirstConnectConfirmationCopy {
-  if (firstConnectTapLights({ lightOnClimbTap, inSharedSession })) return { variant: 'tap_lights' };
+  if (alwaysDrive) return { variant: 'always_drive' };
   if (keepLighting === null) return { variant: 'put_on_board' };
   const reach = resolveKeepLightingReach({
     plan: resolveKeepLightingPlan({ boardIsMoonboard: isMoonboardBoardName(boardName), ...keepLighting }),
-    swipeLightsSolo: lightOnSwipe && !keepLighting.inSession && !inSharedSession,
+    alwaysDrive: false,
   });
   switch (reach.kind) {
     case 'one_climb':

@@ -5,10 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LEGACY_AUTO_DISCONNECT_KEY,
   LEGACY_AUTO_DISCONNECT_TIMEOUT_KEY,
+  LEGACY_LIGHT_ON_CLIMB_TAP_KEY,
+  LEGACY_LIGHT_ON_SWIPE_KEY,
   migrateAutoDisconnect,
+  migrateLightAutomatically,
+  planAlwaysDriveMigration,
   planAutoDisconnectMigration,
   stopDrivingAfterForTimeout,
-  type AutoDisconnectMigrationStore,
+  type SettingsMigrationStore,
 } from '../migrations';
 import type { SettingsKey } from '../types';
 
@@ -24,7 +28,7 @@ vi.mock('react-native-mmkv', () => ({
 }));
 
 /** An in-memory store over raw JSON strings, as MMKV holds them. */
-function memoryStore(initial: Record<string, unknown>): AutoDisconnectMigrationStore & {
+function memoryStore(initial: Record<string, unknown>): SettingsMigrationStore & {
   raw: Map<string, string>;
   writes: string[];
 } {
@@ -187,6 +191,86 @@ describe('migrateAutoDisconnect', () => {
   });
 });
 
+// The two Light automatically switches carried into one (alwaysDrive): either
+// one on turns it on; nothing else changes, and a second run writes nothing.
+describe('planAlwaysDriveMigration', () => {
+  it.each([
+    [true, undefined],
+    [undefined, true],
+    [true, true],
+    [true, false],
+    [false, true],
+  ] as const)('tap %s, swipe %s: Light automatically on', (lightOnClimbTap, lightOnSwipe) => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([
+      { key: 'alwaysDrive', value: true },
+    ]);
+  });
+
+  it.each([
+    [undefined, undefined],
+    [false, false],
+    [false, undefined],
+    ['true', 1],
+    [null, 'yes'],
+  ] as const)('tap %s, swipe %s: nothing written', (lightOnClimbTap, lightOnSwipe) => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: false, lightOnClimbTap, lightOnSwipe })).toEqual([]);
+  });
+
+  it('writes nothing once Light automatically is stored, whatever the old switches say', () => {
+    expect(planAlwaysDriveMigration({ alwaysDriveSet: true, lightOnClimbTap: true, lightOnSwipe: true })).toEqual([]);
+  });
+});
+
+describe('migrateLightAutomatically', () => {
+  it.each([
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+    [{ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false, [LEGACY_LIGHT_ON_SWIPE_KEY]: true }],
+  ])('%o: Light automatically on, and nothing else written', (initial) => {
+    const store = memoryStore(initial);
+    expect(migrateLightAutomatically(store)).toBe(true);
+    expect(parsed(store, 'alwaysDrive')).toBe(true);
+    expect(store.writes).toEqual(['alwaysDrive']);
+  });
+
+  it('changes nothing for a climber with both switches off or never set', () => {
+    for (const initial of [
+      {},
+      { [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false },
+      { [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: false, [LEGACY_LIGHT_ON_SWIPE_KEY]: false },
+    ]) {
+      const store = memoryStore(initial);
+      expect(migrateLightAutomatically(store)).toBe(false);
+      expect(store.writes).toEqual([]);
+      expect(parsed(store, 'alwaysDrive')).toBeUndefined();
+    }
+  });
+
+  it('runs once: after the climber turns Light automatically off, a second run leaves it off', () => {
+    const store = memoryStore({ [LEGACY_LIGHT_ON_SWIPE_KEY]: true });
+    expect(migrateLightAutomatically(store)).toBe(true);
+    store.set('alwaysDrive', false);
+    store.writes.length = 0;
+    expect(migrateLightAutomatically(store)).toBe(false);
+    expect(store.writes).toEqual([]);
+    expect(parsed(store, 'alwaysDrive')).toBe(false);
+  });
+
+  it('keeps a choice the climber already made', () => {
+    const store = memoryStore({ alwaysDrive: false, [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true });
+    expect(migrateLightAutomatically(store)).toBe(false);
+    expect(parsed(store, 'alwaysDrive')).toBe(false);
+  });
+
+  it('leaves the retired switches on disk for an older bundle', () => {
+    const store = memoryStore({ [LEGACY_LIGHT_ON_CLIMB_TAP_KEY]: true, [LEGACY_LIGHT_ON_SWIPE_KEY]: false });
+    migrateLightAutomatically(store);
+    expect(parsed(store, LEGACY_LIGHT_ON_CLIMB_TAP_KEY)).toBe(true);
+    expect(parsed(store, LEGACY_LIGHT_ON_SWIPE_KEY)).toBe(false);
+  });
+});
+
 // The settings store runs it at its first import, before anything reads a setting.
 describe('at the settings store import', () => {
   beforeEach(() => {
@@ -211,6 +295,28 @@ describe('at the settings store import', () => {
     expect(getSetting('moonboardPutOnBoardKeepsLighting')).toBe('until_stopped');
     expect(getSetting('disconnectWhenDrivingEnds')).toBe(false);
     expect([...mockStorage.keys()]).toEqual([LEGACY_AUTO_DISCONNECT_KEY]);
+  });
+
+  it('turns Light automatically on for a climber who had Light the board as I swipe on', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_SWIPE_KEY, 'true');
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(true);
+  });
+
+  it('leaves Light automatically off with both switches off, and writes nothing', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'false');
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(false);
+    expect([...mockStorage.keys()]).toEqual([LEGACY_LIGHT_ON_CLIMB_TAP_KEY]);
+  });
+
+  it('does not turn Light automatically back on at the next launch', async () => {
+    mockStorage.set(LEGACY_LIGHT_ON_CLIMB_TAP_KEY, 'true');
+    await import('../hooks');
+    mockStorage.set('alwaysDrive', 'false');
+    vi.resetModules();
+    const { getSetting } = await import('../hooks');
+    expect(getSetting('alwaysDrive')).toBe(false);
   });
 
   it('does not run again on the next launch', async () => {

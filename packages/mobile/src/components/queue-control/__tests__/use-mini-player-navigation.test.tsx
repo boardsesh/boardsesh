@@ -21,7 +21,7 @@ const targets = vi.hoisted(() => ({
   from: null as ClimbQueueItem | null,
   along: null as PlaylistSuggestionSource | null,
 }));
-const settings = vi.hoisted(() => ({ lightOnSwipe: true }));
+const settings = vi.hoisted(() => ({ alwaysDrive: false }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
@@ -45,9 +45,8 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../lib/playlists/track-pager', () => ({ canLoadMoreOfTrack: () => targets.canLoadMore }));
 vi.mock('../../../settings/hooks', () => ({
-  useSetting: () => [settings.lightOnSwipe, vi.fn()],
-  // The at-press read (`readClimbChangeLights`), for a window that lapsed under a paused timer.
-  getSetting: () => settings.lightOnSwipe,
+  // Light automatically, for Queue Navigation only: whether a step lights reads the drive.
+  useSetting: () => [settings.alwaysDrive, vi.fn()],
 }));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'fresh-uuid' }));
@@ -83,11 +82,17 @@ import {
   enterDriveMode,
   markDriveLive,
   resetDriveModeForTests,
+  startAlwaysDrive,
   stopDrivingForLink,
 } from '../../play-drawer/drive-mode-store';
 import { useMiniPlayerNavigation } from '../use-mini-player-navigation';
-import { SHARED_BROWSE_LATCH_RELEASE_MS } from '../../play-drawer/shared-browse-latch';
 import { resetLastPickForTests, setLastPick } from '../../../lib/last-pick-store';
+
+/** Light automatically's drive, as `DriveModeWatcher` starts it once this phone's link is up. */
+function driveAlways() {
+  settings.alwaysDrive = true;
+  startAlwaysDrive({ sessionId: null, boardId: 7, boardType: 'kilter' });
+}
 
 function makeItem(uuid: string): ClimbQueueItem {
   const climb: Climb = {
@@ -119,7 +124,8 @@ describe('useMiniPlayerNavigation', () => {
     targets.nextItem = makeItem('after');
     targets.atTrackEnd = false;
     targets.canLoadMore = false;
-    settings.lightOnSwipe = true;
+    settings.alwaysDrive = false;
+    resetDriveModeForTests();
     drawer.openPlayDrawer.mockClear();
     analytics.track.mockClear();
   });
@@ -128,7 +134,8 @@ describe('useMiniPlayerNavigation', () => {
     return analytics.track.mock.calls.filter(([eventName]) => eventName === 'Queue Navigation');
   }
 
-  it('moves the queue solo with Light on swipe on, as a swipe in the player would', () => {
+  it("moves the queue in Light automatically's drive, as a swipe in the player would", () => {
+    driveAlways();
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
     act(() => result.current.onPrevious());
@@ -137,9 +144,20 @@ describe('useMiniPlayerNavigation', () => {
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
 
+  // Light automatically on with no drive (no link yet): ⏮ and ⏭ preview.
+  it('previews with Light automatically on and nothing driving', () => {
+    settings.alwaysDrive = true;
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(queue.nextClimb).not.toHaveBeenCalled();
+    expect(drawer.openPlayDrawer).toHaveBeenCalledOnce();
+  });
+
   // #7113: a press on "You are driving the wall" stopped driving on this link;
-  // ⏮ and ⏭ preview, as a swipe in the player does, until the link drops.
-  it('previews after a press stopped driving, solo with Light on swipe on', () => {
+  // ⏮ and ⏭ preview, as a swipe in the player does, until the link drops or
+  // the next Put on board.
+  it("previews after a press stopped Light automatically's drive", () => {
+    driveAlways();
     stopDrivingForLink();
     try {
       const { result } = renderHook(() => useMiniPlayerNavigation());
@@ -160,13 +178,7 @@ describe('useMiniPlayerNavigation', () => {
       },
       'party',
     ],
-    [
-      'with Light on swipe off',
-      () => {
-        settings.lightOnSwipe = false;
-      },
-      'solo',
-    ],
+    ['solo', () => {}, 'solo'],
   ] as const)('moves the wall %s while driving, and says so', (_label, arrange, sessionMode) => {
     arrange();
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });
@@ -189,7 +201,6 @@ describe('useMiniPlayerNavigation', () => {
   // activity (#7038), so the watcher may not have ended it. The timers here
   // never advance.
   it('previews once a keep-lighting window is past its end, before the watcher has tidied it', () => {
-    settings.lightOnSwipe = false;
     vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
     enterDriveMode({
       startedBy: 'tap',
@@ -216,6 +227,7 @@ describe('useMiniPlayerNavigation', () => {
   });
 
   it('reports each move once, as a MiniPlayer button press', () => {
+    driveAlways();
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
     act(() => result.current.onPrevious());
@@ -228,7 +240,8 @@ describe('useMiniPlayerNavigation', () => {
           surface: 'mini_player',
           outcome: 'moved',
           sessionMode: 'solo',
-          lightOnSwipe: true,
+          alwaysDrive: true,
+          driving: true,
         }),
       ],
       [
@@ -240,36 +253,30 @@ describe('useMiniPlayerNavigation', () => {
 
   it.each([
     [
-      'in a crew',
+      'in a crew, Light automatically on with no link',
       () => {
         queue.inSharedSession = true;
+        settings.alwaysDrive = true;
       },
       'party',
       true,
     ],
-    [
-      'with Light on swipe off',
-      () => {
-        settings.lightOnSwipe = false;
-      },
-      'solo',
-      false,
-    ],
-  ] as const)('reports a preview %s', (_label, arrange, sessionMode, lightOnSwipe) => {
+    ['solo, outside a drive', () => {}, 'solo', false],
+  ] as const)('reports a preview %s', (_label, arrange, sessionMode, alwaysDrive) => {
     arrange();
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onNext());
     expect(navigationEvents()).toEqual([
       [
         'Queue Navigation',
-        expect.objectContaining({ direction: 'next', outcome: 'preview', sessionMode, lightOnSwipe }),
+        expect.objectContaining({ direction: 'next', outcome: 'preview', sessionMode, alwaysDrive, driving: false }),
       ],
     ]);
   });
 
   it.each([
     ['in a crew', () => (queue.inSharedSession = true)],
-    ['with Light on swipe off', () => (settings.lightOnSwipe = false)],
+    ['solo, outside a drive', () => {}],
   ])('opens the player on the next climb as a preview %s, leaving the wall alone', (_label, arrange) => {
     arrange();
     const { result } = renderHook(() => useMiniPlayerNavigation());
@@ -347,7 +354,8 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     targets.nextItem = makeItem('after');
     targets.atTrackEnd = false;
     targets.canLoadMore = false;
-    settings.lightOnSwipe = true;
+    settings.alwaysDrive = false;
+    resetDriveModeForTests();
     drawer.openPlayDrawer.mockClear();
     analytics.track.mockClear();
     resetLastPickForTests();
@@ -402,10 +410,11 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     }
   });
 
-  // A trackless pick (a queue slot, a look walked along the queue): solo with
-  // Light on swipe on, its neighbour goes up keeping the walked track.
-  it('puts a trackless pick’s neighbour up, solo with Light on swipe on', () => {
+  // A trackless pick (a queue slot, a look walked along the queue): while
+  // driving, its neighbour goes up keeping the walked track.
+  it('puts a trackless pick’s neighbour up in Light automatically’s drive', () => {
     pickWith(null);
+    driveAlways();
     const { result } = renderHook(() => useMiniPlayerNavigation());
     act(() => result.current.onPrevious());
     expect(queue.previousClimb).not.toHaveBeenCalled();
@@ -416,7 +425,7 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     });
   });
 
-  it('opens a trackless pick’s neighbour as a preview in a crew', () => {
+  it('opens a trackless pick’s neighbour as a preview outside a drive, in a crew too', () => {
     pickWith(null);
     queue.inSharedSession = true;
     const { result } = renderHook(() => useMiniPlayerNavigation());
@@ -426,30 +435,6 @@ describe('useMiniPlayerNavigation from the last pick', () => {
       targets.nextItem?.climb,
       expect.objectContaining({ previewQueueItem: targets.nextItem }),
     );
-  });
-
-  // The player's crew latch: a step from the pick stays a look for the same
-  // dwell after the last crewmate leaves as the player's swipe does
-  // (SHARED_BROWSE_LATCH_RELEASE_MS), then lights again.
-  it('keeps a step from the pick a look through the crew dwell, as the player does', () => {
-    vi.useFakeTimers();
-    try {
-      pickWith(null);
-      queue.inSharedSession = true;
-      const { result, rerender } = renderHook(() => useMiniPlayerNavigation());
-      queue.inSharedSession = false;
-      rerender();
-      act(() => result.current.onNext());
-      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-      expect(drawer.openPlayDrawer).toHaveBeenCalledTimes(1);
-      act(() => {
-        vi.advanceTimersByTime(SHARED_BROWSE_LATCH_RELEASE_MS);
-      });
-      act(() => result.current.onNext());
-      expect(queue.setCurrentClimb).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   // A pick opened on its own board (a logbook row) steps on that board.

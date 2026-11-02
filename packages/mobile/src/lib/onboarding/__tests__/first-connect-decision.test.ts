@@ -8,8 +8,8 @@ import {
   decideConnectStepEnrolment,
   isConnectStepTreatmentLive,
   localDayKey,
+  firstConnectAlwaysDrives,
   firstConnectConfirmationCopy,
-  firstConnectTapLights,
   shouldConfirmFirstConnect,
   shouldShowFirstConnectCard,
   type ConnectStepEnrolment,
@@ -263,59 +263,54 @@ describe('firstConnectConfirmationCopy', () => {
     inSession: false,
   };
   const base = {
-    lightOnClimbTap: false,
-    lightOnSwipe: false,
-    inSharedSession: false,
+    alwaysDrive: false,
     boardName: 'kilter',
     keepLighting: defaults,
   };
 
-  it('says a tap lights a climb only while Light the board when I tap a climb is on', () => {
-    expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true })).toEqual({ variant: 'tap_lights' });
-    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnClimbTap: true })).toEqual({
-      variant: 'tap_lights',
+  // Light automatically on (where it drives): every climb picked lights, from
+  // a list or a swipe, until the climber stops, whatever Stop driving after says.
+  it('says this phone drives the wall where Light automatically drives', () => {
+    expect(firstConnectConfirmationCopy({ ...base, alwaysDrive: true })).toEqual({ variant: 'always_drive' });
+    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', alwaysDrive: true })).toEqual({
+      variant: 'always_drive',
+    });
+    // Stop driving after doesn't apply then, Right away or the swipe flag off included.
+    expect(
+      firstConnectConfirmationCopy({ ...base, alwaysDrive: true, keepLighting: { ...defaults, keepLighting: 'off' } }),
+    ).toEqual({ variant: 'always_drive' });
+    expect(firstConnectConfirmationCopy({ ...base, alwaysDrive: true, keepLighting: null })).toEqual({
+      variant: 'always_drive',
     });
   });
 
-  // A list tap in a shared session stays a preview whatever Light on tap says
-  // (`climbChangeStaysViewOnly`), so the copy falls through to Put on board's plan.
-  it('never says a tap lights a climb in a shared session', () => {
-    expect(firstConnectConfirmationCopy({ ...base, lightOnClimbTap: true, inSharedSession: true })).toEqual({
-      variant: 'window',
-      seconds: 45,
-    });
+  // Where it doesn't drive (a crew with In a session too off), the copy falls
+  // through to Put on board's own plan.
+  it('reads Put on board’s plan where Light automatically doesn’t drive', () => {
     expect(
       firstConnectConfirmationCopy({
         ...base,
-        lightOnClimbTap: true,
-        inSharedSession: true,
+        alwaysDrive: firstConnectAlwaysDrives({
+          alwaysDrive: true,
+          boardType: 'kilter',
+          drivesInSession: false,
+          inSession: true,
+        }),
         keepLighting: { ...defaults, inSession: true, drivesInSession: false },
       }),
     ).toEqual({ variant: 'put_on_board' });
   });
 
-  it('agrees with the tap rule the Climbs card reads', () => {
-    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: false })).toBe(true);
-    expect(firstConnectTapLights({ lightOnClimbTap: true, inSharedSession: true })).toBe(false);
-    expect(firstConnectTapLights({ lightOnClimbTap: false, inSharedSession: false })).toBe(false);
-  });
-
-  // Solo with Light the board as I swipe on, the press drops a stop and opens
-  // no window (the wall control's `tapDrive: 'resume'`): a list pick stays a
-  // preview, so no window is promised.
-  it('promises no window solo with Light the board as I swipe on', () => {
-    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true })).toEqual({ variant: 'put_on_board' });
-    expect(firstConnectConfirmationCopy({ ...base, boardName: 'moonboard', lightOnSwipe: true })).toEqual({
-      variant: 'put_on_board',
-    });
-    // In a crew or a shared session the swipe setting lights nothing, so the window stands.
-    expect(
-      firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, keepLighting: { ...defaults, inSession: true } }),
-    ).toEqual({ variant: 'window', seconds: 45 });
-    expect(firstConnectConfirmationCopy({ ...base, lightOnSwipe: true, inSharedSession: true })).toEqual({
-      variant: 'window',
-      seconds: 45,
-    });
+  it('agrees with the rule the Climbs card and the watcher read', () => {
+    const solo = { alwaysDrive: true, boardType: 'kilter', drivesInSession: false, inSession: false };
+    expect(firstConnectAlwaysDrives(solo)).toBe(true);
+    expect(firstConnectAlwaysDrives({ ...solo, alwaysDrive: false })).toBe(false);
+    // In a crew only with In a session too on, except on a MoonBoard.
+    expect(firstConnectAlwaysDrives({ ...solo, inSession: true })).toBe(false);
+    expect(firstConnectAlwaysDrives({ ...solo, inSession: true, drivesInSession: true })).toBe(true);
+    expect(firstConnectAlwaysDrives({ ...solo, inSession: true, boardType: 'moonboard' })).toBe(true);
+    // A board type not known yet reads as a Kilter or Tension board.
+    expect(firstConnectAlwaysDrives({ ...solo, inSession: true, boardType: null })).toBe(false);
   });
 
   // 2 and 5 minutes are said in minutes, 1 minute as before.

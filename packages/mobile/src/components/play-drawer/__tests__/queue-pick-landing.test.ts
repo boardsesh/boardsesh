@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 // The tap-time reader's lighting rule pulls in the queue provider; the pure
 // resolver under test takes the rule's answer as an input instead.
-vi.mock('../use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
+vi.mock('../use-climb-change-lights', () => ({ isDrivingWall: () => false }));
 
 import { resolveQueuePickLanding, type QueuePickLanding } from '../queue-pick-landing';
 
