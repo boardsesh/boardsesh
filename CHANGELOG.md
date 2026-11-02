@@ -12,6 +12,15 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- Clear your queue from the ⋯ menu in the queue. ([#7228](https://github.com/boardsesh/boardsesh/pull/7228))
+- A climb you open from a link or notification while the app starts stays in the mini player. ([#7222](https://github.com/boardsesh/boardsesh/pull/7222))
+- In a crew session, your drive starts only once your own wall lights, not a crewmate's. ([#7221](https://github.com/boardsesh/boardsesh/pull/7221))
+- Hung up the board by mistake? Tap the bulb again within 10 minutes to reconnect, no board list. ([#7224](https://github.com/boardsesh/boardsesh/pull/7224))
+  Kilter boxes that show up as plain "Kilter Board" are remembered now, so the next tap reconnects.
+- Always drive the wall keeps you driving the wall: every climb you pick lights while you're connected. ([#7218](https://github.com/boardsesh/boardsesh/pull/7218))
+  It replaces the two lighting switches. If you had either on, it's on for you.
+  A MoonBoard now stops driving like any board: after your Stop driving after time (45 seconds to start with), and in a crew only with In a session too on.
+  If you had changed the MoonBoard's own timer, your Stop driving after choice applies now.
 - The mini player's bulb shows a ring that empties as your drive runs out. ([#7213](https://github.com/boardsesh/boardsesh/pull/7213))
   On the Lock Screen and in the Dynamic Island, the draining ring alone shows the time left.
 - The climb on the wall now stays at the top of Climbs for an hour after it's lit, even when it's your own pick. ([#7216](https://github.com/boardsesh/boardsesh/pull/7216))
