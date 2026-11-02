@@ -632,6 +632,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const key = buildSteps.find((step) => step.id === 'appkey');
     expect(key?.run).toContain('ios-screenshot-app-cache.ts key');
     expect(key?.env?.NATIVE_INPUT_HASH).toContain("'packages/mobile/react-native.config.js'");
+    // The widget extension's Swift compiles into Boardsesh.app (#7215).
+    expect(key?.env?.NATIVE_INPUT_HASH).toContain("'packages/mobile/targets/**'");
     expect(key?.env?.NATIVE_INPUT_HASH).toContain("'.boardsesh/cache-tooling/scripts/ios-screenshot-app-cache.ts'");
     expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('pnpm-lock.yaml');
     expect(key?.env?.NATIVE_INPUT_HASH).not.toContain('packages/mobile/src/');

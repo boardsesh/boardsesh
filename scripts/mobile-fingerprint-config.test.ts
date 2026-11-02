@@ -247,7 +247,7 @@ describe('mobile fingerprint config', () => {
     ).toThrow();
   });
 
-  it('hashes the config itself, the iOS locale strings and the monorepo root patches with stable keys', () => {
+  it('hashes the config itself, the iOS locale strings, the Apple targets and the monorepo root patches with stable keys', () => {
     expect(fingerprintConfig.extraSources).toEqual([
       {
         type: 'file',
@@ -260,6 +260,12 @@ describe('mobile fingerprint config', () => {
         filePath: 'locales',
         reasons: ['iosInfoPlistLocales'],
         overrideHashKey: 'iosInfoPlistLocales',
+      },
+      {
+        type: 'dir',
+        filePath: 'targets',
+        reasons: ['iosAppleTargets'],
+        overrideHashKey: 'iosAppleTargets',
       },
       {
         type: 'dir',

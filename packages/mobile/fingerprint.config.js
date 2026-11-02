@@ -125,6 +125,44 @@ module.exports = {
     },
     {
       type: 'dir',
+      filePath: 'targets',
+      reasons: ['iosAppleTargets'],
+      overrideHashKey: 'iosAppleTargets',
+      // @bacons/apple-targets compiles every file under targets/<name>/ into its
+      // own Xcode target: today the BoardseshWidgets Live Activity extension's
+      // Swift, Info.plist and Localizable.strings. The plugin finds those files by
+      // PATH at prebuild, so the fingerprint only saw expo-target.config.js (a
+      // module the config plugin require()s). A widget-only Swift edit therefore
+      // resolved an unchanged runtimeVersion: PR CI skipped the iOS build, Main
+      // Native Release cut no binary, and the OTA check said "Ships over-the-air"
+      // for code no OTA can deliver (#7215). Dedup folds the expo-target.config.js
+      // file source into this dir source.
+      //
+      // Scope: hashed for BOTH platforms, so a widget-only change also moves
+      // Android's runtimeVersion and costs an Android build plus an Android OTA
+      // cut-off it doesn't need (Android's prebuild never reads targets/). This
+      // file can't scope a source to one platform: @expo/fingerprint require()s
+      // it once with no platform argument, extraSources has no platform field,
+      // and fileHookTransform isn't told the platform. Reading `--platform` off
+      // argv would break for resolvers that pass it differently (the Xcode phase,
+      // eoas) and for a process that resolves both platforms from one cached
+      // require(). Like `../../patches` below, it over-triggers: the safe
+      // direction.
+      //
+      // Nothing under targets/ is written at prebuild with today's config:
+      // apple-targets 5 writes entitlements to ios/.targets/, writes Info.plist
+      // only when it is missing, and writes Assets.xcassets only for
+      // `icon`/`colors`/`images` in expo-target.config.js (none are set). The
+      // tracked generated.entitlements is a leftover the plugin ignores while
+      // the config has an `entitlements` object, and would read again without
+      // one, so it stays hashed. .DS_Store and .swiftpm are in @expo/fingerprint's
+      // default ignores.
+      //
+      // probe: appending a comment line to ClimbSessionLiveActivity.swift moves
+      // the resolved iOS and Android runtimeVersions.
+    },
+    {
+      type: 'dir',
       filePath: '../../patches',
       reasons: ['rootPatchedDependencies'],
       overrideHashKey: 'rootPatchedDependencies',

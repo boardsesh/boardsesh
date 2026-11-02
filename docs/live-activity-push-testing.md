@@ -192,7 +192,7 @@ not need to add them manually in Xcode.
 Source locations:
 
 - Main-app Swift (BoardBleManager, LiveActivityManager, SessionWebSocketManager, intents, helpers): `packages/mobile/modules/live-activity/ios/`
-- Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`
+- Widget extension target (Live Activity SwiftUI, AppIntents, WidgetNetworking, plus byte-identical copies of ClimbSessionAttributes / SharedConstants / SharedKeychain / Intent files): `packages/mobile/targets/BoardseshWidgets/` — managed by `@bacons/apple-targets`. Every file in it is a fingerprint input (#7215), so a widget-only edit needs a store build and never ships as an OTA.
 - Widget target build settings that @bacons/apple-targets does not expose directly, including `WIDGET_EXTENSION`: `packages/mobile/plugins/with-boardsesh-widget-build-settings.js`
 
 #### Swift unit tests and CI

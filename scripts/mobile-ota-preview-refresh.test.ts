@@ -374,19 +374,21 @@ describe('runtime inputs', () => {
   });
 
   it('covers the repo-local sources the fingerprint hashes, on the platforms that hash them', () => {
-    // Captured 2026-10-26 from `vp exec expo-updates fingerprint:generate --platform <p> --debug`
+    // Captured 2026-11-02 from `vp exec expo-updates fingerprint:generate --platform <p> --debug`
     // in packages/mobile: every `file`/`dir` source outside node_modules, as repo paths
     // (one representative per plugin/module directory). Re-capture when that output grows.
+    // `packages/mobile/targets` is one dir source on both platforms (#7215); it absorbed
+    // the expo-target.config.js file source the 2026-10-26 capture listed.
     const both = [
       'patches',
       'packages/mobile/locales',
+      'packages/mobile/targets',
       'packages/mobile/assets/icon.png',
       'packages/mobile/assets/splash-icon.png',
       'packages/mobile/eas.json',
       'packages/mobile/fingerprint.config.js',
       'packages/mobile/plugins/with-android-minify.js',
       'packages/mobile/plugins/with-boardsesh-widget-build-settings.js',
-      'packages/mobile/targets/BoardseshWidgets/expo-target.config.js',
     ];
     const sources: Record<'ios' | 'android', string[]> = {
       ios: [...both, 'packages/mobile/modules/live-activity/ios', 'packages/mobile/modules/storefront/ios'],

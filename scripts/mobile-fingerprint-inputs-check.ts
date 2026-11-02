@@ -154,6 +154,16 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
       filePath: 'locales',
     },
     {
+      // Every file @bacons/apple-targets compiles into the widget extension
+      // (Swift, Info.plist, strings). Without it a widget-only Swift edit leaves
+      // runtimeVersion still and ships as an OTA that cannot carry it (#7215).
+      // Required on both platforms: fingerprint.config.js cannot scope a source
+      // to one, so Android hashes it too.
+      overrideHashKey: 'iosAppleTargets',
+      type: 'dir',
+      filePath: 'targets',
+    },
+    {
       overrideHashKey: 'rootPatchedDependencies',
       type: 'dir',
       filePath: '../../patches',
