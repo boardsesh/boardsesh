@@ -188,6 +188,8 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
 }));
 
 import { QueueProvider, usePlaylistSuggestionSource, useQueue, useQueueSessionId } from '../queue-provider';
+import { track } from '../../lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -1190,6 +1192,30 @@ describe('QueueProvider local solo queue', () => {
     await waitFor(() => expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(2));
     expect(events).toEqual(['add:clear-first', 'remove:clear-first', 'remove:clear-tail']);
     expect(queueMutations.addQueueItem.mock.calls.map(([item]) => item.uuid)).toEqual(['clear-first']);
+  });
+
+  // The queue sheet clears from two controls: the edit mode's Clear and the
+  // header's ⋯ → Clear queue. Both run the same clear; only the event says which.
+  it.each([
+    { options: undefined, source: 'edit' },
+    { options: { source: 'edit' as const }, source: 'edit' },
+    { options: { source: 'menu' as const }, source: 'menu' },
+  ])('tags Queue Cleared with source $source and clears the same way', async ({ options, source }) => {
+    const itemA = makeQueueItem('tag-a');
+    const itemB = makeQueueItem('tag-b');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA, itemB], itemA));
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue).toHaveLength(2));
+
+    vi.mocked(track).mockClear();
+    act(() => snapshots.at(-1)?.clearQueue(options));
+
+    const cleared = vi.mocked(track).mock.calls.filter(([event]) => event === SHARED_EVENTS.QueueCleared);
+    expect(cleared).toEqual([[SHARED_EVENTS.QueueCleared, expect.objectContaining({ totalCount: 2, source })]]);
+    // The reducer's clear takes the current climb with it, from either control.
+    expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
   });
 
   it('serializes replacement behind an active send and cancels the unsent tail', async () => {

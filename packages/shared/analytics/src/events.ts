@@ -100,6 +100,10 @@ export const SHARED_EVENTS = {
   PlaylistQueued: 'Playlist Queued',
   ClimbRemovedFromQueue: 'Climb Removed from Queue',
   QueueReordered: 'Queue Reordered',
+  // Mobile queue sheet. Props: { layoutId, totalCount, source: 'edit' | 'menu' }.
+  // `source` says which control cleared it: the edit mode's Clear or the header's
+  // ⋯ menu. Events from before the ⋯ menu carry no `source`; all of those came
+  // from the edit mode.
   QueueCleared: 'Queue Cleared',
   // Fired on every queue advance, including the broadcast advances that used to
   // ALSO fire a separate `Wall Advance`. That pair fired back-to-back from the

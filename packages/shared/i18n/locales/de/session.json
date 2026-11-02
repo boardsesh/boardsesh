@@ -502,6 +502,8 @@
       "emptyQueue": "Deine Warteschlange ist leer",
       "toggleHistory": "Historie ein- oder ausblenden",
       "editQueue": "Warteschlange bearbeiten",
+      "moreActions": "Mehr Aktionen für die Warteschlange",
+      "clearQueue": "Warteschlange leeren",
       "doneEditing": "Fertig",
       "cleared": "Warteschlange geleert",
       "removed_one": "{{count}} Boulder entfernt",

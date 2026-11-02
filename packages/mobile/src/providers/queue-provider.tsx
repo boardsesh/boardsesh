@@ -144,6 +144,7 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
   type QueueReorderSource,
+  type QueueClearSource,
   type WidgetNavigationOptions,
   type NextClimbCaller,
 } from './queue/queue-contexts';
@@ -179,7 +180,7 @@ export {
   useQueueRestored,
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
-export type { StartSessionConfig, QueueReorderSource } from './queue/queue-contexts';
+export type { StartSessionConfig, QueueReorderSource, QueueClearSource } from './queue/queue-contexts';
 
 /**
  * The board identity the compatibility helpers need, or undefined when we can't
@@ -2159,20 +2160,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
   );
 
-  const clearQueue = useCallback(() => {
-    const itemsToRemove = stateRef.current.queue;
-    // Clear is a new queue intent. Cancel this provider's unsent appends, then
-    // enqueue the removals behind any already-active send so the server observes
-    // the same order as the climber's intent.
-    invalidateQueuedQueueMutations();
-    const origin = captureQueueMutationOrigin();
-    // A whole-queue clear supersedes any deferred current re-broadcast (#3868).
-    pendingUnsyncedCurrentRef.current = null;
-    dispatch({ type: 'CLEAR_QUEUE' });
-    track(SHARED_EVENTS.QueueCleared, { layoutId: activeBoardRef.current?.layoutId, totalCount: itemsToRemove.length });
-    setPlaylistSuggestionSourceState(null);
-    sendRemovalsOnLane(itemsToRemove, origin);
-  }, [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane]);
+  const clearQueue = useCallback(
+    (options?: { source?: QueueClearSource }) => {
+      const itemsToRemove = stateRef.current.queue;
+      // Clear is a new queue intent. Cancel this provider's unsent appends, then
+      // enqueue the removals behind any already-active send so the server observes
+      // the same order as the climber's intent.
+      invalidateQueuedQueueMutations();
+      const origin = captureQueueMutationOrigin();
+      // A whole-queue clear supersedes any deferred current re-broadcast (#3868).
+      pendingUnsyncedCurrentRef.current = null;
+      dispatch({ type: 'CLEAR_QUEUE' });
+      track(SHARED_EVENTS.QueueCleared, {
+        layoutId: activeBoardRef.current?.layoutId,
+        totalCount: itemsToRemove.length,
+        source: options?.source ?? 'edit',
+      });
+      setPlaylistSuggestionSourceState(null);
+      sendRemovalsOnLane(itemsToRemove, origin);
+    },
+    [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane],
+  );
 
   // Remove several climbs at once (the queue sheet's edit-mode bulk remove).
   // Unlike N calls to `removeFromQueue`, the wire sends ride the serialized

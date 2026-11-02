@@ -1,14 +1,20 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { ChromeIconButton } from '../ChromeIconButton';
+import { AppMenu } from '../AppMenu';
+import type { AppMenuAction } from '../AppMenu.types';
 import { useTheme } from '../../providers/theme-provider';
+import type { QueueClearSource } from '../../providers/queue-provider';
 import { spacing } from '../../theme/tokens';
 import { topBarFor } from '../../theme/top-bar';
 import { hapticSelection } from '../../lib/haptics';
+
+/** A row in the header's ⋯ menu. The menu reports a position; the row says what it does. */
+type QueueMenuRow = AppMenuAction & { id: 'clearQueue' };
 
 type QueueSheetHeaderProps = {
   isEditMode: boolean;
@@ -22,7 +28,8 @@ type QueueSheetHeaderProps = {
   onToggleHistory: () => void;
   /** Folds the sheet away. The side panel has nothing to close, so it omits it. */
   onClose?: () => void;
-  onClearAll: () => void;
+  /** The edit mode's Clear and the ⋯ menu's Clear queue; `source` says which. */
+  onClearAll: (source: QueueClearSource) => void;
 };
 
 export const QueueSheetHeader = memo(function QueueSheetHeader({
@@ -51,17 +58,32 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
     onToggleEditMode();
   }, [onToggleEditMode]);
 
+  const handleClearFromEdit = useCallback(() => onClearAll('edit'), [onClearAll]);
+
+  // Clear used to live only behind the pencil, where climbers didn't find it.
+  // The ⋯ offers it from the resting header; the pencil keeps reorder and remove.
+  const menuRows = useMemo<QueueMenuRow[]>(
+    () => [{ id: 'clearQueue', label: t('mobile.queueSheet.clearQueue'), systemIcon: 'trash', destructive: true }],
+    [t],
+  );
+  const handleSelectMenuRow = useCallback(
+    (index: number) => {
+      if (menuRows[index]?.id === 'clearQueue') onClearAll('menu');
+    },
+    [menuRows, onClearAll],
+  );
+
   if (isEditMode) {
     return (
       <View style={styles.container}>
         <View style={styles.leftSection}>
           <PressableSurface
-            onPress={onClearAll}
+            onPress={handleClearFromEdit}
             accessibilityRole="button"
             accessibilityLabel={t('queueDrawer.clear')}
             hitSlop={8}
           >
-            <LargeContentViewer title={t('queueDrawer.clear')} onActivate={onClearAll}>
+            <LargeContentViewer title={t('queueDrawer.clear')} onActivate={handleClearFromEdit}>
               <Text
                 variant="label"
                 color={systemColors.error}
@@ -110,10 +132,16 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
         />
       </View>
 
+      {/* Three trailing buttons leave the title less room. Like SheetTopBar's title,
+          it keeps one line and truncates at large text sizes instead of breaking. */}
       <View style={styles.centerSection}>
-        {showTitle ? <Text variant="headline">{t('queueDrawer.title')}</Text> : null}
+        {showTitle ? (
+          <Text variant="headline" numberOfLines={1}>
+            {t('queueDrawer.title')}
+          </Text>
+        ) : null}
         {queueCount > 0 && (
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             {t('mobile.queue.climbCount', { count: queueCount })}
           </Text>
         )}
@@ -126,6 +154,20 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             icon="edit"
             onPress={handleToggleEdit}
             accessibilityLabel={t('mobile.queueSheet.editQueue')}
+          />
+        )}
+
+        {/* Shown exactly when the pencil is: an empty queue has nothing to clear,
+            and anyone who can reach the edit mode's Clear can reach this one. */}
+        {!viewOnlyMode && (
+          <AppMenu
+            iconName="more"
+            // The same 44pt circle (48 on Material) as the glyph buttons beside it.
+            iconAppearance={spec.glyphFilled ? 'filled' : 'plain'}
+            anchorSize={spec.iconTarget}
+            accessibilityLabel={t('mobile.queueSheet.moreActions')}
+            actions={menuRows}
+            onSelectIndex={handleSelectMenuRow}
           />
         )}
 
