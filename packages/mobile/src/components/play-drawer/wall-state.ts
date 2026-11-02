@@ -253,6 +253,22 @@ export function resolveBrowseCaption({
   return wallClimbUuid !== null || wallDriven ? { kind: 'preview' } : null;
 }
 
+/**
+ * Whether the commit bar reads the climb on screen as the climber's own
+ * committed climb, with nothing to commit (`resolveCommitBarModel`). It compares
+ * CLIMBS, not queue slots: a preview of another slot that holds the current
+ * climb (a History or Up next copy, Replay from here on one) shows no Put on
+ * board.
+ *
+ * So a queue pick of such a slot commits at once instead of previewing: a
+ * deferred commit (`previewCommitOptions`) would have no button to wait for,
+ * and the wall's climb doesn't change. The queue sheet's row tap and Replay
+ * from here both read this rule, so the two can't drift from the bar.
+ */
+export function isCommittedHeadClimb(displayedClimbUuid: string | null, committedHeadUuid: string | null): boolean {
+  return displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
+}
+
 /** What the action bar's secondary row is doing. */
 export type CommitBarMode = 'actions' | 'commit';
 
@@ -342,7 +358,7 @@ export function resolveCommitBarModel({
   const connectsOnCommit = tapConnects && !wallDriven && !isAnonymous && !boardMismatch;
   const commitLabel: CommitButtonLabel =
     wallClimbUuid != null || wallDriven || connectsOnCommit ? 'putOnWall' : 'setActive';
-  const displayedIsCommittedHead = displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
+  const displayedIsCommittedHead = isCommittedHeadClimb(displayedClimbUuid, committedHeadUuid);
   // With no link, presence can name a climb lit hours ago and nobody can see
   // the LEDs (#7000), so a tap that connects never counts it as already lit.
   const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid && !connectsOnCommit;

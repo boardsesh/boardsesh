@@ -272,7 +272,9 @@ export function usePlaySelectionController({
     [previewQueueItemUuid],
   );
   const openDrawer = useCallback(
-    (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
+    // `replay`: a pane that mounts later applying a target another pane already
+    // applied (see the target effect below). A look, not a pick.
+    (selectedClimb: Climb, options?: PlayDrawerOpenOptions, { replay = false }: { replay?: boolean } = {}) => {
       const previewItem = options?.previewQueueItem ?? null;
       const playlistSuggestionSource = options?.playlistSuggestionSource ?? null;
       // Fresh active open (a notification, a deep link with activation intent,
@@ -281,6 +283,10 @@ export function usePlaySelectionController({
       // Lists don't come through here: since #6665 they play through the
       // activation hook, which commits (committedExternally) or previews. A fresh-uuid item on a genuinely new selection is
       // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
+      // A reopen of the current climb (the mini player, the workout card's
+      // current-climb row) shows the committed slot, so it never opens as a
+      // browse preview. A replay is not one: it keeps the target's own options,
+      // so a pane mounting later shows the same browse preview the first did.
       const isFreshActiveOpen = !previewItem && !options?.committedExternally && !options?.reopensCurrent;
       const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
       // ...except in a crew, where the same taps are a LOOK. Tapping a peer's
@@ -327,7 +333,7 @@ export function usePlaySelectionController({
       clearMirror();
       setIsTickBarActive(false);
       setActiveSubDrawer('none');
-      if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse) {
+      if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse && !replay) {
         setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
       }
       // #4979 (section 6, decision A): the hold only keeps the automatic send on
@@ -346,6 +352,7 @@ export function usePlaySelectionController({
         !pinnedItem &&
         !options?.committedExternally &&
         !options?.reopensCurrent &&
+        !replay &&
         viewer !== 'anonymous' &&
         !showBoardMismatch &&
         heldQueueItemUuid !== null &&
@@ -383,15 +390,13 @@ export function usePlaySelectionController({
   // The host keeps the iPad pane's target after it lands, and every tab mounts
   // its own pane, so a pane that mounts later replays a target another pane
   // already applied. That replay is a look, not a pick: it must not light a
-  // climb the #4979 hold kept dark hours after the tap, so it opens as
-  // `reopensCurrent`.
+  // climb the #4979 hold kept dark hours after the tap, nor put the climb up a
+  // second time. It still reads the target's own options, so a tap that opened
+  // as a browse preview shows that preview in the later pane too.
   useEffect(() => {
     if (!openTarget) return;
     const replay = openTarget.claimFirstApply ? !openTarget.claimFirstApply() : false;
-    openDrawerRef.current(
-      openTarget.climb,
-      replay ? { ...openTarget.options, reopensCurrent: true } : openTarget.options,
-    );
+    openDrawerRef.current(openTarget.climb, openTarget.options, { replay });
   }, [openTarget]);
 
   const handlePrev = useSwipeSelection({

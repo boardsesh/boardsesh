@@ -8,7 +8,6 @@ import {
 } from '../play-drawer-menu-rows';
 
 const ICONS: Record<ClimbActionId, IconName> = {
-  preview: 'visibility',
   queue: 'add',
   openQueue: 'queue',
   playNext: 'queue.next',
@@ -31,7 +30,6 @@ const ICONS: Record<ClimbActionId, IconName> = {
 
 /** What `useClimbActions` hands the player, in the hook's own order. */
 const HOOK_ORDER: ClimbActionId[] = [
-  'preview',
   'queue',
   'openQueue',
   'playNext',
@@ -132,12 +130,10 @@ describe('buildPlayDrawerMenuRows', () => {
     ]);
   });
 
-  // Preview: already on that climb. Edit entry: a logbook-only row. Tick: the
-  // hero button is in the bar for a member, except in a timed block with the
-  // wall button in the top row (#7000).
-  it('never offers preview or edit entry, and tick only while the bar puts Log away', () => {
+  // Edit entry: a logbook-only row. Tick: the hero button is in the bar for a
+  // member, except in a timed block with the wall button in the top row (#7000).
+  it('never offers edit entry, and tick only while the bar puts Log away', () => {
     const ids = rowIds(EVERYTHING_HIDDEN);
-    expect(ids).not.toContain('preview');
     expect(ids).not.toContain('tick');
     expect(ids).not.toContain('editEntry');
     expect(rowIds(hiding('tick'))[0]).toBe('tick');

@@ -4,7 +4,7 @@
 // colour) plus a `run()` that performs the action and then calls `onAfterAction` (the
 // reaction menu passes its animated dismiss).
 //
-// The hook self-sources most openers (preview / queue / tick / beta video / report) from
+// The hook self-sources most openers (queue / tick / beta video / report) from
 // `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
 // `useToggleFavorite`, the native share from `useShareClimb`, and the create-climb
 // routes from `useCreateClimbNavigation`, so a caller supplies the climb, its board
@@ -30,8 +30,8 @@ import {
   useQueueSessionId,
 } from '../../providers/queue-provider';
 import { readClimbChangeLights } from '../play-drawer/use-climb-change-lights';
+import { isCommittedHeadClimb } from '../play-drawer/wall-state';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
-import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
@@ -45,7 +45,6 @@ import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 
 export type ClimbActionId =
-  | 'preview'
   | 'queue'
   | 'openQueue'
   | 'playNext'
@@ -326,24 +325,6 @@ export function useClimbActions({
 
     const items: ClimbActionItem[] = [];
 
-    // View-only open: a previewQueueItem (badge + "Set active") rather than committing.
-    // Mirror the board-sheet override rule so a cross-board climb still renders the
-    // switch-board overlay; same-board needs no override.
-    items.push({
-      id: 'preview',
-      title: t('mobile.climbActions.preview'),
-      icon: 'visibility',
-      color: accentColor,
-      run: () => {
-        const override = boardConfigsMatch(boardConfig, activeBoardConfig) ? undefined : boardConfig;
-        openPlayDrawer(climb, {
-          previewQueueItem: climbToQueueItem(climb),
-          boardConfig: override,
-        });
-        after();
-      },
-    });
-
     // "Play next" is meaningless on the climb already on the wall, so it is hidden
     // there rather than shown as a no-op. It sits right above Play last: the two
     // placements read as a pair, the way a music app offers them (#6772).
@@ -407,9 +388,15 @@ export function useClimbActions({
           // Walking the queue again, like the row tap: drop any list source.
           // Preview-first: unless automatic lighting is opted in (or this phone
           // drives), open the History slot as a preview that carries the replay
-          // placement to Put on board.
+          // placement to Put on board. A History copy of the climb already up
+          // commits at once: its preview has no Put on board (`isCommittedHeadClimb`),
+          // and the wall's climb stays the same.
           const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
-          if (readClimbChangeLights('tap', { inSharedSession })) {
+          const currentClimbUuid = getQueueSnapshot().currentClimbQueueItem?.climb.uuid ?? null;
+          if (
+            readClimbChangeLights('tap', { inSharedSession }) ||
+            isCommittedHeadClimb(replayItem.climb.uuid, currentClimbUuid)
+          ) {
             // The queue reorders in place, so the sheet stays up to show it.
             setCurrentClimb(replayItem, commitOptions);
           } else {

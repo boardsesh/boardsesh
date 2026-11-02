@@ -17,6 +17,7 @@ import type {
 } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { readClimbChangeLights } from './use-climb-change-lights';
+import { isCommittedHeadClimb } from './wall-state';
 
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
@@ -68,13 +69,24 @@ export function useQueueSheetHandlers({
   const inSharedSession = useIsSharedSession();
   const inSharedSessionRef = useRef(inSharedSession);
   inSharedSessionRef.current = inSharedSession;
+  // Whether a pick of `climb` commits now: automatic lighting is opted in or
+  // this phone is driving, or the climb is the one already up. A preview of a
+  // slot holding the current climb shows no Put on board (`isCommittedHeadClimb`),
+  // so the pick it carries could never land; committing it leaves the wall's
+  // climb where it is.
+  const pickCommitsNow = useCallback(
+    (climbUuid: string) =>
+      readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current }) ||
+      isCommittedHeadClimb(climbUuid, getQueueSnapshot().currentClimbQueueItem?.climb.uuid ?? null),
+    [getQueueSnapshot],
+  );
   // Selecting a queue slot previews it until automatic lighting is opted in
   // or this phone is driving. Keep the slot's identity for the later commit.
   const handleClimbPress = useCallback(
     (item: ClimbQueueItem) => {
       // Opening from the queue sheet means "walk the queue" — drop any list
       // source so next/previous follow the queue again, not a stale list.
-      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+      if (pickCommitsNow(item.climb.uuid)) {
         setCurrentClimb(item, { playlistSuggestionSource: null });
         openPlayDrawer(item.climb, { committedExternally: true });
       } else {
@@ -85,7 +97,7 @@ export function useQueueSheetHandlers({
       }
       requestCloseQueueSheet();
     },
-    [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
+    [pickCommitsNow, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
   // Long-press a queue row → open the climb reaction menu over the queue sheet.
@@ -110,7 +122,9 @@ export function useQueueSheetHandlers({
     (climb: QueueClimb, source: PlaylistSuggestionSource) => {
       const item = climbToQueueItem(climb, { suggested: true });
       const schemaClimb = item.climb as Climb;
-      if (readClimbChangeLights('tap', { inSharedSession: inSharedSessionRef.current })) {
+      // The suggestion's list is what the pick carries, so a suggestion of the
+      // climb already up commits too: its preview would have no Put on board.
+      if (pickCommitsNow(item.climb.uuid)) {
         setCurrentClimb(item, { playlistSuggestionSource: source });
         openPlayDrawer(schemaClimb, { committedExternally: true });
       } else {
@@ -118,7 +132,7 @@ export function useQueueSheetHandlers({
       }
       requestCloseQueueSheet();
     },
-    [setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
+    [pickCommitsNow, setCurrentClimb, openPlayDrawer, requestCloseQueueSheet],
   );
 
   // Tick a history climb → open the log-ascent sheet (stacks above the queue

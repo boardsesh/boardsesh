@@ -252,7 +252,7 @@ vi.mock('../../../theme/colors', () => ({
 vi.mock('../use-climb-actions', () => ({
   useClimbActions: (args: Record<string, unknown>) => {
     return [
-      { id: 'preview', title: 'Preview', icon: 'visibility', color: '#00f', run: () => {} },
+      { id: 'playNext', title: 'Play next', icon: 'queue.next', color: '#00f', run: () => {} },
       { id: 'tick', title: 'Log a tick', icon: 'tick', color: '#0f0', run: () => (captured.ran = 'tick') },
       {
         id: 'playlist',
@@ -263,7 +263,7 @@ vi.mock('../use-climb-actions', () => ({
       },
       { id: 'favorite', title: 'Favorite', icon: 'favorite', color: '#f00', run: () => {} },
       { id: 'share', title: 'Share', icon: 'share', color: '#00f', run: () => (captured.ran = 'share') },
-      // Preview and Favorite are the list's first two rows; these fill it out.
+      // Play next and Favorite are the list's first two rows; these fill it out.
       ...Array.from({ length: Math.max(0, ctrl.listRows - 2) }, (_, index) => ({
         id: `extra-${index}`,
         title: `Extra ${index}`,
@@ -343,7 +343,7 @@ describe('ClimbReactionMenu view switching', () => {
     const { getByLabelText, container } = renderMenu();
 
     // All five actions render.
-    for (const label of ['Log a tick', 'Add to Playlist', 'Share', 'Preview', 'Favorite']) {
+    for (const label of ['Log a tick', 'Add to Playlist', 'Share', 'Play next', 'Favorite']) {
       expect(getByLabelText(label)).not.toBeNull();
     }
 
@@ -352,7 +352,7 @@ describe('ClimbReactionMenu view switching', () => {
     for (const label of ['Log a tick', 'Add to Playlist', 'Share']) {
       expect(container.querySelector(`[data-listrow="true"][aria-label="${label}"]`)).toBeNull();
     }
-    for (const label of ['Preview', 'Favorite']) {
+    for (const label of ['Play next', 'Favorite']) {
       expect(container.querySelector(`[data-listrow="true"][aria-label="${label}"]`)).not.toBeNull();
     }
   });

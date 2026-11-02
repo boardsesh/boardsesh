@@ -51,7 +51,6 @@ export type ClimbMenuGroups = readonly (readonly PlayDrawerMenuRowId[])[];
  * the first that has a row. Ids not listed here are never offered from the
  * player:
  *
- * - `preview`: the climber is already looking at the climb.
  * - `editEntry`: a logbook-only row.
  *
  * `tick` is offered only while the bar puts Log away (a timed block in wall
