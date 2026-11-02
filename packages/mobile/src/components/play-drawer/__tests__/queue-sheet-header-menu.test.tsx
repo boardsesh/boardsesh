@@ -28,8 +28,16 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../Text', () => ({
-  Text: ({ children, numberOfLines }: Children & { numberOfLines?: number }) =>
-    createElement('span', { 'data-lines': numberOfLines === undefined ? 'any' : String(numberOfLines) }, children),
+  Text: ({
+    children,
+    numberOfLines,
+    accessibilityLabel,
+  }: Children & { numberOfLines?: number; accessibilityLabel?: string }) =>
+    createElement(
+      'span',
+      { 'data-lines': numberOfLines === undefined ? 'any' : String(numberOfLines), 'data-a11y': accessibilityLabel },
+      children,
+    ),
 }));
 vi.mock('../../LargeContentViewer', () => ({
   LargeContentViewer: ({ children }: Children) => createElement('span', null, children),
@@ -170,6 +178,23 @@ describe('QueueSheetHeader ⋯ menu', () => {
     const { getByText } = renderHeader();
     expect(getByText('queueDrawer.title').getAttribute('data-lines')).toBe('1');
     expect(getByText('mobile.queue.climbCount').getAttribute('data-lines')).toBe('1');
+  });
+
+  it('says the count is waiting while the player shows a climb whose swipes skip Up next (Then-signposts)', () => {
+    const { getByText, queryByText } = renderHeader({ upNextWaiting: true });
+    const count = getByText('mobile.queue.climbCountWaiting');
+    expect(count.getAttribute('data-lines')).toBe('1');
+    // The dot is for the eye: screen readers hear "3 climbs waiting".
+    expect(count.getAttribute('data-a11y')).toBe('mobile.queue.climbCountWaitingAria');
+    expect(queryByText('mobile.queue.climbCount')).toBeNull();
+  });
+
+  it('keeps the plain count otherwise, and no count at all with nothing up next', () => {
+    expect(renderHeader().queryByText('mobile.queue.climbCountWaiting')).toBeNull();
+    cleanup();
+    const empty = renderHeader({ upNextWaiting: true, queueCount: 0 });
+    expect(empty.queryByText('mobile.queue.climbCountWaiting')).toBeNull();
+    expect(empty.queryByText('mobile.queue.climbCount')).toBeNull();
   });
 
   it('leaves the ⋯ out of the edit mode, whose own Clear still clears as edit', () => {

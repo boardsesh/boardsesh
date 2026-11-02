@@ -49,6 +49,7 @@ import { PlayCoreSheetHosts } from './PlayCoreSheetHosts';
 import { usePlayFavorite } from './use-play-favorite';
 import { usePlaySelectionController, type PlayNavigationStep } from './use-play-selection-controller';
 import { trackQueueNavigation, trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
+import { queueSheetOpenContext } from '../../lib/queue-sheet-open-context';
 import { useAnySheetVisible } from '../../lib/sheet-visibility-store';
 import {
   buildPlayDrawerActionsContext,
@@ -1857,14 +1858,25 @@ export function PlayCore({
     [browseByDefault, alwaysDrive, drivingLive, navigationBoardType, navigationLayoutId, actionsAnalytics],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
+  // Both also say what the player showed and how full Up next was (Then-signposts).
   const handleOpenQueueFromBar = useCallback(() => {
-    trackQueueSheetOpened({ surface: 'player', boardType: navigationBoardType }, actionsAnalytics);
+    trackQueueSheetOpened(
+      { surface: 'player', boardType: navigationBoardType, ...queueSheetOpenContext(getQueueSnapshot(), isPreview) },
+      actionsAnalytics,
+    );
     onOpenQueue();
-  }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
+  }, [onOpenQueue, navigationBoardType, actionsAnalytics, getQueueSnapshot, isPreview]);
   const handleOpenQueueFromMenu = useCallback(() => {
-    trackQueueSheetOpened({ surface: 'player_menu', boardType: navigationBoardType }, actionsAnalytics);
+    trackQueueSheetOpened(
+      {
+        surface: 'player_menu',
+        boardType: navigationBoardType,
+        ...queueSheetOpenContext(getQueueSnapshot(), isPreview),
+      },
+      actionsAnalytics,
+    );
     onOpenQueue();
-  }, [onOpenQueue, navigationBoardType, actionsAnalytics]);
+  }, [onOpenQueue, navigationBoardType, actionsAnalytics, getQueueSnapshot, isPreview]);
 
   // The MiniPlayer's bulb on an unlit last pick (owner decision A): once the
   // preview it opened lands, Put on board is pressed for it (below).

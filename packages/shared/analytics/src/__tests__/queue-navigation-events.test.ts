@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { driveModeEnded, driveModeStarted, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
+import {
+  driveModeEnded,
+  driveModeStarted,
+  queueNavigation,
+  queueSheetOpened,
+  upNextBucket,
+} from '../queue-navigation-events';
 
 describe('queueNavigation', () => {
   it('names the event www fired and carries the step, the session and the board', () => {
@@ -106,11 +112,41 @@ describe('queueNavigation for a swipe that went before its board had painted', (
 });
 
 describe('queueSheetOpened', () => {
-  it('carries the surface and the board type only', () => {
-    expect(queueSheetOpened({ surface: 'mini_player', boardType: 'moonboard' })).toEqual({
+  it('carries the surface, the board type, what the player showed and Up next as a bucket', () => {
+    expect(
+      queueSheetOpened({ surface: 'mini_player', boardType: 'moonboard', from: 'preview', upNextCount: 4 }),
+    ).toEqual({
       name: 'Queue Sheet Opened',
-      properties: { surface: 'mini_player', boardType: 'moonboard' },
+      properties: { surface: 'mini_player', boardType: 'moonboard', from: 'preview', upNextBucket: '2-4' },
     });
+  });
+
+  it('never sends the exact Up next count', () => {
+    const { properties } = queueSheetOpened({
+      surface: 'player',
+      boardType: 'kilter',
+      from: 'current',
+      upNextCount: 37,
+    });
+    expect(properties).not.toHaveProperty('upNextCount');
+    expect(properties.upNextBucket).toBe('10+');
+  });
+});
+
+describe('upNextBucket', () => {
+  it.each([
+    [0, '0'],
+    [-1, '0'],
+    [Number.NaN, '0'],
+    [1, '1'],
+    [2, '2-4'],
+    [4, '2-4'],
+    [5, '5-9'],
+    [9, '5-9'],
+    [10, '10+'],
+    [500, '10+'],
+  ] as const)('puts %s climbs in %s', (count, bucket) => {
+    expect(upNextBucket(count)).toBe(bucket);
   });
 });
 

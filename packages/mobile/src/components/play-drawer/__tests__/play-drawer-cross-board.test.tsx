@@ -1783,16 +1783,37 @@ describe('PlayDrawer queue analytics', () => {
     renderDrawer();
     press(recorded.actionBar.at(-1), 'onOpenQueue');
     press(recorded.actionsMenu.at(-1), 'onOpenQueue');
+    // The player shows the climb up, and nothing is queued after it.
     expect(queueAnalytics.sheetOpened.mock.calls).toEqual([
       [
-        { surface: 'player', boardType: 'kilter' },
+        { surface: 'player', boardType: 'kilter', from: 'current', upNextCount: 0 },
         expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
       ],
       [
-        { surface: 'player_menu', boardType: 'kilter' },
+        { surface: 'player_menu', boardType: 'kilter', from: 'current', upNextCount: 0 },
         expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
       ],
     ]);
+  });
+
+  it('says the player showed a preview, and how many climbs Up next held (Then-signposts)', () => {
+    const current = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    queueState.currentClimbQueueItem = current;
+    queueState.queue = [current, queueItem(TWELVE_CLIMB, 'queued-a'), queueItem(TWELVE_CLIMB, 'queued-b')];
+    const previewQueueItem = queueItem(TWELVE_CLIMB, 'preview-item');
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: TWELVE_CLIMB, options: { previewQueueItem }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    press(recorded.actionBar.at(-1), 'onOpenQueue');
+    expect(queueAnalytics.sheetOpened).toHaveBeenCalledWith(
+      { surface: 'player', boardType: 'kilter', from: 'preview', upNextCount: 2 },
+      expect.anything(),
+    );
   });
 });
 
