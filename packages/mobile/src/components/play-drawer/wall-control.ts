@@ -710,9 +710,11 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     // a keep-lighting window swipes into an open-ended drive.
     state === 'lit' ||
     // A preview on this phone's board, never Set active (no wall to light),
-    // the crew's gym board (a relay), or a crewmate's board (their phone
-    // holds it; Put on board relays the climb to it).
-    (state === 'put_on_wall' && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
+    // the crew's gym board (a relay), a crewmate's board (their phone holds
+    // it; Put on board relays the climb to it), or a wall that can't light the
+    // climb (`offWall`: no lights, or another board's climb). Keep-lighting
+    // follows the swipe, so a press there arms no window it can't go live on.
+    (state === 'put_on_wall' && !input.offWall && !onCrewGymBoard && holder !== 'crew' && labelKey !== 'setActive');
   const swipeAction: WallControlSwipeAction =
     swipeable && !driving && !input.confirmArmed && !input.pending && driveMode !== 'arming' ? 'drive' : null;
   const bulbTapAction: WallControlAction =

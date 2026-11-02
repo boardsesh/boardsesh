@@ -56,7 +56,9 @@ const platform = vi.hoisted(() => ({ OS: 'web' as 'web' | 'ios' }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const toggleFavorite = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
-const crew = vi.hoisted(() => ({ shared: false }));
+// `crew` is the roster's crew (`useIsCrewSession`); null reads `shared`. The two
+// differ while the browse latch outlives a crew that just left.
+const crew = vi.hoisted(() => ({ shared: false, crew: null as boolean | null }));
 // `wall-swipe-to-drive` (#7113). Off by default here, so the older tests keep
 // today's button; the swipe's own tests turn it on.
 const swipeToDrive = vi.hoisted(() => ({ on: false }));
@@ -461,7 +463,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   // Solo unless a case says otherwise (the busy-wall question needs a crew):
   // the crew gate is off, so gestures commit as they always have.
   useIsSharedSession: () => crew.shared,
-  useIsCrewSession: () => crew.shared,
+  useIsCrewSession: () => crew.crew ?? crew.shared,
   usePlaylistSuggestionSource: () => null,
 }));
 // Null (no Bluetooth transport) unless a case hands the player a context, as
@@ -675,6 +677,7 @@ beforeEach(() => {
   lightbulbState.holderIsAuthoritative = false;
   disconnectAllBluetooth.mockClear();
   crew.shared = false;
+  crew.crew = null;
   wallClimbState.uuid = null;
   wallClimbState.sentAt = null;
   boardSheet.props = [];

@@ -761,7 +761,7 @@
           "untilStop": "Danach wird jeder Boulder, den du wählst, beleuchtet, bis du aufhörst.",
           "untilStopOrDisconnect": "Danach wird jeder Boulder, den du wählst, beleuchtet, bis du aufhörst oder „Automatisch trennen“ das Board freigibt.",
           "moonboard": "An einem MoonBoard wird danach jeder Boulder, den du wählst, beleuchtet, bis du aufhörst.",
-          "frost": "Steht auf dem Button Du steuerst das Board und leuchtet er in den Farben des Boulders, wird jeder Boulder beleuchtet, den du wählst. Zum Starten wischst du ihn nach links, oder du hältst ihn gedrückt und wählst Jeden Boulder beleuchten. Tippe ihn an, um aufzuhören.",
+          "frost": "Steht auf dem Button Du steuerst das Board und leuchtet er in den Farben des Boulders, wird jeder Boulder beleuchtet, den du wählst. Zum Starten wischst du ihn nach links (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen). Tippe ihn an, um aufzuhören.",
           "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Zum Starten nutzt du die Aktion Jeden Boulder beleuchten. Tippe den Button an, um aufzuhören.",
           "settings": "Beleuchtung einstellen",
           "done": "Alles klar",

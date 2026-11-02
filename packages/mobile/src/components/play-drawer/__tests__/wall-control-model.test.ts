@@ -893,6 +893,11 @@ describe('resolveWallControl: driving the wall', () => {
     ],
     ['Put on {board} at another gym board', { offWall: true, gymBoardName: 'Kilter' }],
     ['nothing to offer', { ...MINE, offWall: true }],
+    [
+      'a preview on a wall with no lights',
+      { commitButton: 'putOnWall' as const, pressAction: 'releaseWall' as const, wallHeldLocally: true, offWall: true },
+    ],
+    ["a preview of another board's climb", { ...MINE, commitButton: 'putOnWall' as const, offWall: true }],
   ])('offers no swipe when %s', (_case, input) => {
     expect(resolveWallControl({ ...FREE, ...input }).swipeAction).toBeNull();
   });
@@ -1138,6 +1143,24 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
       tapAction: 'take_wall',
       tapDrive: null,
     });
+    // A preview on a wall with no lights this phone holds (or one it doesn't
+    // yet): Put on board makes the climb current, and nothing can light it, so
+    // no window arms only to time out unlit.
+    for (const ledless of [
+      { pressAction: 'releaseWall' as const, wallHeldLocally: true },
+      { pressAction: 'takeWall' as const },
+    ]) {
+      expect(
+        resolveWallControl({
+          ...FREE,
+          ...ON,
+          ...ledless,
+          offWall: true,
+          commitButton: 'putOnWall',
+          commitLabel: 'putOnWall',
+        }),
+      ).toMatchObject({ state: 'put_on_wall', swipeAction: null, tapDrive: null, tapKeepLighting: null });
+    }
     // Disconnect board puts nothing up.
     expect(resolveWallControl({ ...FREE, ...MINE, ...ON, displayedLit: true })).toMatchObject({
       tapAction: 'disconnect',

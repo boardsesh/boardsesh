@@ -296,6 +296,23 @@ export function noteDriveClimbLit({ now = Date.now() }: { now?: number } = {}): 
 }
 
 /**
+ * The window's own choice moved to another length while it runs (the board
+ * sheet's Keep lighting row, spec B4): the new length counts from now, as a
+ * climb that lights would restart it. An arming window only takes the length.
+ * Returns whether anything changed.
+ */
+export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
+  if (!driveMode || driveMode.windowMs === null || windowMs <= 0 || driveMode.windowMs === windowMs) return false;
+  driveMode = {
+    ...driveMode,
+    windowMs,
+    expiresAt: driveMode.phase === 'live' ? now + windowMs : null,
+  };
+  emit();
+  return true;
+}
+
+/**
  * A swipe or Light every climb during a keep-lighting window: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
  */

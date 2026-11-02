@@ -714,7 +714,7 @@
       "breadcrumb": "Board und Bluetooth",
       "hero": {
         "title": "Verbinde dein Handy mit dem Board",
-        "subtitle": "Lies den Wand-Button: Am Board beleuchten beleuchtet diesen Boulder und eine Weile auch die nächsten, die du wählst. Das leuchtende Du steuerst das Board beleuchtet jeden Boulder, bis du aufhörst."
+        "subtitle": "Lies den Wand-Button: Am Board beleuchten beleuchtet diesen Boulder und eine Weile auch die nächsten, die du wählst; auf einem MoonBoard, bis du aufhörst. Das leuchtende Du steuerst das Board beleuchtet jeden Boulder, bis du aufhörst."
       },
       "connect": {
         "title": "Verbinden",
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Erkenne, wann du das Board steuerst",
-        "p1": "Der Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm, und die nächsten gewählten Boulder werden eine Weile ebenfalls beleuchtet. Das mattierte, leuchtende Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, bis du aufhörst, auch in einer Crew. Wisch den Button nach links oder halt ihn gedrückt und wähl Jeden Boulder beleuchten, um zu starten; tipp ihn an, um zu stoppen.",
+        "p1": "Der Wand-Button steuert das physische Board. Lies seine Beschriftung: Am Board beleuchten verbindet bei Bedarf und beleuchtet den Boulder auf dem Bildschirm, und die nächsten gewählten Boulder werden eine Weile ebenfalls beleuchtet. Auf einem MoonBoard beleuchtet Am Board beleuchten jeden gewählten Boulder, bis du aufhörst. Das mattierte, leuchtende Du steuerst das Board bedeutet, dass jeder gewählte Boulder beleuchtet wird, bis du aufhörst, auch in einer Crew. Wisch den Button nach links oder halt ihn gedrückt und wähl Jeden Boulder beleuchten, um zu starten; tipp ihn an, um zu stoppen.",
         "p2": "Zeigt der Button ‹‹, wische den Wand-Button nach links, um zu steuern. Lass los, sobald Loslassen, um jeden Boulder zu beleuchten erscheint. Das verbindet bei Bedarf, beleuchtet den Boulder auf dem Bildschirm und die danach gewählten. Wischen über die Board-Zeichnung wechselt zwischen Bouldern.",
         "p3": "Tippe auf Du steuerst das Board, um das Steuern zu beenden und verbunden weiterzustöbern. Die Beschriftung wechselt zu Board trennen; ein Tipp darauf trennt die Verbindung. Du kannst auch mit Jeden Boulder beleuchten unter ⋯, dann Board-Steuerung, oder über die Screenreader-Aktionen des Buttons starten.",
         "clipAlt": "Den Wand-Button nach links wischen, um zu steuern, dann zum Beenden antippen",

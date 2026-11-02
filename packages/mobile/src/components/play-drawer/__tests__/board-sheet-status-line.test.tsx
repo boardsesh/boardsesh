@@ -123,8 +123,38 @@ describe('BoardSheetStatusLine', () => {
     });
     const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
     expect(container.querySelector('[data-testid="ble-control-status"]')?.getAttribute('aria-label')).toBe(
-      'playView.wallControl.eachPickLights, playView.wallControl.secondsLeft {"count":45}',
+      'playView.wallControl.eachPickLights, playView.wallControl.secondsLeft {"count":40}',
     );
+  });
+
+  // Focus lands on this line when the sheet opens, and TalkBack re-reads a
+  // focused node's changed label: the spoken count keeps the button's 10 s step
+  // while the digits on screen tick each second (spec B2.2).
+  it('keeps its spoken label still across a 1 s tick, on the 10 s step, then says under 10 seconds', () => {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
+    const label = () => container.querySelector('[data-testid="ble-control-status"]')?.getAttribute('aria-label');
+    const before = label();
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(lineOf(container)).toBe(
+      'playView.wallControl.eachPickLights · playView.wallControl.secondsLeft {"count":44}',
+    );
+    expect(label()).toBe(before);
+    act(() => {
+      vi.advanceTimersByTime(36_000);
+    });
+    expect(label()).toBe('playView.wallControl.eachPickLights, playView.wallControl.underTenSeconds');
   });
 
   it('says nothing for a window with no clock yet', () => {

@@ -401,6 +401,34 @@ describe('explicit wall commitment', () => {
     expect(initialProps.chrome.clearMirror).toHaveBeenCalledOnce();
   });
 
+  // In a crew a queue row or Replay from here always opens as a preview that
+  // defers its commit, so this is the main path a deferred commit takes there:
+  // the press that only raises the question must keep the slot's options for
+  // Put mine up, or the climb goes up as a plain look and History's order is lost.
+  it('keeps a deferred commit through the busy-wall question, then commits it once with its options', () => {
+    const slot = item('history');
+    const initialProps = inputs();
+    initialProps.preview.drawerPreviewItem = slot;
+    initialProps.navigation.browseByDefault = true;
+    initialProps.confirmation.browseLatchActive = true;
+    initialProps.confirmation.wallUuidAtLatchStartRef.current = 'old-wall';
+    initialProps.openTarget = open(slot, {
+      previewQueueItem: slot,
+      previewCommitOptions: { placement: 'STEP', playlistSuggestionSource: null },
+    });
+    const { result, rerender } = renderHook(usePlaySelectionController, { initialProps });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.confirmation.setBusyWallConfirmArmed).toHaveBeenCalledWith(true);
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+    rerender({ ...initialProps, confirmation: { ...initialProps.confirmation, busyWallConfirmArmed: true } });
+    act(() => result.current.handleSetActive());
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(slot, {
+      placement: 'STEP',
+      playlistSuggestionSource: null,
+      trigger: 'put_on_wall',
+    });
+  });
+
   it.each(['ios', 'android'] as const)('leaves the busy-wall question to the question row on %s', (platform) => {
     authority.platform = platform;
     const initialProps = inputs();

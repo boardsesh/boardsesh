@@ -636,6 +636,65 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     expect(getLastDriveModeExitReason()).toBe('window_ended');
   });
 
+  // The board sheet's Keep lighting row at the wall (spec B4, WCAG 2.2.1): a
+  // new length applies to the running window, counted from the change.
+  it('takes a new length picked mid-window, counted from the change', () => {
+    vi.useFakeTimers();
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    act(() => {
+      vi.advanceTimersByTime(25_000);
+    });
+    watcher.change({ keepLighting: '60' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 60_000 });
+    // Past the old 45 s end, still lighting.
+    act(() => {
+      vi.advanceTimersByTime(60_000 - 1);
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('turns the window open-ended when Until I stop is picked mid-window', () => {
+    vi.useFakeTimers();
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ keepLighting: 'until_stopped' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: null, expiresAt: null });
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it("takes only its own choice's new length: a MoonBoard window reads the MoonBoard's", () => {
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ moonboardKeepLighting: '30' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
+    act(() => {
+      exitDriveMode('stopped');
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs: 30_000,
+        windowSetting: 'moonboardPutOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-b'));
+    watcher.change({ keepLighting: '60' });
+    expect(getDriveMode()).toMatchObject({ windowMs: 30_000 });
+    watcher.change({ moonboardKeepLighting: '60' });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 60_000 });
+  });
+
   it('ends the window in a crew when In a session too is turned off, and not solo', () => {
     const watcher = mount();
     openWindow();
@@ -666,6 +725,26 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
     act(() => emitWallConfirm('climb-q-2'));
     expect(getDriveMode()).toBeNull();
     expect(getCrewPutUp()).toBeNull();
+  });
+
+  // The climber's own Lock Screen Next or watch step: the server names their
+  // account as the mover, so it is their step, never a crewmate's put-up.
+  it("keeps the window through the climber's own Lock Screen step", () => {
+    reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-q-1'));
+    act(() =>
+      noteRelayReceipt({
+        eventType: 'CurrentClimbChanged',
+        incomingQueueItemUuid: 'q-2',
+        localQueueItemUuid: 'q-1',
+        correlationId: 'widget-navigate',
+        currentChangedBy: 'participant-me',
+        participantId: 'participant-me',
+      }),
+    );
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
   });
 
   it("keeps the window through this phone's own move and its echo", () => {

@@ -160,18 +160,28 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
         />
       );
     }
-    case 'toggle':
+    case 'toggle': {
+      const subtitle = toggleRowSubtitle(row);
       return (
         <View style={styles.padded}>
           <SwitchRow
             label={row.label}
-            description={toggleRowSubtitle(row).text}
+            accessibilityLabel={row.accessibilityLabel}
+            description={subtitle.isReason ? undefined : subtitle.text}
             value={row.value}
             disabled={row.disabled}
             onValueChange={row.onValueChange}
           />
+          {subtitle.isReason ? (
+            // Outside the greyed switch row, so its dimming leaves the reason
+            // at full label contrast (WCAG 1.4.3), as the native forms draw it.
+            <Text variant="footnote" color={systemColors.label} style={styles.toggleReason}>
+              {subtitle.text}
+            </Text>
+          ) : null}
         </View>
       );
+    }
     case 'segmented':
       return (
         <View style={styles.padded}>
@@ -345,6 +355,10 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     gap: spacing[1],
+  },
+  // Under the switch row's own label, which SwitchRow insets by spacing[4].
+  toggleReason: {
+    paddingHorizontal: spacing[4],
   },
   trailingGroup: {
     flexDirection: 'row',

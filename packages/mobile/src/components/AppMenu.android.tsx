@@ -21,7 +21,7 @@ import {
   Row,
   Text,
 } from '@expo/ui/jetpack-compose';
-import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, defaultMinSize, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
@@ -105,7 +105,14 @@ export function AppMenu(props: AppMenuProps) {
             </Column>
           ) : (
             <Row
-              modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
+              modifiers={[
+                clickable(() => setExpanded(true)),
+                // A text anchor (a settings value, the board sheet's Keep
+                // lighting) is a control in its own right: Material's 48dp
+                // minimum touch height. The bare glyph keeps its own size.
+                ...(props.iconName == null ? [defaultMinSize({ minHeight: 48 })] : []),
+                padding(spacing[2], spacing[1], spacing[2], spacing[1]),
+              ]}
               verticalAlignment="center"
             >
               {props.iconName != null ? (

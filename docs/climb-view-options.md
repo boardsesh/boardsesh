@@ -163,7 +163,7 @@ flat amber fallback; the label still says what the next press does.
   arming passes 30 s), the session or the board changes, or the climber signs out; going to the background ends
   nothing. A press's "stopped" lasts until that link drops, a solo press resumes an explicit Light on swipe opt-in, or Put on board opens a keep-lighting window or drive (`tapDrive`). The model's `swipeAction` is `drive` on Put on board
   (this phone's board) and on Disconnect board while not driving; never on Sam's board (his phone holds it), a relay, Set active, a wall with
-  no lights, or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
+  no lights or another board's climb (`offWall`; nor does Put on board's keep-lighting there), or while the busy-wall question is up or a connect is in flight. `climbChangeStaysViewOnly`
   (`play-drawer-navigation.ts`) is the one rule for whether a change of climb lights: driving always does, otherwise
   the setting decides solo and a crew previews. A drive starts from the swipe below, its "Light every climb"
   screen-reader action, or the board sheet's row. Holding any
@@ -172,11 +172,13 @@ flat amber fallback; the label still says what the next press does.
   action, "Board options". Every view runs the same tap. The player's sheet leaves out auto-disconnect and the two lighting switches, which live in Settings ›
   Board; the app-wide sheet (the top bar's bulb, the Climbs header pill) keeps them. Both sheets lead with **Keep
   lighting after Put on board** (the MoonBoard's own choice on a connected MoonBoard), so the window's length is two
-  taps away at the wall, and the player's sheet carries a status line for the climb on screen. Auto-disconnect still frees the
+  taps away at the wall. A change there applies to the window that is running (`DriveModeWatcher`): a new length
+  counts from the change, Until I stop makes it open-ended, and Off ends it. The player's sheet carries a status
+  line for the climb on screen. Auto-disconnect still frees the
   board. Its countdown starts over on every write that lands, every change of preview in the player and every
   wall-button press (tap, hold, swipe, the named action), so browsing previews with nothing lit never drops the
   board; an open-ended drive with nothing picked still counts down, so a phone left in a bag lets go. When it
-  lets go it says so in a toast: "Disconnected after 30 seconds with nothing lit. Put on board to reconnect."
+  lets go it says so in a toast: "Disconnected after 30 seconds with no new climb lit or previewed. Put on board to reconnect."
   (the configured time).
 - **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark
   for 4 h in that one press: Put on board re-asserts when its connect's first write meets the hold (any hold while

@@ -94,6 +94,18 @@ describe('SwitchRow (web)', () => {
     expect(row.getAttribute('aria-checked')).toBe('false');
   });
 
+  it('takes its accessible name from accessibilityLabel when given one', () => {
+    render(
+      createElement(SwitchRow, {
+        label: 'In a session too',
+        accessibilityLabel: 'Keep lighting in a session too',
+        value: false,
+        onValueChange: vi.fn(),
+      }),
+    );
+    expect(screen.getByRole('switch', { name: 'Keep lighting in a session too' })).toBeTruthy();
+  });
+
   it('flips on a row tap and reports disabled without flipping', () => {
     const onValueChange = vi.fn();
     const { rerender } = render(createElement(SwitchRow, { label: 'Rest timer', value: false, onValueChange }));

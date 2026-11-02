@@ -18,7 +18,15 @@
 
 import { ComposeHost } from './ComposeHost.android';
 import { Row, Column, Text, Switch } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, weight, toggleable, padding, defaultMinSize, alpha } from '@expo/ui/jetpack-compose/modifiers';
+import {
+  fillMaxWidth,
+  weight,
+  toggleable,
+  padding,
+  defaultMinSize,
+  alpha,
+  semantics,
+} from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { switchControlColors } from '../theme/expo-ui-modifiers';
@@ -26,7 +34,14 @@ import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
 
-export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
+export function SwitchRow({
+  label,
+  accessibilityLabel,
+  description,
+  value,
+  onValueChange,
+  disabled = false,
+}: SwitchRowProps) {
   const { brandColors, colorScheme, systemColors, m3 } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
   // On-track colour: the brand control tint (M3: one primary colour for
@@ -43,8 +58,15 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     // disabled so a tap is a no-op. `toggleable` sits before `padding` so the
     // ripple covers the padded row, not just the content.
     ...(disabled ? [] : [toggleable(value, () => handleToggle(!value), { role: 'switch' as const })]),
+    // The toggleable row is one TalkBack stop: its own name, with the line under it.
+    ...(accessibilityLabel && !disabled
+      ? [semantics({ contentDescription: description ? `${accessibilityLabel}, ${description}` : accessibilityLabel })]
+      : []),
     padding(spacing[4], spacing[2], spacing[4], spacing[2]),
   ];
+  // Greyed out, the row is no stop of its own: the label and the switch are, so
+  // each carries the name, never a bare "In a session too".
+  const named = accessibilityLabel ? [semantics({ contentDescription: accessibilityLabel })] : undefined;
 
   return (
     // `matchContents={{ vertical: true }}` (NOT the boolean `matchContents`, which
@@ -55,7 +77,11 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Row horizontalArrangement="spaceBetween" verticalAlignment="center" modifiers={rowModifiers}>
         <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
-          <Text style={{ typography: 'bodyLarge' }} color={systemColors.label as string}>
+          <Text
+            style={{ typography: 'bodyLarge' }}
+            color={systemColors.label as string}
+            modifiers={disabled ? named : undefined}
+          >
             {label}
           </Text>
           {description ? (
@@ -75,6 +101,7 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
           // emitted value here; row taps still derive the next value above.
           onCheckedChange={handleToggle}
           colors={switchColors}
+          modifiers={named}
         />
       </Row>
     </ComposeHost>

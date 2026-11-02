@@ -15,7 +15,7 @@ export type BleKeepLightingRowModel = {
   onChange: (choice: KeepLightingChoice) => void;
 };
 
-/** A row's touch height (44 pt iOS; Android's 48 dp comes from the native menu's own anchor). */
+/** A row's height (44 pt). The menu's anchor is the touch target: 44 pt on iOS, 48 dp on Android (`AppMenu`). */
 const ROW_MIN_HEIGHT = 44;
 
 /**

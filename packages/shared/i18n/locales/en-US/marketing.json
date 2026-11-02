@@ -714,7 +714,7 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Read the wall button: Put on board lights this climb and the next ones you pick for a short time. A glowing You are driving the wall lights every climb until you stop."
+        "subtitle": "Read the wall button: Put on board lights this climb and the next ones you pick for a short time; on a MoonBoard, until you stop. A glowing You are driving the wall lights every climb until you stop."
       },
       "connect": {
         "title": "Connect",
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Know when you’re driving the wall",
-        "p1": "The wall button handles physical board controls. Read its label: Put on board connects if needed and lights the climb on screen, and the next climbs you pick light too for a short window. A frosted, glowing You are driving the wall means every climb you pick lights up until you stop, including in a crew. Swipe the button left, or hold it and pick Light every climb, to start; tap it to stop.",
+        "p1": "The wall button handles physical board controls. Read its label: Put on board connects if needed and lights the climb on screen, and the next climbs you pick light too for a short window. On a MoonBoard, Put on board starts driving until you stop. A frosted, glowing You are driving the wall means every climb you pick lights up until you stop, including in a crew. Swipe the button left, or hold it and pick Light every climb, to start; tap it to stop.",
         "p2": "To start driving when the button shows ‹‹, swipe the wall button left. Let go when it says Let go to light every climb. This connects if needed, lights the climb on screen and lights the climbs you choose after it. Swiping across the board itself moves between climbs.",
         "p3": "Tap You are driving the wall to stop driving and browse while staying connected. The label changes to Disconnect board; tapping that disconnects. You can also start driving with Light every climb in ⋯, then Board controls, or the button’s screen-reader actions.",
         "clipAlt": "Swiping the wall button left to start driving, then tapping it to stop",

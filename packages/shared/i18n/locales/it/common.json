@@ -761,7 +761,7 @@
           "untilStop": "Da lì in poi ogni blocco che scegli si illumina in parete finché non smetti.",
           "untilStopOrDisconnect": "Da lì in poi ogni blocco che scegli si illumina in parete finché non smetti, o finché la disconnessione automatica non libera il pannello.",
           "moonboard": "Su una MoonBoard, da lì in poi ogni blocco che scegli si illumina in parete finché non smetti.",
-          "frost": "Quando il pulsante dice Guidi tu il pannello e brilla dei colori del blocco, ogni blocco che scegli si illumina in parete. Per iniziare, scorri il pulsante verso sinistra, oppure tienilo premuto e scegli Illumina ogni blocco. Toccalo per smettere.",
+          "frost": "Quando il pulsante dice Guidi tu il pannello e brilla dei colori del blocco, ogni blocco che scegli si illumina in parete. Per iniziare, scorri il pulsante verso sinistra (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco). Toccalo per smettere.",
           "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. Per iniziare, usa l'azione Illumina ogni blocco. Tocca il pulsante per smettere.",
           "settings": "Impostazioni di illuminazione",
           "done": "Ok",

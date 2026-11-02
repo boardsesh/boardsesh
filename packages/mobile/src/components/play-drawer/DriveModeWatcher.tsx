@@ -4,7 +4,12 @@ import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useSetting } from '../../settings';
-import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
+import {
+  DEFAULT_KEEP_LIGHTING,
+  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  keepLightingWindowMs,
+  sanitiseKeepLighting,
+} from '../../lib/keep-lighting';
 import { useIsCrewSession, useQueueSessionControls } from '../../providers/queue-provider';
 import {
   carryDriveIntoCrew,
@@ -14,8 +19,10 @@ import {
   exitDriveMode,
   getDriveMode,
   isDriveWindowDue,
+  makeDriveOpenEnded,
   markDriveLive,
   resolveDriveModeExit,
+  retimeDriveWindow,
   shouldCarryDriveIntoCrew,
   shouldEndWindowForSettings,
   useDriveMode,
@@ -41,7 +48,8 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * Put on board's keep-lighting window (2.7) ends here too (`window_ended`):
  * one timeout to its end, re-keyed by each climb that renews it, and a
  * catch-up when the app comes back to the foreground, since a timer doesn't
- * run while the app is suspended. Turning its setting off ends it as well.
+ * run while the app is suspended. Turning its setting off ends it as well, and
+ * changing its length mid-window applies to the running window.
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -118,17 +126,26 @@ export function DriveModeWatcher(): null {
   // Off, or In a session too turned off in a crew. The window ends. "A crew"
   // is the roster's `isCrewSession`, the read the press's own `crewSession`
   // takes in PlayCore, so both agree on what a session is.
+  //
+  // Its own choice moved to another length (the board sheet's row, at the
+  // wall, spec B4): the running window takes it, counted from now, and Until I
+  // stop makes it open-ended. Only a change does: a window opened from a plan
+  // keeps its length until its choice moves.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
   const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
   const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
+  const choicesRef = useRef({ keepLighting, moonboardKeepLighting });
   const windowed = drive?.windowMs != null;
   useEffect(() => {
+    const previous = choicesRef.current;
+    choicesRef.current = { keepLighting, moonboardKeepLighting };
     if (!windowed) return;
+    const latest = getDriveMode();
     if (
       shouldEndWindowForSettings({
-        drive: getDriveMode(),
+        drive: latest,
         keepLighting,
         moonboardKeepLighting,
         drivesInSession,
@@ -136,7 +153,14 @@ export function DriveModeWatcher(): null {
       })
     ) {
       exitDriveMode('window_ended');
+      return;
     }
+    const moonboardWindow = latest?.windowSetting === 'moonboardPutOnBoardKeepsLighting';
+    const choice = moonboardWindow ? moonboardKeepLighting : keepLighting;
+    if (choice === (moonboardWindow ? previous.moonboardKeepLighting : previous.keepLighting)) return;
+    const windowMs = keepLightingWindowMs(choice);
+    if (windowMs === null) makeDriveOpenEnded();
+    else if (windowMs !== undefined) retimeDriveWindow(windowMs);
   }, [windowed, keepLighting, moonboardKeepLighting, drivesInSession, isCrewSession]);
 
   // The window's end, modelled on the arming timeout below: one timeout, keyed

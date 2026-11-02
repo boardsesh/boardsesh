@@ -470,7 +470,7 @@
     "autoDisconnect": {
       "description": "Trennt die Verbindung zum Board, wenn für die gewählte Zeit kein Boulder beleuchtet oder in der Vorschau geöffnet wurde.",
       "cutsLighting": "Automatisch trennen gibt das Board nach {{timeout}} frei, dann endet auch die Beleuchtung.",
-      "disconnectedToast": "Board nach {{timeout}} ohne beleuchteten Boulder getrennt. Tippe auf „Am Board beleuchten“, um wieder zu verbinden.",
+      "disconnectedToast": "Board nach {{timeout}} ohne neu beleuchteten oder in der Vorschau geöffneten Boulder getrennt. Tippe auf „Am Board beleuchten“, um wieder zu verbinden.",
       "enabledLabel": "Automatisch trennen",
       "enabledDescription": "Lass andere Kletterer*innen verbinden, sobald der Timer abläuft.",
       "timeoutLabel": "Trennen nach",

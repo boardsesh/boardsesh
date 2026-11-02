@@ -26,7 +26,9 @@ type NavigateOutcome =
   | { kind: 'ok'; currentIndex: number; queueLength: number; serverCurrentIndex: number; targetIndex: number }
   | { kind: 'queue_empty' }
   | { kind: 'out_of_bounds'; queueLength: number; serverCurrentIndex: number; targetIndex: number };
-const navigateSessionQueueMock = vi.fn<() => Promise<NavigateOutcome>>(async () => ({
+const navigateSessionQueueMock = vi.fn<
+  (sessionId: string, action: string, correlationId: string, moverUserId: string | null) => Promise<NavigateOutcome>
+>(async () => ({
   kind: 'ok',
   currentIndex: 1,
   queueLength: 2,
@@ -48,7 +50,8 @@ vi.mock('../handlers/widget-session-guard', () => ({
 }));
 
 vi.mock('../handlers/session-queue-actions', () => ({
-  navigateSessionQueue: () => navigateSessionQueueMock(),
+  navigateSessionQueue: (sessionId: string, action: string, correlationId: string, moverUserId: string | null) =>
+    navigateSessionQueueMock(sessionId, action, correlationId, moverUserId),
   reassertSessionCurrentClimb: () => reassertSessionCurrentClimbMock(),
 }));
 
@@ -201,6 +204,13 @@ describe('handleSessionNavigate', () => {
     expect(parsed.success).toBe(true);
     expect(parsed.currentIndex).toBe(1);
     expect(navigateSessionQueueMock).toHaveBeenCalledOnce();
+  });
+
+  // The watch's step is its own climber's: the event names that account as the
+  // mover, so their phone never reads it as a crewmate's put-up (2.7 window).
+  it("names the watch's account as the mover", async () => {
+    await runNavigate({ method: 'POST', authHeader: bearer, body: navBody });
+    expect(navigateSessionQueueMock).toHaveBeenCalledExactlyOnceWith(SESSION_ID, 'next', 'session-navigate', USER_ID);
   });
 
   it('returns 409 when the queue is empty', async () => {

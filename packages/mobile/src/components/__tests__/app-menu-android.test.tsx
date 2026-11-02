@@ -22,7 +22,15 @@ vi.mock('@expo/ui/jetpack-compose', () => {
   return {
     DropdownMenu,
     DropdownMenuItem,
-    Row: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-row': true }, children),
+    Row: ({ children, modifiers }: { children?: ReactNode; modifiers?: { kind?: string; minHeight?: number }[] }) =>
+      createElement(
+        'div',
+        {
+          'data-row': true,
+          'data-min-height': modifiers?.find((modifier) => modifier.kind === 'defaultMinSize')?.minHeight,
+        },
+        children,
+      ),
     Column: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-column': true }, children),
     Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-compose-text': true }, children),
     IconButton: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
@@ -34,6 +42,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
 });
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   clickable: () => ({}),
+  defaultMinSize: ({ minHeight }: { minHeight?: number }) => ({ kind: 'defaultMinSize', minHeight }),
   padding: () => ({}),
 }));
 vi.mock('react-native', () => ({
@@ -97,6 +106,15 @@ describe('AppMenu (Android) overflow anchor', () => {
     );
     expect(container.querySelector('[data-trigger] [data-icon-button]')).toBeNull();
     expect(container.querySelector('[data-trigger]')?.textContent).toContain('My crew');
+  });
+
+  // The board sheet's Keep lighting row and Settings › Board's select rows are
+  // this anchor alone: Material's 48dp minimum, not a 32dp line of text.
+  it('gives a text anchor a 48dp minimum touch height', () => {
+    const { container } = render(
+      createElement(AppMenu, { label: '45 seconds', actions: ACTIONS, onSelectIndex: vi.fn() }),
+    );
+    expect(container.querySelector('[data-trigger] > [data-row]')?.getAttribute('data-min-height')).toBe('48');
   });
 
   it('stacks a headline over the label as one title-menu and reads both', () => {

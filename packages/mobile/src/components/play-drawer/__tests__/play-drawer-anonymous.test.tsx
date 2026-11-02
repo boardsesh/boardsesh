@@ -104,6 +104,9 @@ const queueActions = vi.hoisted(() => ({
 // ending" is exercised at all.
 const session = vi.hoisted(() => ({
   isShared: false,
+  // The roster's crew (`useIsCrewSession`); null reads `isShared`. The two differ
+  // while the browse latch outlives a crew that just left.
+  isCrew: null as boolean | null,
   useRealNavigation: false,
   suggestionSource: null as PlaylistSuggestionSource | null,
   sessionId: null as string | null,
@@ -486,7 +489,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
   useIsSharedSession: () => session.isShared,
-  useIsCrewSession: () => session.isShared,
+  useIsCrewSession: () => session.isCrew ?? session.isShared,
   usePlaylistSuggestionSource: () => session.suggestionSource,
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.current }));
@@ -717,6 +720,7 @@ beforeEach(() => {
   recorded.previewFirstTip = [];
   queueActions.addToQueue.mockResolvedValue('added');
   session.isShared = false;
+  session.isCrew = null;
   session.useRealNavigation = false;
   session.suggestionSource = null;
   session.sessionId = null;
@@ -2474,6 +2478,27 @@ describe('PlayDrawer — the preview-first card (2.7)', () => {
     setSetting('putOnBoardDrivesInSession', drivesInSession);
     await renderFirstPreview();
     expect(recorded.previewFirstTip.at(-1)?.keepLighting).toEqual(plan);
+  });
+
+  // The crew has left but the browse latch still holds (or a crewmate's arrival
+  // is still in its dwell): the roster says solo, so In a session too has no
+  // say. The press, the watcher and this card all read the roster, never the
+  // latch, so none of them promises a window another one would refuse.
+  it('reads the roster, not the browse latch: no crew means the 45 s window, In a session too off', async () => {
+    session.isShared = true;
+    session.isCrew = false;
+    session.sessionId = 'session-1';
+    setSetting('putOnBoardDrivesInSession', false);
+    await renderFirstPreview();
+    expect(recorded.previewFirstTip.at(-1)?.keepLighting).toEqual({
+      windowMs: 45_000,
+      setting: 'putOnBoardKeepsLighting',
+    });
+    expect(lastActionBarProps().wallControl).toMatchObject({
+      state: 'put_on_wall',
+      tapDrive: 'window',
+      tapKeepLighting: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' },
+    });
   });
 
   it('stays away from a climber who saw it before', async () => {

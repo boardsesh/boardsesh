@@ -714,7 +714,7 @@
       "breadcrumb": "Plafón y Bluetooth",
       "hero": {
         "title": "Conecta el móvil al plafón",
-        "subtitle": "Lee el botón del muro: Poner en el plafón enciende este bloque y los siguientes que elijas durante un rato. Estás al mando del plafón, brillante, enciende cada bloque hasta que pares."
+        "subtitle": "Lee el botón del muro: Poner en el plafón enciende este bloque y los siguientes que elijas durante un rato; en un MoonBoard, hasta que pares. Estás al mando del plafón, brillante, enciende cada bloque hasta que pares."
       },
       "connect": {
         "title": "Conectar",
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Sabe cuándo estás al mando del plafón",
-        "p1": "El botón del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla, y los siguientes que elijas también se encienden durante un rato. Estás al mando del plafón, esmerilado y brillante, significa que cada bloque que elijas se enciende hasta que lo dejes, también en grupo. Desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque, para empezar; tócalo para parar.",
+        "p1": "El botón del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla, y los siguientes que elijas también se encienden durante un rato. En un MoonBoard, Poner en el plafón te pone al mando hasta que pares. Estás al mando del plafón, esmerilado y brillante, significa que cada bloque que elijas se enciende hasta que lo dejes, también en grupo. Desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque, para empezar; tócalo para parar.",
         "p2": "Para tomar el mando cuando el botón muestra ‹‹, desliza el botón del muro hacia la izquierda. Suelta cuando diga Suelta para encender cada bloque. Se conecta si hace falta, enciende el bloque de la pantalla y los que elijas después. Deslizar sobre el dibujo del plafón cambia de bloque.",
         "p3": "Toca Estás al mando del plafón para dejar el mando y explorar sin desconectarte. La etiqueta cambia a Desconectar plafón; tocarla desconecta. También puedes tomar el mando con Encender cada bloque en ⋯, luego Controles del plafón, o en las acciones del lector de pantalla del botón.",
         "clipAlt": "Deslizar el botón del muro hacia la izquierda para tomar el mando y tocarlo para dejarlo",
