@@ -37,9 +37,11 @@ import {
  * paused timers hold back: a timed drive over by the press is not one it
  * renews. Native finds it over too and starts a new one (`afterPress`), so the
  * press starts a drive of its own and the old one ends at its end
- * (`window_ended`). That end keeps the link (`keepLink`): the press is the
- * climber at the wall lighting a climb, so Disconnect Bluetooth when driving
- * ends must not let go of the board under it. A crewmate's put-up ends a
+ * (`window_ended`); under Right away native writes nothing, and the press's
+ * own `queueNavigate` ends it (`endTimedDriveOverAtPress`). That end keeps the
+ * link (`keepLink`): the press is the climber at the wall lighting a climb, so
+ * Disconnect Bluetooth when driving ends must not let go of the board under
+ * it. A crewmate's put-up ends a
  * timed drive either way started (`useDriveCrewPutUp`), and the climber's own
  * press never reads as one: the server names them as its mover.
  *
@@ -229,6 +231,24 @@ export function adoptLockScreenLighting({
 }
 
 /**
+ * A Lock Screen, Dynamic Island or notification Previous / Next, as JS hears
+ * it (`queueNavigate`): a timed drive over by now ends at its end
+ * (`window_ended`), keeping the link. The press is the climber at the wall
+ * lighting a climb, so Disconnect Bluetooth when driving ends must not let go
+ * of the board under it, Right away included. Android reads it here before
+ * arming (`armNotificationPressDrive`). iOS reads it once the press's own
+ * write is adopted: that write replaces a lapsed drive itself, but under Right
+ * away the intent writes none, so the old drive ends here instead of at the
+ * next foreground's catch-up, which would let go of the board. Returns whether
+ * it ended one.
+ */
+export function endTimedDriveOverAtPress(now = Date.now()): boolean {
+  if (!isDriveWindowDue(getDriveMode(), now)) return false;
+  exitDriveMode('window_ended', { keepLink: true });
+  return true;
+}
+
+/**
  * Android: a notification Previous / Next, as JS hears it (`queueNavigate`).
  * The receiver writes no drive: JS moves the queue and its auto-sender
  * lights the wall, so a timed drive must start where a climb lit in the app
@@ -266,7 +286,7 @@ export function armNotificationPressDrive({
   plan: KeepLightingPlan | null;
   now?: number;
 }): boolean {
-  if (isDriveWindowDue(getDriveMode(), now)) exitDriveMode('window_ended', { keepLink: true });
+  endTimedDriveOverAtPress(now);
   if (!linked || plan === null || getDriveMode() !== null) return false;
   enterDriveMode({
     sessionId,

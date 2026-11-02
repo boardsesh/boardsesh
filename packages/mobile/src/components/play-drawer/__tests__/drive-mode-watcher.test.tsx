@@ -1521,6 +1521,44 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 
+  // Right away (or any setting that starts no drive from a press): the iOS
+  // intent lights its one climb and writes nothing, so there is no write to
+  // replace the old drive. The press's own queueNavigate ends it, keeping the
+  // board, as Android's press does.
+  it('keeps the board when an iOS Lock Screen press under Right away finds the timed drive over', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    openTimedDrive();
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => {
+      for (const listener of lockScreen.navigateListeners) {
+        listener({ action: 'next', currentIndex: 1, correlationId: 'corr-1' });
+      }
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(getDriveMode()).toBeNull();
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // No press heard before the app came back: the clock ended the drive, and the
+  // setting lets go of the board (the base's rule for a timed drive that ran out).
+  it('lets go when the app comes back to a timed drive that ran out with no press heard', () => {
+    vi.useFakeTimers();
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
+    mount();
+    openTimedDrive();
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
   it('keeps the board when an Android notification press finds the timed drive over', () => {
     vi.useFakeTimers();
     lockScreen.android = true;

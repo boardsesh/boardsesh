@@ -16,7 +16,7 @@ import {
 } from '../../lib/keep-lighting';
 import { useIsCrewSession, useQueueActions, useQueueSessionControls } from '../../providers/queue-provider';
 import { addWidgetQueueNavigateListener, isAndroidSessionPresence } from '../../lib/live-activity/live-activity-plugin';
-import { adoptLockScreenLighting, armNotificationPressDrive } from './lock-screen-lighting';
+import { adoptLockScreenLighting, armNotificationPressDrive, endTimedDriveOverAtPress } from './lock-screen-lighting';
 import {
   carryDriveIntoCrew,
   clearDrivingStopped,
@@ -71,7 +71,9 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * wall for it, so on its `queueNavigate` event this arms a drive the wall's
  * lit confirm takes live, as Put on board does. Either way the drive reports
  * `startedBy: 'lock_screen'`. Under Right away a press lights its one climb
- * and starts no drive.
+ * and starts no drive. On both platforms a press that finds a timed drive over
+ * ends it keeping the board (`endTimedDriveOverAtPress`); the catch-up with no
+ * press heard ends it at the clock, letting go when the setting says so.
  *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
@@ -133,7 +135,14 @@ export function DriveModeWatcher(): null {
     });
     const removeNavigateListener = addWidgetQueueNavigateListener((event) => {
       adoptFromLockScreen();
-      if (!isAndroidSessionPresence) return;
+      if (!isAndroidSessionPresence) {
+        // iOS: the intent lit the wall and wrote the press's own drive, adopted
+        // just above, unless Right away starts none. A timed drive still over
+        // then has nothing to replace it: it ends keeping the board, as
+        // Android's press does below.
+        endTimedDriveOverAtPress();
+        return;
+      }
       // The bridge drops a press whose index the queue doesn't hold; nothing lights then.
       const { queue } = getQueueSnapshot();
       if (event.currentIndex < 0 || event.currentIndex >= queue.length) return;

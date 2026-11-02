@@ -24,6 +24,7 @@ import {
 import {
   adoptLockScreenLighting,
   armNotificationPressDrive,
+  endTimedDriveOverAtPress,
   isUnsettledLockScreenLighting,
   resetLockScreenLightingForTests,
   resolveLockScreenAdoption,
@@ -234,6 +235,29 @@ describe('isUnsettledLockScreenLighting', () => {
     expect(isUnsettledLockScreenLighting(snapshot(), NOW)).toBe(false);
     expect(isUnsettledLockScreenLighting(snapshot({ mode: 'driving', endsAtMs: null }), NOW)).toBe(false);
     expect(isUnsettledLockScreenLighting(snapshot({ updatedAtMs: NOW - 5_000 }), NOW)).toBe(true);
+  });
+});
+
+// A press JS hears, on either platform: under Right away the iOS intent writes
+// no drive, so nothing else replaces a timed drive the press found over.
+describe('endTimedDriveOverAtPress', () => {
+  it('ends a timed drive past its end, keeping the link', () => {
+    liveWindow(-1_000);
+    expect(endTimedDriveOverAtPress(NOW)).toBe(true);
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true });
+  });
+
+  it('leaves a timed drive with time left, an open-ended drive, and no drive alone', () => {
+    expect(endTimedDriveOverAtPress(NOW)).toBe(false);
+    liveWindow(1_000);
+    expect(endTimedDriveOverAtPress(NOW)).toBe(false);
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: NOW + 1_000 });
+    resetDriveModeForTests();
+    enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: 7, windowMs: null, windowSetting: null });
+    markDriveLive({ now: NOW - 600_000 });
+    expect(endTimedDriveOverAtPress(NOW)).toBe(false);
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: null });
   });
 });
 
