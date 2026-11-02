@@ -1,5 +1,8 @@
 /**
- * Which grades to print above the "Community" ascents-by-angle bars, and how.
+ * Which grades to print beside a row of bars, and how. Used above the play
+ * drawer's "Community" ascents-by-angle bars and under the grade axis of the
+ * profile and session charts. A grade is never cut to "V1…": it fits, stacks,
+ * or skips a bar, in that order.
  *
  * A board offers up to fifteen angles, which on a phone leaves each bar about
  * 14px with a 6px gap — narrower than "V10". The first attempt at #4164 stood
@@ -18,7 +21,7 @@
  *     each grade band begins.
  */
 import { splitGradeLabel } from '@boardsesh/play-view';
-import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from '../../lib/chart/label-metrics';
+import { CHART_LABEL_LINE_HEIGHT, estimateLabelWidth } from './label-metrics';
 
 export type GradeBarLabels = {
   /** Lines to draw above each bar, by bar index. Empty = this bar goes bare. */

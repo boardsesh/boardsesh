@@ -52,6 +52,7 @@ export function SessionAnalyticsSection({
           testID="session-grade-chart"
           bars={gradeBars}
           colorBy="grade"
+          gradeAxis
           height={112}
           fitYAxisToData
           accessibilityLabel={gradeBars

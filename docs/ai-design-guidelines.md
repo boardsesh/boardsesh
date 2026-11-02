@@ -326,6 +326,21 @@ Android. Count badges use `caption2` in a min-size box capped at `1.3` (`count-b
 chart column) takes `<Text numeric>`, which sets `fontVariant: ['tabular-nums']` so digits don't
 jitter sideways.
 
+**A V-grade is never cut.** "V" always renders with its number (`V1`, `V14`, `V5+`), never "V…" or
+"V1…". When a grade doesn't fit, change the layout, not the grade:
+
+- **Rows and headers.** The climb name or title shrinks; the grade keeps its width (see the climb
+  rows, the queue capsule and the play drawer header).
+- **Charts.** Run the labels through `buildGradeBarLabels`
+  (`packages/mobile/src/lib/chart/grade-bar-labels.ts`). It prints a label whole when it fits,
+  stacks a both-formats label ("V6" over "7A") when it doesn't, and only then labels fewer bars.
+  An unlabelled bar still carries its grade in its colour and in the tap tooltip. The `YouCharts`
+  bar charts take `gradeAxis` for a grade x-axis; never hand a grade to gifted-charts' own `label`,
+  which boxes it to one bar and ellipsizes.
+
+The Font half of a both-formats label may stack or drop out on a cramped surface. The V-grade token
+stays whole.
+
 **Button sizes and weights.** `size="large"` is for the single filled call to action of a
 full-screen form, gate or dead end: auth submits, "Sign in to join", the retry on a full-screen
 error (Join, session unavailable, spray scan), send recovery. The tick action bar and the rest

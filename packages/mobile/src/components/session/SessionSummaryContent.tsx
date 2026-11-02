@@ -284,7 +284,7 @@ export function SessionSummaryContent({
         <View style={styles.section}>
           <SectionHeader title={t('summary.gradeDistribution')} />
           <Card>
-            <StackedBarChart bars={gradeBars} colorBy="grade" fitYAxisToData />
+            <StackedBarChart bars={gradeBars} colorBy="grade" gradeAxis fitYAxisToData />
           </Card>
         </View>
       ) : null}

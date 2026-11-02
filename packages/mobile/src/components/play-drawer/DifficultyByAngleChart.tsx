@@ -5,7 +5,7 @@ import { Text } from '../Text';
 import { buildAscentChartScale, type AngleGradeBar } from './community-utils';
 import { useTheme } from '../../providers/theme-provider';
 import { gradeChartColor } from '../you/profile-chart-colors';
-import { buildGradeBarLabels } from './grade-bar-labels';
+import { buildGradeBarLabels } from '../../lib/chart/grade-bar-labels';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type DifficultyByAngleChartProps = {
