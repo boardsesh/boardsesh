@@ -27,7 +27,10 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
-vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
+vi.mock('../../Text', () => ({
+  Text: ({ children, numberOfLines }: Children & { numberOfLines?: number }) =>
+    createElement('span', { 'data-lines': numberOfLines === undefined ? 'any' : String(numberOfLines) }, children),
+}));
 vi.mock('../../LargeContentViewer', () => ({
   LargeContentViewer: ({ children }: Children) => createElement('span', null, children),
 }));
@@ -162,6 +165,12 @@ describe('QueueSheetHeader ⋯ menu', () => {
       expect(anchor?.getAttribute('data-appearance')).toBe(spec.glyphFilled ? 'filled' : 'plain');
     },
   );
+
+  it('keeps the title and count on one line now three buttons share the trailing side', () => {
+    const { getByText } = renderHeader();
+    expect(getByText('queueDrawer.title').getAttribute('data-lines')).toBe('1');
+    expect(getByText('mobile.queue.climbCount').getAttribute('data-lines')).toBe('1');
+  });
 
   it('leaves the ⋯ out of the edit mode, whose own Clear still clears as edit', () => {
     const { container, handlers } = renderHeader({ isEditMode: true, selectedCount: 1 });

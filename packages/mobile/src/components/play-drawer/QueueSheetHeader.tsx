@@ -132,10 +132,16 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
         />
       </View>
 
+      {/* Three trailing buttons leave the title less room. Like SheetTopBar's title,
+          it keeps one line and truncates at large text sizes instead of breaking. */}
       <View style={styles.centerSection}>
-        {showTitle ? <Text variant="headline">{t('queueDrawer.title')}</Text> : null}
+        {showTitle ? (
+          <Text variant="headline" numberOfLines={1}>
+            {t('queueDrawer.title')}
+          </Text>
+        ) : null}
         {queueCount > 0 && (
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             {t('mobile.queue.climbCount', { count: queueCount })}
           </Text>
         )}

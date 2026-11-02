@@ -611,13 +611,18 @@ previews instead (`:325`).
   climbs.
 - The count in the sheet header is the Up next count: the climbs after the current one
   (`QueueSheet.tsx`).
-- The header's ⋯ menu (`QueueSheetHeader.tsx`) holds Clear queue. Before it, Clear sat only
-  behind the pencil, and climbers missed it (`Queue Cleared` fired 8 times on 2.6.0 in 7 days and
-  never on 2.7.x). Both controls run the same clear (`QueueListBody` `handleClearAll`): the queue
-  and the current climb go, for the crew too, and an Undo shows for 8 s. Neither asks first. The
-  ⋯ shows exactly when the pencil does, so an empty queue has neither and the people who can
-  clear are the same. The pencil keeps reorder and remove. `Queue Cleared` carries
-  `source: 'edit' | 'menu'`.
+- The header's ⋯ menu (⋮ on Android; `QueueSheetHeader.tsx`) holds Clear queue. Before it,
+  Clear sat only behind the pencil, and climbers missed it (`Queue Cleared` fired 8 times on 2.6.0
+  in 7 days and never on 2.7.x). Both controls run the same clear (`QueueListBody`
+  `handleClearAll`): the queue and the current climb go, for the crew too, and an Undo shows for
+  8 s. Neither asks first: Undo is the safety net on purpose ("Queue Undo" in
+  `docs/ai-design-guidelines.md`, #6246). The ⋯ shows exactly when the pencil does, so an empty
+  queue has neither and the people who can clear are the same. The pencil keeps reorder and
+  remove. `Queue Cleared` carries `source: 'edit' | 'menu'`.
+- With three trailing buttons (pencil, ⋯, chevron) against one leading, the title sits about
+  52pt left of centre on a 375pt phone (it was about 26pt). A balancing spacer would leave the
+  title about 47pt, so the offset is the accepted trade-off. The title and count keep one line
+  and truncate at large text sizes, as `SheetTopBar`'s title does.
 - Tapping a queue row clears the track (`use-queue-sheet-handlers.ts:65`); tapping a suggestion
   sets one (`:94`).
 - A workout queues as one flat run: the preview's sections (warm-up and so on) don't survive

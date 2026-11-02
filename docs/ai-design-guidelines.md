@@ -922,6 +922,9 @@ Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant,
 - **Disabled:** 40% opacity on iOS, keeping the colour. Material: onSurface at 38%.
 - **Loading:** a spinner takes the label's or glyph's place, in its colour, without changing the width.
 - **Dynamic Type:** bar labels hold at 1.0 on iOS (UIKit bar items don't scale) and 1.2 on Android.
+- **Large Content Viewer:** glyph buttons wrap in `LargeContentViewer`. The known exception is the
+  `AppMenu` ⋯ anchor (the player's and the queue sheet's): on iOS it is a SwiftUI menu with no
+  viewer yet, so a long press at accessibility text sizes shows no HUD on it.
 - **Kind:** callers pass `kind: 'confirm' | 'send' | 'forward'`. Unset, a `prominent` action is a
   confirm and any other a forward. A confirm may pass `icon` (the create drawer's lock) for the ✓.
 - **Header tint** is the theme's label colour (`useStackScreenOptions`, and the root navigation theme's
