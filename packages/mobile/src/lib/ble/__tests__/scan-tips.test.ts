@@ -67,6 +67,26 @@ describe('useScanTipsDue', () => {
     expect(result.current).toBe(true);
   });
 
+  it('is not due on the render where the scan stops, before its effect resets it', () => {
+    const rendered: boolean[] = [];
+    const { rerender } = renderHook(
+      ({ scanning }) => {
+        const due = useScanTipsDue(scanning);
+        rendered.push(due);
+        return due;
+      },
+      { initialProps: { scanning: true } },
+    );
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(rendered.at(-1)).toBe(true);
+    const beforeStop = rendered.length;
+
+    rerender({ scanning: false });
+    expect(rendered.slice(beforeStop)).not.toContain(true);
+  });
+
   it('drops a wait the scan did not finish', () => {
     const { result, rerender } = renderHook(({ scanning }) => useScanTipsDue(scanning), {
       initialProps: { scanning: true },
