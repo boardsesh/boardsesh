@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-10-26T14:02:41.308Z",
+  "generatedAt": "2026-11-02T16:56:27.282Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 4637,
-      "issues": 1602,
-      "contributions": 6239
+      "pullRequests": 4807,
+      "issues": 1686,
+      "contributions": 6493
     },
     {
       "login": "ES-Alexander",
@@ -24,9 +24,9 @@
       "name": "Alex Sánchez",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10997544?u=41ac204494f58d9a5f32b3652af16a75c20869df&v=4",
       "htmlUrl": "https://github.com/alejandrosanchezcabana",
-      "pullRequests": 36,
-      "issues": 2,
-      "contributions": 38
+      "pullRequests": 48,
+      "issues": 24,
+      "contributions": 72
     },
     {
       "login": "fallaciousreasoning",
@@ -101,6 +101,15 @@
       "contributions": 4
     },
     {
+      "login": "DanielePalombo",
+      "name": "Daniele Palombo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/387690?v=4",
+      "htmlUrl": "https://github.com/DanielePalombo",
+      "pullRequests": 4,
+      "issues": 0,
+      "contributions": 4
+    },
+    {
       "login": "diziet",
       "name": "Alex Malafeev",
       "avatarUrl": "https://avatars.githubusercontent.com/u/993499?u=26ae07b76dc6777c012ab57b962614dfa295d4a4&v=4",
@@ -130,7 +139,7 @@
     {
       "login": "mohitkyadav",
       "name": "Mohit Kumar Yadav",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/25580776?u=be6f0c0e5a50095fdece1e6a1a9b205d59f1e212&v=4",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/25580776?u=4de44c0fe53ad70bc46d0408ef358225718d575a&v=4",
       "htmlUrl": "https://github.com/mohitkyadav",
       "pullRequests": 0,
       "issues": 4,
@@ -215,6 +224,15 @@
       "htmlUrl": "https://github.com/crcklt",
       "pullRequests": 0,
       "issues": 1,
+      "contributions": 1
+    },
+    {
+      "login": "dmb1107",
+      "name": "Dave Amarosa-Becker",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2727010?u=b08c54fc03259eef774793d882060cd9b4d27f00&v=4",
+      "htmlUrl": "https://github.com/dmb1107",
+      "pullRequests": 1,
+      "issues": 0,
       "contributions": 1
     },
     {
