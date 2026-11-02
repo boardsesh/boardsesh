@@ -8,6 +8,8 @@
 //                       [💡        Put on board        (Sam)]  …on a crewmate's board
 //   dark         tonal  [💡        Put on board         (me)]  tap re-lights the climb
 //   lit          tonal  [💡      Disconnect board       (me)]  tap disconnects
+//   lit, window  tonal  [💡 Each pick lights · 0:38 ‹‹ (me)]  tap stops the window (2.7)
+//                       [   ===============.........      ]  4 pt bar drains to the bulb
 //   lit, driving frost  [💡  You are driving the wall   (me)]  tap stops driving (#7113)
 //   crew         tonal  [💡        Put on board        (Sam)]  tap relays to their phone
 //
@@ -31,9 +33,16 @@
 // before the face, flat amber progress peeks in once (`useWallSwipePeek`), and
 // dragging left wipes it in from the trailing edge (`useWallSwipe`,
 // `WallSwipeWipe`). The frost appears only once the model confirms driving.
+//
+// Put on board's keep-lighting window (2.7, spec B2) keeps the plain tonal
+// look: the label "Each pick lights", a clock beside it, and a violet drain
+// bar (`WallWindowClock.tsx`, leaves that tick on their own). The swipe still
+// works there and makes the drive open-ended, which brings the frost. The
+// screen-reader value is the time left on a 10 s step, split from the label.
 
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { Icon } from '../Icon';
@@ -55,7 +64,7 @@ import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
-import { useWallControlText } from './wall-control-text';
+import { useWallControlText, windowTimeValue } from './wall-control-text';
 import { WallGlow } from './WallGlow';
 import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
@@ -63,6 +72,7 @@ import { useWallGlowLayer, type WallGlowInput, type WallGlowLayer } from './use-
 import { useWallSwipe } from './use-wall-swipe';
 import { peekProgress } from './wall-swipe';
 import type { DriveStartOutcome } from './use-wall-control';
+import { useWindowSecondsLeft, WallWindowBar, WallWindowDigits } from './WallWindowClock';
 
 const ICON_SIZE = 20;
 /** The holder's face. 24pt reads as a face inside a 44pt control. */
@@ -210,6 +220,10 @@ function WallControlButtonComponent({
   const holdsBoard = model.holder === 'self';
   const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const text = useWallControlText(model);
+  // The window's time left, on a 10 s step, as the button's value (spec B2).
+  const { t } = useTranslation('session');
+  const windowClock = useWindowSecondsLeft(10);
+  const windowValue = model.lightWindow && windowClock ? windowTimeValue(windowClock.secondsLeft * 1000, t) : undefined;
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
   // Clear of Android's edge Back, the same on both sides so it stays centred.
@@ -258,14 +272,17 @@ function WallControlButtonComponent({
   // On the wall per presence, with no link (QA #147): an amber outline on the
   // sheet. Connecting alone does not claim driving or add a face.
   const onWallUnlinked = model.state === 'on_wall_unlinked';
-  // The glow (F1b) brings its own surface: white over the dark pill, dark over the light one.
+  // The glow (F1b) brings its own surface: white over the dark pill, dark over
+  // the light one. The tonal label takes the deeper violet in light, so it
+  // keeps 4.6:1 on the wash (`wall-control-button-contrast`).
+  const tonalForeground = brandColors.primaryStrong;
   const restForeground = fullGlow
     ? fullGlow.surface.label
     : lit
       ? litForeground
       : onWallUnlinked
         ? systemColors.label
-        : brandColors.primary;
+        : tonalForeground;
   const background = fullGlow
     ? fullGlow.surface.base
     : model.driving
@@ -308,20 +325,24 @@ function WallControlButtonComponent({
         onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
       >
-        <Text
-          variant="subheadline"
-          color={rowColors.foreground}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={compact ? COMPACT_MIN_FONT_SCALE : MIN_FONT_SCALE}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[
-            styles.label,
-            rowColors.shadow && (rowColors.shadow.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
-          ]}
-        >
-          {label}
-        </Text>
+        <View style={styles.labelRow}>
+          <Text
+            variant="subheadline"
+            color={rowColors.foreground}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={compact ? COMPACT_MIN_FONT_SCALE : MIN_FONT_SCALE}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={[
+              styles.label,
+              rowColors.shadow && (rowColors.shadow.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
+            ]}
+          >
+            {label}
+          </Text>
+          {/* The clock is its own run, so the words shrink and cut first and the digits never do. */}
+          {model.lightWindow ? <WallWindowDigits color={rowColors.foreground} /> : null}
+        </View>
       </LargeContentViewer>
       {showChevrons ? (
         <View
@@ -362,6 +383,7 @@ function WallControlButtonComponent({
       onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
+      accessibilityValue={windowValue ? { text: windowValue } : undefined}
       accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy }}
       // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
@@ -380,13 +402,17 @@ function WallControlButtonComponent({
       ]}
     >
       {fullGlow ? <WallGlow layer={fullGlow} width={size.w} /> : null}
+      {/* The window's drain bar; it steps aside while a drag or the peek wipes in. */}
+      {model.lightWindow && !wiping && size.w > 0 ? (
+        <WallWindowBar color={tonalForeground} width={size.w} reduceMotion={reduceMotion} />
+      ) : null}
       {row({
         foreground: restForeground,
         // Amber, except on the plain amber fill (a lit climb with no holds to
         // frost), where it would vanish: there it takes the label colour.
         bulb: (holdsBoard || onWallUnlinked) && !(lit && !fullGlow) ? brandColors.live : restForeground,
         shadow: fullGlow,
-        chevrons: (alpha) => withAlpha(fullGlow ? fullGlow.surface.label : brandColors.primary, alpha),
+        chevrons: (alpha) => withAlpha(fullGlow ? fullGlow.surface.label : tonalForeground, alpha),
         resting: true,
       })}
       {wiping && size.w > 0 ? (
@@ -481,6 +507,14 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   labelViewer: { flex: 1, alignItems: 'center' },
+  // The label and, in a window, its clock: centred together, the words shrinking first.
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+    maxWidth: '100%',
+  },
   // The wipe's copy of the row, laid over the flat progress fill.
   wipeRow: {
     flexDirection: 'row',
@@ -496,5 +530,6 @@ const styles = StyleSheet.create({
   label: {
     fontWeight: '600',
     textAlign: 'center',
+    flexShrink: 1,
   },
 });

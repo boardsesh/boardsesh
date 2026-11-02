@@ -50,6 +50,8 @@ function labelText(
       return t('playView.wallControl.disconnectBoard');
     case 'youAreDriving':
       return t('playView.wallControl.youAreDriving');
+    case 'eachPickLights':
+      return t('playView.wallControl.eachPickLights');
     case 'onBoard':
       return t('playView.wallControl.onBoard', { name });
     case 'onCrewBoard':
@@ -96,6 +98,8 @@ function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null
       return t('playView.wallControl.litHint');
     case 'stopDrivingHint':
       return t('playView.wallControl.stopDrivingHint');
+    case 'stopWindowHint':
+      return t('playView.wallControl.stopWindowHint');
     case 'relayHint':
       return t('playView.wallControl.relayHint', { name });
     case 'relayHintCrew':
@@ -154,4 +158,54 @@ export function useWallControlText(model: WallControlModel): WallControlText {
   const { t } = useTranslation('session');
   const { t: tSettings } = useTranslation('settings');
   return useMemo(() => wallControlText(model, t, tSettings), [model, t, tSettings]);
+}
+
+// Put on board's keep-lighting window (2.7, spec B2). The words and the digits
+// are two runs: "Each pick lights" is the label (and the whole accessible
+// name, so "Tap Each pick lights" works in Voice Control), the clock sits
+// beside it, and the time left is the button's accessibility value.
+
+/** Whole seconds left, rounded up, so the clock reads 0:01 until the window is over. */
+export function windowSecondsLeft(remainingMs: number): number {
+  return Math.max(0, Math.ceil(remainingMs / 1000));
+}
+
+/** The clock beside Each pick lights: m:ss ("0:38", "1:00"). */
+export function formatWindowClock(remainingMs: number): string {
+  const seconds = windowSecondsLeft(remainingMs);
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/**
+ * The time left for the screen reader, on a 10 s step so TalkBack doesn't
+ * re-read every tick while focus rests on the button: 30 from 30 to 39.9 s
+ * (never more than is left), 0 under ten.
+ */
+export function windowValueSeconds(remainingMs: number): number {
+  const seconds = Math.max(0, Math.floor(remainingMs / 1000));
+  return seconds < 10 ? 0 : Math.floor(seconds / 10) * 10;
+}
+
+/** "30 seconds left", then "Under 10 seconds left" (`windowValueSeconds`). */
+export function windowTimeValue(remainingMs: number, t: TFunction): string {
+  const seconds = windowValueSeconds(remainingMs);
+  if (seconds < 10) return t('playView.wallControl.underTenSeconds');
+  return t('playView.wallControl.secondsLeft', { count: seconds });
+}
+
+/**
+ * A bulb's value during the window (spec B3): "Each pick lights, 30 seconds
+ * left". The bulb's label stays "Board lights", so the window rides its value,
+ * on the same 10 s step as the button's.
+ */
+export function windowBulbValue(remainingMs: number, t: TFunction): string {
+  return `${t('playView.wallControl.eachPickLights')}, ${windowTimeValue(remainingMs, t)}`;
+}
+
+/** Said once when the window opens: how long, and how to keep lighting (WCAG 2.2.1). */
+export function windowStartedAnnouncement(windowMs: number, t: TFunction): string {
+  const seconds = Math.round(windowMs / 1000);
+  if (seconds === 60) return t('playView.wallControl.windowStartedMinute');
+  return t('playView.wallControl.windowStarted', { count: seconds });
 }

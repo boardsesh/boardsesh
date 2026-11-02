@@ -469,6 +469,7 @@
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
       "description": "Desconecta del plafón cuando no se ha mostrado ningún bloque durante el tiempo elegido.",
+      "cutsLighting": "La desconexión automática suelta el plafón tras {{timeout}}, así que la iluminación también se detiene entonces.",
       "enabledLabel": "Desconexión automática",
       "enabledDescription": "Permite que otros escaladores se conecten cuando termine el temporizador.",
       "timeoutLabel": "Desconectar después de",
@@ -487,7 +488,20 @@
     },
     "lighting": {
       "title": "Iluminación del plafón",
+      "autoTitle": "Encender automáticamente",
       "description": "Elige qué enciende el plafón conectado automáticamente.",
+      "keep": {
+        "label": "Seguir encendiendo tras Poner en el plafón",
+        "off": "Desactivado",
+        "untilStopped": "Hasta que pare",
+        "moonboardLabel": "En un MoonBoard",
+        "moonboardDescription": "La mayoría de los controladores de MoonBoard no llevan bien que se cambie de teléfono, así que esto también se aplica en una sesión.",
+        "sheetMoonboardLabel": "Seguir encendiendo en este MoonBoard",
+        "inSessionLabel": "También en una sesión",
+        "inSessionDescription": "Cuando tu teléfono tiene el plafón de tu crew. Si lo desactivas, los bloques que elijas en una sesión se quedan en vista previa.",
+        "inSessionOffReason": "Activa Seguir encendiendo tras Poner en el plafón para usar esto.",
+        "footer": "Cada bloque que se enciende reinicia el reloj. Si descansas más tiempo, el siguiente bloque que elijas se abre como vista previa."
+      },
       "onSwipeLabel": "Iluminar el plafón al deslizar",
       "onSwipeDescription": "Solo cuando ya hay un bloque en el muro. Una vista previa nunca enciende el plafón al deslizar.",
       "onTapLabel": "Iluminar el plafón al tocar un bloque",

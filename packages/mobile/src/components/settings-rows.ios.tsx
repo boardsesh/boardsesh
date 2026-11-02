@@ -262,10 +262,10 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
           ))}
         </Picker>
       );
-    case 'select':
+    case 'select': {
       // Menu-style Picker: a labelled row showing the current value + chevron that
       // pops a menu on tap — the idiomatic iOS Settings language picker.
-      return (
+      const picker = (
         <Picker
           key={row.key}
           label={row.label}
@@ -282,6 +282,15 @@ export function renderSettingsRow(row: MoreRow, tints: SettingsRowTints) {
           ))}
         </Picker>
       );
+      if (!row.subtitle) return picker;
+      // The explanation sits under the picker, in the same row, in the secondary style.
+      return (
+        <VStack key={row.key} alignment="leading" spacing={spacing[1]}>
+          {picker}
+          <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text>
+        </VStack>
+      );
+    }
     case 'info':
       return (
         <VStack key={row.key} alignment="leading" spacing={spacing[1]}>

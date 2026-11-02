@@ -1,8 +1,10 @@
 import {
   driveModeEnded,
+  driveModeStarted,
   SHARED_EVENTS,
   type AnalyticsEventProperties,
   type DriveModeEndedInput,
+  type DriveModeStartedInput,
 } from '@boardsesh/analytics';
 import { track } from './analytics';
 import type { WallControlAction, WallControlState } from '../components/play-drawer/wall-control';
@@ -58,6 +60,12 @@ export function trackWallControlSwiped({
   control: WallControlSurface;
 }): void {
   track(SHARED_EVENTS.WallControlSwiped, { state: state ?? 'none', outcome, control });
+}
+
+/** Driving the wall started (2.7): once per drive, from the drive-mode store. */
+export function trackDriveModeStarted(input: DriveModeStartedInput): void {
+  const { name, properties } = driveModeStarted(input);
+  track(name, properties);
 }
 
 /** Driving the wall ended (#7113): once per drive, from the drive-mode store. */

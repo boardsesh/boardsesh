@@ -34,6 +34,19 @@ describe('wall control frost requires physical driving', () => {
     ];
     for (const [model, expected] of busyModels) expect(wallControlUsesFrost(model)).toBe(expected);
   });
+  // 2.7, spec B2: the keep-lighting window has its own bar and clock; frost stays the open-ended drive's.
+  it("never frosts Put on board's keep-lighting window", () => {
+    expect(
+      wallControlUsesFrost({
+        ...EMPTY_WALL_CONTROL,
+        state: 'lit',
+        labelKey: 'eachPickLights',
+        lightWindow: true,
+        driving: true,
+      }),
+    ).toBe(false);
+    expect(wallControlUsesFrost({ ...EMPTY_WALL_CONTROL, state: 'lit', lightWindow: false, driving: true })).toBe(true);
+  });
   it('uses the actual target board LED contract, including moves from a ledless board', () => {
     expect(wallControlFrostHasLeds({ boardType: 'kilter' })).toBe(true);
     expect(wallControlFrostHasLeds({ boardType: 'kilter', hasLeds: false })).toBe(false);

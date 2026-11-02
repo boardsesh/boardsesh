@@ -74,6 +74,7 @@ import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
+import { registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
@@ -2643,6 +2644,13 @@ export function BluetoothProvider({
     });
     return () => subscription.remove();
   }, []);
+
+  // The one deadline, read where a view ends before it does: Put on board's
+  // keep-lighting window shows the sooner of its own end and this (spec B2).
+  useEffect(
+    () => registerAutoDisconnectDeadlineReader(() => autoDisconnectControllerRef.current?.getDeadlineMs() ?? null),
+    [],
+  );
 
   // The deadline controller owns expiry; this lightweight poll only drives the
   // final-ten-second visual hint. It runs while connected and updates once per

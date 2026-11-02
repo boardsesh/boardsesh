@@ -12,6 +12,7 @@ import {
 import { glassSize } from '../../theme/layout';
 import type { PaneWallControl } from '../play-drawer/pane-wall-control-store';
 import { useWallControlText } from '../play-drawer/wall-control-text';
+import { useWindowValueText, WallWindowRing } from '../play-drawer/WallWindowRing';
 import { drivingBulbColors, getPaneWallControlVisual } from './board-control-indicator-state';
 
 type PaneWallControlBulbProps = {
@@ -26,7 +27,9 @@ type PaneWallControlBulbProps = {
  * The MiniPlayer's bulb standing in for the player beside it (#7000, the tablet
  * rule, with the bulb chosen). It draws the player's own board control model and runs the
  * player's own tap and hold, so its face and taps match the player's, and the
- * events fire once with `control: 'mini_bar'`.
+ * events fire once with `control: 'mini_bar'`. During Put on board's
+ * keep-lighting window it carries the button's cue too (spec B3): a violet arc
+ * that drains, and the time left as its value.
  */
 export function PaneWallControlBulb({
   control,
@@ -38,6 +41,8 @@ export function PaneWallControlBulb({
   const { systemColors, brandColors, colorScheme } = useTheme();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   const text = useWallControlText(model);
+  // Its label is the button's ("Each pick lights"), so the value is the time alone.
+  const windowValue = useWindowValueText('time', model.lightWindow);
   const hold = model.longPress === 'sheet';
   const accessibilityActions = useMemo(
     () => (hold ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, text.longPressActionLabel) : undefined),
@@ -67,6 +72,7 @@ export function PaneWallControlBulb({
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
       accessibilityHint={text.bulbAccessibilityHint}
+      accessibilityValue={windowValue ? { text: windowValue } : undefined}
       accessibilityState={{ selected: model.selected, busy: model.pending || model.writing }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
@@ -80,6 +86,7 @@ export function PaneWallControlBulb({
       ]}
     >
       <Icon maxFontSizeMultiplier={1} name={visual.iconName} size={iconSize} color={visual.iconColor} />
+      {model.lightWindow ? <WallWindowRing size={size} /> : null}
     </PressableSurface>
   );
 }

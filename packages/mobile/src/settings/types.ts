@@ -5,6 +5,7 @@ import type { PlayerButtonsPosition } from '../lib/player-buttons';
 import type { ClimbListLayoutPreference } from '../components/climb-list-thumbnail-metrics';
 import type { SupportCardRecord } from '../lib/support-asks';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import type { KeepLightingChoice } from '../lib/keep-lighting';
 
 /** What `offlineSprayWallArchiveV1` keeps per archived wall. */
 export type RememberedSprayWallArchive = {
@@ -121,6 +122,23 @@ export type AppSettings = {
   lightOnSwipe: boolean;
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
+  /**
+   * After Put on board, keep lighting (2.7): Off (one climb), a 30, 45 or 60 s
+   * window that each lit climb restarts, or Until I stop (an open-ended drive).
+   * Every board but a MoonBoard. Read through `sanitiseKeepLighting`.
+   */
+  putOnBoardKeepsLighting: KeepLightingChoice;
+  /**
+   * The same choice on a MoonBoard, Until I stop by default: most MoonBoard
+   * controllers don't like phones switching. Applies in a crew session too.
+   */
+  moonboardPutOnBoardKeepsLighting: KeepLightingChoice;
+  /**
+   * "In a session too": Put on board keeps lighting in a crew session as well,
+   * when this phone has the crew's board. Off, picks in a session stay previews.
+   * MoonBoards ignore it.
+   */
+  putOnBoardDrivesInSession: boolean;
   /**
    * A row tap on a playlist, a For You list or a setter's page loads that list
    * into the queue in place of what was there (the behaviour before F4, #6667).

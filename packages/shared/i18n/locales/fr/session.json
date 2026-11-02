@@ -960,7 +960,18 @@
       "onWall": "Au mur",
       "lightAgainHint": "Le rallume sur la board",
       "putOnGymBoard": "Allumer sur la {{board}}",
-      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc"
+      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc",
+      "eachPickLights": "Chaque bloc s'allume",
+      "secondsLeft_one": "{{count}} seconde restante",
+      "secondsLeft_other": "{{count}} secondes restantes",
+      "underTenSeconds": "Moins de 10 secondes restantes",
+      "stopWindowHint": "Touche pour arrêter. Maintiens pour les commandes de la board.",
+      "windowStarted_other": "Chaque bloc que tu choisis s'allume pendant {{count}} secondes. Allumer chaque bloc les garde allumés.",
+      "windowStartedMinute": "Chaque bloc que tu choisis s'allume pendant 1 minute. Allumer chaque bloc les garde allumés.",
+      "stoppedWindow": "Les blocs ne s'allument plus",
+      "windowEnded": "Les blocs s'ouvrent de nouveau en aperçu",
+      "sheetStatusPreview": "Aperçu · pas au mur",
+      "sheetStatusDriving": "Tu pilotes la board. Chaque bloc que tu choisis s'allume."
     },
     "setActive": "Activer",
     "paneEmpty": {

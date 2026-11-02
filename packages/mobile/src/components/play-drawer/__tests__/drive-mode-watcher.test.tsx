@@ -16,6 +16,10 @@ type Reads = {
   isAuthenticated: boolean;
   lightOnSwipe: boolean;
   isCrew?: boolean;
+  /** Settings › Board's keep-lighting (2.7). */
+  keepLighting?: string;
+  moonboardKeepLighting?: string;
+  drivesInSession?: boolean;
 };
 const reads = vi.hoisted((): { current: Reads } => ({
   current: {
@@ -34,6 +38,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
     isConnected: reads.current.isConnected,
     virtualWallHeld: reads.current.virtualWallHeld,
     loading: reads.current.loading,
+    boardName: 'moonboard',
   }),
 }));
 // The queue is read narrowly: the current climb's uuid as the trigger, the
@@ -63,7 +68,28 @@ vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ boardId: reads.current.boardId }),
 }));
 vi.mock('../../../settings', () => ({
-  useSetting: () => [reads.current.lightOnSwipe, vi.fn()],
+  useSetting: (key: string) => {
+    switch (key) {
+      case 'putOnBoardKeepsLighting':
+        return [reads.current.keepLighting ?? '45', vi.fn()];
+      case 'moonboardPutOnBoardKeepsLighting':
+        return [reads.current.moonboardKeepLighting ?? 'until_stopped', vi.fn()];
+      case 'putOnBoardDrivesInSession':
+        return [reads.current.drivesInSession ?? true, vi.fn()];
+      default:
+        return [reads.current.lightOnSwipe, vi.fn()];
+    }
+  },
+}));
+// The foreground catch-up: the test plays the app coming back.
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+vi.mock('react-native', () => ({
+  AppState: {
+    addEventListener: (_type: string, listener: (state: string) => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
 }));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: reads.current.isAuthenticated }),
@@ -382,6 +408,8 @@ describe('DriveModeWatcher: a crew forms', () => {
       phase: 'live',
       sessionId: 'session-1',
       boardId: 7,
+      // The linked board's type, for Drive Mode Started / Ended.
+      boardType: 'moonboard',
       startedBy: 'solo_carry',
     });
     // It stays: the same session, the same board.
@@ -418,5 +446,150 @@ describe('DriveModeWatcher: a crew forms', () => {
     const view = mount();
     view.change({ isCrew: true });
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', startedAt });
+  });
+});
+
+// Put on board's keep-lighting window (2.7): one timeout to its end, re-keyed by
+// each renewal, a catch-up on the foreground, and its setting turned off.
+describe('DriveModeWatcher: the keep-lighting window', () => {
+  function openWindow(windowMs = 45_000) {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: reads.current.sessionId,
+        boardId: reads.current.boardId,
+        windowMs,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+  }
+
+  it('ends the window at its end, and not a moment before', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
+    act(() => {
+      vi.advanceTimersByTime(45_000 - 1);
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    // The link stays, and nothing was stopped: the next pick is a plain preview.
+    expect(isDrivingStoppedForLink()).toBe(false);
+  });
+
+  it('restarts the clock on each climb that lights', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    act(() => {
+      vi.advanceTimersByTime(40_000);
+    });
+    act(() => emitWallConfirm('climb-b'));
+    act(() => {
+      vi.advanceTimersByTime(40_000);
+    });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 2, windowRenewals: 1 });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('waits out the rest when its timer fires early', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    // The clock moved back 3 s under the timer (a time-zone or NTP step).
+    vi.setSystemTime(Date.now() - 3_000);
+    act(() => {
+      vi.advanceTimersByTime(45_000);
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    act(() => {
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('catches up the moment the app comes back after its end passed in the background', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    // Suspended: the wall clock moves on, the timer does not run.
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => {
+      for (const listener of appState.listeners) listener('background');
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('keeps a window that still has time when the app comes back', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    vi.setSystemTime(Date.now() + 10_000);
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('never times out an open-ended drive', () => {
+    vi.useFakeTimers();
+    mount();
+    driveLive();
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+      for (const listener of appState.listeners) listener('active');
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('ends the window when its setting is turned Off', () => {
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ keepLighting: '30' });
+    expect(getDriveMode()?.phase).toBe('live');
+    watcher.change({ keepLighting: 'off' });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('ends the window in a crew when In a session too is turned off, and not solo', () => {
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ drivesInSession: false });
+    expect(getDriveMode()?.phase).toBe('live');
+    watcher.change({ isCrew: true });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('drops its timer once the window ends another way', () => {
+    vi.useFakeTimers();
+    const watcher = mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-a'));
+    watcher.change({ isConnected: false });
+    expect(getLastDriveModeExitReason()).toBe('link_dropped');
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('link_dropped');
+    expect(appState.listeners.size).toBe(0);
   });
 });

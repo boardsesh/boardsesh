@@ -469,6 +469,7 @@
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
       "description": "Disconnetti dal pannello quando nessun blocco viene mostrato per il tempo selezionato.",
+      "cutsLighting": "La disconnessione automatica libera il pannello dopo {{timeout}}, quindi anche l'illuminazione si ferma.",
       "enabledLabel": "Disconnessione automatica",
       "enabledDescription": "Lascia connettere gli altri climber allo scadere del timer.",
       "timeoutLabel": "Disconnetti dopo",
@@ -487,7 +488,20 @@
     },
     "lighting": {
       "title": "Illuminazione del pannello",
+      "autoTitle": "Illumina in automatico",
       "description": "Scegli cosa illumina in automatico il pannello connesso.",
+      "keep": {
+        "label": "Continua a illuminare dopo Illumina il pannello",
+        "off": "Disattivato",
+        "untilStopped": "Finché non mi fermo",
+        "moonboardLabel": "Su una MoonBoard",
+        "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
+        "sheetMoonboardLabel": "Continua a illuminare su questa MoonBoard",
+        "inSessionLabel": "Anche in una session",
+        "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
+        "inSessionOffReason": "Attiva Continua a illuminare dopo Illumina il pannello per usarlo.",
+        "footer": "Ogni blocco che si illumina fa ripartire il timer. Se riposi più a lungo, il prossimo blocco che scegli si apre in anteprima."
+      },
       "onSwipeLabel": "Illumina il pannello mentre scorro",
       "onSwipeDescription": "Solo quando un blocco è in parete. Un'anteprima non illumina mai il pannello mentre scorri.",
       "onTapLabel": "Illumina il pannello quando tocco un blocco",

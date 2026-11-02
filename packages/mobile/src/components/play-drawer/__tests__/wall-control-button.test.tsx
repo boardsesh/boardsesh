@@ -23,11 +23,13 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityLabel,
     accessibilityHint,
     accessibilityState,
+    accessibilityValue,
     accessibilityActions,
     onAccessibilityAction,
     testID,
     style,
   }: Children & {
+    accessibilityValue?: { text?: string };
     accessibilityActions?: { name: string; label?: string }[];
     onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     onPress?: () => void;
@@ -47,6 +49,7 @@ vi.mock('../../PressableSurface', () => ({
         onContextMenu: onLongPress,
         'aria-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-value': accessibilityValue?.text,
         'aria-selected': String(Boolean(accessibilityState?.selected)),
         'data-testid': testID,
         'data-long-press': onLongPress ? 'true' : 'false',
@@ -77,7 +80,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
-vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
+vi.mock('../../Text', () => ({
+  Text: ({ children, color }: Children & { color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
+}));
 vi.mock('../../LargeContentViewer', () => ({
   LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
     createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
@@ -95,6 +101,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     brandColors: {
       primary: '#6D28D9',
       primaryFill: '#6D28D9',
+      primaryStrong: '#5B21B6',
       onPrimary: '#fff',
       onAccent: '#111',
       live: '#B45309',
@@ -159,6 +166,24 @@ vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: Children) => createElement('div', { 'data-testid': 'gesture' }, children),
 }));
 vi.mock('../../../lib/wall-swipe-hint', () => ({ useWallSwipePeek: () => 0 }));
+// The window's clock and bar tick on their own (wall-window-clock test); here
+// only whether the button draws them, and the time it says as its value.
+const windowClock = vi.hoisted(() => ({ secondsLeft: 38 as number | null }));
+vi.mock('../WallWindowClock', () => ({
+  useWindowSecondsLeft: (step: 1 | 10) => {
+    const seconds = windowClock.secondsLeft;
+    if (seconds === null) return null;
+    return { secondsLeft: step === 1 ? seconds : seconds < 10 ? 0 : Math.floor(seconds / 10) * 10, totalMs: 45_000 };
+  },
+  WallWindowDigits: ({ color }: { color: string }) =>
+    createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
+  WallWindowBar: ({ color, reduceMotion }: { color: string; reduceMotion: boolean }) =>
+    createElement('div', {
+      'data-testid': 'window-bar',
+      'data-color': color,
+      'data-reduce-motion': String(reduceMotion),
+    }),
+}));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 import { act } from '@testing-library/react';
@@ -168,6 +193,7 @@ import { resolveWallControl, type WallControlModel, type WallControlState, type 
 
 afterEach(() => {
   cleanup();
+  windowClock.secondsLeft = 38;
   swipeCtrl.frostArmed = false;
   swipeCtrl.releaseArmed = false;
   swipeCtrl.committed = false;
@@ -186,6 +212,9 @@ type ModelOptions = {
   autoDisconnectWarning?: boolean;
   /** A swipe from here goes up on the wall: solo by default; false in a crew (#7017). */
   navigationCommits?: boolean;
+  /** The drive (#7113), and whether it is Put on board's keep-lighting window (2.7). */
+  driveMode?: 'off' | 'arming' | 'live';
+  lightWindow?: boolean;
 };
 
 /** The model the player builds for one state and holder. */
@@ -221,6 +250,8 @@ function modelFor(state: WallControlState, options: ModelOptions = {}): WallCont
     writing: options.writing ?? false,
     autoDisconnectWarning: options.autoDisconnectWarning ?? false,
     navigationCommits: options.navigationCommits ?? true,
+    driveMode: options.driveMode,
+    lightWindow: options.lightWindow,
   });
 }
 
@@ -806,5 +837,71 @@ describe('WallControlButton', () => {
       fireEvent.click(view.getByRole('button'));
       expect(view.onPress).toHaveBeenCalledOnce();
     });
+  });
+});
+
+// Put on board's keep-lighting window (2.7, spec B2): the plain tonal pill with
+// the clock beside its words and a drain bar, never the frost or the amber.
+describe('WallControlButton: the keep-lighting window', () => {
+  const windowModel = () => modelFor('lit', { holder: 'self', driveMode: 'live', lightWindow: true });
+
+  it('reads Each pick lights, the clock beside it, the time left as its value', () => {
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const button = view.getByRole('button');
+    // The accessible name is the visible words alone, so "Tap Each pick lights" works by voice.
+    expect(button.getAttribute('aria-label')).toBe('playView.wallControl.eachPickLights');
+    expect(button.getAttribute('data-value')).toBe('playView.wallControl.secondsLeft:{"count":30}');
+    expect(button.getAttribute('data-hint')).toBe('playView.wallControl.stopWindowHint');
+    expect(view.getAllByText('playView.wallControl.eachPickLights').length).toBeGreaterThan(0);
+    expect(view.getByTestId('window-digits').dataset.color).toBe('#5B21B6');
+  });
+
+  it('says under ten seconds without a count', () => {
+    windowClock.secondsLeft = 7;
+    const view = renderButton(windowModel());
+    expect(view.getByRole('button').getAttribute('data-value')).toBe('playView.wallControl.underTenSeconds');
+  });
+
+  it('draws the bar on the plain tonal fill: no frost, no amber, the swipe hint still there', () => {
+    const view = renderButton(windowModel(), { glow: GLOW, onSwipe: () => 'started' });
+    measure();
+    expect(view.getByTestId('window-bar').dataset.color).toBe('#5B21B6');
+    expect(view.queryByTestId('wall-glow')).toBeNull();
+    const style = view.getByRole('button').getAttribute('data-style') ?? '';
+    expect(style).toContain('"backgroundColor":"#6D28D9"');
+    expect(style).not.toContain('#B45309');
+    // The swipe makes the drive open-ended, so the chevrons stay.
+    expect(view.queryByTestId('play-drawer-wall-control-swipe-hint')).not.toBeNull();
+    expect(view.getByTestId('play-drawer-wall-control').textContent).not.toContain('youAreDriving');
+  });
+
+  it('waits for the button to measure itself before drawing the bar, and steps it aside while a swipe wipes in', () => {
+    const unmeasured = renderButton(windowModel(), { onSwipe: () => 'started' });
+    expect(unmeasured.queryByTestId('window-bar')).toBeNull();
+    cleanup();
+    swipeCtrl.frostArmed = true;
+    const wiping = renderButton(windowModel(), { onSwipe: () => 'started' });
+    measure();
+    expect(wiping.queryByTestId('window-bar')).toBeNull();
+    expect(wiping.queryByTestId('wall-swipe-wipe')).not.toBeNull();
+  });
+
+  it('draws no clock, bar or value outside a window', () => {
+    windowClock.secondsLeft = 38;
+    const view = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    measure();
+    expect(view.queryByTestId('window-digits')).toBeNull();
+    expect(view.queryByTestId('window-bar')).toBeNull();
+    expect(view.getByRole('button').getAttribute('data-value')).toBeNull();
+  });
+
+  // Spec B2: #6D28D9 measured 4.54:1 on the Material light ground, under the 4.6:1 rule.
+  it('takes the deeper violet for every tonal label in light', () => {
+    for (const model of [modelFor('put_on_wall', { holder: 'self' }), windowModel()]) {
+      const view = renderButton(model);
+      const label = view.getAllByText(/playView\.wallControl\.(putOnBoard|eachPickLights)/)[0];
+      expect(label.getAttribute('data-color')).toBe('#5B21B6');
+      cleanup();
+    }
   });
 });

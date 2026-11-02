@@ -116,10 +116,13 @@ export {
 export {
   queueNavigation,
   driveModeEnded,
+  driveModeStarted,
   type DriveModeEndReason,
   type DriveModeStartedBy,
   type DriveModeEndedInput,
   type DriveModeEndedProps,
+  type DriveModeStartedInput,
+  type DriveModeStartedProps,
   queueSheetOpened,
   type QueueNavigationDirection,
   type QueueNavigationMethod,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { driveModeEnded, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
+import { driveModeEnded, driveModeStarted, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
 
 describe('queueNavigation', () => {
   it('names the event www fired and carries the step, the session and the board', () => {
@@ -112,10 +112,43 @@ describe('driveModeEnded', () => {
         endedAt: 62_600,
         climbsLit: 5,
         inSession: true,
+        windowRenewals: 3,
+        windowMs: 45_000,
+        boardType: 'moonboard',
       }),
     ).toEqual({
       name: 'Drive Mode Ended',
-      properties: { reason: 'stopped', startedBy: 'tap', durationSec: 62, climbsLit: 5, inSession: true },
+      properties: {
+        reason: 'stopped',
+        startedBy: 'tap',
+        durationSec: 62,
+        climbsLit: 5,
+        inSession: true,
+        windowRenewals: 3,
+        windowSec: 45,
+        boardType: 'moonboard',
+      },
+    });
+  });
+
+  it("reports Put on board's window running out", () => {
+    const { properties } = driveModeEnded({
+      reason: 'window_ended',
+      startedBy: 'tap',
+      startedAt: 0,
+      endedAt: 45_000,
+      climbsLit: 1,
+      inSession: false,
+      windowRenewals: 0,
+      windowMs: 30_000,
+      boardType: 'kilter',
+    });
+    expect(properties).toMatchObject({
+      reason: 'window_ended',
+      durationSec: 45,
+      windowRenewals: 0,
+      windowSec: 30,
+      boardType: 'kilter',
     });
   });
 
@@ -127,7 +160,31 @@ describe('driveModeEnded', () => {
       endedAt: 4_000,
       climbsLit: -1,
       inSession: false,
+      windowRenewals: -2,
+      windowMs: null,
+      boardType: null,
     });
-    expect(properties).toMatchObject({ durationSec: 0, climbsLit: 0, inSession: false });
+    expect(properties).toMatchObject({
+      durationSec: 0,
+      climbsLit: 0,
+      inSession: false,
+      windowRenewals: 0,
+      windowSec: null,
+      boardType: null,
+    });
+  });
+});
+
+describe('driveModeStarted', () => {
+  it('names the event and carries what started it, whether in a session, and the board type', () => {
+    expect(driveModeStarted({ startedBy: 'tap', inSession: true, boardType: 'moonboard' })).toEqual({
+      name: 'Drive Mode Started',
+      properties: { startedBy: 'tap', inSession: true, boardType: 'moonboard' },
+    });
+    expect(driveModeStarted({ startedBy: 'swipe', inSession: false, boardType: null }).properties).toEqual({
+      startedBy: 'swipe',
+      inSession: false,
+      boardType: null,
+    });
   });
 });

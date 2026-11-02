@@ -140,6 +140,12 @@ import {
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { getSetting, useSetting } from '../../settings';
+import {
+  DEFAULT_KEEP_LIGHTING,
+  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  sanitiseKeepLighting,
+  type KeepLightingPlan,
+} from '../../lib/keep-lighting';
 import { useAuth } from '../../providers/auth-provider';
 import { useBoardseshGradeEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -175,10 +181,16 @@ import { climbChangeStaysViewOnly, swipeStaysViewOnly } from './play-drawer-navi
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
-import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
+import {
+  isHolderSelfAccount,
+  isWallControlDrawn,
+  resolveBoardSheetStatus,
+  resolveWallControl,
+  type WallControlState,
+} from './wall-control';
 import { useWallControl, type DriveStartOutcome } from './use-wall-control';
-import { useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
-import { startDrive } from './drive-runner';
+import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
+import { startDrive, startKeepLighting } from './drive-runner';
 import { formatCrewPutUp, useCrewPutUp } from './crew-put-up-store';
 import { useParseFrames } from '../board-renderer/use-parse-frames';
 import type { HoldPlacement } from '../board-renderer/types';
@@ -472,6 +484,17 @@ export function PlayCore({
   const driveModePhase = useDriveModePhase();
   const drivingStopped = useDrivingStoppedForLink();
   const drivingLive = driveModePhase === 'live';
+  // Put on board's keep-lighting window (2.7): a live drive with an end. It
+  // lights every change of climb like any live drive; the wall button draws it
+  // its own way (Each pick lights, the bar and the clock) instead of the frost.
+  const lightWindow = useDriveLightingMode() === 'window';
+  // After Put on board, keep lighting (Settings › Board): read here so the wall
+  // control's press knows whether its climb going up opens a window.
+  const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const [putOnBoardDrivesInSession] = useSetting('putOnBoardDrivesInSession');
+  const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
+  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const [enhancementSnapshot, setEnhancementSnapshot] = usePrivacyScopedState<PlayCoreEnhancementSnapshot>();
   const handleEnhancementSnapshot = useCallback(
     (snapshot: PlayCoreEnhancementSnapshot | null) => setEnhancementSnapshot(snapshot),
@@ -1362,10 +1385,20 @@ export function PlayCore({
         driveMode: driveModePhase,
         drivingStopped,
         solo: !isCrewSession && !browseByDefault,
+        // Keep-lighting's session read, the roster alone: the one the watcher
+        // ends a window on when In a session too turns off.
+        crewSession: isCrewSession,
         lightOnSwipe,
-        // Most MoonBoard controllers don't like phones switching: a solo press
-        // there still ends in driving, so this phone keeps the board.
-        tapStartsDrive: isMoonboardBoardName(boardName),
+        // After Put on board, keep lighting (2.7): the board family's choice.
+        // Most MoonBoard controllers don't like phones switching, so a MoonBoard
+        // has its own (Until I stop by default), which applies in a crew too.
+        boardIsMoonboard: isMoonboardBoardName(boardName),
+        keepLighting,
+        moonboardKeepLighting,
+        drivesInSession: putOnBoardDrivesInSession,
+        // The swipe's flag is keep-lighting's kill switch too.
+        swipeToDriveEnabled,
+        lightWindow,
       }),
     [
       commitButton,
@@ -1400,6 +1433,11 @@ export function PlayCore({
       isCrewSession,
       browseByDefault,
       lightOnSwipe,
+      keepLighting,
+      moonboardKeepLighting,
+      putOnBoardDrivesInSession,
+      swipeToDriveEnabled,
+      lightWindow,
     ],
   );
   const wallControlState: WallControlState = wallControl.state;
@@ -1790,28 +1828,31 @@ export function PlayCore({
   // climber's own climb connects, or with a link already up is re-sent, which
   // also clears a "Turn off all lights" and the #4979 hold. Never a
   // disconnect: that is a row in the board sheet.
-  const handleLightThisClimb = useCallback(() => {
+  //
+  // Returns whether the climb went up (or a connect for it started): false when
+  // the busy-wall question took the tap, so Put on board's keep-lighting
+  // (`useWallControl`) waits for its Put mine up.
+  const handleLightThisClimb = useCallback((): boolean => {
     if (commitBarModel.mode === 'commit') {
-      if (!commitBarModel.connectsOnCommit) {
-        handleSetActive();
-        return;
-      }
+      if (!commitBarModel.connectsOnCommit) return handleSetActive();
       // The busy-wall question can take the tap instead of a commit: then nothing
       // went up, and connecting would light the old climb under the question.
-      if (!handleSetActive()) return;
+      if (!handleSetActive()) return false;
       // The climb the connect is for picks the board to connect to (#7001): the
       // one just made current, which the queue may not report yet.
       void connectLightbulb('put_on_wall', displayedClimb ?? null);
-      return;
+      return true;
     }
     if (lightbulbPressAction === 'connect') {
       if (currentClimbQueueItem) {
         relightHeldAfterConnectRef.current = { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs() };
       }
       void connectLightbulb('play_drawer', currentClimbQueueItem?.climb ?? null);
-      return;
+      return true;
     }
-    if (bluetoothConnected) handlePutHeldClimbOnWall();
+    if (!bluetoothConnected) return false;
+    handlePutHeldClimbOnWall();
+    return true;
   }, [
     commitBarModel.mode,
     commitBarModel.connectsOnCommit,
@@ -1829,11 +1870,11 @@ export function PlayCore({
   // #4979 hold, without waiting on the auto-send.
   const bluetoothForRelightRef = useRef(bluetooth);
   bluetoothForRelightRef.current = bluetooth;
-  const handleLightAgain = useCallback(() => {
+  const handleLightAgain = useCallback((): boolean => {
     let climb = currentClimbQueueItem?.climb ?? null;
     const committing = commitBarModel.mode === 'commit';
     if (committing) {
-      if (!handleSetActive()) return;
+      if (!handleSetActive()) return false;
       climb = displayedClimb ?? null;
     }
     const relight = () => {
@@ -1842,11 +1883,12 @@ export function PlayCore({
     };
     if (bluetoothConnected) {
       relight();
-      return;
+      return true;
     }
     void connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb).then((connected) => {
       if (connected) relight();
     });
+    return true;
   }, [
     currentClimbQueueItem,
     commitBarModel.mode,
@@ -1871,8 +1913,8 @@ export function PlayCore({
   wallControlForDriveRef.current = wallControl;
   const startDriving = useCallback(
     (startedBy: DriveModeStartedBy): DriveStartOutcome => {
-      // Behind the swipe's flag: a solo press asks for a drive too (`tapDrive`),
-      // and gets the plain light without one.
+      // Behind the swipe's flag. During Put on board's keep-lighting window the
+      // swipe and Light every climb make the drive open-ended (`startDrive`).
       if (!swipeToDriveEnabled) return 'unavailable';
       const committing = commitBarModel.mode === 'commit';
       const climb = committing ? (displayedClimb ?? null) : (currentClimbQueueItem?.climb ?? null);
@@ -1880,6 +1922,7 @@ export function PlayCore({
         model: wallControlForDriveRef.current,
         wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
         sessionId,
+        boardType: boardName,
         startedBy,
         committing,
         commit: () => handleSetActive({ skipBusyWall: true }),
@@ -1894,6 +1937,7 @@ export function PlayCore({
     [
       swipeToDriveEnabled,
       sessionId,
+      boardName,
       currentClimbQueueItem,
       commitBarModel.mode,
       handleSetActive,
@@ -1901,6 +1945,22 @@ export function PlayCore({
       bluetoothConnected,
       connectLightbulb,
     ],
+  );
+  // Put on board's keep-lighting (2.7): its climb went up (or a connect for it
+  // started), so arm the window, or the open-ended drive for Until I stop. It
+  // goes live, and the window's clock starts, at the wall's lit confirm
+  // (`DriveModeWatcher`). Not through `startDrive`, which commits without the
+  // busy-wall question: this runs after the ordinary put-up already asked.
+  const handleKeepLighting = useCallback(
+    (plan: KeepLightingPlan) => {
+      startKeepLighting({
+        plan,
+        sessionId,
+        boardType: boardName,
+        wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
+      });
+    },
+    [sessionId, boardName],
   );
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
@@ -1925,14 +1985,26 @@ export function PlayCore({
           : null,
     [scenarioBusyWall, busyWallUp, currentClimbQueueItem, currentClimbMover, wallClimbUuid],
   );
+  // Put mine up and Keep theirs go through the board control's handler (built
+  // below), so a press whose keep-lighting waited on the question gets it once
+  // its climb goes up (2.7), and Keep theirs drops it.
+  const wallControlAnswersRef = useRef<{ confirmPut: () => void; cancelPut: () => void } | null>(null);
+  const handleBusyWallPut = useCallback(() => {
+    if (wallControlAnswersRef.current) wallControlAnswersRef.current.confirmPut();
+    else handleLightThisClimb();
+  }, [handleLightThisClimb]);
+  const handleBusyWallKeep = useCallback(() => {
+    wallControlAnswersRef.current?.cancelPut();
+    handleBackToLive();
+  }, [handleBackToLive]);
   const busyWall = useBusyWallQuestion({
     armed: busyWallUp,
     holder: busyWallHolder,
     wallClimbName: scenarioBusyWall?.climbName ?? wallClimb.name,
     selfHoldsBoard,
-    onKeep: handleBackToLive,
+    onKeep: handleBusyWallKeep,
     // Confirmation makes tapAction a noop; the state still names the board move.
-    onPut: wallControlState === 'move_to_board' ? handleMoveToGymBoard : handleLightThisClimb,
+    onPut: wallControlState === 'move_to_board' ? handleMoveToGymBoard : handleBusyWallPut,
   });
   // A crewmate put a climb up while this phone drives the wall (#7113): "Your
   // crew put up Crimp Ladder" for 4 s where "Only you see this" sits, on that climb.
@@ -1971,6 +2043,7 @@ export function PlayCore({
       lightAgain: handleLightAgain,
       moveToBoard: handleMoveToGymBoard,
       drive: startDriving,
+      keepLighting: handleKeepLighting,
     }),
     [
       handleLightThisClimb,
@@ -1981,6 +2054,7 @@ export function PlayCore({
       handleLightAgain,
       handleMoveToGymBoard,
       startDriving,
+      handleKeepLighting,
     ],
   );
 
@@ -2293,6 +2367,7 @@ export function PlayCore({
     visible: wallControlDrawn,
     linked: bluetoothConnected,
   });
+  wallControlAnswersRef.current = wallControlHandlers;
   // The board sheet's Light every climb row (#7113): the sheet closes itself.
   const { drive: driveWallControl } = wallControlHandlers;
   const handleBoardSheetDrive = useCallback(() => {
@@ -3182,6 +3257,7 @@ export function PlayCore({
           handleTickBarDismiss={handleTickBarDismiss}
           handleCloseBleControl={handleCloseBleControl}
           onBoardSheetDrive={sheetOffersDrive ? handleBoardSheetDrive : undefined}
+          boardSheetStatus={resolveBoardSheetStatus(wallControl)}
         />
       </View>
       {renderSidePanel ? renderSidePanel(sidePanelClimb) : null}
