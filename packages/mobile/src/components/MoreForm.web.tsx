@@ -66,6 +66,7 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
       anchor={
         <List.Item
           title={row.label}
+          description={row.subtitle}
           disabled={row.disabled}
           style={row.disabled ? styles.disabledRow : undefined}
           aria-disabled={row.disabled ?? false}

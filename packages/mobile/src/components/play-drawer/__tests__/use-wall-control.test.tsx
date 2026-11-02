@@ -3,13 +3,14 @@
 // action runs its runner, a hold opens the board sheet only with a link, and
 // each event fires once with the view that was used.
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analytics = vi.hoisted(() => ({
   tapped: vi.fn(),
   shown: vi.fn(),
   opened: vi.fn(),
   ended: vi.fn(),
+  started: vi.fn(),
   swiped: vi.fn(),
 }));
 const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
@@ -19,18 +20,26 @@ vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlSwiped: analytics.swiped,
   trackWallControlShown: analytics.shown,
   trackDriveModeEnded: analytics.ended,
+  trackDriveModeStarted: analytics.started,
 }));
 vi.mock('../../../lib/analytics-board-connect', () => ({ trackBoardControlsOpened: analytics.opened }));
 vi.mock('../../../lib/haptics', () => haptics);
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key),
+  }),
+}));
 
 import {
   DISCONNECT_TAP_GUARD_MS,
+  WINDOW_END_TAP_GRACE_MS,
   useWallControl,
   type DriveStartOutcome,
   type WallControlRunners,
 } from '../use-wall-control';
+import type { KeepLightingPlan } from '../../../lib/keep-lighting';
+import { startKeepLighting } from '../drive-runner';
 import {
   EMPTY_WALL_CONTROL,
   resolveWallControl,
@@ -40,42 +49,54 @@ import {
 } from '../wall-control';
 import {
   enterDriveMode,
+  exitDriveMode,
   getDriveMode,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
   markDriveLive,
+  noteDriveClimbLit,
   resetDriveModeForTests,
   stopDrivingForLink,
 } from '../drive-mode-store';
 
 type MockRunners = {
-  [Name in Exclude<keyof WallControlRunners, 'drive'>]: ReturnType<typeof vi.fn<() => void>>;
-} & { drive: ReturnType<typeof vi.fn<(startedBy: string) => DriveStartOutcome>> };
+  [Name in Exclude<keyof WallControlRunners, 'drive' | 'light' | 'lightAgain' | 'keepLighting'>]: ReturnType<
+    typeof vi.fn<() => void>
+  >;
+} & {
+  light: ReturnType<typeof vi.fn<() => boolean>>;
+  lightAgain: ReturnType<typeof vi.fn<() => boolean>>;
+  drive: ReturnType<typeof vi.fn<(startedBy: string) => DriveStartOutcome>>;
+  keepLighting: ReturnType<typeof vi.fn<(plan: KeepLightingPlan) => void>>;
+};
 
 function runners(): MockRunners {
   return {
-    light: vi.fn<() => void>(),
+    light: vi.fn<() => boolean>(() => true),
     toggle: vi.fn<() => void>(),
     disconnect: vi.fn<() => void>(),
     openSheet: vi.fn<() => void>(),
-    lightAgain: vi.fn<() => void>(),
+    lightAgain: vi.fn<() => boolean>(() => true),
     moveToBoard: vi.fn<() => void>(),
     drive: vi.fn<(startedBy: string) => DriveStartOutcome>(() => 'started'),
+    keepLighting: vi.fn<(plan: KeepLightingPlan) => void>(),
   };
 }
 
+type HookProps = { model: WallControlModel; linked?: boolean; climbUuid?: string | null; playerOpen?: boolean };
+
 function setup(model: WallControlModel, run = runners(), visible = true) {
   const hook = renderHook(
-    (props: { model: WallControlModel; linked?: boolean }) =>
+    (props: HookProps) =>
       useWallControl({
         model: props.model,
         runners: run,
-        climbUuid: 'climb-1',
-        playerOpen: true,
+        climbUuid: props.climbUuid === undefined ? 'climb-1' : props.climbUuid,
+        playerOpen: props.playerOpen ?? true,
         visible,
         linked: props.linked ?? true,
       }),
-    { initialProps: { model } as { model: WallControlModel; linked?: boolean } },
+    { initialProps: { model } as HookProps },
   );
   return { hook, run };
 }
@@ -400,32 +421,6 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     ['solo, Light on swipe off', { solo: true, lightOnSwipe: false }, 'button', false, true, true],
     ['solo, Light on swipe off, the bulb', { solo: true, lightOnSwipe: false }, 'bulb', false, true, true],
     ['a crew', { solo: false, lightOnSwipe: true }, 'button', false, true, true],
-    // Most MoonBoard controllers don't like phones switching: a solo press there still drives.
-    [
-      'MoonBoard, solo, Light on swipe off',
-      { solo: true, lightOnSwipe: false, tapStartsDrive: true },
-      'button',
-      true,
-      false,
-      false,
-    ],
-    [
-      'MoonBoard, solo, Light on swipe off, the bulb',
-      { solo: true, lightOnSwipe: false, tapStartsDrive: true },
-      'bulb',
-      true,
-      false,
-      false,
-    ],
-    [
-      'MoonBoard, solo, Light on swipe on',
-      { solo: true, lightOnSwipe: true, tapStartsDrive: true },
-      'button',
-      false,
-      true,
-      false,
-    ],
-    ['MoonBoard, a crew', { solo: false, lightOnSwipe: false, tapStartsDrive: true }, 'button', false, true, true],
   ])('%s', (_name, input, control, drives, lights, stoppedAfter) => {
     stopDrivingForLink();
     const run = runners();
@@ -475,36 +470,283 @@ describe('useWallControl: a press lights once without starting Driver mode', () 
     expect(run.drive).not.toHaveBeenCalled();
     expect(run.lightAgain).toHaveBeenCalledOnce();
   });
+});
 
-  it('on a MoonBoard, starts the drive instead of lighting again on the wall with no link', () => {
+// After Put on board, keep lighting (2.7): the press runs the ordinary put-up
+// and, only once its climb went up, arms the window (never through
+// `startDrive`, which skips the busy-wall question).
+describe('useWallControl: Put on board keeps lighting', () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetDriveModeForTests();
+  });
+
+  /** A preview with the link up, solo, keep-lighting at its defaults and the flag on. */
+  const PREVIEW: WallControlInput = {
+    commitButton: 'putOnWall',
+    pressAction: 'disconnect',
+    holderIsAuthoritative: false,
+    localConnected: true,
+    pending: false,
+    displayedLit: false,
+    offWall: false,
+    wallHeldLocally: false,
+    holderIsSelfAccount: false,
+    selfFace: null,
+    crewFace: null,
+    confirmArmed: false,
+    commitLabel: 'putOnWall',
+    otherClimbLit: false,
+    writing: false,
+    autoDisconnectWarning: false,
+    navigationCommits: false,
+    solo: true,
+    lightOnSwipe: false,
+    swipeToDriveEnabled: true,
+    keepLighting: '45',
+    moonboardKeepLighting: 'until_stopped',
+    drivesInSession: true,
+  };
+  const preview = (input: Partial<WallControlInput> = {}) => resolveWallControl({ ...PREVIEW, ...input });
+  /** The runner PlayCore hands it: the real store, solo. */
+  const realKeepLighting = (run: MockRunners) =>
+    run.keepLighting.mockImplementation((plan) => {
+      startKeepLighting({ plan, sessionId: null, wallHeldByOtherUser: false });
+    });
+
+  it('puts the climb up the ordinary way, then arms the 45 s window', () => {
     const run = runners();
-    const model = resolveWallControl({
-      ...PREVIEW_AFTER_STOP,
+    realKeepLighting(run);
+    const { hook } = setup(preview(), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(run.drive).not.toHaveBeenCalled();
+    expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: 45_000, setting: 'putOnBoardKeepsLighting' });
+    expect(run.keepLighting.mock.invocationCallOrder[0]).toBeGreaterThan(run.light.mock.invocationCallOrder[0]);
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000, expiresAt: null });
+    expect(haptics.hapticMedium).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'put_on_wall', action: 'put_on_wall', control: 'button' });
+  });
+
+  it('arms nothing while the busy-wall question holds the climb, then Put mine up arms the window', () => {
+    const run = runners();
+    realKeepLighting(run);
+    // The question took the press: nothing went up.
+    run.light.mockReturnValueOnce(false);
+    const { hook } = setup(preview({ solo: false }), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.keepLighting).not.toHaveBeenCalled();
+    expect(getDriveMode()).toBeNull();
+    // The question is up: the button waits.
+    hook.rerender({ model: preview({ solo: false, confirmArmed: true }) });
+    act(() => hook.result.current.confirmPut());
+    expect(run.light).toHaveBeenCalledTimes(2);
+    expect(run.keepLighting).toHaveBeenCalledOnce();
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+  });
+
+  it('drops the wait on Keep theirs, on another climb, or on a fresh press', () => {
+    const run = runners();
+    run.light.mockReturnValue(false);
+    const { hook } = setup(preview(), run);
+    act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.cancelPut());
+    run.light.mockReturnValue(true);
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+
+    run.light.mockReturnValue(false);
+    act(() => hook.result.current.press('button'));
+    hook.rerender({ model: preview(), climbUuid: 'climb-2' });
+    run.light.mockReturnValue(true);
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+
+    // A Put mine up that doesn't go up arms nothing either.
+    run.light.mockReturnValue(false);
+    act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+  });
+
+  it('only puts the climb up on a Put mine up no press of its own asked about', () => {
+    const { hook, run } = setup(preview({ keepLighting: 'off' }));
+    act(() => hook.result.current.confirmPut());
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(run.keepLighting).not.toHaveBeenCalled();
+  });
+
+  it('on a MoonBoard, Put on board starts an open-ended drive: the frost, no window', () => {
+    const run = runners();
+    realKeepLighting(run);
+    const { hook } = setup(preview({ boardIsMoonboard: true }), run);
+    act(() => hook.result.current.press('button'));
+    expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' });
+    act(() => markDriveLive());
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', windowMs: null, expiresAt: null });
+  });
+
+  it('keeps lighting from the wall with no link too, through its light-again', () => {
+    const run = runners();
+    const model = preview({
       commitButton: null,
       pressAction: 'connect',
       localConnected: false,
       displayedIsWallClimb: true,
       presenceFresh: true,
       displayedIsOwnCurrent: true,
-      solo: true,
-      lightOnSwipe: false,
-      tapStartsDrive: true,
     });
     expect(model.state).toBe('on_wall_unlinked');
     const { hook } = setup(model, run);
     act(() => hook.result.current.press('button'));
-    expect(run.drive).toHaveBeenCalledOnce();
-    expect(run.lightAgain).not.toHaveBeenCalled();
+    expect(run.lightAgain).toHaveBeenCalledOnce();
+    expect(run.keepLighting).toHaveBeenCalledWith({ windowMs: 45_000, setting: 'putOnBoardKeepsLighting' });
   });
 
-  it('on a MoonBoard, lights as before with the stop dropped where the drive cannot start', () => {
+  it('only drops a stop solo with Light the board as I swipe on: the setting lights the next climbs', () => {
     stopDrivingForLink();
-    const run = runners();
-    run.drive.mockReturnValue('unavailable');
-    const { hook } = setup(previewAfterStop({ solo: true, lightOnSwipe: false, tapStartsDrive: true }), run);
+    const { hook, run } = setup(preview({ lightOnSwipe: true, drivingStopped: true }));
     act(() => hook.result.current.press('button'));
-    expect(run.drive).toHaveBeenCalledOnce();
     expect(run.light).toHaveBeenCalledOnce();
+    expect(run.keepLighting).not.toHaveBeenCalled();
     expect(isDrivingStoppedForLink()).toBe(false);
+  });
+
+  it('lights one climb with keep-lighting Off, or the flag off', () => {
+    for (const input of [{ keepLighting: 'off' as const }, { swipeToDriveEnabled: false }]) {
+      const { hook, run } = setup(preview(input));
+      act(() => hook.result.current.press('button'));
+      expect(run.light).toHaveBeenCalledOnce();
+      expect(run.keepLighting).not.toHaveBeenCalled();
+      hook.unmount();
+    }
+  });
+});
+
+describe('useWallControl: the keep-lighting window', () => {
+  beforeEach(() => {
+    resetDriveModeForTests();
+    for (const mock of [...Object.values(analytics), ...Object.values(haptics), announceQueued]) mock.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetDriveModeForTests();
+  });
+
+  const windowModel = () =>
+    modelFor('lit', 'stop_window', { lightWindow: true, labelKey: 'eachPickLights', bulbTapAction: 'disconnect' });
+  function openWindow(windowMs = 45_000) {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => markDriveLive());
+  }
+
+  it('stops the window on a press and keeps the link, with a light buzz, and says so', () => {
+    const { hook, run } = setup(windowModel());
+    openWindow();
+    act(() => hook.result.current.press('button'));
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(isDrivingStoppedForLink()).toBe(true);
+    expect(run.disconnect).not.toHaveBeenCalled();
+    expect(haptics.hapticLight).toHaveBeenCalledOnce();
+    expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedWindow');
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'lit', action: 'stop_window', control: 'button' });
+  });
+
+  it('drops the second tap of a double tap on Each pick lights', () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    openWindow();
+    act(() => hook.result.current.press('button'));
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('says the window once when it opens, with its length and the way to keep lighting; renewals are silent', () => {
+    setup(windowModel());
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    // Arming says nothing yet: the wall hasn't lit.
+    expect(announceQueued).not.toHaveBeenCalled();
+    act(() => markDriveLive());
+    expect(announceQueued).toHaveBeenCalledOnce();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStarted {"count":45}');
+    act(() => {
+      noteDriveClimbLit();
+      noteDriveClimbLit();
+    });
+    expect(announceQueued).toHaveBeenCalledOnce();
+  });
+
+  it('says a one-minute window in minutes', () => {
+    setup(windowModel());
+    openWindow(60_000);
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStartedMinute');
+  });
+
+  it('says when the window ran out, and drops taps for 2 s after, so a stop meant for it never disconnects', () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).toHaveBeenCalledOnce();
+    expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowEnded');
+    // The label flipped to Disconnect board under the climber's thumb.
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => hook.result.current.press('button'));
+    act(() => {
+      vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).not.toHaveBeenCalled();
+    expect(analytics.tapped).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('says nothing about an end it did not run out: a stop, a dropped link', () => {
+    setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      exitDriveMode('link_dropped');
+    });
+    expect(announceQueued).not.toHaveBeenCalled();
+  });
+
+  it('says nothing with the player closed', () => {
+    const { hook } = setup(windowModel());
+    hook.rerender({ model: windowModel(), playerOpen: false });
+    openWindow();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { driveModeEnded, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
+import { driveModeEnded, driveModeStarted, queueNavigation, queueSheetOpened } from '../queue-navigation-events';
 
 describe('queueNavigation', () => {
   it('names the event www fired and carries the step, the session and the board', () => {
@@ -112,11 +112,32 @@ describe('driveModeEnded', () => {
         endedAt: 62_600,
         climbsLit: 5,
         inSession: true,
+        windowRenewals: 3,
       }),
     ).toEqual({
       name: 'Drive Mode Ended',
-      properties: { reason: 'stopped', startedBy: 'tap', durationSec: 62, climbsLit: 5, inSession: true },
+      properties: {
+        reason: 'stopped',
+        startedBy: 'tap',
+        durationSec: 62,
+        climbsLit: 5,
+        inSession: true,
+        windowRenewals: 3,
+      },
     });
+  });
+
+  it("reports Put on board's window running out", () => {
+    const { properties } = driveModeEnded({
+      reason: 'window_ended',
+      startedBy: 'tap',
+      startedAt: 0,
+      endedAt: 45_000,
+      climbsLit: 1,
+      inSession: false,
+      windowRenewals: 0,
+    });
+    expect(properties).toMatchObject({ reason: 'window_ended', durationSec: 45, windowRenewals: 0 });
   });
 
   it('never reports a negative duration or count', () => {
@@ -127,7 +148,21 @@ describe('driveModeEnded', () => {
       endedAt: 4_000,
       climbsLit: -1,
       inSession: false,
+      windowRenewals: -2,
     });
-    expect(properties).toMatchObject({ durationSec: 0, climbsLit: 0, inSession: false });
+    expect(properties).toMatchObject({ durationSec: 0, climbsLit: 0, inSession: false, windowRenewals: 0 });
+  });
+});
+
+describe('driveModeStarted', () => {
+  it('names the event and carries what started it and whether in a session', () => {
+    expect(driveModeStarted({ startedBy: 'tap', inSession: true })).toEqual({
+      name: 'Drive Mode Started',
+      properties: { startedBy: 'tap', inSession: true },
+    });
+    expect(driveModeStarted({ startedBy: 'swipe', inSession: false }).properties).toEqual({
+      startedBy: 'swipe',
+      inSession: false,
+    });
   });
 });

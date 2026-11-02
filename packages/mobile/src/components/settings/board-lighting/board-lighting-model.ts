@@ -1,10 +1,21 @@
-import type { MoreRow, MoreSection } from '../../MoreForm.types';
+import type { MoreRow, MoreSection, MoreSelectRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
+import { KEEP_LIGHTING_CHOICES, keepLightingSeconds, type KeepLightingChoice } from '../../../lib/keep-lighting';
 
 type Toggle = { enabled: boolean; onChange: (enabled: boolean) => void };
+type KeepLightingPicker = { choice: KeepLightingChoice; onChange: (choice: KeepLightingChoice) => void };
 
 export type BoardLightingModelInput = {
   t: SettingsTranslate;
+  /** After Put on board, keep lighting (2.7): every board but a MoonBoard. */
+  keepLighting: KeepLightingPicker;
+  /**
+   * The MoonBoard's own choice, or `null` when no MoonBoard is in view (the
+   * connected board, the active board, or a saved one).
+   */
+  moonboardKeepLighting: KeepLightingPicker | null;
+  /** In a session too: keep-lighting applies in a crew session as well. */
+  drivesInSession: Toggle;
   lightOnSwipe: Toggle;
   lightOnClimbTap: Toggle;
   /**
@@ -28,11 +39,53 @@ export type BoardLightingModelInput = {
   };
 };
 
+/** The words for each keep-lighting choice; 30/45/60 reuse the auto-disconnect timeout labels. */
+function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoice): string {
+  switch (choice) {
+    case 'off':
+      return t('settings:ble.lighting.keep.off');
+    case '30':
+      return t('settings:ble.autoDisconnect.timeoutOptions.30');
+    case '45':
+      return t('settings:ble.autoDisconnect.timeoutOptions.45');
+    case '60':
+      return t('settings:ble.autoDisconnect.timeoutOptions.60');
+    case 'until_stopped':
+      return t('settings:ble.lighting.keep.untilStopped');
+  }
+}
+
+function keepLightingRow(
+  t: SettingsTranslate,
+  key: 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting',
+  label: string,
+  picker: KeepLightingPicker,
+  subtitle?: string,
+): MoreSelectRow {
+  return {
+    kind: 'select',
+    key,
+    label,
+    ...(subtitle ? { subtitle } : {}),
+    options: KEEP_LIGHTING_CHOICES.map((choice) => ({ key: choice, label: keepLightingLabel(t, choice) })),
+    selectedKey: picker.choice,
+    onSelect: (selected) => {
+      const choice = KEEP_LIGHTING_CHOICES.find((candidate) => candidate === selected);
+      if (choice) picker.onChange(choice);
+    },
+  };
+}
+
 /**
- * The Board page's lighting half: what lights the connected board on its own,
- * then what a list tap does (and the MoonBoard's extra LEDs), then the
- * Bluetooth group, which says when the phone lets go of the board so another
- * climber can connect.
+ * The Board page's lighting half (spec B4). First what Put on board keeps
+ * lighting (2.7): the general choice, the MoonBoard's own right under it (only
+ * where a MoonBoard is in view), and In a session too, greyed with its reason
+ * while the general choice is Off (its state follows only the general choice;
+ * a MoonBoard's applies in a session anyway). Then what lights the connected
+ * board on its own (Light automatically), then what a list tap does (and the
+ * MoonBoard's extra LEDs), then the Bluetooth group, which says when the phone
+ * lets go of the board so another climber can connect, and that it cuts the
+ * keep-lighting short when it comes first.
  *
  * The two lighting switches get a group of their own, tap first and swipe
  * under it, because swipe only matters once tap (or Put on the wall) has a
@@ -42,6 +95,47 @@ export type BoardLightingModelInput = {
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
   const { t, autoDisconnectTimeout } = input;
+
+  const keepOff = input.keepLighting.choice === 'off';
+  const keepRows: MoreRow[] = [
+    keepLightingRow(t, 'putOnBoardKeepsLighting', t('settings:ble.lighting.keep.label'), input.keepLighting),
+  ];
+  if (input.moonboardKeepLighting) {
+    keepRows.push(
+      keepLightingRow(
+        t,
+        'moonboardPutOnBoardKeepsLighting',
+        t('settings:ble.lighting.keep.moonboardLabel'),
+        input.moonboardKeepLighting,
+        t('settings:ble.lighting.keep.moonboardDescription'),
+      ),
+    );
+  }
+  keepRows.push({
+    kind: 'toggle',
+    key: 'putOnBoardDrivesInSession',
+    label: t('settings:ble.lighting.keep.inSessionLabel'),
+    // Greyed with the general choice Off: the reason replaces the description, at full contrast.
+    subtitle: keepOff
+      ? t('settings:ble.lighting.keep.inSessionOffReason')
+      : t('settings:ble.lighting.keep.inSessionDescription'),
+    value: input.drivesInSession.enabled,
+    disabled: keepOff,
+    onValueChange: input.drivesInSession.onChange,
+  });
+
+  // Auto-disconnect lets go of the board before keep-lighting would stop.
+  const longestKeepSeconds = Math.max(
+    keepLightingSeconds(input.keepLighting.choice),
+    input.moonboardKeepLighting ? keepLightingSeconds(input.moonboardKeepLighting.choice) : 0,
+  );
+  const cutsLighting = input.autoDisconnect.enabled && autoDisconnectTimeout.seconds < longestKeepSeconds;
+  const timeoutLabel =
+    autoDisconnectTimeout.options.find((option) => option.seconds === autoDisconnectTimeout.seconds)?.label ??
+    String(autoDisconnectTimeout.seconds);
+  const bluetoothFooter = cutsLighting
+    ? `${t('settings:ble.autoDisconnect.description')} ${t('settings:ble.autoDisconnect.cutsLighting', { timeout: timeoutLabel })}`
+    : t('settings:ble.autoDisconnect.description');
 
   const lightingRows: MoreRow[] = [
     {
@@ -84,20 +178,26 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
 
   return [
     {
-      key: 'lighting',
+      key: 'keepLighting',
       title: t('settings:ble.lighting.title'),
+      footer: t('settings:ble.lighting.keep.footer'),
+      rows: keepRows,
+    },
+    {
+      key: 'lightingAuto',
+      title: t('settings:ble.lighting.autoTitle'),
       footer: t('settings:ble.lighting.description'),
       rows: lightingRows,
     },
     {
-      // Untitled: the lighting group's second card, so the pair above stays a pair.
+      // Untitled: Light automatically's second card, so the pair above stays a pair.
       key: 'lightingMore',
       rows: moreLightingRows,
     },
     {
       key: 'bluetooth',
       title: t('settings:ble.sectionTitle'),
-      footer: t('settings:ble.autoDisconnect.description'),
+      footer: bluetoothFooter,
       rows: [
         {
           kind: 'toggle',

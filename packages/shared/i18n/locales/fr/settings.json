@@ -469,6 +469,7 @@
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
       "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
+      "cutsLighting": "La déconnexion automatique libère la board après {{timeout}}, donc l'éclairage s'arrête aussi à ce moment-là.",
       "enabledLabel": "Déconnexion automatique",
       "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
       "timeoutLabel": "Déconnecter après",
@@ -487,7 +488,19 @@
     },
     "lighting": {
       "title": "Éclairage de la board",
+      "autoTitle": "Allumer automatiquement",
       "description": "Choisissez ce qui allume automatiquement la board connectée.",
+      "keep": {
+        "label": "Continuer d'allumer après Allumer sur la board",
+        "off": "Désactivé",
+        "untilStopped": "Jusqu'à ce que j'arrête",
+        "moonboardLabel": "Sur un MoonBoard",
+        "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
+        "inSessionLabel": "Aussi en session",
+        "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
+        "inSessionOffReason": "Activez Continuer d'allumer après Allumer sur la board pour utiliser ce réglage.",
+        "footer": "Chaque bloc qui s'allume relance le chrono. Si vous vous reposez plus longtemps, le bloc suivant s'ouvre en aperçu."
+      },
       "onSwipeLabel": "Allumer la board quand je fais défiler",
       "onSwipeDescription": "Seulement quand un bloc est déjà au mur. Un aperçu n'allume jamais la board quand vous faites défiler.",
       "onTapLabel": "Allumer la board quand je touche un bloc",

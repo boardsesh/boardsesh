@@ -1,10 +1,12 @@
-// The wall button's label must read at WCAG AA (4.5:1) on its own fill, on
-// every surface it can sit on: the Liquid Glass sheet (iOS system grounds) and
-// the Material sheet (Velvet Send surfaces), light and dark (#7000).
+// The wall button's words must read on their own fill, on every surface it can
+// sit on: the Liquid Glass sheet (iOS system grounds) and the Material sheet
+// (Velvet Send surfaces), light and dark (#7000). 4.6:1, a margin over WCAG
+// AA's 4.5:1 (spec B2): the brand violet measured 4.54:1 on the Material light
+// ground, so the tonal label takes `primaryStrong`.
 import { describe, expect, it } from 'vitest';
 import { blendOpaque, brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
 import { contrastRatioHex } from '../../../lib/color-contrast-oracle';
-import { WALL_CONTROL_TONAL_ALPHA } from '../wall-control';
+import { WALL_CONTROL_TONAL_ALPHA, WINDOW_BAR_TRACK_ALPHA } from '../wall-control';
 
 const SURFACES = {
   light: ['#FFFFFF', '#F2F2F7', materialSurfaces.light.background, materialSurfaces.light.secondaryBackground],
@@ -17,16 +19,49 @@ const SURFACES = {
   ],
 } as const;
 
+const SCHEMES = ['light', 'dark'] as const;
+const brandFor = (scheme: (typeof SCHEMES)[number]) => (scheme === 'dark' ? brandColorsDark : brandColors);
+/** The tonal pill's fill over one sheet. */
+const tonalFill = (scheme: (typeof SCHEMES)[number], surface: string) =>
+  blendOpaque(brandFor(scheme).primaryFill, surface, WALL_CONTROL_TONAL_ALPHA);
+
 describe('wall button contrast', () => {
-  it.each(['light', 'dark'] as const)('keeps Put on board at 4.5:1 in %s', (scheme) => {
-    const brand = scheme === 'dark' ? brandColorsDark : brandColors;
+  it.each(SCHEMES)('keeps Put on board and Each pick lights at 4.6:1 in %s', (scheme) => {
+    const brand = brandFor(scheme);
     for (const surface of SURFACES[scheme]) {
-      const fill = blendOpaque(brand.primaryFill, surface, WALL_CONTROL_TONAL_ALPHA);
+      const fill = tonalFill(scheme, surface);
       expect(
-        contrastRatioHex(brand.primary, fill),
-        `${brand.primary} on ${fill} over ${surface}`,
-      ).toBeGreaterThanOrEqual(4.5);
+        contrastRatioHex(brand.primaryStrong, fill),
+        `${brand.primaryStrong} on ${fill} over ${surface}`,
+      ).toBeGreaterThanOrEqual(4.6);
     }
+  });
+
+  // The keep-lighting window's clock is the same run colour as its words (2.7).
+  it.each(SCHEMES)("keeps the window's clock digits at 4.6:1 in %s", (scheme) => {
+    const brand = brandFor(scheme);
+    for (const surface of SURFACES[scheme]) {
+      expect(contrastRatioHex(brand.primaryStrong, tonalFill(scheme, surface))).toBeGreaterThanOrEqual(4.6);
+    }
+  });
+
+  // A non-text graphic (WCAG 1.4.11): 3:1 against the pill's fill and its own track.
+  it.each(SCHEMES)("keeps the window's drain bar at 3:1 against the fill and its track in %s", (scheme) => {
+    const brand = brandFor(scheme);
+    for (const surface of SURFACES[scheme]) {
+      const fill = tonalFill(scheme, surface);
+      const track = blendOpaque(brand.primaryStrong, fill, WINDOW_BAR_TRACK_ALPHA);
+      expect(contrastRatioHex(brand.primaryStrong, fill), `bar on ${fill} over ${surface}`).toBeGreaterThanOrEqual(3);
+      expect(
+        contrastRatioHex(brand.primaryStrong, track),
+        `bar on track ${track} over ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('keeps the deeper violet for light only: dark keeps its lifted foreground', () => {
+    expect(brandColors.primaryStrong).toBe('#5B21B6');
+    expect(brandColorsDark.primaryStrong).toBe(brandColorsDark.primary);
   });
 
   it('is stronger than the old 14% wash, so it no longer reads as disabled', () => {

@@ -960,7 +960,16 @@
       "onWall": "En el plafón",
       "lightAgainHint": "Lo vuelve a encender en el plafón",
       "putOnGymBoard": "Ponerlo en el {{board}}",
-      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque"
+      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque",
+      "eachPickLights": "Cada bloque se enciende",
+      "secondsLeft_one": "Queda {{count}} segundo",
+      "secondsLeft_other": "Quedan {{count}} segundos",
+      "underTenSeconds": "Quedan menos de 10 segundos",
+      "stopWindowHint": "Toca para parar. Mantén pulsado para los controles del plafón.",
+      "windowStarted_other": "Cada bloque que elijas se enciende durante {{count}} segundos. Encender cada bloque los mantiene encendidos.",
+      "windowStartedMinute": "Cada bloque que elijas se enciende durante 1 minuto. Encender cada bloque los mantiene encendidos.",
+      "stoppedWindow": "Los bloques ya no se encienden",
+      "windowEnded": "Los bloques vuelven a abrirse como vista previa"
     },
     "setActive": "Activar",
     "paneEmpty": {

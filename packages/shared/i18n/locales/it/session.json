@@ -960,7 +960,16 @@
       "onWall": "In parete",
       "lightAgainHint": "Lo illumina di nuovo in parete",
       "putOnGymBoard": "Metti sul {{board}}",
-      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco"
+      "moveToGymBoardHint": "Passa al {{board}} e illumina questo blocco",
+      "eachPickLights": "Ogni blocco si illumina",
+      "secondsLeft_one": "Manca {{count}} secondo",
+      "secondsLeft_other": "Mancano {{count}} secondi",
+      "underTenSeconds": "Mancano meno di 10 secondi",
+      "stopWindowHint": "Tocca per fermare. Tieni premuto per i controlli del pannello.",
+      "windowStarted_other": "Ogni blocco che scegli si illumina in parete per {{count}} secondi. Illumina ogni blocco li tiene accesi.",
+      "windowStartedMinute": "Ogni blocco che scegli si illumina in parete per 1 minuto. Illumina ogni blocco li tiene accesi.",
+      "stoppedWindow": "I blocchi non si illuminano più",
+      "windowEnded": "I blocchi tornano ad aprirsi in anteprima"
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {

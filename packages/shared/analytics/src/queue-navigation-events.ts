@@ -131,9 +131,12 @@ export function queueNavigation(
 
 /**
  * Why driving the wall ended (#7113). `stopped`: a press on the frosted wall
- * button (the link stays). `link_dropped`: this phone's link went. `connect_failed`,
- * `commit_failed` and `arming_timed_out`: the swipe never reached the wall. `session_changed`,
+ * button, or on the keep-lighting window's (the link stays). `link_dropped`: this
+ * phone's link went. `connect_failed`, `commit_failed` and `arming_timed_out`: the
+ * swipe (or Put on board) never reached the wall. `session_changed`,
  * `board_changed`, `signed_out`: the drive's session, board or account went away.
+ * `window_ended`: Put on board's keep-lighting window ran out with no climb lit
+ * in it, or its setting was turned off.
  */
 export type DriveModeEndReason =
   | 'stopped'
@@ -143,14 +146,38 @@ export type DriveModeEndReason =
   | 'arming_timed_out'
   | 'session_changed'
   | 'board_changed'
-  | 'signed_out';
+  | 'signed_out'
+  | 'window_ended';
 
 /**
- * What started the drive (#7113): the wall button's swipe, a solo press that
- * puts a climb up, the screen-reader action or the board sheet's row, or a solo
- * climber driving by Light the board as I swipe when a crew formed.
+ * What started the drive (#7113): the wall button's swipe, a press on Put on
+ * board that keeps lighting (the keep-lighting window, or an open-ended drive
+ * where the setting says Until I stop, the MoonBoard default), the
+ * screen-reader action or the board sheet's row, or a solo climber driving by
+ * Light the board as I swipe when a crew formed.
  */
 export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry';
+
+export type DriveModeStartedInput = {
+  startedBy: DriveModeStartedBy;
+  /** The drive started in a party session. */
+  inSession: boolean;
+};
+
+export type DriveModeStartedProps = {
+  startedBy: DriveModeStartedBy;
+  inSession: boolean;
+};
+
+/** A drive started (2.7): what started it, and whether in a party session. */
+export function driveModeStarted(
+  input: DriveModeStartedInput,
+): QueueNavigationPayload<typeof SHARED_EVENTS.DriveModeStarted, DriveModeStartedProps> {
+  return {
+    name: SHARED_EVENTS.DriveModeStarted,
+    properties: { startedBy: input.startedBy, inSession: input.inSession },
+  };
+}
 
 export type DriveModeEndedInput = {
   reason: DriveModeEndReason;
@@ -163,6 +190,11 @@ export type DriveModeEndedInput = {
   climbsLit: number;
   /** The drive started in a party session. */
   inSession: boolean;
+  /**
+   * How many lit climbs renewed Put on board's keep-lighting window (the climb
+   * that opened it not counted). 0 for a drive with no window.
+   */
+  windowRenewals: number;
 };
 
 export type DriveModeEndedProps = {
@@ -172,6 +204,7 @@ export type DriveModeEndedProps = {
   durationSec: number;
   climbsLit: number;
   inSession: boolean;
+  windowRenewals: number;
 };
 
 /** A drive ended (#7113): how long it lasted and how many climbs it lit. */
@@ -186,6 +219,7 @@ export function driveModeEnded(
       durationSec: Math.max(0, Math.round((input.endedAt - input.startedAt) / 1000)),
       climbsLit: Math.max(0, input.climbsLit),
       inSession: input.inSession,
+      windowRenewals: Math.max(0, input.windowRenewals),
     },
   };
 }

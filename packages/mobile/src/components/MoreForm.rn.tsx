@@ -87,6 +87,11 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
           }}
         />
       )}
+      {row.subtitle ? (
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {row.subtitle}
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -290,6 +290,9 @@ vi.mock('@boardsesh/analytics', () => ({
     FavoriteToggle: 'Favorite Toggle',
     QuickTickOpened: 'Quick Tick Opened',
   },
+  // Put on board's keep-lighting starts a drive (2.7): the store reports it.
+  driveModeStarted: (properties: unknown) => ({ name: 'Drive Mode Started', properties }),
+  driveModeEnded: (properties: unknown) => ({ name: 'Drive Mode Ended', properties }),
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 // Queue Navigation's payloads have their own suites (use-play-selection-controller,
@@ -527,6 +530,8 @@ const { AccessibilityInfo } = await import('react-native');
 const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDrawer');
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
+// Put on board's keep-lighting arms a drive (2.7): each test starts with nobody driving.
+const { getDriveMode, resetDriveModeForTests } = await import('../drive-mode-store');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
 const { BUSY_WALL_TAP_DEBOUNCE_MS } = await import('../busy-wall-question');
 const { QueueSessionBoardPathContext } = await import('../../../providers/queue/queue-contexts');
@@ -700,6 +705,7 @@ beforeEach(() => {
   lightbulb.holderIsAuthoritative = false;
   ble.current = null;
   resetAllSettings();
+  resetDriveModeForTests();
   _resetJoinedBrowseNoticeForTests();
   drawerSections.sections = { ...drawerSections.defaults };
   drawerSections.ready = true;
@@ -1576,6 +1582,71 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     return { view, target };
   }
 
+  // After Put on board, keep lighting (2.7): the wall button's press runs the
+  // ordinary put-up, so the question still guards it in a crew, and only Put
+  // mine up opens the window. Keep theirs leaves nothing armed.
+  describe('with Put on board keeping lighting', () => {
+    const linkThisPhone = () => {
+      lightbulb.lit = true;
+      lightbulb.localConnected = true;
+      ble.current = { isConnected: true, sendFramesToBoard: vi.fn(async () => true) };
+    };
+
+    it('opens the window only once Put mine up puts the climb up', () => {
+      linkThisPhone();
+      browseThenLoseTheWall();
+      expect(lastActionBarProps().wallControl).toMatchObject({ state: 'put_on_wall', tapDrive: 'window' });
+
+      act(() => {
+        (lastActionBarProps().onWallControl as () => void)();
+      });
+      expect(lastActionBarProps().commitButton).toBe('confirm');
+      expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+      expect(getDriveMode()).toBeNull();
+
+      afterBusyWallDebounce(() => {
+        (lastActionBarProps().onCommit as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+      expect(getDriveMode()).toMatchObject({
+        phase: 'arming',
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+
+    it('arms nothing on Keep theirs', () => {
+      session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+      linkThisPhone();
+      browseThenLoseTheWall();
+      act(() => {
+        (lastActionBarProps().onWallControl as () => void)();
+      });
+      afterBusyWallDebounce(() => {
+        (lastActionBarProps().onKeepTheirs as () => void)();
+      });
+      expect(lastActionBarProps().commitButton).not.toBe('confirm');
+      expect(getDriveMode()).toBeNull();
+    });
+
+    it('lights one climb in a crew with In a session too off', () => {
+      setSetting('putOnBoardDrivesInSession', false);
+      linkThisPhone();
+      browseThenLoseTheWall();
+      expect(lastActionBarProps().wallControl).toMatchObject({ state: 'put_on_wall', tapDrive: null });
+      act(() => {
+        (lastActionBarProps().onWallControl as () => void)();
+      });
+      afterBusyWallDebounce(() => {
+        (lastActionBarProps().onCommit as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+      expect(getDriveMode()).toBeNull();
+    });
+  });
+
   it('asks before taking a wall that moved under the climber', () => {
     browseThenLoseTheWall();
 
@@ -2118,33 +2189,52 @@ describe('PlayDrawer — reading the wall', () => {
     expect(lastActionBarProps().wallControl).toMatchObject({ state: 'lit', holder: 'self', driving: false });
   });
 
-  // Preview-first: a solo press lights one climb. On a MoonBoard, whose
-  // controllers mostly don't like phones switching, a press that puts a climb
-  // up still starts Driver mode.
+  // After Put on board, keep lighting (2.7), at its defaults: a press that puts
+  // a climb up opens the 45 s window. On a MoonBoard, whose controllers mostly
+  // don't like phones switching, it starts an open-ended drive (Until I stop).
   it.each([
-    ['a Kilter', BOARD_CONFIG, CLIMB, null],
+    ['a Kilter', BOARD_CONFIG, CLIMB, 'window', { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' }],
     [
       'a MoonBoard',
       { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 },
       { ...CLIMB, boardType: 'moonboard', layoutId: 3 } as unknown as Climb,
-      'start',
+      'drive',
+      { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' },
     ],
-  ] as const)('on %s, a solo press that lights a dark climb drives: %s', (_board, boardConfig, climb, tapDrive) => {
+  ] as const)(
+    'on %s, a solo press that lights a dark climb keeps lighting: %s',
+    (_board, boardConfig, climb, tapDrive, plan) => {
+      connectBoard();
+      lightbulb.lit = false;
+      session.currentItem = { uuid: 'queue-item-current', climb };
+      wall.uuid = null;
+      render(
+        createElement(PlayDrawer, {
+          viewer: 'member',
+          presentation: 'pane',
+          boardConfig,
+          reachableBoardKeys: new Set([configKey(boardConfig)]),
+          openTarget: committedTargetFor(climb),
+          onOpenQueue: vi.fn(),
+        }),
+      );
+      expect(lastActionBarProps().wallControl).toMatchObject({
+        state: 'dark',
+        tapAction: 'relight',
+        tapDrive,
+        tapKeepLighting: plan,
+      });
+    },
+  );
+
+  it('lights one climb with After Put on board, keep lighting set to Off', () => {
+    setSetting('putOnBoardKeepsLighting', 'off');
     connectBoard();
     lightbulb.lit = false;
-    session.currentItem = { uuid: 'queue-item-current', climb };
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = null;
-    render(
-      createElement(PlayDrawer, {
-        viewer: 'member',
-        presentation: 'pane',
-        boardConfig,
-        reachableBoardKeys: new Set([configKey(boardConfig)]),
-        openTarget: committedTargetFor(climb),
-        onOpenQueue: vi.fn(),
-      }),
-    );
-    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'dark', tapAction: 'relight', tapDrive });
+    render(drawerElement('member', committedTargetFor(CLIMB)));
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'dark', tapDrive: null, tapKeepLighting: null });
   });
 
   // #7015: the crewmate holding the link turned all the lights off. This phone

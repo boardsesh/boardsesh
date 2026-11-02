@@ -123,13 +123,24 @@ export const SHARED_EVENTS = {
   // Mobile-only (#7113): driving the wall ended. Props (built by
   // `driveModeEnded`, queue-navigation-events.ts): { reason: 'stopped' |
   // 'link_dropped' | 'connect_failed' | 'commit_failed' | 'arming_timed_out' | 'session_changed' |
-  // 'board_changed' | 'signed_out', durationSec, climbsLit (the swipe's own
-  // climb included), inSession, startedBy: 'swipe' (the wall button's swipe) |
-  // 'tap' (a solo press that puts a climb up, #7113 QA) | 'action' (the
+  // 'board_changed' | 'signed_out' | 'window_ended' (2.7: Put on board's
+  // keep-lighting window ran out, or its setting was turned off), durationSec,
+  // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
+  // lit climbs that renewed the keep-lighting window; 0 with no window, and
+  // absent before 2.7), startedBy: 'swipe' (the wall button's swipe) | 'tap'
+  // (a press on Put on board that keeps lighting: from 2.7 the keep-lighting
+  // window, or an open-ended drive where the setting says Until I stop; before
+  // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
   // screen-reader action or the board sheet's row) | 'solo_carry' (a solo
-  // climber driving by Light the board as I swipe when a crew formed) }.
-  // Fired once per drive by the drive-mode store.
+  // climber driving by Light the board as I swipe when a crew formed) }. A
+  // window that a swipe or Light every climb turned open-ended keeps
+  // startedBy 'tap'. Fired once per drive by the drive-mode store.
   DriveModeEnded: 'Drive Mode Ended',
+  // Mobile-only (2.7): a drive started, before it reached the wall (arming).
+  // Props (built by `driveModeStarted`): { startedBy (as Drive Mode Ended),
+  // inSession }. Low volume: once per drive, never per climb. Every Drive Mode
+  // Started has one Drive Mode Ended.
+  DriveModeStarted: 'Drive Mode Started',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by
   // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
   // 'mini_player_menu' | 'snackbar', boardType }. On a side-by-side iPad player the queue button
@@ -499,7 +510,9 @@ export const SHARED_EVENTS = {
   // tap on Disconnect board, state 'lit', called You have the board before
   // #7113; QA builds before Marco's phone test sent 'open_sheet' there instead;
   // 'stop_driving' (#7113) is a tap on You are driving the wall, state 'lit':
-  // driving stops and the link stays). `control`: 'button' (the wall
+  // driving stops and the link stays; 'stop_window' (2.7) is a tap on Each pick
+  // lights, Put on board's keep-lighting window, state 'lit': the window stops
+  // and the link stays). `control`: 'button' (the wall
   // button, full width or in a workout's top row) | 'bulb' (the first row's
   // bulb, back for the busy-wall question or chosen in View options) |
   // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).

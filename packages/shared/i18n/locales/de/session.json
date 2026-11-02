@@ -960,7 +960,16 @@
       "onWall": "Am Board",
       "lightAgainHint": "Beleuchtet ihn noch mal am Board",
       "putOnGymBoard": "Am {{board}} beleuchten",
-      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder"
+      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder",
+      "eachPickLights": "Jeder Boulder leuchtet",
+      "secondsLeft_one": "Noch {{count}} Sekunde",
+      "secondsLeft_other": "Noch {{count}} Sekunden",
+      "underTenSeconds": "Noch weniger als 10 Sekunden",
+      "stopWindowHint": "Tippen zum Beenden. Halten für die Board-Steuerung.",
+      "windowStarted_other": "Jeder Boulder, den du wählst, wird {{count}} Sekunden lang beleuchtet. Mit „Jeden Boulder beleuchten“ bleibt es dabei.",
+      "windowStartedMinute": "Jeder Boulder, den du wählst, wird 1 Minute lang beleuchtet. Mit „Jeden Boulder beleuchten“ bleibt es dabei.",
+      "stoppedWindow": "Boulder werden nicht mehr beleuchtet",
+      "windowEnded": "Boulder öffnen sich wieder als Vorschau"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

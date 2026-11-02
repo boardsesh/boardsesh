@@ -1,7 +1,14 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { isMoonboardBoardName, toBoardName } from '@boardsesh/board-config';
 import type { MoreSection } from '../../MoreForm.types';
+import { useActiveBoardIsMoonboard } from '../../../hooks/use-active-board-is-moonboard';
+import {
+  DEFAULT_KEEP_LIGHTING,
+  DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  sanitiseKeepLighting,
+} from '../../../lib/keep-lighting';
+import { useOfflineBoards } from '../../../settings/offline-boards';
 import { useAutoDisconnectTimeoutLabels } from '../../ble/use-auto-disconnect-timeout-labels';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../lib/ble/auto-disconnect-controller';
 import { hapticSelection } from '../../../lib/haptics';
@@ -16,6 +23,11 @@ import { buildBoardLightingSections } from './board-lighting-model';
  */
 export function useBoardLightingSections(): MoreSection[] {
   const { t } = useTranslation('common');
+  const [storedKeepLighting, setKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting, setMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const [drivesInSession, setDrivesInSession] = useSetting('putOnBoardDrivesInSession');
+  const keepLighting = sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING);
+  const moonboardKeepLighting = sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING);
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
   const [playlistTapLoadsQueue, setPlaylistTapLoadsQueue] = useSetting('playlistTapLoadsQueue');
@@ -27,6 +39,12 @@ export function useBoardLightingSections(): MoreSection[] {
   // live connection. Only shown for a MoonBoard, the same gate as that sheet.
   const bluetooth = useOptionalBluetoothContext();
   const showMoonboardLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
+  // The MoonBoard's keep-lighting row: wherever a MoonBoard is in view, the
+  // connected one, the active one, or one of the climber's saved boards.
+  const activeBoardIsMoonboard = useActiveBoardIsMoonboard();
+  const savedBoards = useOfflineBoards();
+  const savedMoonboard = savedBoards.some((board) => isMoonboardBoardName(toBoardName(board.boardType)));
+  const showMoonboardKeepLighting = showMoonboardLightAdjacentHolds || activeBoardIsMoonboard || savedMoonboard;
   const moonboardLightAdjacentHolds = bluetooth?.moonboardLightAdjacentHolds ?? false;
   const setMoonboardLightAdjacentHolds = bluetooth?.setMoonboardLightAdjacentHolds;
   const reassertWall = bluetooth?.reassertWall;
@@ -35,6 +53,29 @@ export function useBoardLightingSections(): MoreSection[] {
     () =>
       buildBoardLightingSections({
         t,
+        keepLighting: {
+          choice: keepLighting,
+          onChange: (choice) => {
+            hapticSelection();
+            setKeepLighting(choice);
+          },
+        },
+        moonboardKeepLighting: showMoonboardKeepLighting
+          ? {
+              choice: moonboardKeepLighting,
+              onChange: (choice) => {
+                hapticSelection();
+                setMoonboardKeepLighting(choice);
+              },
+            }
+          : null,
+        drivesInSession: {
+          enabled: drivesInSession,
+          onChange: (enabled) => {
+            hapticSelection();
+            setDrivesInSession(enabled);
+          },
+        },
         lightOnSwipe: {
           enabled: lightOnSwipe,
           onChange: (enabled) => {
@@ -87,6 +128,13 @@ export function useBoardLightingSections(): MoreSection[] {
       }),
     [
       t,
+      keepLighting,
+      setKeepLighting,
+      showMoonboardKeepLighting,
+      moonboardKeepLighting,
+      setMoonboardKeepLighting,
+      drivesInSession,
+      setDrivesInSession,
       lightOnSwipe,
       setLightOnSwipe,
       lightOnClimbTap,

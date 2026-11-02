@@ -168,8 +168,14 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
     <DropdownMenu expanded={expanded && !row.disabled} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
         <Row modifiers={triggerModifiers} verticalAlignment="center">
-          <Column modifiers={[weight(1)]}>
+          <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
             <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+            {/* M3 supporting text, as the switch rows draw theirs. */}
+            {row.subtitle ? (
+              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+                {row.subtitle}
+              </Text>
+            ) : null}
           </Column>
           <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
             {currentLabel}
