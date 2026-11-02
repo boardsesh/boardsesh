@@ -29,8 +29,7 @@ import {
   useQueueActions,
   useQueueSessionId,
 } from '../../providers/queue-provider';
-import { readClimbChangeLights } from '../play-drawer/use-climb-change-lights';
-import { isCommittedHeadClimb } from '../play-drawer/wall-state';
+import { readQueuePickLanding } from '../play-drawer/queue-pick-landing';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
@@ -389,25 +388,27 @@ export function useClimbActions({
           // Preview-first: unless automatic lighting is opted in (or this phone
           // drives), open the History slot as a preview that carries the replay
           // placement to Put on board. A History copy of the climb already up
-          // commits at once: its preview has no Put on board (`isCommittedHeadClimb`),
-          // and the wall's climb stays the same.
+          // lands as a queue sheet tap does (`resolveQueuePickLanding`): it
+          // commits when the wall would keep its climb, and otherwise reopens
+          // the climb up, since its preview would have no Put on board.
           const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
-          const currentClimbUuid = getQueueSnapshot().currentClimbQueueItem?.climb.uuid ?? null;
-          if (
-            readClimbChangeLights('tap', { inSharedSession }) ||
-            isCommittedHeadClimb(replayItem.climb.uuid, currentClimbUuid)
-          ) {
+          const landing = readQueuePickLanding(replayItem, {
+            current: getQueueSnapshot().currentClimbQueueItem,
+            inSharedSession,
+          });
+          if (landing === 'commit') {
             // The queue reorders in place, so the sheet stays up to show it.
             setCurrentClimb(replayItem, commitOptions);
           } else {
-            openPlayDrawer(replayItem.climb as Climb, {
-              boardConfig,
-              previewQueueItem: replayItem,
-              previewCommitOptions: commitOptions,
-            });
-            // Nothing in the queue changes yet, and the preview with its Put on
-            // board sits under the queue sheet this menu opened over. Close that
-            // sheet the way its own row tap does, or the replay looks dead.
+            openPlayDrawer(
+              replayItem.climb as Climb,
+              landing === 'reopen'
+                ? { boardConfig, reopensCurrent: true }
+                : { boardConfig, previewQueueItem: replayItem, previewCommitOptions: commitOptions },
+            );
+            // Nothing in the queue changes, and the player sits under the queue
+            // sheet this menu opened over. Close that sheet the way its own row
+            // tap does, or the replay looks dead.
             void dismissSourceSheet?.();
           }
           after();

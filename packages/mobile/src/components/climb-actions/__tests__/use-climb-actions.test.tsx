@@ -15,6 +15,7 @@ const ctrl = vi.hoisted(() => ({
   currentItem: null as { uuid: string; climb: Climb } | null,
   queueItems: [] as Array<{ uuid: string; climb: Climb }>,
   boardMatches: false,
+  inSharedSession: false,
   // The History row Replay from here would replay; null hides the row (F3).
   replayItem: null as { uuid: string; climb: unknown } | null,
 }));
@@ -78,7 +79,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
   useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
   useActiveClimbUuid: () => ctrl.activeClimbUuid,
-  useIsSharedSession: () => false,
+  useIsSharedSession: () => ctrl.inSharedSession,
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -104,6 +105,7 @@ vi.mock('../use-delete-climb-action', () => ({ useDeleteClimbAction: () => opene
 
 import { useClimbActions } from '../use-climb-actions';
 import { track } from '../../../lib/analytics';
+import { registerHeldQueueItemReader } from '../../../lib/held-climb-reader';
 // The real commit bar: what the preview a replay opens will offer.
 import { resolveCommitBarModel, resolveCommitButton } from '../../play-drawer/wall-state';
 
@@ -146,6 +148,7 @@ beforeEach(() => {
   ctrl.currentItem = null;
   ctrl.queueItems = [];
   ctrl.boardMatches = false;
+  ctrl.inSharedSession = false;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
   bluetoothCtrl.connected = false;
@@ -693,6 +696,39 @@ describe('useClimbActions colours and dispatch', () => {
       });
       expect(openers.openPlayDrawer).not.toHaveBeenCalled();
       expect(dismissSourceSheet).not.toHaveBeenCalled();
+    });
+
+    // A commit would light the wall the hold keeps dark (a new current releases
+    // it), or reorder a crew's queue on a look. The climb up reopens instead.
+    it.each([
+      ['while the #4979 hold keeps the wall dark', () => registerHeldQueueItemReader(() => 'now-slot')],
+      [
+        'in a crew',
+        () => {
+          ctrl.inSharedSession = true;
+          return () => {};
+        },
+      ],
+    ])('reopens the climb up instead of replaying a History copy of it %s', (_label, arrange) => {
+      const cleanUp = arrange();
+      ctrl.replayItem = historyRow;
+      ctrl.currentItem = { uuid: 'now-slot', climb };
+      const dismissSourceSheet = vi.fn(() => Promise.resolve({ status: 'dismissed' as const }));
+      const { result } = renderActions({
+        climb,
+        boardConfig: kilterBoard,
+        queueItemUuid: historyRow.uuid,
+        isAuthenticated: true,
+        dismissSourceSheet,
+      });
+      act(() => result.current.find((action) => action.id === 'replayFromHere')?.run());
+      cleanUp();
+      expect(openers.setCurrentClimb).not.toHaveBeenCalled();
+      expect(openers.openPlayDrawer).toHaveBeenCalledExactlyOnceWith(climb, {
+        boardConfig: kilterBoard,
+        reopensCurrent: true,
+      });
+      expect(dismissSourceSheet).toHaveBeenCalledOnce();
     });
 
     it('previews a History row of another climb, whose preview offers Put on board', () => {

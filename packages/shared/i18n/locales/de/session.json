@@ -908,7 +908,6 @@
       "backToWall": "Zurück zum Boulder an der Wand",
       "backToCurrent": "Zurück zu meiner Wahl",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
-      "previewNotLit": "Vorschau, nicht beleuchtet",
       "previewNotOnWall": "Vorschau · nicht am Board",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",

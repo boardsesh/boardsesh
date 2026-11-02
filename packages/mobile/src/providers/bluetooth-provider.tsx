@@ -37,6 +37,7 @@ import {
   type StaleCurrentHold,
   type StaleCurrentHoldReleaseReason,
 } from '../lib/ble/stale-current-hold';
+import { registerHeldQueueItemReader } from '../lib/held-climb-reader';
 import { nowMs } from '../lib/clock';
 import { relayClockMs, takeRelayReceipt } from '../lib/relay-receipt';
 import {
@@ -2562,6 +2563,9 @@ export function BluetoothProvider({
   useEffect(() => {
     if (!isConnected) releaseStaleCurrentHold('disconnect');
   }, [isConnected, releaseStaleCurrentHold]);
+  // Read at the tap by the queue sheet and Replay from here, so a pick of the
+  // climb up while it is held reopens it instead of releasing the hold.
+  useEffect(() => registerHeldQueueItemReader(() => staleCurrentHoldRef.current?.hold.queueItemUuid ?? null), []);
 
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.

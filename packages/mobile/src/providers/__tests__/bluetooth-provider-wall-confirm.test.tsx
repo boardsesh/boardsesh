@@ -301,6 +301,7 @@ vi.mock('../../lib/board-details', () => ({
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
+import { readHeldQueueItemUuid } from '../../lib/held-climb-reader';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -731,6 +732,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
         queueItemUuid: 'queue-climb-1',
         lastCurrentChangeAt: queue.lastCurrentChange.changedAt,
       });
+      // What a queue sheet tap reads, so a pick of this climb keeps it dark.
+      expect(readHeldQueueItemUuid()).toBe('queue-climb-1');
       expect(heldTelemetry()).toEqual([['Board Stale Current Held', { ageHours: 5, scope: 'session' }]]);
     });
 
@@ -787,6 +790,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
 
       await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
       expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(readHeldQueueItemUuid()).toBeNull();
       expect(releaseTelemetry()).toEqual([
         ['Board Stale Current Released', expect.objectContaining({ reason: 'relight', scope: 'session' })],
       ]);

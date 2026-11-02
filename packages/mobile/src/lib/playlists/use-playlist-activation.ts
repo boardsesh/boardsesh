@@ -1240,19 +1240,22 @@ export function usePlaylistActivation({
    * (preview-first): the list from the tapped climb on becomes Up next, and
    * History and the climb on the wall stay where they are. The tap already
    * seeded Up next with `seedItem`, the slot the preview shows; this loads the
-   * rest of the list behind it.
+   * rest of the list behind it. A null `seedItem` means the tapped climb is the
+   * one on the wall: its slot is the Now slot, and the list after it loads.
    *
    * The climber may move while it loads. Put on board took the seed up: the
    * list loads behind it with its track, as Start playlist does. Any other
    * pick came after the tap, and loading would undo it, so the load is skipped.
    */
   const loadPlaylistIntoUpNext = useCallback(
-    async (climb: Climb, seedItem: ClimbQueueItem) => {
+    async (climb: Climb, seedItem: ClimbQueueItem | null) => {
       if (credentialGeneration !== getCredentialGeneration()) return;
       replacementAbortRef.current?.abort();
       const abortController = new AbortController();
       replacementAbortRef.current = abortController;
       const wallAtStartUuid = getQueueSnapshot().currentClimbQueueItem?.uuid ?? null;
+      // The tapped climb's slot: the seed, or the Now slot when it was up.
+      const tappedSlotUuid = seedItem?.uuid ?? wallAtStartUuid;
       let drainStopReason: PlaylistDrainStopReason | null = null;
       let drainPagesFetched = 0;
       try {
@@ -1272,35 +1275,64 @@ export function usePlaylistActivation({
         }
         // Climbs queued while the list loaded would drop out too: ask, as the
         // lighting path does.
-        const landedMeanwhile = upNextOf(getQueueSnapshot()).filter(({ uuid }) => uuid !== seedItem.uuid).length;
+        const landedMeanwhile = upNextOf(getQueueSnapshot()).filter(({ uuid }) => uuid !== tappedSlotUuid).length;
         if (landedMeanwhile > 0) {
           const decision = await promptQueueFork(landedMeanwhile);
           if (abortController.signal.aborted || credentialGeneration !== getCredentialGeneration()) return;
           if (decision === 'cancel') return;
           if (decision === 'append') {
-            const seedStillQueued = getQueueSnapshot().queue.some(({ uuid }) => uuid === seedItem.uuid);
+            const {
+              queue: queueAtAnswer,
+              currentClimbQueueItem: wallAtAnswer,
+              playlistSuggestionSource: trackAtAnswer,
+            } = getQueueSnapshot();
+            const tappedStillQueued = queueAtAnswer.some(({ uuid }) => uuid === tappedSlotUuid);
+            // No full-list track here, unlike the replace below: the list now
+            // sits behind the climbs that landed during the load, not beside
+            // the tapped climb. When the tapped climb is up (Put on board took
+            // the seed up with this list's track, or it was up at the tap),
+            // swipes along that track would queue a second copy of each list
+            // climb, so the climb plays from the queue, as after the first
+            // prompt's Play last. Only this list's track: a climber on
+            // another list keeps theirs, and a seed still in preview leaves
+            // the wall's climb its own track.
+            if (
+              tappedSlotUuid !== null &&
+              wallAtAnswer?.uuid === tappedSlotUuid &&
+              trackAtAnswer?.playlistUuid === sourceId
+            ) {
+              setPlaylistSuggestionSource(null);
+            }
             await queuePlaylistClimbs({
               loadedClimbs: climbs,
               drainStopReason,
               entryPoint: 'replacePrompt',
-              excludeClimbUuid: seedStillQueued ? climb.uuid : undefined,
+              excludeClimbUuid: tappedStillQueued ? climb.uuid : undefined,
             });
             return;
           }
         }
         const live = getQueueSnapshot();
         const liveWallUuid = live.currentClimbQueueItem?.uuid ?? null;
-        const seedWentUp = liveWallUuid === seedItem.uuid;
-        if (liveWallUuid !== wallAtStartUuid && !seedWentUp) return;
+        // Put on board took the seed up, or the tapped climb was up at the tap
+        // and still is.
+        const tappedIsUp = tappedSlotUuid !== null && liveWallUuid === tappedSlotUuid;
+        if (liveWallUuid !== wallAtStartUuid && !tappedIsUp) return;
         // Only climbs this board can draw, as Start playlist queues them (#6664).
         const isClimbableHere = activationTarget?.isClimbable;
         const boardClimbs = isClimbableHere
           ? climbs.filter((candidate) => candidate.uuid === climb.uuid || isClimbableHere(candidate))
           : climbs;
-        // From the tapped climb on, the tapped climb in the seed's slot. Up next
-        // alone may not pass the cap (#6673); History is trimmed to fit.
-        const { queue: listQueue, currentItem } = buildPlaylistQueue(boardClimbs, climb, seedItem);
-        const fromTapped = listQueue.slice(listQueue.indexOf(currentItem));
+        // From the tapped climb on, the tapped climb in the seed's slot; when it
+        // was up at the tap, from the climb after it, since the Now slot holds
+        // it. Up next alone may not pass the cap (#6673); History is trimmed to
+        // fit.
+        const { queue: listQueue, currentItem } = buildPlaylistQueue(
+          boardClimbs,
+          climb,
+          seedItem ?? live.currentClimbQueueItem,
+        );
+        const fromTapped = listQueue.slice(listQueue.indexOf(currentItem) + (seedItem ? 0 : 1));
         const upNext = fromTapped.slice(0, MAX_SYNCED_QUEUE_ITEMS);
         const next = replaceUpNext(live, upNext);
         setQueue(next.queue, next.currentClimbQueueItem, next.historyCount);
@@ -1316,10 +1348,14 @@ export function usePlaylistActivation({
             'info',
           );
         }
-        // The replace dropped any earlier track. Once the tapped climb is up,
-        // the list is its track again, as after Start playlist; before that the
-        // preview walks the list on its own, and Put on board brings the track.
-        if (seedWentUp && activationTarget && activationTarget.isClimbable(climb)) {
+        // `setQueue` leaves the track alone, so until the tapped climb is up
+        // the wall's climb keeps the track it had. That one does no harm: the
+        // loaded climbs are not `suggested`, so a walk plays them as Up next
+        // first, and the older list only picks up after them (#6777). Once the
+        // tapped climb is up, the list is its track, as after Start playlist;
+        // before that the preview walks the list on its own, and Put on board
+        // brings the preview's track, which this upgrades to the whole list.
+        if (tappedIsUp && activationTarget && activationTarget.isClimbable(climb)) {
           setPlaylistSuggestionSource(
             createPlaylistSuggestionSource({
               playlistUuid: sourceId,
@@ -1510,7 +1546,26 @@ export function usePlaylistActivation({
       // climb's new slot opens as a preview. Same three-way prompt as the
       // lighting path whenever Up next has climbs the load would drop.
       const loadIntoUpNextKeepingWall = (): Promise<void> => {
+        // The tapped climb may be the one already up. A copy seeded into Up
+        // next would be a second slot of it: its preview shows no Put on board
+        // (`isCommittedHeadClimb` compares climbs), and Next would play the
+        // climb again. Instead the Now slot stays, the list after it loads,
+        // and the player reopens the climb as it is: no write, nothing lights,
+        // and a #4979 hold stays (`reopensCurrent`).
+        const tappedIsUp = () => getQueueSnapshot().currentClimbQueueItem?.climb.uuid === climb.uuid;
+        const reopenTapped = () => openPlayDrawer(schemaClimb, { ...openingArtOptions, reopensCurrent: true });
         const startLoad = (): Promise<void> => {
+          if (tappedIsUp()) {
+            // Up next goes now, as a seed replaces it, so the load
+            // only asks about climbs queued while it ran.
+            const snapshot = getQueueSnapshot();
+            if (upNextOf(snapshot).length > 0) {
+              const cleared = replaceUpNext(snapshot, []);
+              setQueue(cleared.queue, cleared.currentClimbQueueItem, cleared.historyCount);
+            }
+            reopenTapped();
+            return loadPlaylistIntoUpNext(climb, null);
+          }
           const seedItem = climbToQueueItem(schemaClimb);
           const seeded = replaceUpNext(getQueueSnapshot(), [seedItem]);
           setQueue(seeded.queue, seeded.currentClimbQueueItem, seeded.historyCount);
@@ -1522,6 +1577,14 @@ export function usePlaylistActivation({
         // lighting path, but nothing goes up. It plays from the queue, with no
         // track, for the same reason `playFromQueue` gives.
         const queueBehindWall = (): Promise<void> => {
+          // Up already: nothing to queue for it, so only the list goes in, and
+          // the climb plays from the queue with no track, as `playFromQueue`
+          // leaves the climb up on the lighting path.
+          if (tappedIsUp()) {
+            setPlaylistSuggestionSource(null);
+            reopenTapped();
+            return queuePlaylistClimbs({ entryPoint: 'replacePrompt', excludeClimbUuid: climb.uuid });
+          }
           const slot = climbToQueueItem(schemaClimb);
           const queued = appendQueueItems([slot], { placement: 'next' }) > 0;
           if (queued) previewQueuedSlot(slot, null);
@@ -1754,6 +1817,7 @@ export function usePlaylistActivation({
       honorPlaylistLoadSetting,
       replaceQueueWithPlaylist,
       resolveTarget,
+      setPlaylistSuggestionSource,
       setQueue,
       sourceId,
       viewOnlyBoard,
