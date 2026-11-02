@@ -115,7 +115,9 @@ export function DriveModeWatcher(): null {
   }, [lightOnSwipe]);
 
   // Settings › Board changed under a keep-lighting window: its choice turned
-  // Off, or In a session too turned off in a crew. The window ends.
+  // Off, or In a session too turned off in a crew. The window ends. "A crew"
+  // is the roster's `isCrewSession`, the read the press's own `crewSession`
+  // takes in PlayCore, so both agree on what a session is.
   const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
   const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
   const [drivesInSession] = useSetting('putOnBoardDrivesInSession');

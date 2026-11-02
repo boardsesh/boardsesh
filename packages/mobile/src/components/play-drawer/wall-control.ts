@@ -416,11 +416,20 @@ export type WallControlInput = WallControlStateInput & {
    */
   drivingStopped?: boolean;
   /**
-   * Not in a crew session (the roster, whatever the browse rollout flag says).
-   * Solo, a press may resume an opted-in lighting preference; in a crew,
-   * keep-lighting needs In a session too (`drivesInSession`), except on a MoonBoard.
+   * Not in a crew session and not in its browse latch (PlayCore's
+   * `!isCrewSession && !browseByDefault`). Solo, a press may resume an
+   * opted-in lighting preference.
    */
   solo?: boolean;
+  /**
+   * A crew is in this session: the roster's `useIsCrewSession`, past its
+   * arrival dwell. There keep-lighting needs In a session too
+   * (`drivesInSession`), except on a MoonBoard. The same read
+   * `DriveModeWatcher` ends a running window on, so the press and the watcher
+   * never disagree about a session. Not `solo`, whose browse latch outlives
+   * the crew by a few seconds. Defaults to false.
+   */
+  crewSession?: boolean;
   /**
    * The climber's Light the board as I swipe. Solo with it on, a lit climb is
    * already driven by the setting, so a press only has to drop a stop.
@@ -713,7 +722,7 @@ export function resolveWallControl(input: WallControlInput): WallControlModel {
     keepLighting: input.keepLighting ?? 'off',
     moonboardKeepLighting: input.moonboardKeepLighting ?? 'off',
     drivesInSession: input.drivesInSession === true,
-    inSession: input.solo !== true,
+    inSession: input.crewSession === true,
   });
   let tapDrive: WallControlTapDrive = null;
   let tapKeepLighting: KeepLightingPlan | null = null;

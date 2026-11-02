@@ -1379,6 +1379,9 @@ export function PlayCore({
         driveMode: driveModePhase,
         drivingStopped,
         solo: !isCrewSession && !browseByDefault,
+        // Keep-lighting's session read, the roster alone: the one the watcher
+        // ends a window on when In a session too turns off.
+        crewSession: isCrewSession,
         lightOnSwipe,
         // After Put on board, keep lighting (2.7): the board family's choice.
         // Most MoonBoard controllers don't like phones switching, so a MoonBoard

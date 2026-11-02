@@ -537,12 +537,12 @@ describe('useWallControl: Put on board keeps lighting', () => {
     realKeepLighting(run);
     // The question took the press: nothing went up.
     run.light.mockReturnValueOnce(false);
-    const { hook } = setup(preview({ solo: false }), run);
+    const { hook } = setup(preview({ solo: false, crewSession: true }), run);
     act(() => hook.result.current.press('button'));
     expect(run.keepLighting).not.toHaveBeenCalled();
     expect(getDriveMode()).toBeNull();
     // The question is up: the button waits.
-    hook.rerender({ model: preview({ solo: false, confirmArmed: true }) });
+    hook.rerender({ model: preview({ solo: false, crewSession: true, confirmArmed: true }) });
     act(() => hook.result.current.confirmPut());
     expect(run.light).toHaveBeenCalledTimes(2);
     expect(run.keepLighting).toHaveBeenCalledOnce();
@@ -728,6 +728,33 @@ describe('useWallControl: the keep-lighting window', () => {
     });
     act(() => hook.result.current.press('button'));
     expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("drops a bulb's disconnect in those 2 s too", () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    openWindow();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => hook.result.current.press('mini_bar'));
+    act(() => hook.result.current.press('bulb'));
+    expect(run.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('lets Put on board through in those 2 s: only a disconnect is dropped', () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    openWindow();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    // The climber had already moved to a preview: the button reads Put on board.
+    hook.rerender({ model: modelFor('put_on_wall', 'put_on_wall') });
+    act(() => hook.result.current.press('button'));
+    expect(run.light).toHaveBeenCalledOnce();
+    expect(analytics.tapped).toHaveBeenCalledWith({ state: 'put_on_wall', action: 'put_on_wall', control: 'button' });
   });
 
   it('says nothing about an end it did not run out: a stop, a dropped link', () => {

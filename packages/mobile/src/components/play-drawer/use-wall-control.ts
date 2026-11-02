@@ -95,9 +95,11 @@ export const DISCONNECT_TAP_GUARD_MS = 600;
 
 /**
  * After Put on board's keep-lighting window ends on its own and the label flips
- * to Disconnect board, how long taps are dropped (spec B2): a tap aimed at Each
- * pick lights to stop it must not let go of a crew's board instead. Touch,
- * VoiceOver, Switch Control and Voice Control all arrive as this one press.
+ * to Disconnect board, how long a tap that would disconnect is dropped (spec
+ * B2), the button's or a bulb's: a tap aimed at Each pick lights to stop it
+ * must not let go of a crew's board instead. Any other tap (Put on board on a
+ * preview) goes through. Touch, VoiceOver, Switch Control and Voice Control
+ * all arrive as this one press.
  */
 export const WINDOW_END_TAP_GRACE_MS = 2_000;
 
@@ -215,11 +217,15 @@ export function useWallControl({
     // the wall (it now reads Disconnect board). Drop it.
     const tappedAt = guardedTapAtRef.current;
     if (tappedAt !== null && Date.now() - tappedAt < DISCONNECT_TAP_GUARD_MS) return;
-    // A keep-lighting window just ran out under the climber's thumb.
-    const windowEndedAt = windowEndedAtRef.current;
-    if (windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) return;
     // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
     const action = control === 'button' ? current.tapAction : current.bulbTapAction;
+    // A keep-lighting window just ran out under the climber's thumb: a stop
+    // aimed at it now reads Disconnect board. Only that is dropped; a Put on
+    // board on another climb still goes up.
+    const windowEndedAt = windowEndedAtRef.current;
+    if (action === 'disconnect' && windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) {
+      return;
+    }
     trackWallControlTapped({
       state: current.state,
       action,

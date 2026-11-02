@@ -1066,12 +1066,21 @@ describe('resolveWallControl: Put on board keeps lighting', () => {
     ['solo, 1 minute', { keepLighting: '60' }, 'window', 60_000, 'putOnBoardKeepsLighting'],
     ['solo, Until I stop', { keepLighting: 'until_stopped' }, 'drive', null, 'putOnBoardKeepsLighting'],
     ['solo, Off', { keepLighting: 'off' }, null, null, null],
-    ['a crew, In a session too on', { solo: false }, 'window', 45_000, 'putOnBoardKeepsLighting'],
-    ['a crew, In a session too off', { solo: false, drivesInSession: false }, null, null, null],
+    ['a crew, In a session too on', { solo: false, crewSession: true }, 'window', 45_000, 'putOnBoardKeepsLighting'],
+    ['a crew, In a session too off', { solo: false, crewSession: true, drivesInSession: false }, null, null, null],
+    // The crew left seconds ago: the browse latch still holds, but the roster
+    // (the watcher's read too) says solo, so In a session too has no say.
+    [
+      'the browse latch with no crew, In a session too off',
+      { solo: false, crewSession: false, drivesInSession: false },
+      'window',
+      45_000,
+      'putOnBoardKeepsLighting',
+    ],
     ['MoonBoard, solo, Until I stop', { boardIsMoonboard: true }, 'drive', null, 'moonboardPutOnBoardKeepsLighting'],
     [
       'MoonBoard, a crew with In a session too off',
-      { boardIsMoonboard: true, solo: false, drivesInSession: false },
+      { boardIsMoonboard: true, solo: false, crewSession: true, drivesInSession: false },
       'drive',
       null,
       'moonboardPutOnBoardKeepsLighting',

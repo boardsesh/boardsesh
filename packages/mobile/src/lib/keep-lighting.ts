@@ -90,7 +90,11 @@ export function resolveKeepLightingPlan({
   moonboardKeepLighting: KeepLightingChoice;
   /** Settings › Board's "In a session too". */
   drivesInSession: boolean;
-  /** A crew is here (not solo). */
+  /**
+   * A crew is in this session (the roster's `useIsCrewSession`). The press and
+   * `DriveModeWatcher` both read it, so a window never starts where the watcher
+   * would end it.
+   */
   inSession: boolean;
 }): KeepLightingPlan | null {
   if (boardIsMoonboard) {
