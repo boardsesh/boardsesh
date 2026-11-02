@@ -104,7 +104,7 @@ vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
   renderBoardToPlaylistConfig: () => boardConfig.current,
 }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }),
+  useDrawerHost: () => ({ openPlayDrawer: vi.fn(), getClimbActions: vi.fn() }),
 }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),

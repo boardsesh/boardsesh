@@ -119,7 +119,7 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 
-const drawerHostMock = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }));
+const drawerHostMock = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), getClimbActions: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => drawerHostMock }));
 
 vi.mock('../../../providers/theme-provider', () => ({

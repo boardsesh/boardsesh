@@ -29,7 +29,7 @@ const ctrl = vi.hoisted(() => ({
   fontScale: 1,
   playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
-  openClimbActions: vi.fn(),
+  getClimbActions: vi.fn(),
   // The scroll-stage reaction (0 hero in view, 1 hero gone, 2 filter bar gone),
   // so a test can scroll the header away.
   scrollStageReaction: null as null | ((stage: number, previousStage: number | null) => void),
@@ -237,7 +237,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   usePreviewedClimbUuid: () => ctrl.previewedClimbUuid,
   useDrawerHost: () => ({
     boardConfig: null,
-    openClimbActions: ctrl.openClimbActions,
+    getClimbActions: ctrl.getClimbActions,
     openAddToPlaylist: ctrl.openAddToPlaylist,
   }),
 }));
@@ -491,7 +491,7 @@ describe('PlaylistDetailView', () => {
     ctrl.setOptions.mockClear();
     ctrl.playNext.mockClear();
     ctrl.openAddToPlaylist.mockClear();
-    ctrl.openClimbActions.mockClear();
+    ctrl.getClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
     ctrl.fontScale = 1;
     capturedClimbRows.length = 0;
