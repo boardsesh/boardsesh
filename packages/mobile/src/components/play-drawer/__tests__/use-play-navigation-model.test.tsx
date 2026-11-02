@@ -262,12 +262,30 @@ describe('usePlayNavigationModel', () => {
     });
 
     // #7227: a step that only looks keeps walking this list, holding its place.
+    // A step off the climb on the wall starts a look, and its list says so,
+    // whichever way it goes (#7227 re-review).
     it('hands a look the list it walks, with its place in Up next', () => {
       const { result } = renderHook(() =>
         usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: results }),
       );
+      expect(result.current.nextPreviewSource).toEqual({ ...walking, lookOffWall: true });
+      // Nothing before the list's first climb: the list as it is, marked.
+      expect(result.current.previousPreviewSource).toEqual({ ...results, lookOffWall: true });
+      expect(results).not.toHaveProperty('lookOffWall');
+    });
+
+    // A preview's own list (a list tap's) stays as it was opened: a step off
+    // it is no look off the climb on the wall.
+    it('leaves a preview’s own list unmarked', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queue),
+          playlistSuggestionSource: results,
+          drawerPreviewItem: onList,
+          drawerPreviewSuggestionSource: results,
+        }),
+      );
       expect(result.current.nextPreviewSource).toEqual(walking);
-      // Nothing before the list's first climb: the list as it is.
       expect(result.current.previousPreviewSource).toBe(results);
     });
 

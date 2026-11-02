@@ -172,16 +172,20 @@ export function usePlayNavigationModel({
   // would, rather than stopping at the end of the queue. Null when the walk
   // has no list: a preview opened without one never takes the committed track.
   // A step back onto the list records the Up next climb on screen as the one
-  // it stepped off, where Previous retraces from.
+  // it stepped off, where Previous retraces from. With no preview on screen the
+  // step leaves the climb on the wall itself, so it starts a look, and the
+  // list says so (`offWall`): the look's Put on board then leaves the queue as
+  // Next would, back up the list too. A preview's steps keep its list as it is.
   const { nextTrackResume, prevTrackResume } = navigationTargets;
   const steppedOffQueueItemUuid = displayedQueueItem?.uuid;
+  const offWall = drawerPreviewItem === null;
   const nextPreviewSource = useMemo(
-    () => resolvePreviewStepSource(navigationSuggestionSource, nextTrackResume, steppedOffQueueItemUuid),
-    [navigationSuggestionSource, nextTrackResume, steppedOffQueueItemUuid],
+    () => resolvePreviewStepSource(navigationSuggestionSource, nextTrackResume, { steppedOffQueueItemUuid, offWall }),
+    [navigationSuggestionSource, nextTrackResume, steppedOffQueueItemUuid, offWall],
   );
   const previousPreviewSource = useMemo(
-    () => resolvePreviewStepSource(navigationSuggestionSource, prevTrackResume, steppedOffQueueItemUuid),
-    [navigationSuggestionSource, prevTrackResume, steppedOffQueueItemUuid],
+    () => resolvePreviewStepSource(navigationSuggestionSource, prevTrackResume, { steppedOffQueueItemUuid, offWall }),
+    [navigationSuggestionSource, prevTrackResume, steppedOffQueueItemUuid, offWall],
   );
 
   // The neighbours' headers stay mounted beside the current one, like their

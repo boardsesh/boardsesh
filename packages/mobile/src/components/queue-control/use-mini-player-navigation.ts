@@ -190,11 +190,13 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           // The step keeps the list it walked (the pick's own, or the one the
           // climb on the wall is on) with its place in Up next, as the player's
           // view-only swipe does (#7227), so the player's swipes go on through
-          // Up next and down the list. A pick keeps the board it was drawn on.
+          // Up next and down the list. A step off the climb on the wall starts
+          // a look, and its list says so (`offWall`); a pick's list stays as
+          // the pick left it. A pick keeps the board it was drawn on.
           playlistSuggestionSource: resolvePreviewStepSource(
             pick ? pick.suggestionSource : playlistSuggestionSource,
             trackResume,
-            stepFromUuid,
+            { steppedOffQueueItemUuid: stepFromUuid, offWall: !pick },
           ),
           ...(pick?.boardConfig ? { boardConfig: pick.boardConfig } : {}),
         });
@@ -207,7 +209,9 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         // pick a look left on the list's climb steps into Up next, and without
         // that place the list would go dormant.
         const { item, options } = resolvePreviewStepCommit({
-          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume, stepFromUuid),
+          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume, {
+            steppedOffQueueItemUuid: stepFromUuid,
+          }),
           targetItem,
           direction,
         });

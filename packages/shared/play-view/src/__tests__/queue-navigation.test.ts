@@ -1860,13 +1860,15 @@ describe('a look off the climb on the wall keeps walking its list (#7227)', () =
       const item = way === 'next' ? targets.nextItem : targets.prevItem;
       atTrackEnd = targets.atTrackEnd;
       if (!item) break;
-      // The climb on screen is the one the step leaves, as in PlayCore.
-      const steppedOff = (previewItem ?? committedItem).uuid;
+      // The climb on screen is the one the step leaves, as in PlayCore, and a
+      // step with no preview on screen leaves the climb on the wall.
+      const steppedOffQueueItemUuid = (previewItem ?? committedItem).uuid;
+      const offWall = previewItem === null;
       previewItem = item;
       previewSource = resolvePreviewStepSource(
         source,
         way === 'next' ? targets.nextTrackResume : targets.prevTrackResume,
-        steppedOff,
+        { steppedOffQueueItemUuid, offWall },
       );
       landed.push(item);
       carried.push(previewSource);
@@ -2141,13 +2143,31 @@ describe('resolvePreviewStepSource (#7227)', () => {
   });
 
   it('records the Up next climb a step back onto the list stepped off', () => {
-    const intoUpNext = resolvePreviewStepSource(list, resume, 'item-a');
-    const backOnList = resolvePreviewStepSource(intoUpNext, null, 'item-up-next');
+    const intoUpNext = resolvePreviewStepSource(list, resume, { steppedOffQueueItemUuid: 'item-a' });
+    const backOnList = resolvePreviewStepSource(intoUpNext, null, { steppedOffQueueItemUuid: 'item-up-next' });
     expect(backOnList?.detour).toEqual({ ...resume, lastUpNextQueueItemUuid: 'item-up-next' });
   });
 
   it('carries no list when the walk had none', () => {
     expect(resolvePreviewStepSource(null, resume)).toBeNull();
     expect(resolvePreviewStepSource(null, undefined)).toBeNull();
+    expect(resolvePreviewStepSource(null, undefined, { offWall: true })).toBeNull();
+  });
+
+  // #7227 re-review: a look that went back up the list never sets a resume or
+  // a detour, so its list has to say it began off the climb on the wall.
+  it('marks the list a step off the climb on the wall carries, whichever way it goes', () => {
+    const lookedBack = resolvePreviewStepSource(list, undefined, { offWall: true });
+    expect(lookedBack).toEqual({ ...list, lookOffWall: true });
+    expect(list.lookOffWall).toBeUndefined();
+    const intoUpNext = resolvePreviewStepSource(list, resume, { offWall: true });
+    expect(intoUpNext).toEqual({ ...list, resume, lookOffWall: true });
+  });
+
+  it('keeps a preview’s list as it is: marked stays marked, a list tap’s stays unmarked', () => {
+    const marked = resolvePreviewStepSource(list, undefined, { offWall: true });
+    expect(resolvePreviewStepSource(marked, undefined)).toBe(marked);
+    expect(resolvePreviewStepSource(marked, resume)?.lookOffWall).toBe(true);
+    expect(resolvePreviewStepSource(list, resume)?.lookOffWall).toBeUndefined();
   });
 });

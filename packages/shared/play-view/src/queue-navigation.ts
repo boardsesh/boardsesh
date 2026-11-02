@@ -12,6 +12,7 @@ import {
   findPlaylistClimbIndex,
   upNextStart,
   withPlaylistTrackResume,
+  asLookOffWall,
 } from '@boardsesh/queue';
 import {
   classifyClimbBoardCompatibility,
@@ -1108,6 +1109,12 @@ export function computeNavigationTargetsWithSuggestions(
  * a step from Up next back onto the list records it on the detour, so
  * Previous from the list retraces from the climb the look stepped off.
  *
+ * `offWall` says the step leaves the climb on the wall itself, so it starts a
+ * look: the list it carries is marked as one (`lookOffWall`), and the look's
+ * Put on board, or a step once a drive starts, leaves the queue as Next would,
+ * whichever way the look went. A step off a preview keeps that preview's list
+ * as it is, marked or not: a list tap's list never becomes a look's.
+ *
  * Null with no track: a step that walks only the queue carries no list. A
  * preview opened with no list resolves to no track
  * ({@link resolveNavigationSuggestionSource}), so its steps never pick up the
@@ -1116,11 +1123,11 @@ export function computeNavigationTargetsWithSuggestions(
 export function resolvePreviewStepSource(
   source: PlaylistSuggestionSource | null,
   trackResume: PlaylistTrackResume | null | undefined,
-  steppedOffQueueItemUuid?: string,
+  { steppedOffQueueItemUuid, offWall = false }: { steppedOffQueueItemUuid?: string; offWall?: boolean } = {},
 ): PlaylistSuggestionSource | null {
-  return source && trackResume !== undefined
-    ? withPlaylistTrackResume(source, trackResume, steppedOffQueueItemUuid)
-    : source;
+  if (!source) return null;
+  const walked = offWall ? asLookOffWall(source) : source;
+  return trackResume === undefined ? walked : withPlaylistTrackResume(walked, trackResume, steppedOffQueueItemUuid);
 }
 
 export function countRemainingQueueItemsWithSuggestions(

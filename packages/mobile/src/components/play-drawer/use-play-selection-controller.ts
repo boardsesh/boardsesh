@@ -42,7 +42,8 @@ type SelectionNavigation = {
   /**
    * The list a step to `nextItem` or `prevItem` that only looks keeps walking
    * (`resolvePreviewStepSource`, #7227): the track navigation walks, with the
-   * step's place in Up next. Null when the walk has no list.
+   * step's place in Up next, marked as a look's (`lookOffWall`) when the step
+   * leaves the climb on the wall. Null when the walk has no list.
    */
   nextPreviewSource: PlaylistSuggestionSource | null;
   previousPreviewSource: PlaylistSuggestionSource | null;
@@ -582,10 +583,12 @@ export function usePlaySelectionController({
       // never an older entry pulled out of History. A look that carries a list
       // goes up as Next would, leaving the queue as it is (`keepQueue`, #7227):
       // solo, a commit with a list otherwise drops the suggested climbs after
-      // it, a workout's among them. The provider keeps the queue for a queued
-      // climb (Up next), and for a peek whose walk went through Up next (its
-      // list holds a `resume` or a `detour`). A list tap's climb, or a peek
-      // along a list that never entered Up next, still prunes as before.
+      // it, a workout's among them. The provider keeps the queue for a look
+      // off the climb on the wall (its list's `lookOffWall`, forward through
+      // Up next or back up the list), for a queued climb (Up next), and for a
+      // walk that went through Up next (its list holds a `resume` or a
+      // `detour`). A list tap's climb, or a peek along a list opened that way,
+      // still prunes as before.
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
       const listStep = converted ? { historyCopy: 'fresh' as const } : {};
       setCurrentClimb(item, {

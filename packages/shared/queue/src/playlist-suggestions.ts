@@ -403,6 +403,28 @@ export function withPlaylistTrackResume(
 }
 
 /**
+ * `source` as the list a look off the climb on the wall carries
+ * ({@link PlaylistSuggestionSource.lookOffWall}, issue #7227). `source` itself
+ * when it already says so. The copy keeps the source's prepared index.
+ */
+export function asLookOffWall(source: PlaylistSuggestionSource): PlaylistSuggestionSource {
+  if (source.lookOffWall) return source;
+  return keepPreparedIndex(source, { ...source, lookOffWall: true });
+}
+
+/**
+ * `source` without a look's mark, as the queue holds a list that went up
+ * (issue #7227): the mark says how a preview began, which a committed list
+ * never is. `source` itself when it has no mark.
+ */
+export function withoutLookOffWall(source: PlaylistSuggestionSource): PlaylistSuggestionSource {
+  if (!source.lookOffWall) return source;
+  const next: PlaylistSuggestionSource = { ...source };
+  delete next.lookOffWall;
+  return keepPreparedIndex(source, next);
+}
+
+/**
  * `source` carrying `held`'s place on the walk: its Up next resume point and
  * its last detour (issue #6777). For a fresh copy of the same list (a refresh,
  * a longer page) that replaces the held track while the walk is under way.

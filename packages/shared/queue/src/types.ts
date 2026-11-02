@@ -139,6 +139,18 @@ export type PlaylistSuggestionSource = {
    * new one drops it. Client-only, like the rest of the track.
    */
   detour?: PlaylistTrackDetour;
+  /**
+   * Set on the list a look off the climb on the wall carries (issue #7227): a
+   * preview that began as a swipe, Next or Previous from the committed climb,
+   * walking the list that climb is on. The look's steps, and the last pick it
+   * leaves on the bar, keep it. Its Put on board, or a step once a drive
+   * starts, then leaves the queue as Next would (`keepQueue`), whichever way
+   * the look went: forward through Up next, or back up the list. A list opened
+   * any other way (a list tap, a suggestion, the board sheet) never has it.
+   * Only a preview's list carries it: the queue drops it when the list goes
+   * up. Client-only, like the rest of the track.
+   */
+  lookOffWall?: true;
 };
 
 /**
@@ -244,11 +256,12 @@ export type SetCurrentClimbOptions = {
    * Up next climb, or on the list after walking one. Without it, a solo commit
    * with a list drops the `suggested` climbs after the new current climb, which
    * ends an earlier pass of a list but would also drop a workout's queued
-   * climbs. The queue stays when the climb is already in it, or when the
-   * source holds a `resume` or a `detour` (the walk went through Up next). A
-   * climb not yet queued along a list that never entered Up next (a list tap,
-   * its peeks) still prunes as before. Ignored in now-slot mode and in a
-   * session, where nothing is pruned.
+   * climbs. The queue stays for a look off the climb on the wall (its list's
+   * `lookOffWall`), when the climb is already in the queue, or when the source
+   * holds a `resume` or a `detour` (the walk went through Up next). A climb
+   * not yet queued along a list opened another way (a list tap, its peeks)
+   * still prunes as before. Ignored in now-slot mode and in a session, where
+   * nothing is pruned.
    */
   keepQueue?: boolean;
   trigger?: SetCurrentClimbTrigger;

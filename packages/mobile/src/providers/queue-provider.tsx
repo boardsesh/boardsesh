@@ -21,6 +21,7 @@ import {
   samePlaylistTrackResume,
   withPlaylistTrackResume,
   withPlaylistTrackPlace,
+  withoutLookOffWall,
   getQueueBoardKey,
   isPlaylistPeekQueueItemUuid,
   decideAdd,
@@ -2797,16 +2798,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       // Skip the broadcast for an unresolved climb (#2527), see below.
       const broadcasts = isClimbResolved(item.climb);
-      // A step along a list (`keepQueue`, #7227) leaves the queue as Next does,
-      // with no prune after it, when it lands on a climb already queued, or
-      // when its walk went through Up next on the way (the track holds a
-      // `resume` or a `detour`): the prune would drop the Up next it played, a
-      // workout's queued climbs among them. A list tap's climb, or a peek along
-      // a list that never entered Up next, still prunes as before.
-      const keepsQueue =
-        keepQueue &&
-        (stateRef.current.queue.some(({ uuid }) => uuid === item.uuid) ||
-          Boolean(playlistSuggestionSource?.resume ?? playlistSuggestionSource?.detour));
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
@@ -2821,7 +2812,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // room's — the ordered-hash watchdog would flag drift and resync the
         // leftovers straight back. List-first swipes (#4829) don't need the
         // prune for correctness, so it runs solo-only; in a session the crew's
-        // queue stays exactly as the server holds it.
+        // queue stays exactly as the server holds it. It also skips a step
+        // along a list that keeps the queue as Next does (`keepQueue`, decided
+        // in setCurrentClimb, #7227).
         // sessionId: the room this move is sent to, so the reducer keeps it
         // through a snapshot of that room that predates it. Only when a
         // mutation really goes out (resolved climb, in a session).
@@ -2832,7 +2825,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           correlationId,
           playlistSuggestionSource,
           insertAfterCurrent,
-          pruneSuggestedAfterCurrent: sessionIdRef.current == null && !keepsQueue,
+          pruneSuggestedAfterCurrent: sessionIdRef.current == null && !keepQueue,
           sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
           placement,
           // Solo, the phone trims History itself; in a session only the server
@@ -3089,9 +3082,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // Source is client-only provider state (see note above) — set it whenever
       // the caller passes options. Activation passes a source; a fresh
       // climb-list/search open passes null to clear playlist context; re-opening
-      // the current climb passes nothing, leaving the source intact.
-      if (options?.playlistSuggestionSource !== undefined) {
-        setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
+      // the current climb passes nothing, leaving the source intact. A look's
+      // mark (`lookOffWall`, #7227) says how a preview began: it decides only
+      // whether this commit keeps the queue (below), and the list goes up
+      // without it.
+      const walkedSource = options?.playlistSuggestionSource;
+      const trackSource = walkedSource ? withoutLookOffWall(walkedSource) : walkedSource;
+      if (trackSource !== undefined) {
+        setPlaylistSuggestionSourceState(trackSource);
       }
       // A look that walked from the current climb went up on the wall (#6777).
       // Read before the dispatch, against the climb still current: Up next on
@@ -3116,16 +3114,29 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // (driven by findNextQueueItemWithSuggestions anchoring on the current
       // climb) is preserved. In now-slot mode (F3) the open goes through
       // `placeOnWall` instead: a queued climb moves into Now, never copied.
+      // A step along a list (`keepQueue`, #7227) leaves the queue as Next does,
+      // with no prune after it, for a look off the climb on the wall (its list
+      // says so, whichever way the look went: on through Up next, or back up
+      // the list), for a climb already queued, and for a walk that went through
+      // Up next (the list holds a `resume` or a `detour`). The prune would drop
+      // the Up next the look walked past or played, a workout's queued climbs
+      // among them. A list tap's climb, or a peek along a list opened that way,
+      // still prunes as before.
+      const keepsQueue =
+        options?.keepQueue === true &&
+        (walkedSource?.lookOffWall === true ||
+          Boolean(walkedSource?.resume ?? walkedSource?.detour) ||
+          stateRef.current.queue.some(({ uuid }) => uuid === item.uuid));
       const currentUuidBeforeOpen = stateRef.current.currentClimbQueueItem?.uuid ?? null;
       const nowSlotOpen = dispatchSetCurrent(
         item,
         true,
-        options?.playlistSuggestionSource,
+        trackSource,
         true,
         undefined,
         options?.placement,
         options?.historyCopy,
-        options?.keepQueue === true,
+        keepsQueue,
       );
       // #4979: opening the climb that is already current (a re-tap, or a list
       // row for the same climb, which now-slot mode dedupes onto it) leaves the
@@ -3368,7 +3379,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     );
     if (!prevItem) return;
     const { item, converted } = resolveCommittableQueueItem(prevItem);
-    storeTrackResume(walkedSource, trackResume, currentClimbQueueItem?.uuid);
+    // No stepped-off climb: Previous clears a resume only when it lands on the
+    // list entry the walk left, and a detour is never read from there.
+    storeTrackResume(walkedSource, trackResume);
     // Match nextClimb and the server: suggestions insert immediately after current.
     // In now-slot mode: from a list climb it is a NOW (the list's previous
     // climb, or the last Up next climb of a detour, goes up at the Now slot and

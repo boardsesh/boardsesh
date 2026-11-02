@@ -451,8 +451,8 @@ The player doesn't say which list it is walking, and the walk ends silently.
 - The cleanup that removes browse-origin (`suggested`) climbs needs two things: no session at
   all (`pruneSuggestedAfterCurrent: sessionIdRef.current == null`, `queue-provider.tsx:1950`),
   and a tap that carries a track (`packages/shared/queue/src/reducer.ts:309-312`). A step
-  along a list onto a queued climb, or after the walk went through Up next, skips it as Next
-  does (`keepQueue`, #7227). Pressing
+  along a list skips it as Next does (`keepQueue`, #7227) when it began as a look off the climb
+  on the wall, lands on a queued climb, or went through Up next. Pressing
   Start alone creates a session, so a solo climber who started one keeps every leftover. And
   taps that clear the track (the queue sheet; before F2 also the logbook, sessions, profile,
   board history, Record and similar climbs) never clean up, even solo.
@@ -660,12 +660,15 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    the list to its end card, as Next would, and lights nothing. Put on board puts up the climb
    on screen with that list and its place, and a list climb the look reached goes up as a fresh
    entry, as Next places one. A climb the look reached goes up leaving the queue as it is, as
-   Next does, when it is queued or when the look went through Up next on the way (its list
-   holds a `resume` or a `detour`): solo, without a session, nothing queued after it is
-   dropped, a workout's climbs included (`keepQueue`). A list tap, or a look that only walked
-   the list, still drops the earlier pass's list climbs queued after it, as before. A step
-   that lights from such a look, once this phone drives
-   the wall, commits the same way, with the step's own place in Up next. The MiniPlayer's ⏮ ⏭ hand the player the same list. Until #7227
+   Next does, whichever way the look went, on through Up next or back up the list: the step
+   off the climb on the wall marks the list the look carries (`lookOffWall`), so solo, without
+   a session, nothing queued after the climb is dropped, a workout's climbs included
+   (`keepQueue`). Before #7227 a look's Put on board carried no list, so it dropped nothing
+   either. A step that lights from such a look, once this phone drives the wall, commits the
+   same way, with the step's own place in Up next. The queue drops the mark once the list goes
+   up. Put on board from a list tap's preview, or a step that lights off it, still drops the
+   earlier pass's list climbs queued after it, as a list tap always has. The MiniPlayer's ⏮ ⏭
+   hand the player the same list, marked the same way for a step off the climb on the wall. Until #7227
    the look walked the queue with no list of its own (owner decision, 2026-10-25, keeping the
    #5403 rule), so its swipes stopped at the end of Up next, or one climb past the wall's with
    Up next empty; once 2.7 made every pick a preview (#7188), every solo climber hit that. A

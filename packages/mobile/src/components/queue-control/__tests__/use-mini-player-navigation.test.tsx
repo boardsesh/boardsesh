@@ -320,12 +320,22 @@ describe('useMiniPlayerNavigation', () => {
     expect(queue.nextClimb).not.toHaveBeenCalled();
     expect(queue.previousClimb).not.toHaveBeenCalled();
     const [[, nextOpen], [, previousOpen]] = drawer.openPlayDrawer.mock.calls;
+    // A step off the climb on the wall starts a look, and its list says so
+    // (#7227 re-review), whichever way it goes.
     expect(nextOpen).toEqual({
       previewQueueItem: targets.nextItem,
-      playlistSuggestionSource: { ...list, resume: { climbUuid: 'climb-current', queueItemUuid: 'current' } },
+      playlistSuggestionSource: {
+        ...list,
+        resume: { climbUuid: 'climb-current', queueItemUuid: 'current' },
+        lookOffWall: true,
+      },
     });
-    // A step that stays on the list leaves the list as it is.
-    expect(previousOpen).toEqual({ previewQueueItem: targets.prevItem, playlistSuggestionSource: list });
+    // A step that stays on the list leaves its place as it is.
+    expect(previousOpen).toEqual({
+      previewQueueItem: targets.prevItem,
+      playlistSuggestionSource: { ...list, lookOffWall: true },
+    });
+    expect(list).not.toHaveProperty('lookOffWall');
   });
 
   it('reads disabled with nowhere to go, and a tap does nothing', () => {

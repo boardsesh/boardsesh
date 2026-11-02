@@ -26,8 +26,9 @@ import { resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
  * Either way it is a step, placed as `nextClimb` places one: a fresh copy at
  * the Now slot, never a climb pulled out of History. A step along a list asks
  * to leave the queue as it is (`keepQueue`), as Next does: the provider keeps
- * it for a queued climb, and for a peek whose walk went through Up next, so the
- * Up next it played (a workout's climbs) stays queued. A list's transient
+ * it for a look off the climb on the wall (its list's `lookOffWall`), for a
+ * queued climb, and for a walk that went through Up next, so the Up next the
+ * look walked past or played (a workout's climbs) stays queued. A list's transient
  * `playlist-peek:` item is laundered first, so no peer sees its uuid.
  */
 export function resolvePreviewStepCommit({

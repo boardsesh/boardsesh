@@ -1161,6 +1161,13 @@ describe('PlayDrawer — the shared-session browse latch', () => {
           expect.objectContaining({ climb: expect.objectContaining({ uuid: thirdClimb.uuid }) }),
           expect.objectContaining({ playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'list-1' }) }),
         );
+        // Only the look off the climb on the wall says it is one, so only its
+        // step keeps the queue whatever it walked past; the list tap's prunes.
+        const [, stepOptions] = queueActions.setCurrentClimb.mock.calls.at(-1) as [
+          unknown,
+          { playlistSuggestionSource: PlaylistSuggestionSource },
+        ];
+        expect(stepOptions.playlistSuggestionSource.lookOffWall).toBe(explicitPreview ? undefined : true);
         expect(queueActions.nextClimb).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
@@ -1821,6 +1828,83 @@ describe('PlayDrawer — a look off the climb on the wall keeps walking its list
           trigger: 'next',
         }),
       );
+    });
+  });
+
+  // #7227 re-review: a look back up the list never enters Up next, so its
+  // list holds no resume and no detour. It carries the look's mark instead
+  // (`lookOffWall`), which is what the provider keeps the workout for. A list
+  // tap's preview of the same climb never has it, and still prunes.
+  describe('a look back up the list, with a workout in Up next', () => {
+    const limit1 = { uuid: 'queue-limit-1', climb: climb('climb-limit-1', 'Limit 1'), suggested: true };
+    const limit2 = { uuid: 'queue-limit-2', climb: climb('climb-limit-2', 'Limit 2'), suggested: true };
+    const onC = { uuid: 'queue-c', climb: c, suggested: true };
+
+    function onTheWallAtC(target: Parameters<typeof drawerElement>[1] = committedTargetFor(c)) {
+      session.useRealNavigation = true;
+      session.suggestionSource = { ...results, activatedClimbUuid: c.uuid };
+      session.queue = [onC, limit1, limit2];
+      session.currentItem = onC;
+      return render(drawerElement('member', target));
+    }
+
+    it('Put on board from the peek it stepped back to keeps the workout queued', () => {
+      onTheWallAtC();
+      expect(swipePrevious(1)).toEqual([b.uuid]);
+      act(() => {
+        (lastActionBarProps().onCommit as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: b.uuid }) }),
+        {
+          playlistSuggestionSource: expect.objectContaining({
+            playlistUuid: 'search',
+            activatedClimbUuid: b.uuid,
+            lookOffWall: true,
+          }),
+          keepQueue: true,
+          historyCopy: 'fresh',
+          trigger: 'put_on_wall',
+        },
+      );
+    });
+
+    it('Previous once a drive starts keeps the workout queued', () => {
+      onTheWallAtC();
+      expect(swipePrevious(1)).toEqual([b.uuid]);
+      act(() => {
+        driveTheWall();
+      });
+      act(() => {
+        (lastActionBarProps().onPrevClick as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: a.uuid }) }),
+        expect.objectContaining({
+          playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'search', lookOffWall: true }),
+          keepQueue: true,
+          trigger: 'previous',
+        }),
+      );
+    });
+
+    it('a list tap’s preview of the same climb never carries the mark, even a step on', () => {
+      const tappedB = { uuid: 'tapped-b', climb: b };
+      onTheWallAtC({
+        climb: b,
+        options: { previewQueueItem: tappedB, playlistSuggestionSource: { ...results, activatedClimbUuid: b.uuid } },
+        nonce: 1,
+      } as unknown as Parameters<typeof drawerElement>[1]);
+      expect(swipePrevious(1)).toEqual([a.uuid]);
+      act(() => {
+        (lastActionBarProps().onCommit as () => void)();
+      });
+      const [[committed, options]] = queueActions.setCurrentClimb.mock.calls as [
+        [{ climb: { uuid: string } }, { playlistSuggestionSource: PlaylistSuggestionSource; keepQueue?: boolean }],
+      ];
+      expect(committed.climb.uuid).toBe(a.uuid);
+      expect(options.playlistSuggestionSource).toMatchObject({ playlistUuid: 'search' });
+      expect(options.playlistSuggestionSource).not.toHaveProperty('lookOffWall');
     });
   });
 
