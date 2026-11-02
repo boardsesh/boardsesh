@@ -396,7 +396,7 @@ class SessionPresenceControllerTest {
         assertEquals(null, controller.restTimer)
     }
 
-    // --- Keep-lighting window (2.7) ---
+    // --- Driving the wall (2.7) ---
 
     private fun windowOptions(
         sessionId: String = "session-1",
@@ -505,13 +505,11 @@ class SessionPresenceControllerTest {
         controller.startSession(StartSessionOptions().apply {
             sessionId = "session-1"
             androidNotification = AndroidNotificationStrings().apply {
-                lightWindowLabel = "Cada bloque se enciende"
                 lightDrivingLabel = "Estás al mando del plafón"
             }
         })
 
         val start = launchedIntents.single()
-        assertEquals("Cada bloque se enciende", start.getStringExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_LABEL))
         assertEquals("Estás al mando del plafón", start.getStringExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL))
         assertEquals(null, LightingWindowStore.loadWindow(application))
     }

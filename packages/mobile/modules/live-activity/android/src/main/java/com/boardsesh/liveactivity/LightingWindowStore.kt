@@ -6,13 +6,14 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * This phone's keep-lighting window (2.7), as the notification and JS share it:
+ * This phone's drive (2.7: off, Put on board's timed drive, or an open-ended
+ * drive), as the notification and JS share it:
  * LiveActivityLightingWindowSnapshot in modules/live-activity/src/index.ts, and
  * the iOS `SharedLightingWindowState`.
  *
  * One writer: JS (`source == "app"`), on every change of its drive. A
  * notification Previous / Next writes nothing here: JS lights the wall for it,
- * so JS opens or renews the window at the wall's lit confirm, the way a climb
+ * so JS starts or renews the timed drive at the wall's lit confirm, the way a climb
  * lit in the app does (`armNotificationPressDrive` in lock-screen-lighting.ts).
  * iOS also has a native writer, its lock-screen intent, which lights the wall
  * without JS.
@@ -21,9 +22,9 @@ internal data class LightingWindowSnapshot(
     val sessionId: String,
     /** [LightingWindowStore.MODE_OFF], [LightingWindowStore.MODE_WINDOW] or [LightingWindowStore.MODE_DRIVING]. */
     val mode: String,
-    /** Epoch ms the window ends; null outside a window. */
+    /** Epoch ms the timed drive ends; null outside one. */
     val endsAtMs: Long?,
-    /** The window's length; null outside a window. */
+    /** The timed drive's length; null outside one. */
     val windowSeconds: Double?,
     /** Which choice opened it ("general" / "moonboard"), null when unknown. */
     val family: String?,

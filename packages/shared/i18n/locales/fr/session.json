@@ -882,7 +882,6 @@
         "reconnect": "Se connecter à la board",
         "connecting": "Connexion…",
         "onWall": "{{name}} est sur le mur",
-        "eachPickLights": "Chaque bloc s'allume",
         "drivingTheWall": "Tu pilotes la board"
       },
       "inStatsFlashes": "Flashs",

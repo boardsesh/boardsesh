@@ -8,11 +8,12 @@ import type {
 } from '../../../modules/live-activity/src/index';
 
 /**
- * The keep-lighting window (2.7) as the Lock Screen, the Dynamic Island and
- * the Android notification draw it, from the drive store's seam
- * (`getDriveLightingSnapshot`). Arming reads as off: nothing lights a pick
- * until the wall confirms the first climb. Null outside a session: there is no
- * card to draw it on.
+ * This phone's drive (2.7) as the Lock Screen, the Dynamic Island and the
+ * Android notification draw it, from the drive store's seam
+ * (`getDriveLightingSnapshot`): Put on board's timed drive (`window`, with its
+ * own end and length), an open-ended drive (`driving`, no clock), or off.
+ * Arming reads as off: nothing lights a pick until the wall confirms the first
+ * climb. Null outside a session: there is no card to draw it on.
  */
 export function buildLightingWindowPayload({
   sessionId,
@@ -46,14 +47,15 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
 }
 
 /**
- * Settings › Board's keep-lighting choices for the iOS Lock Screen and Dynamic
- * Island Next / Previous, which light the wall without JS and so open or renew
- * the window natively, the way Put on board would (`resolveKeepLightingPlan`
- * reads the same inputs). Android mirrors nothing: JS lights the wall for a
- * notification press and opens the window itself (`armNotificationPressDrive`).
+ * Settings › Board's Stop driving after choices for the iOS Lock Screen and
+ * Dynamic Island Next / Previous, which light the wall without JS and so start
+ * or renew a drive natively, the way Put on board would
+ * (`resolveKeepLightingPlan` reads the same inputs); Right away starts none.
+ * Android mirrors nothing: JS lights the wall for a notification press and
+ * starts the drive itself (`armNotificationPressDrive`).
  *
  * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
- * keep lighting in the app either.
+ * start a drive in the app either.
  */
 export function buildKeepLightingConfig({
   keepLighting,

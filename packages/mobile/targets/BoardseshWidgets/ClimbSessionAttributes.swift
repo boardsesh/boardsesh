@@ -30,8 +30,8 @@ struct ClimbSessionAttributes: ActivityAttributes {
         /// (`SharedConstants.restTimerKey`). Nil from server pushes and the
         /// native builders, which is harmless: the widget reads the App Group.
         var restRevision: Int? = nil
-        /// Bumped when this phone's keep-lighting window (2.7) changes, the
-        /// same way `restRevision` is; the window itself lives in the App Group
+        /// Bumped when this phone's drive (2.7) changes, the
+        /// same way `restRevision` is; the drive itself lives in the App Group
         /// (`SharedConstants.lightingWindowKey`), so a server push that leaves
         /// this out can't wipe the countdown. Optional so an older binary, or
         /// the backend's push, decodes without it.

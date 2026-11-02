@@ -58,11 +58,12 @@ import java.util.concurrent.Executors
  * the wall". While the climber rests, a Chronometer beside the climb info counts
  * the rest down (or up, with no rest length) without any further updates.
  *
- * Put on board's keep-lighting window (2.7) lives in the header instead: the
- * sub-text names it ("Each pick lights") and the system's own countdown
- * chronometer runs to its end, so TalkBack reads the system clock and the
- * colours follow Material You. An open-ended drive shows "Driving the wall"
- * with no clock. Both swap the small icon for the bulb while picks light.
+ * Driving the wall (2.7) lives in the header instead: the sub-text says
+ * "Driving the wall", and for Put on board's timed drive (Stop driving after)
+ * the system's own countdown chronometer runs to its end, so TalkBack reads
+ * the system clock and the colours follow Material You. An open-ended drive
+ * (a swipe, Until I stop) shows the line with no clock. Both swap the small
+ * icon for the bulb while picks light.
  */
 class BoardSessionService : Service() {
 
@@ -79,7 +80,6 @@ class BoardSessionService : Service() {
     private var reconnectLabel: String = "Connect to board"
     private var connectingLabel: String = "Connecting…"
     private var onWallTemplate: String = "{{name}} is on the wall"
-    private var lightWindowLabel: String = "Each pick lights"
     private var lightDrivingLabel: String = "Driving the wall"
 
     private var sessionId: String = ""
@@ -115,8 +115,8 @@ class BoardSessionService : Service() {
     // Chronometer's elapsedRealtime timebase at build time.
     private var restTimer: RestTimerSnapshot? = null
 
-    // Put on board's keep-lighting window (2.7): off, a window ending at
-    // lightWindowEndMs (epoch ms), or an open-ended drive. Absent extras (an
+    // Driving the wall (2.7): off, a timed drive ending at lightWindowEndMs
+    // (epoch ms), or an open-ended drive. Absent extras (an
     // older bundle) mean off, so the card is today's.
     private var lightState: String = LIGHT_STATE_OFF
     private var lightWindowEndMs: Long? = null
@@ -167,7 +167,7 @@ class BoardSessionService : Service() {
     // a Chronometer can't change on its own (colour, the next beat's base).
     private val restTransition = Runnable { onRestTransition() }
 
-    // Re-posts the notification just after the keep-lighting window ends, so the
+    // Re-posts the notification just after a timed drive ends, so the
     // header drops its clock and the bulb icon even while JS is suspended.
     private val lightTransition = Runnable { onLightTransition() }
 
@@ -180,7 +180,7 @@ class BoardSessionService : Service() {
     // notification again; the re-post also re-arms the next transition from now.
     // SCREEN_ON / USER_PRESENT are protected system broadcasts: no other app can
     // send them, so registering without the export flag below API 33 is safe.
-    // The keep-lighting window's end re-post has the same gap, so it is
+    // A timed drive's end re-post has the same gap, so it is
     // reconciled here too.
     private val screenOnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -247,7 +247,6 @@ class BoardSessionService : Service() {
                 reconnectLabel = intent.getStringExtra(EXTRA_RECONNECT_LABEL) ?: reconnectLabel
                 connectingLabel = intent.getStringExtra(EXTRA_CONNECTING_LABEL) ?: connectingLabel
                 onWallTemplate = intent.getStringExtra(EXTRA_ON_WALL_TEMPLATE) ?: onWallTemplate
-                lightWindowLabel = intent.getStringExtra(EXTRA_LIGHT_WINDOW_LABEL) ?: lightWindowLabel
                 lightDrivingLabel = intent.getStringExtra(EXTRA_LIGHT_DRIVING_LABEL) ?: lightDrivingLabel
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
@@ -640,18 +639,19 @@ class BoardSessionService : Service() {
         scheduleRestTransition()
     }
 
-    // --- Keep-lighting window (2.7) ---
+    // --- Driving the wall (2.7) ---
 
-    // The header while picks light: the sub-text names the state and, for a
-    // window, the system's countdown chronometer runs to its end (never our own
-    // text over it, so TalkBack reads the clock itself). Only the phone that
-    // holds the board shows it; the rest timer keeps the content Chronometer.
+    // The header while picks light: the sub-text says "Driving the wall" and,
+    // for a timed drive, the system's countdown chronometer runs to its end
+    // (never our own text over it, so TalkBack reads the clock itself). Only
+    // the phone that holds the board shows it; the rest timer keeps the
+    // content Chronometer.
     private fun applyLighting(builder: NotificationCompat.Builder) {
         val lighting = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
         when (lighting) {
             is LightingDisplay.Window -> builder
                 .setSmallIcon(R.drawable.ic_lightbulb_filled)
-                .setSubText(lightWindowLabel)
+                .setSubText(lightDrivingLabel)
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
                 .setWhen(lighting.endMs)
@@ -663,7 +663,7 @@ class BoardSessionService : Service() {
         }
     }
 
-    // Arms one re-post just after the window ends. Nothing for a drive or off.
+    // Arms one re-post just after a timed drive ends. Nothing for an open-ended drive or off.
     private fun scheduleLightTransition() {
         cancelOnMain(lightTransition)
         val window = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
@@ -960,11 +960,11 @@ class BoardSessionService : Service() {
         const val ACTION_REST_TIMER = "com.boardsesh.liveactivity.action.REST_TIMER"
         const val ACTION_LIGHTING = "com.boardsesh.liveactivity.action.LIGHTING"
 
-        // The keep-lighting window (2.7): LIGHT_STATE_* and, for a window, its
-        // end in epoch ms. Strings for the header ride ACTION_START.
+        // Driving the wall (2.7): LIGHT_STATE_* and, for a timed drive
+        // (LIGHT_STATE_WINDOW), its end in epoch ms. The header's line rides
+        // ACTION_START.
         const val EXTRA_LIGHT_STATE = "lightState"
         const val EXTRA_LIGHT_WINDOW_END_MS = "lightWindowEndMs"
-        const val EXTRA_LIGHT_WINDOW_LABEL = "lightWindowLabel"
         const val EXTRA_LIGHT_DRIVING_LABEL = "lightDrivingLabel"
 
         // The same words as LightingWindowStore's modes and the JS
@@ -975,8 +975,8 @@ class BoardSessionService : Service() {
         private val LIGHT_STATES = setOf(LIGHT_STATE_OFF, LIGHT_STATE_WINDOW, LIGHT_STATE_DRIVING)
 
         /**
-         * What the header shows at [nowMs]: a window counting down to its end,
-         * a drive, or nothing. A window past its end, or one on a phone that
+         * What the header shows at [nowMs]: a timed drive counting down to its
+         * end, an open-ended drive, or nothing. A timed drive past its end, or one on a phone that
          * doesn't hold the board, shows nothing. Pure, for tests.
          */
         @VisibleForTesting
@@ -1159,12 +1159,12 @@ class BoardSessionService : Service() {
     }
 }
 
-/** What the notification header shows for the keep-lighting window; see [BoardSessionService.resolveLighting]. */
+/** What the notification header shows while driving the wall; see [BoardSessionService.resolveLighting]. */
 internal sealed class LightingDisplay {
-    /** Each pick lights until [endMs]: the header's countdown chronometer. */
+    /** A timed drive: "Driving the wall" with the header's countdown chronometer to [endMs]. */
     data class Window(val endMs: Long) : LightingDisplay()
 
-    /** Every pick lights until the climber stops: no clock. */
+    /** An open-ended drive: "Driving the wall", every pick lights until the climber stops, no clock. */
     object Driving : LightingDisplay()
 
     object Off : LightingDisplay()

@@ -266,10 +266,10 @@ private func resolveRestTimer(
     )
 }
 
-/// This phone's keep-lighting window (2.7) at this render, read from the App
-/// Group like the rest timer (see `SharedConstants.lightingWindowKey`). Only
-/// the phone that holds the board draws it: a crewmate's card (heldByPeer)
-/// shows nothing about the holder's window, and a dropped link has none.
+/// This phone's drive (2.7) at this render, read from the App Group like the
+/// rest timer (see `SharedConstants.lightingWindowKey`). Only the phone that
+/// holds the board draws it: a crewmate's card (heldByPeer) shows nothing
+/// about the holder's drive, and a dropped link has none.
 @available(iOS 17.0, *)
 private func resolveLighting(
     context: ActivityViewContext<ClimbSessionAttributes>,
@@ -443,8 +443,9 @@ private struct NavigationButtonLabel: View {
 }
 
 /// The lit bulb, wrapped by what the wall does with the next pick (2.7):
-/// an amber ring that drains through the keep-lighting window, a full amber
-/// disc while driving, or the bulb alone while picks are previews. Shape
+/// an amber ring that drains as Put on board's timed drive runs out (the
+/// in-app frost shrinking toward the bulb), a full amber disc for an
+/// open-ended drive, or the bulb alone while picks are previews. Shape
 /// carries the state, so it survives greyscale and Differentiate Without
 /// Colour; the ring and the disc are decoration, hidden from VoiceOver.
 @available(iOS 17.0, *)
@@ -495,7 +496,8 @@ private struct LightingBulbGlyph: View {
     }
 }
 
-/// The time the keep-lighting window has left, counting down on its own.
+/// The time a timed drive has left, counting down on its own. Only a timed
+/// drive has it: an open-ended drive has no end to count.
 /// `Text(timerInterval:)` holds at 0:00 until the next render shows previews.
 @available(iOS 17.0, *)
 private func lightingWindowDigitsText(start: Date, end: Date) -> Text {
@@ -536,8 +538,9 @@ private struct WallControlStatus: View {
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
-        // One element: the label names the state, the value carries the time
-        // left (read once by the system timer text, never as a percentage).
+        // One element: the label names the state ("Driving the wall" for any
+        // drive), the value carries a timed drive's time left (read once by the
+        // system timer text, never as a percentage).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(lightingLabel)
         .accessibilityValue(lightingValue)
@@ -546,8 +549,7 @@ private struct WallControlStatus: View {
 
     private var lightingLabel: Text {
         switch lighting {
-        case .window: return Text("Each pick lights")
-        case .driving: return Text("Driving the wall")
+        case .window, .driving: return Text("Driving the wall")
         case .previews: return Text("Wall lit")
         }
     }
@@ -570,7 +572,7 @@ private struct WallControlButton: View {
         // the last known board (and, in a party session where this device isn't
         // the driver, also claims wall control). When already connected and
         // driving, ReconnectBoardIntent just re-lights the wall — a harmless
-        // no-op grab. Nothing here stops a drive or a window, so a pocket tap
+        // no-op grab. Nothing here stops a drive, timed or not, so a pocket tap
         // can't drop the board.
         Button(intent: ReconnectBoardIntent()) {
             WallControlStatus(lighting: lighting)
@@ -611,7 +613,7 @@ private struct NavigationControlsView: View {
             .accessibilityLabel("Previous climb")
 
             // connectedByMe is the only state that renders this row, so the bulb
-            // is always lit here; the window's ring or the drive's disc wraps it.
+            // is always lit here; a timed drive's ring or an open-ended drive's disc wraps it.
             WallControlButton(lighting: lighting)
             if supportsMirroring, let queueItemUuid {
                 Button(intent: MirrorClimbIntent(sessionId: sessionId, queueItemUuid: queueItemUuid, mirrored: !mirrored)) {
@@ -1103,7 +1105,7 @@ private struct CompactLeadingView: View {
     var body: some View {
         // Leading and trailing read as one piece: the ring here, the digits
         // across the camera. The rest timer wins whenever it runs; without
-        // one, the keep-lighting window's ring or the drive's disc; otherwise
+        // one, a timed drive's ring or an open-ended drive's disc; otherwise
         // just the bulb.
         if rest == nil, lighting != .previews {
             LightingBulbGlyph(lighting: lighting, size: 22, ringedGlyphSize: 9, bareGlyphSize: 14)
@@ -1140,8 +1142,8 @@ private struct CompactTrailingView: View {
                 textAlignment: .center
             )
         } else if case let .window(start, end) = lighting {
-            // The window's time left, in the amber of its ring. A drive has no
-            // end to count, so it keeps the grade.
+            // A timed drive's time left, in the amber of its ring. An
+            // open-ended drive has no end to count, so it keeps the grade.
             lightingWindowDigitsText(start: start, end: end)
                 .font(.system(size: 15, weight: .semibold))
                 .monospacedDigit()
@@ -1150,7 +1152,7 @@ private struct CompactTrailingView: View {
                 .minimumScaleFactor(0.6)
                 .multilineTextAlignment(.center)
                 .frame(width: 46, alignment: .center)
-                .accessibilityLabel(Text("Each pick lights"))
+                .accessibilityLabel(Text("Driving the wall"))
         } else {
             let grade = VGradeFormatter.displayGrade(text)
             Text(verbatim: grade)
@@ -1168,8 +1170,8 @@ private struct MinimalView: View {
     let lighting: LightingRenderPhase
 
     var body: some View {
-        // Rest first, as in the compact view; then the window's ring or the
-        // drive's disc; otherwise the bulb.
+        // Rest first, as in the compact view; then a timed drive's ring or an
+        // open-ended drive's disc; otherwise the bulb.
         if rest == nil, lighting != .previews {
             LightingBulbGlyph(lighting: lighting, size: 22, ringedGlyphSize: 9, bareGlyphSize: 12)
         } else {

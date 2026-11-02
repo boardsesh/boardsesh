@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// The keep-lighting window (2.7) reaches the Lock Screen and the Android
+// Driving the wall (2.7) reaches the Lock Screen and the Android
 // notification only through these sends, and native counts it down itself, so
 // the contract is about WHEN JS speaks: on each change of the drive, on each
 // change of the settings, after every start, never per second, never on an

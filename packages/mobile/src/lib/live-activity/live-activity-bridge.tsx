@@ -126,7 +126,6 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       reconnectLabel: t('mobile.session.notification.reconnect'),
       connectingLabel: t('mobile.session.notification.connecting'),
       onWallTemplate: t('mobile.session.notification.onWall'),
-      lightWindowLabel: t('mobile.session.notification.eachPickLights'),
       lightDrivingLabel: t('mobile.session.notification.drivingTheWall'),
     }),
     [t],
@@ -305,7 +304,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       .catch((error: unknown) => console.warn('[LiveActivity] Mirror replay failed:', error));
   }, [state.queue]);
 
-  // The rest timer and the keep-lighting window ride their own leaves: their
+  // The rest timer and the drive (timed or open-ended) ride their own leaves: their
   // store events re-render those, not this.
   return (
     <>

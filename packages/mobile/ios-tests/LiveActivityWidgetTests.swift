@@ -674,7 +674,7 @@ final class LiveActivityWidgetTests: XCTestCase {
     }
 
     func testKeepLightingPlanFollowsTheBoardFamilyLikeTheApp() {
-        // The general choice: a 45 s window.
+        // The general choice: a 45 s timed drive.
         XCTAssertEqual(
             SharedKeepLighting.plan(for: keepLightingConfig()),
             .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
@@ -690,15 +690,25 @@ final class LiveActivityWidgetTests: XCTestCase {
             SharedKeepLighting.plan(for: keepLightingConfig(drivesInSession: true, inCrew: true)),
             .window(seconds: 45, family: SharedLightingWindowState.familyGeneral)
         )
+        // Right away lights one climb and starts no drive.
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "off")))
         XCTAssertEqual(
             SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "until_stopped")),
             .driving(family: SharedLightingWindowState.familyGeneral)
         )
+        // Stop driving after's longer choices (2.7): 2 and 5 minutes.
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "120")),
+            .window(seconds: 120, family: SharedLightingWindowState.familyGeneral)
+        )
+        XCTAssertEqual(
+            SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "300")),
+            .window(seconds: 300, family: SharedLightingWindowState.familyGeneral)
+        )
         // Off where the app would not keep lighting, and with no config at all.
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(enabled: false)))
         XCTAssertNil(SharedKeepLighting.plan(for: nil))
-        // A value this build can't read lights one climb; a newer bundle's longer window still works.
+        // A value this build can't read lights one climb; a newer bundle's longer timed drive still works.
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "forever")))
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "nan")))
         XCTAssertNil(SharedKeepLighting.plan(for: keepLightingConfig(keepLighting: "0")))
@@ -759,10 +769,14 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(fresh.windowSeconds, 45)
     }
 
-    func testLockScreenPressWithOffOrNoSettingsLightsOneClimb() {
+    func testLockScreenPressUnderRightAwayOrNoSettingsLightsOneClimbAndStartsNoDrive() {
         XCTAssertNil(press(current: nil, config: keepLightingConfig(keepLighting: "off")))
         XCTAssertNil(press(current: nil, config: nil))
         XCTAssertNil(press(current: lightingState(mode: SharedLightingWindowState.modeOff), config: keepLightingConfig(enabled: false)))
+        // A timed drive that already ran out is not one to renew: Right away starts nothing new.
+        let over = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: -1, windowSeconds: 45)
+        XCTAssertNil(press(current: over, config: keepLightingConfig(keepLighting: "off")))
+        XCTAssertNil(press(current: over, config: keepLightingConfig(moonboardKeepLighting: "off", moonboard: true)))
     }
 
     func testLockScreenPressIgnoresAnotherSessionsWindow() throws {

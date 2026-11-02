@@ -31,9 +31,7 @@ type AndroidNotificationStrings = {
   reconnectLabel: string;
   connectingLabel?: string;
   onWallTemplate: string;
-  /** The header line during Put on board's keep-lighting window (2.7). */
-  lightWindowLabel?: string;
-  /** The header line while driving the wall (2.7). */
+  /** The header line while driving the wall (2.7), timed or open-ended. */
   lightDrivingLabel?: string;
 };
 

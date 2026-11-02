@@ -1224,7 +1224,7 @@ class BoardSessionServiceTest {
         assertEquals("−00:12", BoardSessionService.formatSignedSeconds(-12))
     }
 
-    // --- Keep-lighting window (2.7) ---
+    // --- Driving the wall (2.7) ---
 
     private fun lightingIntent(state: String?, endMs: Long? = null, sessionId: String = restSessionId): Intent =
         Intent(context, BoardSessionService::class.java).apply {
@@ -1276,15 +1276,15 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
-    fun `a keep-lighting window counts down in the header with its line and the bulb icon`() {
+    fun `a timed drive says driving the wall in the header with the system countdown and the bulb icon`() {
         val captured = slot<Notification>()
         val service = startLightingService(captured) {
-            putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_LABEL, "Jeder Boulder leuchtet")
+            putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, "Du steuerst das Board")
         }
         service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_WINDOW, endMs = restNowMs + 38_000), 0, 2)
 
         val notification = captured.captured
-        assertEquals("Jeder Boulder leuchtet", notification.subText())
+        assertEquals("Du steuerst das Board", notification.subText())
         assertTrue(notification.showsChronometer())
         assertTrue(notification.countsDown())
         assertTrue(notification.showsWhen())
@@ -1296,7 +1296,7 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
-    fun `a drive names itself in the header with no clock`() {
+    fun `an open-ended drive says driving the wall in the header with no clock`() {
         val captured = slot<Notification>()
         val service = startLightingService(captured)
         service.onStartCommand(lightingIntent(BoardSessionService.LIGHT_STATE_DRIVING), 0, 2)

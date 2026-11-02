@@ -1,9 +1,12 @@
-// Feeds the keep-lighting window (2.7) to the Lock Screen, the Dynamic Island
-// and the Android session notification, and on iOS mirrors Settings › Board's
-// keep-lighting choices so a Lock Screen Next or Previous can open or renew
-// the window natively while JS is suspended. Android mirrors nothing: JS lights
-// the wall for a notification press and opens the window itself
-// (`armNotificationPressDrive`).
+// Feeds driving the wall (2.7) to the Lock Screen, the Dynamic Island and the
+// Android session notification: Put on board's timed drive with its end (the
+// iOS draining ring and timer, Android's header countdown), an open-ended
+// drive with none, or off. On iOS it also mirrors Settings › Board's Stop
+// driving after choices so a Lock Screen Next or Previous can start or renew a
+// drive natively while JS is suspended. Android mirrors nothing: JS lights the
+// wall for a notification press and starts the drive itself
+// (`armNotificationPressDrive`). The card always shows the wall's climb (the
+// queue's current), never the MiniPlayer's last pick.
 //
 // PERFORMANCE CONTRACT: no per-second work. The native side counts the window
 // down with self-updating views (iOS timer text and ring, Android's header
@@ -106,7 +109,7 @@ export function useLiveActivityLighting({
       });
       const serialized = JSON.stringify(payload);
       if (serialized === lastSent) return;
-      // A window the climber opened from the Lock Screen that the drive store
+      // A drive the climber started from the Lock Screen that the drive store
       // has not adopted yet is never covered with "off": DriveModeWatcher
       // adopts it the moment it can, or it runs out on its own.
       if (payload?.mode === 'off' && isUnsettledLockScreenLighting(readLiveActivityLightingWindow(), Date.now())) {

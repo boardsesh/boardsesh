@@ -1,5 +1,5 @@
 // What JS hands the Lock Screen, the Dynamic Island and the Android
-// notification for the keep-lighting window (2.7), and the settings it mirrors
+// notification for driving the wall (2.7), and the settings it mirrors
 // for a lock-screen press to act on natively.
 import { describe, expect, it } from 'vitest';
 import type { DriveModeState } from '../../../components/play-drawer/drive-mode-store';
@@ -23,15 +23,15 @@ function drive(overrides: Partial<DriveModeState> = {}): DriveModeState {
 }
 
 describe('buildLightingWindowPayload', () => {
-  it('sends a window with its shown end, its length and the choice that opened it', () => {
+  it('sends a timed drive with its own end, its length and the choice that started it', () => {
     expect(
       buildLightingWindowPayload({
         sessionId: 'session-1',
         drive: drive({ windowSetting: 'moonboardPutOnBoardKeepsLighting' }),
-        // The shown end, clamped to auto-disconnect by the store's seam.
-        lighting: { mode: 'window', endsAt: 31_000 },
+        // The drive's own end: nothing clamps it since auto-disconnect went (2.7).
+        lighting: { mode: 'window', endsAt: 46_000 },
       }),
-    ).toEqual({ sessionId: 'session-1', mode: 'window', endsAtMs: 31_000, windowSeconds: 45, family: 'moonboard' });
+    ).toEqual({ sessionId: 'session-1', mode: 'window', endsAtMs: 46_000, windowSeconds: 45, family: 'moonboard' });
   });
 
   it('sends an open-ended drive with no end', () => {
@@ -88,8 +88,17 @@ describe('buildKeepLightingConfig', () => {
     expect(buildKeepLightingConfig({ ...base, boardName: 'moonboard' }).moonboard).toBe(true);
   });
 
-  it('is off where a press would not keep lighting in the app either', () => {
-    // The swipe flag is keep-lighting's kill switch.
+  it('mirrors Right away and the 2 and 5 minute choices as stored: native reads off as one climb, no drive', () => {
+    expect(buildKeepLightingConfig({ ...base, keepLighting: 'off', moonboardKeepLighting: '300' })).toMatchObject({
+      keepLighting: 'off',
+      moonboardKeepLighting: '300',
+      enabled: true,
+    });
+    expect(buildKeepLightingConfig({ ...base, keepLighting: '120' }).keepLighting).toBe('120');
+  });
+
+  it('is off where a press would not start a drive in the app either', () => {
+    // The swipe flag is the drive's kill switch.
     expect(buildKeepLightingConfig({ ...base, swipeToDriveEnabled: false }).enabled).toBe(false);
     // Solo with Light the board as I swipe, every pick lights already.
     expect(buildKeepLightingConfig({ ...base, isCrewSession: false, lightOnSwipe: true }).enabled).toBe(false);

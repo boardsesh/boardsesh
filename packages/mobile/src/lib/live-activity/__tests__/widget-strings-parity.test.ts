@@ -38,7 +38,6 @@ const REQUIRED_KEYS = [
   'Log a climb to start',
   'Wall lit',
   'Picks are previews',
-  'Each pick lights',
   'Driving the wall',
   'Every climb you pick lights up',
   'Lights the climb again',

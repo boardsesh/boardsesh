@@ -73,7 +73,7 @@ internal class SessionPresenceController(
         sessionActive = true
         activeSessionId = options?.sessionId ?: ""
         restTimer = null
-        // Another session's keep-lighting window (a killed app's leftover) goes;
+        // Another session's drive (a killed app's leftover) goes;
         // this one's survives, and JS sends it again after the start anyway.
         LightingWindowStore.loadWindow(context)?.let {
             if (it.sessionId != activeSessionId) LightingWindowStore.clearWindow(context)
@@ -93,7 +93,6 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, strings?.reconnectLabel ?: "Connect to board")
             putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, strings?.connectingLabel ?: "Connecting…")
             putExtra(BoardSessionService.EXTRA_ON_WALL_TEMPLATE, strings?.onWallTemplate ?: "{{name}} is on the wall")
-            putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_LABEL, strings?.lightWindowLabel ?: "Each pick lights")
             putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, strings?.lightDrivingLabel ?: "Driving the wall")
             // Initial lightbulb / controls state before the first climb update.
             putExtra(
@@ -191,7 +190,7 @@ internal class SessionPresenceController(
     }
 
     /**
-     * Stores JS's keep-lighting window (2.7) for `getLightingWindow`, and shows
+     * Stores JS's drive (2.7) for `getLightingWindow`, and shows
      * it in the notification header; `null` takes it off. Dropped outside a
      * session window and for another session. A write that draws the header it
      * already shows (the re-send after every start) doesn't wake the service.

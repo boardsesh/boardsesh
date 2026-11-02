@@ -25,9 +25,8 @@ class AndroidNotificationStrings : Record {
     @Field var reconnectLabel: String = "Connect to board"
     @Field var connectingLabel: String = "Connecting…"
     @Field var onWallTemplate: String = "{{name}} is on the wall"
-    // The header line during Put on board's keep-lighting window, and while
-    // driving (2.7). An older bundle leaves them out and gets the English.
-    @Field var lightWindowLabel: String = "Each pick lights"
+    // The header line while driving the wall (2.7), timed or open-ended. An
+    // older bundle leaves it out and gets the English.
     @Field var lightDrivingLabel: String = "Driving the wall"
 }
 
@@ -171,9 +170,9 @@ class SessionPresenceModule : Module() {
         // climb updates, a no-op until a session has started.
         AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
 
-        // Put on board's keep-lighting window (2.7) in the notification header.
-        // JS is its only writer: a notification Previous / Next opens or renews
-        // it in JS, at the wall's lit confirm, so no settings are mirrored here.
+        // Driving the wall (2.7) in the notification header. JS is its only
+        // writer: a notification Previous / Next starts or renews a timed drive
+        // in JS, at the wall's lit confirm, so no settings are mirrored here.
         AsyncFunction("updateLightingWindow") { options: LightingWindowOptions? ->
             controller?.updateLightingWindow(options)
         }

@@ -882,7 +882,6 @@
         "reconnect": "Conectar al plafón",
         "connecting": "Conectando…",
         "onWall": "{{name}} está en el muro",
-        "eachPickLights": "Cada bloque se enciende",
         "drivingTheWall": "Estás al mando del plafón"
       },
       "inStatsFlashes": "Flashes",

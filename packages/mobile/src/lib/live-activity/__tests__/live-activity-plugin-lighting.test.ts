@@ -1,4 +1,4 @@
-// An OTA bundle reaches binaries older than the keep-lighting window (2.7). On
+// An OTA bundle reaches binaries older than driving on the Lock Screen (2.7). On
 // those the native methods do not exist and every call must be a silent
 // no-op: the drive itself must never notice the Lock Screen is missing.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,7 +61,7 @@ beforeEach(() => {
   native.sessionPresence = null;
 });
 
-describe('keep-lighting window bridge', () => {
+describe('lighting window bridge (driving the wall)', () => {
   it('is a silent no-op on a binary that predates it', async () => {
     const getLightingWindow = vi.fn(() => STORED);
     // An older binary: no support flag, no methods.

@@ -83,7 +83,7 @@ export async function updateLiveActivityRestTimer(options: LiveActivityRestTimer
 }
 
 /**
- * Whether this binary draws the keep-lighting window (2.7) on the Lock Screen,
+ * Whether this binary draws driving the wall (2.7) on the Lock Screen,
  * in the Dynamic Island and in the Android notification. False on an older
  * binary running this JS over the air, where nothing is sent.
  */
@@ -91,7 +91,7 @@ export const sessionPresenceSupportsLightingWindow =
   sessionModule?.supportsLightingWindow === true && typeof sessionModule.updateLightingWindow === 'function';
 
 /**
- * Hands this phone's keep-lighting window to the Lock Screen, the Dynamic
+ * Hands this phone's drive (timed, open-ended or none) to the Lock Screen, the Dynamic
  * Island and the Android notification; `null` takes it off. A silent no-op on
  * a binary that predates it, and a native failure never reaches the drive.
  */
@@ -107,10 +107,10 @@ export async function updateLiveActivityLightingWindow(
 }
 
 /**
- * Whether native opens or renews the keep-lighting window itself on a
- * lock-screen Next / Previous, and so needs Settings › Board's choices
- * mirrored. iOS only: its intent lights the wall without JS. Android's
- * notification press reaches JS before anything lights, so JS opens the window
+ * Whether native starts or renews a drive itself on a
+ * lock-screen Next / Previous, and so needs Settings › Board's Stop driving
+ * after choices mirrored. iOS only: its intent lights the wall without JS.
+ * Android's notification press reaches JS before anything lights, so JS starts the drive
  * there at the wall's lit confirm (`armNotificationPressDrive`).
  */
 export const sessionPresenceMirrorsKeepLighting =
@@ -135,8 +135,8 @@ export async function updateLiveActivityKeepLightingConfig(
 }
 
 /**
- * The stored keep-lighting window, read synchronously so the drive store can
- * adopt a lock-screen press before its own window-end check runs. Null on an
+ * The stored drive, read synchronously so the drive store can adopt a
+ * lock-screen press before its own timed-drive end check runs. Null on an
  * older binary, when nothing is stored, or when the read fails.
  */
 export function readLiveActivityLightingWindow(): LiveActivityLightingWindowSnapshot | null {

@@ -882,7 +882,6 @@
         "reconnect": "Connetti al pannello",
         "connecting": "Connessione…",
         "onWall": "{{name}} è in parete",
-        "eachPickLights": "Ogni blocco si illumina",
         "drivingTheWall": "Guidi tu il pannello"
       },
       "inStatsFlashes": "Flash",

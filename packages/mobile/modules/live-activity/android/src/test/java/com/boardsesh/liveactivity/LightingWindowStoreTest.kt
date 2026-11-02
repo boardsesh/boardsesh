@@ -12,9 +12,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * Put on board's keep-lighting window (2.7) as the controller and JS share it:
- * the twin of `SharedLightingWindowStore` on iOS. JS is its only writer here (a
- * notification Previous / Next opens the window in JS, at the lit confirm).
+ * This phone's drive (2.7) as the controller and JS share it: the twin of
+ * `SharedLightingWindowStore` on iOS. JS is its only writer here (a
+ * notification Previous / Next starts the timed drive in JS, at the lit confirm).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])

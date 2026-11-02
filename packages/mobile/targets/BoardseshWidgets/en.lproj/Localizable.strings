@@ -28,10 +28,9 @@
 "Since your last climb" = "Since your last climb";
 "Log a climb to start" = "Log a climb to start";
 
-/* Keep-lighting window (2.7): what the wall does with the next pick */
+/* Driving the wall (2.7): what the wall does with the next pick */
 "Wall lit" = "Wall lit";
 "Picks are previews" = "Picks are previews";
-"Each pick lights" = "Each pick lights";
 "Driving the wall" = "Driving the wall";
 "Every climb you pick lights up" = "Every climb you pick lights up";
 "Lights the climb again" = "Lights the climb again";

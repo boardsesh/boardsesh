@@ -882,7 +882,6 @@
         "reconnect": "Mit Board verbinden",
         "connecting": "Verbinde…",
         "onWall": "{{name}} ist an der Wand",
-        "eachPickLights": "Jeder Boulder leuchtet",
         "drivingTheWall": "Du steuerst das Board"
       },
       "inStatsFlashes": "Flashes",

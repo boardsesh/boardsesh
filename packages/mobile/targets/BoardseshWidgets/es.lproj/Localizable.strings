@@ -28,10 +28,9 @@
 "Since your last climb" = "Desde tu último bloque";
 "Log a climb to start" = "Registra un bloque para empezar";
 
-/* Keep-lighting window (2.7): what the wall does with the next pick */
+/* Driving the wall (2.7): what the wall does with the next pick */
 "Wall lit" = "Muro encendido";
 "Picks are previews" = "Los bloques se abren como vista previa";
-"Each pick lights" = "Cada bloque se enciende";
 "Driving the wall" = "Estás al mando del plafón";
 "Every climb you pick lights up" = "Cada bloque que elijas se enciende";
 "Lights the climb again" = "Vuelve a encender el bloque";

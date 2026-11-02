@@ -12,12 +12,12 @@ import android.content.Intent
  * platforms with no branching); the lightbulb becomes a `boardControl` event.
  *
  * Previous / Next light the wall through JS (its auto-sender writes the new
- * climb as the event lands), so the press opens or renews Put on board's
- * keep-lighting window (2.7) there too, at the wall's lit confirm
+ * climb as the event lands), so the press starts or renews Put on board's
+ * timed drive (2.7, Stop driving after) there too, at the wall's lit confirm
  * (`armNotificationPressDrive` in lock-screen-lighting.ts), and JS sends it
  * back through `updateLightingWindow`. Nothing is written here: a press the
- * party server turns down, or whose write fails, never shows a window. (iOS
- * differs: its intent lights the wall itself, so it records the window after
+ * party server turns down, or whose write fails, never shows a drive. (iOS
+ * differs: its intent lights the wall itself, so it records the drive after
  * its own write succeeds.)
  */
 class BoardSessionActionReceiver : BroadcastReceiver() {

@@ -507,9 +507,8 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
           relightLabel: 'mobile.session.notification.relight',
           reconnectLabel: 'mobile.session.notification.reconnect',
           onWallTemplate: 'mobile.session.notification.onWall',
-          // The header lines of Put on board's keep-lighting window (2.7).
-          // Left out, Android falls back to English.
-          lightWindowLabel: 'mobile.session.notification.eachPickLights',
+          // The header's line while driving the wall (2.7), timed or
+          // open-ended. Left out, Android falls back to English.
           lightDrivingLabel: 'mobile.session.notification.drivingTheWall',
         }),
       }),

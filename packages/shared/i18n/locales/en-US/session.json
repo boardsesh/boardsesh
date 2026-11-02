@@ -882,7 +882,6 @@
         "reconnect": "Connect to board",
         "connecting": "Connecting…",
         "onWall": "{{name}} is on the wall",
-        "eachPickLights": "Each pick lights",
         "drivingTheWall": "Driving the wall"
       },
       "inStatsFlashes": "Flashes",

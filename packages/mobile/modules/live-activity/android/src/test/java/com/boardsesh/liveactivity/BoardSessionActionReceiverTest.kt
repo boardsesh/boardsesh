@@ -99,10 +99,10 @@ class BoardSessionActionReceiverTest {
         verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-2") }
     }
 
-    // --- Keep-lighting window (2.7) ---
+    // --- Driving the wall (2.7) ---
 
     @Test
-    fun `Previous and Next write no keep-lighting window and wake no service, so JS opens it at the lit confirm`() {
+    fun `Previous and Next write no drive and wake no service, so JS starts it at the lit confirm`() {
         for (action in listOf(BoardSessionService.ACTION_NAV_NEXT, BoardSessionService.ACTION_NAV_PREVIOUS)) {
             receiver.onReceive(context, Intent(action).apply {
                 putExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 2)
