@@ -24,6 +24,8 @@ const queue = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
   // The real one answers null outside now-slot mode; a played slot is not History.
   findReplayFromHereItem: vi.fn((_queueItemUuid: string): unknown => null),
+  // What Play next reads when it runs: the displayed slot only counts while it is still queued.
+  queueUuids: ['slot-2'] as string[],
 }));
 const toggleFavoriteMutate = vi.hoisted(() => vi.fn());
 // The app-wide profile cache: who is looking.
@@ -78,6 +80,10 @@ vi.mock('../../../providers/queue-provider', () => ({
     playNext: queue.playNext,
     setCurrentClimb: queue.setCurrentClimb,
     findReplayFromHereItem: queue.findReplayFromHereItem,
+    getQueueSnapshot: () => ({
+      queue: queue.queueUuids.map((uuid) => ({ uuid })),
+      currentClimbQueueItem: null,
+    }),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
   useIsSharedSession: () => false,
@@ -148,6 +154,7 @@ beforeEach(() => {
   menu.mounts = 0;
   menu.props = [];
   queue.activeClimbUuid = null;
+  queue.queueUuids = ['slot-2'];
   favoriteStatusReads.length = 0;
   profile.id = 'me';
   profile.reads = [];
@@ -164,6 +171,13 @@ describe('PlayDrawerActionsMenu', () => {
     expect(queue.playNext).toHaveBeenCalledTimes(1);
     expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: 'slot-2' }));
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('falls back to matching by climb when the displayed slot left the queue before the tap', () => {
+    queue.queueUuids = ['some-other-slot'];
+    const { container } = render(createElement(PlayDrawerActionsMenu, makeProps({ queueItemUuid: 'slot-2' })));
+    tap(container, 'mobile.climbActions.playNext');
+    expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: undefined }));
   });
 
   it('lets Play next match by climb when the displayed climb has no queued slot', () => {
