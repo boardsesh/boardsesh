@@ -3,10 +3,10 @@ name: help clip - Start playlist? confirm
 ---
 # Clip: start-playlist-queue -> packages/web/public/videos/help/start-playlist-queue.mp4
 #
-# Records: opening a playlist from Discover and tapping a climb in it. Because
+# Records: opening a playlist from Discover and pressing its header Play. Because
 # Up next already has climbs, the app asks "Start playlist?" with three choices
 # (Start playlist, Play last, Cancel) and says how many climbs will drop out.
-# The clip CANCELS: Cancel opens the tapped climb as a preview, and the queue
+# The clip CANCELS: Cancel opens the first climb as a preview, and the queue
 # and the wall stay as they were.
 #
 # The prompt only appears when Up next already has climbs (see
@@ -24,8 +24,8 @@ name: help clip - Start playlist? confirm
 #
 # Coordinates for the app's own pressables, which this RN Fabric build does not
 # expose to Maestro:
-#   48%,60%  the "Five Stars" card in the FOR YOU row on Discover
-#   50%,39%  the first climb in the playlist
+#   18%,43%  seeded Aurora Circuit 5, compatible with the active Tension board
+#   90%,8%   header Play chooses the first compatible climb
 # The Start playlist? prompt is a native action sheet, so its Cancel is matched
 # by text. Never tap Start playlist: it would replace the queue's Up next.
 #
@@ -40,22 +40,29 @@ name: help clip - Start playlist? confirm
 
 # Open the playlist.
 - tapOn:
-    point: '48%,60%'
+    point: '18%,43%'
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1200
     optional: true
 
-# Tap a climb in it.
+# A cold playlist can settle visually while its rows are still skeletons.
+- extendedWaitUntil:
+    notVisible:
+      id: 'climb-list-row-skeleton'
+    timeout: 60000
+
+# Header Play activates the first climb through the same playlist callback.
+# Use the native button: row taps on this cached iOS client did not activate.
 - tapOn:
-    point: '50%,39%'
+    point: '90%,8%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 2600
     optional: true
 
-# Cancel: the tapped climb opens as a preview; the queue and the wall stay as
+# Cancel: the first climb opens as a preview; the queue and the wall stay as
 # they were.
 - tapOn:
     text: 'Cancel'

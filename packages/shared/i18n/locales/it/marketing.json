@@ -723,6 +723,8 @@
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
         "litShotAlt": "Il lettore con il grande pulsante parete",
         "litShotCaption": "Leggi il pulsante parete: Guidi tu il pannello significa che anche i blocchi che scegli si illuminano. Con il cronometro finisce da solo; senza, continua finché non lo tocchi.",
+        "timedClipAlt": "Un tocco su Illumina il pannello avvia una guida a tempo, con cronometro e sfondo smerigliato che si riduce",
+        "timedClipCaption": "Tocca Illumina il pannello per iniziare a guidare. Il cronometro e lo sfondo smerigliato si riducono; cambiare blocco li riempie. Tocca di nuovo per smettere.",
         "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
         "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. Occupa l’estremo destro della riga in alto. Entrambi i controlli connettono e illuminano i blocchi; tienili premuti per le opzioni quando il pannello è connesso. Il pulsante parete permette anche di scorrere per guidare e toccare per smettere. La lampadina non è smerigliata: quando la guida ha un limite di tempo, un anello viola intorno a lei si svuota man mano che il tempo passa, e toccare la lampadina mentre guidi disconnette."
       },
@@ -738,7 +740,9 @@
         "autoLight": "Guida sempre il pannello (disattivato per impostazione predefinita) ti tiene alla guida ogni volta che il tuo telefono ha il pannello: ogni blocco che scegli si illumina in parete, senza cronometro, quindi Smetti di guidare dopo non si applica. In una session serve Anche in una session. Tocca Guidi tu il pannello per smettere; i blocchi che scegli si aprono in anteprima finché non ti disconnetti o tocchi Illumina il pannello. Il menu della lampadina in alto ha quasi tutte queste opzioni.",
         "p3": "Senza pannello connesso, Illumina il pannello connette, illumina il blocco sullo schermo e ti fa guidare; in una crew, solo sul telefono che tiene il pannello e con Anche in una session attivo. Dopo Disconnetti il Bluetooth quando smetti di guidare, Illumina il pannello si riconnette allo stesso pannello. Dopo Disconnetti il pannello, l’app dimentica quel pannello e la connessione successiva lo cerca di nuovo.",
         "shotAlt": "I controlli di un pannello connesso",
-        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti, e cambia Smetti di guidare dopo senza lasciare la parete. Illumina ogni blocco avvia la guida quando disponibile."
+        "shotCaption": "Illumina di nuovo, spegni tutte le luci o disconnetti, e cambia Smetti di guidare dopo senza lasciare la parete. Illumina ogni blocco avvia la guida quando disponibile.",
+        "lightingShotAlt": "Impostazioni di illuminazione del pannello con durata della guida e illuminazione automatica",
+        "lightingShotCaption": "Scegli quando smettere di guidare, se vale anche in una session e se al termine si disconnette il Bluetooth."
       },
       "failed": {
         "title": "Quando non si connette",
@@ -813,6 +817,8 @@
         "sessionsLink": "Come una session ti fa sfogliare senza cambiare il blocco in parete",
         "clipAlt": "Sfogliare una lista nel lettore senza illuminare i suoi blocchi",
         "clipCaption": "Sfoglia la lista mentre il blocco in parete resta lo stesso. Illumina il pannello lo illumina, e anche i blocchi che scegli dopo si illuminano finché il tuo tempo non finisce.",
+        "shotAlt": "Anteprima di un blocco con il pulsante indietro, Anteprima · non in parete e un pulsante per illuminare senza smerigliatura",
+        "shotCaption": "L’anteprima resta sul tuo telefono. Il pulsante indietro torna al blocco in parete; il pulsante per illuminare accende questo.",
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
       "quick": {

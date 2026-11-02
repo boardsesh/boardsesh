@@ -12,7 +12,7 @@ name: help screenshots
 # The same branch turns off `requireRenderLine`, because several shots here never
 # mount a board.
 #
-# The fourteen `takeScreenshot:` names below are a CONTRACT — the help pages
+# The fifteen `takeScreenshot:` names below are a CONTRACT — the help pages
 # reference the files by name. Renumbering or renaming one silently breaks a page
 # image. The numbers are the help pages' DISPLAY order, not capture order (the
 # same split app-store.yaml documents for its own set).
@@ -352,36 +352,27 @@ name: help screenshots
 # The play drawer IS a route, so it dismisses normally and can safely precede
 # anything. Keep the modal-backed shot last.
 
-# Preview — the player's arrow + face back chip, Preview · not on the wall and a
-# plain Put on board, without lighting the wall. Unverified since 2.7:
-# screenshotOpenPreview opens visibleClimbs[0], likely the climb 10-board-view
-# just put up, and a preview of the climb up shows none of that chrome. Check the
-# PNG before shipping it; it may need to target another climb. The helper turns
-# Always drive the wall (alwaysDrive) off and marks the one-shot browse notice
-# seen. Driving was stopped above and screenshotDrive is absent here, so this
-# preview cannot silently inherit or restart the preceding still's live drive.
-# Clear whatever overlay the previous shot left up.
-#
-# A repeat deep link to a route that is ALREADY the current route does not
-# remount it — expo-router calls setParams on the mounted screen — so the sheet
-# or drawer the last shot opened is still sitting there when the next param
-# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
-# exactly that reason: the board sheet from 09 covered the three drawer shots
-# after it, and the run's own duplicate check caught it.
-#
-# Bouncing through ://home leaves the climbs route, which tears the overlay down,
-# so the next ://climbs link mounts clean. Each of the four params has its own
-# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
-# that has already fired.
+# Preview: tap a tracked row and swipe away from the wall's first climb.
+# The deep-link preview has no swipe track and can select the lit climb.
 - openLink: com.boardsesh.app://home
 - waitForAnimationToEnd
-- openLink: com.boardsesh.app://climbs?screenshotOpenPreview=1
-- tapOn:
-    text: 'Open'
-    optional: true
+- openLink: com.boardsesh.app://climbs
 - waitForAnimationToEnd
+- tapOn:
+    point: '50%,33%'
+- waitForAnimationToEnd
+- swipe:
+    start: '85%,50%'
+    end: '18%,50%'
+    duration: 700
 - waitForAnimationToEnd
 - takeScreenshot: 12-preview
+
+# Settings: the real lighting section, before the full-window climb menu.
+- openLink: com.boardsesh.app://settings/board-look?section=lighting
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 15-board-lighting
 
 # Climb actions — the first climb row lifted above the dimmed list, with its
 # menu under it: Play next, Play last, add to playlist, favourite, log a tick,

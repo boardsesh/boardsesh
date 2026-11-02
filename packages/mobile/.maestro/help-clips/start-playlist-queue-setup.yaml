@@ -1,22 +1,19 @@
 appId: com.boardsesh.app
 name: help clip setup - playlist tap loads queue
 ---
-# Setup for start-playlist-queue.yaml. Run it BEFORE the recording starts; it is
-# not a clip and records nothing.
-#
-# With the 2.7 defaults the "Start playlist?" sheet never appears: a tap in a
-# playlist only previews. This turns ON "Tapping a playlist loads it into my
-# queue" in Settings > Board and leaves "Always drive the wall" at its default
-# (off), so nothing drives the wall. Both taps are optional so a re-run on an already-set phone
-# does not fail; check the switch by eye once, since a re-run flips it back OFF
-# if it was already on. Starting from a fresh install or a reset Settings is the
-# safe path.
-- openLink: com.boardsesh.app://settings/board-look
+# Run once on a fresh/default capture simulator BEFORE recording.
+# Always drive stays off. The native switch label is exposed to Maestro, but
+# tapping that label does not change the switch. Use the measured switch itself.
+# iPhone 16 Pro Max, iOS 27.0, 1320 x 2868, source 3b1d9be90c, 2026-11-02.
+# Verify the switch is ON by eye; a second run turns it off.
+- openLink: com.boardsesh.app://home
 - waitForAnimationToEnd
-- scrollUntilVisible:
-    element: 'Tapping a playlist loads it into my queue'
-    optional: true
+- openLink: com.boardsesh.app://settings/board-look?section=lighting
+- waitForAnimationToEnd
+- swipe:
+    start: '50%,80%'
+    end: '50%,45%'
+    duration: 500
 - tapOn:
-    text: 'Tapping a playlist loads it into my queue'
-    optional: true
+    point: '84%,44%'
 - waitForAnimationToEnd

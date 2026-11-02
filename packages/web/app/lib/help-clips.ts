@@ -21,6 +21,7 @@ export type HelpClipName =
   | 'grade-range-tap'
   | 'preview-browsing'
   | 'wall-swipe-to-drive'
+  | 'put-on-board-timed-drive'
   | 'start-playlist-queue';
 
 export type HelpClipSources = {
