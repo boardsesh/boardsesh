@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { classifyBleDisconnect, isBluetoothSwitchedOff } from '../disconnect-category';
 
@@ -98,5 +100,32 @@ describe('isBluetoothSwitchedOff', () => {
     expect(isBluetoothSwitchedOff(undefined)).toBe(false);
     expect(isBluetoothSwitchedOff({ source: 'native-ios', iosErrorCode: 7, errorDomain: 'CBErrorDomain' })).toBe(false);
     expect(isBluetoothSwitchedOff({ source: 'native-ios', description: 'central state 4' })).toBe(false);
+  });
+});
+
+// The parser reads the text BoardBleManager.swift writes on a bluetooth_unavailable
+// drop. Pin that literal so a rename on the Swift side fails here instead of
+// silently turning every stack reset back into a silent "switched off".
+describe('BoardBleManager.swift bluetooth_unavailable description', () => {
+  const swiftSource = readFileSync(
+    join(__dirname, '../../../../modules/live-activity/ios/BoardBleManager.swift'),
+    'utf8',
+  );
+  const emitted = /"context": "bluetooth_unavailable",\s*"errorDescription": "([^"]*)\\\(state\.rawValue\)"/.exec(
+    swiftSource,
+  );
+
+  it('still writes the central state the parser reads', () => {
+    expect(emitted?.[1]).toBe('central state ');
+  });
+
+  it('parses what Swift writes for poweredOff and resetting', () => {
+    const asSwiftWrites = (rawValue: number) => ({
+      source: 'native-ios' as const,
+      context: 'bluetooth_unavailable',
+      description: `${emitted?.[1] ?? ''}${rawValue}`,
+    });
+    expect(isBluetoothSwitchedOff(asSwiftWrites(4))).toBe(true);
+    expect(isBluetoothSwitchedOff(asSwiftWrites(1))).toBe(false);
   });
 });
