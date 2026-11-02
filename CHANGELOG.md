@@ -8,6 +8,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Hold a climb or tap ⋯ for the same menu, with the climb lifted above the list. ([#7205](https://github.com/boardsesh/boardsesh/pull/7205))
+- Your Lock Screen and notification show how long picks keep lighting the wall. ([#7203](https://github.com/boardsesh/boardsesh/pull/7203))
+  Next and Previous on the Lock Screen keep the countdown going.
+  Driving the wall shows a full amber bulb, so you know every pick lights.
 - Browse climbs without lighting the wall: a tap shows the climb, Put on board lights it. ([#7188](https://github.com/boardsesh/boardsesh/pull/7188))
   Put on board drives the wall: every climb you pick lights until 45 s after the last one. A MoonBoard drives until you stop.
   Choose when driving stops in Settings › Board, and whether Bluetooth lets go when it does.
