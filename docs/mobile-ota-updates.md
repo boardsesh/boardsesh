@@ -518,9 +518,10 @@ and wait until **both** stores offer the candidate runtimes. Early updates and
 native post-upload republishes retain their existing guarded paths. Public store
 submission remains manual, and older runtimes retain their last compatible OTA.
 
-Native changes open one shared patch version on main through `mobile-native-release.yml`.
-An already-raised unreleased version is adopted without another patch. The stamped
-commit starts both tester builds. JS-only pushes keep their version and use the
+Native changes are stamped on main through `mobile-native-release.yml`. They rebuild
+main's open marketing version until a store accepts it (its `release/*` anchor closes
+it); only then does the next native change open one shared patch. The stamped commit
+starts both tester builds. JS-only pushes keep their version and use the
 staged OTA pipeline, with immediate delivery on an eligible unreleased native line.
 Public App Store and Play production submission
 requires an explicit manual workflow action; a merge never submits a public release.
@@ -1708,10 +1709,13 @@ it can't silently drop out of one channel (which would revert that channel to th
 
 Native PRs target `main`. `mobile-native-release.yml` compares both canonical
 platform fingerprints with the latest validated release stamp, or the protected
-`release/native-baseline` bootstrap tag. A changed pair creates one version-only
-bot commit opening the next unused patch and starts both TestFlight and Play
-tester builds from that exact commit. Several native merges waiting for the job
-share one current snapshot/version. JS-only changes do not bump or build.
+`release/native-baseline` bootstrap tag. A changed pair creates one bot stamp and
+starts both TestFlight and Play tester builds from that exact commit. While main's
+marketing version is open (no release anchor at it, no higher reservation) the stamp
+adopts it with new build numbers; once a store accepts it, the stamp opens the next
+unused patch. Several native merges waiting for the job share one current
+snapshot/version. JS-only changes do not bump or build. The full rule is in
+[the store release runbook](mobile-store-release.md#1-main-opens-native-versions).
 
 The coordinator does not wait for binaries while holding its lock. It reconciles
 the newest stamped release on main pushes, native completions, hourly, and manual
