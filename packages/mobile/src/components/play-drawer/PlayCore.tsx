@@ -88,10 +88,11 @@ import {
   resolveBrowseCaption,
 } from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
-import { usePreviewFirstTip } from './use-preview-first-tip';
+import { resolvePreviewFirstTipInput, usePreviewFirstTip } from './use-preview-first-tip';
 import { WallStateLiveRegion } from './WallStateLiveRegion';
 import { PlayerPreviewTip, type PlayerPreviewTipExit } from '../onboarding/PlayerPreviewTip';
 import { retirePreviewFirstTip } from '../../lib/onboarding/preview-first-tip';
+import { BOARD_LOOK_LIGHTING_SECTION } from '../settings/board-look/board-look-model';
 import { usePresenceClearedClimbUuid, useWallClimb } from './use-wall-climb';
 import { resolveBusyWallHolder } from './busy-wall-question';
 import { formatBusyWallCaption } from './busy-wall-question-text';
@@ -1480,23 +1481,45 @@ export function PlayCore({
     t,
   });
 
+  // Reserve only the first eligible section's header. Without sections, content
+  // plus bottom safe area exactly fills the measured viewport and cannot scroll.
+  // The phone split's pane and the landscape iPad player fit the board to the
+  // viewport's height instead (`computeFitToHeightFirstScreenHeight`).
+  // - The pane always does, whatever its rows hold: its bottom inset clears the
+  //   MiniPlayer capsule (`PhoneSplitPane`), and the first screen pads that band
+  //   so every button ends above the capsule and the first section starts below
+  //   the fold rather than peeking under the capsule.
+  // - The iPad player does only with sections to scroll to, with the controls
+  //   under the board, and with a plain second row that hangs below the fold.
+  //   The wall button, the busy-wall question and Fell / Sent keep their place
+  //   on screen (`shouldFitBoardToHeight`, #6956).
+  const fitsBoardToHeight = shouldFitBoardToHeight({
+    fitBoardToHeight,
+    isPane,
+    hasVisibleSections,
+    controlsAbove,
+    secondaryRow: actionBarLayout.secondaryRow,
+  });
+
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
-  const previewFirstTip = usePreviewFirstTip({
-    signedIn: isAuthenticated && !isAnonymous,
-    boardHasLights:
-      playerHasWall &&
-      wallControl.state !== null &&
-      wallControl.state !== 'take_wall' &&
-      wallControl.state !== 'release_wall' &&
-      wallControl.labelKey !== 'setActive',
-    previewShowing: isPreview && !displayedLit,
-    playerBusy:
-      busyWallUp ||
-      workoutOutcome !== null ||
-      showBoardMismatch ||
-      (trackEndCardClimbUuid !== null && trackEndCardClimbUuid === displayedClimbUuid),
-  });
+  const previewFirstTip = usePreviewFirstTip(
+    resolvePreviewFirstTipInput({
+      signedIn: isAuthenticated && !isAnonymous,
+      playerHasWall,
+      wallControl,
+      isPreview,
+      displayedLit,
+      busyWallUp,
+      workoutOutcomeUp: workoutOutcome !== null,
+      boardMismatchUp: showBoardMismatch,
+      trackEndCardUp: trackEndCardClimbUuid !== null && trackEndCardClimbUuid === displayedClimbUuid,
+      hasVisibleSections,
+      tabletop,
+      fitsBoardToHeight,
+      openKey: openTarget?.nonce ?? null,
+    }),
+  );
   const { markLatchExit, suppressBrowseAnnouncement, noteBrowseNoticeSpoken, liveRegionText } = useWallStateAnnouncer({
     pillState: wallPillState,
     climbName: displayedClimb?.name ?? null,
@@ -2233,7 +2256,12 @@ export function PlayCore({
   const handlePreviewFirstTipExit = useCallback(
     (exit: PlayerPreviewTipExit) => {
       retirePreviewFirstTip();
-      if (exit === 'settings') pushAfterPlayerDismiss(() => router.push('/settings/board-look'));
+      if (exit === 'settings') {
+        // The Board page, opened on its lighting group, where the keep-lighting choice is.
+        pushAfterPlayerDismiss(() =>
+          router.push({ pathname: '/settings/board-look', params: { section: BOARD_LOOK_LIGHTING_SECTION } }),
+        );
+      }
     },
     [pushAfterPlayerDismiss],
   );
@@ -2482,25 +2510,7 @@ export function PlayCore({
     handleFirstSectionHeaderLayout,
   });
 
-  // Reserve only the first eligible section's header. Without sections, content
-  // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  // The phone split's pane and the landscape iPad player fit the board to the
-  // viewport's height instead (`computeFitToHeightFirstScreenHeight`).
-  // - The pane always does, whatever its rows hold: its bottom inset clears the
-  //   MiniPlayer capsule (`PhoneSplitPane`), and the first screen pads that band
-  //   so every button ends above the capsule and the first section starts below
-  //   the fold rather than peeking under the capsule.
-  // - The iPad player does only with sections to scroll to, with the controls
-  //   under the board, and with a plain second row that hangs below the fold.
-  //   The wall button, the busy-wall question and Fell / Sent keep their place
-  //   on screen (`shouldFitBoardToHeight`, #6956).
-  const fitsBoardToHeight = shouldFitBoardToHeight({
-    fitBoardToHeight,
-    isPane,
-    hasVisibleSections,
-    controlsAbove,
-    secondaryRow: actionBarLayout.secondaryRow,
-  });
+  // `fitsBoardToHeight` is resolved above, where the preview-first card reads it too.
   const firstScreenPaddingBottom = fitsBoardToHeight && isPane ? insets.bottom : 0;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
   // In tabletop the controls sit between the first screen and the sections.

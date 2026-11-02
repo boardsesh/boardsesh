@@ -4,7 +4,7 @@
 // driving section, for climbers who read release notes rather than tips.
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
@@ -20,6 +20,9 @@ import {
   markPreviewFirstSpotlightShown,
   type PreviewFirstSpotlightRecord,
 } from '../../lib/preview-first-spotlight';
+
+/** Got it's floor: a small Compose button lands at 40 dp, under Material's 48. */
+const DISMISS_MIN_HEIGHT = Platform.OS === 'android' ? 48 : 44;
 
 type PreviewFirstSpotlightCardProps = {
   style?: StyleProp<ViewStyle>;
@@ -100,6 +103,7 @@ function PreviewFirstSpotlightCardComponent({ style }: PreviewFirstSpotlightCard
           title={t('mobile.changelog.previewFirstSpotlight.dismiss')}
           variant="text"
           size="small"
+          minHeight={DISMISS_MIN_HEIGHT}
           onPress={handleDismiss}
         />
       </View>

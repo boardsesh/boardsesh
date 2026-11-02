@@ -162,6 +162,13 @@ export type PreviewFirstTipGateInput = {
    * over the board (end of list, switch board) or Fell / Sent.
    */
   playerBusy: boolean;
+  /**
+   * The card's slot is on the first screen: the Logbook peek's place under the
+   * board. False when every section is hidden or the board is fitted to the
+   * screen's height, where the card would sit unseen below the fold and still
+   * spend its seen flag and its screen-reader line.
+   */
+  slotInView: boolean;
   screenshotMode: boolean;
 };
 
@@ -172,7 +179,7 @@ export type PreviewFirstTipGateInput = {
  */
 export function shouldShowPreviewFirstTip(input: PreviewFirstTipGateInput): boolean {
   if (input.screenshotMode || !input.signedIn || !input.boardHasLights) return false;
-  if (input.connectCardVisible || input.listTipShowing || input.playerBusy) return false;
+  if (input.connectCardVisible || input.listTipShowing || input.playerBusy || !input.slotInView) return false;
   const { status, opens } = input.state;
   if (input.claimedThisOpen) return status === 'showing';
   if (!input.previewShowing) return false;
@@ -188,6 +195,41 @@ export function shouldShowPreviewFirstTip(input: PreviewFirstTipGateInput): bool
 export function previewFirstAnnouncementDue(state: PreviewFirstTipState, visible: boolean): boolean {
   if (!visible) return false;
   return state.status === 'unseen' || state.announcePending;
+}
+
+/** A drive, as the card's retire rule reads it. */
+export type PreviewFirstTipDrive = {
+  /** `Date.now()` when it started. */
+  startedAt: number;
+  /**
+   * It lights every pick until the climber stops it: a swipe, Light every
+   * climb, the board sheet's row, or Put on board set to keep lighting until
+   * stopped (a MoonBoard's default). Not Put on board's timed window.
+   */
+  openEnded: boolean;
+};
+
+/**
+ * Whether the drive on this board retires the card: the climber started driving
+ * the wall after the card showed, so the frost has been learned. Put on board's
+ * timed window is what the card describes, so the card stays through it until
+ * the window turns open-ended (a swipe or Light every climb during it).
+ *
+ * `previous` is the drive as the card last saw it, so a window that was already
+ * running when the card showed still retires it once it turns open-ended.
+ */
+export function previewFirstTipRetiredByDrive({
+  drive,
+  previous,
+  shownAt,
+}: {
+  drive: PreviewFirstTipDrive | null;
+  previous: PreviewFirstTipDrive | null;
+  shownAt: number;
+}): boolean {
+  if (drive === null || !drive.openEnded) return false;
+  if (drive.startedAt >= shownAt) return true;
+  return previous !== null && previous.startedAt === drive.startedAt && !previous.openEnded;
 }
 
 /**
@@ -232,4 +274,12 @@ export function resolvePreviewFirstWindowLine({
     case 'until_stopped':
       return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
   }
+}
+
+/**
+ * Put on board's own drive has no end: Until I stop, or a MoonBoard's. Such a
+ * drive retires the card like a swipe does; a timed window does not.
+ */
+export function putOnBoardDriveIsOpenEnded(line: PreviewFirstWindowLine): boolean {
+  return line !== null && (line.key === 'untilStop' || line.key === 'moonboard');
 }

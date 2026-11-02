@@ -52,8 +52,8 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { type: 'button', onClick: onPress }, title),
+  Button: ({ title, onPress, minHeight }: { title: string; onPress: () => void; minHeight?: number }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-min-height': minHeight }, title),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#6D28D9' }, systemColors: { label: '#111', separator: '#ccc' } }),
@@ -99,6 +99,12 @@ describe('PreviewFirstSpotlightCard', () => {
     fireEvent.click(await screen.findByText(copy.dismiss));
     expect(screen.queryByRole('heading')).toBeNull();
     await waitFor(() => expect(secure.values.get(KEY)).toMatchObject({ dismissed: true }));
+  });
+
+  // A small text button lands at 40 dp on Android without a floor.
+  it('gives Got it a full touch target', async () => {
+    render(createElement(PreviewFirstSpotlightCard));
+    expect((await screen.findByText(copy.dismiss)).dataset.minHeight).toBe('44');
   });
 
   it('stays away once dismissed', async () => {

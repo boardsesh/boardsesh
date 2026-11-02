@@ -233,6 +233,7 @@ function renderButton(
     compact?: boolean;
     spansRow?: boolean;
     glow?: WallGlowInput | null;
+    sample?: boolean;
   } = {},
 ) {
   const onPress = vi.fn();
@@ -247,6 +248,7 @@ function renderButton(
       compact: extra.compact,
       spansRow: extra.spansRow,
       glow: extra.glow,
+      sample: extra.sample,
     }),
   );
   return { ...view, onPress, onLongPress };
@@ -388,6 +390,15 @@ describe('WallControlButton', () => {
     const lit = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
     expect(lit.getAllByText('playView.wallControl.disconnectBoard').length).toBeGreaterThan(0);
     expect(lit.getByTestId('play-drawer-wall-control-holder')).toBeTruthy();
+  });
+
+  // The preview-first card draws the real button as a picture beside the real
+  // one: a test or a Maestro `id:` selector must only ever find the real one.
+  it('carries no testIDs as a picture', () => {
+    const picture = renderButton(modelFor('lit', { holder: 'self' }), { sample: true });
+    expect(picture.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
+    expect(picture.container.querySelector('[data-testid^="play-drawer-wall-control"]')).toBeNull();
+    expect(picture.container.querySelector('[data-testid^="wall-control-"]')).toBeNull();
   });
 
   it('says You are driving the wall while driving, and that a tap stops it', () => {

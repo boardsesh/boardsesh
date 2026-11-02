@@ -22,6 +22,8 @@ const {
   getPreviewFirstTipState,
   loadPreviewFirstTip,
   previewFirstAnnouncementDue,
+  previewFirstTipRetiredByDrive,
+  putOnBoardDriveIsOpenEnded,
   resolvePreviewFirstWindowLine,
   retirePreviewFirstTip,
   shouldShowPreviewFirstTip,
@@ -54,6 +56,7 @@ const ready: GateInput = {
   connectCardVisible: false,
   listTipShowing: false,
   playerBusy: false,
+  slotInView: true,
   screenshotMode: false,
 };
 
@@ -76,6 +79,19 @@ describe('shouldShowPreviewFirstTip', () => {
     expect(shouldShowPreviewFirstTip({ ...ready, connectCardVisible: true })).toBe(false);
     expect(shouldShowPreviewFirstTip({ ...ready, listTipShowing: true })).toBe(false);
     expect(shouldShowPreviewFirstTip({ ...ready, playerBusy: true })).toBe(false);
+  });
+
+  // Below the fold it would spend its seen flag and its screen-reader line unseen.
+  it('waits for its slot under the board to be on the first screen', () => {
+    expect(shouldShowPreviewFirstTip({ ...ready, slotInView: false })).toBe(false);
+    expect(
+      shouldShowPreviewFirstTip({
+        ...ready,
+        slotInView: false,
+        claimedThisOpen: true,
+        state: { status: 'showing', opens: 1, announcePending: false },
+      }),
+    ).toBe(false);
   });
 
   it('waits for the seen flag, and stays away once retired', () => {
@@ -203,5 +219,56 @@ describe('resolvePreviewFirstWindowLine', () => {
     expect(
       resolvePreviewFirstWindowLine({ keepLighting: 'until_stopped', moonboardKeepsLighting: '30', isMoonboard: true }),
     ).toEqual({ key: 'windowSeconds', seconds: 30 });
+  });
+});
+
+describe('previewFirstTipRetiredByDrive', () => {
+  const SHOWN_AT = 1_000;
+  const swipe = { startedAt: SHOWN_AT + 1, openEnded: true };
+  const timedWindow = { startedAt: SHOWN_AT + 1, openEnded: false };
+
+  it('retires on an open-ended drive started after it showed', () => {
+    expect(previewFirstTipRetiredByDrive({ drive: swipe, previous: null, shownAt: SHOWN_AT })).toBe(true);
+    expect(
+      previewFirstTipRetiredByDrive({ drive: { ...swipe, startedAt: SHOWN_AT }, previous: null, shownAt: SHOWN_AT }),
+    ).toBe(true);
+  });
+
+  // The window is what the card describes.
+  it("stays through Put on board's timed window", () => {
+    expect(previewFirstTipRetiredByDrive({ drive: timedWindow, previous: null, shownAt: SHOWN_AT })).toBe(false);
+    expect(previewFirstTipRetiredByDrive({ drive: null, previous: timedWindow, shownAt: SHOWN_AT })).toBe(false);
+  });
+
+  it('ignores a drive that was already open-ended when it showed', () => {
+    const earlier = { startedAt: SHOWN_AT - 1, openEnded: true };
+    expect(previewFirstTipRetiredByDrive({ drive: earlier, previous: null, shownAt: SHOWN_AT })).toBe(false);
+    expect(previewFirstTipRetiredByDrive({ drive: earlier, previous: earlier, shownAt: SHOWN_AT })).toBe(false);
+  });
+
+  // A swipe or Light every climb during a window makes the same drive open-ended.
+  it('retires when a window that was running before it showed turns open-ended', () => {
+    const before = { startedAt: SHOWN_AT - 1, openEnded: false };
+    expect(
+      previewFirstTipRetiredByDrive({ drive: { ...before, openEnded: true }, previous: before, shownAt: SHOWN_AT }),
+    ).toBe(true);
+    // A different drive that happens to be open-ended is not that window turning.
+    expect(
+      previewFirstTipRetiredByDrive({
+        drive: { startedAt: SHOWN_AT - 2, openEnded: true },
+        previous: before,
+        shownAt: SHOWN_AT,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('putOnBoardDriveIsOpenEnded', () => {
+  it('is open-ended for Until I stop and a MoonBoard, not for a timed window or Off', () => {
+    expect(putOnBoardDriveIsOpenEnded({ key: 'untilStop' })).toBe(true);
+    expect(putOnBoardDriveIsOpenEnded({ key: 'moonboard' })).toBe(true);
+    expect(putOnBoardDriveIsOpenEnded({ key: 'windowSeconds', seconds: 45 })).toBe(false);
+    expect(putOnBoardDriveIsOpenEnded({ key: 'windowMinute' })).toBe(false);
+    expect(putOnBoardDriveIsOpenEnded(null)).toBe(false);
   });
 });

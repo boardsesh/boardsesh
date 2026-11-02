@@ -837,7 +837,7 @@
       },
       "previewFirstSpotlight": {
         "title": "Parcours les blocs sans allumer la board",
-        "tap": "Un toucher ouvre un aperçu. Allumer sur la board allume le bloc, et les blocs que tu choisis dans les 45 secondes qui suivent s'allument aussi.",
+        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, et les blocs que tu choisis dans les 45 secondes qui suivent s'allument aussi.",
         "swipe": "Fais glisser le bouton de la board vers la gauche pour continuer à allumer jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume.",
         "moonboard": "Sur un MoonBoard, l'éclairage continue jusqu'à ce que tu arrêtes. Change la durée dans Paramètres › Board.",
         "cta": "Voir comment ça marche",

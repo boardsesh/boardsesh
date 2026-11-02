@@ -15,8 +15,9 @@ vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
   markTipSeen: () => storage.markTipSeen(),
 }));
 
-const { usePreviewFirstTip } = await import('../use-preview-first-tip');
+const { resolvePreviewFirstTipInput, usePreviewFirstTip } = await import('../use-preview-first-tip');
 const {
+  PREVIEW_FIRST_TIP_MAX_OPENS,
   _resetPreviewFirstTipForTests,
   consumePreviewFirstAnnouncement,
   getPreviewFirstTipState,
@@ -26,7 +27,14 @@ const { _resetListCardPresenceForTests, setListCardShowing } =
   await import('../../../lib/onboarding/list-card-presence');
 type Input = Parameters<typeof usePreviewFirstTip>[0];
 
-const firstPreview: Input = { signedIn: true, boardHasLights: true, previewShowing: true, playerBusy: false };
+const firstPreview: Input = {
+  signedIn: true,
+  boardHasLights: true,
+  previewShowing: true,
+  playerBusy: false,
+  slotInView: true,
+  openKey: 1,
+};
 
 /** Render the hook and let the seen flag's read land. */
 async function renderTip(input: Input = firstPreview) {
@@ -128,6 +136,37 @@ describe('usePreviewFirstTip', () => {
     expect(getPreviewFirstTipState().opens).toBe(2);
   });
 
+  // The iPad pane stays mounted, so its mount is not the open: each climb
+  // opened into it is, and the card's limit applies there too.
+  it('counts each climb opened into a mounted pane as an open, up to the limit', async () => {
+    const { result, rerender } = await renderTip();
+    expect(getPreviewFirstTipState().opens).toBe(1);
+
+    for (let openKey = 2; openKey <= PREVIEW_FIRST_TIP_MAX_OPENS; openKey += 1) {
+      rerender({ ...firstPreview, openKey });
+      expect(result.current.visible).toBe(true);
+      expect(getPreviewFirstTipState().opens).toBe(openKey);
+    }
+    rerender({ ...firstPreview, openKey: PREVIEW_FIRST_TIP_MAX_OPENS + 1 });
+    expect(result.current.visible).toBe(false);
+  });
+
+  it('stays put while the same open re-renders', async () => {
+    const { result, rerender } = await renderTip();
+    rerender({ ...firstPreview });
+    rerender({ ...firstPreview, previewShowing: false });
+    expect(result.current.visible).toBe(true);
+    expect(getPreviewFirstTipState().opens).toBe(1);
+  });
+
+  it('never spends itself below the fold', async () => {
+    const { result } = await renderTip({ ...firstPreview, slotInView: false });
+    expect(result.current.visible).toBe(false);
+    expect(result.current.announcementDue).toBe(false);
+    expect(getPreviewFirstTipState()).toMatchObject({ status: 'unseen', opens: 0 });
+    expect(storage.markTipSeen).not.toHaveBeenCalled();
+  });
+
   it('goes for good on an exit', async () => {
     const { result } = await renderTip();
     act(() => retirePreviewFirstTip());
@@ -139,5 +178,84 @@ describe('usePreviewFirstTip', () => {
     const { result } = await renderTip();
     expect(result.current.visible).toBe(false);
     expect(result.current.deciding).toBe(false);
+  });
+});
+
+describe('resolvePreviewFirstTipInput', () => {
+  type Player = Parameters<typeof resolvePreviewFirstTipInput>[0];
+  // A preview on this phone's own board, connected, with the sections under it.
+  const player: Player = {
+    signedIn: true,
+    playerHasWall: true,
+    wallControl: { state: 'put_on_wall', holder: 'self', labelKey: 'putOnBoard' },
+    isPreview: true,
+    displayedLit: false,
+    busyWallUp: false,
+    workoutOutcomeUp: false,
+    boardMismatchUp: false,
+    trackEndCardUp: false,
+    hasVisibleSections: true,
+    tabletop: false,
+    fitsBoardToHeight: false,
+    openKey: 7,
+  };
+
+  it('is ready on a preview of a board this phone can light', () => {
+    expect(resolvePreviewFirstTipInput(player)).toEqual({
+      signedIn: true,
+      boardHasLights: true,
+      previewShowing: true,
+      playerBusy: false,
+      slotInView: true,
+      openKey: 7,
+    });
+    // Not linked yet, but Put on board connects.
+    expect(
+      resolvePreviewFirstTipInput({
+        ...player,
+        wallControl: { state: 'connect', holder: null, labelKey: 'putOnBoard' },
+      }).boardHasLights,
+    ).toBe(true);
+  });
+
+  // Spec B5: never on Set active, a spray wall or a board with no lights.
+  it('has no board with lights on Set active, spray, no-lights boards or with nothing to offer', () => {
+    const lights = (overrides: Partial<Player>) =>
+      resolvePreviewFirstTipInput({ ...player, ...overrides }).boardHasLights;
+    expect(lights({ wallControl: { state: 'put_on_wall', holder: null, labelKey: 'setActive' } })).toBe(false);
+    expect(lights({ playerHasWall: false })).toBe(false);
+    expect(lights({ wallControl: { state: 'take_wall', holder: null, labelKey: 'takeWall' } })).toBe(false);
+    expect(lights({ wallControl: { state: 'release_wall', holder: 'self', labelKey: 'releaseWall' } })).toBe(false);
+    expect(lights({ wallControl: { state: null, holder: null, labelKey: null } })).toBe(false);
+  });
+
+  // A crewmate's phone lights it: there is no frost here and no window to open.
+  it('has no board with lights for a crew relay', () => {
+    expect(
+      resolvePreviewFirstTipInput({
+        ...player,
+        wallControl: { state: 'put_on_wall', holder: 'crew', labelKey: 'putOnBoard' },
+      }).boardHasLights,
+    ).toBe(false);
+  });
+
+  it('is a preview only while the climb on screen is not the lit one', () => {
+    expect(resolvePreviewFirstTipInput({ ...player, displayedLit: true }).previewShowing).toBe(false);
+    expect(resolvePreviewFirstTipInput({ ...player, isPreview: false }).previewShowing).toBe(false);
+  });
+
+  // Never stacked with the busy-wall question, a card over the board or Fell / Sent.
+  it('is busy while anything else in the player is asking', () => {
+    for (const busy of ['busyWallUp', 'workoutOutcomeUp', 'boardMismatchUp', 'trackEndCardUp'] as const) {
+      expect(resolvePreviewFirstTipInput({ ...player, [busy]: true }).playerBusy).toBe(true);
+    }
+  });
+
+  it('has its slot in view only where the sections peek on the first screen', () => {
+    const slot = (overrides: Partial<Player>) => resolvePreviewFirstTipInput({ ...player, ...overrides }).slotInView;
+    expect(slot({ hasVisibleSections: false })).toBe(false);
+    expect(slot({ fitsBoardToHeight: true })).toBe(false);
+    // The tabletop's sections start in view, under the controls.
+    expect(slot({ tabletop: true, hasVisibleSections: false })).toBe(true);
   });
 });

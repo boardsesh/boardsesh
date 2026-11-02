@@ -40,7 +40,10 @@ import type { WallGlowInput } from '../play-drawer/use-wall-glow';
 import {
   DEFAULT_MOONBOARD_PUT_ON_BOARD_KEEPS_LIGHTING,
   DEFAULT_PUT_ON_BOARD_KEEPS_LIGHTING,
+  previewFirstTipRetiredByDrive,
+  putOnBoardDriveIsOpenEnded,
   resolvePreviewFirstWindowLine,
+  type PreviewFirstTipDrive,
   type PutOnBoardKeepsLighting,
 } from '../../lib/onboarding/preview-first-tip';
 
@@ -114,18 +117,32 @@ function PlayerPreviewTipComponent({
   const screenReaderEnabled = useScreenReaderEnabled();
   const stacked = fontScale >= PLAYER_PREVIEW_TIP_STACK_FONT_SCALE;
 
-  // A drive that starts while the card is up means the frost has been learned
-  // (a swipe, Light every climb, the board sheet's row). Put on board's own
-  // keep-lighting window (`startedBy: 'tap'`) is what the card describes, so it
-  // stays for that.
+  const windowLine = resolvePreviewFirstWindowLine({
+    keepLighting,
+    moonboardKeepsLighting,
+    isMoonboard: isMoonboardBoardName(boardName),
+  });
+
+  // A drive that starts while the card is up means the frost has been learned:
+  // a swipe, Light every climb, the board sheet's row, or Put on board where it
+  // keeps lighting until stopped (Until I stop, a MoonBoard). Put on board's
+  // timed window (`startedBy: 'tap'`) is what the card describes, so it stays
+  // for that until a swipe turns the window open-ended.
   const drive = useDriveMode();
   const shownAtRef = useRef(Date.now());
-  const driveStartedAt = drive && drive.startedBy !== 'tap' ? drive.startedAt : null;
+  const driveStartedAt = drive?.startedAt ?? null;
+  const driveOpenEnded = drive !== null && (drive.startedBy !== 'tap' || putOnBoardDriveIsOpenEnded(windowLine));
+  const seenDriveRef = useRef<PreviewFirstTipDrive | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   useEffect(() => {
-    if (driveStartedAt !== null && driveStartedAt >= shownAtRef.current) onExitRef.current('drive');
-  }, [driveStartedAt]);
+    const current = driveStartedAt === null ? null : { startedAt: driveStartedAt, openEnded: driveOpenEnded };
+    const previous = seenDriveRef.current;
+    seenDriveRef.current = current;
+    if (previewFirstTipRetiredByDrive({ drive: current, previous, shownAt: shownAtRef.current })) {
+      onExitRef.current('drive');
+    }
+  }, [driveStartedAt, driveOpenEnded]);
 
   // This climber's face at the trailing edge, as the button shows it while they
   // hold the board. The player asks for the same profile while linked, so this
@@ -136,11 +153,6 @@ function PlayerPreviewTipComponent({
     [profile],
   );
   const sampleModel = useMemo(() => buildDrivingSampleModel(selfFace), [selfFace]);
-  const windowLine = resolvePreviewFirstWindowLine({
-    keepLighting,
-    moonboardKeepsLighting,
-    isMoonboard: isMoonboardBoardName(boardName),
-  });
   const windowText =
     windowLine === null
       ? null
@@ -199,7 +211,7 @@ function PlayerPreviewTipComponent({
         importantForAccessibility="no-hide-descendants"
         accessibilityIgnoresInvertColors
       >
-        <WallControlButton model={sampleModel} glow={glow} onPress={noop} onLongPress={noop} />
+        <WallControlButton model={sampleModel} glow={glow} onPress={noop} onLongPress={noop} sample />
       </View>
       <Text variant="subheadline" color={systemColors.label} testID="player-preview-tip-frost">
         {frostText}

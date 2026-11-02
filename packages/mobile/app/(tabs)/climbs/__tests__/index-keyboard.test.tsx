@@ -2854,10 +2854,6 @@ describe('ClimbList row highlight', () => {
   });
 });
 
-// Recent is a pinnable chip. Unpinning it is a display choice: the saved
-// searches and the search in force are untouched, new searches still save, and
-// pinning it again shows the same history at once. Whether the row draws the
-// chip from these props is locked in climb-capsules.test.ts.
 // The player's preview-first card waits for this list's cards (one card at a
 // time). Beside a tablet's player pane both are on screen, so the list says
 // when its first-connect card is up, and stops saying it once it is not.
@@ -2880,6 +2876,10 @@ describe('ClimbList publishes its cards for the preview-first card', () => {
   });
 });
 
+// Recent is a pinnable chip. Unpinning it is a display choice: the saved
+// searches and the search in force are untouched, new searches still save, and
+// pinning it again shows the same history at once. Whether the row draws the
+// chip from these props is locked in climb-capsules.test.ts.
 describe('ClimbList with the Recent chip unpinned', () => {
   const savedSearch: RecentFilter = {
     id: 'crimp',

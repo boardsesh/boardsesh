@@ -187,6 +187,8 @@ describe('PlayerPreviewTip', () => {
     // No swipe, so no chevrons, no peek and no gesture on the picture.
     expect(sample.onSwipe).toBeUndefined();
     expect(model.swipeAction).toBeNull();
+    // A picture: no testIDs, so a test or Maestro only finds the real button.
+    expect(sample.sample).toBe(true);
   });
 
   it('falls back to the flat driving amber with no holds to frost', () => {
@@ -250,6 +252,26 @@ describe('PlayerPreviewTip', () => {
 
   it("stays through Put on board's own keep-lighting window, which it describes", () => {
     const onExit = renderTip();
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  // Most MoonBoard controllers don't like phones switching, so Put on board
+  // starts a drive with no end there: that is the frost the card explains.
+  it('goes when Put on board starts a drive with no end on a MoonBoard', () => {
+    const onExit = renderTip({ boardName: 'moonboard' });
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    expect(onExit).toHaveBeenCalledWith('drive');
+  });
+
+  it('goes when Put on board keeps lighting until stopped', () => {
+    const onExit = renderTip({ keepLighting: 'until_stopped' });
+    act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
+    expect(onExit).toHaveBeenCalledWith('drive');
+  });
+
+  it("stays through a MoonBoard's timed window", () => {
+    const onExit = renderTip({ boardName: 'moonboard', moonboardKeepsLighting: '30' });
     act(() => drive.set({ startedAt: Date.now() + 1, startedBy: 'tap' }));
     expect(onExit).not.toHaveBeenCalled();
   });
