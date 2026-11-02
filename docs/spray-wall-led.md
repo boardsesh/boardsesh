@@ -62,7 +62,9 @@ pointed at Boardsesh's hosted accounts, backend or update service.
 
 The dev-only component story `spray-wall-led-section--setup` exercises this same
 component with a separate local settings key, without needing an existing wall.
-Open `dev/stories/spray-wall-led-section--setup` in a development build. It can
+Open `dev/stories/spray-wall-led-section--setup` in a development build after
+signing in against your own backend; the native app's authentication gate also
+applies to stories. It can
 contact a real WLED device only when you enter its address and press a control.
 Use **Edit spray wall** against your own backend to check full form placement.
 
