@@ -74,14 +74,15 @@ import type { TrackEndCardModel } from '../track-end';
 
 const target = { uuid: 'queue-crimp', climb: { uuid: 'crimp', name: 'Crimp Ladder' } } as unknown as ClimbQueueItem;
 
-function renderCard(model: Partial<TrackEndCardModel> = {}) {
+function renderCard(model: Partial<TrackEndCardModel> = {}, { committedOnWall = true } = {}) {
   return render(
     createElement(TrackEndCard, {
+      committedOnWall,
       model: {
         listName: 'Projects',
         upNextCount: 3,
         firstUpNextName: 'Crimp Ladder',
-        onWallName: null,
+        backToName: null,
         action: { kind: 'nextInQueue', target },
         ...model,
       },
@@ -144,7 +145,7 @@ describe('TrackEndCard', () => {
   it('from a preview, goes back to your queue and names the climb on the wall (then-signposts)', () => {
     const { container } = renderCard({
       firstUpNextName: null,
-      onWallName: 'modern love',
+      backToName: 'modern love',
       upNextCount: 4,
       action: { kind: 'backToCommitted' },
     });
@@ -156,8 +157,20 @@ describe('TrackEndCard', () => {
     expect(container.textContent).not.toContain('playView.track.end.firstUpNext');
   });
 
+  it('never says "On the wall" when the wall does not show your climb', () => {
+    // No board linked, nothing lit, or a crewmate's climb up: the card names it as yours.
+    const { container } = renderCard(
+      { firstUpNextName: null, backToName: 'modern love', upNextCount: 4, action: { kind: 'backToCommitted' } },
+      { committedOnWall: false },
+    );
+
+    expect(keepGoing(container)?.textContent).toBe('playView.track.end.backToQueue {"upNextCount":4}');
+    expect(firstUpNext(container)?.textContent).toBe('playView.track.end.yourClimb {"name":"modern love"}');
+    expect(container.textContent).not.toContain('playView.track.end.onTheWall');
+  });
+
   it('a preview whose Now has no name says only where it goes', () => {
-    const { container } = renderCard({ firstUpNextName: null, onWallName: null, action: { kind: 'backToCommitted' } });
+    const { container } = renderCard({ firstUpNextName: null, backToName: null, action: { kind: 'backToCommitted' } });
 
     expect(keepGoing(container)?.textContent).toBe('playView.track.end.backToQueue {"upNextCount":3}');
     expect(firstUpNext(container)).toBeNull();

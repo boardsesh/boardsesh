@@ -16,7 +16,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: effects.hapticSelectio
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: effects.announceQueued }));
 
 import { resetPreviewNotesForTests, useThenSignposts } from '../use-then-signposts';
-import { PREVIEW_NOTE_RUN_CAP } from '../then-signposts';
+import { PREVIEW_NOTE_RUN_CAP, resolvePreviewNoteOnLine } from '../then-signposts';
 import type { PlayNavigationSignposts } from '../use-play-navigation-model';
 import type { PlayNavigationStep } from '../use-play-selection-controller';
 import type { TrackLabelParts } from '../track-label-text';
@@ -86,12 +86,17 @@ function listPreview(overrides: Partial<Props> = {}): Props {
 
 const swipeNext: PlayNavigationStep = { direction: 'next', method: 'swipe', outcome: 'preview' };
 
-/** One step from `props` towards `landedOn`, then the render after it lands there. */
+/**
+ * One step from `props` towards `landedOn`, then the render after it lands
+ * there. A note that lands is put on line 2, as the player does when nothing
+ * outranks it; `lineTwoTaken` holds it back, as the busy wall would.
+ */
 function stepAndLand(
   hook: { result: { current: ReturnType<typeof useThenSignposts> }; rerender: (props: Props) => void },
   props: Props,
   step: PlayNavigationStep,
   landedOn: string,
+  { lineTwoTaken = false }: { lineTwoTaken?: boolean } = {},
 ) {
   const target = step.direction === 'next' ? { nextClimbUuid: landedOn } : { previousClimbUuid: landedOn };
   hook.rerender({ ...props, ...target });
@@ -99,6 +104,9 @@ function stepAndLand(
     hook.result.current.onStep(step);
   });
   hook.rerender({ ...props, displayedClimbUuid: landedOn, nextClimbUuid: `${landedOn}+1`, previousClimbUuid: null });
+  if (!lineTwoTaken && hook.result.current.previewNote !== null) {
+    act(() => hook.result.current.markPreviewNoteShown());
+  }
 }
 
 beforeEach(() => {
@@ -171,6 +179,59 @@ describe('the preview note', () => {
     expect(hook.result.current.previewNote).toBeNull();
   });
 
+  it('spends nothing on a note the busy wall or a crewmate kept off line 2', () => {
+    const props = listPreview();
+    const hook = renderHook(useThenSignposts, { initialProps: props });
+    // Earned on every open, but never shown: neither cap is spent.
+    for (let open = 0; open < PREVIEW_NOTE_RUN_CAP + 1; open += 1) {
+      act(() => hook.result.current.resetForOpen());
+      stepAndLand(hook, props, swipeNext, `s${open + 10}`, { lineTwoTaken: true });
+      expect(hook.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+    }
+    // Within one open, the next swipe may still earn it, and this time it shows.
+    stepAndLand(hook, { ...props, displayedClimbUuid: 's13' }, swipeNext, 's14', { lineTwoTaken: true });
+    expect(hook.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+    stepAndLand(hook, { ...props, displayedClimbUuid: 's14' }, swipeNext, 's15');
+    expect(hook.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+    // Shown now: this open is spent.
+    stepAndLand(hook, { ...props, displayedClimbUuid: 's15' }, swipeNext, 's16');
+    expect(hook.result.current.previewNote).toBeNull();
+  });
+
+  it('counts a shown note once, however often line 2 says so', () => {
+    const props = listPreview();
+    const hook = renderHook(useThenSignposts, { initialProps: props });
+    stepAndLand(hook, props, swipeNext, 's6');
+    act(() => hook.result.current.markPreviewNoteShown());
+    act(() => hook.result.current.markPreviewNoteShown());
+    // Two more opens still show it: the run spent one, not three.
+    for (const landedOn of ['s7', 's8']) {
+      act(() => hook.result.current.resetForOpen());
+      stepAndLand(hook, props, swipeNext, landedOn);
+      expect(hook.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+    }
+    act(() => hook.result.current.resetForOpen());
+    stepAndLand(hook, props, swipeNext, 's9');
+    expect(hook.result.current.previewNote).toBeNull();
+  });
+
+  it('goes when Put on board makes the climb it was shown on your own', () => {
+    const props = listPreview();
+    const hook = renderHook(useThenSignposts, { initialProps: props });
+    stepAndLand(hook, props, swipeNext, 's6');
+    expect(hook.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+    // Same climb on screen, no longer a preview: "Preview · …" would be false.
+    hook.rerender({ ...props, displayedClimbUuid: 's6', isPreview: false, previewSource: null });
+    expect(hook.result.current.previewNote).toBeNull();
+  });
+
+  it('is pluralised by the count', () => {
+    const props = listPreview({ signposts: { ...quiet, upNextCount: 1 } });
+    const hook = renderHook(useThenSignposts, { initialProps: props });
+    stepAndLand(hook, props, swipeNext, 's6');
+    expect(hook.result.current.previewNote).toBe('Preview · Up next: 1 waiting');
+  });
+
   it('does not spend the run on a step that showed nothing', () => {
     const props = listPreview({ signposts: { ...quiet, upNextCount: 0 } });
     const hook = renderHook(useThenSignposts, { initialProps: props });
@@ -179,6 +240,22 @@ describe('the preview note', () => {
     const later = renderHook(useThenSignposts, { initialProps: queued });
     stepAndLand(later, queued, swipeNext, 's6');
     expect(later.result.current.previewNote).toBe('Preview · Up next: 4 waiting');
+  });
+});
+
+describe('line 2 for the note', () => {
+  const note = 'Preview · Up next: 4 waiting';
+
+  it('shows the note when nothing outranks it', () => {
+    expect(resolvePreviewNoteOnLine({ previewNote: note, busyWallUp: false, crewPutUpCaption: null })).toBe(note);
+    expect(resolvePreviewNoteOnLine({ previewNote: null, busyWallUp: false, crewPutUpCaption: null })).toBeNull();
+  });
+
+  it.each([
+    ['the busy-wall question', { busyWallUp: true, crewPutUpCaption: null }],
+    ["a crewmate's put-up", { busyWallUp: false, crewPutUpCaption: 'Your crew put up Crimp Ladder' }],
+  ])('gives line 2 to %s', (_case, outranking) => {
+    expect(resolvePreviewNoteOnLine({ previewNote: note, ...outranking })).toBeNull();
   });
 });
 

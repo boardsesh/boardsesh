@@ -37,12 +37,19 @@ const CARD_FADE_MS = 150;
 
 type TrackEndCardProps = {
   model: TrackEndCardModel;
+  /**
+   * The wall shows the climb a preview's action goes back to (trusted presence
+   * names the queue's Now), so the card may say "On the wall: modern love".
+   * Otherwise (no board, nothing lit, a crewmate's climb up) it says "Your
+   * climb: modern love": the card never claims what is lit.
+   */
+  committedOnWall: boolean;
   /** Run the card's action: carry on with the queue. Only called when there is one. */
   onKeepGoing: () => void;
   onDismiss: () => void;
 };
 
-function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) {
+function TrackEndCardImpl({ model, committedOnWall, onKeepGoing, onDismiss }: TrackEndCardProps) {
   const { t } = useTranslation('session');
   const { variant, systemColors, m3SurfaceContainers, materialElevation } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -75,19 +82,21 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
     ? t('playView.track.end.title', { name: model.listName })
     : t('playView.track.end.titleUnnamed');
   // From a preview the action goes BACK to the queue's Now (the then-signposts):
-  // "Back to your queue (4)", naming the climb up there. From the climber's own
-  // climb it carries on into Up next, naming the climb that comes first.
+  // "Back to your queue (4)", naming that climb, as the one on the wall only
+  // while the wall shows it. From the climber's own climb it carries on into
+  // Up next, naming the climb that comes first.
   const goesBack = model.action?.kind === 'backToCommitted';
   const actionTitle = goesBack
     ? t('playView.track.end.backToQueue', { upNextCount: model.upNextCount })
     : t('playView.track.end.keepGoing', { upNextCount: model.upNextCount });
-  const actionDetail = goesBack
-    ? model.onWallName
-      ? t('playView.track.end.onTheWall', { name: model.onWallName })
-      : null
-    : model.firstUpNextName
-      ? t('playView.track.end.firstUpNext', { name: model.firstUpNextName })
-      : null;
+  let actionDetail: string | null = null;
+  if (goesBack && model.backToName) {
+    actionDetail = committedOnWall
+      ? t('playView.track.end.onTheWall', { name: model.backToName })
+      : t('playView.track.end.yourClimb', { name: model.backToName });
+  } else if (!goesBack && model.firstUpNextName) {
+    actionDetail = t('playView.track.end.firstUpNext', { name: model.firstUpNextName });
+  }
 
   return (
     <View accessibilityViewIsModal style={styles.modalRegion} testID="play-drawer-track-end">

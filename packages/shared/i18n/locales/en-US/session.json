@@ -1029,7 +1029,8 @@
       "upNextPositionThenAria": "Up next, {{position}} of {{total}}, then {{name}}",
       "upNextFirst_one": "Up next first · {{count}} climb",
       "upNextFirst_other": "Up next first · {{count}} climbs",
-      "previewUpNextWaiting": "Preview · Up next: {{number}} waiting",
+      "previewUpNextWaiting_one": "Preview · Up next: {{count}} waiting",
+      "previewUpNextWaiting_other": "Preview · Up next: {{count}} waiting",
       "nextIn": "Next in {{name}}",
       "previousIn": "Previous in {{name}}",
       "nextInQueue": "Next in your queue",
@@ -1051,6 +1052,7 @@
         "keepGoing": "Keep going with your queue ({{upNextCount}})",
         "backToQueue": "Back to your queue ({{upNextCount}})",
         "onTheWall": "On the wall: {{name}}",
+        "yourClimb": "Your climb: {{name}}",
         "firstUpNext": "First up: {{name}}",
         "stay": "Stay here"
       }

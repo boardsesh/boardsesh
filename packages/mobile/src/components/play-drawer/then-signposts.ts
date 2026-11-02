@@ -73,7 +73,9 @@ export const PREVIEW_NOTE_RUN_CAP = 3;
 /**
  * Whether a step earns the preview note, "Preview · Up next: 4 waiting": the
  * climber's own swipe off a list preview that opens the next preview, while Up
- * next has climbs, the first time this open and within the run's cap.
+ * next has climbs, before a note has shown this open and within the run's cap.
+ * Earning it is not showing it: the busy wall and a crewmate's put-up outrank
+ * it on line 2, and only a note that showed spends the caps.
  */
 export function stepEarnsPreviewNote({
   enabled,
@@ -103,9 +105,30 @@ export function stepEarnsPreviewNote({
   );
 }
 
-/** "Preview · Up next: 4 waiting". */
-export function formatPreviewNote(upNextCount: number, t: TFunction<'session'>, locale: string): string {
-  return t('playView.track.previewUpNextWaiting', { number: getCachedNumberFormat(locale).format(upNextCount) });
+/**
+ * "Preview · Up next: 4 waiting", pluralised by the count. Every language puts
+ * the count before anything the line may cut. The queue holds at most 500
+ * climbs, so the count needs no grouping.
+ */
+export function formatPreviewNote(upNextCount: number, t: TFunction<'session'>): string {
+  return t('playView.track.previewUpNextWaiting', { count: upNextCount });
+}
+
+/**
+ * The note as line 2 shows it: the busy-wall question and a crewmate's put-up
+ * outrank it there, so null while either is up. Only a note that shows spends
+ * its caps, and only it is read as the board's value.
+ */
+export function resolvePreviewNoteOnLine({
+  previewNote,
+  busyWallUp,
+  crewPutUpCaption,
+}: {
+  previewNote: string | null;
+  busyWallUp: boolean;
+  crewPutUpCaption: string | null;
+}): string | null {
+  return busyWallUp || crewPutUpCaption !== null ? null : previewNote;
 }
 
 /** What the step did to the walk, for `Queue Navigation`'s `track`, `from`, `upNextBucket` and `crossed`. */

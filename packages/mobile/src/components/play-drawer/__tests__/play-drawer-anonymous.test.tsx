@@ -3822,14 +3822,54 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+      // A screen reader hears it too: the board's value after the swipe.
+      expect(lastBoardProps().accessibilityValueText).toBe('playView.track.previewUpNextWaiting');
       swipeNext();
       expect(lastCaption()).not.toBe('playView.track.previewUpNextWaiting');
+      expect(lastBoardProps().accessibilityValueText).toBeUndefined();
       // A look at a list never crosses anything: no tick.
       expect(haptics.selection).not.toHaveBeenCalled();
       // Once per open: a new open of the list earns it once more.
       view.rerender(openSearch(2));
       swipeNext();
       expect(lastCaption()).toBe('playView.track.previewUpNextWaiting');
+    });
+
+    // The end card from a preview names the climb back goes to, as "On the
+    // wall" only while trusted presence shows it lit.
+    it.each([
+      ['your climb is lit', first.uuid, true],
+      ["a crewmate's climb is lit", 'someone-elses-climb', false],
+      ['nothing is lit', null, false],
+    ])('tells the end card whether the wall shows your climb when %s', (_case, wallUuid, onWall) => {
+      wall.uuid = wallUuid;
+      wall.sentAt = wallUuid ? new Date(Date.now() - 60_000).toISOString() : null;
+      const lastOfSearch = climb('climb-search-last', 'Last of search');
+      const search = {
+        playlistUuid: 'search',
+        activatedClimbUuid: lastOfSearch.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs: [lastOfSearch],
+        label: 'Search results',
+        total: 1,
+      } as unknown as PlaylistSuggestionSource;
+      session.useRealNavigation = true;
+      session.suggestionSource = projects;
+      session.queue = [itemFirst, itemQueued];
+      session.currentItem = itemFirst;
+      render(
+        drawerElement('member', {
+          climb: lastOfSearch,
+          options: {
+            previewQueueItem: { uuid: 'preview-last', climb: lastOfSearch },
+            playlistSuggestionSource: search,
+          },
+          nonce: 1,
+        } as unknown as Parameters<typeof drawerElement>[1]),
+      );
+      swipeNext();
+      expect(lastTrackEndCardProps().model).toMatchObject({ action: { kind: 'backToCommitted' } });
+      expect(lastTrackEndCardProps().committedOnWall).toBe(onWall);
     });
 
     it('stays silent on the Next button across', () => {

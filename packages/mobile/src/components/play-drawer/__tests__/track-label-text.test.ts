@@ -222,10 +222,14 @@ describe('spokenCaption', () => {
     ['de', deSession],
     ['it', itSession],
   ])('reads the %s signpost captions with no dot', (_locale, catalog) => {
-    const { previewUpNextWaiting, upNextFirst_one: one, upNextFirst_other: other } = catalog.playView.track;
-    for (const caption of [previewUpNextWaiting, one, other]) {
-      expect(caption).toContain(' · ');
-      expect(spokenCaption(caption)).not.toContain('·');
-    }
+    const {
+      previewUpNextWaiting_one: noteOne,
+      previewUpNextWaiting_other: noteOther,
+      upNextFirst_one: one,
+      upNextFirst_other: other,
+    } = catalog.playView.track;
+    // The note reads like the caption it stands in for: "Preview · …".
+    for (const note of [noteOne, noteOther]) expect(note).toContain(' · ');
+    for (const caption of [noteOne, noteOther, one, other]) expect(spokenCaption(caption)).not.toContain('·');
   });
 });

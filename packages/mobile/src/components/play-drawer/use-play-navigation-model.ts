@@ -283,7 +283,8 @@ export function usePlayNavigationModel({
   // The queue button's Up next count while a list is walked (#6238): the same
   // count the end card offers, so Up next stays in sight before the list ends.
   // Null when no list is walked.
-  const upNextCount = countUpNext(queue.length, committedQueueIndex);
+  // With nothing current, History stays in the array (F3) and is not Up next.
+  const upNextCount = countUpNext(queue, committedQueueIndex, historyCount);
   const listWalkUpNextCount = resolveListWalkUpNextBadge(currentTrackLabel, upNextCount);
 
   // The then-signposts' reading of the walk: each step's own `trackResume`
@@ -339,6 +340,7 @@ export function usePlayNavigationModel({
       navigationBoardConfig,
       isReachableClimb,
       preparedQueue,
+      historyCount,
     ).item;
     return resolveTrackEndCard({
       navigationState: { atTrackEnd },
@@ -346,6 +348,7 @@ export function usePlayNavigationModel({
       trackLabel: currentTrackLabel,
       queue,
       committedQueueIndex,
+      historyCount,
       queueSuccessor,
       previewOverNow,
       committedClimbName: currentClimbQueueItem?.climb?.name ?? null,
@@ -353,6 +356,7 @@ export function usePlayNavigationModel({
   }, [
     atTrackEnd,
     committedQueueIndex,
+    historyCount,
     currentClimbQueueItem,
     preparedQueue,
     queue,

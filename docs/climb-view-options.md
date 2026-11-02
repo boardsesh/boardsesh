@@ -664,8 +664,8 @@ lines in the Large Content Viewer. Full rules and the walk they read: `climb-lis
 Your climb, Up next waiting      |   Projects · 7 of 20           |
                                  |   Up next first · 4 climbs     |
 An Up next climb, list goes on   | Up next · 2 of 4 · then Proj…  |   the list name is cut first
-At font scale 2 (Android 200%)   |   Up next · 2 of 4             |
-                                 |   then Projects                |   own line while line 2 is free
+Fewer than 6 letters of the name |   Up next · 2 of 4             |
+would fit (timer up, de/es)      |   then Projects                |   line 2's size, while it is free
 A list preview, first swipe      |  Search results · 5 of 23      |
                                  | Preview · Up next: 4 waiting   |   until the next swipe
 ```
@@ -674,14 +674,20 @@ A list preview, first swipe      |  Search results · 5 of 23      |
   "Up next · 2 of 4 · then Projects". The name and the count are separate texts and only the name may shrink; with
   a "then", "Up next" stays whole too, and the list's name after "then" is the one text that shrinks
   (`styles.thenName`). "then {{name}}" is split around the name in every locale (`formatThenParts`), so a language
-  that puts the name first keeps its words whole as well. From font scale 2, "then Projects" takes a line of its own
-  (`resolveThenPlacement`), unless a caption needs line 2; then it stays on line 1 and its name is cut.
+  that puts the name first keeps its words whole as well. Where it goes is measured, not guessed from the text size
+  (`resolveThenPlacement`): two invisible texts, hidden from screen readers, lay the never-cut words out across the
+  frame the bar has now, once with six letters of the name and once with "…". When six letters don't fit, "then
+  Projects" moves to line 2 at caption size while line 2 is free; with line 2 taken it stays as "then …" if that
+  fits, and otherwise it is only spoken (the top bar's label and the board's value keep it). The line never runs
+  under ⌄ or the timer.
 - **Line 2**, in this order: the busy-wall question, a crewmate's put-up (4 s), the preview note ("Preview · Up next:
   4 waiting"), the browse caption ("Preview · not on the wall", or a crew's "Only you see this"), then on your own
-  climb "Up next first · 4 climbs". The "·" is read as a comma (`spokenCaption`).
+  climb "Up next first · 4 climbs". The "·" is read as a comma (`spokenCaption`). The note only spends its caps once
+  it is on line 2, so one hidden behind the busy wall or a crewmate's put-up costs nothing.
 - **One element for VoiceOver and TalkBack**, never a live region. The board below carries the walk's spoken extras
-  (its value "Up next, 4 of 4, then Projects" on an Up next climb, an increment action named "Next in Projects" when
-  Next crosses into the list), and a step that crosses announces "Now in Projects, 8 of 20" on landing.
+  (its value "Up next, 4 of 4, then Projects" on an Up next climb, or the preview note while line 2 shows it, an
+  increment action named "Next in Projects" when Next crosses into the list), and a step that crosses announces "Now
+  in Projects, 8 of 20" on landing.
 - **Workouts**: the stage keeps line 1, with no "then", no note and no "Up next first".
 - **Nothing over the climb**: every sign is text in the top bar or spoken; the one non-text cue is a single
   `hapticSelection` tick on a swipe that crosses from Up next into the list (Next and Previous buttons stay silent).
@@ -964,7 +970,7 @@ The defaults above were picked without data. Two events (#6940) let them be revi
   painted, but the swipe waited over 700 ms in all) and `heldMs` (finger-up to the step); every other step sends
   neither. Every step also says which walk it took (the then-signposts, 2026-11-02): `track` (`list`, `upNext` or
   `queue`: where it landed), `from` (`preview`, or `current` for the climber's own climb; a MiniPlayer step from
-  the last pick is `preview`), `upNextBucket` (`0`, `1-3`, `4-10`, `11+`) and `crossed` (it left Up next for the
+  the last pick is `preview`), `upNextBucket` (`0`, `1`, `2-4`, `5-9`, `10+`, the buckets `Queue Sheet Opened` uses) and `crossed` (it left Up next for the
   list). A Previous right after a `crossed` Next is a crossing that surprised the climber. The rest
   timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
   of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on

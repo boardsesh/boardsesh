@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
+import { registerTrackPageLoader } from '../../../lib/playlists/track-pager';
 import type { BoardConfig } from '../play-drawer-types';
 import { usePlayNavigationModel } from '../use-play-navigation-model';
 
@@ -211,7 +212,7 @@ describe('usePlayNavigationModel', () => {
         listName: 'Projects',
         upNextCount: 2,
         firstUpNextName: 'Climb q1',
-        onWallName: null,
+        backToName: null,
         action: { kind: 'nextInQueue', target: queued[0] },
       });
     });
@@ -370,7 +371,7 @@ describe('usePlayNavigationModel', () => {
         listName: 'Search results',
         upNextCount: 0,
         firstUpNextName: null,
-        onWallName: null,
+        backToName: null,
         action: null,
       });
       // The list ended with Up next: nothing comes after it to name.
@@ -393,7 +394,7 @@ describe('usePlayNavigationModel', () => {
         listName: 'Search results',
         upNextCount: 2,
         firstUpNextName: null,
-        onWallName: 'Climb a',
+        backToName: 'Climb a',
         action: { kind: 'backToCommitted' },
       });
     });
@@ -482,6 +483,43 @@ describe('usePlayNavigationModel', () => {
       });
       expect(onQueued.result.current.signposts).toMatchObject({ nextTrack: 'list', nextCrosses: true });
       expect(onQueued.result.current.navigationState.nextItem?.climb.uuid).toBe('b');
+    });
+
+    // The list's next climb is not loaded yet: "then" still names the list
+    // while its next page can load, and only then.
+    it('names the list after Up next while its next climb is still to load', () => {
+      const firstPageOnly: PlaylistSuggestionSource = {
+        ...walking,
+        climbs: [onList.climb],
+        total: 3,
+        continuation: { loaderId: registerTrackPageLoader(async () => null), nextPage: 1 },
+      };
+      const paging = renderHook(() => usePlayNavigationModel(own(queuedSecond, firstPageOnly)));
+      expect(paging.result.current.currentTrackLabel).toMatchObject({ kind: 'upNext', thenListName: 'Projects' });
+      // A loader that is gone (restored after a restart) ends the track here.
+      const stranded = { ...firstPageOnly, continuation: { loaderId: 'track-pages-gone-1', nextPage: 1 } };
+      const ended = renderHook(() => usePlayNavigationModel(own(queuedSecond, stranded)));
+      expect(ended.result.current.currentTrackLabel).toMatchObject({ kind: 'upNext', thenListName: null });
+    });
+
+    // F3 now-slot mode: with nothing current, History stays in the array and
+    // Up next starts at the line, so the note never counts History.
+    it('never counts History as Up next with nothing current', () => {
+      const played = [item('h1'), item('h2'), item('u1')];
+      const nothingCurrent = {
+        ...inputs(played),
+        currentClimbQueueItem: null,
+        historyCount: 2,
+        drawerPreviewItem: item('s5'),
+        drawerPreviewSuggestionSource: projects,
+        displayedQueueItem: item('s5'),
+        displayedClimb: item('s5').climb,
+      };
+      const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps: nothingCurrent });
+      expect(result.current.signposts.upNextCount).toBe(1);
+      // All of it played: Up next is empty, so no note and no bucket above 0.
+      rerender({ ...nothingCurrent, historyCount: 3 });
+      expect(result.current.signposts.upNextCount).toBe(0);
     });
 
     it('keeps the signposts object while nothing about the walk changed', () => {

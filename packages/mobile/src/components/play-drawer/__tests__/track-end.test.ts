@@ -34,7 +34,14 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 2,
       firstUpNextName: 'next-1',
-      onWallName: null,
+      backToName: null,
+      action: { kind: 'nextInQueue', target: queue[2] },
+    });
+  });
+
+  it('with nothing current, counts and offers Up next from the History line, never History (F3)', () => {
+    expect(card({ committedQueueIndex: -1, historyCount: 2, queueSuccessor: null })).toMatchObject({
+      upNextCount: 2,
       action: { kind: 'nextInQueue', target: queue[2] },
     });
   });
@@ -54,22 +61,22 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 2,
       firstUpNextName: null,
-      onWallName: 'modern love',
+      backToName: 'modern love',
       action: { kind: 'backToCommitted' },
     });
   });
 
   it("cuts Now's name like the first Up next name, and names none it does not know", () => {
     const longName = 'The Very Long Crimp Ladder Traverse Of Doom And Despair';
-    expect(card({ previewOverNow: true, committedClimbName: longName })?.onWallName).toBe(
+    expect(card({ previewOverNow: true, committedClimbName: longName })?.backToName).toBe(
       'The Very Long Crimp Ladder Trav\u2026',
     );
-    expect(card({ previewOverNow: true, committedClimbName: '  ' })?.onWallName).toBeNull();
-    expect(card({ previewOverNow: true })?.onWallName).toBeNull();
+    expect(card({ previewOverNow: true, committedClimbName: '  ' })?.backToName).toBeNull();
+    expect(card({ previewOverNow: true })?.backToName).toBeNull();
   });
 
   it('names no climb on the wall on a committed climb, where the action goes forward', () => {
-    expect(card({ committedClimbName: 'modern love' })?.onWallName).toBeNull();
+    expect(card({ committedClimbName: 'modern love' })?.backToName).toBeNull();
   });
 
   it('says the list is finished, with no queue action, when nothing is Up next', () => {
@@ -77,7 +84,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 0,
       firstUpNextName: null,
-      onWallName: null,
+      backToName: null,
       action: null,
     });
     // An empty queue with no Now: nothing to go back to either.
@@ -92,7 +99,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 3,
       firstUpNextName: 'q1',
-      onWallName: null,
+      backToName: null,
       action: { kind: 'nextInQueue', target: queued[0] },
     });
     // The queue walk from the top lands past what this board cannot draw.
@@ -131,7 +138,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 0,
       firstUpNextName: null,
-      onWallName: null,
+      backToName: null,
       action: null,
     });
     expect(
@@ -186,14 +193,26 @@ describe('truncateClimbName', () => {
 
 describe('Up next count and the queue badge (#6238)', () => {
   it('counts what is queued after Now, and the whole queue without one', () => {
-    expect(countUpNext(4, 1)).toBe(2);
-    expect(countUpNext(4, 3)).toBe(0);
-    expect(countUpNext(4, -1)).toBe(4);
-    expect(countUpNext(0, -1)).toBe(0);
+    const four = [queue[0], queue[1], queue[2], queue[2]];
+    expect(countUpNext(four, 1)).toBe(2);
+    expect(countUpNext(four, 3)).toBe(0);
+    expect(countUpNext(four, -1)).toBe(4);
+    expect(countUpNext([], -1)).toBe(0);
+  });
+
+  it('never counts History with nothing current (F3): Up next starts at the line', () => {
+    const four = [queue[0], queue[1], queue[2], queue[2]];
+    expect(countUpNext(four, -1, 3)).toBe(1);
+    expect(countUpNext(four, -1, 4)).toBe(0);
+    // A line past the end is clamped, and legacy mode (null) counts the whole queue.
+    expect(countUpNext(four, -1, 9)).toBe(0);
+    expect(countUpNext(four, -1, null)).toBe(4);
+    // Now in the queue wins over the line.
+    expect(countUpNext(four, 1, 3)).toBe(2);
   });
 
   it('agrees with the end card', () => {
-    expect(card()?.upNextCount).toBe(countUpNext(queue.length, 1));
+    expect(card()?.upNextCount).toBe(countUpNext(queue, 1));
   });
 
   it('counts Up next only while the header names a list', () => {

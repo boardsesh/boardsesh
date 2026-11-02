@@ -71,8 +71,9 @@ import {
   type SwipeArtWait,
 } from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
-import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
+import { formatBrowseCaption, formatTrackLabelParts, spokenCaption } from './track-label-text';
 import { useThenSignposts } from './use-then-signposts';
+import { resolvePreviewNoteOnLine } from './then-signposts';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
@@ -1729,6 +1730,10 @@ export function PlayCore({
         : null;
   const headerPillState = headerPill?.state ?? null;
   const headerBackTarget = headerPill?.backTarget ?? null;
+  // The wall shows the climber's own climb, by trusted presence: the end card
+  // may then call it "On the wall" (the back chip's 'wall' rule, without its
+  // preview gate). Anything else and the card calls it "Your climb".
+  const committedOnWall = wallPresenceTrusted && wallClimbUuid !== null && wallClimbUuid === committedHeadUuid;
   // Back always lands on the climber's committed climb (the wall's too, when
   // back is to the wall), so the chip names that one to a screen reader.
   const headerBackTargetName = currentClimbQueueItem?.climb.name ?? null;
@@ -2236,6 +2241,19 @@ export function PlayCore({
   const topBarCaption = busyWall.model
     ? formatBusyWallCaption(busyWall.model, t)
     : (crewPutUpCaption ?? thenSignposts.previewNote ?? browseCaption ?? thenSignposts.upNextFirstCaption);
+  // The note on line 2 now: only then does it spend its caps (once per open,
+  // three per run), and a screen reader hears it as the board's value, which
+  // VoiceOver and TalkBack read after the adjust action that earned it.
+  const previewNoteOnLine = resolvePreviewNoteOnLine({
+    previewNote: thenSignposts.previewNote,
+    busyWallUp: busyWall.model != null,
+    crewPutUpCaption,
+  });
+  const { markPreviewNoteShown } = thenSignposts;
+  useEffect(() => {
+    if (previewNoteOnLine !== null) markPreviewNoteShown();
+  }, [previewNoteOnLine, markPreviewNoteShown]);
+  const boardValueText = previewNoteOnLine !== null ? spokenCaption(previewNoteOnLine) : boardSignposts.valueText;
   // The board sheet (Re-light / Turn off all lights / Disconnect). A hold on
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
@@ -3402,7 +3420,7 @@ export function PlayCore({
                               canSwipePrevious={navigationState.canPrevious}
                               onSwipeNext={handleNextAdjust}
                               onSwipePrevious={handlePrevSwipe}
-                              accessibilityValueText={boardSignposts.valueText}
+                              accessibilityValueText={boardValueText}
                               nextActionLabel={boardSignposts.nextActionLabel}
                               previousActionLabel={boardSignposts.previousActionLabel}
                               onResetZoomReady={handleResetZoomReady}
@@ -3439,6 +3457,7 @@ export function PlayCore({
                           {trackEndCardVisible && trackEndCard ? (
                             <TrackEndCard
                               model={trackEndCard}
+                              committedOnWall={committedOnWall}
                               onKeepGoing={handleTrackEndKeepGoing}
                               onDismiss={closeTrackEndCard}
                             />

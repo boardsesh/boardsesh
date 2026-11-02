@@ -167,11 +167,12 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
     () => (prevItem === null ? null : miniPlayerStepWalk(previousTrack, listName)),
     [prevItem, previousTrack, listName],
   );
-  // Up next as the player counts it, for the event's bucket: after the queue's Now.
+  // Up next as the player counts it, for the event's bucket: after the queue's
+  // Now, or from the History line with nothing current.
   const currentUuid = currentClimbQueueItem?.uuid;
   const upNextCount = useMemo(
-    () => countUpNext(queue.length, currentUuid ? queue.findIndex(({ uuid }) => uuid === currentUuid) : -1),
-    [queue, currentUuid],
+    () => countUpNext(queue, currentUuid ? queue.findIndex(({ uuid }) => uuid === currentUuid) : -1, historyCount),
+    [queue, currentUuid, historyCount],
   );
   const from = pick ? 'preview' : 'current';
 

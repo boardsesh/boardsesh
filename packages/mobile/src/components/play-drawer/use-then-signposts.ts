@@ -48,8 +48,18 @@ type ThenSignpostsInput = {
 };
 
 export type ThenSignposts = {
-  /** "Preview · Up next: 4 waiting", on the preview the first swipe landed on. */
+  /**
+   * "Preview · Up next: 4 waiting", on the preview the first swipe landed on.
+   * Line 2 shows it unless the busy wall or a crewmate's put-up outranks it;
+   * the player then calls {@link ThenSignposts.markPreviewNoteShown}.
+   */
   previewNote: string | null;
+  /**
+   * The note above is on line 2 now. Spends this open's showing and one of the
+   * run's {@link PREVIEW_NOTE_RUN_CAP}, once per note: a note hidden behind a
+   * higher caption spends nothing, so the climber still gets to see one.
+   */
+  markPreviewNoteShown: () => void;
   /** "Up next first · 4 climbs", on the climber's own climb. */
   upNextFirstCaption: string | null;
   board: BoardSignpostAccessibility;
@@ -85,6 +95,10 @@ export function useThenSignposts(input: ThenSignpostsInput): ThenSignposts {
   // The climb the note was earned for. It shows while that preview is on
   // screen, and the next step takes it away.
   const [noteClimbUuid, setNoteClimbUuid] = useState<string | null>(null);
+  const noteClimbUuidRef = useRef<string | null>(null);
+  noteClimbUuidRef.current = noteClimbUuid;
+  // The note that spent the caps, so one note never spends them twice.
+  const countedNoteRef = useRef<string | null>(null);
   const shownThisOpenRef = useRef(false);
   // A crossing step's landing, for the announcement: from the climb it left
   // to the climb it lands on.
@@ -105,10 +119,7 @@ export function useThenSignposts(input: ThenSignpostsInput): ThenSignposts {
         shownThisOpen: shownThisOpenRef.current,
         shownThisRun: previewNotesThisRun,
       });
-    if (earnsNote) {
-      shownThisOpenRef.current = true;
-      previewNotesThisRun += 1;
-    }
+    countedNoteRef.current = null;
     setNoteClimbUuid(earnsNote ? targetClimbUuid : null);
 
     const crosses = next ? latest.signposts.nextCrosses : latest.signposts.previousCrosses;
@@ -121,8 +132,17 @@ export function useThenSignposts(input: ThenSignpostsInput): ThenSignposts {
     return resolveStepWalk({ direction: step.direction, signposts: latest.signposts, isPreview: latest.isPreview });
   }, []);
 
+  const markPreviewNoteShown = useCallback(() => {
+    const shownFor = noteClimbUuidRef.current;
+    if (shownFor === null || countedNoteRef.current === shownFor) return;
+    countedNoteRef.current = shownFor;
+    shownThisOpenRef.current = true;
+    previewNotesThisRun += 1;
+  }, []);
+
   const resetForOpen = useCallback(() => {
     shownThisOpenRef.current = false;
+    countedNoteRef.current = null;
     pendingCrossingRef.current = null;
     setNoteClimbUuid(null);
   }, []);
@@ -140,7 +160,7 @@ export function useThenSignposts(input: ThenSignpostsInput): ThenSignposts {
 
   const upNextCount = signposts.upNextCount;
   const showNote = enabled && isPreview && noteClimbUuid !== null && noteClimbUuid === displayedClimbUuid;
-  const previewNote = showNote && upNextCount > 0 ? formatPreviewNote(upNextCount, t, locale) : null;
+  const previewNote = showNote && upNextCount > 0 ? formatPreviewNote(upNextCount, t) : null;
   const upNextFirstCaption = resolveUpNextFirstCaption({
     enabled,
     isPreview,
@@ -153,5 +173,5 @@ export function useThenSignposts(input: ThenSignpostsInput): ThenSignposts {
     [enabled, trackLabel, trackParts, signposts, t],
   );
 
-  return { previewNote, upNextFirstCaption, board, onStep, resetForOpen };
+  return { previewNote, markPreviewNoteShown, upNextFirstCaption, board, onStep, resetForOpen };
 }

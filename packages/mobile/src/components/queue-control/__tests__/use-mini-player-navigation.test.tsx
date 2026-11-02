@@ -7,6 +7,7 @@ import type { TrackPosition } from '@boardsesh/play-view';
 const queue = vi.hoisted(() => ({
   items: [] as ClimbQueueItem[],
   current: null as ClimbQueueItem | null,
+  historyCount: 0 as number | null,
   source: null as PlaylistSuggestionSource | null,
   inSharedSession: false,
   nextClimb: vi.fn(),
@@ -38,7 +39,11 @@ vi.mock('../../../providers/queue-provider', () => ({
     previousClimb: queue.previousClimb,
     setCurrentClimb: queue.setCurrentClimb,
   }),
-  useQueueData: () => ({ queue: queue.items, currentClimbQueueItem: queue.current, historyCount: 0 }),
+  useQueueData: () => ({
+    queue: queue.items,
+    currentClimbQueueItem: queue.current,
+    historyCount: queue.historyCount,
+  }),
   usePlaylistSuggestionSource: () => queue.source,
   useIsSharedSession: () => queue.inSharedSession,
 }));
@@ -131,6 +136,7 @@ function makeItem(uuid: string): ClimbQueueItem {
 describe('useMiniPlayerNavigation', () => {
   beforeEach(() => {
     queue.items = [];
+    queue.historyCount = 0;
     targets.position = { kind: 'off' };
     queue.current = makeItem('current');
     queue.source = null;
@@ -407,6 +413,7 @@ describe('useMiniPlayerNavigation from the last pick', () => {
 
   beforeEach(() => {
     queue.items = [];
+    queue.historyCount = 0;
     targets.position = { kind: 'off' };
     queue.current = makeItem('current');
     queue.source = null;
@@ -650,8 +657,20 @@ describe('useMiniPlayerNavigation names the walk each button takes', () => {
     act(() => result.current.onNext());
     expect(analytics.track).toHaveBeenCalledWith(
       'Queue Navigation',
-      expect.objectContaining({ track: 'list', from: 'current', upNextBucket: '1-3', crossed: true }),
+      expect.objectContaining({ track: 'list', from: 'current', upNextBucket: '2-4', crossed: true }),
     );
+  });
+
+  // F3 now-slot mode: with nothing current, History stays in the array and is
+  // not Up next. The bucket counts from the line, as the queue sheet does.
+  it('never buckets History as Up next with nothing current', () => {
+    queue.current = null;
+    queue.historyCount = 2;
+    queue.items = [makeItem('h1'), makeItem('h2'), makeItem('u1')];
+    targets.nextItem = makeItem('u1');
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(analytics.track).toHaveBeenCalledWith('Queue Navigation', expect.objectContaining({ upNextBucket: '1' }));
   });
 
   it('reports a step from the last pick as from a preview', () => {

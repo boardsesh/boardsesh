@@ -80,14 +80,15 @@ export type QueueNavigationTrack = 'list' | 'upNext' | 'queue';
 /** Where the step was taken from: a preview, or the climber's own climb. */
 export type QueueNavigationFrom = 'preview' | 'current';
 
-/** How many climbs were Up next when the step was taken, in coarse buckets. */
-export type QueueNavigationUpNextBucket = '0' | '1-3' | '4-10' | '11+';
-
 /** The walk the step took, as the call site knows it. */
 export type QueueNavigationWalk = {
   track: QueueNavigationTrack;
   from: QueueNavigationFrom;
-  /** Climbs Up next (after the queue's Now, the whole queue without one) before the step. */
+  /**
+   * Climbs Up next before the step: after the queue's Now, or from the History
+   * line with nothing current (`upNextStart`), the count the queue sheet's
+   * header shows.
+   */
   upNextCount: number;
   /** The step left Up next for the list. */
   crossed: boolean;
@@ -136,7 +137,7 @@ export type QueueNavigationProps = BoardTypeProperty & {
   layoutId: number | null;
   track: QueueNavigationTrack;
   from: QueueNavigationFrom;
-  upNextBucket: QueueNavigationUpNextBucket;
+  upNextBucket: UpNextBucket;
   crossed: boolean;
   /** Only on a swipe that went before its board had painted: what the board was doing. */
   heldArtState?: QueueNavigationArtState;
@@ -152,6 +153,21 @@ export type QueueNavigationProps = BoardTypeProperty & {
  */
 export type QueueSheetSurface = 'player' | 'player_menu' | 'mini_player' | 'mini_player_menu' | 'snackbar';
 
+/**
+ * How many climbs Up next held, bucketed so a breakdown stays readable and no
+ * event carries a queue's exact length: `0`, `1`, `2-4`, `5-9`, `10+`.
+ */
+export type UpNextBucket = '0' | '1' | '2-4' | '5-9' | '10+';
+
+/** {@link UpNextBucket} for a count of Up next climbs. Anything below 1 (or not a number) is `0`. */
+export function upNextBucket(count: number): UpNextBucket {
+  if (!(count >= 1)) return '0';
+  if (count < 2) return '1';
+  if (count < 5) return '2-4';
+  if (count < 10) return '5-9';
+  return '10+';
+}
+
 export type QueueSheetOpenedInput = {
   surface: QueueSheetSurface;
   boardType: string | null | undefined;
@@ -164,14 +180,6 @@ export type QueueNavigationPayload<TName extends string, TProperties> = {
   name: TName;
   properties: TProperties;
 };
-
-/** Up next in the buckets `upNextBucket` reports: none, a few, a session's worth, a long queue. */
-export function upNextBucket(upNextCount: number): QueueNavigationUpNextBucket {
-  if (!(upNextCount >= 1)) return '0';
-  if (upNextCount <= 3) return '1-3';
-  if (upNextCount <= 10) return '4-10';
-  return '11+';
-}
 
 function layoutIdProperty({ boardType, layoutId }: QueueNavigationBoard): number | null {
   if (boardType === 'spray') return null;
