@@ -255,21 +255,66 @@ jobs:
       - name: Resolve simulator destination
         id: simulator
         run: |
-          SIMULATOR_UDID=$(xcrun simctl list devices available -j \
-            | python3 -c "
-          import json, sys
-          listing = json.load(sys.stdin)
+          python3 <<'PY'
+          import json, os, re, subprocess, sys, uuid
+
+          def fail(message):
+              print(f"::error::{message}", file=sys.stderr)
+              sys.exit(1)
+
+          def simctl(*arguments):
+              try:
+                  result = subprocess.run(
+                      ['xcrun', 'simctl', *arguments],
+                      capture_output=True, text=True, timeout=30,
+                  )
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  fail(f"Simulator {' '.join(arguments)} failed: {error}")
+              if result.returncode != 0:
+                  fail(f"Simulator {' '.join(arguments)} failed ({result.returncode}): {result.stderr.strip()}")
+              return result.stdout
+
+          try:
+              listing = json.loads(simctl('list', '--json'))
+              devices = listing['devices']
+              runtimes = {runtime['identifier']: runtime for runtime in listing['runtimes']}
+              device_types = {device_type['identifier'] for device_type in listing['devicetypes']}
+          except (KeyError, TypeError, json.JSONDecodeError) as error:
+              fail(f"Simulator inventory has no compatible runtime/device metadata: {error}")
+
+          # Preserve coverage: use the same newest-runtime/first-iPhone policy,
+          # but allocate our own device instead of booting image-baked state.
+          selected = None
           for runtime in sorted(listing['devices'].keys(), reverse=True):
               if 'iOS' not in runtime:
                   continue
-              for device in listing['devices'][runtime]:
-                  if 'iPhone' in device['name'] and device['isAvailable']:
-                      print(device['udid'])
-                      sys.exit(0)
-          sys.exit(1)
-          ")
-          echo "udid=$SIMULATOR_UDID" >> "$GITHUB_OUTPUT"
-          echo "Using simulator: $SIMULATOR_UDID"
+              for device in devices[runtime]:
+                  if 'iPhone' in device.get('name', '') and device.get('isAvailable'):
+                      selected = (runtime, device)
+                      break
+              if selected:
+                  break
+          if selected is None:
+              fail('Simulator inventory has no available iPhone.')
+          runtime, template = selected
+          device_type = template.get('deviceTypeIdentifier')
+          if not runtimes.get(runtime, {}).get('isAvailable') or device_type not in device_types:
+              fail(f"Selected iPhone {template['name']} has no compatible runtime/device metadata.")
+          run_id = os.environ.get('GITHUB_RUN_ID')
+          attempt = os.environ.get('GITHUB_RUN_ATTEMPT')
+          if not run_id or not attempt:
+              fail('Simulator allocation requires GITHUB_RUN_ID and GITHUB_RUN_ATTEMPT.')
+          name = f"Boardsesh CI {run_id}-{attempt}-{uuid.uuid4().hex[:8]}"
+          simulator_udid = simctl('create', name, device_type, runtime).strip()
+          if not re.fullmatch(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}', simulator_udid):
+              fail(f"Simulator create returned a malformed UUID: {simulator_udid!r}")
+          existing_udids = {device.get('udid', '').upper() for group in devices.values() for device in group}
+          if simulator_udid.upper() in existing_udids:
+              fail(f"Simulator create returned an existing UUID: {simulator_udid}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"udid={simulator_udid}\n")
+          print(f"Created simulator: {name} ({simulator_udid}); {template['name']} on {runtime}")
+          PY
 
       - name: Check embedded framework ABI
         run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Release-iphonesimulator/Boardsesh.app

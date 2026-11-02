@@ -132,7 +132,21 @@ export const RULES: readonly PatchRule[] = [
       'hasPostedAppContextDestroys = true',
       'moduleRegistry.post(event: .appContextDestroys)',
     ],
-    patchedKey: 'expo-modules-core@58.0.26',
+    patchedKey: 'expo-modules-core@58.0.28',
+  },
+  {
+    package: 'expo-modules-core',
+    file: 'ios/Core/Functions/AsyncFunctionDefinition.swift',
+    // The existential pattern cast crashes Swift 6.4.2 SILGen when consuming
+    // FunctionCallResult. Match upstream's inferred Exception binding while
+    // preserving ownership and rejecting the same error through the promise.
+    sentinels: [
+      'switch consume result {',
+      'case .success(let value):\n          promise.resolve(value)',
+      'case .failure(let error):\n          promise.reject(error)',
+    ],
+    forbiddenSubstrings: ['case .failure(let error as any Error):'],
+    patchedKey: 'expo-modules-core@58.0.28',
   },
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
@@ -329,7 +343,7 @@ export const RULES: readonly PatchRule[] = [
     package: 'react-native',
     file: 'ReactCommon/react/renderer/scheduler/Scheduler.h',
     sentinels: ['std::shared_ptr<std::atomic<bool>> delegateInvalidated_;'],
-    patchedKey: 'react-native@0.88.0',
+    patchedKey: 'react-native@0.88.1',
   },
   {
     package: 'react-native',
@@ -342,7 +356,7 @@ export const RULES: readonly PatchRule[] = [
       'if (*invalidated) {\n              return;',
       'if (*invalidated) {\n            return;',
     ],
-    patchedKey: 'react-native@0.88.0',
+    patchedKey: 'react-native@0.88.1',
   },
   {
     package: 'react-native-ble-plx',
@@ -371,13 +385,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.21.6',
+    patchedKey: '@expo/fingerprint@0.21.7',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeIsolatedStoreModulePath'],
-    patchedKey: '@expo/fingerprint@0.21.6',
+    patchedKey: '@expo/fingerprint@0.21.7',
   },
   {
     package: 'react-native-screens',
@@ -388,7 +402,7 @@ export const RULES: readonly PatchRule[] = [
       'findContentScrollViewInManagedSubtreeFrom',
       'RNSManagedContentScrollViewSearchMaxDepth',
     ],
-    patchedKey: 'react-native-screens@4.30.0',
+    patchedKey: 'react-native-screens@4.30.1',
   },
   // `scrollEdgeEffects` on a native-stack screen reaches a FlashList only through
   // this fallback: upstream walks first children, which stops at any leading
@@ -402,7 +416,7 @@ export const RULES: readonly PatchRule[] = [
       'scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);',
       'if (view != screen && [view isKindOfClass:RNSScreenView.class]) {',
     ],
-    patchedKey: 'react-native-screens@4.30.0',
+    patchedKey: 'react-native-screens@4.30.1',
   },
   // The bottom-accessory relayout nudge. No single sentinel is enough, because
   // this hunk has TWO regressions to guard, in opposite directions.
@@ -441,7 +455,7 @@ export const RULES: readonly PatchRule[] = [
       '[_controller setBottomAccessory:nil animated:YES];',
       '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
     ],
-    patchedKey: 'react-native-screens@4.30.0',
+    patchedKey: 'react-native-screens@4.30.1',
     forbiddenInMethod: [
       {
         method: 'applyBottomAccessoryVisibility',
@@ -484,7 +498,7 @@ export const RULES: readonly PatchRule[] = [
       'static const CGFloat RNSTabsBottomAccessoryMaxWidth = 689.0;',
       'return CGSizeMake(MIN(size.width, RNSTabsBottomAccessoryMaxWidth), size.height);',
     ],
-    patchedKey: 'react-native-screens@4.30.0',
+    patchedKey: 'react-native-screens@4.30.1',
     forbiddenInMethod: [
       {
         method: 'sizeThatFits',
@@ -528,7 +542,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@58.0.23',
+    patchedKey: '@expo/ui@58.0.25',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -539,7 +553,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@58.0.23',
+    patchedKey: '@expo/ui@58.0.25',
   },
   // SwiftUI RNHostView owners can overlap for the same hosted React view.
   // The shared native handler must survive until every owner releases its lease;
@@ -563,7 +577,7 @@ export const RULES: readonly PatchRule[] = [
       'if (leaseCount.unsignedIntegerValue > 1)',
       '[(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];',
     ],
-    patchedKey: '@expo/ui@58.0.23',
+    patchedKey: '@expo/ui@58.0.25',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -581,7 +595,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@58.0.17',
+    patchedKey: 'expo-image@58.0.18',
   },
   // The embedded bundle's commitTime. `expo-updates` launches whichever update
   // has the newest one, and upstream stamps BUILD time — so a long native build
@@ -604,7 +618,7 @@ export const RULES: readonly PatchRule[] = [
       'Math.min(committerTime, now)',
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
-    patchedKey: 'expo-updates@58.0.18',
+    patchedKey: 'expo-updates@58.0.19',
   },
 ];
 
@@ -615,7 +629,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@58.0.15':
+  'expo-dev-launcher@58.0.17':
     'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
     "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +

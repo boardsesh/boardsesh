@@ -71,7 +71,7 @@ index eb34427..28b0aa0 100644
  
  @end
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index 419edef..ec73805 100644
+index 2900e12..e426c5f 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { parseSnapPoint } from './types';

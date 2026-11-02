@@ -1,5 +1,5 @@
 diff --git a/ios/Core/AppContext.swift b/ios/Core/AppContext.swift
-index 8fc3ed6..39d3448 100644
+index 8a8685b..350fbe6 100644
 --- a/ios/Core/AppContext.swift
 +++ b/ios/Core/AppContext.swift
 @@ -41,6 +41,10 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
@@ -13,7 +13,7 @@ index 8fc3ed6..39d3448 100644
    /**
     The legacy module registry with modules written in the old-fashioned way.
     */
-@@ -624,8 +628,10 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
+@@ -651,8 +655,10 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
      sharedObjectRegistry.clear()
      classRegistry.clear()
  
@@ -26,7 +26,7 @@ index 8fc3ed6..39d3448 100644
      }
    }
  
-@@ -706,9 +712,22 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
+@@ -733,9 +739,22 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
        // Otherwise the JSCRuntime asserts may fail on deallocation.
        releaseRuntimeObjects()
      }
@@ -49,7 +49,7 @@ index 8fc3ed6..39d3448 100644
    /**
     Cleans things up before deallocation.
     */
-@@ -718,9 +737,7 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
+@@ -745,9 +764,7 @@ public class AppContext: NSObject, EXAppContextProtocol, @unchecked Sendable {
      // Post an event to the registry only if it was already created.
      // If we let it to lazy-load here, that would crash since the module registry
      // has a weak reference to the app context which is being deallocated.
@@ -60,3 +60,16 @@ index 8fc3ed6..39d3448 100644
    }
  
    @objc
+diff --git a/ios/Core/Functions/AsyncFunctionDefinition.swift b/ios/Core/Functions/AsyncFunctionDefinition.swift
+index 48ee585..7b5e168 100644
+--- a/ios/Core/Functions/AsyncFunctionDefinition.swift
++++ b/ios/Core/Functions/AsyncFunctionDefinition.swift
+@@ -197,7 +197,7 @@ public class AsyncFunctionDefinition<Args, FirstArgType, ReturnType>: AnyAsyncFu
+         switch consume result {
+         case .success(let value):
+           promise.resolve(value)
+-        case .failure(let error as any Error):
++        case .failure(let error):
+           promise.reject(error)
+         }
+       }
