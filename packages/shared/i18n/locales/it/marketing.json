@@ -793,12 +793,12 @@
       },
       "open": {
         "title": "Apri il menu",
-        "p1": "Tieni premuta la riga di un blocco. Si solleva in una scheda con Registra una salita, Aggiungi alla playlist e Condividi in alto e il resto sotto.",
-        "p2": "Preferisci un tocco? In Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi, attiva Mostra il pulsante azioni rapide per avere un ⋮ su ogni riga dei Blocchi.",
-        "shotAlt": "La scheda delle azioni sul blocco",
-        "shotCaption": "Tre pulsanti rapidi in alto, la lista completa sotto.",
+        "p1": "Tieni premuta la riga di un blocco e le sue azioni si aprono in un menu. Su iPhone la riga si solleva sopra la lista oscurata, con il menu sotto. Tocca un'azione, o tocca fuori per chiuderlo.",
+        "p2": "Preferisci un tocco? In Impostazioni, poi Blocchi e gradi, poi Elenco dei blocchi, attiva Mostra il pulsante azioni rapide per avere un ⋮ su ogni riga dei Blocchi. Apre lo stesso menu.",
+        "shotAlt": "La riga di un blocco sollevata sopra la lista, con le sue azioni sotto",
+        "shotCaption": "La riga in alto, le sue azioni a gruppi sotto.",
         "clipAlt": "Tenere premuta la riga di un blocco",
-        "clipCaption": "Tieni premuta la riga e la scheda si solleva da sola."
+        "clipCaption": "Tieni premuta la riga e il menu si apre da solo."
       },
       "preview": {
         "title": "Tocca un blocco per vederne l'anteprima",
@@ -811,11 +811,11 @@
         "drivingLink": "Come iniziare e smettere di guidare il pannello"
       },
       "quick": {
-        "title": "I tre pulsanti in alto",
+        "title": "Le azioni che userai di più",
         "tick": "Registra una salita apre il foglio della salita.",
-        "playlist": "Aggiungi alla playlist è una checklist. Spunta per aggiungere, togli la spunta per rimuovere.",
+        "playlist": "Aggiungi alla playlist apre una checklist delle tue playlist. Spunta per aggiungere, togli la spunta per rimuovere.",
         "share": "Condividi passa un link al foglio di condivisione del telefono.",
-        "p1": "La scheda si chiude quando parte un'azione, tranne Aggiungi alla playlist."
+        "p1": "Il menu si chiude appena scegli un'azione."
       },
       "rest": {
         "title": "Il resto della lista",

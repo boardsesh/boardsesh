@@ -793,12 +793,12 @@
       },
       "open": {
         "title": "Ouvrir le menu",
-        "p1": "Garde une ligne de bloc appuyée. Elle se soulève en carte, avec Enregistrer une croix, Ajouter à la playlist et Partager en haut et le reste en dessous.",
-        "p2": "Tu préfères une touche ? Sous Paramètres, puis Blocs et cotations, puis Liste des blocs, active Afficher le bouton d'actions rapides pour un ⋮ sur chaque ligne de Blocs.",
-        "shotAlt": "La carte d'actions d'un bloc",
-        "shotCaption": "Trois boutons rapides en haut, la liste complète en dessous.",
+        "p1": "Garde une ligne de bloc appuyée et ses actions s'ouvrent dans un menu. Sur iPhone, la ligne se soulève au-dessus de la liste assombrie, avec le menu en dessous. Touche une action, ou touche à côté pour fermer.",
+        "p2": "Tu préfères une touche ? Sous Paramètres, puis Blocs et cotations, puis Liste des blocs, active Afficher le bouton d'actions rapides pour un ⋮ sur chaque ligne de Blocs. Il ouvre le même menu.",
+        "shotAlt": "Une ligne de bloc soulevée au-dessus de la liste, avec ses actions en dessous",
+        "shotCaption": "La ligne en haut, ses actions en groupes en dessous.",
         "clipAlt": "Garder une ligne de bloc appuyée",
-        "clipCaption": "Garde la ligne appuyée et la carte se soulève toute seule."
+        "clipCaption": "Garde la ligne appuyée et le menu s'ouvre tout seul."
       },
       "preview": {
         "title": "Touche un bloc pour le voir en aperçu",
@@ -811,11 +811,11 @@
         "drivingLink": "Comment commencer et arrêter de piloter la board"
       },
       "quick": {
-        "title": "Les trois boutons du haut",
+        "title": "Les actions que tu utiliseras le plus",
         "tick": "Enregistrer une croix ouvre la fiche d'ascension.",
-        "playlist": "Ajouter à la playlist est une liste à cocher. Coche pour ajouter, décoche pour retirer.",
+        "playlist": "Ajouter à la playlist ouvre une liste à cocher de tes playlists. Coche pour ajouter, décoche pour retirer.",
         "share": "Partager passe un lien à la fiche de partage de ton téléphone.",
-        "p1": "La carte se ferme dès qu'une action part, sauf Ajouter à la playlist."
+        "p1": "Le menu se ferme dès que tu choisis une action."
       },
       "rest": {
         "title": "Le reste de la liste",

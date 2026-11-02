@@ -793,12 +793,12 @@
       },
       "open": {
         "title": "Open the menu",
-        "p1": "Press and hold a climb row. It lifts into a card with Log a tick, Add to Playlist and Share on top and the rest below.",
-        "p2": "Prefer a tap? Under Settings, then Climbs & grades, then Climb list, turn on Show quick-actions button for a ⋮ on every Climbs row.",
-        "shotAlt": "The climb actions card",
-        "shotCaption": "Three quick buttons on top, the full list below.",
+        "p1": "Press and hold a climb row and its actions open in a menu. On iPhone the row lifts above the dimmed list with the menu underneath. Tap an action, or tap outside to close.",
+        "p2": "Prefer a tap? Under Settings, then Climbs & grades, then Climb list, turn on Show quick-actions button for a ⋮ on every Climbs row. It opens the same menu.",
+        "shotAlt": "A climb row lifted above the list, with its actions underneath",
+        "shotCaption": "The row on top, its actions in groups below.",
         "clipAlt": "Holding a climb row",
-        "clipCaption": "Hold the row and the card lifts on its own."
+        "clipCaption": "Hold the row and the menu opens on its own."
       },
       "preview": {
         "title": "Tap a climb to preview it",
@@ -811,11 +811,11 @@
         "drivingLink": "How to start and stop driving the wall"
       },
       "quick": {
-        "title": "The three buttons across the top",
+        "title": "The actions you'll use most",
         "tick": "Log a tick opens the ascent sheet.",
-        "playlist": "Add to Playlist is a checklist. Tick to add, untick to remove.",
+        "playlist": "Add to Playlist opens a checklist of your playlists. Tick to add, untick to remove.",
         "share": "Share hands a link to your phone's share sheet.",
-        "p1": "The card closes when an action fires, except Add to Playlist."
+        "p1": "The menu closes as soon as you pick an action."
       },
       "rest": {
         "title": "The rest of the list",
