@@ -26,12 +26,12 @@ type WallControlBulbProps = {
  * corner. It draws a `WallControlModel` and nothing else; the face comes from
  * `model.holderFace`, never from board presence, so it goes the moment the
  * link does. Taps and holds go to `useWallControl`, which buzzes and logs.
- * During Put on board's timed drive a violet arc drains round it and its value
+ * During Put on board's timed drive an amber arc drains round it and its value
  * says the time left (spec B3).
  */
 function WallControlBulbComponent({ model, showFace = true, onPress, onLongPress }: WallControlBulbProps) {
   const text = useWallControlText(model);
-  const windowValue = useWindowValueText('bulb', model.lightWindow);
+  const windowValue = useWindowValueText(model.lightWindow);
   const hold = model.longPress === 'sheet';
   const face = showFace ? model.holderFace : null;
   return (

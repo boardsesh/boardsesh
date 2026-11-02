@@ -537,7 +537,8 @@
       "wallHeldWithClimb": "Hai il pannello: {{name}}, {{grade}}",
       "wallHeldHint": "Libera il pannello",
       "wallOpenLabel": "Il pannello è libero",
-      "wallOpenHint": "Prende la parete"
+      "wallOpenHint": "Prende la parete",
+      "drivingValue": "Guidi tu il pannello"
     },
     "relayToWall": "Metti il tuo blocco in parete",
     "peerDrivingBoard": "Qualcun altro sta controllando il pannello"

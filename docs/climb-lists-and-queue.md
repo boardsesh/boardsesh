@@ -204,7 +204,9 @@ a fresh open (a notification, a deep link), the MiniPlayer's ⏮ ⏭, and every 
   driving, the swipe's own first. A step along a list is placed as Next places one: a fresh
   copy at the Now slot, never a climb pulled out of History.
 - **The MiniPlayer's bulb** takes the wall button's live fill while driving, so a driver on
-  the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`).
+  the Climbs tab knows a tap lights the wall (`resolveWallBulbLook` says `driving`). During
+  Put on board's timed drive it is the amber bulb in an amber ring that drains to the
+  drive's end instead, as on the Live Activity (`BulbDriveCue`).
 - **Stopping it.** Press **You are driving the wall** to stop and keep the link. With the
   default settings, later taps and swipes preview. A board-button tap (Put on board) lights
   that climb and opens the keep-lighting window (`startedBy: 'tap'`: 45 s by default, renewed

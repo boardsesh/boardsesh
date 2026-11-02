@@ -537,7 +537,8 @@
       "wallHeldWithClimb": "Vous avez le mur : {{name}}, {{grade}}",
       "wallHeldHint": "Libère le mur",
       "wallOpenLabel": "Le mur est libre",
-      "wallOpenHint": "Prend le mur"
+      "wallOpenHint": "Prend le mur",
+      "drivingValue": "Tu pilotes la board"
     },
     "relayToWall": "Allumer ton bloc au mur",
     "peerDrivingBoard": "Quelqu’un d’autre pilote la board"

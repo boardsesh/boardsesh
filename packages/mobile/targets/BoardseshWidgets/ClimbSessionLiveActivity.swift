@@ -445,9 +445,11 @@ private struct NavigationButtonLabel: View {
 /// The lit bulb, wrapped by what the wall does with the next pick (2.7):
 /// an amber ring that drains as Put on board's timed drive runs out (the
 /// in-app frost shrinking toward the bulb), a full amber disc for an
-/// open-ended drive, or the bulb alone while picks are previews. Shape
-/// carries the state, so it survives greyscale and Differentiate Without
-/// Colour; the ring and the disc are decoration, hidden from VoiceOver.
+/// open-ended drive, or the bulb alone while picks are previews. The ring is
+/// the only sign of the time left: no digits beside it (owner decision
+/// 2026-11-02), as on the app's MiniPlayer bulb. Shape carries the state, so
+/// it survives greyscale and Differentiate Without Colour; the ring and the
+/// disc are decoration, hidden from VoiceOver.
 @available(iOS 17.0, *)
 private struct LightingBulbGlyph: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -496,14 +498,6 @@ private struct LightingBulbGlyph: View {
     }
 }
 
-/// The time a timed drive has left, counting down on its own. Only a timed
-/// drive has it: an open-ended drive has no end to count.
-/// `Text(timerInterval:)` holds at 0:00 until the next render shows previews.
-@available(iOS 17.0, *)
-private func lightingWindowDigitsText(start: Date, end: Date) -> Text {
-    Text(timerInterval: start...end, countsDown: true)
-}
-
 @available(iOS 17.0, *)
 private struct WallControlStatus: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -524,23 +518,12 @@ private struct WallControlStatus: View {
                 // bulb's soft amber glow is the only warm accent on the card.
                 .frame(width: 44, height: 44)
                 .shadow(color: palette.warning.opacity(glowOpacity), radius: lighting == .previews ? 6 : 0)
-            if case let .window(start, end) = lighting {
-                lightingWindowDigitsText(start: start, end: end)
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundColor(palette.warning)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    // Timer text claims every point it is offered; a fixed frame
-                    // keeps it from pushing Prev and Next around.
-                    .frame(width: 40, alignment: .leading)
-            }
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         // One element: the label names the state ("Driving the wall" for any
-        // drive), the value carries a timed drive's time left (read once by the
-        // system timer text, never as a percentage).
+        // drive) and the value says what a pick does. No live number: the
+        // ring shows a timed drive's time left (owner decision 2026-11-02).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(lightingLabel)
         .accessibilityValue(lightingValue)
@@ -556,8 +539,7 @@ private struct WallControlStatus: View {
 
     private var lightingValue: Text {
         switch lighting {
-        case let .window(start, end): return lightingWindowDigitsText(start: start, end: end)
-        case .driving: return Text("Every climb you pick lights up")
+        case .window, .driving: return Text("Every climb you pick lights up")
         case .previews: return Text("Picks are previews")
         }
     }
@@ -1038,7 +1020,7 @@ struct ClimbSessionLiveActivity: Widget {
             } compactLeading: {
                 CompactLeadingView(connection: state.connection, rest: rest, lighting: lighting)
             } compactTrailing: {
-                CompactTrailingView(text: context.state.climbDifficulty, rest: rest, lighting: lighting)
+                CompactTrailingView(text: context.state.climbDifficulty, rest: rest)
             } minimal: {
                 MinimalView(connection: state.connection, rest: rest, lighting: lighting)
             }
@@ -1103,9 +1085,9 @@ private struct CompactLeadingView: View {
     let lighting: LightingRenderPhase
 
     var body: some View {
-        // Leading and trailing read as one piece: the ring here, the digits
-        // across the camera. The rest timer wins whenever it runs; without
-        // one, a timed drive's ring or an open-ended drive's disc; otherwise
+        // The rest timer wins whenever it runs (its ring here, its digits
+        // across the camera); without one, a timed drive's ring or an
+        // open-ended drive's disc, with the grade still trailing; otherwise
         // just the bulb.
         if rest == nil, lighting != .previews {
             LightingBulbGlyph(lighting: lighting, size: 22, ringedGlyphSize: 9, bareGlyphSize: 14)
@@ -1129,7 +1111,6 @@ private struct CompactTrailingView: View {
     @Environment(\.colorScheme) private var colorScheme
     let text: String
     let rest: ResolvedRestTimer?
-    let lighting: LightingRenderPhase
 
     var body: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
@@ -1141,19 +1122,9 @@ private struct CompactTrailingView: View {
                 width: 46,
                 textAlignment: .center
             )
-        } else if case let .window(start, end) = lighting {
-            // A timed drive's time left, in the amber of its ring. An
-            // open-ended drive has no end to count, so it keeps the grade.
-            lightingWindowDigitsText(start: start, end: end)
-                .font(.system(size: 15, weight: .semibold))
-                .monospacedDigit()
-                .foregroundColor(palette.warning)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .multilineTextAlignment(.center)
-                .frame(width: 46, alignment: .center)
-                .accessibilityLabel(Text("Driving the wall"))
         } else {
+            // A drive keeps the grade here: the leading ring alone shows a
+            // timed drive's time left (owner decision 2026-11-02).
             let grade = VGradeFormatter.displayGrade(text)
             Text(verbatim: grade)
                 .font(.system(size: 15, weight: .bold))

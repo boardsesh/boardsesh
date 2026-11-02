@@ -148,8 +148,24 @@ flat amber fallback; the label still says what the next press does.
   Driver mode instead, which also ends a window's clock. Solo with **Light the board as I
   swipe** explicitly enabled, `tapDrive: 'resume'` clears a stop on this link so that saved
   opt-in applies again.
+- **Driving on the MiniPlayer (owner decision, 2026-11-02).** Every MiniPlayer bulb shows how long the wall keeps
+  lighting picks, the Live Activity's pattern (`BulbDriveCue` in `queue-control/bulb-drive-cue.ts`): during Put on
+  board's timed drive the amber bulb sits in an amber ring (`WallWindowRing`, the theme's `warning`) that drains
+  from full to nothing at the drive's end and fills again each time a climb lights; an open-ended drive keeps the
+  amber disc; nobody driving, nothing extra. That covers the bar's own bulb (`BoardControlIndicator`), the last
+  pick's Put on board bulb (`PickPutOnBoardBulb`, where an open-ended drive is a whole ring, since a disc would
+  say the pick is lit) and the tablet or open-Duo bulb (`PaneWallControlBulb`). The ring has no halo under it, so
+  it meets the bar itself: at least 3:1 on Liquid Glass and Material, light and dark (3.2:1 at worst, the held
+  Material bar in light). The drain is one Reanimated `withTiming` from the store's `expiresAt` on the UI thread
+  (5 s steps under Reduce Motion, from a timer that only writes the shared value), so the bar never re-renders on
+  a tick. A screen reader hears "Driving the wall" as the bulb's value, with no number: a value stepping every
+  10 s would re-render the bar and could be read again while focus rests there, and the drive's start
+  announcement already says how long it lasts. The open Duo's bulb is already labelled "You are driving the
+  wall", so it adds no value. Taps and holds are unchanged. The collapsed iOS platter has no bulb once you hold
+  the board, so the ring shows on the open platter only. The first row's bulb in the player draws the same amber
+  ring and keeps its 10 s spoken value.
 - **Driving reaches the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws an amber
-  ring that drains around the bulb for a timed drive, and a full amber disc for an open-ended one; Android's header
+  ring that drains around the bulb for a timed drive, with no digits, and a full amber disc for an open-ended one; Android's header
   says "Driving the wall", with the system countdown for a timed drive and no clock for an open-ended one. Both keep
   showing the wall's climb, never the MiniPlayer's last pick. Lock-screen and notification **Next** / **Previous**
   light the wall and start or renew a timed drive once it is lit; under **Right away** they light that one climb and

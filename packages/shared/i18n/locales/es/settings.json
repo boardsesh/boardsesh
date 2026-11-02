@@ -537,7 +537,8 @@
       "wallHeldWithClimb": "Tienes el muro: {{name}}, {{grade}}",
       "wallHeldHint": "Libera el muro",
       "wallOpenLabel": "El muro está libre",
-      "wallOpenHint": "Toma el muro"
+      "wallOpenHint": "Toma el muro",
+      "drivingValue": "Estás al mando del plafón"
     },
     "relayToWall": "Poner tu bloque en el plafón",
     "peerDrivingBoard": "Otra persona está controlando el plafón"

@@ -379,8 +379,8 @@ Lock your iPhone. The Live Activity widget should update within a few seconds sh
 Driving the wall (2.7) on the Lock Screen, in the Dynamic Island and in the Android notification: Put on board's timed drive (Settings › Board › **Stop driving after**) and an open-ended drive. Background in `docs/live-activity-board-control.md`.
 
 1. Start a party session, connect to the board, and leave **Stop driving after** on the default (45 s) and **Disconnect Bluetooth when driving ends** off.
-2. Tap **Put on board**, then lock the phone. The Lock Screen bulb sits in an amber ring that drains, with the time left beside it (VoiceOver: "Driving the wall", then the time left). On Android the notification header reads "Driving the wall" with the system countdown beside it.
-3. Tap **Next** on the Lock Screen while the drive runs. The wall lights the next climb and the clock restarts at 0:45.
+2. Tap **Put on board**, then lock the phone. The Lock Screen bulb sits in an amber ring that drains, with no digits beside it (VoiceOver: "Driving the wall", then "Every climb you pick lights up"). The compact Dynamic Island shows the ring and keeps the grade. On Android the notification header reads "Driving the wall" with the system countdown beside it.
+3. Tap **Next** on the Lock Screen while the drive runs. The wall lights the next climb and the ring fills again (Android: the clock restarts at 0:45).
 4. Wait out the drive. Within a second of its end the ring goes and the bulb stands alone ("Wall lit, picks are previews" for VoiceOver); the Android header drops its line, its clock and the bulb small icon.
 5. With nothing driving, tap **Next** again. The press starts a fresh timed drive from the settings. With **Until I stop** (or on a MoonBoard at its default) it starts an open-ended drive instead: a full amber disc with no time beside it, and on Android "Driving the wall" with no clock.
 6. Swipe the wall button in the app to drive, then lock the phone. The disc shows with no clock (a swipe drive is open-ended), and Android's header reads "Driving the wall" with no clock.

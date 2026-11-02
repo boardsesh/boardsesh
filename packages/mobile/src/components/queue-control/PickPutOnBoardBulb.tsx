@@ -12,7 +12,10 @@ import { lastPickOpenOptions, type LastPick } from '../../lib/last-pick-store';
 import { hapticMedium } from '../../lib/haptics';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import { glassSize } from '../../theme/layout';
+import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
+import { WallWindowRing } from '../play-drawer/WallWindowRing';
 import { getBoardConnectionLabel, getBoardControlIndicatorVisual } from './board-control-indicator-state';
+import { resolveBulbDriveCue } from './bulb-drive-cue';
 import type { PickBulb } from './use-pick-bulb';
 
 /**
@@ -58,6 +61,9 @@ type PickBulbSlotProps = {
  * bulb, or the pin on a board with no lights) and a tap puts the pick on the
  * board (`usePickPutOnBoard`). A climb this wall can't light, with no board at
  * the gym to walk to, gets no bulb, as the player offers no board control.
+ * While this phone drives the wall the unlit pick's bulb is ringed in amber
+ * (`BulbDriveCue`): the timed drive's ring drains, an open-ended drive's stays
+ * whole, so the bar still says how long picks keep lighting.
  */
 export function PickBulbSlot({
   pick,
@@ -106,6 +112,7 @@ function PickPutOnBoardBulb({
   const { systemColors, brandColors } = useTheme();
   const differentiateWithoutColor = useDifferentiateWithoutColor();
   const { ledless, bluetooth, localConnected, inAppBoardConnection, holderDisplayName } = useBoardConnectionState();
+  const lightingMode = useDriveLightingMode();
   const { open: openBoardControls } = useBleControlSheet();
   const putOnBoard = usePickPutOnBoard(pick);
   // The board controls, as on the usual bulb: gated on a real Bluetooth link,
@@ -123,6 +130,12 @@ function PickPutOnBoardBulb({
   );
   // No board bound: nothing to put it on, as the bar's usual bulb.
   if (!bluetooth) return null;
+  // This pick isn't the lit climb, so an open-ended drive is a whole ring, never the disc.
+  const driveCue = resolveBulbDriveCue({
+    mode: lightingMode,
+    drivesTheWall: inAppBoardConnection === 'connectedByMe' && localConnected && !ledless,
+    showsLitClimb: false,
+  });
   const visual = getBoardControlIndicatorVisual({
     boardConnection: 'disconnected',
     connectedColor: brandColors.warning,
@@ -147,6 +160,9 @@ function PickPutOnBoardBulb({
     ledless,
     holderDisplayName,
   });
+  const accessibilityValue = driveCue
+    ? `${connectionValue}, ${tSettings('ble.barControl.drivingValue')}`
+    : connectionValue;
   const accessibilityActions =
     enableLongPress && localConnected ? [{ name: 'longpress', label: tSettings('ble.holdForControls') }] : undefined;
   return (
@@ -157,7 +173,7 @@ function PickPutOnBoardBulb({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityValue={{ text: connectionValue }}
+      accessibilityValue={{ text: accessibilityValue }}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={accessibilityActions ? handleAccessibilityAction : undefined}
       hitSlop={8}
@@ -168,6 +184,7 @@ function PickPutOnBoardBulb({
       ]}
     >
       <Icon maxFontSizeMultiplier={1} name={visual.iconName} size={iconSize} color={visual.iconColor} />
+      {driveCue === 'drain' || driveCue === 'whole' ? <WallWindowRing size={size} kind={driveCue} /> : null}
     </PressableSurface>
   );
 }

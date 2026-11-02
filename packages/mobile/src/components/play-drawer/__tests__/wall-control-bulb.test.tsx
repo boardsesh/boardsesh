@@ -56,7 +56,7 @@ vi.mock('../../ble/BleLightbulbButton', () => ({
 // only whether the bulb asks for it, and what it says.
 vi.mock('../WallWindowRing', () => ({
   WallWindowRing: ({ size }: { size: number }) => createElement('s', { 'data-ring': String(size) }),
-  useWindowValueText: (kind: string, active: boolean) => (active ? `window-${kind}` : null),
+  useWindowValueText: (active: boolean) => (active ? 'window-bulb' : null),
 }));
 
 import { WallControlBulb } from '../WallControlBulb';
