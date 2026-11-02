@@ -207,6 +207,12 @@ describe('lastPickChange', () => {
       'carries',
     ],
     ['the restore landed without a current', loading, { ...loading, restored: true }, 'keeps'],
+    [
+      'a first climb went up after the restore brought none back',
+      { ...loading, restored: true },
+      { ...loading, currentItemUuid: 'b', restored: true },
+      'ends',
+    ],
     ['the current changed while the restore loads', loading, { ...loading, currentItemUuid: 'b' }, 'ends'],
     [
       'the restore flag turned with a current already there',

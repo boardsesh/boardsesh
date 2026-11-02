@@ -168,7 +168,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
   useReachableBoardKeys: () => new Set<string>(),
 }));
 
-import { QueueProvider, useQueue, useQueueActions, useQueueData } from '../queue-provider';
+import { QueueProvider, useQueue, useQueueActions, useQueueData, useQueueRestored } from '../queue-provider';
 
 type QueueData = ReturnType<typeof useQueueData>;
 
@@ -361,5 +361,30 @@ describe('QueueProvider narrow contexts — useQueueData', () => {
     });
     expect(readSnapshot().playlistSuggestionSource).toBeNull();
     expect(actionOnlyRender).toHaveBeenCalledTimes(beforeRenders);
+  });
+
+  // Plan item 5: LastPickWatcher tells the restore's change of current from the
+  // climber's own by reading the two together, so they must commit together.
+  it('says useQueueRestored() in the same commit that lands the saved current', async () => {
+    const saved = makeQueueItem('saved-current');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [saved],
+      currentClimbQueueItem: saved,
+      playlistSuggestionSource: null,
+      savedAt: '2026-11-01T08:00:00.000Z',
+    });
+    const seen: Array<{ current: string | null; restored: boolean }> = [];
+    function RestoreProbe() {
+      const { currentClimbQueueItem } = useQueueData();
+      const restored = useQueueRestored();
+      useEffect(() => {
+        seen.push({ current: currentClimbQueueItem?.uuid ?? null, restored });
+      });
+      return null;
+    }
+    render(createElement(QueueProvider, null, createElement(RestoreProbe)));
+    await waitFor(() => expect(seen.at(-1)).toEqual({ current: 'saved-current', restored: true }));
+    expect(seen[0]).toEqual({ current: null, restored: false });
+    expect(seen.filter((entry) => entry.current === 'saved-current' && !entry.restored)).toEqual([]);
   });
 });
