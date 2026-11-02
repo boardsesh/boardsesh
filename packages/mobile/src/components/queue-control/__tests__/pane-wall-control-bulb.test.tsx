@@ -44,7 +44,10 @@ vi.mock('../../PressableSurface', () => ({
       children,
     ),
 }));
-vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { secondaryLabel: '#888' },
@@ -132,7 +135,9 @@ describe('PaneWallControlBulb', () => {
     expect(bulb.getAttribute('data-value')).toBeNull();
     // The amber bulb alone inside the ring: no disc to hide the arc, no halo under it.
     expect(bulb.getAttribute('data-style')).not.toContain('backgroundColor');
-    expect(windowed.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
+    const glyph = windowed.container.querySelector('[data-icon]');
+    expect(glyph?.getAttribute('data-icon')).toBe('lightbulb.fill');
+    expect(glyph?.getAttribute('data-color')).toBe('#FBBF24');
     cleanup();
     const plain = renderBulb(LIT);
     expect(plain.container.querySelector('[data-ring]')).toBeNull();
@@ -150,6 +155,8 @@ describe('PaneWallControlBulb', () => {
     expect(container.querySelector('[data-ring]')).toBeNull();
     expect(getByRole('button').getAttribute('data-style')).toContain('"backgroundColor":"#FBBF24"');
     expect(container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('lightbulb.fill');
+    // Dark ink on the dark scheme's pale amber disc.
+    expect(container.querySelector('[data-icon]')?.getAttribute('data-color')).toBe('#16111F');
   });
 
   it.each([
