@@ -169,7 +169,13 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
       statusLabel = t('playView.tickBar.attemptLabel');
       break;
   }
-  const climb = tickToClimb(tick);
+  // Memoized on the tick: the menu target feeds useClimbMenu, which rebuilds the
+  // native menu's rows whenever its identity changes.
+  const climb = useMemo(() => tickToClimb(tick), [tick]);
+  const boardConfig = useMemo(
+    () => (tick.layoutId ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard) : null),
+    [tick],
+  );
   const historyRowLabel = t('mobile.session.historyRowAria', {
     name: tick.climbName ?? t('detail.unknownClimb'),
     status: statusLabel,
@@ -177,9 +183,6 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const rowAccessibilityLabel = isMultiFrameClimb(climb?.framesCount)
     ? `${historyRowLabel}, ${t('mobile.climbRow.frameCount', { ns: 'climbs', count: climb.framesCount })}`
     : historyRowLabel;
-  const boardConfig = tick.layoutId
-    ? renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard)
-    : null;
   const subtitleParts = [
     participant?.displayName ?? null,
     status === 'flash' ? null : t('detail.attemptCount', { count: tick.attemptCount }),
@@ -198,16 +201,20 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
     onPress(tick);
   };
 
-  const menuTarget =
-    climb && boardConfig
-      ? getClimbActions(climb, {
-          boardName: boardConfig.boardName,
-          layoutId: boardConfig.layoutId,
-          sizeId: boardConfig.sizeId,
-          setIds: boardConfig.setIds.join(','),
-          angle: tick.angle,
-        })
-      : null;
+  const tickAngle = tick.angle;
+  const menuTarget = useMemo(
+    () =>
+      climb && boardConfig
+        ? getClimbActions(climb, {
+            boardName: boardConfig.boardName,
+            layoutId: boardConfig.layoutId,
+            sizeId: boardConfig.sizeId,
+            setIds: boardConfig.setIds.join(','),
+            angle: tickAngle,
+          })
+        : null,
+    [climb, boardConfig, tickAngle, getClimbActions],
+  );
 
   return (
     <View>

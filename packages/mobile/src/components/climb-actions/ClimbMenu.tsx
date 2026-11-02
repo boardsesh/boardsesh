@@ -1,4 +1,4 @@
-import { useCallback, type ReactElement, type RefObject } from 'react';
+import { useCallback, useRef, type ReactElement, type RefObject } from 'react';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { AppMenu } from '../AppMenu';
@@ -38,27 +38,37 @@ export function ClimbMenu({
     },
     [rows],
   );
-  if (rows.length === 0) return children ?? null;
+  // Once a row has had a menu, its anchor stays mounted when the rows drop to
+  // none (a queue row in edit mode): unwrapping would remount the row and its
+  // thumbnail on every flip. A hold on it then opens nothing. A row that never
+  // had a menu costs no anchor at all.
+  const anchoredRef = useRef(false);
+  if (rows.length > 0) anchoredRef.current = true;
   const label = accessibilityLabel ?? t('mobile.climbRow.moreActions');
   // A row's hold menu is never remounted on a new target: that would remount
   // the row it wraps (thumbnail, board-art request) on every recycled cell. It
   // takes the key as data and retires only its drawn menu. The ⋯ button holds
   // no row, so a remount is the cheap, certain way to close it.
-  return children ? (
-    <AppMenu
-      actions={rows}
-      onSelectIndex={select}
-      trigger="longPress"
-      menuKey={menuKey}
-      menuRef={menuRef}
-      style={style}
-      liftPreview={liftPreview}
-      previewBackgroundColor={previewBackgroundColor}
-      previewOverlayColor={previewOverlayColor}
-    >
-      {children}
-    </AppMenu>
-  ) : (
+  if (children) {
+    if (!anchoredRef.current) return children;
+    return (
+      <AppMenu
+        actions={rows}
+        onSelectIndex={select}
+        trigger="longPress"
+        menuKey={menuKey}
+        menuRef={menuRef}
+        style={style}
+        liftPreview={liftPreview}
+        previewBackgroundColor={previewBackgroundColor}
+        previewOverlayColor={previewOverlayColor}
+      >
+        {children}
+      </AppMenu>
+    );
+  }
+  if (rows.length === 0) return null;
+  return (
     <AppMenu
       key={menuKey}
       iconName="more"

@@ -111,6 +111,10 @@ const mocks = vi.hoisted(() => ({
   // Row actions, hoisted so tests can assert a stale row never reaches them.
   playNext: vi.fn(),
   getClimbActions: vi.fn(),
+  // What the row's last onOpenActions call returned: its menu target.
+  lastActionsTarget: undefined as unknown,
+  // Every onOpenActions the rows were handed, to check it stays one function.
+  actionsHandlers: new Set<unknown>(),
   openAddToPlaylist: vi.fn(),
   // Mutable per-test: whether another climber is in the session.
   isSharedSession: false,
@@ -535,23 +539,35 @@ vi.mock('../../../../src/components/ClimbListRow', () => ({
     climb: Climb;
     onPress?: (pressedClimb: Climb) => void;
     onPlayNext?: (queuedClimb: Climb) => void;
-    onOpenActions?: (actionsClimb: Climb) => void;
+    onOpenActions?: (actionsClimb: Climb) => unknown;
     onOpenPlaylist?: (playlistClimb: Climb) => void;
     selected?: boolean;
-  }) => [
-    createElement(
-      'button',
-      { key: 'row', onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
-      rowClimb.name,
-    ),
-    createElement('button', { key: 'queue', onClick: () => onPlayNext?.(rowClimb) }, `queue:${rowClimb.name}`),
-    createElement('button', { key: 'actions', onClick: () => onOpenActions?.(rowClimb) }, `actions:${rowClimb.name}`),
-    createElement(
-      'button',
-      { key: 'playlist', onClick: () => onOpenPlaylist?.(rowClimb) },
-      `playlist:${rowClimb.name}`,
-    ),
-  ],
+  }) => {
+    mocks.actionsHandlers.add(onOpenActions);
+    return [
+      createElement(
+        'button',
+        { key: 'row', onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
+        rowClimb.name,
+      ),
+      createElement('button', { key: 'queue', onClick: () => onPlayNext?.(rowClimb) }, `queue:${rowClimb.name}`),
+      createElement(
+        'button',
+        {
+          key: 'actions',
+          onClick: () => {
+            mocks.lastActionsTarget = onOpenActions?.(rowClimb);
+          },
+        },
+        `actions:${rowClimb.name}`,
+      ),
+      createElement(
+        'button',
+        { key: 'playlist', onClick: () => onOpenPlaylist?.(rowClimb) },
+        `playlist:${rowClimb.name}`,
+      ),
+    ];
+  },
 }));
 
 vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
@@ -1084,6 +1100,7 @@ beforeEach(() => {
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
+  mocks.lastActionsTarget = undefined;
   mocks.isRefetching = false;
   mocks.nativeRootHeader = true;
   mocks.renderNativeChrome = false;
@@ -1763,6 +1780,7 @@ describe('ClimbList previous results standing in for a loading search', () => {
     mocks.isPlaceholderData = true;
     mocks.playNext.mockClear();
     mocks.getClimbActions.mockClear();
+    mocks.getClimbActions.mockImplementation((menuClimb: Climb) => ({ climb: menuClimb, boardConfig: {} }));
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
 
@@ -1771,19 +1789,35 @@ describe('ClimbList previous results standing in for a loading search', () => {
     fireEvent.click(getByText('playlist:Moonage'));
 
     expect(mocks.playNext).not.toHaveBeenCalled();
-    expect(mocks.getClimbActions).not.toHaveBeenCalled();
+    // The row keeps a menu; a command picked on it is dropped.
+    const target = mocks.lastActionsTarget as { resolveClimb?: () => Promise<Climb | null> } | undefined;
+    await expect(target?.resolveClimb?.()).resolves.toBeNull();
     expect(mocks.openAddToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it("keeps one menu builder through a search's placeholder rows", async () => {
+    mocks.actionsHandlers.clear();
+    const { findByText, rerender } = render(<ClimbList />);
+    await findByText('Moonage');
+    mocks.isPlaceholderData = true;
+    rerender(<ClimbList />);
+    mocks.isPlaceholderData = false;
+    rerender(<ClimbList />);
+    expect(mocks.actionsHandlers.size).toBe(1);
   });
 
   it('runs queue, actions and playlist on a fresh row', async () => {
     mocks.playNext.mockClear();
     mocks.getClimbActions.mockClear();
+    mocks.getClimbActions.mockImplementation((menuClimb: Climb) => ({ climb: menuClimb, boardConfig: {} }));
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
 
     fireEvent.click(await findByText('queue:Moonage'));
     fireEvent.click(getByText('actions:Moonage'));
     fireEvent.click(getByText('playlist:Moonage'));
+    const target = mocks.lastActionsTarget as { resolveClimb?: () => Promise<Climb | null> } | undefined;
+    await expect(target?.resolveClimb?.()).resolves.toEqual(expect.objectContaining({ uuid: 'climb-1' }));
 
     // The right swipe is Play next (#6772).
     expect(mocks.playNext).toHaveBeenCalledWith({

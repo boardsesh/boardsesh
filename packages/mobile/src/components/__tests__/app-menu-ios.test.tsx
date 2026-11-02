@@ -273,6 +273,23 @@ describe('AppMenu (iOS) hosting', () => {
     expect(item.isConnected).toBe(false);
   });
 
+  it('keeps the hosted row when its rows drop to none, and draws no items for a hold', () => {
+    const props = {
+      trigger: 'longPress' as const,
+      children: createElement('span', null, 'Climb row'),
+      onSelectIndex: vi.fn(),
+    };
+    const { container, getByText, rerender } = render(createElement(AppMenu, { ...props, actions, menuKey: 'a' }));
+    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
+    const row = getByText('Climb row');
+    rerender(createElement(AppMenu, { ...props, actions: [], menuKey: 'edit' }));
+    expect(getByText('Climb row')).toBe(row);
+    expect(container.querySelector('[data-context-items]')).toBeNull();
+    rerender(createElement(AppMenu, { ...props, actions, menuKey: 'a' }));
+    expect(getByText('Climb row')).toBe(row);
+    expect(container.querySelector('[data-context-items]')).not.toBeNull();
+  });
+
   it('draws the lifted preview on the surface the row sits on', () => {
     const { container } = render(
       createElement(AppMenu, {

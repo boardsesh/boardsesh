@@ -223,7 +223,9 @@ export function AppMenu(props: AppMenuProps) {
                     row
                   )}
                 </ContextMenu.Trigger>
-                <ContextMenu.Items>{menuItems}</ContextMenu.Items>
+                {/* No items slot with no rows: SwiftUI shows no menu for a
+                    hold, and the row stays in the same Host. */}
+                {resolved.length > 0 ? <ContextMenu.Items>{menuItems}</ContextMenu.Items> : null}
               </ContextMenu>
             </Host>
           );

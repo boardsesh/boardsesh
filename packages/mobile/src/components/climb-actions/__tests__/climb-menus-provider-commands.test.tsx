@@ -167,4 +167,17 @@ describe('climb menu commands through the root command host', () => {
     expect(presenters.tick).not.toHaveBeenCalled();
     expect(presenters.report).not.toHaveBeenCalled();
   });
+
+  it("opens Add to playlist in the modal route's own sheet when the menu names one", async () => {
+    // The moderation feed is a root `modal`: the root playlist sheet would
+    // present under it and vanish.
+    const presenters = playerPresenters();
+    unregister = registerClimbActionPresenters(presenters);
+    const openPlaylistInRoute = vi.fn();
+    renderRow({ climb, boardConfig: board, openPlaylistInRoute });
+    fireEvent.click(screen.getByText('actions.playlist.popover.title'));
+    await waitFor(() => expect(openPlaylistInRoute).toHaveBeenCalledExactlyOnceWith(climb, board));
+    expect(openers.openAddToPlaylist).not.toHaveBeenCalled();
+    expect(presenters.playlist).not.toHaveBeenCalled();
+  });
 });

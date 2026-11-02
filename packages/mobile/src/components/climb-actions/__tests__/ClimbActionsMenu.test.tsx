@@ -12,6 +12,8 @@ const runtime = vi.hoisted(() => ({
   openPlaylist: vi.fn(),
   board: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
   queue: [] as { uuid: string }[],
+  current: null as { uuid: string } | null,
+  nowSlotMode: false,
   activeClimbUuid: null as string | null,
   renders: [] as string[],
 }));
@@ -26,7 +28,7 @@ vi.mock('../../AppMenu', () => ({
   }) =>
     createElement(
       'div',
-      null,
+      { 'data-app-menu': true },
       props.children,
       props.actions.map((action, index) =>
         createElement(
@@ -55,8 +57,11 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useActiveClimbUuid: () => runtime.activeClimbUuid,
-  useQueueData: () => ({ queue: runtime.queue, currentClimbQueueItem: null }),
-  useQueueActions: () => ({ findReplayFromHereItem: () => null }),
+  useQueueData: () => ({
+    queue: runtime.queue,
+    currentClimbQueueItem: runtime.current,
+    nowSlotMode: runtime.nowSlotMode,
+  }),
 }));
 vi.mock('../use-climb-actions', () => ({
   useClimbActions: (args: { climb: Climb; onAfterAction?: () => void }) => {
@@ -98,6 +103,8 @@ function deferred<T>() {
 beforeEach(() => {
   runtime.generation = 0;
   runtime.queue = [];
+  runtime.current = null;
+  runtime.nowSlotMode = false;
   runtime.activeClimbUuid = null;
   runtime.renders = [];
   vi.clearAllMocks();
@@ -120,6 +127,49 @@ function CountedRows({ rows }: { rows: ClimbActionsTarget[] }) {
   );
 }
 afterEach(cleanup);
+
+describe('ClimbMenu anchor', () => {
+  const oneRow = [{ id: 'tick' as const, label: 'Log', run: () => undefined }];
+  let mounts = 0;
+  function Body() {
+    const [mountId] = useState(() => {
+      mounts += 1;
+      return mounts;
+    });
+    return <span data-mount={mountId}>Row body</span>;
+  }
+
+  it('keeps a row anchored when its rows drop to none, so the row is not remounted', () => {
+    const { container, rerender } = render(
+      <ClimbMenu rows={oneRow} menuKey="a">
+        <Body />
+      </ClimbMenu>,
+    );
+    const mount = container.querySelector('[data-mount]')?.getAttribute('data-mount');
+    rerender(
+      <ClimbMenu rows={[]} menuKey="edit">
+        <Body />
+      </ClimbMenu>,
+    );
+    expect(container.querySelector('[data-app-menu]')).not.toBeNull();
+    rerender(
+      <ClimbMenu rows={oneRow} menuKey="a">
+        <Body />
+      </ClimbMenu>,
+    );
+    expect(container.querySelector('[data-mount]')?.getAttribute('data-mount')).toBe(mount);
+  });
+
+  it('adds no anchor to a row that never had a menu', () => {
+    const { container } = render(
+      <ClimbMenu rows={[]} menuKey="none">
+        <Body />
+      </ClimbMenu>,
+    );
+    expect(container.querySelector('[data-app-menu]')).toBeNull();
+    expect(container.textContent).toBe('Row body');
+  });
+});
 
 describe('shared native climb menu commands', () => {
   it('renders metadata without mounting command hooks or resolving climbs', () => {
@@ -176,6 +226,22 @@ describe('shared native climb menu commands', () => {
     expect(runtime.renders).toEqual(['a']);
     // On the wall already, so its menu drops Play next; the other keeps it.
     expect(screen.getAllByText('mobile.climbActions.playNext')).toHaveLength(1);
+  });
+
+  it('offers Replay from here on a History row only while now-slot mode is on', () => {
+    // The mode flips without touching the queue or the current climb.
+    runtime.queue = [{ uuid: 'history-1' }, { uuid: 'now' }];
+    runtime.current = runtime.queue[1];
+    runtime.nowSlotMode = true;
+    const history = target('a', { queueItemUuid: 'history-1' });
+    const { rerender } = render(<Harness selected={history} />);
+    expect(screen.queryByText('mobile.climbActions.replayFromHere')).not.toBeNull();
+    runtime.nowSlotMode = false;
+    rerender(<Harness selected={history} />);
+    expect(screen.queryByText('mobile.climbActions.replayFromHere')).toBeNull();
+    runtime.nowSlotMode = true;
+    rerender(<Harness selected={history} />);
+    expect(screen.queryByText('mobile.climbActions.replayFromHere')).not.toBeNull();
   });
 
   it('includes board, angle, queue slot, and credentials in native menu identity', () => {

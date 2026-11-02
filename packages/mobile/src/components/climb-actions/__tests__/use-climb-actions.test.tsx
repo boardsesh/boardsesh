@@ -607,6 +607,7 @@ describe('useClimbActions colours and dispatch', () => {
   });
 
   it('playNext.run forwards the queue slot when the menu came from a queue row', () => {
+    ctrl.queueItems = [{ uuid: 'queue-slot-7', climb }];
     const onAfterAction = vi.fn();
     const { result } = renderActions({
       climb,
@@ -623,6 +624,23 @@ describe('useClimbActions colours and dispatch', () => {
     // Fire-and-forget: the cross-board prompt sits above the dismissed sheet, so
     // the dismiss must not wait on the promise.
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('playNext.run matches by climb when the slot is not in this queue', () => {
+    // A board-sheet row carries the slot from the wall's session, which may be
+    // another climber's. planPlayNext would insert a second copy for it.
+    ctrl.queueItems = [{ uuid: 'local-copy', climb }];
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      queueItemUuid: 'their-session-slot',
+    });
+    result.current.find((action) => action.id === 'playNext')?.run();
+    expect(openers.playNext).toHaveBeenCalledWith({
+      item: { uuid: 'queue-uuid', climb },
+      queueItemUuid: undefined,
+    });
   });
 
   describe('Replay from here (F3)', () => {

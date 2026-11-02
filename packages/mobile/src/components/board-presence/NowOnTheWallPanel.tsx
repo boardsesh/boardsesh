@@ -695,20 +695,30 @@ function NowOnTheWallPanelComponent(
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
       });
       if (!target) return null;
-      const actionGeneration = actionGenerationRef.current;
-      const actionBoardSignature = boardConfigSignatureRef.current;
-      const isCurrentTarget = () =>
-        actionGeneration === actionGenerationRef.current && actionBoardSignature === boardConfigSignatureRef.current;
+      // The board is stamped when the row builds its menu, during render; the
+      // generation only once an action is picked. The panel bumps the generation
+      // on mount, after the first render's menus exist, so stamping it here
+      // would leave those menus doing nothing. A board switch rebuilds every
+      // row's menu (boardConfigSignature is a dep).
+      const actionBoardSignature = boardConfigSignature;
       return {
         ...target,
         resolveClimb: async () => {
-          if (!isCurrentTarget()) return null;
+          if (actionBoardSignature !== boardConfigSignatureRef.current) return null;
+          const actionGeneration = actionGenerationRef.current;
           const action = await resolveAction(presenceClimb, actionContext);
-          return isCurrentTarget() ? (action?.climb ?? null) : null;
+          if (
+            actionGeneration !== actionGenerationRef.current ||
+            actionBoardSignature !== boardConfigSignatureRef.current
+          ) {
+            return null;
+          }
+          if (!action) notifyActionFailed();
+          return action?.climb ?? null;
         },
       };
     },
-    [getActionContext, onOpenActions, resolveAction],
+    [boardConfigSignature, getActionContext, notifyActionFailed, onOpenActions, resolveAction],
   );
 
   const handleClose = useCallback(() => {

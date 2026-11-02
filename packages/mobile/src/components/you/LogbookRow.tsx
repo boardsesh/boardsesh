@@ -314,7 +314,8 @@ export const LogbookRow = memo(function LogbookRow({
     onActivateRef.current(ascentRef.current);
   }, []);
 
-  const menuTarget = onOpenActions?.(ascent) ?? null;
+  // Memoized: a fresh target rebuilds the native menu's rows on every render.
+  const menuTarget = useMemo(() => onOpenActions?.(ascent) ?? null, [onOpenActions, ascent]);
   const menu = useClimbMenu(menuTarget);
 
   const handleEdit = useCallback(() => {

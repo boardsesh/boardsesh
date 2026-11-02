@@ -66,7 +66,12 @@ const managedSheet = vi.hoisted(() => ({
   lastOnFullyDismissed: null as (() => void) | null,
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
-const climbRows = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+// `renderTargets`: when set, the row builds its menu during render, as the real
+// ClimbListRow does in a useMemo, and keeps the first one per climb.
+const climbRows = vi.hoisted(() => ({
+  props: [] as Record<string, unknown>[],
+  renderTargets: null as Map<string, unknown> | null,
+}));
 const menuViewability = vi.hoisted(() => ({
   changed: null as
     | ((input: {
@@ -314,6 +319,11 @@ vi.mock('../../ActivityIndicator', () => ({
 vi.mock('../../ClimbListRow', () => ({
   ClimbListRow: (props: ClimbListRowMockProps) => {
     climbRows.props.push(props);
+    const renderTargets = climbRows.renderTargets;
+    const renderClimbUuid = props.climb?.uuid;
+    if (renderTargets && renderClimbUuid && !renderTargets.has(renderClimbUuid)) {
+      renderTargets.set(renderClimbUuid, props.onOpenActions?.(props.climb));
+    }
     const content = props.renderContent
       ? props.renderContent({
           climb: props.climb,
@@ -484,6 +494,7 @@ describe('BoardSheet', () => {
     managedSheet.lastOnFullyDismissed = null;
     managedSheet.dismissAndWait.mockClear();
     climbRows.props = [];
+    climbRows.renderTargets = null;
     thumbnails.props = [];
     safeArea.bottom = 0;
   });
@@ -1161,6 +1172,68 @@ describe('BoardSheet', () => {
     expect(target?.climb.uuid).toBe('flaky-climb');
     await expect(target?.resolveClimb?.()).resolves.toBe(detail);
     expect(graphql.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs a command from a menu built on the first render, before the bounded load lands', async () => {
+    presence.history = [makeClimb('first-climb', 2, { frames: 'first-frames', angle: 30 })];
+    climbRows.renderTargets = new Map();
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    const detail = makeFullClimb('first-climb', { angle: 30 });
+    const climbRequest = createDeferred<{ climb: Climb | null }>();
+    graphql.request.mockReturnValueOnce(climbRequest.promise);
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    act(() => ref.current?.present());
+    // Built while the row rendered, before the panel's mount effects ran.
+    const firstTarget = climbRows.renderTargets.get('first-climb') as ClimbActionsTarget | null | undefined;
+    expect(firstTarget?.climb.uuid).toBe('first-climb');
+    const pendingClimb = firstTarget?.resolveClimb?.();
+    await act(async () => {
+      climbRequest.resolve({ climb: detail });
+      await climbRequest.promise;
+    });
+    expect(await pendingClimb).toBe(detail);
+  });
+
+  it('says the action failed when a menu command cannot load its climb', async () => {
+    presence.history = [makeClimb('lost-climb', 2, { frames: 'lost-frames', angle: 30 })];
+    climbRows.renderTargets = new Map();
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    graphql.request.mockRejectedValue(new Error('offline'));
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    await act(async () => {
+      ref.current?.present();
+    });
+    const firstTarget = climbRows.renderTargets.get('lost-climb') as ClimbActionsTarget | null | undefined;
+    await expect(firstTarget?.resolveClimb?.()).resolves.toBeNull();
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.boardPresence.actionFailed', 'error');
   });
 
   it('hydrates only the initial bounded rows, then the newly visible history row', async () => {

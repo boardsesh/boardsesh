@@ -425,6 +425,8 @@ type QueueDataContextValue = {
    * then treats exactly as today.
    */
   historyCount?: number | null;
+  /** F3 now-slot mode is on: History rows can be replayed from. Absent reads as off. */
+  nowSlotMode?: boolean;
 };
 
 export const QueueDataContext = createContext<QueueDataContextValue | null>(null);

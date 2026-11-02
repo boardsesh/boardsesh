@@ -114,7 +114,9 @@ stops a root opener being passed in their place, so `play-drawer-cross-board.tes
 each sheet through the player and checks it is the player's own. The favourite row
 goes through the bar heart's own toggle (`handleToggleFavoriteFromMenu`), so the two never
 disagree. Off the player, native climb menus use the root presenter or dismiss their source sheet
-through its coordinator before presenting the next surface. **Any new ⋯ row that opens
+through its coordinator before presenting the next surface. The moderation feed is a root `modal`
+too, so it mounts its own `AddToPlaylistSheet` and hands its card menus `openPlaylistInRoute`
+(`ClimbActionsTarget`); its Tick, Beta and Report still use the root openers. **Any new ⋯ row that opens
 a native sheet needs an in-tree opener**, or it re-hits the bug.
 
 **Every native sheet must go through the presentation coordinator.** Sibling `@expo/ui`

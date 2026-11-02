@@ -47,6 +47,7 @@ import type { WindowAnchorPoint } from '../components/navigation/AnchoredPopover
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-privacy-scoped-state';
+import { useDeferredSheetData } from '../hooks/use-deferred-sheet-data';
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { findGymBoardForClimb, findGymBoardToConnectForClimb } from '../lib/boards/gym-board-for-climb';
@@ -107,13 +108,20 @@ export type OpenClimbActionsOptions = {
    * Its presence also marks a menu opened inside the player: only those route
    * Tick, Playlist, Beta and Report to the player's own sheets. */
   dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
+  /** Add to playlist hosted inside the modal route the menu was opened from
+   * (the moderation feed). The root sheet would present under that route and
+   * vanish (docs/mobile-sheets-vs-routes.md, rule 1). Inside `/play` the
+   * player's own sheet wins. */
+  openPlaylistInRoute?: (climb: Climb, boardConfig: BoardConfig) => void;
 };
 
 /** A native menu's immutable climb, board and source-slot snapshot. */
 export type ClimbActionsTarget = OpenClimbActionsOptions & {
   climb: Climb;
   boardConfig: BoardConfig;
-  /** Presence menus hydrate the snapshot only when a command is selected. */
+  /** Run when a command is picked: the climb to run it on, or null to drop it.
+   * Presence menus hydrate the wall's snapshot here; the Climbs list drops a
+   * pick on a stale placeholder row. */
   resolveClimb?: () => Promise<Climb | null>;
 };
 
@@ -257,39 +265,6 @@ type DrawerHostValue = {
 };
 
 const DrawerHostContext = createContext<DrawerHostValue | null>(null);
-
-/**
- * Data-backed sheet state that survives the dismiss animation. `open(value)`
- * shows it; `close()` requests the animated close (flips `visible` false) but
- * keeps the data mounted; `clearIfClosed()` (wired to the sheet's onFullyDismissed)
- * drops the data only once the animation has settled and the sheet wasn't
- * re-opened — so the native Host never unmounts mid-animation (an iOS freeze
- * vector) and the content doesn't blank out while sliding away.
- */
-function useDeferredSheetData<T>(): {
-  data: T | null;
-  visible: boolean;
-  open: (value: T) => void;
-  close: () => void;
-  clearIfClosed: () => void;
-} {
-  const [data, setData] = usePrivacyScopedState<T>(null);
-  const [visible, setVisible] = useState(false);
-  const visibleRef = useRef(visible);
-  visibleRef.current = visible;
-  const open = useCallback(
-    (value: T) => {
-      setData(value);
-      setVisible(true);
-    },
-    [setData],
-  );
-  const close = useCallback(() => setVisible(false), []);
-  const clearIfClosed = useCallback(() => {
-    if (!visibleRef.current) setData(null);
-  }, [setData]);
-  return { data, visible: visible && data !== null, open, close, clearIfClosed };
-}
 
 export function useDrawerHost(): DrawerHostValue {
   const context = useContext(DrawerHostContext);

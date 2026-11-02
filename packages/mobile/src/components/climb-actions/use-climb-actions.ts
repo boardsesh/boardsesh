@@ -30,6 +30,7 @@ import {
   useQueueSessionId,
 } from '../../providers/queue-provider';
 import { readQueuePickLanding } from '../play-drawer/queue-pick-landing';
+import { resolveQueuedSlotUuid } from '../play-drawer/play-drawer-menu-rows';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
@@ -392,8 +393,14 @@ export function useClimbActions({
     const commands: Record<ClimbActionId, () => void> = {
       playNext: () => {
         // Fire-and-forget: the cross-board prompt (when it fires) sits above
-        // the dismissed sheet, so `after()` must not wait on it.
-        void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
+        // the dismissed sheet, so `after()` must not wait on it. A slot that is
+        // not in this queue (a board-sheet row from another climber's session)
+        // matches by climb instead, so the copy already in Up next moves rather
+        // than a second copy landing.
+        void playNext({
+          item: { uuid: randomUUID(), climb },
+          queueItemUuid: resolveQueuedSlotUuid(getQueueSnapshot().queue, queueItemUuid),
+        });
         after();
       },
       queue: () => {

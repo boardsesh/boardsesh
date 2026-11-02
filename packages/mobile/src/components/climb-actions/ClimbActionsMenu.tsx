@@ -19,7 +19,7 @@ import {
   type BoardConfig,
   type ClimbActionsTarget,
 } from '../../providers/drawer-host-provider';
-import { useQueueActions, useQueueData, useActiveClimbUuid } from '../../providers/queue-provider';
+import { useQueueData, useActiveClimbUuid } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
@@ -113,14 +113,16 @@ export function ClimbMenusProvider({
   const [selection, setSelection] = usePrivacyScopedState<Selection>(null);
   const nonce = useRef(0);
   const activeClimbUuid = useActiveClimbUuid();
-  const { queue, currentClimbQueueItem } = useQueueData();
-  const { findReplayFromHereItem } = useQueueActions();
+  // The rows `findReplayFromHereItem` replays from: History, in now-slot mode
+  // only. Subscribed to the mode itself, so turning it off or on redraws the
+  // menus without waiting for a queue edit. Indexed once, not scanned per row.
+  const { queue, currentClimbQueueItem, nowSlotMode = false } = useQueueData();
   const replayableSlots = useMemo(() => {
+    if (!nowSlotMode) return EMPTY_SLOTS;
     const currentIndex = queue.findIndex((item) => item.uuid === currentClimbQueueItem?.uuid);
-    // Check the queue mode once, then index History once instead of scanning per row.
-    if (currentIndex <= 0 || !findReplayFromHereItem(queue[0].uuid)) return EMPTY_SLOTS;
+    if (currentIndex <= 0) return EMPTY_SLOTS;
     return new Set(queue.slice(0, currentIndex).map((item) => item.uuid));
-  }, [queue, currentClimbQueueItem, findReplayFromHereItem]);
+  }, [queue, currentClimbQueueItem, nowSlotMode]);
   const queueState = useMemo<MenuQueueState>(
     () => ({ activeClimbUuid, replayableSlots, activeBoardConfig }),
     [activeClimbUuid, replayableSlots, activeBoardConfig],
@@ -214,11 +216,13 @@ function ClimbActionRunner({
 }) {
   const { openAddToPlaylist } = useDrawerHost();
   // Only a menu opened inside `/play` (it carries the route's dismiss waiter)
-  // hands its sheets to the player. Any other menu, even one on a modal pushed
-  // over the player, presents from the root as it always did.
+  // hands its sheets to the player. A modal route that hosts its own playlist
+  // sheet (the moderation feed) gets Add to playlist there; anything else
+  // presents from the root as it always did.
   const presenters = target.dismissPlayerAndWait ? getClimbActionPresenters() : null;
   const selectPlaylist = useCallback(() => {
     if (presenters) openPresentedClimbAction(presenters, 'playlist', target);
+    else if (target.openPlaylistInRoute) target.openPlaylistInRoute(target.climb, target.boardConfig);
     else openAddToPlaylist(target.climb, target.boardConfig);
     onComplete();
   }, [openAddToPlaylist, target, onComplete, presenters]);

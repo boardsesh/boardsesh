@@ -1600,12 +1600,16 @@ function ClimbListInner() {
     [playNext],
   );
 
+  // The row builds its menu while it renders, so the stale-row guard runs when
+  // a command is picked, not here: a dep on the placeholder flag would rebuild
+  // every visible row's menu twice per search.
   const handleOpenClimbActions = useCallback(
     (climb: Climb) => {
-      if (isPlaceholderDataRef.current) return;
-      return getClimbActions(climb);
+      const target = getClimbActions(climb);
+      if (!target) return target;
+      return { ...target, resolveClimb: async () => (isPlaceholderDataRef.current ? null : climb) };
     },
-    [getClimbActions, isPlaceholderData],
+    [getClimbActions],
   );
 
   const handleOpenAddToPlaylist = useCallback(
