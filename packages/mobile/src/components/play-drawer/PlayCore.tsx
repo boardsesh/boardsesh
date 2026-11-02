@@ -1594,6 +1594,14 @@ export function PlayCore({
         : null,
     [swipeToDriveEnabled, boardName, keepLighting, moonboardKeepLighting, putOnBoardDrivesInSession, isCrewSession],
   );
+  // The two settings the plan doesn't take, read as the press and the link read
+  // them (`resolveKeepLightingReach`): solo with Light the board as I swipe on
+  // the press opens no window (the wall control's `solo` and `lightOnSwipe`),
+  // and auto-disconnect ends lighting when it lets go of the board.
+  const previewFirstSwipeLightsSolo = lightOnSwipe && !isCrewSession && !browseByDefault;
+  const previewFirstAutoDisconnectSeconds = bluetooth?.autoDisconnectEnabled
+    ? bluetooth.autoDisconnectTimeoutSeconds
+    : null;
 
   // The one-shot preview-first card under the wall button (2.7): the first
   // preview on a board with lights, signed in, while nothing else is asking.
@@ -3332,6 +3340,8 @@ export function PlayCore({
                           boardName={boardName}
                           glow={wallGlowInput}
                           keepLighting={previewFirstKeepLighting}
+                          swipeLightsSolo={previewFirstSwipeLightsSolo}
+                          autoDisconnectSeconds={previewFirstAutoDisconnectSeconds}
                           onExit={handlePreviewFirstTipExit}
                           onLayout={handlePreviewFirstTipLayout}
                         />

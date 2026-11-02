@@ -77,7 +77,12 @@ climb**, to start open-ended Driver mode. On a MoonBoard Put on board starts Dri
 default, in a crew too, because most MoonBoard controllers don't like phones switching (its own
 setting; still to be tested in the field). The top bar's second line says "Preview · not on the wall" for a preview while this
 phone holds the board. A playlist tap with **Tapping a playlist loads it into my queue** on
-loads the list into Up next, keeps the wall's climb and previews the tapped climb.
+depends on Light on tap: off, the list from the tapped climb becomes Up next, the wall keeps
+its climb and the tapped climb opens as a preview; on, the list replaces the queue and the
+tapped climb lights. A newcomer's first-connect confirmation and the Climbs list's connect card
+read the same settings, so neither promises that a tap lights a climb while Light on tap is off
+or in a shared session: the confirmation names Put on board's window (or Until I stop on a
+MoonBoard) instead, cut to auto-disconnect's timeout when that is shorter.
 The two switches remain independent opt-ins to automatic lighting outside Driver mode.
 Changing the angle keeps a default preview and regrades it instead of restoring the
 committed climb underneath it.
@@ -582,7 +587,7 @@ card once both are done. Every "walks … to the end card" under Today plays Up 
 | Surface                                  | Today                                                                                     | After                                                                                              |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Search results | Inserts the climb into the queue (a second copy if it was already queued) and walks the results, named "Search results" in the top bar, to the end card (F1). With Light on tap off or in a crew, a preview that walks the results (F2). | Plays from the results. Nothing is added to Up next (F1, F3). |
-| Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Play next and Play last copy it in, at the top or the bottom of Up next (#6772). The playlist switch keeps the old replace, and its prompt's Cancel and Play last now open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
+| Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Play next and Play last copy it in, at the top or the bottom of Up next (#6772). With the playlist switch on, a tap replaces the queue with the list while Light on tap is on; with Light on tap off it makes the list from the tapped climb Up next and previews that climb, keeping the wall's climb. Its prompt's Cancel and Play last open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
 | For You and smart lists                  | As the playlist (F4); the track pages the board the rows on screen were read on.           | Plays from the list (F3).                                                                          |
 | Setter page                              | As the playlist (F4); the track pages with the same cross-angle stats as the list.         | Plays from the setter's list (F3).                                                                 |
 | Logbook | Inserts the climb and plays from the logbook, named "Logbook": Up next first, then the logbook to the end card (#6777); a preview with the same track with Light on tap off or in a crew, which walks only the logbook (F2). | Plays from the logbook. Nothing is added to Up next (F2, F3). |

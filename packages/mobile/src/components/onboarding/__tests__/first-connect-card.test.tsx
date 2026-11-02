@@ -40,6 +40,8 @@ const storeCtrl = vi.hoisted(() => ({
   },
 }));
 const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
+const settingsCtrl = vi.hoisted(() => ({ lightOnClimbTap: false }));
+const sessionCtrl = vi.hoisted(() => ({ shared: false }));
 const bluetoothMocks = vi.hoisted(() => ({
   // The hook's own connect (`useLightbulbControl().connect`): it logs Board
   // Connect Tapped, arms the undo toast and relights the remembered board; its
@@ -142,6 +144,13 @@ vi.mock('../../../lib/onboarding/first-connect-store', () => ({
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
 }));
+vi.mock('../../../settings', () => ({
+  useSetting: (key: string) => {
+    if (key !== 'lightOnClimbTap') throw new Error(`unexpected setting ${key}`);
+    return [settingsCtrl.lightOnClimbTap, vi.fn()];
+  },
+}));
+vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => sessionCtrl.shared }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
@@ -183,6 +192,8 @@ describe('FirstConnectCard', () => {
       cardDismissedThisLaunch: false,
     };
     flagsCtrl.enabled = true;
+    settingsCtrl.lightOnClimbTap = false;
+    sessionCtrl.shared = false;
     lightbulbCtrl.pressAction = 'connect';
     lightbulbCtrl.pending = false;
     lightbulbCtrl.holderIsAuthoritative = false;
@@ -212,6 +223,27 @@ describe('FirstConnectCard', () => {
     expect(screen.getByText('Connect')).toBeTruthy();
     expect(screen.getByText('This wall has no lights')).toBeTruthy();
     expect(screen.getByLabelText('Not now')).toBeTruthy();
+  });
+
+  // A tap lights a climb only with Light the board when I tap a climb on; off
+  // (the 2.7 default) it opens a preview, so the card names Put on board.
+  it('says a tap lights a climb only while Light on tap is on', () => {
+    settingsCtrl.lightOnClimbTap = true;
+    renderCard();
+
+    expect(screen.getByText('Connect this phone to the board, then tap any climb to light it.')).toBeTruthy();
+    expect(screen.queryByText(/Put on board/)).toBeNull();
+  });
+
+  // A list tap in a shared session stays a preview whatever the setting says.
+  it('names Put on board in a shared session even with Light on tap on', () => {
+    settingsCtrl.lightOnClimbTap = true;
+    sessionCtrl.shared = true;
+    renderCard();
+
+    expect(
+      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
+    ).toBeTruthy();
   });
 
   // The card can mount while Climbs is scrolled, and an iOS button host that

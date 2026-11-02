@@ -173,6 +173,7 @@ import {
 } from '../../../src/lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_PREVIEW_FIRST_KEY, ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { setListCardShowing } from '../../../src/lib/onboarding/list-card-presence';
+import { useFirstConnectConfirmationShowing } from '../../../src/lib/onboarding/first-connect-confirmation-presence';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -584,7 +585,11 @@ function ClimbListInner() {
   // card's own store, so for everyone outside the treatment this is false.
   const connectCardBoardHasLights = activeBoard != null && activeBoard.hasLeds !== false;
   const connectCardVisible = useFirstConnectCardExpected(connectCardBoardHasLights);
-  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible;
+  // Connecting from that card hides it, and the "Connected to {{board}}" dialog
+  // lands a moment later: the tips wait through that too, so neither shows
+  // under the dialog (and the quick-actions tip is not used up there).
+  const connectConfirmationShowing = useFirstConnectConfirmationShowing();
+  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible && !connectConfirmationShowing;
 
   // One-shot tip teaching the quick-actions menu (long-press or the ⋯ button).
   // Armed on focus if unseen; held back until the board-reveal banner is gone so
@@ -953,6 +958,7 @@ function ClimbListInner() {
     armed: quickActionsTipArmed,
     revealTipShowing: showRevealTip,
     connectCardVisible,
+    connectConfirmationShowing,
     climbCount: visibleClimbs.length,
   });
   useEffect(() => {

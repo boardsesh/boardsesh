@@ -20,7 +20,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { ONBOARDING_TIP_PREVIEW_FIRST_KEY } from '@boardsesh/key-value-storage';
-import type { KeepLightingPlan } from '../keep-lighting';
+import { resolveKeepLightingReach, type KeepLightingPlan } from '../keep-lighting';
 
 /**
  * `hasSeenTip` / `markTipSeen`, loaded on first use rather than at import: the
@@ -156,6 +156,12 @@ export type PreviewFirstTipGateInput = {
   previewShowing: boolean;
   /** The Climbs list's first-connect card is on screen: it goes first. */
   connectCardVisible: boolean;
+  /**
+   * The one-time "Connected to {{board}}" confirmation is about to show or is
+   * up. It says what Put on board keeps lighting too, and it comes once per
+   * phone, so it goes first; the card can come back once it closes.
+   */
+  connectConfirmationShowing: boolean;
   /** The Climbs list's board-reveal tip or quick-actions tip is on screen (a tablet's pane beside the list). */
   listTipShowing: boolean;
   /**
@@ -175,12 +181,13 @@ export type PreviewFirstTipGateInput = {
 
 /**
  * Whether the card is on screen. One card at a time, like `shouldShowQuickActionsTip`:
- * it waits for the first-connect card, the Climbs list's tips and anything in the
- * player that is asking the climber something.
+ * it waits for the first-connect card and its confirmation, the Climbs list's
+ * tips and anything in the player that is asking the climber something.
  */
 export function shouldShowPreviewFirstTip(input: PreviewFirstTipGateInput): boolean {
   if (input.screenshotMode || !input.signedIn || !input.boardHasLights) return false;
-  if (input.connectCardVisible || input.listTipShowing || input.playerBusy || !input.slotInView) return false;
+  if (input.connectCardVisible || input.connectConfirmationShowing) return false;
+  if (input.listTipShowing || input.playerBusy || !input.slotInView) return false;
   const { status, opens } = input.state;
   if (input.claimedThisOpen) return status === 'showing';
   if (!input.previewShowing) return false;
@@ -238,12 +245,21 @@ export type PreviewFirstWindowLine =
   | { key: 'windowSeconds'; seconds: number }
   | { key: 'windowMinute' }
   | { key: 'untilStop' }
+  | { key: 'untilStopOrDisconnect' }
   | { key: 'moonboard' }
   | null;
 
+/**
+ * Read by the same rule as the first-connect confirmation
+ * (`resolveKeepLightingReach`): solo with Light the board as I swipe on the
+ * press opens no window, so there is no line; a shorter auto-disconnect is
+ * the window; and auto-disconnect can end an Until I stop drive.
+ */
 export function resolvePreviewFirstWindowLine({
   plan,
   isMoonboard,
+  swipeLightsSolo = false,
+  autoDisconnectSeconds = null,
 }: {
   /**
    * What Put on board keeps lighting here (`resolveKeepLightingPlan`), or null
@@ -252,10 +268,20 @@ export function resolvePreviewFirstWindowLine({
    */
   plan: KeepLightingPlan | null;
   isMoonboard: boolean;
+  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
+  swipeLightsSolo?: boolean;
+  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
+  autoDisconnectSeconds?: number | null;
 }): PreviewFirstWindowLine {
-  // One climb lights and nothing after it: the headline already says so.
-  if (plan === null) return null;
-  if (plan.windowMs === null) return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
-  if (plan.windowMs === 60_000) return { key: 'windowMinute' };
-  return { key: 'windowSeconds', seconds: Math.round(plan.windowMs / 1000) };
+  const reach = resolveKeepLightingReach({ plan, swipeLightsSolo, autoDisconnectSeconds });
+  switch (reach.kind) {
+    // One climb lights and nothing after it: the headline already says so.
+    case 'one_climb':
+      return null;
+    case 'until_stop':
+      if (reach.autoDisconnects) return { key: 'untilStopOrDisconnect' };
+      return isMoonboard ? { key: 'moonboard' } : { key: 'untilStop' };
+    case 'window':
+      return reach.seconds === 60 ? { key: 'windowMinute' } : { key: 'windowSeconds', seconds: reach.seconds };
+  }
 }

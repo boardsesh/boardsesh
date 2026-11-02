@@ -10,7 +10,11 @@ import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
-import { isConnectStepTreatmentLive, shouldShowFirstConnectCard } from '../../lib/onboarding/first-connect-decision';
+import {
+  firstConnectTapLights,
+  isConnectStepTreatmentLive,
+  shouldShowFirstConnectCard,
+} from '../../lib/onboarding/first-connect-decision';
 import {
   FIRST_CONNECT_LAUNCH_ID,
   dismissFirstConnectCardForLaunch,
@@ -19,7 +23,9 @@ import {
   useFirstConnectSelector,
   useFirstConnectSnapshot,
 } from '../../lib/onboarding/first-connect-store';
+import { useSetting } from '../../settings';
 import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
+import { useIsSharedSession } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -44,6 +50,11 @@ function trackCardAction(action: FirstRunCardAction): void {
  * The connect-step test's Climbs card (#5654, PR 7, treatment only): "Light
  * climbs on {{board}}", with **Connect**, **This wall has no lights** and an X
  * ("Not now").
+ *
+ * The body follows Light the board when I tap a climb (`firstConnectTapLights`):
+ * off (the 2.7 default) a tap opens a preview, so it names Put on board; on, a
+ * tap lights the climb, so it says that, except in a shared session, where a
+ * list tap stays a preview. It never promises a tap lights a climb when it won't.
  *
  * Shown while a board with lights is bound and this phone has never connected,
  * on at most two launches. The X hides it for this launch; "no lights" hides it
@@ -94,6 +105,9 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
   const { variant, systemColors, brandColors, m3SurfaceContainers } = useTheme();
   const { device, enrolment, cardDismissedThisLaunch } = useFirstConnectSnapshot();
   const enabled = useFirstConnectCtaEnabled();
+  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
+  const inSharedSession = useIsSharedSession();
+  const tapLights = firstConnectTapLights({ lightOnClimbTap, inSharedSession });
   const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress, connect } = useLightbulbControl({
     surface: 'first_connect_card',
   });
@@ -185,7 +199,7 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
             {title}
           </Text>
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('mobile.firstConnect.card.body')}
+            {tapLights ? t('mobile.firstConnect.card.bodyTapLights') : t('mobile.firstConnect.card.body')}
           </Text>
         </View>
         <PressableSurface

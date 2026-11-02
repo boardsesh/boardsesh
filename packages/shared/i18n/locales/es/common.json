@@ -1031,6 +1031,7 @@
           "windowSeconds": "Durante los {{seconds}} segundos siguientes, cada bloque que elijas también se enciende.",
           "windowMinute": "Durante el minuto siguiente, cada bloque que elijas también se enciende.",
           "untilStop": "Después, cada bloque que elijas se enciende hasta que pares.",
+          "untilStopOrDisconnect": "Después, cada bloque que elijas se enciende hasta que pares o hasta que la desconexión automática suelte el plafón.",
           "moonboard": "En un MoonBoard, cada bloque que elijas después se enciende hasta que pares.",
           "frost": "Cuando el botón dice Estás al mando del plafón y brilla con los colores del bloque, cada bloque que elijas se enciende. Para empezar, desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque. Tócalo para parar.",
           "frostScreenReader": "Cuando el botón dice Estás al mando del plafón, cada bloque que elijas se enciende. Para empezar, usa la acción Encender cada bloque. Toca el botón para parar.",
