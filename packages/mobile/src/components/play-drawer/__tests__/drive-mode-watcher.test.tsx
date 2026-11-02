@@ -308,7 +308,7 @@ describe('DriveModeWatcher', () => {
       vi.advanceTimersByTime(DRIVE_ARMING_TIMEOUT_MS - 1);
     });
     expect(getDriveMode()?.phase).toBe('arming');
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
   });
 
@@ -435,7 +435,7 @@ describe('DriveModeWatcher: the wall confirms', () => {
     mount();
     act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     expect(getDriveMode()?.phase).toBe('arming');
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
     expect(effects.hapticSuccess).toHaveBeenCalledOnce();
   });
@@ -444,36 +444,51 @@ describe('DriveModeWatcher: the wall confirms', () => {
     reads.current = { ...reads.current, isConnected: false };
     mount();
     act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'arming', climbsLit: 0 });
+  });
+
+  // A crewmate lights their own wall in the same session, and the feed relays
+  // their confirm here while this phone's swipe is still on its way.
+  it('never goes live on a relayed confirm; this phone’s own confirm of the same climb still counts', () => {
+    mount();
+    act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
+    act(() => emitWallConfirm('climb-a', 'relay'));
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', climbsLit: 0 });
+    expect(effects.hapticSuccess).not.toHaveBeenCalled();
+    act(() => emitWallConfirm('climb-a', 'self'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
+    expect(effects.hapticSuccess).toHaveBeenCalledOnce();
   });
 
   it('counts each new climb lit once, the swipe’s own first; re-sends and echoes are not new', () => {
     mount();
     act(() => enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7 }));
     act(() => {
-      emitWallConfirm('climb-a');
+      emitWallConfirm('climb-a', 'self');
       // The crew feed's echo of the same write.
-      emitWallConfirm('climb-a');
-      emitWallConfirm('climb-b');
-      emitWallConfirm('climb-c');
-      emitWallConfirm('climb-c');
+      emitWallConfirm('climb-a', 'relay');
+      emitWallConfirm('climb-b', 'self');
+      // A late echo of climb-a, landing after the drive moved on.
+      emitWallConfirm('climb-a', 'relay');
+      emitWallConfirm('climb-c', 'self');
+      emitWallConfirm('climb-c', 'self');
     });
     expect(getDriveMode()?.climbsLit).toBe(3);
     // Prev back to a climb lit before is lit again.
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()?.climbsLit).toBe(4);
   });
 
   it('counts nothing with nobody driving, and starts over for a new drive', () => {
     mount();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     act(() => {
       enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 1 });
-      emitWallConfirm('climb-a');
+      emitWallConfirm('climb-a', 'self');
       exitDriveMode('link_dropped');
       enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 2 });
-      emitWallConfirm('climb-a');
+      emitWallConfirm('climb-a', 'self');
     });
     expect(getDriveMode()?.climbsLit).toBe(1);
   });
@@ -551,8 +566,8 @@ describe('DriveModeWatcher: Always drive the wall', () => {
 
   it('every climb that lights counts as one more, as in any drive', () => {
     mount();
-    act(() => emitWallConfirm('climb-a'));
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-a', 'self'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()?.climbsLit).toBe(2);
   });
 
@@ -793,7 +808,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1 });
     act(() => {
       vi.advanceTimersByTime(45_000 - 1);
@@ -812,11 +827,11 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     act(() => {
       vi.advanceTimersByTime(40_000);
     });
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     act(() => {
       vi.advanceTimersByTime(40_000);
     });
@@ -827,11 +842,32 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getLastDriveModeExitReason()).toBe('window_ended');
   });
 
+  // A crewmate's confirm from another wall, relayed by the session feed.
+  it('never starts or renews the clock on a relayed confirm', () => {
+    vi.useFakeTimers();
+    mount();
+    openWindow();
+    act(() => emitWallConfirm('climb-elsewhere', 'relay'));
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', expiresAt: null });
+    act(() => emitWallConfirm('climb-a', 'self'));
+    const endsAt = Date.now() + 45_000;
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1, expiresAt: endsAt });
+    act(() => {
+      vi.advanceTimersByTime(40_000);
+    });
+    act(() => emitWallConfirm('climb-b', 'relay'));
+    expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1, windowRenewals: 0, expiresAt: endsAt });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
   it('waits out the rest when its timer fires early', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     // The clock moved back 3 s under the timer (a time-zone or NTP step).
     vi.setSystemTime(Date.now() - 3_000);
     act(() => {
@@ -851,7 +887,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     // The clock moves past the end; no timer runs.
     vi.setSystemTime(Date.now() + 46_000);
     expect(drivingAtPick(getDriveMode()?.phase === 'live')).toBe(false);
@@ -868,7 +904,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     // Suspended: the wall clock moves on, the timer does not run.
     vi.setSystemTime(Date.now() + 60_000);
     act(() => {
@@ -885,7 +921,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     vi.setSystemTime(Date.now() + 10_000);
     act(() => {
       for (const listener of appState.listeners) listener('active');
@@ -907,7 +943,7 @@ describe('DriveModeWatcher: the timed drive', () => {
   it('ends the window when its setting is turned Off', () => {
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     watcher.change({ keepLighting: '30' });
     expect(getDriveMode()?.phase).toBe('live');
     watcher.change({ keepLighting: 'off' });
@@ -920,7 +956,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     act(() => {
       vi.advanceTimersByTime(25_000);
     });
@@ -941,7 +977,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     vi.useFakeTimers();
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     watcher.change({ keepLighting: 'until_stopped' });
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: null, expiresAt: null });
     act(() => {
@@ -956,7 +992,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     reads.current = { ...reads.current, boardName: 'moonboard' };
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     watcher.change({ keepLighting: '30' });
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 30_000 });
   });
@@ -964,7 +1000,7 @@ describe('DriveModeWatcher: the timed drive', () => {
   it('ends the window in a crew when In a session too is turned off, and not solo', () => {
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     watcher.change({ drivesInSession: false });
     expect(getDriveMode()?.phase).toBe('live');
     watcher.change({ isCrew: true });
@@ -979,7 +1015,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     const watcher = mount();
     openWindow();
-    act(() => emitWallConfirm('climb-q-1'));
+    act(() => emitWallConfirm('climb-q-1', 'self'));
     act(() => {
       vi.advanceTimersByTime(40_000);
     });
@@ -988,7 +1024,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     // This phone's auto-sender lights the crewmate's climb: no drive to renew.
     watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
-    act(() => emitWallConfirm('climb-q-2'));
+    act(() => emitWallConfirm('climb-q-2', 'self'));
     expect(getDriveMode()).toBeNull();
     expect(getCrewPutUp()).toBeNull();
   });
@@ -1006,7 +1042,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     expect(getDriveMode()).toBeNull();
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
-    act(() => emitWallConfirm('climb-q-2'));
+    act(() => emitWallConfirm('climb-q-2', 'self'));
     expect(getDriveMode()).toBeNull();
   });
 
@@ -1016,7 +1052,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-q-1'));
+    act(() => emitWallConfirm('climb-q-1', 'self'));
     act(() =>
       noteRelayReceipt({
         eventType: 'CurrentClimbChanged',
@@ -1034,7 +1070,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     reads.current = { ...reads.current, isCrew: true, currentClimbQueueItem: queueItem('q-1', 'Mine') };
     mount();
     openWindow();
-    act(() => emitWallConfirm('climb-q-1'));
+    act(() => emitWallConfirm('climb-q-1', 'self'));
     noteOwnMove('q-own');
     act(() => crewMove('q-own'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
@@ -1046,7 +1082,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     reads.current = { ...reads.current, boardName: 'moonboard', drivesInSession: false };
     const watcher = mount();
     openWindow(30_000);
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', boardType: 'moonboard' });
     watcher.change({ isCrew: true });
     expect(getDriveMode()).toBeNull();
@@ -1060,7 +1096,7 @@ describe('DriveModeWatcher: the timed drive', () => {
     // The lock-screen adoption listens for the foreground all the time.
     const alwaysListening = appState.listeners.size;
     openWindow();
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     watcher.change({ isConnected: false });
     expect(getLastDriveModeExitReason()).toBe('link_dropped');
     act(() => {
@@ -1138,7 +1174,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     // Suspended for a minute; a lock-screen Next 25 s ago renewed it.
     vi.setSystemTime(Date.now() + 60_000);
     lockScreenWrite({ endsAtMs: Date.now() + 20_000, updatedAtMs: Date.now() - 25_000 });
@@ -1159,7 +1195,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     act(() => {
       vi.advanceTimersByTime(30_000);
     });
@@ -1189,7 +1225,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     // Suspended for a minute; a lock-screen Next 10 s ago, after the end.
     vi.setSystemTime(Date.now() + 60_000);
     lockScreenWrite({ endsAtMs: Date.now() + 35_000, updatedAtMs: Date.now() - 10_000 });
@@ -1244,7 +1280,7 @@ describe('DriveModeWatcher: a timed drive started from the Lock Screen', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
     lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'general' });
     navigate();
@@ -1360,7 +1396,7 @@ describe('DriveModeWatcher: a stop from the Lock Screen bulb', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     vi.setSystemTime(Date.now() + 10_000);
     // Tapped while JS slept: no event reached it.
     lockScreenStop();
@@ -1443,7 +1479,7 @@ describe('DriveModeWatcher: an Android notification press', () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', climbsLit: 1, expiresAt: Date.now() + 45_000 });
     act(() => {
       vi.advanceTimersByTime(45_000);
@@ -1467,7 +1503,7 @@ describe('DriveModeWatcher: an Android notification press', () => {
     mount();
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen', windowMs: null });
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: null, expiresAt: null });
   });
 
@@ -1483,13 +1519,13 @@ describe('DriveModeWatcher: an Android notification press', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     act(() => {
       vi.advanceTimersByTime(30_000);
     });
     navigate();
     expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap' });
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()).toMatchObject({ expiresAt: Date.now() + 45_000, windowRenewals: 1 });
   });
 
@@ -1508,7 +1544,7 @@ describe('DriveModeWatcher: an Android notification press', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     vi.setSystemTime(Date.now() + 60_000);
     navigate();
     expect(effects.track).toHaveBeenCalledWith(
@@ -1516,7 +1552,7 @@ describe('DriveModeWatcher: an Android notification press', () => {
       expect.objectContaining({ reason: 'window_ended', startedBy: 'tap', durationSec: 45 }),
     );
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen' });
-    act(() => emitWallConfirm('climb-b'));
+    act(() => emitWallConfirm('climb-b', 'self'));
     expect(getDriveMode()).toMatchObject({
       phase: 'live',
       startedBy: 'lock_screen',
@@ -1579,7 +1615,7 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
   }
 
   it('lets go when the time runs out, and only then', () => {
@@ -1617,7 +1653,7 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-a'));
+    act(() => emitWallConfirm('climb-a', 'self'));
     if (reason === 'window_ended') {
       act(() => {
         vi.advanceTimersByTime(45_000);
@@ -1761,13 +1797,13 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
         windowSetting: 'putOnBoardKeepsLighting',
       });
     });
-    act(() => emitWallConfirm('climb-q-1'));
+    act(() => emitWallConfirm('climb-q-1', 'self'));
     act(() => crewMove('q-2'));
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
     watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
     await act(async () => {
-      emitWallConfirm('climb-q-2');
+      emitWallConfirm('climb-q-2', 'self');
       await Promise.resolve();
     });
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
@@ -1775,6 +1811,7 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
 
   // The confirm bus also replays the session's confirms: another climb's (a
   // late echo of this phone's own, or any member's relay) never ends the wait.
+  // A relay of their climb does, the same as this phone's own confirm of it.
   it('after a crewmate’s put-up, waits for their climb, not any confirm', async () => {
     vi.useFakeTimers();
     reads.current = {
@@ -1788,13 +1825,13 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
     act(() => crewMove('q-2'));
     watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
     await act(async () => {
-      emitWallConfirm('climb-q-1');
-      emitWallConfirm('climb-elsewhere');
+      emitWallConfirm('climb-q-1', 'relay');
+      emitWallConfirm('climb-elsewhere', 'relay');
       await Promise.resolve();
     });
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
     await act(async () => {
-      emitWallConfirm('climb-q-2');
+      emitWallConfirm('climb-q-2', 'relay');
       await Promise.resolve();
     });
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');

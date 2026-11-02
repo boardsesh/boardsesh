@@ -1876,7 +1876,7 @@ describe('QueueProvider session update subscription', () => {
       });
     });
 
-    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1');
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'relay');
     await waitFor(() => {
       expect(snapshots.at(-1)?.isSessionWallLit).toBe(true);
     });
