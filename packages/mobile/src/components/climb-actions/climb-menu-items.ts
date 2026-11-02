@@ -119,18 +119,16 @@ export function buildClimbMenuItems(
   }
   if (onOpenAngle) push('angle', t('session:playView.actionBar.changeAngle'), 'angle', accentColor);
   push('playlist', t('actions.playlist.popover.title'), 'playlist', accentColor);
-  push(
-    'favorite',
-    // A caller-owned favourite can say which way the row goes; a menu's own
-    // read may still be loading, so it keeps the neutral label.
-    !favoriteControl
-      ? t('mobile.climbRow.toggleFavorite')
-      : isFavorited
-        ? t('session:playView.actionBar.removeFavoriteAria')
-        : t('session:playView.actionBar.addFavoriteAria'),
-    isFavorited ? 'favorite.fill' : 'favorite',
-    favoriteColor,
-  );
+  // The label says which way the row goes, for a screen reader as much as for
+  // sight. A caller-owned favourite knows both ways. A menu's own read is sure
+  // only of a favourite: the store holds favourites, so a miss can also mean the
+  // climb's status hasn't loaded, and that row keeps the neutral label.
+  const favoriteLabel = isFavorited
+    ? t('session:playView.actionBar.removeFavoriteAria')
+    : favoriteControl
+      ? t('session:playView.actionBar.addFavoriteAria')
+      : t('mobile.climbRow.toggleFavorite');
+  push('favorite', favoriteLabel, isFavorited ? 'favorite.fill' : 'favorite', favoriteColor);
   push('tick', t('mobile.climbActions.tick'), 'tick', successColor);
   if (onEditEntry) push('editEntry', t('mobile.climbActions.editEntry'), 'edit', accentColor);
   if (isAuthenticated) push('betaVideo', t('mobile.climbActions.addBetaVideo'), 'video', accentColor);

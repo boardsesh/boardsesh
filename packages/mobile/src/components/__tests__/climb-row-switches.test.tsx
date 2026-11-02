@@ -431,7 +431,7 @@ const SURFACES: Surface[] = [
       'icon:person',
       'title3:V10',
       '#climb-row-more-button',
-      'native-menu:more',
+      'icon:more.vertical',
     ],
     takes: {
       thumbnail: ['thumbnail'],
@@ -442,7 +442,7 @@ const SURFACES: Surface[] = [
       sentMark: ['icon:tick.outline'],
       progress: [],
       playlistTags: ['#climb-row-tags-line', 'caption1:Project@30'],
-      quickActions: ['#climb-row-more-button', 'native-menu:more'],
+      quickActions: ['#climb-row-more-button', 'icon:more.vertical'],
     },
   },
   {

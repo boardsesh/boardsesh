@@ -531,6 +531,47 @@ describe('QueueItemRow React.memo', () => {
     expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 
+  it('hands the menu one target per slot while the queue rebuilds its items', () => {
+    const item = makeItem('slot-a', 'Crimp Master');
+    const onOpenActions = vi.fn(() => ({ climb: item.climb, boardConfig: board, queueItemUuid: item.uuid }));
+    const props = { position: 1, board, isCurrentClimb: false, onPress, onRemove, onOpenActions };
+    const { rerender } = render(<QueueItemRow {...props} item={item} />);
+    const first = menuState.target;
+    // The reducer hands a fresh item object for the same slot and climb.
+    rerender(<QueueItemRow {...props} item={{ ...item }} position={2} />);
+    expect(menuState.target).toBe(first);
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the menu's Log a tick off a History row that has its own tick", () => {
+    const item = makeItem('a', 'Crimp Master');
+    menuState.actions = [
+      { name: 'tick', label: 'Log a tick' },
+      { name: 'share', label: 'Share' },
+    ];
+    try {
+      render(
+        <QueueItemRow
+          item={item}
+          position={1}
+          board={board}
+          isCurrentClimb={false}
+          isHistoryItem
+          onPress={onPress}
+          onRemove={onRemove}
+          onToggleSelect={onToggleSelect}
+          onTickHistory={vi.fn()}
+          onOpenActions={() => ({ climb: item.climb, boardConfig: board, queueItemUuid: item.uuid })}
+        />,
+      );
+      const names = a11y.row?.accessibilityActions?.map((action) => action.name);
+      expect(names).toContain('share');
+      expect(names).not.toContain('tick');
+    } finally {
+      menuState.actions = [{ name: 'share', label: 'Share' }];
+    }
+  });
+
   it('refreshes the menu board when the same queue slot remains after an angle change', () => {
     const item = makeItem('same-slot', 'Crimp Master');
     const onOpenActions = vi.fn(() => ({ climb: item.climb, boardConfig: board, queueItemUuid: item.uuid }));

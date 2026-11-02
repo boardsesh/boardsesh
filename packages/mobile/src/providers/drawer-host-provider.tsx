@@ -95,14 +95,17 @@ export type OpenClimbActionsOptions = {
    *  "Play next" uses it to move that exact item rather than guessing which copy
    *  of a twice-queued climb was long-pressed. */
   queueItemUuid?: string;
-  /** When set, the climb actions sheet shows an "Edit entry" row wired to this
+  /** When set, the climb menu shows an "Edit entry" row wired to this
    *  callback (logbook rows pass it to open the tick editor). */
   onEditEntry?: () => void;
-  /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
-   * actions overlay. Omitted when the source is an inline iPad pane. */
+  /** Awaitable close for the native BoardSheet / QueueSheet the menu was opened
+   * from, run before a command presents its own sheet. Omitted when the source
+   * is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
-  /** `/play`-owned native-stack close waiter. Threaded from the route because a
-   * root overlay cannot safely subscribe to the player's transition events. */
+  /** `/play`-owned native-stack close waiter. Threaded from the route because the
+   * root command host cannot safely subscribe to the player's transition events.
+   * Its presence also marks a menu opened inside the player: only those route
+   * Tick, Playlist, Beta and Report to the player's own sheets. */
   dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
 };
 
@@ -202,9 +205,12 @@ type DrawerHostValue = {
   boardConfig: BoardConfig | null;
   openPlayDrawer: (climb: Climb, options?: OpenPlayDrawerOptions) => void;
   openLogAscent: (input: LogAscentInput) => void;
-  /** Opens the climb actions bottom sheet for the given climb. Uses the active
-   *  boardConfig at the time of opening. Pass `onEditEntry` (logbook context) to
-   *  add an "Edit entry" row that edits the tick the climb was opened from. */
+  /** Resolves the climb menu target for a row: the climb, the board its
+   *  commands file against (the stored active board unless overridden) and the
+   *  source slot. Presents nothing; the row's native menu owns the hold. Pass
+   *  `onEditEntry` (logbook context) to add an "Edit entry" row that edits the
+   *  tick the climb was opened from. Null before the board resolves, or for a
+   *  resolver captured before the credential scope changed. */
   getClimbActions: (
     climb: Climb,
     boardConfigOverride?: BoardConfig,
@@ -558,10 +564,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // reset away.
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const sprayViewerUserId = profile?.id ?? storedUserId ?? null;
-  // Read at the app root (resolved by interaction time) and passed to the reaction
-  // menu so its mount-time enter animation uses the real value, not the hook's
-  // conservative `true` default.
-
   // The user's STORED active board as a BoardConfig (never the override). Used
   // by non-drawer surfaces and to decide whether a climb opened with a board
   // override is genuinely a different board (→ switch-board gate) or the same
@@ -1395,7 +1397,11 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     <DrawerHostContext.Provider value={value}>
       <PreviewedClimbContext.Provider value={previewedClimbValue}>
         <PlayDrawerRouteContext.Provider value={routeValue}>
-          <ClimbMenusProvider currentUserId={profile?.id ?? null} isAuthenticated={isAuthenticated}>
+          <ClimbMenusProvider
+            currentUserId={profile?.id ?? null}
+            isAuthenticated={isAuthenticated}
+            activeBoardConfig={storedActiveBoardConfig}
+          >
             {/* Bulbs live in the screens, so only they need connect-follows-the-climb (#7001). */}
             <ClimbBoardConnectContext.Provider value={climbBoardConnectValue}>
               {children}

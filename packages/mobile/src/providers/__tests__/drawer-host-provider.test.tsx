@@ -1368,6 +1368,22 @@ describe('DrawerHostProvider play drawer open target', () => {
     },
   );
 
+  it('passes a reopen of the current climb through without pinning a preview copy', () => {
+    // The mini player and the workout card's current-climb row reopen the
+    // committed slot. Tap lighting is off by default, but a reopen is not a pick.
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    const climb = makeQueueItem('reopen-current').climb as Climb;
+    act(() => hosts.at(-1)!.openPlayDrawer(climb, { reopensCurrent: true }));
+    expect(routes.at(-1)?.playTarget?.options).toEqual({ reopensCurrent: true });
+    expect(previewedClimbUuids.at(-1)).toBeNull();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
   it('stages a Link target without a second navigation or leaking navigation options', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];

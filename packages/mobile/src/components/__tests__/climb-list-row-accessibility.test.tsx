@@ -402,7 +402,7 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(a11y.moreButton).toBeNull();
   });
 
-  it('keeps the native ellipsis outside the row trigger and uses the same descriptors', () => {
+  it('keeps the ellipsis outside the row trigger and opens the same hold menu', () => {
     const onPress = vi.fn();
     const { container, getByRole } = render(
       <ClimbListRow
@@ -415,8 +415,12 @@ describe('ClimbListRow screen-reader activation', () => {
     );
     const icon = getByRole('button', { name: 'mobile.climbRow.moreActions' });
     expect(icon.closest('[data-native-climb-menu="longPress"]')).toBeNull();
+    // One menu per row: the ⋮ is a plain button that opens the row's own.
+    expect(container.querySelector('[data-native-climb-menu="icon"]')).toBeNull();
+    climbMenuTestState.openedRows = null;
     fireEvent.click(icon);
     const iconRows = climbMenuTestState.openedRows;
+    expect(iconRows).not.toBeNull();
     fireEvent.contextMenu(container.querySelector('[data-native-climb-menu="longPress"]')!);
     expect(climbMenuTestState.openedRows).toBe(iconRows);
     expect(climbMenuTestState.commands).toEqual([]);

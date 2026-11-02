@@ -298,7 +298,7 @@ describe('WorkoutRunCard', () => {
       syncStagePacing(uuid, workoutRun);
     }
 
-    it('shows the set and rep you are on and the climb on the wall, which opens the player', () => {
+    it('shows the set and rep you are on and the climb on the wall, which reopens it in the player', () => {
       setWorkoutRun('session-1', timedRun);
       onTheWall('b');
       render(createElement(WorkoutRunCard));
@@ -307,7 +307,12 @@ describe('WorkoutRunCard', () => {
       expect(screen.getByTestId('workout-runner-current').textContent).toContain('workoutStageSetPosition');
       expect(screen.getByTestId('workout-runner-current').textContent).toContain('Climb b');
       fireEvent.click(screen.getByTestId('workout-runner-current'));
-      expect(drawerHost.openPlayDrawer).toHaveBeenCalledWith({ uuid: 'climb-b', name: 'Climb b' }, {});
+      // A reopen, not a pick: the player shows the committed workout slot, so the
+      // stage label and the Fell / Sent row keep their queue-item uuid.
+      expect(drawerHost.openPlayDrawer).toHaveBeenCalledWith(
+        { uuid: 'climb-b', name: 'Climb b' },
+        { reopensCurrent: true },
+      );
     });
 
     it('offers to turn the rest timer on while a timed block has it off', () => {

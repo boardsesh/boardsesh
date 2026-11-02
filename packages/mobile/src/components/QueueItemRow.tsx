@@ -175,10 +175,14 @@ function QueueItemRowComponent({
   // nothing here scans the queue.
   const rowClimb = item.climb;
   const rowBoard = useMemo(() => resolveClimbRenderBoard(rowClimb, board)?.boardConfig ?? board, [rowClimb, board]);
-  // The resolver reads the live board through the host; re-read on a board or
-  // preference render even when this queue slot itself did not change.
-  const resolvedMenuTarget = isEditMode ? null : (onOpenActions?.(item) ?? null);
-  const menuTarget = resolvedMenuTarget ? { ...resolvedMenuTarget, boardConfig: rowBoard } : null;
+  // The menu acts on the board the row is drawn on: the queue's board, or a
+  // slot from another wall's own board. One target per slot, climb and board,
+  // so a queue update that leaves this slot alone hands the menu the same
+  // object and its rows aren't rebuilt. A credential change swaps the resolver.
+  const menuTarget = useMemo(() => {
+    const resolved = isEditMode ? null : (onOpenActions?.(itemRef.current) ?? null);
+    return resolved ? { ...resolved, boardConfig: rowBoard } : null;
+  }, [isEditMode, onOpenActions, item.uuid, rowClimb, rowBoard]);
   const menu = useClimbMenu(menuTarget);
 
   // Disable swipe-to-delete for edit mode and history items.
@@ -416,11 +420,17 @@ function QueueItemRowComponent({
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const logAscentLabel = t('mobile.queue.logAscent');
+  // A History row logs from its own tick, into the Queue's tick host. The menu's
+  // Log a tick would be a second action for the same job that presents
+  // differently, so the row publishes its own and leaves the menu's out.
   const rowAccessibilityActions = useMemo(() => {
     const rowActions = showTick
       ? rowAccessibilityActionsWith({ name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel })
       : ACTIVATE_ACCESSIBILITY_ACTIONS;
-    return menu.accessibilityActions.length === 0 ? rowActions : [...(rowActions ?? []), ...menu.accessibilityActions];
+    const menuActions = showTick
+      ? menu.accessibilityActions.filter((action) => action.name !== 'tick')
+      : menu.accessibilityActions;
+    return menuActions.length === 0 ? rowActions : [...(rowActions ?? []), ...menuActions];
   }, [showTick, logAscentLabel, menu.accessibilityActions]);
 
   // History rows pin the grade for the angle the climb was CLIMBED at, which can
@@ -469,7 +479,14 @@ function QueueItemRowComponent({
         rowAnimatedStyle,
       ]}
     >
-      <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} style={styles.menuAnchor}>
+      <ClimbMenu
+        rows={menu.rows}
+        menuKey={menu.menuKey}
+        style={styles.menuAnchor}
+        liftPreview
+        previewBackgroundColor={systemColors.secondaryBackground}
+        previewOverlayColor={isCurrentClimb && !isHistoryItem ? `${brandColors.primary}14` : undefined}
+      >
         <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View
             accessible

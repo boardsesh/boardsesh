@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   Dimensions,
   FlatList,
+  Keyboard,
   findNodeHandle,
   StyleSheet,
   View,
@@ -32,10 +33,14 @@ import { getLiftedRowMenuLayout, type MenuAnchorRect } from './lifted-row-menu-l
 
 export type { ClimbListRowMenuHandle } from './ClimbListRowMenu.types';
 
+/** Which control opened the menu, and so gets screen-reader focus back. */
+type MenuSource = 'row' | 'more';
+
 type MenuSnapshot = Pick<ClimbListRowMenuProps, 'rows' | 'menuKey' | 'preview' | 'title' | 'previewOverlayColor'> & {
   anchor: MenuAnchorRect;
   generation: number;
   viewport: ReturnType<typeof Dimensions.get>;
+  source: MenuSource;
 };
 
 // A second row opening retires the first, including an outstanding measurement.
@@ -50,6 +55,7 @@ export function ClimbListRowMenu(props: ClimbListRowMenuProps) {
 function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
   const { systemColors } = useTheme();
   const sourceRef = useRef<ViewInstance | null>(null);
+  const moreButtonRef = useRef<ViewInstance | null>(null);
   const current = useRef(props);
   current.current = props;
   const revision = useRef(0);
@@ -66,6 +72,15 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
     pending.current = null;
     setSnapshot(null);
   }, []);
+  // A menu closed under the climber (its target changed, the window resized)
+  // hands screen-reader focus back to the control that opened it, as a cancel
+  // does; otherwise VoiceOver's cursor would be left on nothing.
+  const retireAndRestoreFocus = useCallback(() => {
+    revision.current++;
+    const active = snapshotRef.current;
+    pending.current = active ? { snapshot: active, revision: revision.current, restoreFocus: true } : null;
+    setSnapshot(null);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -77,48 +92,58 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
     };
   }, [retire]);
   useEffect(() => {
-    retire();
-  }, [props.menuKey, retire]);
+    retireAndRestoreFocus();
+  }, [props.menuKey, retireAndRestoreFocus]);
 
-  const open = useCallback(() => {
-    if (snapshotRef.current || current.current.rows.length === 0) return;
-    retireActiveMenu?.();
-    retireActiveMenu = retire;
-    const request = ++revision.current;
-    const { rows, menuKey, preview, title, previewOverlayColor } = current.current;
-    const generation = getCredentialGeneration();
-    const viewport = Dimensions.get('window');
-    current.current.onBeforeOpen?.();
-    // reset() settles a partially swiped row on the next UI frame. Both
-    // triggers measure the same resting body after that reset.
-    requestAnimationFrame(() => {
-      if (!mounted.current || revision.current !== request) return;
-      sourceRef.current?.measureInWindow((x, y, width, height) => {
-        if (
-          !mounted.current ||
-          revision.current !== request ||
-          current.current.menuKey !== menuKey ||
-          generation !== getCredentialGeneration() ||
-          ![x, y, width, height].every(Number.isFinite) ||
-          width <= 0 ||
-          height <= 0
-        )
-          return;
-        hapticLight();
-        setSnapshot({
-          rows,
-          menuKey,
-          preview,
-          title,
-          previewOverlayColor,
-          generation,
-          viewport,
-          anchor: { x, y, width, height },
+  const open = useCallback(
+    (source: MenuSource) => {
+      if (snapshotRef.current || current.current.rows.length === 0) return;
+      retireActiveMenu?.();
+      retireActiveMenu = retire;
+      const request = ++revision.current;
+      const { rows, menuKey, preview, title, previewOverlayColor } = current.current;
+      const generation = getCredentialGeneration();
+      const viewport = Dimensions.get('window');
+      // The overlay sits under the keyboard's window, so the lower actions would
+      // open beneath a keyboard left up from search. The list keeps its rows in
+      // place as it goes down, so the row is measured where it stays.
+      Keyboard.dismiss();
+      current.current.onBeforeOpen?.();
+      // reset() settles a partially swiped row on the next UI frame. Both
+      // triggers measure the same resting body after that reset.
+      requestAnimationFrame(() => {
+        if (!mounted.current || revision.current !== request) return;
+        sourceRef.current?.measureInWindow((x, y, width, height) => {
+          if (
+            !mounted.current ||
+            revision.current !== request ||
+            current.current.menuKey !== menuKey ||
+            generation !== getCredentialGeneration() ||
+            ![x, y, width, height].every(Number.isFinite) ||
+            width <= 0 ||
+            height <= 0
+          )
+            return;
+          hapticLight();
+          setSnapshot({
+            rows,
+            menuKey,
+            preview,
+            title,
+            previewOverlayColor,
+            generation,
+            viewport,
+            anchor: { x, y, width, height },
+            source,
+          });
         });
       });
-    });
-  }, [retire]);
-  useImperativeHandle(props.ref, () => ({ open }), [open]);
+    },
+    [retire],
+  );
+  const openFromRow = useCallback(() => open('row'), [open]);
+  const openFromMoreButton = useCallback(() => open('more'), [open]);
+  useImperativeHandle(props.ref, () => ({ open: openFromRow }), [openFromRow]);
 
   // This effect runs after React has removed FullWindowOverlay. Presenters can
   // now claim the native window, rather than racing a still-mounted menu.
@@ -130,14 +155,19 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
       if (
         !mounted.current ||
         command.revision !== revision.current ||
-        command.snapshot.menuKey !== current.current.menuKey ||
         command.snapshot.generation !== getCredentialGeneration()
       )
         return;
       if (retireActiveMenu === retire) retireActiveMenu = undefined;
-      if (command.run) command.run();
-      else if (command.restoreFocus) {
-        const handle = findNodeHandle(current.current.focusRef.current);
+      if (command.run) {
+        // A selection runs only against the target it was drawn for.
+        if (command.snapshot.menuKey === current.current.menuKey) command.run();
+      } else if (command.restoreFocus) {
+        const focusTarget =
+          command.snapshot.source === 'more' && moreButtonRef.current
+            ? moreButtonRef.current
+            : current.current.focusRef.current;
+        const handle = findNodeHandle(focusTarget);
         if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
       }
     });
@@ -160,7 +190,8 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
       {props.showMoreButton && props.rows.length > 0 ? (
         <View testID="climb-row-more-button" style={props.moreButtonStyle}>
           <StaticPressableSurface
-            onPress={open}
+            ref={moreButtonRef}
+            onPress={openFromMoreButton}
             accessibilityLabel={props.accessibilityLabel}
             style={styles.moreButton}
           >
@@ -168,7 +199,7 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
           </StaticPressableSurface>
         </View>
       ) : null}
-      {active ? <LiftedRowMenu snapshot={active} finish={finish} retire={retire} /> : null}
+      {active ? <LiftedRowMenu snapshot={active} finish={finish} retire={retireAndRestoreFocus} /> : null}
     </>
   );
 }

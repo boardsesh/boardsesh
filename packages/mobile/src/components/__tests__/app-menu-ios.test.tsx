@@ -69,14 +69,17 @@ vi.mock('react-native', () => ({
   View: ({
     children,
     onLayout,
+    style,
   }: {
     children?: ReactNode;
     onLayout?: (event: { nativeEvent: { layout: { width: number } } }) => void;
+    style?: { backgroundColor?: string };
   }) =>
     createElement(
       'div',
       {
         'data-measured-menu-anchor': onLayout ? true : undefined,
+        'data-row-background': style && !Array.isArray(style) ? style.backgroundColor : undefined,
         onClick: onLayout ? () => onLayout({ nativeEvent: { layout: { width: 326 } } }) : undefined,
       },
       children,
@@ -249,6 +252,42 @@ describe('AppMenu (iOS) hosting', () => {
     expect(onSelectIndex).not.toHaveBeenCalled();
     fireEvent.click(getByText('Choose holds'));
     expect(onSelectIndex).toHaveBeenCalledWith(0);
+  });
+
+  it('keeps the hosted row across a target change and redraws only the items', () => {
+    const props = {
+      trigger: 'longPress' as const,
+      children: createElement('span', null, 'Climb row'),
+      actions,
+      onSelectIndex: vi.fn(),
+    };
+    const { container, getByText, rerender } = render(createElement(AppMenu, { ...props, menuKey: 'climb-a' }));
+    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
+    const row = getByText('Climb row');
+    const item = getByText('Choose holds');
+    // A recycled cell: same width, new climb. The row (and its board art) stays
+    // mounted; an item still drawn for the old climb belongs to a Button that is gone.
+    rerender(createElement(AppMenu, { ...props, menuKey: 'climb-b' }));
+    expect(getByText('Climb row')).toBe(row);
+    expect(getByText('Choose holds')).not.toBe(item);
+    expect(item.isConnected).toBe(false);
+  });
+
+  it('draws the lifted preview on the surface the row sits on', () => {
+    const { container } = render(
+      createElement(AppMenu, {
+        trigger: 'longPress',
+        liftPreview: true,
+        previewBackgroundColor: 'secondaryBackground',
+        children: createElement('span', null, 'Queue row'),
+        actions,
+        onSelectIndex: vi.fn(),
+      }),
+    );
+    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
+    expect(container.querySelector('[data-row-background]')?.getAttribute('data-row-background')).toBe(
+      'secondaryBackground',
+    );
   });
 
   it('never takes the screen safe-area inset, so a menu that mounts scrolled under the status bar stays in its frame', () => {

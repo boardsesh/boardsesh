@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, createRef, type ReactNode } from 'react';
+import type { AppMenuHandle } from '../AppMenu.types';
 
 // The Compose tree can't mount under vitest, so each Compose primitive renders as
 // a tagged DOM node: enough to tell an IconButton from a Text.
@@ -71,6 +72,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
         children,
       ),
     Column: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-column': true }, children),
+    Box: () => createElement('div', { 'data-compose-box': true }),
     Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-compose-text': true }, children),
     IconButton: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
       createElement('button', { 'data-icon-button': true, onClick }, children),
@@ -84,6 +86,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
 vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   clickable: (handler: () => void) => ({ kind: 'clickable', handler }),
   defaultMinSize: ({ minHeight }: { minHeight?: number }) => ({ kind: 'defaultMinSize', minHeight }),
+  fillMaxSize: () => ({}),
   padding: () => ({}),
   selectable: (selected: boolean, handler: () => void) => ({ kind: 'selectable', selected, handler }),
 }));
@@ -208,7 +211,7 @@ describe('AppMenu (Android) overflow anchor', () => {
 });
 
 describe('AppMenu (Android) dividers', () => {
-  it('opens a custom row only on long press, keeping row taps and accessibility with the child', () => {
+  it('keeps a custom row in React Native and mounts its menu host only on a hold', () => {
     const onRowPress = vi.fn();
     const onSelectIndex = vi.fn();
     const { container, getByText } = render(
@@ -220,26 +223,65 @@ describe('AppMenu (Android) dividers', () => {
         onSelectIndex,
       }),
     );
+    // No Compose host for a row nobody held, and the row never sits inside one:
+    // Compose RNHostView content can draw blank on Android.
     expect(container.querySelector('[data-host]')).toBeNull();
-    expect(getByText('Climb row')).toBeTruthy();
-    fireEvent.click(container.querySelector('[data-measured-menu-anchor]')!);
-    const menu = () => container.querySelector('[data-expanded]')?.getAttribute('data-expanded');
+    expect(container.querySelector('[data-rn-match-contents]')).toBeNull();
     const anchor = container.querySelector('[data-long-press-anchor]') as Element;
     expect(anchor.getAttribute('data-accessible')).toBe('false');
     expect(anchor.getAttribute('data-focusable')).toBe('false');
-    expect(container.querySelector('[data-host]')?.getAttribute('data-host-accessible')).toBe('false');
-    expect(container.querySelector('[data-host]')?.hasAttribute('aria-label')).toBe(false);
-    expect(container.querySelector('[data-rn-match-contents="true"]')).not.toBeNull();
-    fireEvent.click(getByText('Climb row'));
+    const row = getByText('Climb row');
+    fireEvent.click(row);
     expect(onRowPress).toHaveBeenCalledOnce();
-    expect(menu()).toBe('false');
+    expect(container.querySelector('[data-host]')).toBeNull();
+
     fireEvent.contextMenu(anchor);
+    const menu = () => container.querySelector('[data-expanded]')?.getAttribute('data-expanded');
     expect(menu()).toBe('true');
+    const host = container.querySelector('[data-host]');
+    expect(host?.getAttribute('data-host-accessible')).toBe('false');
+    expect(host?.hasAttribute('aria-label')).toBe(false);
+    expect(getByText('Climb row')).toBe(row);
+    expect(row.closest('[data-host]')).toBeNull();
     fireEvent.click(getByText('Blocked'));
     expect(onSelectIndex).not.toHaveBeenCalled();
     fireEvent.click(getByText('Share'));
     expect(onSelectIndex).toHaveBeenCalledWith(1);
     expect(menu()).toBe('false');
+  });
+
+  it("opens from a ⋮ button's handle and closes, row intact, when its target changes", () => {
+    const menuRef = createRef<AppMenuHandle>();
+    const props = {
+      trigger: 'longPress' as const,
+      menuRef,
+      children: createElement('span', null, 'Climb row'),
+      actions: [{ label: 'Share' }],
+      onSelectIndex: vi.fn(),
+    };
+    const { container, getByText, rerender } = render(createElement(AppMenu, { ...props, menuKey: 'climb-a' }));
+    const row = getByText('Climb row');
+    act(() => menuRef.current?.open());
+    const menu = () => container.querySelector('[data-expanded]')?.getAttribute('data-expanded');
+    expect(menu()).toBe('true');
+    rerender(createElement(AppMenu, { ...props, menuKey: 'climb-b' }));
+    expect(menu()).toBe('false');
+    expect(getByText('Climb row')).toBe(row);
+  });
+
+  it('opens nothing from its handle without rows', () => {
+    const menuRef = createRef<AppMenuHandle>();
+    const { container } = render(
+      createElement(AppMenu, {
+        trigger: 'longPress',
+        menuRef,
+        children: createElement('span', null, 'Climb row'),
+        actions: [],
+        onSelectIndex: vi.fn(),
+      }),
+    );
+    act(() => menuRef.current?.open());
+    expect(container.querySelector('[data-host]')).toBeNull();
   });
 
   it('draws an M3 divider above a row that opens a group, without taking an index', () => {

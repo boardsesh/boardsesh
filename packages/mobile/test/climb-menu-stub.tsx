@@ -1,6 +1,15 @@
 // Row-host tests keep the real row gestures and accessibility bridge while native
 // menu primitives and the app-wide command controller are exercised separately.
-import { createElement, useCallback, useMemo, useRef, type ReactElement, type ReactNode } from 'react';
+import {
+  createElement,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { AccessibilityActionEvent } from 'react-native';
 import type { ClimbActionsTarget } from '../src/providers/drawer-host-provider';
 
@@ -49,15 +58,19 @@ export function ClimbMenu({
   rows,
   children,
   accessibilityLabel,
+  menuRef,
 }: {
   rows: Row[];
   children?: ReactElement;
   accessibilityLabel?: string;
+  menuRef?: RefObject<{ open: () => void } | null>;
 }) {
-  if (rows.length === 0) return children ?? null;
   const open = () => {
-    climbMenuTestState.openedRows = rows;
+    if (rows.length > 0) climbMenuTestState.openedRows = rows;
   };
+  // A ⋮ beside the row opens this same hold menu (Android and web).
+  useImperativeHandle(menuRef, () => ({ open }));
+  if (rows.length === 0) return children ?? null;
   return children
     ? createElement('div', { 'data-native-climb-menu': 'longPress', onContextMenu: open }, children)
     : createElement('button', {

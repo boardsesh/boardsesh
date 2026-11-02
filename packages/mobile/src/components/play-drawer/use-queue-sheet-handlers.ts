@@ -111,8 +111,10 @@ export function useQueueSheetHandlers({
   );
 
   // A queue row's climb menu: the target a hold resolves, bound to that exact
-  // slot. The queue renders against the active board, so the default
-  // boardConfig is correct.
+  // slot, on the stored active board. QueueItemRow swaps in the board it draws
+  // the row on, which is that same board except for a slot from another wall:
+  // that slot's commands file against the climb's own board, as a mixed-board
+  // playlist row's do.
   const handleOpenActions = useCallback(
     (item: ClimbQueueItem) => {
       // `queueItemUuid` names the exact row that was long-pressed, so "Play next"

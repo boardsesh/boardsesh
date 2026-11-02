@@ -539,7 +539,9 @@ function NowOnTheWallPanelComponent(
       return context && !actionClimbCacheRef.current.has(context.cacheKey) ? [{ climb, context }] : [];
     });
     // At most the hero and eight visible/initial history rows, three requests
-    // at a time. No history pagination, render-time requests or automatic retry.
+    // at a time. No history pagination, render-time requests or automatic retry:
+    // a row whose load failed keeps its snapshot menu, and a selection on it
+    // fetches the climb on demand.
     void (async () => {
       for (let offset = 0; offset < missing.length; offset += MENU_METADATA_CONCURRENCY) {
         if (cancelled || metadataGeneration !== actionGenerationRef.current) return;
@@ -667,17 +669,28 @@ function NowOnTheWallPanelComponent(
     [onOpenPlaylist, runInteractiveAction],
   );
 
+  // The full climb a row's menu can read, once the panel has loaded it. Rows get
+  // it as a prop, so a load re-renders only the row it belongs to.
+  const loadedMenuClimb = useCallback(
+    (presenceClimb: BoardPresenceClimb): Climb | undefined => {
+      const actionContext = getActionContext(presenceClimb);
+      return actionContext ? menuClimbCache.get(actionContext.cacheKey) : undefined;
+    },
+    [getActionContext, menuClimbCache],
+  );
+
   const handleInteractiveOpenActions = useCallback(
-    (presenceClimb: BoardPresenceClimb) => {
+    (presenceClimb: BoardPresenceClimb, loadedClimb?: Climb) => {
       if (!onOpenActions) return null;
       const actionContext = getActionContext(presenceClimb);
       if (!actionContext) return null;
-      // Ownership and edit/delete availability need authoritative metadata.
-      // The bounded panel effect hydrates it; resolving a row never fetches.
-      const cachedClimb = menuClimbCache.get(actionContext.cacheKey);
-      if (!cachedClimb) return null;
+      // Who set the climb (Edit, Delete, Report) needs the full climb, which the
+      // panel loads for the hero and the visible rows. Until it lands, or when
+      // that load failed, the menu reads the wall's own snapshot of the climb,
+      // so a hold always has a menu. Either way a selection fetches the full
+      // climb first and runs only a row its menu offers too (ClimbMenusProvider).
       const target = onOpenActions({
-        climb: cachedClimb,
+        climb: loadedClimb ?? boardPresenceClimbToClimb(presenceClimb),
         boardConfig: actionContext.actionBoardConfig,
         queueItemUuid: presenceClimb.queueItemUuid ?? null,
       });
@@ -695,7 +708,7 @@ function NowOnTheWallPanelComponent(
         },
       };
     },
-    [getActionContext, menuClimbCache, onOpenActions, resolveAction],
+    [getActionContext, onOpenActions, resolveAction],
   );
 
   const handleClose = useCallback(() => {
@@ -752,6 +765,7 @@ function NowOnTheWallPanelComponent(
             onPlayNext={handleInteractivePlayNext}
             onOpenPlaylist={handleInteractiveOpenPlaylist}
             onOpenActions={handleInteractiveOpenActions}
+            menuClimb={loadedMenuClimb(item)}
           />
         );
       }
@@ -778,6 +792,7 @@ function NowOnTheWallPanelComponent(
       handleInteractivePlayNext,
       handleInteractiveOpenPlaylist,
       handleInteractiveOpenActions,
+      loadedMenuClimb,
       isActionLoading,
       onClimbPress,
     ],
@@ -794,6 +809,8 @@ function NowOnTheWallPanelComponent(
           actionCacheKey(actionBoardConfigForPresenceClimb(boardConfig, currentClimb), currentClimb.climbUuid),
         )
       : false;
+
+  const heroMenuClimb = currentClimb ? loadedMenuClimb(currentClimb) : undefined;
 
   const listHeader = useMemo(() => {
     // Per-climb grades under the "Show Boardsesh grades" toggle. resolveGrade with
@@ -836,6 +853,7 @@ function NowOnTheWallPanelComponent(
               onPlayNext={handleInteractivePlayNext}
               onOpenPlaylist={handleInteractiveOpenPlaylist}
               onOpenActions={handleInteractiveOpenActions}
+              menuClimb={heroMenuClimb}
             />
           ) : (
             <NowOnTheWallHero
@@ -942,6 +960,7 @@ function NowOnTheWallPanelComponent(
     handleInteractivePlayNext,
     handleInteractiveOpenPlaylist,
     handleInteractiveOpenActions,
+    heroMenuClimb,
     heroActionLoading,
     onClimbPress,
     variant,
@@ -1134,7 +1153,9 @@ type InteractiveRowActionProps = {
   onPress?: (climb: BoardPresenceClimb) => void;
   onPlayNext?: (climb: BoardPresenceClimb) => void;
   onOpenPlaylist?: (climb: BoardPresenceClimb) => void;
-  onOpenActions?: (climb: BoardPresenceClimb) => ClimbActionsTarget | null | undefined;
+  onOpenActions?: (climb: BoardPresenceClimb, loadedClimb?: Climb) => ClimbActionsTarget | null | undefined;
+  /** The full climb, once loaded: its menu then knows who set it. */
+  menuClimb?: Climb;
 };
 
 type HeroContentProps = Omit<HeroProps, 'climb' | 'surfaceColor'> & {
@@ -1242,6 +1263,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   onPlayNext,
   onOpenPlaylist,
   onOpenActions,
+  menuClimb,
 }: InteractiveHeroRowProps) {
   const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
   const climbBoardConfig = useMemo(
@@ -1263,8 +1285,8 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
   const handleOpenActions = useCallback(() => {
-    return onOpenActions?.(climb);
-  }, [climb, onOpenActions]);
+    return onOpenActions?.(climb, menuClimb);
+  }, [climb, menuClimb, onOpenActions]);
   const renderContent = useCallback(
     ({ climb: renderClimb }: ClimbListRowRenderContentArgs) => (
       <NowOnTheWallHeroContent
@@ -1458,6 +1480,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
   onPlayNext,
   onOpenPlaylist,
   onOpenActions,
+  menuClimb,
 }: InteractiveHistoryRowProps) {
   const rowClimb = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
   const climbBoardConfig = useMemo(
@@ -1478,8 +1501,8 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
   const handleOpenActions = useCallback(() => {
-    return onOpenActions?.(climb);
-  }, [climb, onOpenActions]);
+    return onOpenActions?.(climb, menuClimb);
+  }, [climb, menuClimb, onOpenActions]);
   const renderContent = useCallback(
     ({ climb: renderClimb }: ClimbListRowRenderContentArgs) => (
       <HistoryRowContent

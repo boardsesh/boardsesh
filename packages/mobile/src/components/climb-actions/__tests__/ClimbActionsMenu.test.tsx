@@ -12,6 +12,8 @@ const runtime = vi.hoisted(() => ({
   openPlaylist: vi.fn(),
   board: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
   queue: [] as { uuid: string }[],
+  activeClimbUuid: null as string | null,
+  renders: [] as string[],
 }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -52,7 +54,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ boardConfig: runtime.board, openAddToPlaylist: runtime.openPlaylist }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useActiveClimbUuid: () => null,
+  useActiveClimbUuid: () => runtime.activeClimbUuid,
   useQueueData: () => ({ queue: runtime.queue, currentClimbQueueItem: null }),
   useQueueActions: () => ({ findReplayFromHereItem: () => null }),
 }));
@@ -95,8 +97,28 @@ function deferred<T>() {
 
 beforeEach(() => {
   runtime.generation = 0;
+  runtime.queue = [];
+  runtime.activeClimbUuid = null;
+  runtime.renders = [];
   vi.clearAllMocks();
 });
+
+// A memoised row, as every list row is: it re-renders only for its own props or
+// for what it reads from the menu runtime.
+const CountedRow = React.memo(function CountedRow({ selected }: { selected: ClimbActionsTarget }) {
+  runtime.renders.push(selected.climb.uuid);
+  const menu = useClimbMenu(selected);
+  return <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} />;
+});
+function CountedRows({ rows }: { rows: ClimbActionsTarget[] }) {
+  return (
+    <ClimbMenusProvider currentUserId="viewer" isAuthenticated activeBoardConfig={runtime.board}>
+      {rows.map((row) => (
+        <CountedRow key={row.climb.uuid} selected={row} />
+      ))}
+    </ClimbMenusProvider>
+  );
+}
 afterEach(cleanup);
 
 describe('shared native climb menu commands', () => {
@@ -133,6 +155,27 @@ describe('shared native climb menu commands', () => {
     runtime.generation += 1;
     await act(async () => pending.resolve(target('a').climb));
     expect(runtime.executed).not.toHaveBeenCalled();
+  });
+
+  it('leaves every row alone when a queue update changes nothing it shows', () => {
+    const rows = [target('a'), target('b')];
+    const view = render(<CountedRows rows={rows} />);
+    expect(runtime.renders).toEqual(['a', 'b']);
+    // A crewmate adds a climb: a new queue array, no row's state moved.
+    runtime.queue = [{ uuid: 'slot-new' }];
+    view.rerender(<CountedRows rows={rows} />);
+    expect(runtime.renders).toEqual(['a', 'b']);
+  });
+
+  it('re-renders only the row whose climb went on the wall', () => {
+    const rows = [target('a'), target('b')];
+    const view = render(<CountedRows rows={rows} />);
+    runtime.renders = [];
+    runtime.activeClimbUuid = 'a';
+    view.rerender(<CountedRows rows={rows} />);
+    expect(runtime.renders).toEqual(['a']);
+    // On the wall already, so its menu drops Play next; the other keeps it.
+    expect(screen.getAllByText('mobile.climbActions.playNext')).toHaveLength(1);
   });
 
   it('includes board, angle, queue slot, and credentials in native menu identity', () => {

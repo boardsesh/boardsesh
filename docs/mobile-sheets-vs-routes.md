@@ -66,6 +66,21 @@ unmounts, preserving the normal sheet presenter for add-to-playlist and other ac
 Other surfaces retain SwiftUI ContextMenu/Menu on iOS, Compose dropdowns on Android,
 and Paper on Expo web. `getClimbActions` resolves a snapshot without opening anything.
 The old `ClimbReactionMenu` overlay and its embedded sheets are removed.
+
+A hold menu never remounts the row it wraps when its target changes (a recycled
+cell, a crew edit): it retires only the drawn menu. Android and web close it; iOS
+re-keys the context-menu items. On iOS the row must live inside the SwiftUI Host
+for the system to lift it. On Android the row stays a plain React Native view (a
+Compose `RNHostView` row can draw blank, #6500), and the dropdown's Compose host
+mounts on the first hold, anchored to a strip along the row's bottom edge. The ⋮
+on Android and web is a plain button that opens that same menu. Only a menu opened
+inside `/play` (its target carries the route's `dismissPlayerAndWait`) sends Tick,
+Playlist, Beta and Report to the player's own sheets; every other menu presents
+from the root.
+
+Rows read the queue through `ClimbMenusProvider`'s store, one boolean each (on the
+wall, replayable slot, on the stored board), so a crew queue edit re-renders only
+the rows whose menu changed.
 Native iOS captures: [before](./images/climb-menu-before.png),
 [long press](./images/climb-menu-after.png), [ellipsis](./images/climb-menu-ellipsis.png).
 

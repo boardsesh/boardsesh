@@ -23,7 +23,8 @@ type ViewProps = {
   accessibilityLabel?: string;
   accessibilityRole?: string;
 };
-type PressProps = ViewProps & {
+type PressProps = Omit<ViewProps, 'ref'> & {
+  ref?: Ref<HTMLButtonElement>;
   onPress?: () => void;
   disabled?: boolean;
   accessibilityState?: { disabled?: boolean; selected?: boolean };
@@ -41,6 +42,7 @@ const runtime = vi.hoisted(() => ({
   maximumMountedBodies: 0,
   haptic: vi.fn(),
   focus: vi.fn(),
+  dismissKeyboard: vi.fn(),
 }));
 
 function MockView({ ref, children, testID, style, accessibilityLabel, accessibilityRole }: ViewProps) {
@@ -66,7 +68,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: { position: 'absolute' } },
   Dimensions: { get: () => ({ ...runtime.viewport }) },
   useWindowDimensions: () => runtime.viewport,
-  findNodeHandle: () => 42,
+  // A rendered button reports its label, so a test can tell which control got
+  // focus back; the row body's ref is never attached here.
+  findNodeHandle: (instance: unknown) => (instance instanceof HTMLElement ? instance.getAttribute('aria-label') : 42),
+  Keyboard: { dismiss: runtime.dismissKeyboard },
   AccessibilityInfo: { setAccessibilityFocus: runtime.focus },
   FlatList: ({
     data,
@@ -138,6 +143,7 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../PressableSurface', () => ({
   StaticPressableSurface: ({
+    ref,
     children,
     onPress,
     disabled,
@@ -148,6 +154,7 @@ vi.mock('../../PressableSurface', () => ({
     createElement(
       'button',
       {
+        ref,
         'data-testid': testID,
         'aria-label': accessibilityLabel,
         'aria-disabled': accessibilityState?.disabled,
@@ -438,6 +445,47 @@ describe('lifted climb list row menu', () => {
     view.rerender(<Harness rows={rows} />);
     expect(screen.queryByTestId('full-window-overlay')).toBeNull();
     completeFrames();
-    expect(runtime.focus).not.toHaveBeenCalled();
+    // The menu closed under the climber: focus goes back to the ⋮ that opened it.
+    expect(runtime.focus).toHaveBeenCalledExactlyOnceWith('More Rocky');
+  });
+
+  it('puts the keyboard away before it measures the row', () => {
+    render(<Harness rows={actionRows()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    expect(runtime.dismissKeyboard).toHaveBeenCalledTimes(1);
+    expect(runtime.measurements).toHaveLength(0);
+    measureNext();
+    expect(screen.getByTestId('full-window-overlay')).toBeTruthy();
+  });
+
+  it('hands focus back to the control that opened a cancelled menu', () => {
+    const menuRef = createRef<ClimbListRowMenuHandle>();
+    render(<Harness menuRef={menuRef} rows={actionRows()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-backdrop'));
+    completeAnimations();
+    completeFrames();
+    expect(runtime.focus).toHaveBeenCalledExactlyOnceWith('More Rocky');
+
+    // A hold opens it from the row, so the row gets focus back.
+    act(() => menuRef.current?.open());
+    measureNext();
+    fireEvent.click(screen.getByTestId('climb-row-menu-backdrop'));
+    completeAnimations();
+    completeFrames();
+    expect(runtime.focus).toHaveBeenLastCalledWith(42);
+  });
+
+  it('hands focus back when a target change retires the open menu, and runs nothing', () => {
+    const run = vi.fn();
+    const view = render(<Harness rows={actionRows(run)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Rocky' }));
+    measureNext();
+    view.rerender(<Harness rows={actionRows(run)} menuKey="climb-b" title="Granite" />);
+    expect(screen.queryByTestId('full-window-overlay')).toBeNull();
+    completeFrames();
+    expect(runtime.focus).toHaveBeenCalledExactlyOnceWith('More Granite');
+    expect(run).not.toHaveBeenCalled();
   });
 });

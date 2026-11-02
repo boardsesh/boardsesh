@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, RefObject } from 'react';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import type { IconName } from './icon-map';
 
@@ -90,12 +90,29 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
   trigger?: never;
 };
 
+/** Opens a long-press menu from a separate control, such as a row's ⋮ button. */
+export type AppMenuHandle = {
+  /** Android and web open the menu under the row. A SwiftUI context menu only
+   *  opens from its hold, so on iOS this does nothing. */
+  open: () => void;
+};
+
 /** A row body keeps its own tap/accessibility behavior while a hold opens its menu. */
 type AppMenuLongPressAnchorProps = AppMenuSharedProps & {
   children: ReactElement;
   trigger: 'longPress';
+  menuRef?: RefObject<AppMenuHandle | null>;
+  /**
+   * What the actions act on (climb, board, slot, row set). The anchor and its
+   * children stay mounted when it changes, so a recycled list cell keeps its
+   * row; only the drawn menu is retired: Android and web close an open menu,
+   * and iOS re-keys its items so one still on screen from before runs nothing.
+   */
+  menuKey?: string;
   /** Lift a list row as an opaque, rounded native preview on iOS. */
   liftPreview?: boolean;
+  /** The lifted preview's opaque surface; the screen background by default. */
+  previewBackgroundColor?: ColorValue;
   /** Preserve a selected row's translucent wash over the opaque preview surface. */
   previewOverlayColor?: ColorValue;
   accessibilityLabel?: string;

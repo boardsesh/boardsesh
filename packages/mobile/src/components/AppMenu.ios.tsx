@@ -135,9 +135,14 @@ export function AppMenu(props: AppMenuProps) {
     [iconName, headline, anchorSize, plainIcon, fillColor, maxWidth, resolvedLabel, accessibilityHint],
   );
 
+  // A long-press anchor stays mounted while its target changes, and an open
+  // SwiftUI context menu keeps the items it was drawn with. Keying the items on
+  // the target retires those: a stale item belongs to an unmounted Button, so a
+  // tap on it runs nothing rather than the new target's row at that index.
+  const itemKeyPrefix = props.trigger === 'longPress' && props.menuKey != null ? `${props.menuKey}|` : '';
   const renderButton = (action: (typeof resolved)[number], index: number) => (
     <Button
-      key={`${index}-${action.label}`}
+      key={`${itemKeyPrefix}${index}-${action.label}`}
       label={action.label}
       // `iosSystemImage` is a plain string; the Button's `systemImage` is the
       // SFSymbol literal union. Derive the cast target from Button itself rather
@@ -166,7 +171,7 @@ export function AppMenu(props: AppMenuProps) {
       {resolved.slice(paletteCount).map((action, offset) => {
         const index = paletteCount + offset;
         return (
-          <Fragment key={`${index}-${action.label}`}>
+          <Fragment key={`${itemKeyPrefix}${index}-${action.label}`}>
             {action.dividerBefore ? <Divider /> : null}
             {renderButton(action, index)}
           </Fragment>
@@ -176,6 +181,11 @@ export function AppMenu(props: AppMenuProps) {
   );
 
   if (props.trigger === 'longPress') {
+    // The SwiftUI context menu lifts its trigger, so the row has to live inside
+    // the Host. The bridge keeps the width it first measured, so the Host waits
+    // for one RN layout pass and then moves the row inside it: one remount per
+    // new cell. It is not keyed on the target, so a recycled cell keeps its
+    // Host and its row; only a width change (rotation, a fold) remounts again.
     return (
       <MeasuredMenuAnchor style={style}>
         {(width) => {
@@ -186,7 +196,9 @@ export function AppMenu(props: AppMenuProps) {
                 style={{
                   width,
                   flexDirection: 'row',
-                  backgroundColor: props.liftPreview ? systemColors.background : undefined,
+                  backgroundColor: props.liftPreview
+                    ? (props.previewBackgroundColor ?? systemColors.background)
+                    : undefined,
                 }}
               >
                 {props.liftPreview && props.previewOverlayColor ? (

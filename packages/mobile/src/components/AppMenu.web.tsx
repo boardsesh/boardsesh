@@ -13,7 +13,16 @@ import { PressableSurface } from './PressableSurface';
 // `systemIcon` (an iOS SF Symbol name) is ignored here — it isn't a Material glyph
 // name, matching Android, which also drops it.
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 import { StyleSheet, View, type PointerEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { Divider, Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
@@ -110,6 +119,22 @@ export function AppMenu(props: AppMenuProps) {
   const { m3, systemColors } = useTheme();
   const [visible, setVisible] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
+  const longPressMenuKey = props.trigger === 'longPress' ? props.menuKey : undefined;
+  const hasRows = resolved.length > 0;
+  useImperativeHandle(
+    props.trigger === 'longPress' ? props.menuRef : undefined,
+    () => ({
+      open: () => {
+        if (hasRows) setVisible(true);
+      },
+    }),
+    [hasRows],
+  );
+  // The rows now act on something else: close the open menu rather than let a
+  // click land on a row drawn for the old target.
+  useEffect(() => {
+    setVisible(false);
+  }, [longPressMenuKey]);
 
   const labelColor = systemColors.label as string;
   const caretColor = systemColors.secondaryLabel as string;

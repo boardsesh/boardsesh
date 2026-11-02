@@ -1,8 +1,24 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import type { AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { buildPlayDrawerMenuRows, type ClimbMenuGroups } from '../play-drawer/play-drawer-menu-rows';
-import { boardConfigsMatch, useDrawerHost, type ClimbActionsTarget } from '../../providers/drawer-host-provider';
+import {
+  boardConfigsMatch,
+  useDrawerHost,
+  type BoardConfig,
+  type ClimbActionsTarget,
+} from '../../providers/drawer-host-provider';
 import { useQueueActions, useQueueData, useActiveClimbUuid } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
@@ -24,23 +40,74 @@ const LIST_GROUPS: ClimbMenuGroups = [
 const ALL_BUTTONS_HIDDEN = { tick: true, favorite: true, share: true, queue: true, mirror: true, angle: true };
 
 type Selection = { target: ClimbActionsTarget; id: ClimbActionId; nonce: number; credentialGeneration: number };
+
+/**
+ * The queue and board state a row's menu reads. It changes on every crew queue
+ * edit, so it lives in a store, not in a context value: each row subscribes to
+ * the one boolean it needs (is this climb on the wall, can this slot be
+ * replayed, is this the stored board), and re-renders only when that flips.
+ */
+type MenuQueueState = {
+  activeClimbUuid: string | null | undefined;
+  replayableSlots: ReadonlySet<string>;
+  activeBoardConfig: BoardConfig | null;
+};
+type MenuQueueStore = {
+  getState: () => MenuQueueState;
+  setState: (next: MenuQueueState) => void;
+  subscribe: (listener: () => void) => () => void;
+};
+
+function createMenuQueueStore(initial: MenuQueueState): MenuQueueStore {
+  let state = initial;
+  const listeners = new Set<() => void>();
+  return {
+    getState: () => state,
+    setState: (next) => {
+      if (next === state) return;
+      state = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+/** The stable half: who is looking, and the one command entry point. */
 type MenuRuntime = {
   currentUserId: string | null;
   isAuthenticated: boolean;
-  activeClimbUuid: string | null | undefined;
-  replayableSlots: ReadonlySet<string>;
   execute: (target: ClimbActionsTarget, id: ClimbActionId) => void;
+  queueStore: MenuQueueStore;
 };
 const MenuRuntimeContext = createContext<MenuRuntime | null>(null);
+
+const EMPTY_SLOTS: ReadonlySet<string> = new Set<string>();
+const subscribeToNothing = () => () => undefined;
+
+function useMenuQueueFlag(store: MenuQueueStore | undefined, select: (state: MenuQueueState) => boolean): boolean {
+  return useSyncExternalStore(
+    store?.subscribe ?? subscribeToNothing,
+    () => (store ? select(store.getState()) : false),
+    () => false,
+  );
+}
 
 /** One command host for all row menus: scrolling starts no per-climb requests. */
 export function ClimbMenusProvider({
   currentUserId,
   isAuthenticated,
+  activeBoardConfig = null,
   children,
 }: {
   currentUserId: string | null;
   isAuthenticated: boolean;
+  /** The stored active board: a menu on another board can't read its favourite. */
+  activeBoardConfig?: BoardConfig | null;
   children: ReactNode;
 }) {
   const [selection, setSelection] = usePrivacyScopedState<Selection>(null);
@@ -51,9 +118,16 @@ export function ClimbMenusProvider({
   const replayableSlots = useMemo(() => {
     const currentIndex = queue.findIndex((item) => item.uuid === currentClimbQueueItem?.uuid);
     // Check the queue mode once, then index History once instead of scanning per row.
-    if (currentIndex <= 0 || !findReplayFromHereItem(queue[0].uuid)) return new Set<string>();
+    if (currentIndex <= 0 || !findReplayFromHereItem(queue[0].uuid)) return EMPTY_SLOTS;
     return new Set(queue.slice(0, currentIndex).map((item) => item.uuid));
   }, [queue, currentClimbQueueItem, findReplayFromHereItem]);
+  const queueState = useMemo<MenuQueueState>(
+    () => ({ activeClimbUuid, replayableSlots, activeBoardConfig }),
+    [activeClimbUuid, replayableSlots, activeBoardConfig],
+  );
+  const [queueStore] = useState(() => createMenuQueueStore(queueState));
+  // Before paint, so a row never draws a menu one queue state behind.
+  useLayoutEffect(() => queueStore.setState(queueState), [queueStore, queueState]);
   const execute = useCallback(
     (target: ClimbActionsTarget, id: ClimbActionId) => {
       nonce.current += 1;
@@ -63,8 +137,8 @@ export function ClimbMenusProvider({
   );
   const complete = useCallback(() => setSelection(null), [setSelection]);
   const runtime = useMemo(
-    () => ({ currentUserId, isAuthenticated, activeClimbUuid, replayableSlots, execute }),
-    [currentUserId, isAuthenticated, activeClimbUuid, replayableSlots, execute],
+    () => ({ currentUserId, isAuthenticated, execute, queueStore }),
+    [currentUserId, isAuthenticated, execute, queueStore],
   );
   return (
     <MenuRuntimeContext.Provider value={runtime}>
@@ -139,7 +213,10 @@ function ClimbActionRunner({
   onComplete: () => void;
 }) {
   const { openAddToPlaylist } = useDrawerHost();
-  const presenters = getClimbActionPresenters();
+  // Only a menu opened inside `/play` (it carries the route's dismiss waiter)
+  // hands its sheets to the player. Any other menu, even one on a modal pushed
+  // over the player, presents from the root as it always did.
+  const presenters = target.dismissPlayerAndWait ? getClimbActionPresenters() : null;
   const selectPlaylist = useCallback(() => {
     if (presenters) openPresentedClimbAction(presenters, 'playlist', target);
     else openAddToPlaylist(target.climb, target.boardConfig);
@@ -178,29 +255,54 @@ export function useClimbMenu(target: ClimbActionsTarget | null) {
   const moderationEnabled = useClimbModerationEnabled();
   const wallArchived = useSprayWallIsArchived(target?.boardConfig.boardName, target?.boardConfig.layoutId ?? null);
   const favorited = useIsClimbFavorited(target?.climb.uuid ?? '');
-  const { boardConfig: activeBoardConfig } = useDrawerHost();
+  const queueStore = runtime?.queueStore;
+  const climbUuid = target?.climb.uuid;
+  const queueItemUuid = target?.queueItemUuid;
+  const board = target?.boardConfig ?? null;
+  const isActiveClimb = useMenuQueueFlag(queueStore, (state) => !!climbUuid && state.activeClimbUuid === climbUuid);
+  const canReplay = useMenuQueueFlag(
+    queueStore,
+    (state) => !!queueItemUuid && state.replayableSlots.has(queueItemUuid),
+  );
+  const onActiveBoard = useMenuQueueFlag(queueStore, (state) => boardConfigsMatch(board, state.activeBoardConfig));
+  const currentUserId = runtime?.currentUserId ?? null;
+  const isAuthenticated = runtime?.isAuthenticated ?? false;
+  const execute = runtime?.execute;
   const rows = useMemo(() => {
-    if (!target || !runtime) return [];
+    if (!target || !execute) return [];
     const items = buildClimbMenuItems(
-      { ...target, currentUserId: runtime.currentUserId, isAuthenticated: runtime.isAuthenticated },
+      { ...target, currentUserId, isAuthenticated },
       {
         t,
         actionColors,
-        activeClimbUuid: runtime.activeClimbUuid,
+        activeClimbUuid: isActiveClimb ? target.climb.uuid : null,
         wallArchived,
         moderationEnabled,
-        isFavorited: boardConfigsMatch(target.boardConfig, activeBoardConfig) && favorited,
-        canReplay: !!target.queueItemUuid && runtime.replayableSlots.has(target.queueItemUuid),
+        isFavorited: onActiveBoard && favorited,
+        canReplay,
       },
-      (id) => runtime.execute(target, id),
+      (id) => execute(target, id),
     );
     return buildPlayDrawerMenuRows(items, {
       hidden: ALL_BUTTONS_HIDDEN,
       boardMismatch: false,
-      isActiveClimb: target.climb.uuid === runtime.activeClimbUuid,
+      isActiveClimb,
       groups: LIST_GROUPS,
     });
-  }, [target, runtime, t, actionColors, wallArchived, moderationEnabled, activeBoardConfig, favorited]);
+  }, [
+    target,
+    execute,
+    currentUserId,
+    isAuthenticated,
+    t,
+    actionColors,
+    isActiveClimb,
+    wallArchived,
+    moderationEnabled,
+    onActiveBoard,
+    favorited,
+    canReplay,
+  ]);
   const onSelectIndex = useCallback(
     (index: number) => {
       const row = rows[index];
@@ -218,8 +320,7 @@ export function useClimbMenu(target: ClimbActionsTarget | null) {
     const row = latestRows.current.find((item) => item.id === event.nativeEvent.actionName);
     if (row && !row.disabled) row.run();
   }, []);
-  const board = target?.boardConfig;
-  const menuKey = `${getCredentialGeneration()}|${runtime?.currentUserId}|${target?.climb.uuid}|${board?.boardName}|${board?.layoutId}|${board?.sizeId}|${board?.setIds}|${board?.angle}|${target?.queueItemUuid}|${rows.map((row) => `${row.id}:${row.disabled}`).join(',')}`;
+  const menuKey = `${getCredentialGeneration()}|${currentUserId}|${climbUuid}|${board?.boardName}|${board?.layoutId}|${board?.sizeId}|${board?.setIds}|${board?.angle}|${queueItemUuid}|${rows.map((row) => `${row.id}:${row.disabled}`).join(',')}`;
   return { rows, onSelectIndex, menuKey, accessibilityActions, onAccessibilityAction };
 }
 

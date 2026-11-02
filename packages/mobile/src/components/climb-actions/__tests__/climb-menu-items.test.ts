@@ -71,6 +71,18 @@ describe('buildClimbMenuItems', () => {
     expect(favorite(false)).toMatchObject({ title: 'session:playView.actionBar.addFavoriteAria', icon: 'favorite' });
   });
 
+  it("names a list menu's favourite by what it knows", () => {
+    const favorite = (isFavorited?: boolean) => menu({}, { isFavorited }).find((item) => item.id === 'favorite');
+    // A favourite the store holds is certain, so the row says it removes it.
+    expect(favorite(true)).toMatchObject({
+      title: 'session:playView.actionBar.removeFavoriteAria',
+      icon: 'favorite.fill',
+    });
+    // A miss may only mean the status hasn't loaded: the label stays neutral.
+    expect(favorite(false)).toMatchObject({ title: 'mobile.climbRow.toggleFavorite', icon: 'favorite' });
+    expect(favorite(undefined)).toMatchObject({ title: 'mobile.climbRow.toggleFavorite', icon: 'favorite' });
+  });
+
   it('dispatches the id of the row that was chosen', () => {
     const dispatch = vi.fn();
     const items = menu({ isAuthenticated: true }, {}, dispatch);

@@ -86,8 +86,11 @@ export type PlayDrawerActionsMenuProps = {
  * A menu row reports a position, so a row set that changes while the menu is
  * open (a crew member moves the wall, commit mode flips, the scrim comes up)
  * would land a tap on whatever row has moved into that slot. The menu is keyed
- * on the climb and its row set instead: any such change remounts it, which closes
- * it, and a tap always resolves against the rows it was drawn from.
+ * on the climb, its board and its row set instead: any such change remounts it,
+ * which closes it, and a tap always resolves against the rows it was drawn from.
+ * The angle is left out of the key on purpose: a crew member moving the wall
+ * changes no row, so the menu stays open and the picked row runs at the new
+ * angle, the one the wall is now at.
  */
 export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
   climb,
@@ -173,7 +176,7 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
 
   return (
     <ClimbMenu
-      menuKey={`${currentUserId}|${climb.uuid}|${boardConfig.boardName}|${boardConfig.layoutId}|${boardConfig.sizeId}|${boardConfig.setIds}|${boardConfig.angle}|${queueItemUuid}|${rowSignature}`}
+      menuKey={`${currentUserId}|${climb.uuid}|${boardConfig.boardName}|${boardConfig.layoutId}|${boardConfig.sizeId}|${boardConfig.setIds}|${queueItemUuid}|${rowSignature}`}
       accessibilityLabel={t('playView.actionBar.climbActionsAria')}
       rows={rows}
     />

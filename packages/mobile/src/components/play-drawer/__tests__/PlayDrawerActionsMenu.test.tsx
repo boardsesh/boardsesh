@@ -324,10 +324,10 @@ describe('PlayDrawerActionsMenu', () => {
     expect(container.textContent).toContain('mobile.climbActions.report');
   });
 
-  it('closes the native menu across an angle change', () => {
+  it('keeps the same menu across an angle change', () => {
     const { rerender } = render(createElement(PlayDrawerActionsMenu, makeProps()));
     rerender(createElement(PlayDrawerActionsMenu, makeProps({ boardConfig: { ...TENSION, angle: 45 } })));
-    expect(menu.mounts).toBe(2);
+    expect(menu.mounts).toBe(1);
   });
 
   it('asks for no profile without a session', () => {

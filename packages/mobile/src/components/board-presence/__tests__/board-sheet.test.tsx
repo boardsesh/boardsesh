@@ -1070,7 +1070,7 @@ describe('BoardSheet', () => {
     });
   });
 
-  it('hydrates authoritative native menu metadata in a bounded effect before enabling it', async () => {
+  it('offers the menu on the wall snapshot at once, then on the full climb once the bounded load lands', async () => {
     presence.history = [
       makeClimb('old-climb', 2, { frames: 'old-frames', grade: 'V4', angle: 30, queueItemUuid: 'queue-old' }),
     ];
@@ -1103,23 +1103,64 @@ describe('BoardSheet', () => {
       angle: 30,
       climbUuid: 'old-climb',
     });
+    // Before the load lands, a hold still has a menu: the wall's own snapshot
+    // of the climb. A selection then waits on the same in-flight load.
     const pendingResolver = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
-    expect(pendingResolver?.()).toBeNull();
-    expect(onOpenActions).not.toHaveBeenCalled();
+    const snapshotTarget = pendingResolver?.();
+    expect(snapshotTarget?.climb.uuid).toBe('old-climb');
+    expect(snapshotTarget?.climb).not.toBe(oldDetail);
+    expect(onOpenActions).toHaveBeenCalledExactlyOnceWith({
+      climb: expect.objectContaining({ uuid: 'old-climb' }),
+      queueItemUuid: 'queue-old',
+      boardConfig: { ...boardConfig, angle: 30 },
+    });
+    const pendingSelection = snapshotTarget?.resolveClimb?.();
     expect(graphql.request).toHaveBeenCalledOnce();
     await act(async () => {
       climbRequest.resolve({ climb: oldDetail });
       await climbRequest.promise;
     });
+    expect(await pendingSelection).toBe(oldDetail);
     const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
     const target = resolveMenu?.();
-    expect(onOpenActions).toHaveBeenCalledExactlyOnceWith({
+    expect(onOpenActions).toHaveBeenLastCalledWith({
       climb: oldDetail,
       queueItemUuid: 'queue-old',
       boardConfig: { ...boardConfig, angle: 30 },
     });
     expect(await target?.resolveClimb?.()).toBe(oldDetail);
     expect(graphql.request).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a menu on a row whose load failed, and fetches the climb when an action is picked', async () => {
+    presence.history = [makeClimb('flaky-climb', 2, { frames: 'flaky-frames', grade: 'V4', angle: 30 })];
+    const onOpenActions = vi.fn((action: BoardSheetClimbAction) => ({
+      climb: action.climb,
+      boardConfig: action.boardConfig,
+    }));
+    const detail = makeFullClimb('flaky-climb', { angle: 30 });
+    graphql.request.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ climb: detail });
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        onDismissed: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+        onOpenActions,
+      }),
+    );
+    await act(async () => {
+      ref.current?.present();
+    });
+    expect(graphql.request).toHaveBeenCalledOnce();
+    const resolveMenu = climbRows.props.at(-1)?.onOpenActions as (() => ClimbActionsTarget | null) | undefined;
+    const target = resolveMenu?.();
+    expect(target?.climb.uuid).toBe('flaky-climb');
+    await expect(target?.resolveClimb?.()).resolves.toBe(detail);
+    expect(graphql.request).toHaveBeenCalledTimes(2);
   });
 
   it('hydrates only the initial bounded rows, then the newly visible history row', async () => {

@@ -67,9 +67,9 @@ const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
 // A partial swipe reveals a labelled action; releasing past COMMIT_THRESHOLD
 // commits it and closes the row. friction=1 keeps finger tracking direct.
 
-// The ⋮ button is nested inside the row's `accessible` container, so it needs both
-// its own props (TalkBack focuses it) and a labelled custom action published on the
-// row (VoiceOver does not) — see lib/row-accessibility-actions.
+// The ⋮ button is a sibling of the row's `accessible` body (ClimbListRowMenu
+// renders it), so a screen reader focuses it on its own. The row body also
+// publishes every menu action as a labelled custom action.
 
 // Per-row swipe perf: the panels below split into a cheap always-mounted shell
 // (just the coloured panel + its resting-state icon, zero shared values /
@@ -748,9 +748,6 @@ const styles = StyleSheet.create({
   // overlap with the row above or below.
   moreButtonWithoutThumbnail: {
     marginVertical: -CLIMB_ROW_VERTICAL_PADDING,
-  },
-  moreIconRotate: {
-    transform: [{ rotate: '90deg' }],
   },
   swipeIcon: {
     width: 28,
