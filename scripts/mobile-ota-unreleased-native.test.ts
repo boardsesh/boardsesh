@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { APP_CONFIG_PATH } from './lib/mobile-release-version';
 import { nativeReleaseMessage, NATIVE_BASELINE_TAG } from './lib/native-release';
-import { prepareNativeVersionRestoration, prepareNativeVersionStamp } from './mobile-native-release';
+import { prepareNativeVersionRestoration, prepareNativeVersionStamp, writeNativeStamp } from './mobile-native-release';
 import { classifyUnreleasedNativeOta } from './mobile-ota-unreleased-native';
 import { candidateFixture } from './__tests__/helpers/ota-stable-fixtures';
 
@@ -40,18 +40,19 @@ function fixture(kind: 'bump' | 'adoption' | 'restoration' = 'bump') {
     '-m',
     nativeReleaseMessage({ ...oldFingerprints, sourceSha: baselineSha }, 'baseline'),
   ]);
+  // The live stores below offer 2.6.0, so its approval anchor exists and closes that version.
+  const publicAnchor = { tag: `release/ios-v2.6.0-${oldFingerprints.ios.slice(0, 12)}`, sha: baselineSha };
+  git(['tag', publicAnchor.tag, baselineSha]);
   if (kind !== 'bump') writeVersion('2.7.0');
   writeFileSync(join(directory, 'native.txt'), 'new native pair');
   git(['add', '.']);
   git(['commit', '--quiet', '-m', 'native change']);
   const rawSource = git(['rev-parse', 'HEAD']);
-  let stamp = prepareNativeVersionStamp(
-    directory,
-    rawSource,
-    fingerprints,
-    kind === 'restoration' ? '2.7.0' : '2.6.0',
-    [],
-  );
+  // A restoration line undoes the pre-fix coordinator's extra bump of the open 2.7.0.
+  let stamp =
+    kind === 'restoration'
+      ? writeNativeStamp(directory, rawSource, fingerprints, '2.7.1', 'version-bump')
+      : prepareNativeVersionStamp(directory, rawSource, fingerprints, '2.6.0', [publicAnchor]);
   git(['update-ref', 'HEAD', stamp.sha]);
   if (kind === 'restoration') {
     stamp = prepareNativeVersionRestoration(directory, stamp.sha, '2.7.0', stamp.sha, fingerprints).stamp;

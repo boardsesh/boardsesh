@@ -33,6 +33,7 @@ import {
   prepareNativeVersionRestoration,
   prepareNativeVersionStamp,
   validateNativeStampSource,
+  writeNativeStamp,
 } from './mobile-native-release';
 
 const fingerprints = { ios: 'a'.repeat(40), android: 'b'.repeat(40) };
@@ -133,7 +134,6 @@ describe('main native release snapshots', () => {
   it('adopts an already-raised unreleased version despite same-version tester builds', () => {
     const tester = { tag: 'build-ios-v2.7.0-8-aaaaaaaaaaaa', sha: stamp.sourceSha };
     expect(planNativeVersion('2.7.0', '2.6.0', [tester])).toEqual({ kind: 'version-adoption', version: '2.7.0' });
-    expect(planNativeVersion('2.7.0', '2.7.0', [tester])).toEqual({ kind: 'version-bump', version: '2.7.1' });
     expect(
       planNativeVersion('2.7.0', '2.6.0', [{ tag: 'release/ios-v2.7.0-aaaaaaaaaaaa', sha: stamp.sourceSha }]),
     ).toEqual({ kind: 'version-bump', version: '2.7.1' });
@@ -142,12 +142,38 @@ describe('main native release snapshots', () => {
     ).toEqual({ kind: 'version-bump', version: '2.8.1' });
   });
 
+  it('keeps the open version for every native change until a store accepts it', () => {
+    const testers = [
+      { tag: 'build-ios-v2.7.0-9-aaaaaaaaaaaa', sha: stamp.sourceSha },
+      { tag: 'build-android-v2.7.0-2001557-bbbbbbbbbbbb', sha: stamp.sourceSha },
+      { tag: 'release/ios-v2.6.0-cccccccccccc', sha: 'e'.repeat(40) },
+    ];
+    // An unsubmitted or in-review 2.7.0 has only tester builds: rebuild it with new build numbers.
+    expect(planNativeVersion('2.7.0', '2.7.0', testers)).toEqual({ kind: 'version-adoption', version: '2.7.0' });
+    // Either store accepting 2.7.0 cuts its anchor and closes the version.
+    for (const anchor of ['release/ios-v2.7.0-aaaaaaaaaaaa', 'release/android-v2.7.0-bbbbbbbbbbbb'])
+      expect(planNativeVersion('2.7.0', '2.7.0', [...testers, { tag: anchor, sha: stamp.sourceSha }])).toEqual({
+        kind: 'version-bump',
+        version: '2.7.1',
+      });
+    // A live higher reservation still wins over keeping the open version.
+    expect(
+      planNativeVersion('2.7.0', '2.7.0', [...testers, { tag: 'build-ios-v2.7.1-1-aaaaaaaaaaaa', sha: stamp.sha }]),
+    ).toEqual({ kind: 'version-bump', version: '2.7.2' });
+    // A main version below the last native stamp is never adopted.
+    expect(planNativeVersion('2.6.9', '2.7.0', testers)).toEqual({ kind: 'version-bump', version: '2.7.1' });
+  });
+
   it('ignores only explicitly superseded tester sources when reserving the next patch', () => {
     const bad = { tag: 'build-ios-v2.7.1-1-aaaaaaaaaaaa', sha: stamp.sha };
     const publicAnchor = { tag: 'release/ios-v2.7.1-aaaaaaaaaaaa', sha: stamp.sha };
     const other = { tag: 'build-android-v2.7.3-2000100-aaaaaaaaaaaa', sha: stamp.sourceSha };
     expect(nativeVersionTagNames([bad, publicAnchor, other], [stamp.sha])).toEqual([publicAnchor.tag, other.tag]);
-    expect(planNativeVersion('2.7.0', '2.7.0', [bad], [stamp.sha]).version).toBe('2.7.1');
+    expect(planNativeVersion('2.7.0', '2.7.0', [bad])).toEqual({ kind: 'version-bump', version: '2.7.2' });
+    expect(planNativeVersion('2.7.0', '2.7.0', [bad], [stamp.sha])).toEqual({
+      kind: 'version-adoption',
+      version: '2.7.0',
+    });
     expect(planNativeVersion('2.7.0', '2.7.0', [bad, publicAnchor], [stamp.sha]).version).toBe('2.7.2');
     expect(planNativeVersion('2.7.0', '2.7.0', [bad, other], [stamp.sha]).version).toBe('2.7.4');
   });
@@ -353,8 +379,8 @@ function nativeHistory() {
 }
 function mistakenBump() {
   const repository = nativeHistory();
-  // Reproduce the old coordinator's extra bump despite the pre-raised source.
-  const bad = prepareNativeVersionStamp(repository.directory, repository.sourceSha, fingerprints, '2.7.0', []);
+  // Reproduce the old coordinator's extra bump of the open 2.7.0 (946156a72d).
+  const bad = writeNativeStamp(repository.directory, repository.sourceSha, fingerprints, '2.7.1', 'version-bump');
   repository.setHead(bad.sha);
   return { ...repository, bad };
 }
@@ -410,20 +436,26 @@ describe('pre-raised native version adoption and explicit restoration', { timeou
     expect(validateNativeStampSource(adopted.sha, adopted.sha, repository.directory)).toMatchObject(adopted);
   });
 
-  it.each(['changed-tree', 'wrong-author', 'wrong-version', 'unchanged-fingerprints', 'not-raised'] as const)(
+  it.each(['changed-tree', 'wrong-author', 'wrong-version', 'unchanged-fingerprints', 'lowered'] as const)(
     'rejects invalid adoption provenance: %s',
     (failure) => {
       const repository = nativeHistory();
-      const bad = prepareNativeVersionStamp(repository.directory, repository.sourceSha, fingerprints, '2.7.0', []);
-      const parent =
-        failure === 'not-raised'
-          ? repository.git(['rev-parse', `${NATIVE_BASELINE_TAG}^{commit}`])
-          : repository.sourceSha;
+      const bad = writeNativeStamp(repository.directory, repository.sourceSha, fingerprints, '2.7.1', 'version-bump');
+      let parent = repository.sourceSha;
+      if (failure === 'lowered') {
+        writeFileSync(
+          join(repository.directory, APP_CONFIG_PATH),
+          "export default {\n  version: '2.5.0',\n  name: 'Boardsesh',\n};\n",
+        );
+        repository.git(['add', '.']);
+        repository.git(['commit', '--quiet', '-m', 'version below the 2.6.0 baseline']);
+        parent = repository.git(['rev-parse', 'HEAD']);
+      }
       const source = forgedStamp(
         repository,
         parent,
         'version-adoption',
-        failure === 'not-raised' ? '2.6.0' : failure === 'wrong-version' ? '2.8.0' : '2.7.0',
+        failure === 'lowered' ? '2.5.0' : failure === 'wrong-version' ? '2.8.0' : '2.7.0',
         {
           ...(failure === 'changed-tree' ? { tree: repository.git(['rev-parse', `${bad.sha}^{tree}`]) } : {}),
           ...(failure === 'wrong-author' ? { author: 'Impersonator' } : {}),
@@ -480,7 +512,7 @@ describe('pre-raised native version adoption and explicit restoration', { timeou
       [{ tag: 'build-ios-v2.7.1-1-aaaaaaaaaaaa', sha: repository.bad.sha }],
       getSupersededNativeStampShas(repository.directory, prepared.stamp.sha),
     );
-    expect(next.version).toBe('2.7.1');
+    expect(next).toMatchObject({ kind: 'version-adoption', version: '2.7.0' });
     repository.setHead(next.sha);
     expect(getSupersededNativeStampShas(repository.directory, next.sha)).toEqual([repository.bad.sha]);
     repository.git(['tag', 'release/ios-v2.7.0-aaaaaaaaaaaa', prepared.stamp.sha]);
@@ -488,32 +520,38 @@ describe('pre-raised native version adoption and explicit restoration', { timeou
     expect(validateNativeStampSource(repository.bad.sha, next.sha, repository.directory).version).toBe('2.7.1');
   });
 
-  it.each(['wrong-expected', 'wrong-target', 'changed-native', 'released-target', 'changed-version'] as const)(
-    'refuses unsafe restoration plan: %s',
-    (failure) => {
-      const repository = mistakenBump();
-      if (failure === 'released-target') repository.git(['tag', 'release/android-v2.7.0-aaaaaaaaaaaa']);
-      if (failure === 'changed-version') {
-        writeFileSync(
-          join(repository.directory, APP_CONFIG_PATH),
-          "export default {\n  version: '2.8.0',\n  name: 'Boardsesh',\n};\n",
-        );
-        repository.git(['add', '.']);
-        repository.git(['commit', '--quiet', '-m', 'another deliberate version']);
-      }
-      const mainSha = repository.git(['rev-parse', 'HEAD']);
-      expect(() =>
-        prepareNativeVersionRestoration(
-          repository.directory,
-          mainSha,
-          failure === 'wrong-target' ? '2.6.0' : '2.7.0',
-          failure === 'wrong-expected' ? repository.sourceSha : repository.bad.sha,
-          failure === 'changed-native' ? { ...fingerprints, ios: '1'.repeat(40) } : fingerprints,
-        ),
-      ).toThrow();
-      expect(repository.git(['rev-parse', 'HEAD'])).toBe(mainSha);
-    },
-  );
+  it.each([
+    'wrong-expected',
+    'wrong-target',
+    'changed-native',
+    'released-target',
+    'changed-version',
+    'higher-reservation',
+  ] as const)('refuses unsafe restoration plan: %s', (failure) => {
+    const repository = mistakenBump();
+    if (failure === 'released-target') repository.git(['tag', 'release/android-v2.7.0-aaaaaaaaaaaa']);
+    if (failure === 'higher-reservation')
+      repository.git(['tag', 'build-android-v2.8.0-2000100-aaaaaaaaaaaa', repository.sourceSha]);
+    if (failure === 'changed-version') {
+      writeFileSync(
+        join(repository.directory, APP_CONFIG_PATH),
+        "export default {\n  version: '2.8.0',\n  name: 'Boardsesh',\n};\n",
+      );
+      repository.git(['add', '.']);
+      repository.git(['commit', '--quiet', '-m', 'another deliberate version']);
+    }
+    const mainSha = repository.git(['rev-parse', 'HEAD']);
+    expect(() =>
+      prepareNativeVersionRestoration(
+        repository.directory,
+        mainSha,
+        failure === 'wrong-target' ? '2.6.0' : '2.7.0',
+        failure === 'wrong-expected' ? repository.sourceSha : repository.bad.sha,
+        failure === 'changed-native' ? { ...fingerprints, ios: '1'.repeat(40) } : fingerprints,
+      ),
+    ).toThrow();
+    expect(repository.git(['rev-parse', 'HEAD'])).toBe(mainSha);
+  });
 
   it('rejects a forged restoration that changes file mode or names the wrong superseded stamp', () => {
     const repository = mistakenBump();
@@ -541,7 +579,7 @@ describe('pre-raised native version adoption and explicit restoration', { timeou
     );
   });
 
-  it('cannot undo an ordinary automatic patch that did not follow a pre-raised source version', () => {
+  it('cannot undo the patch opened after a store accepted the previous version', () => {
     const repository = fixture('2.6.0');
     repository.git([
       'tag',
@@ -550,12 +588,92 @@ describe('pre-raised native version adoption and explicit restoration', { timeou
       '-m',
       nativeReleaseMessage({ ...baselineFingerprints, sourceSha: repository.sourceSha }, 'baseline'),
     ]);
-    const legitimate = prepareNativeVersionStamp(repository.directory, repository.sourceSha, fingerprints, '2.6.0', []);
+    const anchor = 'release/ios-v2.6.0-eeeeeeeeeeee';
+    repository.git(['tag', anchor, repository.sourceSha]);
+    const legitimate = prepareNativeVersionStamp(repository.directory, repository.sourceSha, fingerprints, '2.6.0', [
+      { tag: anchor, sha: repository.sourceSha },
+    ]);
     repository.git(['update-ref', 'HEAD', legitimate.sha]);
-    expect(legitimate.version).toBe('2.6.1');
+    expect(legitimate).toMatchObject({ kind: 'version-bump', version: '2.6.1' });
     expect(() =>
       prepareNativeVersionRestoration(repository.directory, legitimate.sha, '2.6.0', legitimate.sha, fingerprints),
-    ).toThrow('already-raised');
+    ).toThrow('public release anchor');
+  });
+
+  it('keeps restored 2.7.0 open for the next native change and can undo the second extra bump', () => {
+    // The incident: 7305e664a0 restored 2.7.0, then the native merge 2315895fb5 got e3a4fc467f (2.7.1).
+    const repository = mistakenBump();
+    repository.git(['tag', 'build-ios-v2.7.1-1-aaaaaaaaaaaa', repository.bad.sha]);
+    const restored = prepareNativeVersionRestoration(
+      repository.directory,
+      repository.bad.sha,
+      '2.7.0',
+      repository.bad.sha,
+      fingerprints,
+    ).stamp;
+    repository.setHead(restored.sha);
+    repository.git(['tag', 'build-ios-v2.7.0-9-aaaaaaaaaaaa', restored.sha]);
+    const nativeChange = (name: string) => {
+      writeFileSync(join(repository.directory, name), `${name} changes the native pair\n`);
+      repository.git(['add', '.']);
+      repository.git(['commit', '--quiet', '-m', `native merge ${name}`]);
+      return repository.git(['rev-parse', 'HEAD']);
+    };
+    const references = () =>
+      repository
+        .git(['for-each-ref', '--format=%(refname:strip=2) %(objectname)', 'refs/tags/build-*', 'refs/tags/release/*'])
+        .split('\n')
+        .map((line) => line.split(' '))
+        .map(([tag, sha]) => ({ tag: tag!, sha: sha! }));
+    const secondPair = { ios: '1'.repeat(40), android: '2'.repeat(40) };
+    const secondMerge = nativeChange('second-native.txt');
+
+    // Fixed coordinator: the open 2.7.0 is rebuilt, not replaced by 2.7.1.
+    const kept = prepareNativeVersionStamp(
+      repository.directory,
+      secondMerge,
+      secondPair,
+      restored.version,
+      references(),
+      getSupersededNativeStampShas(repository.directory, secondMerge),
+    );
+    expect(kept).toMatchObject({ kind: 'version-adoption', version: '2.7.0', sourceSha: secondMerge });
+    expect(repository.git(['rev-parse', `${kept.sha}^{tree}`])).toBe(
+      repository.git(['rev-parse', `${secondMerge}^{tree}`]),
+    );
+    expect(validateNativeStampSource(kept.sha, kept.sha, repository.directory)).toMatchObject(kept);
+
+    // The bump main actually received can be undone with the same restore-version dispatch.
+    const secondBad = writeNativeStamp(repository.directory, secondMerge, secondPair, '2.7.1', 'version-bump');
+    repository.setHead(secondBad.sha);
+    repository.git(['tag', 'build-ios-v2.7.1-2-111111111111', secondBad.sha]);
+    repository.git(['tag', 'build-android-v2.7.1-2001563-222222222222', secondBad.sha]);
+    const restoredAgain = prepareNativeVersionRestoration(
+      repository.directory,
+      secondBad.sha,
+      '2.7.0',
+      secondBad.sha,
+      secondPair,
+    );
+    expect(restoredAgain.alreadyApplied).toBe(false);
+    expect(restoredAgain.stamp).toMatchObject({ kind: 'version-restoration', version: '2.7.0', ...secondPair });
+    expect(
+      validateNativeStampSource(restoredAgain.stamp.sha, restoredAgain.stamp.sha, repository.directory),
+    ).toMatchObject(restoredAgain.stamp);
+    repository.setHead(restoredAgain.stamp.sha);
+    const retired = getSupersededNativeStampShas(repository.directory, restoredAgain.stamp.sha);
+    expect(retired).toEqual([secondBad.sha, repository.bad.sha]);
+
+    const thirdMerge = nativeChange('third-native.txt');
+    const thirdPair = { ios: '3'.repeat(40), android: '4'.repeat(40) };
+    expect(
+      prepareNativeVersionStamp(repository.directory, thirdMerge, thirdPair, '2.7.0', references(), retired),
+    ).toMatchObject({ kind: 'version-adoption', version: '2.7.0' });
+    // Once a store accepts 2.7.0, the next native change opens 2.7.1 again.
+    repository.git(['tag', 'release/ios-v2.7.0-aaaaaaaaaaaa', restored.sha]);
+    expect(
+      prepareNativeVersionStamp(repository.directory, thirdMerge, thirdPair, '2.7.0', references(), retired),
+    ).toMatchObject({ kind: 'version-bump', version: '2.7.1' });
   });
 });
 

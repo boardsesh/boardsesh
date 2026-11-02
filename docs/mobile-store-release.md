@@ -1,9 +1,11 @@
 # Mobile store release runbook
 
-Native and JavaScript work both target `main`. Native fingerprint changes automatically
-open the next unused patch version and start iOS TestFlight and Android tester builds.
-JavaScript-only changes keep the marketing version and use the existing OTA deployment
-pipeline. Several native merges waiting for the coordinator share one current snapshot.
+Native and JavaScript work both target `main`. A native fingerprint change rebuilds
+main's open marketing version with new store build numbers and starts iOS TestFlight and
+Android tester builds. The version stays open until a store accepts it; the first native
+change after that opens the next unused patch. JavaScript-only changes keep the marketing
+version and use the existing OTA deployment pipeline. Several native merges waiting for
+the coordinator share one current snapshot.
 
 Public store submission is manual. Merging a PR, completing a native build, creating
 an automatic store draft, or merging the retired release branch never submits the live
@@ -33,18 +35,42 @@ update, or delete those tags.
 
 **Main Native Release** (`mobile-native-release.yml`) runs after main pushes, native
 workflow completions, hourly, and on demand. It compares both canonical platform
-fingerprints with the latest validated native release stamp. A changed pair uses the
-already-raised, unreleased marketing version when one was deliberately merged above
-the previous native version. For example, importing native work already at 2.7.0 from
-a 2.6.0 baseline adopts 2.7.0, including when 2.7.0 tester builds already exist.
-Otherwise the coordinator opens the next unused patch. Public release anchors and
-higher reserved versions still protect against reusing an unavailable version.
+fingerprints with the latest validated native release stamp. A changed pair adopts
+main's marketing version while that version is open, and rebuilds it: iOS takes the
+next TestFlight build number for that version and Android the next versionCode. A
+version is open when all three hold:
 
-The bot records the parent source SHA, version, and both full fingerprints. A normal
-stamp changes only the marketing version. An adoption stamp preserves the parent tree
-exactly and immediately dispatches both exact-source tester builds, since an empty
-commit does not match their push path filters. The original unversioned merge waits
-for this validated stamp. Version-only changes remain outside the fingerprint.
+1. It is at or above the previous native stamp's version.
+2. No `release/<platform>-v<version>-*` anchor exists for it on either platform.
+3. No other build or release tag reserves a higher version. Tester builds of an
+   explicitly superseded stamp do not count.
+
+That covers a version merged deliberately above the previous one (importing native
+work at 2.7.0 from a 2.6.0 baseline adopts 2.7.0) and the version the previous stamp
+already opened (2.7.0 builds 9, 10 and 11 while 2.7.0 waits for submission). When the
+version is not open, the coordinator opens the next unused patch. Public release
+anchors and higher reserved versions still protect against reusing an unavailable
+version.
+
+The release anchor is what closes a version. **Mobile Release Anchor** cuts it when App
+Store Connect or Play reports the version accepted, so submitting for review does not
+close it: App Store Connect still takes new builds of a version that is waiting for or
+in review, and later native merges keep producing tester builds of it. The next native
+change after acceptance opens the next patch. The anchor job runs every 6 hours. If
+Apple approves a version and a native merge lands before its anchor exists, the adopted
+iOS upload is refused as a closed train, and the coordinator stops on that upload
+instead of guessing. Dispatch Mobile Release Anchor (`mobile-auto-version-bump.yml`)
+right after an approval to close that window. If it happens anyway, raise the version
+on main deliberately; the next native change adopts it.
+
+The bot records the parent source SHA, version, and both full fingerprints. A bump
+stamp changes only the marketing version. An adoption stamp (`chore(mobile): adopt
+native v<version>`) preserves the parent tree exactly and immediately dispatches both
+exact-source tester builds, since an empty commit does not match their push path
+filters. Whether the version was still open is decided when the stamp is planned;
+validating an old stamp reads only git history, so a later store approval never
+invalidates it. The original unversioned merge waits for this validated stamp.
+Version-only changes remain outside the fingerprint.
 
 The coordinator refetches and recomputes if main moves. Repeating a run never bumps an
 unchanged native pair. It does not hold its lock while native builds run. Failed or
@@ -70,15 +96,14 @@ Use `action=plan` to inspect without writing. The repository App needs Contents 
 and bypass permission for the protected tags and main; a GITHUB_TOKEN push would not
 start the downstream native workflows. Major or minor version choices can still be
 committed deliberately; the next changed native snapshot adopts that already-raised
-unreleased version. A later native change at the same marketing version opens the
-next unused patch.
+unreleased version, and later native changes keep it until a store accepts it.
 
 ### Restore a mistaken extra version bump
 
-`restore-version` is an explicit manual recovery for a coordinator bump made after
-the source had already opened an unreleased native version. Plan with the exact
-target version and mistaken stamp, inspect the returned source/fingerprints, then
-repeat with `apply=true`:
+`restore-version` is an explicit manual recovery for a coordinator bump that should
+have kept the open version, such as the bumps made before the coordinator kept open
+versions. Plan with the exact target version and mistaken stamp, inspect the returned
+source/fingerprints, then repeat with `apply=true`:
 
 ```sh
 gh workflow run mobile-native-release.yml --ref main \
@@ -86,11 +111,15 @@ gh workflow run mobile-native-release.yml --ref main \
   -f expected_stamp_sha=<exact-latest-bump-sha> -f apply=false
 ```
 
-The target must equal the mistaken stamp's parent version and remain above the
-previous native version and every public release anchor. The expected stamp must
-still be latest, the current marketing version must match it, and both canonical
-native fingerprints must be unchanged. Apply makes one normal fast-forward bot
-commit changing only that version line and naming the exact superseded stamp.
+The target must equal the mistaken stamp's parent version and still be open by the
+rule above, counting the mistaken stamp's own tester builds as retired: at or above
+the previous native version, with no release anchor at or above it and no other
+higher reservation. The expected stamp must still be latest, the current marketing
+version must match it, and both canonical native fingerprints must be unchanged. A
+newer native stamp on main (including an adoption of the bumped version) makes the
+restoration refuse, so dispatch it before the next native merge. Apply makes one
+normal fast-forward bot commit changing only that version line and naming the exact
+superseded stamp.
 A changed main during the push requires a fresh plan. Repeating a confirmed recovery
 recognizes the existing restoration instead of creating another commit.
 
@@ -680,11 +709,12 @@ after the shipped fingerprint moves on.
 
 ## End-to-end checklist
 
-1. Merge native work into main and wait for its stamped patch and tester builds.
+1. Merge native work into main and wait for its stamp and tester builds of the open version.
 2. Check Discord Users assignment, beta-review state, and Android tester availability.
 3. QA the exact uploaded candidates and inspect their drafts, listing, and screenshots.
 4. Plan the explicit build pair, then deliberately submit it through the manual workflow.
 5. Confirm public availability and immutable accepted-build anchors after store approval.
+   The anchor closes the version; the next native merge opens the next patch.
 
 ## Notes
 
