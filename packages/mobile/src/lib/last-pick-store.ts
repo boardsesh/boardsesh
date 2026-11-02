@@ -23,8 +23,9 @@ import { getCredentialGeneration } from './privacy/privacy-cache';
  * In memory only, like the player's own preview: a relaunch starts from the
  * queue's current. Cleared on sign-out or an account change (the credential
  * generation, read here and by the watcher), on a change of board, and when
- * the queue's current changes (`LastPickWatcher`). The one writer is the
- * player (`use-last-pick-writer.ts`); the bar's own Mirror flips it.
+ * the queue's current changes (`LastPickWatcher`), except for the change the
+ * cold-start queue restore makes: the pick is carried over that one. The one
+ * writer is the player (`use-last-pick-writer.ts`); the bar's own Mirror flips it.
  */
 export type LastPick = {
   /** The climb as the player showed it: a queue slot, a list's peek, or a fresh item. */
@@ -102,6 +103,19 @@ export function setLastPick(input: LastPickInput): void {
 export function setLastPickMirrored(mirrored: boolean): void {
   if (!pick || pick.mirrored === mirrored) return;
   pick = { ...pick, mirrored };
+  emit();
+}
+
+/**
+ * The queue's cold-start restore landed (`LastPickWatcher`). A pick made while
+ * the saved queue was still loading (from a notification or a link) was made
+ * under no current climb. The restore is not a change after the pick, so the
+ * pick now counts as made under the restored current and the bar keeps it.
+ * A pick made under any other current is left as it is.
+ */
+export function carryLastPickOverRestore(currentBefore: string | null, restoredCurrent: string | null): void {
+  if (!pick || currentBefore === restoredCurrent || pick.currentAtPick !== currentBefore) return;
+  pick = { ...pick, currentAtPick: restoredCurrent };
   emit();
 }
 

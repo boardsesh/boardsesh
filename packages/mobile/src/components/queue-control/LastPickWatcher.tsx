@@ -1,7 +1,7 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { useQueueData } from '../../providers/queue-provider';
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useQueueData, useQueueRestored } from '../../providers/queue-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
-import { clearLastPick } from '../../lib/last-pick-store';
+import { carryLastPickOverRestore, clearLastPick } from '../../lib/last-pick-store';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
 
 /** The board a pick belongs to: the stored active board, its angle aside (an angle is not another board). */
@@ -10,21 +10,31 @@ export function lastPickBoardKey(boardConfig: BoardConfig | null): string | null
   return `${boardConfig.boardName}:${boardConfig.layoutId}:${boardConfig.sizeId}:${boardConfig.setIds}`;
 }
 
-type WatchedState = { currentItemUuid: string | null; boardKey: string | null; generation: number };
+type WatchedState = {
+  currentItemUuid: string | null;
+  boardKey: string | null;
+  generation: number;
+  /** The cold-start queue restore has landed (`useQueueRestored`). */
+  restored: boolean;
+};
 
 /**
- * Whether the climber's last pick is over (owner decision A): the queue's
- * current changed after it (a Put on board, a crewmate's put-up, the Lock
- * Screen's or the notification's Next / Previous, the rest timer's
- * auto-advance), the climber changed board, or the account changed (a
- * sign-out, another sign-in).
+ * What a change does to the climber's last pick:
+ * - `ends` (owner decision A): the queue's current changed after it (a Put on
+ *   board, a crewmate's put-up, the Lock Screen's or the notification's Next /
+ *   Previous, the rest timer's auto-advance), the climber changed board, or the
+ *   account changed (a sign-out, another sign-in);
+ * - `carries`: the current changed only because the cold-start restore landed
+ *   the saved queue on the empty one, which is not the climber's change, so a
+ *   pick made before it (from a notification or a link) stays;
+ * - `keeps`: nothing it watches changed.
  */
-export function lastPickEnds(previous: WatchedState, next: WatchedState): boolean {
-  return (
-    previous.currentItemUuid !== next.currentItemUuid ||
-    previous.boardKey !== next.boardKey ||
-    previous.generation !== next.generation
-  );
+export function lastPickChange(previous: WatchedState, next: WatchedState): 'ends' | 'carries' | 'keeps' {
+  if (previous.boardKey !== next.boardKey || previous.generation !== next.generation) return 'ends';
+  if (previous.currentItemUuid === next.currentItemUuid) return 'keeps';
+  // The restore only lands on an empty queue, in the render that marks it done.
+  const restoreLanded = !previous.restored && next.restored && previous.currentItemUuid === null;
+  return restoreLanded ? 'carries' : 'ends';
 }
 
 /**
@@ -33,11 +43,16 @@ export function lastPickEnds(previous: WatchedState, next: WatchedState): boolea
  * made under another current climb (`resolveBarPick`); this drops it for good,
  * so a current that changes back (an Undo) never brings it back.
  *
+ * The cold-start restore is the exception: its climb is not newer than a pick
+ * made while it loaded, so the pick is carried over to it. A layout effect, so
+ * the bar never paints a frame of the restored climb in the pick's place.
+ *
  * Renders nothing. Mounted once in the root layout, inside the drawer host,
  * beside the other app-wide watchers.
  */
 export function LastPickWatcher(): null {
   const { currentClimbQueueItem } = useQueueData();
+  const restored = useQueueRestored();
   const { boardConfig } = useDrawerHost();
   const generation = useSyncExternalStore(
     subscribeToCredentialChanges,
@@ -47,11 +62,14 @@ export function LastPickWatcher(): null {
   const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
   const boardKey = lastPickBoardKey(boardConfig);
   const previousRef = useRef<WatchedState | null>(null);
-  useEffect(() => {
-    const next: WatchedState = { currentItemUuid, boardKey, generation };
+  useLayoutEffect(() => {
+    const next: WatchedState = { currentItemUuid, boardKey, generation, restored };
     const previous = previousRef.current;
     previousRef.current = next;
-    if (previous && lastPickEnds(previous, next)) clearLastPick();
-  }, [currentItemUuid, boardKey, generation]);
+    if (!previous) return;
+    const change = lastPickChange(previous, next);
+    if (change === 'ends') clearLastPick();
+    else if (change === 'carries') carryLastPickOverRestore(previous.currentItemUuid, currentItemUuid);
+  }, [currentItemUuid, boardKey, generation, restored]);
   return null;
 }
