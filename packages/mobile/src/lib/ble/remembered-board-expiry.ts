@@ -34,3 +34,20 @@ export function soonestForgetAfter(boards: ReadonlyArray<StoredLastConnectedBoar
   }
   return soonest;
 }
+
+/**
+ * True when a native link is the Live Activity bulb's reconnect of this board
+ * (`ReconnectBoardIntent`). Native has no clock for a hang-up's 10 minutes, so
+ * after the app slept past them the Lock Screen still offered "Tap to
+ * reconnect". Such a link, found already connected when the app runs, is the
+ * climber taking the board back (owner's call, 2026-11-02): the app keeps it
+ * even though the stamp ran out. Any other link (a state restoration, a binary
+ * that reports no pairing) is not, and the expiry still applies.
+ */
+export function isLockScreenTakeBack(
+  connectOrigin: string | undefined,
+  nativeConfigKey: string | undefined,
+  board: StoredLastConnectedBoard,
+): boolean {
+  return connectOrigin === 'liveActivityIntent' && nativeConfigKey === board.configKey;
+}

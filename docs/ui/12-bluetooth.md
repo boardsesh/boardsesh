@@ -79,8 +79,10 @@ Kilter-built box named for that board type (`Kilter Board`, `isKilterBuiltBox`).
 The next tap on the bulb reconnects to it while the picker shows "searching",
 with no board list. A drop, a config switch and Disconnect Bluetooth when
 driving ends keep it with no limit. A hang-up keeps it for 10 minutes, then it
-is forgotten, the iOS native pairing included. That pairing, which lets the
-Lock Screen bulb reconnect, goes sooner when the route moves to another board.
+is forgotten, the iOS native pairing included, unless the Lock Screen bulb
+already reconnected it: that link is kept and the board is remembered again.
+That pairing, which lets the Lock Screen bulb reconnect, goes sooner when the
+route moves to another board.
 A hang-up after a wrong-box connect, and a sign-out, forget it at once. The rules and their reasons are in
 `docs/board-connection-holder.md`.
 

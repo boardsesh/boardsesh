@@ -6094,8 +6094,12 @@ describe('useBoardBluetooth prepared native pairing (#7122)', () => {
       expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
     });
 
-    it('forgets the native pairing and adopts nothing when the bulb reconnects after the 10 minutes', async () => {
+    // Owner's call, 2026-11-02 ("keep the tapped link"): native has no clock
+    // for the 10 minutes, so the Lock Screen still offered the tap. The link
+    // it made is the climber taking the board back.
+    it('adopts the bulb’s reconnect after the 10 minutes ran out and remembers the board again', async () => {
       const { adapter, result } = await adoptedThenReleased('user');
+      vi.mocked(mockLastConnectedBoardStore.setStoredLastConnectedBoard).mockClear();
       const afterTenMinutes = Date.now() + HANG_UP_REMEMBER_MS;
       const clock = vi.spyOn(Date, 'now').mockReturnValue(afterTenMinutes);
       try {
@@ -6103,10 +6107,213 @@ describe('useBoardBluetooth prepared native pairing (#7122)', () => {
       } finally {
         clock.mockRestore();
       }
-      expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
-      expect(result.current.isConnected).toBe(false);
-      expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
-      expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+      expect(adapter.adoptConnection).toHaveBeenCalledTimes(2);
+      expect(result.current.isConnected).toBe(true);
+      expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+      // Renewed with a fresh stamp, then held again: no stamp, as after any reconnect.
+      expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
+        configKey: currentConfigKey,
+        deviceId: 'board-b',
+        forgetAfter: afterTenMinutes + HANG_UP_REMEMBER_MS,
+      });
+      expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenLastCalledWith({
+        configKey: currentConfigKey,
+        deviceId: 'board-b',
+      });
+      expect(mockLastConnectedBoardStore.clearStoredLastConnectedBoard).not.toHaveBeenCalled();
+      expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('board-b');
+    });
+
+    // On screen, or JS waking with its timer overdue: the expiry asks native
+    // first, and adopts the bulb's link without waiting for a foreground.
+    it('adopts a bulb reconnect the expiry timer finds, with no foreground or connected event', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter, result } = await adoptedThenReleased('user');
+        vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+          deviceId: 'board-b',
+          name: 'Kilter Board',
+          configKey: currentConfigKey,
+          connectOrigin: 'liveActivityIntent',
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HANG_UP_REMEMBER_MS);
+        });
+        expect(adapter.adoptConnection).toHaveBeenCalledTimes(2);
+        expect(result.current.isConnected).toBe(true);
+        expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('board-b');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('forgets the native pairing when the 10 minutes run out with nothing connected', async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = await adoptedThenReleased('user');
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HANG_UP_REMEMBER_MS);
+        });
+        expect(result.current.isConnected).toBe(false);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    describe('on launch after the 10 minutes ran out', () => {
+      const expiredStamp = () => ({
+        configKey: currentConfigKey,
+        deviceId: 'board-b',
+        forgetAfter: Date.now() - 1,
+      });
+
+      function nativeHolds(connectOrigin: string) {
+        return {
+          deviceId: 'board-b',
+          name: 'Kilter Board',
+          configKey: currentConfigKey,
+          connectOrigin,
+        };
+      }
+
+      function deferredNativeAnswer() {
+        let answer: (device: NativeSnapshot) => void = () => {};
+        const promise = new Promise<NativeSnapshot>((resolve) => {
+          answer = resolve;
+        });
+        return { promise, answer };
+      }
+
+      beforeEach(() => {
+        const adapter = makePreparedAdapter();
+        vi.mocked(createBluetoothAdapter).mockReturnValue(
+          adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+        );
+        // Native's plain disconnect forgets the pairing and drops its link.
+        vi.mocked(forgetNativeKeptBoard).mockImplementation(async () => {
+          vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+          return true;
+        });
+      });
+
+      afterEach(() => {
+        vi.mocked(forgetNativeKeptBoard).mockImplementation(async () => false);
+      });
+
+      it('adopts the link a Lock Screen tap made, remembers the board again and keeps the native pairing', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(nativeHolds('liveActivityIntent'));
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+
+        expect(result.current.isConnected).toBe(true);
+        expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
+          configKey: currentConfigKey,
+          deviceId: 'board-b',
+          forgetAfter: expect.any(Number),
+        });
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenLastCalledWith({
+          configKey: currentConfigKey,
+          deviceId: 'board-b',
+        });
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('board-b');
+      });
+
+      it('forgets the board and the native pairing when nothing is connected', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+
+        expect(result.current.isConnected).toBe(false);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+      });
+
+      it('forgets the native pairing and adopts nothing when the link is not the bulb’s', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(nativeHolds('restored'));
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+
+        expect(result.current.isConnected).toBe(false);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+      });
+
+      // The adoption check can land before native answers the expiry; JS
+      // memory has already let the board go by then.
+      it('adopts nothing but the bulb’s link while the expiry waits on native', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        const expiryAnswer = deferredNativeAnswer();
+        vi.mocked(getNativeBleConnectedDevice)
+          .mockReturnValueOnce(expiryAnswer.promise)
+          .mockResolvedValue(nativeHolds('restored'));
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+
+        expect(result.current.isConnected).toBe(false);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        await act(async () => expiryAnswer.answer(nativeHolds('restored')));
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+      });
+
+      it('takes the bulb’s link back while the expiry waits on native, and native’s late answer changes nothing', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        const expiryAnswer = deferredNativeAnswer();
+        vi.mocked(getNativeBleConnectedDevice)
+          .mockReturnValueOnce(expiryAnswer.promise)
+          .mockResolvedValue(nativeHolds('liveActivityIntent'));
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+        expect(result.current.isConnected).toBe(true);
+
+        await act(async () => expiryAnswer.answer(nativeHolds('liveActivityIntent')));
+        expect(result.current.isConnected).toBe(true);
+        expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+        // Held: the board stays stored with no stamp.
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenLastCalledWith({
+          configKey: currentConfigKey,
+          deviceId: 'board-b',
+        });
+      });
+
+      it('adopts a later native link by the usual rules once native has answered', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+
+        vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(nativeHolds('restored'));
+        await act(async () => connectedListener?.({ deviceId: 'board-b', deviceName: 'Kilter Board' }));
+        expect(result.current.isConnected).toBe(true);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+      });
+
+      it('takes nothing back from an answer that a connect overtook', async () => {
+        mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(expiredStamp());
+        const adapter = makePreparedAdapter();
+        adapter.prepareBoardConnection.mockRejectedValue(new Error('Native pairing invalidation failed'));
+        vi.mocked(createBluetoothAdapter).mockReturnValue(
+          adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+        );
+        const expiryAnswer = deferredNativeAnswer();
+        vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(expiryAnswer.promise);
+        const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+        await act(async () => {});
+        await act(async () => {
+          expect(await result.current.connect()).toBe(false);
+        });
+
+        await act(async () => expiryAnswer.answer(nativeHolds('liveActivityIntent')));
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
+        expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+        expect(result.current.isConnected).toBe(false);
+      });
     });
 
     it('adopts the bulb’s reconnect after a driving-ends release', async () => {
@@ -6421,6 +6628,8 @@ describe('useBoardBluetooth a hang-up keeps the board for 10 minutes', () => {
     comeBackToTheApp();
 
     expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    // Native forgets once it has said no Lock Screen tap took the board back.
+    await act(async () => {});
     expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
   });
 
