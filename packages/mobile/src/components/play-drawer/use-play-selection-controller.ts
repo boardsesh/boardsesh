@@ -7,7 +7,12 @@ import {
   type PlaylistSuggestionSource,
 } from '@boardsesh/queue';
 import type { ActiveSubDrawer, NavigationState } from '@boardsesh/play-view';
-import type { QueueNavigationDirection, QueueNavigationMethod, QueueNavigationOutcome } from '@boardsesh/analytics';
+import type {
+  QueueNavigationArtWait,
+  QueueNavigationDirection,
+  QueueNavigationMethod,
+  QueueNavigationOutcome,
+} from '@boardsesh/analytics';
 import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
 import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
@@ -105,6 +110,8 @@ export type PlayNavigationStep = {
   direction: QueueNavigationDirection;
   method: QueueNavigationMethod;
   outcome: QueueNavigationOutcome;
+  /** Only on a swipe that went before the climb's board had painted. */
+  artWait?: QueueNavigationArtWait;
 };
 type PlaySelectionInputs = {
   openTarget: PlayDrawerOpenTarget | null;
@@ -153,7 +160,8 @@ function previewCommitFor(
 
 /**
  * One swipe intent, with independent callback identities for next and previous.
- * `method` says whether a button or a swipe asked for it, for the analytics.
+ * `method` says whether a button or a swipe asked for it, and `artWait` whether
+ * a swipe went before its board had painted, for the analytics.
  */
 function useSwipeSelection({
   drawerPreviewItem,
@@ -176,7 +184,7 @@ function useSwipeSelection({
   onNavigationStep,
 }: SwipeSelectionInputs) {
   return useCallback(
-    (method: QueueNavigationMethod) => {
+    (method: QueueNavigationMethod, artWait?: QueueNavigationArtWait) => {
       const previewTarget = getSwipeNavigationTarget({
         previewItem: drawerPreviewItem,
         previewSuggestionSource: drawerPreviewSuggestionSource,
@@ -195,7 +203,7 @@ function useSwipeSelection({
         // The displayed climb moved; the wall did not.
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
-        onNavigationStep({ direction, method, outcome: 'preview' });
+        onNavigationStep({ direction, method, outcome: 'preview', artWait });
         return;
       }
       // Driving the wall from a preview that walks a list (#7113): the next
@@ -216,7 +224,7 @@ function useSwipeSelection({
         setDrawerPreviewSuggestionSource(null);
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
-        onNavigationStep({ direction, method, outcome: 'moved' });
+        onNavigationStep({ direction, method, outcome: 'moved', artWait });
         return;
       }
       // A trackless preview with a neighbour of its own: a queue slot (a
@@ -232,7 +240,7 @@ function useSwipeSelection({
         setDrawerPreviewItem(null);
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
-        onNavigationStep({ direction, method, outcome: 'moved' });
+        onNavigationStep({ direction, method, outcome: 'moved', artWait });
         return;
       }
       setDrawerPreviewItem(null);
@@ -241,7 +249,7 @@ function useSwipeSelection({
       navigateQueue();
       clearMirror();
       // No target means the controls read disabled: nothing to count.
-      if (targetItem) onNavigationStep({ direction, method, outcome: 'moved' });
+      if (targetItem) onNavigationStep({ direction, method, outcome: 'moved', artWait });
     },
     [
       drawerPreviewSuggestionSource,

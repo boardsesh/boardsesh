@@ -131,6 +131,8 @@ export {
   type QueueNavigationSurface,
   type QueueNavigationOutcome,
   type QueueNavigationBoard,
+  type QueueNavigationArtState,
+  type QueueNavigationArtWait,
   type QueueNavigationInput,
   type QueueNavigationProps,
   type QueueNavigationPayload,

@@ -76,6 +76,35 @@ describe('queueNavigation', () => {
   });
 });
 
+describe('queueNavigation for a swipe that went before its board had painted', () => {
+  const swipe = {
+    direction: 'next',
+    method: 'swipe',
+    surface: 'player',
+    outcome: 'moved',
+    inSharedSession: false,
+    lightOnSwipe: true,
+    boardType: 'moonboard',
+    layoutId: 2,
+  } as const;
+
+  it('says what the board was doing and how long the release waited, in whole milliseconds', () => {
+    const { properties } = queueNavigation({ ...swipe, artWait: { artState: 'loading', waitedMs: 700.6 } });
+    expect(properties).toMatchObject({ heldArtState: 'loading', heldMs: 701, boardType: 'moonboard' });
+  });
+
+  it('never sends a negative wait', () => {
+    const { properties } = queueNavigation({ ...swipe, artWait: { artState: 'failed', waitedMs: -3 } });
+    expect(properties).toMatchObject({ heldArtState: 'failed', heldMs: 0 });
+  });
+
+  it('adds nothing to an ordinary step', () => {
+    const { properties } = queueNavigation(swipe);
+    expect(properties).not.toHaveProperty('heldArtState');
+    expect(properties).not.toHaveProperty('heldMs');
+  });
+});
+
 describe('queueSheetOpened', () => {
   it('carries the surface and the board type only', () => {
     expect(queueSheetOpened({ surface: 'mini_player', boardType: 'moonboard' })).toEqual({

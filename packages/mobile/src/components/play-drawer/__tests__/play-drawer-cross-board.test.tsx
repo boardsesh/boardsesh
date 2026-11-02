@@ -22,6 +22,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { LayoutChangeEvent } from 'react-native';
 import { clearOpeningLayoutCache } from '../opening-layout-cache';
+import type { SwipePager } from '../use-swipe-pager';
 import { publishHingeStatus, resetHingeStatusForTests } from '../../../lib/device-hinge-store';
 
 type Props = Record<string, unknown>;
@@ -1731,6 +1732,26 @@ describe('PlayDrawer queue analytics', () => {
     expect(queueAnalytics.navigation).toHaveBeenCalledWith(
       expect.objectContaining({ ...solo, direction: 'previous', method: 'swipe', outcome: 'moved' }),
       expect.objectContaining({ player_layout_version: 3, player_previous_next: false }),
+    );
+  });
+
+  it.each([
+    [1, 'next'],
+    [-1, 'previous'],
+  ] as const)('says when a board swipe toward %s went before the climb had painted', async (step, direction) => {
+    setSetting('lightOnSwipe', true);
+    arrangeNeighbours();
+    renderDrawer();
+    const pager = lastBoardProps().pager as SwipePager;
+    const artWait = { artState: 'loading' as const, waitedMs: 700 };
+    await act(async () => {
+      pager.noteStepArtWait(1, artWait);
+      pager.requestStep(step, 1);
+    });
+    expect(queueAnalytics.navigation).toHaveBeenCalledOnce();
+    expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+      expect.objectContaining({ ...solo, direction, method: 'swipe', outcome: 'moved', artWait }),
+      expect.anything(),
     );
   });
 
