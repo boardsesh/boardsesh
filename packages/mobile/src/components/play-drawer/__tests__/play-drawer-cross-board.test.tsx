@@ -558,6 +558,7 @@ vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
 const { PlayDrawer } = await import('../PlayDrawer');
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { resetWallCleared } = await import('../../ble/wall-cleared-store');
+const { registerAutoDisconnectActivity } = await import('../../../lib/auto-disconnect-deadline');
 const { getDriveMode, isDrivingStoppedForLink, markDriveLive, enterDriveMode, resetDriveModeForTests } =
   await import('../drive-mode-store');
 
@@ -2519,6 +2520,55 @@ describe('PlayDrawer wall button taps', () => {
       'play_drawer',
       expect.objectContaining({ uuid: TWELVE_CLIMB.uuid }),
     );
+  });
+});
+
+// 2.7: auto-disconnect counted only writes, so a climber looking through
+// previews with nothing lit was dropped mid-look (1,648 drops for 60 climbers
+// in 30 days). A change of preview on screen is activity; a render is not, and
+// neither is an open-ended drive with nothing picked: a phone left in a bag
+// still lets go.
+describe('PlayDrawer auto-disconnect activity', () => {
+  const activity = vi.fn();
+  beforeEach(() => {
+    activity.mockClear();
+    const release = registerAutoDisconnectActivity(activity);
+    onTestFinished(release);
+  });
+  afterEach(() => resetDriveModeForTests());
+
+  const previewOf = (uuid: string, nonce: number) => {
+    const climb = climbOn('kilter', 1, 40, uuid);
+    return createElement(PlayDrawer, {
+      presentation: 'pane' as const,
+      boardConfig: TWELVE_BY_TWELVE,
+      openTarget: { climb, options: { previewQueueItem: queueItem(climb, `preview-${uuid}`) }, nonce },
+      onOpenQueue: onOpenQueueForDrawer,
+    });
+  };
+
+  it('counts each change of preview on screen, never a render alone', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const first = previewOf('PREVIEWA0000000000000000000000AA', 1);
+    const view = render(first);
+    expect(activity).toHaveBeenCalledOnce();
+    view.rerender(first);
+    flushOpeningFrame();
+    expect(activity).toHaveBeenCalledOnce();
+    view.rerender(previewOf('PREVIEWB0000000000000000000000BB', 2));
+    flushOpeningFrame();
+    expect(activity).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts nothing for an open-ended drive with nothing picked', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => {
+      enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: null });
+      markDriveLive();
+    });
+    const view = renderDrawer();
+    view.rerender(drawerElement());
+    expect(activity).not.toHaveBeenCalled();
   });
 });
 

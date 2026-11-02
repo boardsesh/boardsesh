@@ -70,12 +70,13 @@ import { useToast } from './toast-provider';
 import { toClimbInput } from '../lib/climb-to-queue-item';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
+import { useAutoDisconnectTimeoutLabels } from '../components/ble/use-auto-disconnect-timeout-labels';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
-import { registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
+import { registerAutoDisconnectActivity, registerAutoDisconnectDeadlineReader } from '../lib/auto-disconnect-deadline';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
@@ -963,10 +964,13 @@ export function BluetoothProvider({
       onExpire: () => autoDisconnectExpireRef.current(),
     });
   }
+  // Activity pushes the deadline out: a write that landed (below), and the
+  // climber's own changes of climb in the player and wall-button presses
+  // (`noteAutoDisconnectActivity`). The warning ring goes with it.
   const resetAutoDisconnect = useCallback(() => {
-    autoDisconnectControllerRef.current?.reset();
-    setAutoDisconnectWarning(false);
+    if (autoDisconnectControllerRef.current?.noteActivity()) setAutoDisconnectWarning(false);
   }, []);
+  useEffect(() => registerAutoDisconnectActivity(resetAutoDisconnect), [resetAutoDisconnect]);
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
   const bluetoothColorOverrides = useMemo(
     () => getBluetoothColorOverrides(holdColorOverrides),
@@ -2657,9 +2661,15 @@ export function BluetoothProvider({
     [clearPendingWallReportAndUndoToastArm, disconnect],
   );
 
+  // Auto-disconnect used to let go silently, which read as the board dropping.
+  // It says what happened and the one tap that brings the board back.
+  const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
+  const autoDisconnectTimeoutLabel =
+    autoDisconnectTimeoutLabels[autoDisconnectTimeoutSeconds] ?? String(autoDisconnectTimeoutSeconds);
   const autoDisconnectOnExpire = useCallback(() => {
     void wrappedDisconnect('auto_disconnect');
-  }, [wrappedDisconnect]);
+    showToast(t('ble.autoDisconnect.disconnectedToast', { timeout: autoDisconnectTimeoutLabel }), 'info');
+  }, [wrappedDisconnect, showToast, t, autoDisconnectTimeoutLabel]);
   autoDisconnectExpireRef.current = autoDisconnectOnExpire;
 
   useEffect(() => {

@@ -147,6 +147,8 @@ vi.mock('react-native', () => ({
   },
 }));
 
+// Auto-disconnect is off unless a test turns it on (`autoDisconnect.enabled`).
+const autoDisconnect = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../settings', async () => {
   const { useState } = await import('react');
   return {
@@ -154,7 +156,8 @@ vi.mock('../../settings', async () => {
       // Mirror the real custom hook: every call owns one state slot. BluetoothProvider
       // invokes its settings unconditionally in a fixed order, so this setter can
       // rerender the provider without a test-only rerender seam.
-      const initialValue = key === 'autoDisconnectBle' || key === 'moonboardLightAdjacentHolds' ? false : 30;
+      const initialValue =
+        key === 'autoDisconnectBle' ? autoDisconnect.enabled : key === 'moonboardLightAdjacentHolds' ? false : 30;
       return useState(initialValue);
     },
   };
@@ -284,8 +287,14 @@ vi.mock('../queue-provider', () => ({
   },
 }));
 
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('../toast-provider', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: toast.showToast }),
+}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key),
+  }),
 }));
 
 const boardDetails = vi.hoisted(() => ({
@@ -302,6 +311,7 @@ import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
 import { readHeldQueueItemUuid } from '../../lib/held-climb-reader';
+import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -422,6 +432,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
     wallConfirm.emitWallConfirm.mockClear();
     analytics.track.mockClear();
     alert.alert.mockClear();
+    toast.showToast.mockClear();
+    autoDisconnect.enabled = false;
     pickerSheet.props = null;
     resolvedBoards.value = new Map();
     bluetooth.options = undefined;
@@ -1002,6 +1014,60 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(releaseTelemetry()).toEqual([
         ['Board Stale Current Released', expect.objectContaining({ reason: 'disconnect', scope: 'solo' })],
       ]);
+    });
+  });
+
+  // 2.7: auto-disconnect let go of the board with nothing on screen, which read
+  // as the board dropping. It says so now, with the configured time, and the
+  // climber's own activity (a preview change, a wall-button press) pushes the
+  // deadline out as a write does.
+  describe('auto-disconnect', () => {
+    beforeEach(() => {
+      autoDisconnect.enabled = true;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      // Nothing current: no write of its own pushes the deadline out.
+      queue.currentClimbQueueItem = null;
+    });
+
+    it('lets go after the configured seconds with nothing lit, and says so with that time', () => {
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        vi.advanceTimersByTime(29_999);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(bluetooth.state.disconnect).toHaveBeenCalledWith('auto_disconnect');
+      expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(
+        'ble.autoDisconnect.disconnectedToast {"timeout":"ble.autoDisconnect.timeoutOptions.30"}',
+        'info',
+      );
+    });
+
+    it('starts over on the climber’s activity, and still lets go once it stops', () => {
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        vi.advanceTimersByTime(20_000);
+        noteAutoDisconnectActivity();
+        vi.advanceTimersByTime(20_000);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(bluetooth.state.disconnect).toHaveBeenCalledWith('auto_disconnect');
+    });
+
+    it('lets nothing go and says nothing with auto-disconnect off, activity or not', () => {
+      autoDisconnect.enabled = false;
+      renderProvider(createElement(BluetoothProbe));
+      act(() => {
+        noteAutoDisconnectActivity();
+        vi.advanceTimersByTime(10 * 60_000);
+      });
+      expect(bluetooth.state.disconnect).not.toHaveBeenCalled();
+      expect(toast.showToast).not.toHaveBeenCalled();
     });
   });
 

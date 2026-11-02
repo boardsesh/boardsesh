@@ -123,6 +123,7 @@ import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveWallLit } from './wall-lit';
 import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
+import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 import { nowMs } from '../../lib/clock';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -377,6 +378,13 @@ export function PlayCore({
   const [drawerPreviewIsWallClimb, setDrawerPreviewIsWallClimb] = useState(
     () => !!initialDrawerPreviewItem(openTarget) && !!openTarget?.options?.previewIsWallClimb,
   );
+  // A change of the preview on screen is the climber at the wall, browsing: it
+  // pushes auto-disconnect's deadline out (2.7), as a write does, so looking
+  // through climbs never drops the board under them.
+  const drawerPreviewUuid = drawerPreviewItem?.uuid ?? null;
+  useEffect(() => {
+    if (drawerPreviewUuid !== null) noteAutoDisconnectActivity();
+  }, [drawerPreviewUuid]);
   // The wall-state pill's explainer, and the header's measured bottom edge it
   // hangs from. Owned here rather than inside the pill because the callout is an
   // absolute sibling of the swipeable header (so it doesn't ride the swipe

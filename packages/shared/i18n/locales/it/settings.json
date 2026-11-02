@@ -470,6 +470,7 @@
     "autoDisconnect": {
       "description": "Disconnetti dal pannello quando nessun blocco viene mostrato per il tempo selezionato.",
       "cutsLighting": "La disconnessione automatica libera il pannello dopo {{timeout}}, quindi anche l'illuminazione si ferma.",
+      "disconnectedToast": "Pannello disconnesso dopo {{timeout}} senza nessun blocco illuminato. Tocca Illumina il pannello per riconnetterti.",
       "enabledLabel": "Disconnessione automatica",
       "enabledDescription": "Lascia connettere gli altri climber allo scadere del timer.",
       "timeoutLabel": "Disconnetti dopo",

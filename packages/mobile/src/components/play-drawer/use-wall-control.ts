@@ -2,6 +2,7 @@ import type { AnalyticsEventProperties, WallControlPreviewReason } from '@boards
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { announceQueued } from '../../lib/announce-queued';
+import { noteAutoDisconnectActivity } from '../../lib/auto-disconnect-deadline';
 import {
   trackWallControlSwiped,
   trackWallControlTapped,
@@ -228,6 +229,8 @@ export function useWallControl({
   }, [linked, tSettings]);
 
   const press = useCallback((control: WallControlSurface) => {
+    // Any press is the climber at the wall: auto-disconnect starts over (2.7).
+    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     // A connect in flight: the spinner says so, and a second tap waits.
     if (current.pending) return;
@@ -321,6 +324,7 @@ export function useWallControl({
   }, []);
 
   const longPress = useCallback((control: WallControlSurface) => {
+    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     if (current.longPress !== 'sheet') return;
     hapticMedium();
@@ -331,6 +335,7 @@ export function useWallControl({
   // The swipe owns its own haptics (the threshold, then an error on a refusal);
   // the lit confirm buzzes success.
   const startDriveBy = useCallback((startedBy: DriveModeStartedBy): DriveStartOutcome => {
+    noteAutoDisconnectActivity();
     const { model: current, runners: run } = latest.current;
     // `swipeAction` is the one rule for where a drive can start: never while a
     // connect is in flight, the busy-wall question is up, or already driving.
@@ -352,6 +357,7 @@ export function useWallControl({
     [startDriveBy],
   );
   const swipeCancelled = useCallback((control: WallControlSurface) => {
+    noteAutoDisconnectActivity();
     trackWallControlSwiped({ state: latest.current.model.state, outcome: 'cancelled', control });
   }, []);
 
