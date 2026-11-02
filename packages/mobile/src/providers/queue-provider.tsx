@@ -125,6 +125,7 @@ import {
   QueueSessionControlContext,
   QueueSessionIdContext,
   QueueSessionBoardPathContext,
+  QueueRestoredContext,
   QueueLiveStatsContext,
   QueueSharedSessionContext,
   QueueActiveClimbContext,
@@ -175,6 +176,7 @@ export {
   useHasActiveClimb,
   useQueueData,
   useQueueActions,
+  useQueueRestored,
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
 export type { StartSessionConfig, QueueReorderSource } from './queue/queue-contexts';
@@ -1334,7 +1336,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
-  useQueuePersistence({
+  // `queueRestored` is the restore landing, for QueueRestoredContext.
+  const { restored: queueRestored } = useQueuePersistence({
     authenticatedUserId,
     identityReady: !isAuthenticated || !!authenticatedUserId,
     credentialGeneration,
@@ -3796,7 +3799,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
                   <QueueActiveClimbContext.Provider value={activeClimbValue}>
                     <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
                       <QueueDataContext.Provider value={queueDataValue}>
-                        <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                        <QueueContext.Provider value={contextValue}>
+                          <QueueRestoredContext.Provider value={queueRestored}>
+                            {children}
+                          </QueueRestoredContext.Provider>
+                        </QueueContext.Provider>
                       </QueueDataContext.Provider>
                     </QueueHasActiveClimbContext.Provider>
                   </QueueActiveClimbContext.Provider>

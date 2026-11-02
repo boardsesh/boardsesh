@@ -331,6 +331,20 @@ export function useSessionBoardPath(): string {
 }
 
 /**
+ * Whether the cold-start queue restore has landed for this viewer: the saved
+ * solo queue came back, or there was nothing to bring back. A bare boolean
+ * that flips once per launch (and again after a sign-in or sign-out), in the
+ * same render as the restored climb, so a reader can tell the restore's change
+ * of current from the climber's own. Read by `LastPickWatcher`. False outside
+ * the provider, where no current change is the restore's.
+ */
+export const QueueRestoredContext = createContext<boolean>(false);
+
+export function useQueueRestored(): boolean {
+  return useContext(QueueRestoredContext);
+}
+
+/**
  * Live session analytics + presence, split out of the main QueueContext so the
  * ≤1/2s `SessionStatsUpdated` party push (and roster deltas) re-renders only the
  * session screen — not every `useQueue()` consumer (climb list, persistent bar,
