@@ -101,14 +101,38 @@ rescue => error
 end
 
 # True when App Store Connect has a version deliver can edit, false when there is
-# none, so the `metadata` and `screenshots` lanes can skip instead of letting
-# deliver retry "Cannot find edit app store version" for ~20 minutes. When the
-# check itself fails it also returns false: deliver's own lookup would include a
-# version waiting for review, and since the merge-back submission sends versions
-# for review unattended, a push must not run blind. A skipped push is one rerun.
+# none, so the `screenshots` lane can skip instead of letting deliver retry
+# "Cannot find edit app store version" for ~20 minutes (the `metadata` lane makes
+# the same check on the version it reads). When the check itself fails it also
+# returns false: deliver's own lookup would include a version waiting for review,
+# and since the merge-back submission sends versions for review unattended, a
+# push must not run blind. A skipped push is one rerun.
 def editable_app_store_version_present?
   edit_version = editable_app_store_version
   !edit_version.nil? && edit_version != :unknown
+end
+
+# Whether the App Store version has a phased release, so a listing-text push can
+# hand deliver the same answer and leave it as it is (#7225).
+#
+# deliver's phased_release option defaults to false, not nil (fastlane 2.241.2,
+# deliver/lib/deliver/options.rb). Its metadata step leaves a phased release
+# alone only when the option is nil: false deletes the version's phased release
+# and true creates one (UploadMetadata#upload, "Update phased release", in
+# deliver/lib/deliver/upload_metadata.rb). An explicit nil falls back to that
+# false default (FastlaneCore::Configuration#fetch), so passing what is already
+# there is the only way to keep it. Calls with skip_metadata: true return before
+# that step and need nothing.
+#
+# App Store Connect answers "none" with `data: null`, which Spaceship raises as a
+# RuntimeError "No data" (Spaceship::ConnectAPI::Models.parse). deliver reads
+# that as none, and so does this. Any other failure stops the push: reading it as
+# none would let deliver delete a phased release its own read can see.
+def app_store_version_phased_release?(version)
+  !version.fetch_app_store_version_phased_release.nil?
+rescue => error
+  return false if error.instance_of?(RuntimeError) && error.message == "No data"
+  UI.user_error!("Could not read whether App Store version #{version.version_string} has a phased release (#{error.message}); not pushing listing text, because deliver would remove one this lane cannot see. Rerun once App Store Connect answers.")
 end
 
 # App Store version states in which a version is not out yet: being prepared,
@@ -496,6 +520,9 @@ platform :ios do
           app_identifier: "com.boardsesh.app",
           screenshots_path: staging_dir,
           skip_binary_upload: true,
+          # skip_metadata: true also skips deliver's phased-release step, so this
+          # call cannot remove one. Turning metadata on here needs the
+          # phased_release pass-through the `metadata` lane has (#7225).
           skip_metadata: true,
           skip_app_version_update: true,
           overwrite_screenshots: true,
@@ -527,8 +554,8 @@ platform :ios do
     # and this refuses unless that exact version is the one deliver would edit.
     # Nothing editable means it is already submitted or in a review draft (deliver
     # cannot edit either), so that is a skip, not a failure: a rerun stays green.
+    edit_version = editable_app_store_version
     unless expected_version.empty?
-      edit_version = editable_app_store_version
       UI.user_error!("Could not read the editable App Store version; not pushing listing text.") if edit_version == :unknown
       if edit_version.nil?
         UI.important("No editable App Store version (#{expected_version} may already be submitted or in a review draft); not pushing listing text.")
@@ -548,11 +575,24 @@ platform :ios do
     # backoff ladder and then fails — which used to burn the whole metadata job's
     # time budget. Skip cleanly when there's nothing to edit; the text lands on the
     # next run once a version is editable (and it's pushed again at release time).
-    unless editable_app_store_version_present?
+    if edit_version.nil? || edit_version == :unknown
       UI.important("No editable App Store version in 'Prepare for Submission' — nothing for deliver to edit. Skipping the listing-text upload; it will be pushed once a version is editable.")
       emit_step_summary("**Skipped:** no editable App Store version — no iOS listing text uploaded.")
       next
     end
+
+    # Keep the version's phased release as App Store Connect has it. Left out,
+    # phased_release defaults to false and deliver deletes a phased release the
+    # owner turned on (see app_store_version_phased_release?). Do not drop this.
+    keep_phased_release = app_store_version_phased_release?(edit_version)
+    phased_release_note =
+      if keep_phased_release
+        "Phased release: on for #{edit_version.version_string}; the listing push keeps it on."
+      else
+        "Phased release: none on #{edit_version.version_string}; the listing push leaves it off."
+      end
+    UI.message(phased_release_note)
+    emit_step_summary(phased_release_note)
 
     upload_to_app_store(
       api_key: api_key,
@@ -561,6 +601,7 @@ platform :ios do
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
+      phased_release: keep_phased_release,
       # Only edit the current editable version's text; never create or retitle a version.
       skip_app_version_update: true,
       submit_for_review: false,
@@ -640,6 +681,9 @@ platform :ios do
       build_number: build_number,
       skip_binary_upload: true,
       skip_screenshots: true,
+      # Also skips deliver's phased-release step (UploadMetadata#upload returns
+      # first thing), so a draft never removes one; see
+      # app_store_version_phased_release? before turning metadata on here.
       skip_metadata: true,
       submit_for_review: false,
       automatic_release: false,

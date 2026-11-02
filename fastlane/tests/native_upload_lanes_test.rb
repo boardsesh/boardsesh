@@ -87,7 +87,16 @@ end
 FakeBuild = Struct.new(:id, :app_version, :version)
 
 # What the metadata lane's editable-version check reads from Spaceship.
-FakeEditableVersion = Struct.new(:version_string, :app_version_state, :app_store_state)
+# phased_release is what App Store Connect holds: nil for none, an exception for
+# a failed read, anything else for an existing phased release.
+FakeEditableVersion = Struct.new(:version_string, :app_version_state, :app_store_state, :phased_release) do
+  def fetch_app_store_version_phased_release
+    raise phased_release if phased_release.is_a?(Exception)
+    # Spaceship::ConnectAPI::Models.parse raises this when the answer is `data: null`.
+    raise "No data" if phased_release.nil?
+    phased_release
+  end
+end
 
 module BoardseshPlayListing
   class Error < StandardError; end
@@ -312,6 +321,53 @@ class NativeUploadLanesTest < Minitest::Test
     assert_equal 1, @dsl.app_store_uploads.length
     assert_equal true, @dsl.app_store_uploads.first.fetch(:skip_app_version_update)
     assert_equal false, @dsl.app_store_uploads.first.fetch(:submit_for_review)
+  end
+
+  # deliver's phased_release defaults to false, and false deletes the version's
+  # phased release (#7225). The listing push passes what App Store Connect holds.
+  def test_ios_metadata_keeps_an_existing_phased_release
+    summary_path = File.join(@root, "step-summary.md")
+    ENV["GITHUB_STEP_SUMMARY"] = summary_path
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, :inactive_phased_release))
+    assert_equal 1, @dsl.app_store_uploads.length
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:skip_metadata)
+    assert_equal true, @dsl.app_store_uploads.first.fetch(:phased_release)
+    assert_includes File.read(summary_path), "Phased release: on for 2.7.0; the listing push keeps it on."
+  end
+
+  def test_ios_metadata_passes_no_phased_release_when_there_is_none
+    summary_path = File.join(@root, "step-summary.md")
+    ENV["GITHUB_STEP_SUMMARY"] = summary_path
+    run_ios_metadata(FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, nil))
+    # Explicit false, not a missing key: false with nothing there is a no-op in deliver.
+    assert_equal false, @dsl.app_store_uploads.first.fetch(:phased_release)
+    assert_includes File.read(summary_path), "Phased release: none on 2.7.0; the listing push leaves it off."
+  end
+
+  # Reading a failed lookup as "none" would let deliver delete the phased release.
+  def test_ios_metadata_stops_when_the_phased_release_cannot_be_read
+    edit_version = FakeEditableVersion.new("2.7.0", "PREPARE_FOR_SUBMISSION", nil, RuntimeError.new("App Store Connect is down"))
+    [{}, { expected_version: "2.7.0" }].each do |options|
+      error = assert_raises(RuntimeError, options.inspect) { run_ios_metadata(edit_version, options) }
+      assert_includes error.message, "Could not read whether App Store version 2.7.0 has a phased release (App Store Connect is down)"
+    end
+    assert_nil @dsl.app_store_uploads
+  end
+
+  # deliver only reaches its phased-release step when skip_metadata is false
+  # (UploadMetadata#upload returns first thing otherwise). Every App Store upload
+  # either skips metadata or says what to do with the phased release.
+  def test_every_app_store_upload_leaves_the_phased_release_alone
+    run_ios_draft([app_store_version("2.6.0", "READY_FOR_DISTRIBUTION")])
+    write_default_screenshot_campaign
+    Spaceship::ConnectAPI::App.current = FakeApp.new("app-1", FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil))
+    Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:ios, :screenshots]).call }
+    run_ios_metadata(FakeEditableVersion.new("2.7.1", "PREPARE_FOR_SUBMISSION", nil, :inactive_phased_release))
+    assert_equal 3, @dsl.app_store_uploads.length
+    @dsl.app_store_uploads.each do |upload|
+      assert(upload.fetch(:skip_metadata) == true || [true, false].include?(upload[:phased_release]),
+        "upload_to_app_store with skip_metadata: false must pass phased_release explicitly: #{upload.keys.inspect}")
+    end
   end
 
   # Spaceship's editable-version lookup also returns a version waiting for review.
