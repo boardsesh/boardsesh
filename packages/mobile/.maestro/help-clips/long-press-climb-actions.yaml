@@ -3,16 +3,16 @@ name: help clip - long press a climb row
 ---
 # Clip: long-press-climb-actions -> packages/web/public/videos/help/long-press-climb-actions.mp4
 #
-# Records: pressing and holding a climb row on the Climbs tab until the
-# iMessage-style action card lifts (Log a tick / Add to Playlist / Share / …),
-# then dismissing it by tapping the backdrop.
+# Records: pressing and holding a climb row on the Climbs tab until the row
+# lifts above the dimmed list with its climb menu under it (Play next / Add to
+# Playlist / Log a tick / Share / …), then dismissing it by tapping the backdrop.
 #
 # Driven by coordinates: Maestro's accessibility tree on this RN Fabric build
 # does not expose climb rows, so there is nothing to match by text or id.
 # The caller navigates to ://home then ://climbs BEFORE recording starts, so the
 # clip contains only the gesture.
 #
-# 50%,23% is the first climb row; 50%,7% is the backdrop above the floating card.
+# 50%,23% is the first climb row; 50%,7% is the backdrop above the lifted row.
 
 # Settle on the climb list.
 - waitForAnimationToEnd
@@ -26,13 +26,13 @@ name: help clip - long press a climb row
     point: '50%,23%'
 - waitForAnimationToEnd
 
-# Hold on the open action card long enough to read the climb and the actions above the fold.
+# Hold on the open menu long enough to read the climb and the actions above the fold.
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 2600
     optional: true
 
-# Dismiss: tap the scrim above the floating climb.
+# Dismiss: tap the scrim above the lifted row.
 - tapOn:
     point: '50%,7%'
 - waitForAnimationToEnd

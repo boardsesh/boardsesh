@@ -301,6 +301,13 @@ type ClimbListRowProps = {
    * an unrelated climb list on the same screen.
    */
   testID?: string;
+  /**
+   * Screenshot mode only: lift this row's menu once it has rows, as a hold or
+   * the ⋮ does. The Climbs list sets it on its first row for the help flow's
+   * climb-actions shot (`screenshotOpenClimbActions`), since Maestro can't see
+   * the rows to hold one. Ignored in normal builds.
+   */
+  screenshotOpenMenu?: boolean;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -327,6 +334,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showFavorite = false,
   showMoreButton = false,
   testID = 'climb-row',
+  screenshotOpenMenu = false,
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
@@ -497,6 +505,13 @@ const ClimbListRow = React.memo(function ClimbListRow({
     disarm();
   }, [disarm]);
   const openLiftedMenu = useCallback(() => rowMenuRef.current?.open(), []);
+  // Dead-strips in normal builds. The menu opens once its rows exist; a second
+  // open while it is up is a no-op.
+  const screenshotMenuReady = screenshotOpenMenu && menu.rows.length > 0;
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotMenuReady) return;
+    openLiftedMenu();
+  }, [screenshotMenuReady, openLiftedMenu]);
   const longPressGesture = useLongPressGesture({
     enabled: Platform.OS === 'ios' && showMoreButton && menu.rows.length > 0,
     minDuration: 400,
