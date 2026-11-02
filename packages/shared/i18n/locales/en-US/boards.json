@@ -112,6 +112,7 @@
         "title": "Light climbs on {{board}}",
         "titleNoName": "Light climbs on your board",
         "body": "Connect this phone to the board, then tap a climb and Put on board to light it.",
+        "bodyTapLights": "Connect this phone to the board, then tap any climb to light it.",
         "connect": "Connect",
         "tryAgain": "Try again",
         "noLights": "This wall has no lights",
@@ -125,6 +126,9 @@
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",
         "body": "Tapping a climb in the list now lights it on the wall.",
+        "bodyWindow": "For {{seconds}} seconds after Put on board, every climb you pick lights too. After that, tap Put on board again.",
+        "bodyUntilStop": "After Put on board, every climb you pick lights until you tap the button to stop.",
+        "bodyPutOnBoard": "Tap a climb, then Put on board to light it on the wall.",
         "gotIt": "Got it"
       }
     },

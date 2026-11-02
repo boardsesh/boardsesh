@@ -4,6 +4,7 @@ import { registerConnectStepArm } from '../../lib/analytics-connect-step-arm';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
 import { useFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
+import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { isConnectStepArm, type ConnectStepArm } from '../../lib/onboarding/connect-step-arm';
@@ -12,7 +13,12 @@ import {
   enrolInConnectStep,
   type ConnectStepEnrolmentRequest,
 } from '../../lib/onboarding/connect-step-enrolment';
-import { shouldConfirmFirstConnect } from '../../lib/onboarding/first-connect-decision';
+import { setFirstConnectConfirmationShowing } from '../../lib/onboarding/first-connect-confirmation-presence';
+import {
+  firstConnectConfirmationCopy,
+  shouldConfirmFirstConnect,
+  type FirstConnectConfirmationCopy,
+} from '../../lib/onboarding/first-connect-decision';
 import {
   bindFirstConnectAccount,
   getFirstConnectSnapshot,
@@ -23,11 +29,14 @@ import { useSetting } from '../../settings';
 import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useChoose } from '../../providers/dialog-provider';
-import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
+import { useFirstConnectCtaEnabled, useWallSwipeToDriveEnabled } from '../../providers/feature-flags-provider';
+import { useIsCrewSession } from '../../providers/queue-provider';
 import { SHEET_SETTLE_MS } from '../../providers/sheet-presentation-provider';
 import { useOptionalTheme } from '../../providers/theme-provider';
 
 const CONFIRMATION_ACKNOWLEDGED = 'got_it';
+
+type ConfirmationCopyInput = Parameters<typeof firstConnectConfirmationCopy>[0];
 
 /**
  * The connect-step test's (#5654, PR 7) always-mounted half. Renders nothing.
@@ -39,7 +48,11 @@ const CONFIRMATION_ACKNOWLEDGED = 'got_it';
  *   surface keys on, for EVERY climber: the phone's history is worth keeping
  *   whether or not this account is in the test. It only watches the Bluetooth
  *   context's public `isConnected`; nothing under `lib/ble/` changes.
- * - Shows the one-time "Connected to {{board}}" confirmation, in both arms.
+ * - Shows the one-time "Connected to {{board}}" confirmation, in both arms,
+ *   saying what lights from here on under this climber's lighting settings
+ *   (`firstConnectConfirmationCopy`). From the moment it decides to show it
+ *   until the dialog closes, the player's preview-first card stands down
+ *   (`first-connect-confirmation-presence.ts`).
  * - Re-enrols the signed-in account when a tester changes the QA override
  *   (More → Feature Flags), so a forced arm shows at once instead of on the
  *   next launch. The gate enrols once per launch, which a test plan followed
@@ -48,7 +61,7 @@ const CONFIRMATION_ACKNOWLEDGED = 'got_it';
  * The device picker's own "This wall has no lights" is heard at the picker's
  * tap (`recordDevicePickerNoLights`), not here.
  *
- * Mount inside `BluetoothProviderWrapper` and `DialogProvider`.
+ * Mount inside `QueueProvider`, `BluetoothProviderWrapper` and `DialogProvider`.
  */
 export function FirstConnectHost() {
   const { t } = useTranslation('boards');
@@ -62,26 +75,55 @@ export function FirstConnectHost() {
   const enabled = useFirstConnectCtaEnabled();
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
-  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
-  const lightOnClimbTapRef = useRef(lightOnClimbTap);
-  lightOnClimbTapRef.current = lightOnClimbTap;
   const { data: activeBoard } = useActiveBoard();
   const hasBoard = activeBoard != null;
   const boardName = (activeBoard?.name ?? '').trim() || null;
   const uiVariant = useOptionalTheme()?.variant ?? null;
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
+  // What the confirmation says lights from here on: read when it is decided,
+  // the way Put on board reads it (the player's `resolveKeepLightingPlan`).
+  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
+  const [storedKeepLighting] = useSetting('putOnBoardKeepsLighting');
+  const [storedMoonboardKeepLighting] = useSetting('moonboardPutOnBoardKeepsLighting');
+  const [drivesInSession] = useSetting('putOnBoardDrivesInSession');
+  const inSession = useIsCrewSession();
+  const keepLightingEnabled = useWallSwipeToDriveEnabled();
+  const copyInput: ConfirmationCopyInput = {
+    lightOnClimbTap,
+    boardName: activeBoard?.boardType ?? null,
+    keepLighting: keepLightingEnabled
+      ? {
+          keepLighting: sanitiseKeepLighting(storedKeepLighting, DEFAULT_KEEP_LIGHTING),
+          moonboardKeepLighting: sanitiseKeepLighting(storedMoonboardKeepLighting, DEFAULT_MOONBOARD_KEEP_LIGHTING),
+          drivesInSession,
+          inSession,
+        }
+      : null,
+  };
+  const copyInputRef = useRef(copyInput);
+  copyInputRef.current = copyInput;
   const choose = useChoose();
   const showConfirmation = useCallback(
-    (boardName: string | null) => {
+    (boardName: string | null, copy: FirstConnectConfirmationCopy) => {
+      const message =
+        copy.variant === 'tap_lights'
+          ? t('mobile.firstConnect.confirm.body')
+          : copy.variant === 'window'
+            ? t('mobile.firstConnect.confirm.bodyWindow', { seconds: copy.seconds })
+            : copy.variant === 'until_stop'
+              ? t('mobile.firstConnect.confirm.bodyUntilStop')
+              : t('mobile.firstConnect.confirm.bodyPutOnBoard');
       choose({
         title: boardName
           ? t('mobile.firstConnect.confirm.title', { board: boardName })
           : t('mobile.firstConnect.confirm.titleNoName'),
-        message: t('mobile.firstConnect.confirm.body'),
+        message,
         options: [{ value: CONFIRMATION_ACKNOWLEDGED, label: t('mobile.firstConnect.confirm.gotIt') }],
         cancelValue: CONFIRMATION_ACKNOWLEDGED,
-      }).catch(reportError);
+      })
+        .catch(reportError)
+        .finally(() => setFirstConnectConfirmationShowing(false));
     },
     [choose, t],
   );
@@ -109,7 +151,10 @@ export function FirstConnectHost() {
   const confirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
-      if (confirmationTimerRef.current !== null) clearTimeout(confirmationTimerRef.current);
+      if (confirmationTimerRef.current === null) return;
+      clearTimeout(confirmationTimerRef.current);
+      confirmationTimerRef.current = null;
+      setFirstConnectConfirmationShowing(false);
     },
     [],
   );
@@ -123,16 +168,19 @@ export function FirstConnectHost() {
         enrolment: getFirstConnectSnapshot().enrolment,
         enabled: enabledRef.current,
         device: before,
-        lightOnClimbTap: lightOnClimbTapRef.current,
       });
       if (!shouldConfirm) return;
       await markFirstConnectConfirmationShown(nowMs());
       const boardName = boardNameRef.current;
+      const copy = firstConnectConfirmationCopy(copyInputRef.current);
+      // The player's preview-first card says the same thing: it waits from
+      // here until the dialog closes.
+      setFirstConnectConfirmationShowing(true);
       // After the device picker has finished sliding away, so the dialog does
       // not land on a sheet mid-dismiss.
       confirmationTimerRef.current = setTimeout(() => {
         confirmationTimerRef.current = null;
-        showConfirmationRef.current(boardName);
+        showConfirmationRef.current(boardName, copy);
       }, SHEET_SETTLE_MS);
     })().catch(reportError);
   }, [isConnected]);

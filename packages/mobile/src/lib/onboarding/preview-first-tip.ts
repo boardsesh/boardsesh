@@ -156,6 +156,12 @@ export type PreviewFirstTipGateInput = {
   previewShowing: boolean;
   /** The Climbs list's first-connect card is on screen: it goes first. */
   connectCardVisible: boolean;
+  /**
+   * The one-time "Connected to {{board}}" confirmation is about to show or is
+   * up. It says what Put on board keeps lighting too, and it comes once per
+   * phone, so it goes first; the card can come back once it closes.
+   */
+  connectConfirmationShowing: boolean;
   /** The Climbs list's board-reveal tip or quick-actions tip is on screen (a tablet's pane beside the list). */
   listTipShowing: boolean;
   /**
@@ -175,12 +181,13 @@ export type PreviewFirstTipGateInput = {
 
 /**
  * Whether the card is on screen. One card at a time, like `shouldShowQuickActionsTip`:
- * it waits for the first-connect card, the Climbs list's tips and anything in the
- * player that is asking the climber something.
+ * it waits for the first-connect card and its confirmation, the Climbs list's
+ * tips and anything in the player that is asking the climber something.
  */
 export function shouldShowPreviewFirstTip(input: PreviewFirstTipGateInput): boolean {
   if (input.screenshotMode || !input.signedIn || !input.boardHasLights) return false;
-  if (input.connectCardVisible || input.listTipShowing || input.playerBusy || !input.slotInView) return false;
+  if (input.connectCardVisible || input.connectConfirmationShowing) return false;
+  if (input.listTipShowing || input.playerBusy || !input.slotInView) return false;
   const { status, opens } = input.state;
   if (input.claimedThisOpen) return status === 'showing';
   if (!input.previewShowing) return false;

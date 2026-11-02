@@ -112,6 +112,7 @@
         "title": "Ilumina bloques en {{board}}",
         "titleNoName": "Ilumina bloques en tu plafón",
         "body": "Conecta este teléfono al plafón, toca un bloque y pulsa Poner en el plafón para iluminarlo.",
+        "bodyTapLights": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
         "connect": "Conecta el plafón",
         "tryAgain": "Reintentar",
         "noLights": "Este muro no tiene luces",
@@ -125,6 +126,9 @@
         "title": "Conectado a {{board}}",
         "titleNoName": "Conectado a tu plafón",
         "body": "Ahora, al tocar un bloque de la lista, se ilumina en el muro.",
+        "bodyWindow": "Durante los {{seconds}} segundos siguientes a Poner en el plafón, cada bloque que elijas también se enciende. Después, vuelve a pulsar Poner en el plafón.",
+        "bodyUntilStop": "Después de Poner en el plafón, cada bloque que elijas se enciende hasta que toques el botón para parar.",
+        "bodyPutOnBoard": "Toca un bloque y pulsa Poner en el plafón para encenderlo en el muro.",
         "gotIt": "Entendido"
       }
     },

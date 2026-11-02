@@ -1,8 +1,10 @@
 // Wires the preview-first card (`lib/onboarding/preview-first-tip.ts`) to one
 // player open: reads the seen flag, waits its turn behind the Climbs list's
-// first-connect card and tips, and counts this open once it shows.
+// first-connect card and tips and the first-connect confirmation, and counts
+// this open once it shows.
 
 import { useEffect, useMemo, useState } from 'react';
+import { useFirstConnectConfirmationShowing } from '../../lib/onboarding/first-connect-confirmation-presence';
 import { useListCardShowing } from '../../lib/onboarding/list-card-presence';
 import {
   claimPreviewFirstTipOpen,
@@ -122,6 +124,7 @@ export function usePreviewFirstTip({
   const connectCardVisible = useListCardShowing('firstConnect');
   const revealTipShowing = useListCardShowing('boardReveal');
   const quickActionsTipShowing = useListCardShowing('quickActions');
+  const connectConfirmationShowing = useFirstConnectConfirmationShowing();
   // This open's claim. `refused` means another player (the tablet's pane and
   // the full-screen player, mid-handoff) took the last open. A new open key is
   // a new open, with nothing claimed yet.
@@ -133,6 +136,7 @@ export function usePreviewFirstTip({
     boardHasLights,
     previewShowing,
     connectCardVisible,
+    connectConfirmationShowing,
     listTipShowing: revealTipShowing || quickActionsTipShowing,
     playerBusy,
     slotInView,

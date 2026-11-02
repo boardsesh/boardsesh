@@ -53,6 +53,7 @@ const ready: GateInput = {
   boardHasLights: true,
   previewShowing: true,
   connectCardVisible: false,
+  connectConfirmationShowing: false,
   listTipShowing: false,
   playerBusy: false,
   slotInView: true,
@@ -76,6 +77,7 @@ describe('shouldShowPreviewFirstTip', () => {
 
   it('yields to the first-connect card, the list tips and anything asking in the player', () => {
     expect(shouldShowPreviewFirstTip({ ...ready, connectCardVisible: true })).toBe(false);
+    expect(shouldShowPreviewFirstTip({ ...ready, connectConfirmationShowing: true })).toBe(false);
     expect(shouldShowPreviewFirstTip({ ...ready, listTipShowing: true })).toBe(false);
     expect(shouldShowPreviewFirstTip({ ...ready, playerBusy: true })).toBe(false);
   });

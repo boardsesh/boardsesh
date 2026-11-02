@@ -112,6 +112,7 @@
         "title": "Allume les blocs sur {{board}}",
         "titleNoName": "Allume les blocs sur ta board",
         "body": "Connecte ce téléphone à la board, touche un bloc, puis Allumer sur la board pour l'allumer.",
+        "bodyTapLights": "Connecte ce téléphone à la board, puis touche un bloc pour l'allumer.",
         "connect": "Connecte la board",
         "tryAgain": "Réessayer",
         "noLights": "Ce mur n'a pas de LED",
@@ -125,6 +126,9 @@
         "title": "Connecté à {{board}}",
         "titleNoName": "Connecté à ta board",
         "body": "Touche un bloc dans la liste : il s'allume au mur.",
+        "bodyWindow": "Pendant les {{seconds}} secondes qui suivent Allumer sur la board, chaque bloc que tu choisis s'allume aussi. Ensuite, touche à nouveau Allumer sur la board.",
+        "bodyUntilStop": "Après Allumer sur la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter.",
+        "bodyPutOnBoard": "Touche un bloc, puis Allumer sur la board pour l'allumer au mur.",
         "gotIt": "Compris"
       }
     },

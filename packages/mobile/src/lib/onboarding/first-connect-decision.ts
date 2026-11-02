@@ -7,8 +7,10 @@
 //   {{board}}"). Its play-view pill went in #7000: the player's Connect board
 //   button now does that job for everyone;
 // - both arms: a one-time "Connected to {{board}}" confirmation after this
-//   phone's first successful connect.
+//   phone's first successful connect, saying what lights from here on.
 
+import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { resolveKeepLightingPlan, type KeepLightingChoice } from '../keep-lighting';
 import { isNativeVersionAtLeast } from '../native-version';
 import { isNewAccount } from './first-board-picker-decision';
 import { assignConnectStepArm, type ConnectStepArm } from './connect-step-arm';
@@ -236,19 +238,73 @@ export function shouldShowFirstConnectCard(input: FirstConnectCardInput): boolea
 
 /**
  * The confirmation after the first successful connect, in both arms. Only for
- * an enrolled account, never with the kill switch on, only once per phone, and
- * only while tapping a climb really does light it (`lightOnClimbTap`), since
- * that is what it says.
+ * an enrolled account, never with the kill switch on, and only once per phone.
+ *
+ * Nothing about the lighting settings gates it: its body says what lights
+ * under them (`firstConnectConfirmationCopy`). The host records the connect
+ * BEFORE it asks, so a gate here that the climber could later change (it was
+ * `lightOnClimbTap` until 2.7) would use the confirmation up for good on the
+ * first connect it turned away.
  */
 export function shouldConfirmFirstConnect(input: {
   enrolment: ConnectStepEnrolment | null;
   enabled: boolean;
   /** The phone's state BEFORE this connect was recorded. */
   device: FirstConnectDeviceState;
-  lightOnClimbTap: boolean;
 }): boolean {
-  if (!input.enabled || input.enrolment === null || !input.lightOnClimbTap) return false;
+  if (!input.enabled || input.enrolment === null) return false;
   return input.device.connectedAt === null && input.device.confirmationShownAt === null;
+}
+
+/**
+ * What the confirmation says lights from here on:
+ *
+ * - `tap_lights` — Light the board when I tap a climb is on: every tap lights.
+ * - `window` — Put on board keeps lighting for `seconds` (Settings › Board's
+ *   keep-lighting choice, 45 s by default).
+ * - `until_stop` — Put on board keeps lighting until the climber taps the
+ *   button (Until I stop, a MoonBoard's default).
+ * - `put_on_board` — Put on board lights one climb: the choice is Off, or no
+ *   window can start here (a crew session with In a session too off, or the
+ *   keep-lighting flag off).
+ */
+export type FirstConnectConfirmationCopy =
+  | { variant: 'tap_lights' }
+  | { variant: 'window'; seconds: number }
+  | { variant: 'until_stop' }
+  | { variant: 'put_on_board' };
+
+/** Settings › Board's keep-lighting choices and the crew read, as `resolveKeepLightingPlan` takes them. */
+export type FirstConnectKeepLightingInput = {
+  keepLighting: KeepLightingChoice;
+  moonboardKeepLighting: KeepLightingChoice;
+  drivesInSession: boolean;
+  inSession: boolean;
+};
+
+/**
+ * The confirmation's body, read by the rule Put on board itself follows
+ * (`resolveKeepLightingPlan`), so it never promises lighting the press won't do.
+ */
+export function firstConnectConfirmationCopy({
+  lightOnClimbTap,
+  boardName,
+  keepLighting,
+}: {
+  lightOnClimbTap: boolean;
+  /** The board type (`kilter`, `moonboard`, …): a MoonBoard takes its own keep-lighting choice. */
+  boardName: string | null;
+  /** Null when keep-lighting is off for everyone (its `wall-swipe-to-drive` kill switch). */
+  keepLighting: FirstConnectKeepLightingInput | null;
+}): FirstConnectConfirmationCopy {
+  if (lightOnClimbTap) return { variant: 'tap_lights' };
+  const plan =
+    keepLighting === null
+      ? null
+      : resolveKeepLightingPlan({ boardIsMoonboard: isMoonboardBoardName(boardName), ...keepLighting });
+  if (plan === null) return { variant: 'put_on_board' };
+  if (plan.windowMs === null) return { variant: 'until_stop' };
+  return { variant: 'window', seconds: Math.round(plan.windowMs / 1000) };
 }
 
 /** The phone's local calendar day, `YYYY-MM-DD`. */
