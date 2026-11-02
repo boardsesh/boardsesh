@@ -244,7 +244,10 @@ const HEADLINE: Record<Verdict, string> = {
 export function enforcementNote(input: EnforcementInput): string | null {
   if (input.overall !== 'native-change-required') return null;
   if (input.baseBranch === 'main') {
-    return 'Merging into `main` automatically opens a patch version and starts TestFlight and Play tester builds; no waiver label is needed.';
+    return (
+      'Merging into `main` starts TestFlight and Play tester builds. They keep the open marketing version while it ' +
+      'is unreleased, and open the next patch only after a store release; no waiver label is needed.'
+    );
   }
   return null;
 }
