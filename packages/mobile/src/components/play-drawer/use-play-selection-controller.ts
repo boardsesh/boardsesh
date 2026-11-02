@@ -13,6 +13,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
 import { getSetting } from '../../settings/hooks';
 import { climbChangeStaysViewOnly, getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
+import { drivingAtPick } from './drive-mode-store';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
@@ -145,7 +146,8 @@ function useSwipeSelection({
         targetItem,
         lightOnSwipe,
         inSharedSession: browseByDefault,
-        driving,
+        // A keep-lighting window past its end lights nothing (#7038).
+        driving: drivingAtPick(driving),
         stoppedForLink,
         previewOnOtherBoard,
       });
@@ -308,7 +310,7 @@ export function usePlaySelectionController({
         (viewer === 'anonymous' ||
           showBoardMismatch ||
           climbChangeStaysViewOnly({
-            driving,
+            driving: drivingAtPick(driving),
             inSharedSession: browseByDefault,
             lightSetting: getSetting('lightOnClimbTap'),
             stoppedForLink,
@@ -577,7 +579,7 @@ export function usePlaySelectionController({
         targetItem: target,
         lightOnSwipe,
         inSharedSession: browseByDefault,
-        driving,
+        driving: drivingAtPick(driving),
         stoppedForLink,
         previewOnOtherBoard,
       });
@@ -637,11 +639,12 @@ export function usePlaySelectionController({
   const handleSimilarClimbPress = useCallback(
     (similarClimb: Climb, similarClimbs: Climb[] = []) => {
       clearPreviewCommitOptions();
+      const drivingNow = drivingAtPick(driving);
       const previewOnly =
-        getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving }) === 'preview' ||
+        getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving: drivingNow }) === 'preview' ||
         showBoardMismatch ||
         climbChangeStaysViewOnly({
-          driving,
+          driving: drivingNow,
           inSharedSession: browseByDefault,
           lightSetting: getSetting('lightOnClimbTap'),
           stoppedForLink,

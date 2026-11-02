@@ -22,8 +22,8 @@ import { trackQueueNavigation } from '../../lib/queue-navigation-analytics';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
 import { getViewOnlyPreviewNavigationTarget } from '../play-drawer/play-drawer-navigation';
-import { useClimbChangeLights } from '../play-drawer/use-climb-change-lights';
-import { useDriveModePhase } from '../play-drawer/drive-mode-store';
+import { readClimbChangeLights, useClimbChangeLights } from '../play-drawer/use-climb-change-lights';
+import { drivingAtPick, useDriveModePhase } from '../play-drawer/drive-mode-store';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 
 export type MiniPlayerNavigation = {
@@ -100,11 +100,15 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
     (targetItem: ClimbQueueItem | null, navigateQueue: () => void, direction: QueueNavigationDirection) => {
       if (!targetItem) return;
       hapticSelection();
+      // A keep-lighting window past its end lights nothing, even before the
+      // watcher has tidied it (#7038): the step then reads the rule afresh.
+      const windowLapsed = driving && !drivingAtPick(driving);
+      const lights = windowLapsed ? readClimbChangeLights('swipe', { inSharedSession }) : stepLights;
       const target = getViewOnlyPreviewNavigationTarget({
         previewItem: null,
         previewSuggestionSource: null,
         targetItem,
-        forceViewOnly: !stepLights,
+        forceViewOnly: !lights,
       });
       const trackStep = (outcome: 'moved' | 'preview') =>
         trackQueueNavigation({
@@ -114,7 +118,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           outcome,
           inSharedSession,
           lightOnSwipe,
-          driving,
+          driving: driving && !windowLapsed,
           boardType,
           layoutId,
         });

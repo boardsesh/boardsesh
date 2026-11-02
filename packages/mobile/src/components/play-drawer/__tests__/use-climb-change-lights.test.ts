@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetAllSettings, setSetting } from '../../../settings';
 
-const drive = vi.hoisted(() => ({ phase: 'off' as 'off' | 'arming' | 'live', stopped: false }));
+const drive = vi.hoisted(() => ({ phase: 'off' as 'off' | 'arming' | 'live', stopped: false, windowLapsed: false }));
 vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));
 vi.mock('../drive-mode-store', () => ({
   getDriveMode: () => (drive.phase === 'off' ? null : { phase: drive.phase }),
+  // The store's at-pick read: a keep-lighting window past its end is no drive (#7038).
+  drivingAtPick: (rendered: boolean) => rendered && !drive.windowLapsed,
   isDrivingStoppedForLink: () => drive.stopped,
   useDriveModePhase: () => drive.phase,
   useDrivingStoppedForLink: () => drive.stopped,
@@ -16,6 +18,7 @@ beforeEach(() => {
   resetAllSettings();
   drive.phase = 'off';
   drive.stopped = false;
+  drive.windowLapsed = false;
 });
 
 describe('the live preview-first lighting policy', () => {
@@ -42,6 +45,14 @@ describe('the live preview-first lighting policy', () => {
     drive.phase = 'live';
     expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(true);
     expect(readClimbChangeLights('swipe', { inSharedSession: true })).toBe(true);
+  });
+
+  it('reads a keep-lighting window past its end as no drive at the tap', () => {
+    drive.phase = 'live';
+    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(true);
+    drive.windowLapsed = true;
+    expect(readClimbChangeLights('tap', { inSharedSession: true })).toBe(false);
+    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
   });
 
   it('honors a stop on the current link even when both lighting settings are on', () => {

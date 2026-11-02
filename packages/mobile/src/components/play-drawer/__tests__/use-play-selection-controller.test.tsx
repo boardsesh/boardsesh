@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { PlayDrawerOpenOptions } from '../play-drawer-types';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { usePlaySelectionController } from '../use-play-selection-controller';
 import { setSetting } from '../../../settings/hooks';
+import { enterDriveMode, getDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
 
 const authority = vi.hoisted(() => ({ uuid: 0, platform: 'ios', announce: vi.fn() }));
 vi.mock('react-native', () => ({
@@ -774,6 +775,94 @@ describe('driving the wall', () => {
       expect(props.confirmation.setBusyWallConfirmArmed).not.toHaveBeenCalledWith(true);
       expect(props.queue.setCurrentClimb).toHaveBeenCalledOnce();
     }
+  });
+});
+
+// Put on board's keep-lighting window (2.7) is a live drive with an end. The
+// player's render read it as driving, but Android pauses JS timers with the
+// activity (#7038), so the watcher may not have ended it yet: every pick reads
+// the wall clock, and a pick past the end stays a preview. The timers here
+// never advance; only the clock moves.
+describe('a keep-lighting window past its end', () => {
+  beforeEach(() => {
+    setSetting('lightOnClimbTap', false);
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_000 });
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: null,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      now: 1_000,
+    });
+    markDriveLive({ now: 1_000 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    resetDriveModeForTests();
+  });
+  /** What the player rendered while the window was on: driving, Light on swipe off. */
+  function windowInputs(): SelectionInputs {
+    const props = inputs();
+    props.navigation.driving = true;
+    props.navigation.lightOnSwipe = false;
+    return props;
+  }
+  const lapse = () => vi.setSystemTime(46_000);
+
+  it.each(['handlePrev', 'handleNext'] as const)('%s inside the window still moves the wall', (handler) => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    vi.setSystemTime(45_999);
+    act(() => result.current[handler]('swipe'));
+    expect(handler === 'handlePrev' ? props.queue.previousClimb : props.queue.nextClimb).toHaveBeenCalledOnce();
+  });
+
+  it.each(['handlePrev', 'handleNext'] as const)('%s past the end opens a preview, the wall untouched', (handler) => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current[handler]('swipe'));
+    expect(props.queue.previousClimb).not.toHaveBeenCalled();
+    expect(props.queue.nextClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      handler === 'handlePrev' ? props.navigation.navigationState.prevItem : props.navigation.navigationState.nextItem,
+    );
+    expect(props.onNavigationStep).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'preview' }));
+    // The watcher, not the pick, ends the drive and tidies the button.
+    expect(getDriveMode()?.phase).toBe('live');
+  });
+
+  it('a fresh open past the end is a preview', () => {
+    const props = windowInputs();
+    lapse();
+    props.openTarget = open(item('new'));
+    renderHook(usePlaySelectionController, { initialProps: props });
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'new' }) }),
+    );
+  });
+
+  it('a similar climb past the end is a preview', () => {
+    const props = windowInputs();
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current.handleSimilarClimbPress(item('similar').climb as Climb, [item('similar').climb as Climb]));
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'similar' }) }),
+    );
+  });
+
+  it('Keep going with your queue past the end is a preview', () => {
+    const props = windowInputs();
+    const target = item('queued');
+    const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+    lapse();
+    act(() => result.current.continueIntoQueue(target));
+    expect(props.queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(props.preview.setDrawerPreviewItem).toHaveBeenCalledWith(target);
   });
 });
 
