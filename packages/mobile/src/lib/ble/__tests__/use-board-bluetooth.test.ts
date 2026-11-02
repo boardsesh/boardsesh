@@ -6380,6 +6380,95 @@ describe('useBoardBluetooth prepared native pairing (#7122)', () => {
       expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
     });
 
+    async function hungUpWithRoute() {
+      const adapter = makePreparedAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin: 'userConnect',
+      });
+      const hook = renderHook((board: typeof currentBoard) => useBoardBluetooth(board), {
+        initialProps: currentBoard,
+      });
+      await act(async () => {});
+      expect(hook.result.current.isConnected).toBe(true);
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+      await act(async () => {
+        await hook.result.current.disconnect('user');
+      });
+      expect(adapter.disconnect).toHaveBeenLastCalledWith({ keepBoard: true });
+      return { adapter, hook };
+    }
+
+    // The switch's native forget failed (forgetNativeKeptBoard resolves false),
+    // so native still pairs the board, but the release is no longer settled.
+    // The take-back the expiry confirms must still be adopted, or the board is
+    // renewed every 10 minutes while the bulb keeps the wall lit.
+    it('adopts a take-back after the 10 minutes when a board switch failed to forget natively', async () => {
+      vi.useFakeTimers();
+      try {
+        const { adapter, hook } = await hungUpWithRoute();
+        hook.rerender({ ...currentBoard, boardUuid: 'wall-c' });
+        await act(async () => {});
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        hook.rerender(currentBoard);
+        await act(async () => {});
+
+        vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+          deviceId: 'board-b',
+          name: 'Kilter Board',
+          configKey: currentConfigKey,
+          connectOrigin: 'liveActivityIntent',
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(HANG_UP_REMEMBER_MS);
+        });
+        expect(adapter.adoptConnection).toHaveBeenCalledTimes(2);
+        expect(hook.result.current.isConnected).toBe(true);
+        expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenLastCalledWith({
+          configKey: currentConfigKey,
+          deviceId: 'board-b',
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // A silent reconnect to the hung-up board is still running when the route
+    // moves, so the switch can't forget yet. It fails before its preparation
+    // (Bluetooth off), which leaves native pairing the old board: the switch
+    // forgets it once the connect settles.
+    it('forgets a hang-up’s pairing once a connect that overlapped the switch fails before preparation', async () => {
+      const { adapter, hook } = await hungUpWithRoute();
+      let finishAvailability!: (available: boolean) => void;
+      adapter.isAvailable = vi.fn().mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          finishAvailability = resolve;
+        }),
+      );
+      let connectResult!: Promise<boolean>;
+      await act(async () => {
+        connectResult = hook.result.current.connect();
+      });
+      expect(adapter.isAvailable).toHaveBeenCalledOnce();
+
+      hook.rerender({ ...currentBoard, boardUuid: 'wall-c' });
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+
+      await act(async () => {
+        finishAvailability(false);
+        expect(await connectResult).toBe(false);
+      });
+      expect(adapter.prepareBoardConnection).not.toHaveBeenCalled();
+      expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+    });
+
     it('keeps a hang-up’s pairing while no board is in view', async () => {
       const adapter = makePreparedAdapter();
       vi.mocked(createBluetoothAdapter).mockReturnValue(

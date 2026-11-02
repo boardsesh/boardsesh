@@ -802,8 +802,9 @@ export function useBoardBluetooth({
   // saying disconnected over a lit wall. A hang-up's pairing lasts as long as
   // its JS stamp, and only while the route shows that board: once either ends,
   // native forgets it too, unless the bulb already reconnected it
-  // (forgetNativeBoardUnlessTakenBack). A hang-up from a wrong-box connect
-  // forgets the pairing and never sets this.
+  // (forgetNativeBoardUnlessTakenBack, which also sets this once native says
+  // the bulb holds that board). A hang-up from a wrong-box connect forgets the
+  // pairing and never sets this.
   const keptBoardReleaseSettledRef = useRef(false);
   // The config key whose remembered board a hang-up of the live connection
   // keeps (stamped for HANG_UP_REMEMBER_MS), or null when it forgets at once:
@@ -865,6 +866,12 @@ export function useBoardBluetooth({
         if (generation !== nativeReconciliationGenerationRef.current) return;
         if (device && isLockScreenTakeBack(device.connectOrigin, device.configKey, expired)) {
           rememberConnectedBoard({ ...expired, forgetAfter: Date.now() + HANG_UP_REMEMBER_MS });
+          // Native holds the very link adoptsBulbReconnect describes, so let the
+          // recheck through. A hang-up whose native disconnect threw, or a
+          // board switch whose native forget failed, leaves the release
+          // unsettled: without this nothing is adopted, and the board is
+          // renewed every 10 minutes under a lit wall.
+          keptBoardReleaseSettledRef.current = true;
           recheckNativeConnectionRef.current?.();
           return;
         }
@@ -2728,13 +2735,16 @@ export function useBoardBluetooth({
   // pairing on the switch. The JS handle keeps its stamp: walking back within
   // the 10 minutes still reconnects silently from the app. Disconnect
   // Bluetooth when driving ends and a link drop keep the pairing across a
-  // switch; that gap stays with #7122.
+  // switch; that gap stays with #7122. A switch that lands while a connect runs
+  // is skipped (forgetNativeBoardWhileIdle), so `loading` and `isConnected`
+  // re-run this once it settles: a connect that fails before its preparation
+  // (Bluetooth off, permission denied) leaves the old pairing in place.
   useEffect(() => {
     const kept = lastConnectedBoard;
     if (kept?.forgetAfter === undefined || !currentConfigKey || kept.configKey === currentConfigKey) return;
     if (nativeForgotForStampRef.current === kept.forgetAfter) return;
     if (forgetNativeBoardWhileIdle()) nativeForgotForStampRef.current = kept.forgetAfter;
-  }, [currentConfigKey, lastConnectedBoard, forgetNativeBoardWhileIdle]);
+  }, [currentConfigKey, lastConnectedBoard, loading, isConnected, forgetNativeBoardWhileIdle]);
 
   // Rehydrate the remembered board from storage on mount so a one-tap silent
   // reconnect survives a cold start / provider remount, not just the in-memory
