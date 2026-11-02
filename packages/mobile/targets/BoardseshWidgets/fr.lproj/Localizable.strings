@@ -5,8 +5,6 @@
 "Next climb" = "Bloc suivant";
 "Mirror climb" = "Miroir du bloc";
 "Unmirror climb" = "Annuler le miroir";
-"Wall lit, you are driving" = "Mur allumé, tu pilotes";
-"Wall control" = "Contrôle du mur";
 "Tap to reconnect" = "Appuie pour te reconnecter";
 "Board disconnected. Tap to reconnect" = "Board déconnectée. Appuie pour te reconnecter";
 "On the wall" = "Sur le mur";
@@ -29,3 +27,11 @@
 "Queue's empty" = "File vide";
 "Since your last climb" = "Depuis ton dernier bloc";
 "Log a climb to start" = "Enregistre un bloc pour démarrer";
+
+/* Keep-lighting window (2.7): what the wall does with the next pick */
+"Wall lit" = "Mur allumé";
+"Picks are previews" = "Les blocs s'ouvrent en aperçu";
+"Each pick lights" = "Chaque bloc s'allume";
+"Driving the wall" = "Tu pilotes la board";
+"Every climb you pick lights up" = "Chaque bloc que tu choisis s'allume";
+"Lights the climb again" = "Rallume le bloc";

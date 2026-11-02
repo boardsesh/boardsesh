@@ -180,6 +180,15 @@ enum ClimbNavigationIntent {
             if !writeSucceeded {
                 completionClass = .bleFailure
             }
+            // The press lit the wall, so it opens or renews the keep-lighting
+            // window (2.7) the way a climb that lights in the app would, from
+            // the settings JS mirrored into the App Group. Written before the
+            // Darwin post so JS, if it is running, adopts it with the move.
+            // The optimistic frame above went out before the window existed,
+            // so redraw once more.
+            if writeSucceeded, SharedLightingWindowRuntime.recordPress(in: defaults) != nil {
+                await LiveActivityManager.shared.rerenderForLightingWindow()
+            }
         }
         #endif
 

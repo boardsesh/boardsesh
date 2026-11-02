@@ -322,6 +322,14 @@ export type LiveActivityStartSessionOptions = {
     connectingLabel?: string;
     /** "{{name}} is on the wall" template; Kotlin substitutes holderDisplayName. */
     onWallTemplate: string;
+    /**
+     * The header's line during Put on board's keep-lighting window (2.7),
+     * "Each pick lights"; the system draws the countdown beside it. An older
+     * binary ignores it.
+     */
+    lightWindowLabel?: string;
+    /** The header's line while driving the wall, "Driving the wall". An older binary ignores it. */
+    lightDrivingLabel?: string;
   };
 };
 
@@ -421,6 +429,64 @@ export type LiveActivityRestTimerOptions = {
   androidOverCaption?: string | null;
 };
 
+/**
+ * What the wall does with this phone's next pick (2.7), as the Lock Screen,
+ * the Dynamic Island and the Android notification draw it: `off` (previews),
+ * `window` (Put on board's keep-lighting window, until `endsAtMs`) or
+ * `driving` (open-ended, until the climber stops).
+ */
+export type LiveActivityLightingMode = 'off' | 'window' | 'driving';
+
+/** Which keep-lighting choice opened the window: the general one or the MoonBoard one. */
+export type LiveActivityLightingFamily = 'general' | 'moonboard';
+
+/** JS's keep-lighting window, sent through `updateLightingWindow`. */
+export type LiveActivityLightingWindowOptions = {
+  sessionId: string;
+  mode: LiveActivityLightingMode;
+  /** Epoch ms the window ends (clamped to auto-disconnect). null outside a window. */
+  endsAtMs: number | null;
+  /** The window's length, so a lock-screen press renews it by its own length. null outside a window. */
+  windowSeconds: number | null;
+  family: LiveActivityLightingFamily | null;
+};
+
+/**
+ * The stored window as `getLightingWindow` reads it back. `source` says who
+ * wrote it: `app` (JS) or `lockScreen` (a lock-screen or notification Next or
+ * Previous, written natively while JS may have been suspended). Optional
+ * fields are absent rather than null.
+ */
+export type LiveActivityLightingWindowSnapshot = {
+  sessionId: string;
+  mode: LiveActivityLightingMode;
+  endsAtMs?: number | null;
+  windowSeconds?: number | null;
+  family?: LiveActivityLightingFamily | null;
+  source: 'app' | 'lockScreen';
+  updatedAtMs: number;
+};
+
+/**
+ * Settings › Board's keep-lighting choices, mirrored for the lock-screen and
+ * notification Next / Previous, which open or renew the window natively the
+ * way `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) would.
+ */
+export type LiveActivityKeepLightingConfig = {
+  /** The general `KeepLightingChoice` ('off' | '30' | '45' | '60' | 'until_stopped'). */
+  keepLighting: string;
+  /** The MoonBoard `KeepLightingChoice`. */
+  moonboardKeepLighting: string;
+  /** "In a session too". */
+  drivesInSession: boolean;
+  /** A crew is in the session (the roster's crew). */
+  inCrew: boolean;
+  /** The session's board is a MoonBoard. */
+  moonboard: boolean;
+  /** False where a press would not keep lighting in the app either. */
+  enabled: boolean;
+};
+
 export type WidgetMirrorEvent = {
   sessionId: string;
   queueItemUuid: string;
@@ -510,6 +576,14 @@ type LiveActivityNativeModule = {
   supportsRestTimer?: boolean;
   /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /** True on binaries that draw the keep-lighting window (2.7). */
+  supportsLightingWindow?: boolean;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateLightingWindow?(options: LiveActivityLightingWindowOptions | null): Promise<void>;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
+  /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
+  getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
@@ -536,6 +610,14 @@ type SessionPresenceNativeModule = {
   supportsRestTimer?: boolean;
   /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /** True on binaries that draw the keep-lighting window (2.7). */
+  supportsLightingWindow?: boolean;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateLightingWindow?(options: LiveActivityLightingWindowOptions | null): Promise<void>;
+  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
+  /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
+  getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
   /**
    * Resolves after `ms` on a native clock that keeps running while the activity
    * is paused, when Android stops firing JS timers (#7038). Optional for OTA

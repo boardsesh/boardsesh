@@ -61,6 +61,9 @@ internal class SessionPresenceController(
     var restTimer: RestTimerOptions? = null
         private set
 
+    /** The clock JS's lighting writes are stamped with; a test pins it. */
+    internal var wallClockMs: () -> Long = { System.currentTimeMillis() }
+
     fun startSession(options: StartSessionOptions?) {
         // On API 34+ a connectedDevice FGS can't promote without
         // BLUETOOTH_CONNECT, so skip the start rather than create a
@@ -70,6 +73,11 @@ internal class SessionPresenceController(
         sessionActive = true
         activeSessionId = options?.sessionId ?: ""
         restTimer = null
+        // Another session's keep-lighting window (a killed app's leftover) goes;
+        // this one's survives, and JS sends it again after the start anyway.
+        LightingWindowStore.loadWindow(context)?.let {
+            if (it.sessionId != activeSessionId) LightingWindowStore.clearWindow(context)
+        }
         val strings = options?.androidNotification
         val intent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_START
@@ -85,6 +93,8 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, strings?.reconnectLabel ?: "Connect to board")
             putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, strings?.connectingLabel ?: "Connecting…")
             putExtra(BoardSessionService.EXTRA_ON_WALL_TEMPLATE, strings?.onWallTemplate ?: "{{name}} is on the wall")
+            putExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_LABEL, strings?.lightWindowLabel ?: "Each pick lights")
+            putExtra(BoardSessionService.EXTRA_LIGHT_DRIVING_LABEL, strings?.lightDrivingLabel ?: "Driving the wall")
             // Initial lightbulb / controls state before the first climb update.
             putExtra(
                 BoardSessionService.EXTRA_BOARD_CONNECTION,
@@ -180,11 +190,72 @@ internal class SessionPresenceController(
         launchService(intent, clearSessionOnFailure = false)
     }
 
+    /**
+     * Stores JS's keep-lighting window (2.7) for the receiver and
+     * `getLightingWindow`, and shows it in the notification header; `null`
+     * takes it off. Dropped outside a session window and for another session.
+     * A write that only takes over a window JS just adopted from a press draws
+     * the same header, so the service isn't woken for it.
+     */
+    fun updateLightingWindow(options: LightingWindowOptions?) {
+        if (!sessionActive) return
+        if (options != null && options.sessionId != activeSessionId) {
+            Log.w(TAG, "updateLightingWindow: ignoring a window for another session")
+            return
+        }
+        val previous = LightingWindowStore.loadWindow(context)
+        val snapshot = options?.let {
+            LightingWindowSnapshot(
+                sessionId = it.sessionId,
+                mode = it.mode,
+                endsAtMs = it.endsAtMs.finiteLong(),
+                windowSeconds = it.windowSeconds?.takeIf { seconds -> seconds.isFinite() },
+                family = it.family,
+                source = LightingWindowStore.SOURCE_APP,
+                updatedAtMs = wallClockMs(),
+            )
+        }
+        // A snapshot out of bounds is never stored (saveWindow clears instead):
+        // it reads as off, like null.
+        val shown = snapshot?.takeIf { LightingWindowStore.saveWindow(context, it) }
+        if (shown == null) {
+            LightingWindowStore.clearWindow(context)
+            if (previous == null) return
+        } else if (shown.drawsLike(previous)) {
+            return
+        }
+        // Same transient-failure contract as updateRestTimer.
+        launchService(BoardSessionService.lightingIntent(context, activeSessionId, shown), clearSessionOnFailure = false)
+    }
+
+    /** Stores (or, with `null`, clears) Settings › Board's keep-lighting choices for the receiver. */
+    fun updateKeepLightingConfig(options: KeepLightingConfigOptions?) {
+        if (options == null) {
+            LightingWindowStore.clearConfig(context)
+            return
+        }
+        LightingWindowStore.saveConfig(
+            context,
+            KeepLightingConfig(
+                keepLighting = options.keepLighting,
+                moonboardKeepLighting = options.moonboardKeepLighting,
+                drivesInSession = options.drivesInSession,
+                inCrew = options.inCrew,
+                moonboard = options.moonboard,
+                enabled = options.enabled,
+            ),
+        )
+    }
+
     fun endSession() {
         val hadActiveSession = sessionActive
         sessionActive = false
         activeSessionId = ""
         restTimer = null
+        // No session, no notification to open a window from; JS sends the
+        // settings again after the next start.
+        LightingWindowStore.clearWindow(context)
+        LightingWindowStore.clearConfig(context)
         val stopIntent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_STOP
         }

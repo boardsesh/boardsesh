@@ -78,7 +78,7 @@ public class LiveActivityModule: Module {
         Name("LiveActivity")
 
         Events("queueNavigate", "queueMirror")
-        Constants(["supportsMirrorControl": true, "supportsRestTimer": true])
+        Constants(["supportsMirrorControl": true, "supportsRestTimer": true, "supportsLightingWindow": true])
 
         OnDestroy {
             self.stopDarwinObservation()
@@ -159,6 +159,24 @@ public class LiveActivityModule: Module {
         // would silently drop a rest change riding along with it.
         AsyncFunction("updateRestTimer") { (options: UpdateRestTimerOptions?) -> Void in
             self.updateRestTimer(options: options)
+        }
+
+        // Keep-lighting window (2.7). Nil clears it. Its own call for the rest
+        // timer's reason: a rejected queue update must never drop it.
+        AsyncFunction("updateLightingWindow") { (options: UpdateLightingWindowOptions?) -> Void in
+            self.updateLightingWindow(options: options)
+        }
+
+        // Settings › Board's keep-lighting choices, for a lock-screen Next or
+        // Previous to open or renew the window natively. Nil clears them.
+        AsyncFunction("updateKeepLightingConfig") { (options: KeepLightingConfigOptions?) -> Void in
+            self.updateKeepLightingConfig(options: options)
+        }
+
+        // Synchronous so the drive store can adopt a lock-screen window before
+        // its own window-end check runs on the same foreground event.
+        Function("getLightingWindow") { () -> [String: Any]? in
+            SharedConstants.sharedDefaults.flatMap { SharedLightingWindowStore.load(from: $0)?.bridgeBody }
         }
     }
 
@@ -733,6 +751,10 @@ public class LiveActivityModule: Module {
             if let rest = SharedRestTimerStore.load(from: defaults), rest.sessionId != sessionId {
                 SharedRestTimerStore.clear(in: defaults)
             }
+            // The keep-lighting window follows the same rule.
+            if let lighting = SharedLightingWindowStore.load(from: defaults), lighting.sessionId != sessionId {
+                SharedLightingWindowStore.clear(in: defaults)
+            }
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
             defaults.set(widgetMirrorUrl, forKey: SharedConstants.widgetMirrorUrlKey)
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
@@ -905,6 +927,10 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
             defaults.removeObject(forKey: SharedConstants.partySessionKey)
             SharedRestTimerStore.clear(in: defaults)
+            // No session, no lock-screen card to open a window from. JS sends
+            // the config again after the next start.
+            SharedLightingWindowStore.clear(in: defaults)
+            SharedKeepLightingConfigStore.clear(in: defaults)
         }
         SharedKeychain.remove(SharedKeychain.authTokenKey)
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
@@ -1008,7 +1034,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
+            let unchanged = sameContentIgnoringRevisions(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1119,7 +1145,7 @@ public class LiveActivityModule: Module {
                 await activityManager.prefetchCurrentThumbnail()
             }
             let elapsed = await activityManager.timeSinceLastUpdate()
-            let unchanged = sameContentIgnoringRestRevision(await activityManager.lastPushedState(), state)
+            let unchanged = sameContentIgnoringRevisions(await activityManager.lastPushedState(), state)
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
@@ -1164,7 +1190,100 @@ extension LiveActivityModule {
     }
 }
 
+// MARK: - Lighting Window (2.7)
+
+extension LiveActivityModule {
+    /// Stage (or clear) JS's keep-lighting window in the App Group, then ask the
+    /// activity to re-render so the widget reads it. A write that only takes
+    /// over a lock-screen window JS just adopted draws the same card, so it
+    /// skips the redraw.
+    fileprivate func updateLightingWindow(options: UpdateLightingWindowOptions?) {
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        if let options, !options.sessionId.isEmpty {
+            let previous = SharedLightingWindowStore.load(from: defaults)
+            let state = SharedLightingWindowState(
+                v: SharedLightingWindowState.currentVersion,
+                sessionId: options.sessionId,
+                mode: options.mode,
+                endsAtMs: options.endsAtMs,
+                windowSeconds: options.windowSeconds,
+                family: options.family,
+                source: SharedLightingWindowState.sourceApp,
+                updatedAtMs: Date().timeIntervalSince1970 * 1000
+            )
+            let stored = SharedLightingWindowStore.save(state, to: defaults)
+            if stored && state.drawsLike(previous) { return }
+        } else if !SharedLightingWindowStore.clear(in: defaults) {
+            return
+        }
+
+        guard #available(iOS 17.0, *) else { return }
+        enqueueLifecycleWork {
+            await LiveActivityManager.shared.rerenderForLightingWindow()
+        }
+    }
+
+    /// Stage (or clear) the keep-lighting settings. Nothing on the card shows
+    /// them, so there is nothing to redraw.
+    fileprivate func updateKeepLightingConfig(options: KeepLightingConfigOptions?) {
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        guard let options else {
+            SharedKeepLightingConfigStore.clear(in: defaults)
+            return
+        }
+        SharedKeepLightingConfigStore.save(
+            SharedKeepLightingConfig(
+                v: SharedKeepLightingConfig.currentVersion,
+                keepLighting: options.keepLighting,
+                moonboardKeepLighting: options.moonboardKeepLighting,
+                drivesInSession: options.drivesInSession,
+                inCrew: options.inCrew,
+                moonboard: options.moonboard,
+                enabled: options.enabled
+            ),
+            to: defaults
+        )
+    }
+}
+
+extension SharedLightingWindowState {
+    /// The snapshot as `getLightingWindow` hands it to JS
+    /// (`LiveActivityLightingWindowSnapshot`). Absent optionals are left out.
+    var bridgeBody: [String: Any] {
+        var body: [String: Any] = [
+            "sessionId": sessionId,
+            "mode": mode,
+            "source": source,
+            "updatedAtMs": updatedAtMs,
+        ]
+        if let endsAtMs { body["endsAtMs"] = endsAtMs }
+        if let windowSeconds { body["windowSeconds"] = windowSeconds }
+        if let family { body["family"] = family }
+        return body
+    }
+}
+
 // MARK: - Argument Records
+
+/// Mirrors `LiveActivityLightingWindowOptions` in modules/live-activity/src/index.ts.
+struct UpdateLightingWindowOptions: Record {
+    @Field var sessionId: String = ""
+    @Field var mode: String = SharedLightingWindowState.modeOff
+    @Field var endsAtMs: Double?
+    @Field var windowSeconds: Double?
+    @Field var family: String?
+}
+
+/// Mirrors `LiveActivityKeepLightingConfig` in modules/live-activity/src/index.ts.
+/// The defaults are what an absent field means: one climb, no window.
+struct KeepLightingConfigOptions: Record {
+    @Field var keepLighting: String = "off"
+    @Field var moonboardKeepLighting: String = "off"
+    @Field var drivesInSession: Bool = false
+    @Field var inCrew: Bool = false
+    @Field var moonboard: Bool = false
+    @Field var enabled: Bool = false
+}
 
 /// Mirrors `LiveActivityRestTimerOptions` in modules/live-activity/src/index.ts.
 /// The Android-only `androidCaption` is simply not declared, so Expo drops it.
@@ -1266,11 +1385,12 @@ struct UpdateActivityClimbOptions: Record {
     @Field var renderMode: String?
 }
 
-/// Dedup comparison for JS-driven updates. The rest-timer re-render bumps
-/// `restRevision` on the state it shows, while JS-built states always carry
-/// nil, so a plain `==` would never collapse the next same-climb update inside
-/// the dedup window. The revision is only a redraw trigger, so ignore it here.
-private func sameContentIgnoringRestRevision(
+/// Dedup comparison for JS-driven updates. The rest-timer and lighting-window
+/// re-renders bump `restRevision` / `lightingRevision` on the state they show,
+/// while JS-built states always carry nil, so a plain `==` would never collapse
+/// the next same-climb update inside the dedup window. The revisions are only
+/// redraw triggers, so ignore them here.
+private func sameContentIgnoringRevisions(
     _ shown: ClimbSessionAttributes.ContentState?,
     _ incoming: ClimbSessionAttributes.ContentState
 ) -> Bool {
@@ -1278,5 +1398,7 @@ private func sameContentIgnoringRestRevision(
     var incoming = incoming
     shown.restRevision = nil
     incoming.restRevision = nil
+    shown.lightingRevision = nil
+    incoming.lightingRevision = nil
     return shown == incoming
 }

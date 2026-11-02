@@ -278,6 +278,71 @@ export function noteDriveClimbLit({ now = Date.now() }: { now?: number } = {}): 
 }
 
 /**
+ * A Lock Screen, Dynamic Island or Android notification Next / Previous lit the
+ * wall and opened a keep-lighting window (or, for Until I stop, an open-ended
+ * drive) natively while this JS may have been suspended (2.7): adopt it as a
+ * live drive. The press already lit its climb, so there is no arming, and the
+ * window ends where native said (`expiresAt`), not a full length from now.
+ * `startedAt` is the press. Refuses (false) while a drive is on.
+ *
+ * `climbsLit` starts at 0: the climb the press lit is counted when this
+ * phone's auto-sender confirms it, like every other.
+ */
+export function startLockScreenDrive({
+  sessionId,
+  boardId,
+  boardType = null,
+  windowMs,
+  windowSetting,
+  expiresAt,
+  startedAt,
+}: {
+  sessionId: string | null;
+  boardId: number | null;
+  boardType?: string | null;
+  /** The window's length, or null for an open-ended drive. */
+  windowMs: number | null;
+  windowSetting: KeepLightingSettingKey | null;
+  /** When the native window ends; null for an open-ended drive. */
+  expiresAt: number | null;
+  startedAt: number;
+}): boolean {
+  if (driveMode) return false;
+  const windowed = windowMs !== null && windowMs > 0 && expiresAt !== null;
+  driveMode = {
+    phase: 'live',
+    sessionId,
+    boardId,
+    boardType,
+    startedAt,
+    startedBy: 'lock_screen',
+    climbsLit: 0,
+    windowMs: windowed ? windowMs : null,
+    windowSetting: windowed ? windowSetting : null,
+    expiresAt: windowed ? expiresAt : null,
+    windowRenewals: 0,
+  };
+  stoppedForLink = false;
+  lastExitReason = null;
+  emit();
+  trackDriveModeStarted({ startedBy: 'lock_screen', inSession: sessionId !== null, boardType });
+  return true;
+}
+
+/**
+ * A lock-screen press renewed the live keep-lighting window past the end this
+ * JS knows (2.7): take the later end, counted as one renewal. Returns whether
+ * it moved.
+ */
+export function extendDriveWindow(expiresAt: number): boolean {
+  if (driveMode?.phase !== 'live' || driveMode.windowMs === null || driveMode.expiresAt === null) return false;
+  if (expiresAt <= driveMode.expiresAt) return false;
+  driveMode = { ...driveMode, expiresAt, windowRenewals: driveMode.windowRenewals + 1 };
+  emit();
+  return true;
+}
+
+/**
  * A swipe or Light every climb during a keep-lighting window: the drive goes on
  * with no end, the frost. Returns whether there was a window to open up.
  */

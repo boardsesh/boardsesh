@@ -11,6 +11,7 @@ import { useBoardConnectionState } from '../../components/ble/use-board-connecti
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
 import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
+import { LiveActivityLightingSync } from './live-activity-lighting';
 import {
   addWidgetMirrorListener,
   getPendingWidgetMirror,
@@ -125,6 +126,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       reconnectLabel: t('mobile.session.notification.reconnect'),
       connectingLabel: t('mobile.session.notification.connecting'),
       onWallTemplate: t('mobile.session.notification.onWall'),
+      lightWindowLabel: t('mobile.session.notification.eachPickLights'),
+      lightDrivingLabel: t('mobile.session.notification.drivingTheWall'),
     }),
     [t],
   );
@@ -302,6 +305,12 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       .catch((error: unknown) => console.warn('[LiveActivity] Mirror replay failed:', error));
   }, [state.queue]);
 
-  // The rest timer rides its own leaf: its store events re-render that, not this.
-  return <LiveActivityRestTimerSync sessionId={sessionId} activityStartCount={activityStartCount} />;
+  // The rest timer and the keep-lighting window ride their own leaves: their
+  // store events re-render those, not this.
+  return (
+    <>
+      <LiveActivityRestTimerSync sessionId={sessionId} activityStartCount={activityStartCount} />
+      <LiveActivityLightingSync sessionId={sessionId} boardName={boardName} activityStartCount={activityStartCount} />
+    </>
+  );
 }

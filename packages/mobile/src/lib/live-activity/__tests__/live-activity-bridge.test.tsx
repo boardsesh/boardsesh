@@ -155,6 +155,9 @@ vi.mock('../use-live-activity', () => ({
   useLiveActivity: (args: unknown) => widget.useLiveActivity(args),
 }));
 
+// The keep-lighting leaf has its own tests; keep it out of the bridge's.
+vi.mock('../live-activity-lighting', () => ({ LiveActivityLightingSync: () => null }));
+
 vi.mock('../live-activity-plugin', () => ({
   // The rest timer leaf has its own tests; keep it quiet here.
   sessionPresenceSupportsRestTimer: false,

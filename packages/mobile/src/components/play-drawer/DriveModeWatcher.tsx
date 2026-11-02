@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useAuth } from '../../providers/auth-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
@@ -6,6 +6,8 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useSetting } from '../../settings';
 import { DEFAULT_KEEP_LIGHTING, DEFAULT_MOONBOARD_KEEP_LIGHTING, sanitiseKeepLighting } from '../../lib/keep-lighting';
 import { useIsCrewSession, useQueueSessionControls } from '../../providers/queue-provider';
+import { addWidgetQueueNavigateListener } from '../../lib/live-activity/live-activity-plugin';
+import { adoptLockScreenLighting } from './lock-screen-lighting';
 import {
   carryDriveIntoCrew,
   clearDrivingStopped,
@@ -43,6 +45,13 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * catch-up when the app comes back to the foreground, since a timer doesn't
  * run while the app is suspended. Turning its setting off ends it as well.
  *
+ * A Lock Screen, Dynamic Island or Android notification Next / Previous opens
+ * or renews that window natively, since JS may be suspended when it lights
+ * the wall (`lock-screen-lighting.ts`). This adopts that write: when the app
+ * comes back (before the catch-up, so a renewed window isn't ended as
+ * overdue), on the press's own `queueNavigate` event, and when the link comes
+ * up. A drive started that way reports `startedBy: 'lock_screen'`.
+ *
  * Renders nothing. Mounted once, in the root layout beside the other
  * app-wide syncs, so a drive ends the same way with the player closed.
  */
@@ -65,6 +74,30 @@ export function DriveModeWatcher(): null {
   const previousRef = useRef<DriveWatchSnapshot | null>(null);
   // The arming drive (by its start) whose connect was seen in flight.
   const connectSeenForRef = useRef<number | null>(null);
+
+  // A lock-screen press's window, adopted with the latest reads. Stable, so the
+  // listeners below subscribe once and the window-end check can call it first.
+  const boardType = bluetooth?.boardName ?? null;
+  const adoptionInputRef = useRef({ sessionId, linked, boardId, boardType });
+  adoptionInputRef.current = { sessionId, linked, boardId, boardType };
+  const adoptFromLockScreen = useCallback(() => {
+    adoptLockScreenLighting(adoptionInputRef.current);
+  }, []);
+  useEffect(() => {
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') adoptFromLockScreen();
+    });
+    const removeNavigateListener = addWidgetQueueNavigateListener(() => adoptFromLockScreen());
+    return () => {
+      appState.remove();
+      removeNavigateListener();
+    };
+  }, [adoptFromLockScreen]);
+  // On mount, and whenever the link or the session changes: a write left while
+  // the link was down (or by a press before a cold launch) can be judged now.
+  useEffect(() => {
+    adoptFromLockScreen();
+  }, [adoptFromLockScreen, linked, sessionId]);
 
   useEffect(() => {
     const current: DriveWatchSnapshot = { linked, pending, sessionId, boardId, signedIn: isAuthenticated };
@@ -147,6 +180,8 @@ export function DriveModeWatcher(): null {
     if (windowEndsAt === null) return undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const endIfDue = () => {
+      // A lock-screen press may have renewed it while JS was suspended.
+      adoptFromLockScreen();
       const latest = getDriveMode();
       if (latest?.expiresAt !== windowEndsAt) return;
       if (isDriveWindowDue(latest)) {
@@ -165,7 +200,7 @@ export function DriveModeWatcher(): null {
       if (timer !== null) clearTimeout(timer);
       subscription.remove();
     };
-  }, [windowEndsAt]);
+  }, [windowEndsAt, adoptFromLockScreen]);
 
   const armingSince = drive?.phase === 'arming' ? drive.startedAt : null;
   useEffect(() => {

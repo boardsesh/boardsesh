@@ -4,6 +4,7 @@
 import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LiveActivityLightingWindowSnapshot } from '../../../../modules/live-activity/src/index';
 
 type QueueItemRead = { uuid: string; climb: { uuid: string; name: string } };
 type Reads = {
@@ -91,6 +92,21 @@ vi.mock('react-native', () => ({
     },
   },
 }));
+// The stored keep-lighting window a lock-screen press writes natively (2.7),
+// and the press's queueNavigate event.
+const lockScreen = vi.hoisted(() => ({
+  snapshot: null as LiveActivityLightingWindowSnapshot | null,
+  navigateListeners: new Set<() => void>(),
+}));
+vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
+  readLiveActivityLightingWindow: () => lockScreen.snapshot,
+  addWidgetQueueNavigateListener: (listener: () => void) => {
+    lockScreen.navigateListeners.add(listener);
+    return () => {
+      lockScreen.navigateListeners.delete(listener);
+    };
+  },
+}));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: reads.current.isAuthenticated }),
 }));
@@ -99,6 +115,7 @@ import { emitWallConfirm } from '@boardsesh/play-view';
 import { DriveModeWatcher } from '../DriveModeWatcher';
 import { noteOwnMove, noteRelayReceipt, clearRelayReceipt } from '../../../lib/relay-receipt';
 import { CREW_PUT_UP_NOTICE_MS, clearCrewPutUp, getCrewPutUp } from '../crew-put-up-store';
+import { resetLockScreenLightingForTests } from '../lock-screen-lighting';
 import {
   DRIVE_ARMING_TIMEOUT_MS,
   enterDriveMode,
@@ -144,6 +161,8 @@ function driveLive() {
 beforeEach(() => {
   reads.current = { ...DEFAULT_READS };
   resetDriveModeForTests();
+  lockScreen.snapshot = null;
+  resetLockScreenLightingForTests();
   clearRelayReceipt();
   clearCrewPutUp();
   for (const effect of Object.values(effects)) effect.mockClear();
@@ -582,6 +601,8 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
   it('drops its timer once the window ends another way', () => {
     vi.useFakeTimers();
     const watcher = mount();
+    // The lock-screen adoption listens for the foreground all the time.
+    const alwaysListening = appState.listeners.size;
     openWindow();
     act(() => emitWallConfirm('climb-a'));
     watcher.change({ isConnected: false });
@@ -590,6 +611,145 @@ describe('DriveModeWatcher: the keep-lighting window', () => {
       vi.advanceTimersByTime(60_000);
     });
     expect(getLastDriveModeExitReason()).toBe('link_dropped');
-    expect(appState.listeners.size).toBe(0);
+    expect(appState.listeners.size).toBe(alwaysListening);
+  });
+});
+
+// A Lock Screen, Dynamic Island or Android notification Next / Previous lit the
+// wall and opened or renewed the window natively while JS slept (2.7).
+describe('DriveModeWatcher: a window opened from the Lock Screen', () => {
+  function lockScreenWrite(snapshot: Partial<LiveActivityLightingWindowSnapshot>): void {
+    lockScreen.snapshot = {
+      sessionId: 'session-1',
+      mode: 'window',
+      endsAtMs: Date.now() + 30_000,
+      windowSeconds: 45,
+      family: 'general',
+      source: 'lockScreen',
+      updatedAtMs: Date.now() - 15_000,
+      ...snapshot,
+    };
+  }
+
+  function foreground(): void {
+    act(() => {
+      for (const listener of appState.listeners) listener('active');
+    });
+  }
+
+  it('adopts it as a live window when the app comes back, ending where native said', () => {
+    vi.useFakeTimers();
+    mount();
+    const endsAtMs = Date.now() + 30_000;
+    lockScreenWrite({ endsAtMs });
+    foreground();
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'lock_screen',
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      expiresAt: endsAtMs,
+      sessionId: 'session-1',
+      boardId: 7,
+    });
+    expect(effects.track).toHaveBeenCalledWith(
+      'Drive Mode Started',
+      expect.objectContaining({ startedBy: 'lock_screen', inSession: true }),
+    );
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('takes the later end a press left before the catch-up can end the window as overdue', () => {
+    vi.useFakeTimers();
+    mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    // Suspended for a minute; a lock-screen Next 25 s ago renewed it.
+    vi.setSystemTime(Date.now() + 60_000);
+    lockScreenWrite({ endsAtMs: Date.now() + 20_000, updatedAtMs: Date.now() - 25_000 });
+    foreground();
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'tap', expiresAt: Date.now() + 20_000 });
+    expect(getDriveMode()?.windowRenewals).toBe(1);
+  });
+
+  it('checks for a renewal at the old end, before ending the window', () => {
+    vi.useFakeTimers();
+    mount();
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: 'session-1',
+        boardId: 7,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => emitWallConfirm('climb-a'));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    // A notification Next renewed it natively; its event has not reached JS yet.
+    lockScreenWrite({ endsAtMs: Date.now() + 45_000, updatedAtMs: Date.now() });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(getDriveMode()?.phase).toBe('live');
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+  });
+
+  it('turns an open drive into one with no end when the press drove the wall (Until I stop)', () => {
+    mount();
+    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null, family: 'moonboard' });
+    act(() => {
+      for (const listener of lockScreen.navigateListeners) listener();
+    });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen', windowMs: null, expiresAt: null });
+  });
+
+  it('waits for the link before adopting, then adopts once it is up', () => {
+    reads.current = { ...reads.current, isConnected: false };
+    const watcher = mount();
+    lockScreenWrite({});
+    foreground();
+    expect(getDriveMode()).toBeNull();
+    watcher.change({ isConnected: true });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', startedBy: 'lock_screen' });
+  });
+
+  it('adopts each press once: a stop in the app is not undone by the next foreground', () => {
+    mount();
+    lockScreenWrite({ mode: 'driving', endsAtMs: null, windowSeconds: null });
+    foreground();
+    expect(getDriveMode()?.startedBy).toBe('lock_screen');
+    act(() => {
+      stopDrivingForLink();
+    });
+    foreground();
+    expect(getDriveMode()).toBeNull();
+  });
+
+  it('ignores a window written by the app itself, another session, or one already over', () => {
+    mount();
+    lockScreenWrite({ source: 'app' });
+    foreground();
+    lockScreenWrite({ sessionId: 'session-0', updatedAtMs: Date.now() - 1 });
+    foreground();
+    lockScreenWrite({ endsAtMs: Date.now() - 1, updatedAtMs: Date.now() - 2 });
+    foreground();
+    expect(getDriveMode()).toBeNull();
   });
 });

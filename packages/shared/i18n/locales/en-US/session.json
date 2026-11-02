@@ -881,7 +881,9 @@
         "relight": "Relight wall",
         "reconnect": "Connect to board",
         "connecting": "Connecting…",
-        "onWall": "{{name}} is on the wall"
+        "onWall": "{{name}} is on the wall",
+        "eachPickLights": "Each pick lights",
+        "drivingTheWall": "Driving the wall"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Who's climbing",

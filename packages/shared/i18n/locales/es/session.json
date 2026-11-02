@@ -881,7 +881,9 @@
         "relight": "Reactivar el muro",
         "reconnect": "Conectar al plafón",
         "connecting": "Conectando…",
-        "onWall": "{{name}} está en el muro"
+        "onWall": "{{name}} está en el muro",
+        "eachPickLights": "Cada bloque se enciende",
+        "drivingTheWall": "Estás al mando del plafón"
       },
       "inStatsFlashes": "Flashes",
       "inLeaderboardTitle": "Quién escala",

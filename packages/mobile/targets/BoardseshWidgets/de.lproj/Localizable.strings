@@ -5,8 +5,6 @@
 "Next climb" = "Nächster Boulder";
 "Mirror climb" = "Boulder spiegeln";
 "Unmirror climb" = "Spiegelung aufheben";
-"Wall lit, you are driving" = "Wand leuchtet, du steuerst";
-"Wall control" = "Wandsteuerung";
 "Tap to reconnect" = "Zum Verbinden tippen";
 "Board disconnected. Tap to reconnect" = "Board getrennt. Zum Verbinden tippen";
 "On the wall" = "An der Wand";
@@ -30,3 +28,11 @@
 "Queue's empty" = "Warteschlange leer";
 "Since your last climb" = "Seit deinem letzten Boulder";
 "Log a climb to start" = "Trag eine Begehung ein";
+
+/* Keep-lighting window (2.7): what the wall does with the next pick */
+"Wall lit" = "Wand leuchtet";
+"Picks are previews" = "Boulder öffnen sich als Vorschau";
+"Each pick lights" = "Jeder Boulder leuchtet";
+"Driving the wall" = "Du steuerst das Board";
+"Every climb you pick lights up" = "Jeder Boulder, den du wählst, wird beleuchtet";
+"Lights the climb again" = "Beleuchtet den Boulder erneut";

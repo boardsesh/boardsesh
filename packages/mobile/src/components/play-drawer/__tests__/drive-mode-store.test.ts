@@ -11,6 +11,7 @@ import {
   clearDrivingStopped,
   enterDriveMode,
   exitDriveMode,
+  extendDriveWindow,
   getDriveLightingSnapshot,
   getDriveMode,
   getLastDriveModeExitReason,
@@ -22,6 +23,7 @@ import {
   resetDriveModeForTests,
   resolveDriveModeExit,
   shouldEndWindowForSettings,
+  startLockScreenDrive,
   stopDrivingForLink,
   subscribeDriveMode,
   useDriveLightingMode,
@@ -486,5 +488,99 @@ describe('the keep-lighting window', () => {
     // An open-ended drive has no window to end.
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
     expect(shouldEndWindowForSettings({ ...base, drive: getDriveMode(), moonboardKeepLighting: 'off' })).toBe(false);
+  });
+});
+
+// 2.7: a Lock Screen or notification Next / Previous opened the window natively.
+describe('lock-screen drives', () => {
+  it('adopts a window as live, no arming, ending where native said', () => {
+    expect(
+      startLockScreenDrive({
+        sessionId: 'session-1',
+        boardId: 7,
+        boardType: 'kilter',
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+        expiresAt: 31_000,
+        startedAt: 1_000,
+      }),
+    ).toBe(true);
+    expect(getDriveMode()).toEqual({
+      phase: 'live',
+      sessionId: 'session-1',
+      boardId: 7,
+      boardType: 'kilter',
+      startedAt: 1_000,
+      startedBy: 'lock_screen',
+      climbsLit: 0,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      expiresAt: 31_000,
+      windowRenewals: 0,
+    });
+    expect(analytics.track).toHaveBeenCalledWith('Drive Mode Started', {
+      startedBy: 'lock_screen',
+      inSession: true,
+      boardType: 'kilter',
+    });
+    expect(getDriveLightingSnapshot()).toEqual({ mode: 'window', endsAt: 31_000 });
+  });
+
+  it('adopts an open-ended drive, and never over a drive already on', () => {
+    expect(
+      startLockScreenDrive({
+        sessionId: null,
+        boardId: null,
+        windowMs: null,
+        windowSetting: null,
+        expiresAt: null,
+        startedAt: 1_000,
+      }),
+    ).toBe(true);
+    expect(getDriveLightingSnapshot()).toEqual({ mode: 'driving', endsAt: null });
+    expect(
+      startLockScreenDrive({
+        sessionId: null,
+        boardId: null,
+        windowMs: 30_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+        expiresAt: 40_000,
+        startedAt: 2_000,
+      }),
+    ).toBe(false);
+    expect(getDriveMode()?.windowMs).toBeNull();
+  });
+
+  it('takes only a later end for a live window, as one renewal', () => {
+    enterDriveMode({
+      startedBy: 'tap',
+      sessionId: null,
+      boardId: 7,
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+    });
+    // Arming: no end to move yet.
+    expect(extendDriveWindow(90_000)).toBe(false);
+    markDriveLive({ now: 10_000 });
+    expect(getDriveMode()?.expiresAt).toBe(55_000);
+    expect(extendDriveWindow(50_000)).toBe(false);
+    expect(extendDriveWindow(70_000)).toBe(true);
+    expect(getDriveMode()).toMatchObject({ expiresAt: 70_000, windowRenewals: 1 });
+    // An open-ended drive has no end to move.
+    makeDriveOpenEnded();
+    expect(extendDriveWindow(80_000)).toBe(false);
+  });
+
+  it('reports a lock-screen drive in Drive Mode Ended', () => {
+    startLockScreenDrive({
+      sessionId: null,
+      boardId: 7,
+      windowMs: null,
+      windowSetting: null,
+      expiresAt: null,
+      startedAt: 1_000,
+    });
+    exitDriveMode('link_dropped');
+    expect(endedCalls()[0]?.[1]).toMatchObject({ startedBy: 'lock_screen', reason: 'link_dropped' });
   });
 });

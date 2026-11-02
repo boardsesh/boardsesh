@@ -153,10 +153,12 @@ export type DriveModeEndReason =
  * What started the drive (#7113): the wall button's swipe, a press on Put on
  * board that keeps lighting (the keep-lighting window, or an open-ended drive
  * where the setting says Until I stop, the MoonBoard default), the
- * screen-reader action or the board sheet's row, or a solo climber driving by
- * Light the board as I swipe when a crew formed.
+ * screen-reader action or the board sheet's row, a solo climber driving by
+ * Light the board as I swipe when a crew formed, or (2.7) a Lock Screen,
+ * Dynamic Island or Android notification Next / Previous that lit the wall and
+ * opened the window natively, adopted once the app ran again.
  */
-export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry';
+export type DriveModeStartedBy = 'swipe' | 'tap' | 'action' | 'solo_carry' | 'lock_screen';
 
 export type DriveModeStartedInput = {
   startedBy: DriveModeStartedBy;

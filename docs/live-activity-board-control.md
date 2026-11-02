@@ -198,6 +198,35 @@ The rest timer counts down on the Lock Screen card, in the Dynamic Island (compa
 
 Android does not share this gap: the foreground service keeps running and re-posts its own notification at the deadline (the digits turn red and the caption swaps to `androidOverCaption`) and at every fixed-window beat.
 
+## Keep-lighting window on the Lock Screen, in the Dynamic Island and the Android notification (2.7)
+
+Put on board's keep-lighting window (default 45 s after the last lit climb, Settings › Board) and open-ended Driver mode both reach the phone's outside surfaces. Only the phone that holds the board (`connectedByMe`) draws them; a crewmate's card shows nothing about the holder's window.
+
+**What the climber sees.**
+
+- iOS Lock Screen and expanded Dynamic Island: an amber ring drains around the bulb with the time left beside it during a window, a full amber disc sits behind the bulb while driving, and the bulb stands alone while picks are previews. The bulb, the ring and the digits are one VoiceOver element: the label is "Each pick lights", "Driving the wall" or "Wall lit", the value is the live timer, "Every climb you pick lights up" or "Picks are previews", and the hint is "Lights the climb again".
+- Compact Dynamic Island: the ring (or disc) in the leading slot, the window's time left in the trailing slot. A drive keeps the grade there. The rest timer wins both slots and the minimal view whenever it runs.
+- Android notification: the header's sub-text says "Each pick lights" and the system's own countdown chronometer (`setUsesChronometer` + `setChronometerCountDown`, `setWhen(end)`) runs beside it, or the sub-text says "Driving the wall" with no clock. The small icon becomes the bulb while picks light. The strings ride `ACTION_START` from JS (`mobile.session.notification.eachPickLights` / `drivingTheWall`). The rest timer keeps the content Chronometer.
+
+**Where the state lives.** Like the rest timer, never in `ContentState`, so a crewmate's queue edit (the backend re-sends the whole content state) can't wipe the countdown:
+
+- iOS: App Group key `bs_lighting_window` (`SharedConstants.lightingWindowKey`, `SharedLightingWindowState`: `mode` off | window | driving, `endsAtMs`, `windowSeconds`, `family`, `source` app | lockScreen, `updatedAtMs`). `ContentState.lightingRevision` (optional, nil from pushes) is bumped by `LiveActivityManager.rerenderForLightingWindow` only to make ActivityKit redraw; the JS dedup ignores it like `restRevision`. `LightingRenderPhase.resolve` decides at render time whether a window is over. The manager arms one more redraw just after the window's end; if the app is suspended first, the ring sits empty at 0:00 until the next update.
+- Android: SharedPreferences `boardsesh_lighting_window` (`LightingWindowStore`), and `ACTION_LIGHTING` with `lightState` + `lightWindowEndMs` for the service. Absent extras mean off, so an older bundle draws today's card. The service re-posts at the end + 250 ms and on `SCREEN_ON` / `USER_PRESENT`.
+
+**Who writes it.** JS, from the drive store's seam (`getDriveLightingSnapshot` + `subscribeDriveMode`), through `LiveActivityLightingSync` (mounted by `LiveActivityBridge`, `src/lib/live-activity/live-activity-lighting.tsx`), only when the native module reports `supportsLightingWindow`. Arming reads as off. JS also mirrors Settings › Board's keep-lighting choices (`updateKeepLightingConfig`: both choices, In a session too, the roster's crew, whether the board is a MoonBoard, and `enabled`, false with the swipe flag off or solo with Light the board as I swipe) after every Live Activity start and on every change. Native clears the window and the settings on `endSession`, and the window on a start for another session.
+
+**Lock-screen Next and Previous open or renew the window natively.** They already light the wall without JS (iOS: `ClimbNavigationIntent` writes BLE through `LiveActivityBleBridge`; Android: JS writes it as soon as `BoardSessionActionReceiver`'s event lands), so each press now also opens or renews the window by the same rule as a climb that lights in the app (`SharedLightingWindowRuntime.afterPress` / `LightingWindowStore.afterPress`):
+
+- a drive goes on as it is;
+- an open window is renewed by its own length (`windowSeconds`), whatever the setting says now;
+- otherwise the mirrored settings decide, as `resolveKeepLightingPlan` would: a window of that many seconds, a drive for Until I stop (the MoonBoard default), or one lit climb for Off.
+
+On iOS this happens only after the intent's BLE write succeeded, in the app process (the widget-extension fallback can't reach BLE and opens nothing). The window is written before the Darwin post. On Android the receiver writes it before dispatching `queueNavigate` and re-delivers it to the service. The Previous / Next PendingIntents carry `sessionId`; one from an older notification opens nothing. The window starts at the press, not at a confirm, and is not clamped to auto-disconnect until JS adopts it.
+
+**JS adopts a lock-screen write once.** `DriveModeWatcher` reads the stored window (`getLightingWindow`, synchronous) when the app comes to the foreground, on the press's own `queueNavigate` event, when the link comes up, and at the top of its own window-end check, so a renewed window is never ended as overdue. `resolveLockScreenAdoption` (`src/components/play-drawer/lock-screen-lighting.ts`) starts a live drive with no arming (`startedBy: 'lock_screen'`, ending where native said), takes the later end of a window already running (`extendDriveWindow`), or turns a window open-ended. It waits while there is no link or a drive is arming, and settles each write by its `updatedAtMs`, so a drive the climber stopped in the app is not restarted by the next foreground. Until it is settled, the JS writer never covers a running lock-screen window with "off".
+
+Nothing on the Lock Screen or in the notification stops a drive or disconnects, so a pocket tap can't drop the board. This is a native change (new fingerprint, store build) in the live-activity module, so it needs a Fable or Astra review. Push-testing steps: `docs/live-activity-push-testing.md#test-the-keep-lighting-window`.
+
 ## Architecture Decision: Where Does BLE Live?
 
 The widget extension **cannot** hold a CoreBluetooth connection (extensions have strict memory/runtime limits and Apple kills them after ~30s). The main app process must own the BLE connection.

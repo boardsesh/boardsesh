@@ -25,6 +25,10 @@ class AndroidNotificationStrings : Record {
     @Field var reconnectLabel: String = "Connect to board"
     @Field var connectingLabel: String = "Connecting…"
     @Field var onWallTemplate: String = "{{name}} is on the wall"
+    // The header line during Put on board's keep-lighting window, and while
+    // driving (2.7). An older bundle leaves them out and gets the English.
+    @Field var lightWindowLabel: String = "Each pick lights"
+    @Field var lightDrivingLabel: String = "Driving the wall"
 }
 
 // boardConnection/holderDisplayName drive the lightbulb + Previous/Next
@@ -83,6 +87,26 @@ class RestTimerOptions : Record {
     @Field var androidOverCaption: String? = null
 }
 
+// Mirrors LiveActivityLightingWindowOptions (modules/live-activity/src/index.ts).
+class LightingWindowOptions : Record {
+    @Field var sessionId: String = ""
+    @Field var mode: String = LightingWindowStore.MODE_OFF
+    @Field var endsAtMs: Double? = null
+    @Field var windowSeconds: Double? = null
+    @Field var family: String? = null
+}
+
+// Mirrors LiveActivityKeepLightingConfig. The defaults are what an absent field
+// means: one climb, no window.
+class KeepLightingConfigOptions : Record {
+    @Field var keepLighting: String = "off"
+    @Field var moonboardKeepLighting: String = "off"
+    @Field var drivesInSession: Boolean = false
+    @Field var inCrew: Boolean = false
+    @Field var moonboard: Boolean = false
+    @Field var enabled: Boolean = false
+}
+
 /**
  * Android counterpart to the iOS LiveActivity module. Thin Expo adapter over
  * [SessionPresenceController] (which owns the BoardSessionService lifecycle and
@@ -119,7 +143,7 @@ class SessionPresenceModule : Module() {
         Name("SessionPresence")
 
         Events("queueNavigate", "boardControl", "queueMirror")
-        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true)
+        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true, "supportsLightingWindow" to true)
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -157,6 +181,21 @@ class SessionPresenceModule : Module() {
         // The rest countdown in the ongoing notification. `null` clears it. Like the
         // climb updates, a no-op until a session has started.
         AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
+
+        // Put on board's keep-lighting window (2.7) in the notification header,
+        // and the settings a notification Previous / Next renews it from.
+        AsyncFunction("updateLightingWindow") { options: LightingWindowOptions? ->
+            controller?.updateLightingWindow(options)
+        }
+        AsyncFunction("updateKeepLightingConfig") { options: KeepLightingConfigOptions? ->
+            controller?.updateKeepLightingConfig(options)
+        }
+
+        // Synchronous so the drive store can adopt a notification press before
+        // its own window-end check on the same foreground event.
+        Function("getLightingWindow") {
+            appContext.reactContext?.applicationContext?.let { LightingWindowStore.loadWindow(it)?.toBridgeMap() }
+        }
 
         // No-op (not a throw) when no session was ever started: there's nothing to
         // tear down, and the JS hook has already cleared its own state. Kept

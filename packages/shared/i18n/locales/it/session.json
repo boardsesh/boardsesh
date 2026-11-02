@@ -881,7 +881,9 @@
         "relight": "Illumina di nuovo",
         "reconnect": "Connetti al pannello",
         "connecting": "Connessione…",
-        "onWall": "{{name}} è in parete"
+        "onWall": "{{name}} è in parete",
+        "eachPickLights": "Ogni blocco si illumina",
+        "drivingTheWall": "Guidi tu il pannello"
       },
       "inStatsFlashes": "Flash",
       "inLeaderboardTitle": "Chi sta arrampicando",

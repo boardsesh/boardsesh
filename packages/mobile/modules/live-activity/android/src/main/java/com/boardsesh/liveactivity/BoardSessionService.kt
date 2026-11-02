@@ -57,6 +57,12 @@ import java.util.concurrent.Executors
  * only the outline bulb (tap to reconnect) and, for heldByPeer, "<name> is on
  * the wall". While the climber rests, a Chronometer beside the climb info counts
  * the rest down (or up, with no rest length) without any further updates.
+ *
+ * Put on board's keep-lighting window (2.7) lives in the header instead: the
+ * sub-text names it ("Each pick lights") and the system's own countdown
+ * chronometer runs to its end, so TalkBack reads the system clock and the
+ * colours follow Material You. An open-ended drive shows "Driving the wall"
+ * with no clock. Both swap the small icon for the bulb while picks light.
  */
 class BoardSessionService : Service() {
 
@@ -73,6 +79,8 @@ class BoardSessionService : Service() {
     private var reconnectLabel: String = "Connect to board"
     private var connectingLabel: String = "Connecting…"
     private var onWallTemplate: String = "{{name}} is on the wall"
+    private var lightWindowLabel: String = "Each pick lights"
+    private var lightDrivingLabel: String = "Driving the wall"
 
     private var sessionId: String = ""
     private var queueItemUuid: String = ""
@@ -106,6 +114,12 @@ class BoardSessionService : Service() {
     // The rest countdown (null = hidden). Epoch-ms from JS; converted to the
     // Chronometer's elapsedRealtime timebase at build time.
     private var restTimer: RestTimerSnapshot? = null
+
+    // Put on board's keep-lighting window (2.7): off, a window ending at
+    // lightWindowEndMs (epoch ms), or an open-ended drive. Absent extras (an
+    // older bundle) mean off, so the card is today's.
+    private var lightState: String = LIGHT_STATE_OFF
+    private var lightWindowEndMs: Long? = null
 
     // The overlay path whose composited bitmap is currently displayed; the async
     // compose only applies its result if this still matches (stale guard).
@@ -153,6 +167,10 @@ class BoardSessionService : Service() {
     // a Chronometer can't change on its own (colour, the next beat's base).
     private val restTransition = Runnable { onRestTransition() }
 
+    // Re-posts the notification just after the keep-lighting window ends, so the
+    // header drops its clock and the bulb icon even while JS is suspended.
+    private val lightTransition = Runnable { onLightTransition() }
+
     // The re-post above runs on the main Handler, whose clock is uptime: it stops
     // while the phone is in deep sleep. The Chronometer's base is elapsedRealtime,
     // which keeps counting through sleep. A rest that ends while the screen is off
@@ -162,9 +180,11 @@ class BoardSessionService : Service() {
     // notification again; the re-post also re-arms the next transition from now.
     // SCREEN_ON / USER_PRESENT are protected system broadcasts: no other app can
     // send them, so registering without the export flag below API 33 is safe.
+    // The keep-lighting window's end re-post has the same gap, so it is
+    // reconciled here too.
     private val screenOnReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (restTimer != null) onRestTransition()
+            onScreenOn()
         }
     }
     private var screenOnReceiverRegistered = false
@@ -201,6 +221,7 @@ class BoardSessionService : Service() {
 
     override fun onDestroy() {
         cancelOnMain(restTransition)
+        cancelOnMain(lightTransition)
         unregisterScreenOnReceiver()
         foregrounded = false
         super.onDestroy()
@@ -226,11 +247,27 @@ class BoardSessionService : Service() {
                 reconnectLabel = intent.getStringExtra(EXTRA_RECONNECT_LABEL) ?: reconnectLabel
                 connectingLabel = intent.getStringExtra(EXTRA_CONNECTING_LABEL) ?: connectingLabel
                 onWallTemplate = intent.getStringExtra(EXTRA_ON_WALL_TEMPLATE) ?: onWallTemplate
+                lightWindowLabel = intent.getStringExtra(EXTRA_LIGHT_WINDOW_LABEL) ?: lightWindowLabel
+                lightDrivingLabel = intent.getStringExtra(EXTRA_LIGHT_DRIVING_LABEL) ?: lightDrivingLabel
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
-                // A new session window starts without a countdown; JS sends the
-                // current rest state right after every start.
+                // A new session window starts without a countdown or a lighting
+                // window; JS sends both right after every start.
                 restTimer = null
+                lightState = LIGHT_STATE_OFF
+                lightWindowEndMs = null
+            }
+            ACTION_LIGHTING -> {
+                // Only for the session this service shows, like the rest timer.
+                val lightSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
+                if (sessionId.isNotEmpty() && lightSessionId == sessionId) {
+                    lightState = intent.getStringExtra(EXTRA_LIGHT_STATE)?.takeIf { it in LIGHT_STATES } ?: LIGHT_STATE_OFF
+                    lightWindowEndMs = if (intent.hasExtra(EXTRA_LIGHT_WINDOW_END_MS)) {
+                        intent.getLongExtra(EXTRA_LIGHT_WINDOW_END_MS, 0L)
+                    } else {
+                        null
+                    }
+                }
             }
             ACTION_REST_TIMER -> {
                 val restSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
@@ -278,9 +315,14 @@ class BoardSessionService : Service() {
         // call startForeground() in time.
         val promoted = startInForeground()
 
-        if (intent?.action == ACTION_STOP || !promoted) {
+        // A lighting update that reached a service with no session (the system
+        // started it fresh for a stale notification's press) has nothing to
+        // show: promote, as above, then stop rather than post an empty card.
+        val orphanedLighting = intent?.action == ACTION_LIGHTING && sessionId.isEmpty()
+        if (intent?.action == ACTION_STOP || !promoted || orphanedLighting) {
             foregrounded = false
             cancelOnMain(restTransition)
+            cancelOnMain(lightTransition)
             unregisterScreenOnReceiver()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -290,6 +332,7 @@ class BoardSessionService : Service() {
         foregrounded = true
         registerScreenOnReceiver()
         scheduleRestTransition()
+        scheduleLightTransition()
         // Image compositing never runs before promotion: the notification was
         // already built (with the cached bitmap or a placeholder) and posted above.
         maybeComposeImage()
@@ -397,6 +440,7 @@ class BoardSessionService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setContentIntent(launchAppIntent())
+        applyLighting(builder)
 
         // Controls follow ownership: only the driver (connectedByMe) gets
         // Previous/Next; everyone else gets just the outline bulb to (re)connect.
@@ -596,6 +640,62 @@ class BoardSessionService : Service() {
         scheduleRestTransition()
     }
 
+    // --- Keep-lighting window (2.7) ---
+
+    // The header while picks light: the sub-text names the state and, for a
+    // window, the system's countdown chronometer runs to its end (never our own
+    // text over it, so TalkBack reads the clock itself). Only the phone that
+    // holds the board shows it; the rest timer keeps the content Chronometer.
+    private fun applyLighting(builder: NotificationCompat.Builder) {
+        val lighting = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
+        when (lighting) {
+            is LightingDisplay.Window -> builder
+                .setSmallIcon(R.drawable.ic_lightbulb_filled)
+                .setSubText(lightWindowLabel)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+                .setWhen(lighting.endMs)
+                .setShowWhen(true)
+            LightingDisplay.Driving -> builder
+                .setSmallIcon(R.drawable.ic_lightbulb_filled)
+                .setSubText(lightDrivingLabel)
+            LightingDisplay.Off -> Unit
+        }
+    }
+
+    // Arms one re-post just after the window ends. Nothing for a drive or off.
+    private fun scheduleLightTransition() {
+        cancelOnMain(lightTransition)
+        val window = resolveLighting(lightState, lightWindowEndMs, wallClockMs(), boardConnection)
+            as? LightingDisplay.Window ?: return
+        val delayMs = (window.endMs - wallClockMs()).coerceAtLeast(0L) + REST_TRANSITION_SLACK_MS
+        scheduleOnMain(lightTransition, delayMs)
+    }
+
+    private fun onLightTransition() {
+        if (!foregrounded) return
+        try {
+            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (error: Exception) {
+            Log.w(TAG, "lighting transition re-post failed: ${error.message}")
+        }
+        scheduleLightTransition()
+    }
+
+    // One re-post for whatever the phone slept through, then both transitions
+    // re-armed from now.
+    private fun onScreenOn() {
+        if (restTimer == null && lightState == LIGHT_STATE_OFF) return
+        if (!foregrounded) return
+        try {
+            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
+        } catch (error: Exception) {
+            Log.w(TAG, "screen-on re-post failed: ${error.message}")
+        }
+        scheduleRestTransition()
+        scheduleLightTransition()
+    }
+
     // Minimal notification for when buildNotification() throws: no RemoteViews,
     // bitmaps, or extra pending intents, so it can still satisfy the
     // startForeground() contract.
@@ -615,6 +715,8 @@ class BoardSessionService : Service() {
         return PendingIntent.getActivity(this, REQ_CONTENT, launch, pendingFlags())
     }
 
+    // Previous / Next carry the session so the receiver can open or renew the
+    // keep-lighting window (2.7) for this card before the press reaches JS.
     private fun actionPendingIntent(navAction: String, requestCode: Int): PendingIntent {
         // The JS bridge navigates to the ABSOLUTE queue[currentIndex] (it ignores
         // the action), so send the TARGET index — currentIndex ∓ 1 — not the
@@ -630,6 +732,7 @@ class BoardSessionService : Service() {
             action = navAction
             putExtra(EXTRA_CURRENT_INDEX, targetIndex)
             putExtra(EXTRA_CORRELATION_ID, UUID.randomUUID().toString())
+            putExtra(EXTRA_SESSION_ID, sessionId)
         }
         return PendingIntent.getBroadcast(this, requestCode, intent, pendingFlags())
     }
@@ -858,6 +961,45 @@ class BoardSessionService : Service() {
         const val ACTION_MIRROR = "com.boardsesh.liveactivity.action.MIRROR"
         const val ACTION_BULB = "com.boardsesh.liveactivity.action.BULB"
         const val ACTION_REST_TIMER = "com.boardsesh.liveactivity.action.REST_TIMER"
+        const val ACTION_LIGHTING = "com.boardsesh.liveactivity.action.LIGHTING"
+
+        // The keep-lighting window (2.7): LIGHT_STATE_* and, for a window, its
+        // end in epoch ms. Strings for the header ride ACTION_START.
+        const val EXTRA_LIGHT_STATE = "lightState"
+        const val EXTRA_LIGHT_WINDOW_END_MS = "lightWindowEndMs"
+        const val EXTRA_LIGHT_WINDOW_LABEL = "lightWindowLabel"
+        const val EXTRA_LIGHT_DRIVING_LABEL = "lightDrivingLabel"
+
+        // The same words as LightingWindowStore's modes and the JS
+        // LiveActivityLightingMode.
+        const val LIGHT_STATE_OFF = LightingWindowStore.MODE_OFF
+        const val LIGHT_STATE_WINDOW = LightingWindowStore.MODE_WINDOW
+        const val LIGHT_STATE_DRIVING = LightingWindowStore.MODE_DRIVING
+        private val LIGHT_STATES = setOf(LIGHT_STATE_OFF, LIGHT_STATE_WINDOW, LIGHT_STATE_DRIVING)
+
+        /**
+         * What the header shows at [nowMs]: a window counting down to its end,
+         * a drive, or nothing. A window past its end, or one on a phone that
+         * doesn't hold the board, shows nothing. Pure, for tests.
+         */
+        @VisibleForTesting
+        internal fun resolveLighting(state: String, windowEndMs: Long?, nowMs: Long, boardConnection: String): LightingDisplay {
+            if (boardConnection != CONNECTION_CONNECTED_BY_ME) return LightingDisplay.Off
+            return when (state) {
+                LIGHT_STATE_DRIVING -> LightingDisplay.Driving
+                LIGHT_STATE_WINDOW -> windowEndMs?.takeIf { it > nowMs }?.let { LightingDisplay.Window(it) } ?: LightingDisplay.Off
+                else -> LightingDisplay.Off
+            }
+        }
+
+        /** The service intent that hands [snapshot] (null: off) to the notification for [sessionId]. */
+        internal fun lightingIntent(context: Context, sessionId: String, snapshot: LightingWindowSnapshot?): Intent =
+            Intent(context, BoardSessionService::class.java).apply {
+                action = ACTION_LIGHTING
+                putExtra(EXTRA_SESSION_ID, sessionId)
+                putExtra(EXTRA_LIGHT_STATE, snapshot?.mode ?: LIGHT_STATE_OFF)
+                snapshot?.endsAtMs?.let { putExtra(EXTRA_LIGHT_WINDOW_END_MS, it) }
+            }
 
         const val EXTRA_REST_CLEAR = "restClear"
         const val EXTRA_REST_STATUS = "restStatus"
@@ -1018,6 +1160,17 @@ class BoardSessionService : Service() {
             inFlight.clear()
         }
     }
+}
+
+/** What the notification header shows for the keep-lighting window; see [BoardSessionService.resolveLighting]. */
+internal sealed class LightingDisplay {
+    /** Each pick lights until [endMs]: the header's countdown chronometer. */
+    data class Window(val endMs: Long) : LightingDisplay()
+
+    /** Every pick lights until the climber stops: no clock. */
+    object Driving : LightingDisplay()
+
+    object Off : LightingDisplay()
 }
 
 /** The rest timer as the service holds it: LiveActivityRestTimerOptions, in Longs. */

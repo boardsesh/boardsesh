@@ -374,6 +374,21 @@ Lock your iPhone. The Live Activity widget should update within a few seconds sh
 5. Other connected clients should see the queue change
 6. **The board will NOT repaint in this case.** iOS does not background-launch a user-killed app for `LiveActivityIntent`, so the intent falls back to the widget extension process, which cannot reach `BoardBleManager`. Re-opening the app on this device will re-sync the board via the foreground WS path.
 
+### Test the keep-lighting window
+
+Put on board's keep-lighting window (2.7) on the Lock Screen, in the Dynamic Island and in the Android notification. Background in `docs/live-activity-board-control.md`.
+
+1. Start a party session, connect to the board, and leave Settings › Board on the default (45 s).
+2. Tap **Put on board**, then lock the phone. The Lock Screen bulb sits in an amber ring that drains, with the time left beside it; on Android the notification header reads "Each pick lights" with the system countdown.
+3. Tap **Next** on the Lock Screen inside the window. The wall lights the next climb and the clock restarts at 0:45.
+4. Wait out the window. Within a second of its end the ring goes and the bulb stands alone ("Wall lit, picks are previews" for VoiceOver); the Android header drops its clock and the bulb small icon.
+5. With nothing driving, tap **Next** again. The press opens a fresh window from the settings. With **Until I stop** (or on a MoonBoard at its default) it starts a drive instead: a full amber disc, "Driving the wall".
+6. Suspend the app (lock for 30 s or more), press **Next**, then open the app. The player shows the window still running, with the end the Lock Screen showed; Drive Mode Started reads `startedBy: 'lock_screen'` when nothing was driving before.
+7. From a second device, change the queue while the window runs. The countdown survives the crew push.
+8. On a crewmate's phone (`heldByPeer`), nothing about the holder's window shows.
+
+Known gap: if the app is suspended before the window's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
+
 ## Testing Background Updates
 
 This is the key test — verifying that APNs keeps the Live Activity alive when the app is backgrounded.
@@ -519,7 +534,10 @@ If you have the push token from the database, you can send a test push directly:
 # Generate a JWT for APNs auth (requires the .p8 key)
 # Or use a tool like https://github.com/nicklama/apns-push-tester
 
-# The payload must match ClimbSessionAttributes.ContentState exactly:
+# The payload must match ClimbSessionAttributes.ContentState exactly. The
+# device-only fields (restRevision, lightingRevision and the ownership fields)
+# are optional and left out here; the rest timer and the keep-lighting window
+# live in the App Group, so a push like this never wipes them.
 {
   "aps": {
     "timestamp": 1712345678,
