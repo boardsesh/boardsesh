@@ -484,7 +484,7 @@
         "moonboardDescription": "Die meisten MoonBoard-Controller vertragen keinen Handywechsel, deshalb gilt das auch in einer Session.",
         "sheetMoonboardLabel": "Steuern an diesem MoonBoard beenden nach",
         "inSessionLabel": "Auch in einer Session",
-        "inSessionAccessibilityLabel": "„Am Board beleuchten“ und „Board immer steuern“ steuern auch in einer Session",
+        "inSessionAccessibilityLabel": "„Am Board beleuchten“ und „Board immer steuern“ gelten auch in einer Session",
         "inSessionDescription": "Wenn dein Handy das Board der Crew hat. Ist das aus, bleiben die Boulder, die du in einer Session wählst, Vorschauen.",
         "inSessionOffReason": "Stell dafür „Steuern beenden nach“ auf etwas anderes als „Sofort“.",
         "alwaysDriveReason": "„Board immer steuern“ ist an, deshalb gilt das nicht.",

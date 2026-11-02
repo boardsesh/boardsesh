@@ -117,7 +117,7 @@ export type AppSettings = {
    */
   moonboardGridLabels: boolean;
   /**
-   * Always drive the wall: always drive the wall. While this phone's own
+   * Always drive the wall: this phone drives the wall whenever it holds the board. While this phone's own
    * Bluetooth link holds the board (never a relay, never a wall with no
    * lights), it drives with no end (`DriveModeWatcher`, `startedBy: 'always'`),
    * so every climb picked lights, as after a swipe on the wall button. In a

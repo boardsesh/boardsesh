@@ -484,7 +484,7 @@
         "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
         "sheetMoonboardLabel": "Stop driving this MoonBoard after",
         "inSessionLabel": "In a session too",
-        "inSessionAccessibilityLabel": "Put on board and Always drive the wall drive in a session too",
+        "inSessionAccessibilityLabel": "Put on board and Always drive the wall also apply in a session",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
         "inSessionOffReason": "Change Stop driving after from Right away to use this.",
         "alwaysDriveReason": "Always drive the wall is on, so this doesn't apply.",

@@ -104,7 +104,7 @@ export function migrateAutoDisconnect(store: SettingsMigrationStore): boolean {
   return writes.length > 0;
 }
 
-// The two Always drive the wall switches gave way to one (2026-11): Light the
+// Two switches gave way to one, Always drive the wall (2026-11): Light the
 // board when I tap a climb and Light the board as I swipe each lit picks
 // their own way, outside a drive. Always drive the wall now always drives the
 // wall while this phone holds the board, so every pick lights as after a

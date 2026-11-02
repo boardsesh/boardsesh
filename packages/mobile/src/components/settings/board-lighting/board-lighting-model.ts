@@ -19,7 +19,7 @@ export type BoardLightingModelInput = {
   /** Disconnect Bluetooth when driving ends (2.7, replacing auto-disconnect). */
   disconnectWhenDrivingEnds: Toggle;
   /**
-   * Always drive the wall: always drive the wall while this phone holds the
+   * Always drive the wall: this phone drives the wall while it holds the
    * board. On, Stop driving after (and the MoonBoard's) shows greyed with its
    * reason on the row, and In a session too applies whatever Stop driving
    * after says.

@@ -26,7 +26,7 @@ type BleControlSheetProps = {
   showLightAdjacentHolds: boolean;
   lightAdjacentHoldsEnabled: boolean;
   onToggleLightAdjacentHolds: (enabled: boolean) => void;
-  /** Always drive the wall: always drive the wall while this phone holds the board. */
+  /** Always drive the wall: this phone drives the wall while it holds the board. */
   alwaysDrive: boolean;
   onToggleAlwaysDrive: (enabled: boolean) => void;
   /**

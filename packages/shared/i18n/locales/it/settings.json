@@ -484,7 +484,7 @@
         "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
         "sheetMoonboardLabel": "Smetti di guidare questa MoonBoard dopo",
         "inSessionLabel": "Anche in una session",
-        "inSessionAccessibilityLabel": "Illumina il pannello e Guida sempre il pannello guidano anche in una session",
+        "inSessionAccessibilityLabel": "Illumina il pannello e Guida sempre il pannello valgono anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
         "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
         "alwaysDriveReason": "Guida sempre il pannello è attivo, quindi questa opzione non si applica.",

@@ -80,7 +80,7 @@ export type QueueNavigationInput = QueueNavigationBoard & {
   outcome: QueueNavigationOutcome;
   /** Someone else is in the session with this climber. */
   inSharedSession: boolean;
-  /** Always drive the wall (always drive the wall) at the time of the step. */
+  /** Always drive the wall (`alwaysDrive`) at the time of the step. */
   alwaysDrive: boolean;
   /**
    * The climber was driving the wall (#7113): a swipe on the wall button, Put

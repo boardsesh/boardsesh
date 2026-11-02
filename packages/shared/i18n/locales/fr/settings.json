@@ -484,7 +484,7 @@
         "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
         "sheetMoonboardLabel": "Arrêter de piloter ce MoonBoard après",
         "inSessionLabel": "Aussi en session",
-        "inSessionAccessibilityLabel": "Allumer sur la board et Toujours piloter la board pilotent aussi en session",
+        "inSessionAccessibilityLabel": "Allumer sur la board et Toujours piloter la board s'appliquent aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
         "inSessionOffReason": "Choisissez autre chose que Tout de suite dans Arrêter de piloter après pour utiliser ce réglage.",
         "alwaysDriveReason": "Toujours piloter la board est activé, donc ce réglage ne s'applique pas.",
