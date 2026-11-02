@@ -218,6 +218,13 @@ it can read on the UI thread.
   step before. A qualifying second release during that wait is retained on the UI thread until
   its neighbour is mounted and its exact background and holds overlay have displayed (#6351).
   A React commit, image `onLoad`, or first-paint timeout alone does not make a page ready to enter.
+  The wait is bounded: `RELEASE_ART_DEADLINE_MS` (700 ms, a delayed no-op `withTiming` on a shared
+  value with `ReduceMotion.Never`, so no JS timer and no per-frame work) after finger-up the release
+  goes onto a mounted page that is still painting, and a page whose art `failed` is stepped onto at
+  once. Unbounded, an overlay that never answered held every swipe for good. While the neighbour
+  paints, the drag follows the finger at 30% (the end card's resistance) instead of staying at 0.
+  Only those anomalous steps hop to the JS thread (`noteStepArtWait`), and they ride the step's own
+  `Queue Navigation` as `heldArtState` / `heldMs`; an ordinary step costs nothing extra.
   The board/carousel host stays mounted when a section header changes and the drawer measures
   itself again (#6383), including the setter-notes layouts reported in #6373. See rule 9.
 - `packages/mobile/src/components/ClimbListRow.tsx` follows the same pattern: the swipe-commit

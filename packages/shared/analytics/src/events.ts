@@ -116,7 +116,10 @@ export const SHARED_EVENTS = {
   // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, driving, boardType, layoutId
   // (null on a spray wall) }. `preview` is a step that only looked: in a crew or
   // with Light on swipe off the wall stays put. `driving` (#7113, false before
-  // it) says the climber was driving the wall, so the step lit it in a crew too. The rest timer's auto-advance
+  // it) says the climber was driving the wall, so the step lit it in a crew too.
+  // `heldArtState` ('ready' | 'loading' | 'failed') and `heldMs` (November 2026) ride
+  // only on a swipe that went before the next climb's board had painted, or
+  // whose release waited past 700 ms; every other step sends neither. The rest timer's auto-advance
   // and the workout runner do not fire it. www's `method` values differ, so read
   // mobile on `surface`, which www never sent.
   QueueNavigation: 'Queue Navigation',

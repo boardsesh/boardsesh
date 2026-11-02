@@ -20,6 +20,10 @@
 //    layout id is minted per wall, so it is sent as null on a spray wall: the
 //    spray telemetry rule is that no event identifies a wall
 //    (docs/spray-walls.md, "Telemetry").
+//  * `heldArtState` and `heldMs` ride only on the rare swipe that went before
+//    the next climb's board had painted (the dead-swipe fix, November 2026). Every other
+//    step sends neither, so the event costs nothing more and an ordinary
+//    step's properties are what they were.
 //  * Only a climber's own deliberate step fires it. The rest timer's
 //    auto-advance and the workout runner call the same `nextClimb`, but they are
 //    not navigation and stay silent: counting them would read as presses.
@@ -46,6 +50,21 @@ export type QueueNavigationSurface = 'player' | 'mini_player';
  */
 export type QueueNavigationOutcome = 'moved' | 'preview';
 
+/**
+ * What the next climb's board was doing when a swipe went to it anyway.
+ * `loading`: still painting when the release's 700 ms ran out. `failed`: it
+ * never will, so the swipe went at once. `ready`: it had painted, but the
+ * release still waited past 700 ms, for the app to mount the climb's page.
+ */
+export type QueueNavigationArtState = 'ready' | 'loading' | 'failed';
+
+/** A swipe that went before its board had painted, or after waiting past the deadline. */
+export type QueueNavigationArtWait = {
+  artState: QueueNavigationArtState;
+  /** From finger-up to the step, in milliseconds. */
+  waitedMs: number;
+};
+
 /** The board the step happened on, as the call site knows it. */
 export type QueueNavigationBoard = {
   /** The board's type (`kilter`, `spray`, ...). Anything outside the nine is sent as null. */
@@ -67,6 +86,8 @@ export type QueueNavigationInput = QueueNavigationBoard & {
    * every change of climb light it, in a crew too. Defaults to false.
    */
   driving?: boolean;
+  /** Set only on a swipe that went before its board had painted. Absent on every other step. */
+  artWait?: QueueNavigationArtWait;
 };
 
 export type QueueNavigationProps = BoardTypeProperty & {
@@ -81,6 +102,10 @@ export type QueueNavigationProps = BoardTypeProperty & {
   driving: boolean;
   /** Null on a spray wall (its layout id names the wall) and with no board. */
   layoutId: number | null;
+  /** Only on a swipe that went before its board had painted: what the board was doing. */
+  heldArtState?: QueueNavigationArtState;
+  /** Only with `heldArtState`: how long the release waited, in whole milliseconds. */
+  heldMs?: number;
 };
 
 /**
@@ -125,6 +150,9 @@ export function queueNavigation(
       driving: input.driving ?? false,
       ...boardTypeProperty(input.boardType),
       layoutId: layoutIdProperty(input),
+      ...(input.artWait
+        ? { heldArtState: input.artWait.artState, heldMs: Math.max(0, Math.round(input.artWait.waitedMs)) }
+        : {}),
     },
   };
 }

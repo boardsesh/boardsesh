@@ -63,7 +63,13 @@ import { LivePlayDrawerHeader, PreparedPlayDrawerHeader, useLivePlayDrawerHeader
 import { PlayDrawerStatusBarScrim } from './PlayDrawerStatusBarScrim';
 import { copyClimbName } from './copy-climb-name';
 import { SwipeableHeader } from './SwipeableHeader';
-import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } from './use-swipe-pager';
+import {
+  useSwipeNavigation,
+  useSwipePager,
+  useSwipePages,
+  useTrackEndSwipe,
+  type SwipeArtWait,
+} from './use-swipe-pager';
 import { useTrackPaging } from './use-track-paging';
 import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
@@ -1992,8 +1998,9 @@ export function PlayCore({
   // The same step, told apart by how it was asked for.
   const handlePrevButton = useCallback(() => handlePrev('button'), [handlePrev]);
   const handleNextButton = useCallback(() => handleNext('button'), [handleNext]);
-  const handlePrevSwipe = useCallback(() => handlePrev('swipe'), [handlePrev]);
-  const handleNextSwipe = useCallback(() => handleNext('swipe'), [handleNext]);
+  // The pager hands a swipe step what its board was still doing, if anything.
+  const handlePrevSwipe = useCallback((artWait?: SwipeArtWait) => handlePrev('swipe', artWait), [handlePrev]);
+  const handleNextSwipe = useCallback((artWait?: SwipeArtWait) => handleNext('swipe', artWait), [handleNext]);
 
   // A current climb unchanged for 4 h is held dark on the connect's first write
   // (#4979). A tap that connects asked for the climb, so the hold it meets right
