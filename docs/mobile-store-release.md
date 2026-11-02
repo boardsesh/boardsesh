@@ -302,6 +302,23 @@ that run skips iOS; `mobile-store-draft.yml` dispatches it again with
 New land without anyone running it by hand. Dispatch it manually only to re-push
 unchanged copy.
 
+An iOS listing text push keeps the version's phased release and rating reset
+request as they are on App Store Connect (#7225). Every iOS push runs the same
+`ios metadata` lane: Mobile Store Metadata, the listing push in Mobile Store
+Draft Submission, and the combined Mobile Store Submission's "Push listing text
+and What's New" step. deliver's `phased_release` and `reset_ratings` options
+default to false, and false deletes a phased release or rating reset request
+the version already has, so the lane reads both first and passes those answers
+to deliver. If App Store Connect can't say whether one exists, the push fails
+instead of guessing; rerun it. The run summary says which way it went
+("Phased release: on for 2.7.0" or "Phased release: none on 2.7.0", and the
+same for "Rating reset"). The lane reads them before the upload, which takes
+minutes, so don't turn either on while a listing push is running, and check
+phased release is still on after the last push before release. The App Store
+screenshot upload and the draft lane's version-creation call
+(`ios draft_submission`) skip deliver's metadata step, so they never touch
+either setting.
+
 Screenshots are automatic too. **Mobile Screenshots** (`mobile-screenshots-ios.yml`
 and `mobile-screenshots-android.yml`) runs after each native deploy on
 `main` **that actually shipped a binary**, one workflow per
