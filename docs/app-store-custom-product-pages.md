@@ -137,9 +137,11 @@ board configuration. Its loaded-list gate also waits for the requested board's
 search results, rather than accepting a repeated title from a previous board.
 
 Capture order differs from the exported story. Workouts and wall status are
-captured before joining the genuine crew queue: joining changes the Session tab,
-and the wall-status capsule appears only when the lit climb differs from the
-selected climb. The manufacturer status gate checks the phone capsule's complete
+captured before joining the genuine crew queue, because joining changes the
+Session tab. Since the 2026-11-02 owner decision the wall-status capsule shows
+the climb on the wall in the Climbs header for an hour after it was lit, even
+when it is the selected climb, so every Climbs scene inside that hour carries it
+in place of the large title. The manufacturer status gate checks the phone capsule's complete
 localized accessibility label, or the iPad's dedicated wall-status panel, on the
 Climbs screen; an ordinary climb-list row cannot satisfy it. Queue capture then
 precedes logbook and LED capture so their selected climb belongs to the target

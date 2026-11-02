@@ -2422,7 +2422,8 @@ export function renderCppMaestroFlow(
       variant: board,
     })),
     // Restore a real primary solo climb after the other-board trio. It differs
-    // from the lit wall climb, preserving the genuine wall-status capsule.
+    // from the lit wall climb, so the wall-status capsule names a different climb
+    // from the pick (it shows either way since the 2026-11-02 owner decision).
     ...(coverage.accessoryClimb
       ? [
           {
