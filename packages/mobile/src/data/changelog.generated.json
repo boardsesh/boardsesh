@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-02T08:22:49.619Z",
+  "generatedAt": "2026-11-02T10:52:51.109Z",
   "entries": [
+    {
+      "prNumber": 7188,
+      "category": "improved",
+      "title": "Browse climbs without lighting the wall: a tap shows the climb, Put on board lights it.",
+      "mergedAt": "2026-11-02T10:48:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7188",
+      "body": "Put on board drives the wall: every climb you pick lights until 45 s after the last one. A MoonBoard drives until you stop.\nChoose when driving stops in Settings › Board, and whether Bluetooth lets go when it does.\nThe mini player keeps the climb you last opened.\nSwipe the button left to drive the wall for the whole session."
+    },
     {
       "prNumber": 7204,
       "category": "improved",

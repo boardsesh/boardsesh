@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Browse climbs without lighting the wall: a tap shows the climb, Put on board lights it. ([#7188](https://github.com/boardsesh/boardsesh/pull/7188))
+  Put on board drives the wall: every climb you pick lights until 45 s after the last one. A MoonBoard drives until you stop.
+  Choose when driving stops in Settings › Board, and whether Bluetooth lets go when it does.
+  The mini player keeps the climb you last opened.
+  Swipe the button left to drive the wall for the whole session.
 - The support page button now reads "Support us". ([#7204](https://github.com/boardsesh/boardsesh/pull/7204))
 
 ### Fixed
