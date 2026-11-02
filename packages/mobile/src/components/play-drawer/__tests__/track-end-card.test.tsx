@@ -81,6 +81,7 @@ function renderCard(model: Partial<TrackEndCardModel> = {}) {
         listName: 'Projects',
         upNextCount: 3,
         firstUpNextName: 'Crimp Ladder',
+        onWallName: null,
         action: { kind: 'nextInQueue', target },
         ...model,
       },
@@ -138,6 +139,28 @@ describe('TrackEndCard', () => {
     expect(container.querySelector('[data-testid="play-drawer-track-end-keep-going"]')?.textContent).toBe(
       'playView.track.end.keepGoing {"upNextCount":3}',
     );
+  });
+
+  it('from a preview, goes back to your queue and names the climb on the wall (then-signposts)', () => {
+    const { container } = renderCard({
+      firstUpNextName: null,
+      onWallName: 'modern love',
+      upNextCount: 4,
+      action: { kind: 'backToCommitted' },
+    });
+
+    // "Keep going" promised a step forward; the button goes BACK to Now.
+    expect(keepGoing(container)?.textContent).toBe('playView.track.end.backToQueue {"upNextCount":4}');
+    expect(firstUpNext(container)?.textContent).toBe('playView.track.end.onTheWall {"name":"modern love"}');
+    expect(container.textContent).not.toContain('playView.track.end.keepGoing');
+    expect(container.textContent).not.toContain('playView.track.end.firstUpNext');
+  });
+
+  it('a preview whose Now has no name says only where it goes', () => {
+    const { container } = renderCard({ firstUpNextName: null, onWallName: null, action: { kind: 'backToCommitted' } });
+
+    expect(keepGoing(container)?.textContent).toBe('playView.track.end.backToQueue {"upNextCount":3}');
+    expect(firstUpNext(container)).toBeNull();
   });
 
   it('names nothing and offers no queue when the list was the end of it', () => {

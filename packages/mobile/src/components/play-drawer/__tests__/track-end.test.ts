@@ -34,6 +34,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 2,
       firstUpNextName: 'next-1',
+      onWallName: null,
       action: { kind: 'nextInQueue', target: queue[2] },
     });
   });
@@ -47,13 +48,28 @@ describe('resolveTrackEndCard (#6664)', () => {
   });
 
   it("sends a preview back to the queue's Now", () => {
-    // It goes back to Now, which is not Up next, so it names no climb (#6238).
-    expect(card({ previewOverNow: true })).toEqual({
+    // It goes back to Now, which is not Up next, so it names no Up next climb
+    // (#6238); it names Now, the climb on the wall (the then-signposts).
+    expect(card({ previewOverNow: true, committedClimbName: 'modern love' })).toEqual({
       listName: 'Projects',
       upNextCount: 2,
       firstUpNextName: null,
+      onWallName: 'modern love',
       action: { kind: 'backToCommitted' },
     });
+  });
+
+  it("cuts Now's name like the first Up next name, and names none it does not know", () => {
+    const longName = 'The Very Long Crimp Ladder Traverse Of Doom And Despair';
+    expect(card({ previewOverNow: true, committedClimbName: longName })?.onWallName).toBe(
+      'The Very Long Crimp Ladder Trav\u2026',
+    );
+    expect(card({ previewOverNow: true, committedClimbName: '  ' })?.onWallName).toBeNull();
+    expect(card({ previewOverNow: true })?.onWallName).toBeNull();
+  });
+
+  it('names no climb on the wall on a committed climb, where the action goes forward', () => {
+    expect(card({ committedClimbName: 'modern love' })?.onWallName).toBeNull();
   });
 
   it('says the list is finished, with no queue action, when nothing is Up next', () => {
@@ -61,6 +77,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 0,
       firstUpNextName: null,
+      onWallName: null,
       action: null,
     });
     // An empty queue with no Now: nothing to go back to either.
@@ -75,6 +92,7 @@ describe('resolveTrackEndCard (#6664)', () => {
       listName: 'Projects',
       upNextCount: 3,
       firstUpNextName: 'q1',
+      onWallName: null,
       action: { kind: 'nextInQueue', target: queued[0] },
     });
     // The queue walk from the top lands past what this board cannot draw.
@@ -102,15 +120,23 @@ describe('resolveTrackEndCard (#6664)', () => {
   // #6777: Up next plays before the list goes on, so the list can end on a
   // queued climb. The card still names the list that ended.
   it('names the list when Up next ran out at its end', () => {
-    const upNextLabel = { kind: 'upNext', listName: 'Projects', count: { position: 2, total: 2 } } as const;
+    const upNextLabel = {
+      kind: 'upNext',
+      listName: 'Projects',
+      count: { position: 2, total: 2 },
+      thenListName: null,
+    } as const;
     const doneQueue = [item('history'), item('last-on-list'), item('queued')];
     expect(card({ trackLabel: upNextLabel, queue: doneQueue, committedQueueIndex: 2, queueSuccessor: null })).toEqual({
       listName: 'Projects',
       upNextCount: 0,
       firstUpNextName: null,
+      onWallName: null,
       action: null,
     });
-    expect(card({ trackLabel: { kind: 'upNext', listName: null, count: null } })?.listName).toBeNull();
+    expect(
+      card({ trackLabel: { kind: 'upNext', listName: null, count: null, thenListName: null } })?.listName,
+    ).toBeNull();
   });
 
   // #6238: the card says which climb "Keep going" opens.
@@ -176,6 +202,8 @@ describe('Up next count and the queue badge (#6238)', () => {
     expect(resolveListWalkUpNextBadge({ kind: 'hidden' }, 3)).toBeNull();
     expect(resolveListWalkUpNextBadge(named, 0)).toBe(0);
     // Playing Up next in the middle of a list still walks it (#6777).
-    expect(resolveListWalkUpNextBadge({ kind: 'upNext', listName: 'Projects', count: null }, 2)).toBe(2);
+    expect(
+      resolveListWalkUpNextBadge({ kind: 'upNext', listName: 'Projects', count: null, thenListName: null }, 2),
+    ).toBe(2);
   });
 });

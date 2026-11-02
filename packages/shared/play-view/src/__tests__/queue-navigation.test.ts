@@ -26,6 +26,10 @@ import {
   resolveUpNextProgress,
   resolveUpNextCommitResume,
   anchoredSuggestionSource,
+  countUpNextBeforeList,
+  resolveStepTrack,
+  stepCrossesIntoList,
+  upNextHandsBackToList,
 } from '../queue-navigation';
 
 function makeClimb(uuid: string): Climb {
@@ -2169,5 +2173,130 @@ describe('resolvePreviewStepSource (#7227)', () => {
     expect(resolvePreviewStepSource(marked, undefined)).toBe(marked);
     expect(resolvePreviewStepSource(marked, resume)?.lookOffWall).toBe(true);
     expect(resolvePreviewStepSource(list, resume)?.lookOffWall).toBeUndefined();
+  });
+});
+
+// The then-signposts (2026-11-02): "Up next first · 4 climbs" on the climber's
+// own climb, "Up next · 2 of 4 · then Projects" on each Up next climb, and the
+// crossing cue when a step leaves Up next for the list. Every sign reads the
+// walk's own steps, so these pin them against what a swipe actually does.
+describe('the then-signposts read the walk the swipe takes', () => {
+  const l = [1, 2, 3, 4, 5].map((n) => climbOnBoard(`l${n}`, 'tension', 8));
+  const projects = makeSource(l[0], l);
+  // modern love: picked from Projects, a list tap commits it flagged `suggested`.
+  const onList: ClimbQueueItem = { uuid: 'item-l2', climb: l[1], suggested: true };
+  const upNext = ['a', 'b', 'c', 'd'].map((id) => queueItemOnBoard(id, 'tension', 8));
+  // A queued climb this wall can't draw (#5099): the walk passes it over.
+  const otherBoard = queueItemOnBoard('kilter-x', 'kilter', 1);
+  const queue = [makeItem('history'), onList, upNext[0], upNext[1], upNext[2], upNext[3], otherBoard];
+  const resume = { climbUuid: 'l2', queueItemUuid: 'item-l2' };
+  const walking = withPlaylistTrackResume(projects, resume);
+  const next = (from: ClimbQueueItem | null, source: PlaylistSuggestionSource | null) =>
+    selectNextQueueItemWithSuggestions(queue, from, source, TENSION_BOARD);
+
+  it('on your own climb, Next steps into Up next and counts what it plays before the list', () => {
+    const position = resolveTrackPosition(queue, onList, projects);
+    const step = next(onList, projects);
+    expect(resolveStepTrack(position, step.trackResume)).toBe('upNext');
+    expect(stepCrossesIntoList(position, step.trackResume)).toBe(false);
+    // Four, not five: the climb this wall can't draw is no swipe target.
+    expect(countUpNextBeforeList(queue, onList, projects, undefined, TENSION_BOARD)).toBe(4);
+    // The same count "Up next · 1 of 4" then reads as its total.
+    expect(resolveUpNextProgress(queue, upNext[0], walking, undefined, TENSION_BOARD)).toEqual({
+      position: 1,
+      total: 4,
+    });
+  });
+
+  it('says "then Projects" on every Up next climb, and the last one crosses onto the list', () => {
+    for (const [index, item] of upNext.entries()) {
+      const position = resolveTrackPosition(queue, item, walking);
+      expect(position.kind).toBe('upNext');
+      expect(upNextHandsBackToList(position, walking)).toBe(true);
+      const step = next(item, walking);
+      const last = index === upNext.length - 1;
+      expect(resolveStepTrack(position, step.trackResume)).toBe(last ? 'list' : 'upNext');
+      expect(stepCrossesIntoList(position, step.trackResume)).toBe(last);
+    }
+    // The undrawable climb after d never makes d's step wrong: it lands on l3.
+    expect(next(upNext[3], walking).item?.climb.uuid).toBe('l3');
+  });
+
+  it('crosses back onto the list from the first Up next climb too', () => {
+    const position = resolveTrackPosition(queue, upNext[0], walking);
+    const back = selectPreviousQueueItemWithSuggestions(queue, upNext[0], walking, undefined, TENSION_BOARD);
+    expect(back.item).toBe(onList);
+    expect(resolveStepTrack(position, back.trackResume)).toBe('list');
+    expect(stepCrossesIntoList(position, back.trackResume)).toBe(true);
+    // Going back up Up next stays in it.
+    const middle = resolveTrackPosition(queue, upNext[1], walking);
+    const toFirst = selectPreviousQueueItemWithSuggestions(queue, upNext[1], walking, undefined, TENSION_BOARD);
+    expect(resolveStepTrack(middle, toFirst.trackResume)).toBe('upNext');
+    expect(stepCrossesIntoList(middle, toFirst.trackResume)).toBe(false);
+  });
+
+  // Parity: the tail is shown exactly when walking on from the climb reaches
+  // the list, by the swipe's own steps.
+  it('shows "then" exactly when the walk goes on to the list', () => {
+    const atListEnd = makeSource(l[0], [l[0], l[1]]);
+    for (const source of [projects, atListEnd]) {
+      let walkSource = withPlaylistTrackResume(source, resume);
+      let from: ClimbQueueItem = upNext[0];
+      let reachesList = false;
+      for (let guard = 0; guard < queue.length; guard += 1) {
+        const position = resolveTrackPosition(queue, from, walkSource);
+        const step = next(from, walkSource);
+        if (!step.item) break;
+        if (resolveStepTrack(position, step.trackResume) === 'list') {
+          reachesList = true;
+          break;
+        }
+        if (step.trackResume !== undefined) walkSource = withPlaylistTrackResume(walkSource, step.trackResume);
+        from = step.item;
+      }
+      const tail = upNextHandsBackToList(
+        resolveTrackPosition(queue, upNext[0], withPlaylistTrackResume(source, resume)),
+        withPlaylistTrackResume(source, resume),
+      );
+      expect(tail).toBe(reachesList);
+    }
+  });
+
+  it('has no "then" when the list ends with Up next, and the end card takes over', () => {
+    const shortList = withPlaylistTrackResume(makeSource(l[0], [l[0], l[1]]), resume);
+    const position = resolveTrackPosition(queue, upNext[3], shortList);
+    expect(upNextHandsBackToList(position, shortList)).toBe(false);
+    expect(next(upNext[3], shortList).atTrackEnd).toBe(true);
+  });
+
+  it('stops counting Up next at a queued copy of the list climb that comes next', () => {
+    const l3Copy = itemFor(l[2]);
+    const withCopy = [onList, upNext[0], l3Copy, upNext[1]];
+    expect(countUpNextBeforeList(withCopy, onList, projects, undefined, TENSION_BOARD)).toBe(1);
+  });
+
+  it('with Up next empty, Next stays on the list: nothing new to say', () => {
+    const alone = [makeItem('history'), onList];
+    const position = resolveTrackPosition(alone, onList, projects);
+    const step = selectNextQueueItemWithSuggestions(alone, onList, projects, TENSION_BOARD);
+    expect(resolveStepTrack(position, step.trackResume)).toBe('list');
+    expect(stepCrossesIntoList(position, step.trackResume)).toBe(false);
+    expect(countUpNextBeforeList(alone, onList, projects, undefined, TENSION_BOARD)).toBe(0);
+  });
+
+  it('a list preview walks only its list: no Up next count, every step on the list', () => {
+    const preview: ClimbQueueItem = { uuid: 'preview-l4', climb: l[3] };
+    const position = resolveTrackPosition(queue, preview, projects);
+    expect(position.kind).toBe('list');
+    expect(countUpNextBeforeList(queue, preview, projects)).toBeNull();
+    expect(resolveStepTrack(position, next(preview, projects).trackResume)).toBe('list');
+  });
+
+  it('with no list, every step walks the queue', () => {
+    const position = resolveTrackPosition(queue, upNext[0], null);
+    expect(resolveStepTrack(position, next(upNext[0], null).trackResume)).toBe('queue');
+    expect(stepCrossesIntoList(position, null)).toBe(false);
+    expect(upNextHandsBackToList(position, null)).toBe(false);
+    expect(countUpNextBeforeList(queue, upNext[0], null)).toBeNull();
   });
 });

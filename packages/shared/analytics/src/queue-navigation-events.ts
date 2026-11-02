@@ -27,6 +27,10 @@
 //  * Only a climber's own deliberate step fires it. The rest timer's
 //    auto-advance and the workout runner call the same `nextClimb`, but they are
 //    not navigation and stay silent: counting them would read as presses.
+//  * `track`, `from`, `upNextBucket` and `crossed` (the then-signposts, November
+//    2026) say which walk the step took. Every step carries all four. A Previous
+//    right after a `crossed` Next is a climber the crossing from Up next into
+//    the list surprised; Up next is bucketed so no count identifies a queue.
 
 import { boardTypeProperty, type BoardTypeProperty } from './board-type-property';
 import { SHARED_EVENTS } from './events';
@@ -66,6 +70,29 @@ export type QueueNavigationArtWait = {
   waitedMs: number;
 };
 
+/**
+ * Which walk the step landed on. `list`: the list named at the top. `upNext`:
+ * Up next, played in the middle of that list. `queue`: no list steers the walk,
+ * so it walks the queue.
+ */
+export type QueueNavigationTrack = 'list' | 'upNext' | 'queue';
+
+/** Where the step was taken from: a preview, or the climber's own climb. */
+export type QueueNavigationFrom = 'preview' | 'current';
+
+/** How many climbs were Up next when the step was taken, in coarse buckets. */
+export type QueueNavigationUpNextBucket = '0' | '1-3' | '4-10' | '11+';
+
+/** The walk the step took, as the call site knows it. */
+export type QueueNavigationWalk = {
+  track: QueueNavigationTrack;
+  from: QueueNavigationFrom;
+  /** Climbs Up next (after the queue's Now, the whole queue without one) before the step. */
+  upNextCount: number;
+  /** The step left Up next for the list. */
+  crossed: boolean;
+};
+
 /** The board the step happened on, as the call site knows it. */
 export type QueueNavigationBoard = {
   /** The board's type (`kilter`, `spray`, ...). Anything outside the nine is sent as null. */
@@ -90,6 +117,8 @@ export type QueueNavigationInput = QueueNavigationBoard & {
   driving?: boolean;
   /** Set only on a swipe that went before its board had painted. Absent on every other step. */
   artWait?: QueueNavigationArtWait;
+  /** Which walk the step took. */
+  walk: QueueNavigationWalk;
 };
 
 export type QueueNavigationProps = BoardTypeProperty & {
@@ -105,6 +134,10 @@ export type QueueNavigationProps = BoardTypeProperty & {
   driving: boolean;
   /** Null on a spray wall (its layout id names the wall) and with no board. */
   layoutId: number | null;
+  track: QueueNavigationTrack;
+  from: QueueNavigationFrom;
+  upNextBucket: QueueNavigationUpNextBucket;
+  crossed: boolean;
   /** Only on a swipe that went before its board had painted: what the board was doing. */
   heldArtState?: QueueNavigationArtState;
   /** Only with `heldArtState`: how long the release waited, in whole milliseconds. */
@@ -132,6 +165,14 @@ export type QueueNavigationPayload<TName extends string, TProperties> = {
   properties: TProperties;
 };
 
+/** Up next in the buckets `upNextBucket` reports: none, a few, a session's worth, a long queue. */
+export function upNextBucket(upNextCount: number): QueueNavigationUpNextBucket {
+  if (!(upNextCount >= 1)) return '0';
+  if (upNextCount <= 3) return '1-3';
+  if (upNextCount <= 10) return '4-10';
+  return '11+';
+}
+
 function layoutIdProperty({ boardType, layoutId }: QueueNavigationBoard): number | null {
   if (boardType === 'spray') return null;
   return typeof layoutId === 'number' ? layoutId : null;
@@ -153,6 +194,10 @@ export function queueNavigation(
       driving: input.driving ?? false,
       ...boardTypeProperty(input.boardType),
       layoutId: layoutIdProperty(input),
+      track: input.walk.track,
+      from: input.walk.from,
+      upNextBucket: upNextBucket(input.walk.upNextCount),
+      crossed: input.walk.crossed,
       ...(input.artWait
         ? { heldArtState: input.artWait.artState, heldMs: Math.max(0, Math.round(input.artWait.waitedMs)) }
         : {}),

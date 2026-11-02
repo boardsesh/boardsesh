@@ -3,9 +3,12 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
+// The system text size the bar reads (Android's 200% is 2).
+const windowFont = vi.hoisted(() => ({ scale: 1 }));
 // react-native isn't satisfiable under jsdom; stub the surface the label touches.
 // See play-drawer-header-stats-angle.test.tsx for the same pattern.
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: windowFont.scale }),
   View: ({
     children,
     accessible,
@@ -75,11 +78,21 @@ vi.mock('../../Text', () => ({
   },
 }));
 
-import { PlayListContext } from '../PlayListContext';
+import { PlayListContext, resolveThenPlacement, THEN_OWN_LINE_FONT_SCALE } from '../PlayListContext';
+import type { TrackLabelParts } from '../track-label-text';
 
 beforeEach(() => {
   theme.colorScheme = 'light';
+  windowFont.scale = 1;
 });
+
+/** "Up next · 4 of 4 · then Projects": the last Up next climb before the list goes on. */
+const thenParts: TrackLabelParts = {
+  name: 'Up next',
+  count: '4 of 4',
+  thenTail: { before: 'then ', name: 'Projects', after: '' },
+  accessibilityLabel: 'Up next, 4 of 4, then Projects',
+};
 
 const texts = (container: HTMLElement) => Array.from(container.querySelectorAll('span'));
 
@@ -209,5 +222,81 @@ describe('PlayListContext', () => {
       expect(text.getAttribute('data-font-scaling')).toBe('false');
       expect(text.getAttribute('data-line-height')).toBe('19.2');
     }
+  });
+
+  // The then-signposts: the tail's list name is cut first; "Up next", the
+  // count and "then" are never cut.
+  it('prints "· then Projects" after the count, and only the list name may shrink', () => {
+    const { container } = render(
+      createElement(PlayListContext, { parts: thenParts, testID: 'play-drawer-track-label' }),
+    );
+    const all = texts(container);
+    expect(all.map((text) => text.textContent)).toEqual(['Up next', ' · 4 of 4', ' · then ', 'Projects']);
+    expect(all.map((text) => text.getAttribute('data-shrink'))).toEqual(['0', '0', '0', '1']);
+    // One line: the four texts share a row.
+    expect(new Set(all.map((text) => text.parentElement)).size).toBe(1);
+    expect(container.querySelector('[data-testid="play-drawer-track-label"]')?.getAttribute('aria-label')).toBe(
+      'Up next, 4 of 4, then Projects',
+    );
+    expect(container.querySelector('section')?.getAttribute('data-large-content-title')).toBe(
+      'Up next · 4 of 4 · then Projects',
+    );
+  });
+
+  it('keeps the words after a name the language puts first whole too', () => {
+    const suffix: TrackLabelParts = { ...thenParts, thenTail: { before: '', name: 'Projekte', after: ' danach' } };
+    const all = texts(render(createElement(PlayListContext, { parts: suffix })).container);
+    expect(all.map((text) => text.textContent)).toEqual(['Up next', ' · 4 of 4', ' · ', 'Projekte', ' danach']);
+    expect(all.map((text) => text.getAttribute('data-shrink'))).toEqual(['0', '0', '0', '1', '0']);
+  });
+
+  it(`moves "then Projects" to a line of its own from ${THEN_OWN_LINE_FONT_SCALE}x text, while no caption needs it`, () => {
+    windowFont.scale = 2;
+    const { container } = render(createElement(PlayListContext, { parts: thenParts }));
+    const all = texts(container);
+    expect(all.map((text) => text.textContent)).toEqual(['Up next', ' · 4 of 4', 'then ', 'Projects']);
+    expect(all[0]?.parentElement).not.toBe(all[2]?.parentElement);
+    expect(all[2]?.parentElement).toBe(all[3]?.parentElement);
+    // On its own line nothing beside it competes for room: the name stays as it was.
+    expect(all[0]?.getAttribute('data-shrink')).toBe('1');
+  });
+
+  it('keeps "then" on the first line when a caption takes the second', () => {
+    windowFont.scale = 2;
+    const { container } = render(
+      createElement(PlayListContext, { parts: thenParts, caption: 'Someone just put up Crimp Ladder' }),
+    );
+    expect(texts(container).map((text) => text.textContent)).toEqual([
+      'Up next',
+      ' · 4 of 4',
+      ' · then ',
+      'Projects',
+      'Someone just put up Crimp Ladder',
+    ]);
+  });
+
+  it('places "then" by text size and caption', () => {
+    expect(resolveThenPlacement({ hasThen: false, hasCaption: false, fontScale: 2 })).toBeNull();
+    expect(resolveThenPlacement({ hasThen: true, hasCaption: false, fontScale: 1.99 })).toBe('inline');
+    expect(resolveThenPlacement({ hasThen: true, hasCaption: false, fontScale: 2 })).toBe('ownLine');
+    expect(resolveThenPlacement({ hasThen: true, hasCaption: true, fontScale: 3 })).toBe('inline');
+  });
+
+  it('carries the second-line signposts like any caption', () => {
+    const { container } = render(
+      createElement(PlayListContext, {
+        parts: { name: 'Projects', count: '7 of 20', accessibilityLabel: 'Playing from Projects, 7 of 20' },
+        caption: 'Up next first · 4 climbs',
+        testID: 'play-drawer-track-label',
+      }),
+    );
+    expect(texts(container).map((text) => text.textContent)).toEqual([
+      'Projects',
+      ' · 7 of 20',
+      'Up next first · 4 climbs',
+    ]);
+    expect(container.querySelector('[data-testid="play-drawer-track-label"]')?.getAttribute('aria-label')).toBe(
+      'Playing from Projects, 7 of 20. Up next first, 4 climbs',
+    );
   });
 });

@@ -211,6 +211,7 @@ describe('usePlayNavigationModel', () => {
         listName: 'Projects',
         upNextCount: 2,
         firstUpNextName: 'Climb q1',
+        onWallName: null,
         action: { kind: 'nextInQueue', target: queued[0] },
       });
     });
@@ -312,6 +313,8 @@ describe('usePlayNavigationModel', () => {
         kind: 'upNext',
         listName: 'Search results',
         count: { position: 1, total: 2 },
+        // The list carries on after Up next: "· then Search results".
+        thenListName: 'Search results',
       });
       // The list keeps its place: Previous goes back to the list climb, the
       // last queued climb leads back onto the list.
@@ -367,8 +370,126 @@ describe('usePlayNavigationModel', () => {
         listName: 'Search results',
         upNextCount: 0,
         firstUpNextName: null,
+        onWallName: null,
         action: null,
       });
+      // The list ended with Up next: nothing comes after it to name.
+      expect(bothDone.current.currentTrackLabel).toMatchObject({ kind: 'upNext', thenListName: null });
+    });
+
+    it("from a preview, the end card goes back to the queue's Now and names it", () => {
+      const lastOnList = item('c');
+      const preview = { ...lastOnList, uuid: 'preview-c' };
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(queue),
+          drawerPreviewItem: preview,
+          drawerPreviewSuggestionSource: results,
+          displayedQueueItem: preview,
+          displayedClimb: preview.climb,
+        }),
+      );
+      expect(result.current.trackEndCard).toEqual({
+        listName: 'Search results',
+        upNextCount: 2,
+        firstUpNextName: null,
+        onWallName: 'Climb a',
+        action: { kind: 'backToCommitted' },
+      });
+    });
+  });
+
+  // The then-signposts: the model reads where each step lands off the walk's
+  // own steps, so the top bar, the tick and the event never guess.
+  describe('the then-signposts', () => {
+    const onList = item('a');
+    const queuedFirst = item('q1');
+    const queuedSecond = item('q2');
+    const queue = [onList, queuedFirst, queuedSecond];
+    const projects: PlaylistSuggestionSource = {
+      playlistUuid: 'smart:projects',
+      activatedClimbUuid: 'a',
+      boardKey: 'kilter:1',
+      climbs: [onList.climb, item('b').climb, item('c').climb],
+      label: 'Projects',
+      total: 3,
+    };
+    const walking: PlaylistSuggestionSource = { ...projects, resume: { climbUuid: 'a', queueItemUuid: onList.uuid } };
+    function own(displayed: ClimbQueueItem, source: PlaylistSuggestionSource) {
+      return {
+        ...inputs(queue),
+        displayedQueueItem: displayed,
+        displayedClimb: displayed.climb,
+        currentClimbQueueItem: displayed,
+        playlistSuggestionSource: source,
+      };
+    }
+
+    it('on your own climb, Next steps into Up next and counts it', () => {
+      const { result } = renderHook(() => usePlayNavigationModel(own(onList, projects)));
+      expect(result.current.signposts).toEqual({
+        upNextCount: 2,
+        nextTrack: 'upNext',
+        previousTrack: 'list',
+        nextCrosses: false,
+        previousCrosses: false,
+        upNextFirstCount: 2,
+      });
+    });
+
+    it('the last Up next climb crosses onto the list; the first crosses back', () => {
+      const last = renderHook(() => usePlayNavigationModel(own(queuedSecond, walking)));
+      expect(last.result.current.signposts).toMatchObject({
+        nextTrack: 'list',
+        nextCrosses: true,
+        upNextFirstCount: null,
+      });
+      const first = renderHook(() => usePlayNavigationModel(own(queuedFirst, walking)));
+      expect(first.result.current.signposts).toMatchObject({
+        nextTrack: 'upNext',
+        nextCrosses: false,
+        previousTrack: 'list',
+        previousCrosses: true,
+      });
+    });
+
+    it('with Up next empty, nothing is new: no count, no crossing, no "then"', () => {
+      const alone = [onList];
+      const { result } = renderHook(() => usePlayNavigationModel({ ...own(onList, projects), queue: alone }));
+      expect(result.current.signposts).toEqual({
+        upNextCount: 0,
+        nextTrack: 'list',
+        previousTrack: 'list',
+        nextCrosses: false,
+        previousCrosses: false,
+        upNextFirstCount: null,
+      });
+    });
+
+    // #5099: a queued climb this wall can't draw is walked past, so it never
+    // counts and never takes the "then" off the climb before it.
+    it('passes over a queued climb this wall cannot draw', () => {
+      const otherBoard = item('x', 'pxr12', 'tension', 9);
+      const mixed = [onList, queuedFirst, otherBoard];
+      const fromList = renderHook(() => usePlayNavigationModel({ ...own(onList, projects), queue: mixed }));
+      expect(fromList.result.current.signposts.upNextFirstCount).toBe(1);
+      const onQueued = renderHook(() => usePlayNavigationModel({ ...own(queuedFirst, walking), queue: mixed }));
+      expect(onQueued.result.current.currentTrackLabel).toEqual({
+        kind: 'upNext',
+        listName: 'Projects',
+        count: { position: 1, total: 1 },
+        thenListName: 'Projects',
+      });
+      expect(onQueued.result.current.signposts).toMatchObject({ nextTrack: 'list', nextCrosses: true });
+      expect(onQueued.result.current.navigationState.nextItem?.climb.uuid).toBe('b');
+    });
+
+    it('keeps the signposts object while nothing about the walk changed', () => {
+      const initialProps = own(onList, projects);
+      const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps });
+      const first = result.current.signposts;
+      rerender({ ...initialProps, queue: [...queue] });
+      expect(result.current.signposts).toBe(first);
     });
   });
 });

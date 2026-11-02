@@ -287,14 +287,124 @@ export function resolveUpNextProgress(
     if (!isListWalkEntry(item, source) && !swipeWalksPast(item, activeConfig, isReachable)) played += 1;
   }
   if (!foundResume) return null;
-  const listSuccessorUuid = source.climbs[position.resumeIndex + 1]?.uuid;
+  const ahead = countUpNextAhead(queue, currentIndex, source, position, activeConfig, isReachable);
+  return { position: played, total: played + ahead };
+}
+
+/**
+ * The list climb a walk steps to once Up next is played: the one after the list
+ * climb it is at (the climb itself on the list, the one it left from while it
+ * plays Up next). Undefined when the list ends there. {@link selectNextOnTrack}
+ * reads it to decide the swipe, and the player's "then Projects" reads the same
+ * value, so the two can never disagree.
+ */
+function listSuccessorOf(
+  source: PlaylistSuggestionSource,
+  position: Exclude<TrackPosition, { kind: 'off' }>,
+): Climb | undefined {
+  const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
+  return source.climbs[listIndex + 1];
+}
+
+/**
+ * The Up next climbs a walk still plays after `currentIndex` before its list
+ * picks up again: queued climbs the walk plays (list-walk entries and climbs
+ * this wall can't draw left out), up to a queued copy of the list's next climb,
+ * which is where the list carries on.
+ */
+function countUpNextAhead(
+  queue: ClimbQueue,
+  currentIndex: number,
+  source: PlaylistSuggestionSource,
+  position: Exclude<TrackPosition, { kind: 'off' }>,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): number {
+  const listSuccessorUuid = listSuccessorOf(source, position)?.uuid;
   let ahead = 0;
   for (const item of upNextQueueItems(queue, currentIndex, source)) {
     if (swipeWalksPast(item, activeConfig, isReachable)) continue;
     if (item.climb?.uuid === listSuccessorUuid) break;
     ahead += 1;
   }
-  return { position: played, total: played + ahead };
+  return ahead;
+}
+
+/**
+ * "Up next first · 4 climbs": how many Up next climbs the walk plays from a
+ * climb on its list before the list goes on (the then-signposts). The same
+ * count "Up next · 1 of 4" then reads as its total, since both walk Up next by
+ * the selectors' own rules: `activeConfig` and `isReachable` leave out a
+ * queued climb this wall can't draw, as Next does (#5099).
+ *
+ * Null when the climb is not a queue entry on a list: off the list, or a
+ * preview, which walks only its list and never plays Up next.
+ */
+export function countUpNextBeforeList(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  prepared?: PreparedQueueNavigation,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
+): number | null {
+  if (!source || !currentItem) return null;
+  const position = resolveTrackPosition(queue, currentItem, source, prepared);
+  if (position.kind !== 'list') return null;
+  const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
+  if (currentIndex < 0) return null;
+  return countUpNextAhead(queue, currentIndex, source, position, activeConfig, isReachable);
+}
+
+/**
+ * Whether the list carries on once the stretch of Up next a walk plays is done
+ * ("Up next · 2 of 4 · then Projects"): true while the climb plays Up next in
+ * the middle of `source` and the list has a climb after the one the walk left
+ * from. That climb is the one {@link selectNextQueueItemWithSuggestions} steps
+ * to after Up next, so a queued climb this wall can't draw, which the walk
+ * passes over, never changes the answer.
+ */
+export function upNextHandsBackToList(position: TrackPosition, source: PlaylistSuggestionSource | null): boolean {
+  if (!source || position.kind !== 'upNext') return false;
+  return listSuccessorOf(source, position) !== undefined;
+}
+
+/**
+ * Which walk a step lands on:
+ *
+ * - `queue`: no list steers the walk, so the step walks the queue.
+ * - `list`: the step lands on the list (`trackResume` null: back on it, or
+ *   carrying on along it; or a step that stays on it).
+ * - `upNext`: the step plays Up next in the middle of the list (`trackResume`
+ *   names the list climb it leaves from, or the walk is already in Up next and
+ *   stays there).
+ *
+ * `position` is where the climb on screen stands ({@link resolveTrackPosition});
+ * `trackResume` is the step's own, from {@link computeNavigationTargetsWithSuggestions}.
+ */
+export type StepTrack = 'list' | 'upNext' | 'queue';
+
+export function resolveStepTrack(
+  position: TrackPosition,
+  trackResume: PlaylistTrackResume | null | undefined,
+): StepTrack {
+  if (position.kind === 'off') return 'queue';
+  if (trackResume === null) return 'list';
+  if (trackResume !== undefined) return 'upNext';
+  return position.kind;
+}
+
+/**
+ * The step leaves Up next for the list: the last Up next climb's Next onto the
+ * list's next climb, or the first one's Previous back onto the list climb it
+ * was played from. The player's crossing cue (one selection tick, "Now in
+ * Projects") rides exactly these steps.
+ */
+export function stepCrossesIntoList(
+  position: TrackPosition,
+  trackResume: PlaylistTrackResume | null | undefined,
+): boolean {
+  return position.kind === 'upNext' && trackResume === null;
 }
 
 /** The queue neighbour on either side of `currentIndex` that already holds
@@ -578,8 +688,7 @@ function selectNextOnTrack(
   activeConfig: ActiveBoardForCompatibility | undefined,
   isReachable: ReachableClimbPredicate | undefined,
 ): NextQueueItemSelection {
-  const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
-  const listSuccessor: Climb | undefined = source.climbs[listIndex + 1];
+  const listSuccessor = listSuccessorOf(source, position);
   const upNext = scanForFirstCompatible(upNextQueueItems(queue, currentIndex, source), activeConfig, isReachable);
   if (upNext.item) {
     // Up next and the list agree on what comes next: the list carries on, and

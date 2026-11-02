@@ -25,6 +25,13 @@ export type TrackEndCardModel = {
    * no name: the card then reads as it did before.
    */
   firstUpNextName: string | null;
+  /**
+   * From a preview, the climb its action goes back to, the queue's Now:
+   * "Back to your queue (4)", then "On the wall: modern love" (the
+   * then-signposts). Capped like `firstUpNextName`; null on every other card,
+   * and for a Now with no name.
+   */
+  onWallName: string | null;
   /** Null when nothing is queued after Now: the card then only says the list is finished. */
   action: TrackEndAction | null;
 };
@@ -73,8 +80,13 @@ export function truncateClimbName(name: string, maxLength = MAX_FIRST_UP_NEXT_NA
 
 function firstUpNextNameOf(target: ClimbQueueItem): string | null {
   // The wire boundary is untyped: a peer's item can land before its climb does.
-  const name = truncateClimbName(target.climb?.name ?? '');
-  return name.length > 0 ? name : null;
+  return cardClimbName(target.climb?.name);
+}
+
+/** A climb's name as the card prints it, or null for none. */
+function cardClimbName(name: string | null | undefined): string | null {
+  const truncated = truncateClimbName(name ?? '');
+  return truncated.length > 0 ? truncated : null;
 }
 
 /**
@@ -96,8 +108,9 @@ function firstUpNextNameOf(target: ClimbQueueItem): string | null {
  * board: the number on the button counts it.
  *
  * `previewOverNow` is a preview pinned while the queue has a Now: the action
- * goes back to that Now. A preview with no Now to go back to carries on into
- * the queue like a committed climb would.
+ * goes back to that Now, "Back to your queue (4)", and the card names it,
+ * `committedClimbName`, as the climb on the wall. A preview with no Now to go
+ * back to carries on into the queue like a committed climb would.
  */
 export function resolveTrackEndCard({
   navigationState,
@@ -107,6 +120,7 @@ export function resolveTrackEndCard({
   committedQueueIndex,
   queueSuccessor,
   previewOverNow,
+  committedClimbName = null,
 }: {
   navigationState: Pick<NavigationState, 'atTrackEnd'>;
   moreToLoad: boolean;
@@ -115,15 +129,21 @@ export function resolveTrackEndCard({
   committedQueueIndex: number;
   queueSuccessor: ClimbQueueItem | null;
   previewOverNow: boolean;
+  /** The queue's Now, by name: what a preview's action goes back to. */
+  committedClimbName?: string | null;
 }): TrackEndCardModel | null {
   if (!navigationState.atTrackEnd || moreToLoad) return null;
   // Up next can run out at the list's end too (#6777): the card still names the list.
   const listName = trackLabelListName(trackLabel);
   const upNextCount = countUpNext(queue.length, committedQueueIndex);
-  if (upNextCount <= 0) return { listName, upNextCount: 0, firstUpNextName: null, action: null };
-  // A preview's action goes back to Now, which is not Up next: no name to promise.
-  if (previewOverNow) return { listName, upNextCount, firstUpNextName: null, action: { kind: 'backToCommitted' } };
+  const finished = { listName, upNextCount, firstUpNextName: null, onWallName: null, action: null };
+  if (upNextCount <= 0) return { ...finished, upNextCount: 0 };
+  // A preview's action goes back to Now, which is not Up next: it names Now,
+  // the climb up on the wall, rather than promising the first of Up next.
+  if (previewOverNow) {
+    return { ...finished, onWallName: cardClimbName(committedClimbName), action: { kind: 'backToCommitted' } };
+  }
   const target = queueSuccessor ?? queue[committedQueueIndex + 1];
-  if (!target) return { listName, upNextCount, firstUpNextName: null, action: null };
-  return { listName, upNextCount, firstUpNextName: firstUpNextNameOf(target), action: { kind: 'nextInQueue', target } };
+  if (!target) return finished;
+  return { ...finished, firstUpNextName: firstUpNextNameOf(target), action: { kind: 'nextInQueue', target } };
 }

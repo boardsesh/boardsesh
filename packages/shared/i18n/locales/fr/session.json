@@ -910,7 +910,7 @@
       "onWall": "Sur le mur",
       "browsingHint": "Tu regardes seulement. Le mur ne bouge pas.",
       "backToWall": "Revenir au bloc au mur",
-      "backToCurrent": "Revenir à mon choix",
+      "backToCurrent": "Revenir à ton bloc",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
       "previewNotOnWall": "Aperçu · pas au mur",
       "onlyYouSeeThis": "Toi seul le vois",
@@ -930,7 +930,7 @@
         "committed": "{{name}} est sur le mur",
         "previewFirstAnnounce": "Aperçu, pas allumé au mur. Touche Allumer sur la board pour l'allumer."
       },
-      "backToMyPickNamed": "Revenir à mon choix : {{name}}",
+      "backToCurrentNamed": "Revenir à ton bloc : {{name}}",
       "backToWallNamed": "Revenir au bloc au mur : {{name}}"
     },
     "wallControl": {
@@ -1024,6 +1024,18 @@
       "playingFromPositionAria": "Liste : {{name}}, {{position}} sur {{total}}",
       "upNext": "À suivre",
       "upNextPositionAria": "À suivre, {{position}} sur {{total}}",
+      "then": "puis {{name}}",
+      "upNextThenAria": "À suivre, puis {{name}}",
+      "upNextPositionThenAria": "À suivre, {{position}} sur {{total}}, puis {{name}}",
+      "upNextFirst_one": "D'abord ta file · {{count}} bloc",
+      "upNextFirst_other": "D'abord ta file · {{count}} blocs",
+      "previewUpNextWaiting": "Aperçu · À suivre : {{number}} en attente",
+      "nextIn": "Suivant dans {{name}}",
+      "previousIn": "Précédent dans {{name}}",
+      "nextInQueue": "Suivant dans ta file d'attente",
+      "previousInQueue": "Précédent dans ta file d'attente",
+      "nowIn": "Maintenant dans {{name}}",
+      "nowInPosition": "Maintenant dans {{name}}, {{position}} sur {{total}}",
       "searchResults": "Résultats de recherche",
       "setterClimbs": "Blocs de {{name}}",
       "logbook": "Carnet",
@@ -1037,6 +1049,8 @@
         "titleUnnamed": "Fin de la liste",
         "finished": "C'est toute la liste, et rien n'attend dans ta file d'attente après ce bloc.",
         "keepGoing": "Continuer avec ta file d'attente ({{upNextCount}})",
+        "backToQueue": "Revenir à ta file d'attente ({{upNextCount}})",
+        "onTheWall": "Au mur : {{name}}",
         "firstUpNext": "D'abord : {{name}}",
         "stay": "Rester ici"
       }

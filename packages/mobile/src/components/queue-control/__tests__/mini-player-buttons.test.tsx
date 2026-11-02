@@ -22,6 +22,8 @@ const navigation = vi.hoisted(() => ({
   onPrevious: vi.fn(),
   onNext: vi.fn(),
   playerOpen: false,
+  previousWalk: null as { kind: 'list'; name: string } | { kind: 'upNext' } | null,
+  nextWalk: null as { kind: 'list'; name: string } | { kind: 'upNext' } | null,
 }));
 const effects = vi.hoisted(() => ({ track: vi.fn(), hapticSelection: vi.fn(), showToast: vi.fn() }));
 const queue = vi.hoisted(() => ({
@@ -37,7 +39,8 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { angle?: number }) => (options?.angle != null ? `${key}:${options.angle}` : key),
+    t: (key: string, options?: { angle?: number; name?: string }) =>
+      options?.angle != null ? `${key}:${options.angle}` : options?.name != null ? `${key}:${options.name}` : key,
   }),
 }));
 vi.mock('../../PressableSurface', () => ({
@@ -190,6 +193,8 @@ beforeEach(() => {
   navigation.canPrevious = true;
   navigation.canNext = false;
   navigation.playerOpen = false;
+  navigation.previousWalk = null;
+  navigation.nextWalk = null;
   queue.sessionId = null;
   queue.currentClimbQueueItem = { uuid: 'item-a', climb };
 });
@@ -334,6 +339,19 @@ describe('MiniPlayerLeadingButtons', () => {
       expect(navigation.onPrevious).toHaveBeenCalledOnce();
       const next = getByLabelText('playView.actionBar.nextAria') as HTMLButtonElement;
       expect(next.disabled).toBe(true);
+    });
+
+    // Owner answer 2 on the then-signposts: a screen reader hears which list
+    // each button walks. Spoken only: the glyphs and slots stay as they are.
+    it('tell a screen reader which list they walk', () => {
+      navigation.canNext = true;
+      navigation.previousWalk = { kind: 'upNext' };
+      navigation.nextWalk = { kind: 'list', name: 'Search results' };
+      const { getByLabelText } = renderButtons(['previous', 'next']);
+      fireEvent.click(getByLabelText('playView.track.nextIn:Search results'));
+      expect(navigation.onNext).toHaveBeenCalledOnce();
+      fireEvent.click(getByLabelText('playView.track.previousInQueue'));
+      expect(navigation.onPrevious).toHaveBeenCalledOnce();
     });
 
     it('page the list only while Next shows and the player is closed', () => {

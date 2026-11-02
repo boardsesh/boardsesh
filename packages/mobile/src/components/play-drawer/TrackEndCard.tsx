@@ -3,7 +3,8 @@
 // Swipes and Next walk the list a climb was tapped in, and at its last climb
 // they stop. This card is what Next, or one more forward swipe, shows there:
 // the list's name, and one way to carry on with the queue instead, naming the
-// climb that comes first (#6238). It used to
+// climb that comes first (#6238); from a preview, the way back to the queue's
+// Now, naming the climb on the wall (the then-signposts). It used to
 // be that Next fell silently into whatever older climb sat in the queue.
 //
 // An anchored transient card over the board, NOT a sheet — the same reasoning
@@ -73,6 +74,20 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
   const title = model.listName
     ? t('playView.track.end.title', { name: model.listName })
     : t('playView.track.end.titleUnnamed');
+  // From a preview the action goes BACK to the queue's Now (the then-signposts):
+  // "Back to your queue (4)", naming the climb up there. From the climber's own
+  // climb it carries on into Up next, naming the climb that comes first.
+  const goesBack = model.action?.kind === 'backToCommitted';
+  const actionTitle = goesBack
+    ? t('playView.track.end.backToQueue', { upNextCount: model.upNextCount })
+    : t('playView.track.end.keepGoing', { upNextCount: model.upNextCount });
+  const actionDetail = goesBack
+    ? model.onWallName
+      ? t('playView.track.end.onTheWall', { name: model.onWallName })
+      : null
+    : model.firstUpNextName
+      ? t('playView.track.end.firstUpNext', { name: model.firstUpNextName })
+      : null;
 
   return (
     <View accessibilityViewIsModal style={styles.modalRegion} testID="play-drawer-track-end">
@@ -104,17 +119,17 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
         {model.action ? (
           <View style={styles.primaryGroup}>
             <Button
-              title={t('playView.track.end.keepGoing', { upNextCount: model.upNextCount })}
+              title={actionTitle}
               variant="filled"
               size="medium"
               onPress={onKeepGoing}
               testID="play-drawer-track-end-keep-going"
               style={styles.fullWidth}
             />
-            {/* What "Keep going" opens (#6238), on its own line rather than in
+            {/* What the action opens (#6238), on its own line rather than in
                 the button: a native button label does not wrap, and a German
                 label plus a climb name outgrows the card. */}
-            {model.firstUpNextName ? (
+            {actionDetail ? (
               <Text
                 variant="footnote"
                 color={systemColors.secondaryLabel}
@@ -122,7 +137,7 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
                 style={styles.centered}
                 testID="play-drawer-track-end-first-up-next"
               >
-                {t('playView.track.end.firstUpNext', { name: model.firstUpNextName })}
+                {actionDetail}
               </Text>
             ) : null}
           </View>
