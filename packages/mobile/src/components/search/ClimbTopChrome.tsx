@@ -40,7 +40,7 @@ import { trustedWallCapsuleClimb, usePresenceFresh } from '../../lib/board-prese
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import {
   dismissWallCapsule,
-  useWallCapsuleDismissed,
+  useWallCapsuleDismissal,
   wallCapsuleOccurrenceKey,
 } from '../../lib/wall-capsule-dismissal-store';
 import { useWallCapsuleHistoryAge } from '../queue-control/use-wall-capsule-history-age';
@@ -173,7 +173,9 @@ function ClimbTopChromeComponent({
         : null,
     [liveWallClimb, boardId, occurrenceKey],
   );
-  const { loaded: dismissalLoaded, dismissed } = useWallCapsuleDismissed(boardId, occurrenceKey);
+  // Reads the raw wall climb, trusted or not: a different climb on the wall ends
+  // the board's Hide even past the hour.
+  const { loaded: dismissalLoaded, dismissed, hiddenClimbUuid } = useWallCapsuleDismissal(boardId, wallClimb);
   const historyAge = useWallCapsuleHistoryAge(
     liveWallClimb?.sentAt ?? null,
     !linked && dismissalLoaded && !dismissed && liveWallClimb !== null,
@@ -189,6 +191,11 @@ function ClimbTopChromeComponent({
   const { isPad, widthClass } = useDeviceLayout();
   const accessoryCollapses = !(isPad && widthClass === 'regular');
   const heldCue = nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe';
+  // Booleans, not the queue head's uuid, so a queue change that alters neither
+  // (a crew advancing, the MiniPlayer moving) builds no new capsule and leaves
+  // the native header's options alone. Only the held cue reads the queue head.
+  const wallIsQueueHead = heldCue && queueHeadUuid !== null && liveWallClimb?.climbUuid === queueHeadUuid;
+  const queueHeadHidden = heldCue && queueHeadUuid !== null && hiddenClimbUuid === queueHeadUuid;
   // Keep the climb, its meaning and its dismissal scope together while a modal
   // covers the list. None may change the native title during player dismissal.
   const liveHeaderCapsule = useMemo(() => {
@@ -196,20 +203,21 @@ function ClimbTopChromeComponent({
       wall: trustedWall,
       dismissal: { loaded: dismissalLoaded, dismissed },
       heldCue,
-      queueHeadUuid,
+      wallIsQueueHead,
+      queueHeadHidden,
     });
     if (capsule === null || capsule.kind === 'held') return capsule;
     return {
       ...capsule,
       presentation: linked ? { kind: 'live' as const } : { kind: 'history' as const, ageLabel: historyAge ?? '' },
     };
-  }, [trustedWall, dismissalLoaded, dismissed, heldCue, queueHeadUuid, linked, historyAge]);
+  }, [trustedWall, dismissalLoaded, dismissed, heldCue, wallIsQueueHead, queueHeadHidden, linked, historyAge]);
   const headerCapsule = useSettledHeaderValue(liveHeaderCapsule);
   const settledWall = headerCapsule?.wall ?? null;
   const handleDismissWallCapsule = useCallback(
     (dismissedOccurrence: string) => {
       if (settledWall === null || dismissedOccurrence !== settledWall.occurrenceKey) return;
-      dismissWallCapsule(settledWall.boardId, dismissedOccurrence);
+      dismissWallCapsule(settledWall.boardId, settledWall.climb);
     },
     [settledWall],
   );

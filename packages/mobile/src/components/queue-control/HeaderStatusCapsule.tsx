@@ -12,8 +12,11 @@
 // target, 44 pt wide and the capsule's full 38 pt tall, with a 3 pt slop above
 // and below toward the 44 pt floor. The 38 pt is UIKit's bar slot, and UIKit
 // owns hit testing at the bar's edges, as for the bar's own items (`glassSize.bar`).
-// It drops out with the leading face in a too-narrow title slot; the
-// screen-reader Hide stays.
+// Like the bar's other glyph-only controls, a long press at an accessibility
+// text size shows "Hide" in the Large Content Viewer, and the lift hides.
+// In a too-narrow title slot it drops out with the leading face where a swipe
+// still hides the capsule; a capsule with no swipe keeps it (`keepWhenCompact`),
+// so a sighted climber can always hide it. The screen-reader Hide stays either way.
 
 import { useContext, useMemo, type ReactNode } from 'react';
 import {
@@ -40,6 +43,7 @@ import { PressableSurface } from '../PressableSurface';
 import { GlassSurface } from '../GlassSurface';
 import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { NATIVE_ACTION_SIZE } from '../chrome/GlassActionToolbar';
+import { iconMap } from '../icon-map';
 
 // The native header's bar height, so a name over a byline fits at the 1.2 font cap.
 const CAPSULE_HEIGHT = glassSize.bar;
@@ -65,6 +69,11 @@ export type HeaderCapsuleDismiss = {
   onPress: () => void;
   /** The glyph colour on a patterned surface; the secondary label colour otherwise. */
   color?: ColorValue;
+  /**
+   * The capsule has no swipe to hide it (the held capsule, whose swipe could end
+   * as the tap that lets go of the board), so the × stays in a too-narrow slot.
+   */
+  keepWhenCompact?: boolean;
 };
 
 /** True when UIKit's title slot is too narrow for the capsule's leading element. */
@@ -131,7 +140,7 @@ export function HeaderStatusCapsule({
       borderColor: background?.borderColor ?? withAlpha(tintColor, 0.35),
     },
   ];
-  const showDismiss = dismiss !== undefined && !compact;
+  const showDismiss = dismiss !== undefined && (!compact || dismiss.keepWhenCompact === true);
   const rowStyle = [styles.row, compact && styles.rowCompact, showDismiss && styles.rowBeforeDismiss];
   const mainTarget = onPress ? (
     <PressableSurface
@@ -181,12 +190,19 @@ export function HeaderStatusCapsule({
             style={styles.dismissButton}
             testID={testID ? `${testID}-dismiss` : undefined}
           >
-            <Icon
-              maxFontSizeMultiplier={1}
-              name="close"
-              size={DISMISS_GLYPH}
-              color={dismiss.color ?? systemColors.secondaryLabel}
-            />
+            <LargeContentViewer
+              title={dismiss.label}
+              systemImage={iconMap.close.ios}
+              onActivate={dismiss.onPress}
+              style={styles.dismissGlyph}
+            >
+              <Icon
+                maxFontSizeMultiplier={1}
+                name="close"
+                size={DISMISS_GLYPH}
+                color={dismiss.color ?? systemColors.secondaryLabel}
+              />
+            </LargeContentViewer>
           </PressableSurface>
         </View>
       ) : (
@@ -358,6 +374,13 @@ const styles = StyleSheet.create({
   dismissButton: {
     flexShrink: 0,
     width: DISMISS_TARGET,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The viewer's long press covers the whole ×, not just its 12 pt glyph.
+  dismissGlyph: {
+    width: '100%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',

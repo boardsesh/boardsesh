@@ -232,16 +232,22 @@ vi.mock('../../LargeContentViewer', () => ({
   LargeContentViewer: ({
     children,
     style,
+    title,
+    systemImage,
     onActivate,
   }: {
     children?: ReactNode;
     style?: unknown;
+    title?: string;
+    systemImage?: string;
     onActivate?: () => void;
   }) =>
     createElement(
       'div',
       {
         'data-label-viewer': 'true',
+        'data-viewer-title': title,
+        'data-viewer-image': systemImage,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
         // Stands in for the finger lifting while the viewer is up.
         onDoubleClick: onActivate,
@@ -328,7 +334,7 @@ vi.mock('../../GlassSurface', () => ({
 }));
 
 import { BoardHeldCapsule, HeldClimbCapsule } from '../BoardHeldCapsule';
-import { NativeHeaderActionContext } from '../../chrome/native-header-action-context';
+import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../../chrome/native-header-action-context';
 import { wallGlowSurfaces } from '../../../theme/colors';
 
 const TEST_GLOW: WallGlowInput = {
@@ -647,6 +653,35 @@ describe('BoardHeldCapsule', () => {
 
     beforeEach(() => {
       spies.currentClimb = { uuid: 'climb-1', name: 'Kish Mud Prison', difficulty: 'V7' };
+    });
+
+    // Review: the held capsule has no swipe, so in a narrow slot (an iPad in
+    // narrow Split View) the × is the only sighted way to hide it.
+    it('keeps its × in a too-narrow title slot, where it has no swipe to fall back on', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <NativeTitleMaxWidthContext.Provider value={58}>
+          <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />
+        </NativeTitleMaxWidthContext.Provider>,
+      );
+      fireEvent.click(hideButton(container)!);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
+    });
+
+    // Review: like the bar's other glyph-only controls, a long press at an
+    // accessibility text size names the × in the Large Content Viewer.
+    it('names the × "Hide" in the Large Content Viewer, and its lift hides', () => {
+      const onDismiss = vi.fn();
+      const { container } = render(
+        <BoardHeldCapsule ledless={false} dismiss={{ occurrenceKey: 'board-1:climb-1', onDismiss }} />,
+      );
+      const viewer = hideButton(container)!.querySelector('[data-label-viewer]') as HTMLElement;
+      expect(viewer.getAttribute('data-viewer-title')).toBe('mobile.boardPresence.stripDismiss');
+      expect(viewer.getAttribute('data-viewer-image')).toBe('xmark');
+      expect(viewer.querySelector('[data-icon="close"]')).not.toBeNull();
+      fireEvent.doubleClick(viewer);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('board-1:climb-1');
+      expect(spies.lightbulbPress).not.toHaveBeenCalled();
     });
 
     it('has no × and no Hide action for a bare hold', () => {

@@ -337,7 +337,9 @@ name: app-store screenshots android
       - takeScreenshot: 13-moonboard-2024-view
 
 # The wall stays on the seeded first climb while this climber picks a different
-# local queue head. Capture the real live wall-status header before joining a crew.
+# local queue head, so the shot shows the wall's climb in the header beside a
+# different pick. The header shows the wall's climb either way; capture it before
+# joining a crew.
 - runFlow:
     when:
       true: ${SCREENSHOT_SHARED_SESSION_ID != ''}

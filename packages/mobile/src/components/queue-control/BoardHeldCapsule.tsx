@@ -19,7 +19,7 @@
 // (Re-light / Turn off / Disconnect) while this device holds the radio link.
 // While it draws the climb on the wall it carries the wall capsule's Hide: the ×
 // and the screen-reader action, never a swipe, because a swipe that ends as a tap
-// here would let go of the board.
+// here would let go of the board. With no swipe, the × stays in a narrow slot.
 
 import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
@@ -142,7 +142,8 @@ function BoardHeldCapsuleImpl({ ledless, dismiss }: BoardHeldCapsuleProps) {
     ...(handleDismiss ? [{ name: DISMISS_ACTION, label: hideLabel }] : []),
   ];
   const accessibilityActions = actionList.length > 0 ? actionList : undefined;
-  const dismissButton = handleDismiss ? { label: hideLabel, onPress: handleDismiss } : undefined;
+  // No swipe here, so the × is the only sighted Hide: it stays in a narrow slot.
+  const dismissButton = handleDismiss ? { label: hideLabel, onPress: handleDismiss, keepWhenCompact: true } : undefined;
   const accessibilityHint = t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint');
 
   if (climb) {
