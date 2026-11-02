@@ -446,7 +446,11 @@ describe('BluetoothProvider mismatch switch', () => {
     expect(bluetooth.state.connect).not.toHaveBeenCalled();
 
     rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, boardUuid: savedBoard.uuid, children: null }));
-    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, '99000001'));
+    await waitFor(() =>
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, '99000001', undefined, {
+        afterBoardSwitch: true,
+      }),
+    );
   });
 
   it.each(['dismissed', 'reopened', 'board_changed', 'credentials_changed'] as const)(
@@ -559,7 +563,11 @@ describe('BluetoothProvider mismatch switch', () => {
     pickerSheet.props?.onSelect('device-2');
     await act(async () => lastAlertButtons()[2]?.onPress?.());
     expect(pickerState.handleCancel).toHaveBeenCalledOnce();
-    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    await waitFor(() =>
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, {
+        afterBoardSwitch: true,
+      }),
+    );
   });
 
   it.each([1, 2])('ignores mismatch alert action %s after the active board changes', async (buttonIndex) => {
@@ -662,7 +670,9 @@ describe('BluetoothProvider mismatch switch', () => {
     );
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, {
+        afterBoardSwitch: true,
+      });
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
 
@@ -731,7 +741,9 @@ describe('BluetoothProvider mismatch switch', () => {
       createElement(BluetoothProvider, { ...currentProps, boardUuid: 'wall-a', children: createElement('div') }),
     );
     expect(bluetooth.state.connect).toBe(stableConnect);
-    await waitFor(() => expect(stableConnect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    await waitFor(() =>
+      expect(stableConnect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, { afterBoardSwitch: true }),
+    );
     rerender(
       createElement(BluetoothProvider, { ...currentProps, boardUuid: 'wall-a', children: createElement('div') }),
     );
@@ -801,7 +813,11 @@ describe('BluetoothProvider mismatch switch', () => {
         children: createElement('div'),
       }),
     );
-    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    await waitFor(() =>
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, {
+        afterBoardSwitch: true,
+      }),
+    );
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
 
@@ -828,7 +844,11 @@ describe('BluetoothProvider mismatch switch', () => {
     expect(bluetooth.state.connect).not.toHaveBeenCalled();
 
     rerender(createElement(BluetoothProvider, { ...currentProps, setIds: '7,1', children: createElement('div') }));
-    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    await waitFor(() =>
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, {
+        afterBoardSwitch: true,
+      }),
+    );
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
 
@@ -860,7 +880,9 @@ describe('BluetoothProvider mismatch switch', () => {
       }),
     );
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined, {
+        afterBoardSwitch: true,
+      });
     });
 
     bluetooth.state.isConnected = true;
@@ -1370,7 +1392,9 @@ describe('BluetoothProvider picker Scan again', () => {
     rerenderSettled(rerender, KILTER_PROPS);
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, {
+        afterBoardSwitch: false,
+      });
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
@@ -1416,7 +1440,9 @@ describe('BluetoothProvider picker Scan again', () => {
       rerenderSettled(rerender, props);
 
       await waitFor(() => {
-        expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
+        expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, {
+          afterBoardSwitch: false,
+        });
       });
       expect(analytics.track).toHaveBeenCalledWith(
         'Board Connect Tapped',
@@ -1492,7 +1518,9 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
     rerenderOn(rerender, MOON_PROPS);
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device');
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-device', {
+        afterBoardSwitch: true,
+      });
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
     await expect(connected).resolves.toBe(true);
@@ -1515,7 +1543,9 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
 
     await expect(connected).resolves.toBe(false);
     // Nothing remembered for the MoonBoard: the picker opens for it.
-    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+    expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined, {
+      afterBoardSwitch: true,
+    });
   });
 
   it('resolves false and never connects when the switch never reaches the provider', async () => {

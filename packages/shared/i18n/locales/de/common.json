@@ -936,6 +936,7 @@
   },
   "bluetooth": {
     "boardNotFound": "Dein Board wurde nicht gefunden. Prüf, ob es an und in Reichweite ist — und wenn ein anderes Handy verbunden ist, trenn dort zuerst.",
+    "boardSwitchConnectFailed": "Board gewechselt, aber die Verbindung zum neuen hat nicht geklappt. Geh näher ran und versuch es nochmal.",
     "connectFailed": "Verbindung fehlgeschlagen. Geh näher ans Board und versuch es nochmal.",
     "serviceMissing": "Verbunden, aber das Board hat nicht geantwortet. Schalt es aus und wieder ein und versuch es nochmal.",
     "unavailable": "Bluetooth ist aus. Schalt es ein, um dich mit deinem Board zu verbinden.",

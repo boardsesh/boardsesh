@@ -1208,6 +1208,7 @@
   },
   "bluetooth": {
     "boardNotFound": "No se encontró tu plafón. Asegúrate de que esté encendido y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",
+    "boardSwitchConnectFailed": "Cambiaste de plafón, pero no se pudo conectar con el nuevo. Acércate a él e inténtalo de nuevo.",
     "connectFailed": "No se pudo conectar. Acércate al plafón e inténtalo de nuevo.",
     "serviceMissing": "Conectado, pero el plafón no respondió. Reinícialo e inténtalo de nuevo.",
     "unavailable": "El Bluetooth está apagado. Actívalo para conectar con tu plafón.",

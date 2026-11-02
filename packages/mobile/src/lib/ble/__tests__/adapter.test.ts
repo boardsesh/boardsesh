@@ -86,6 +86,7 @@ vi.mock('@boardsesh/ble-protocol', async (importOriginal) => {
     INTER_CHUNK_DELAY_MS: 0,
     parseSerialNumber: actual.parseSerialNumber,
     isRetryableAndroidConnectError: actual.isRetryableAndroidConnectError,
+    blePlxErrorCodes: actual.blePlxErrorCodes,
   };
 });
 
@@ -1585,8 +1586,10 @@ describe('RNBleAdapter', () => {
 
         expect(connection).toMatchObject({ deviceId: 'retry-device', retrySucceeded: true });
         expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        // Attempt one gets the whole native timeout; attempt two only what is
+        // left of the one 12 s budget after the 500ms backoff (#7038).
         expect(mockBleManager.connectToDevice).toHaveBeenNthCalledWith(1, 'retry-device', { timeout: 12_000 });
-        expect(mockBleManager.connectToDevice).toHaveBeenNthCalledWith(2, 'retry-device', { timeout: 12_000 });
+        expect(mockBleManager.connectToDevice).toHaveBeenNthCalledWith(2, 'retry-device', { timeout: 11_500 });
         expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledOnce();
         expect(mockBleManager.startDeviceScan).toHaveBeenCalledOnce();
         expect(devicePicker).toHaveBeenCalledOnce();
@@ -1595,6 +1598,7 @@ describe('RNBleAdapter', () => {
         expect(deviceWithServices.characteristicsForService).toHaveBeenCalledOnce();
         expect(mockBleManager.onDeviceDisconnected).toHaveBeenCalledOnce();
         expect(adapter.getLastConnectAttemptCount()).toBe(2);
+        expect(adapter.getLastConnectFirstAttemptCode()).toBe(133);
       } finally {
         vi.useRealTimers();
       }
@@ -1668,6 +1672,8 @@ describe('RNBleAdapter', () => {
           await expect(settled).resolves.toBe(firstError);
           expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
           expect(adapter.getLastConnectAttemptCount()).toBe(1);
+          // No retry ran, so there is no code that set one off.
+          expect(adapter.getLastConnectFirstAttemptCode()).toBeUndefined();
           expect(vi.getTimerCount()).toBe(0);
         } finally {
           // clearAllMocks keeps queued once-implementations, and the unused
@@ -1723,6 +1729,8 @@ describe('RNBleAdapter', () => {
         // The retry genuinely lost — the counterpart to the discovery-failure
         // case below, where the same count of 2 comes with a saved connect.
         expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
+        // The code that set the retry off, not the one it lost with.
+        expect(adapter.getLastConnectFirstAttemptCode()).toBe(133);
       } finally {
         vi.useRealTimers();
       }
@@ -1822,6 +1830,7 @@ describe('RNBleAdapter', () => {
       await expect(adapter.requestAndConnect()).rejects.toBe(deniedError);
       expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
       expect(adapter.getLastConnectAttemptCount()).toBe(1);
+      expect(adapter.getLastConnectFirstAttemptCode()).toBeUndefined();
     });
 
     it('does not retry a post-connect discovery failure', async () => {
@@ -1865,6 +1874,229 @@ describe('RNBleAdapter', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('requestAndConnect — GATT 133/147 retry once (board connection plan, item 7)', () => {
+    type PendingDelay = { ms: number; resolve: () => void };
+
+    // The connect runs through scan, pick, scan stop, attempt one, cleanup and
+    // the backoff, each a few promise hops, with no JS timer in between.
+    async function flushMicrotasks() {
+      for (let tick = 0; tick < 100; tick++) {
+        await Promise.resolve();
+      }
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      // clearAllMocks keeps queued once-implementations; a leftover one would
+      // leak into the next test's connect.
+      mockBleManager.connectToDevice.mockReset();
+      mockBleManager.stopDeviceScan.mockReset();
+      vi.useRealTimers();
+    });
+
+    it.each([133, 147])('connects with exactly one retry after GATT %i', async (gattStatus) => {
+      const { devicePicker, connectedDevice } = setupSelectedDevice();
+      mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+      mockBleManager.connectToDevice
+        .mockRejectedValueOnce(androidConnectError(201, gattStatus))
+        .mockResolvedValueOnce(connectedDevice);
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+      const connecting = adapter.requestAndConnect();
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(connecting).resolves.toMatchObject({ deviceId: 'retry-device', retrySucceeded: true });
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+      expect(devicePicker).toHaveBeenCalledOnce();
+      expect(adapter.getLastConnectAttemptCount()).toBe(2);
+      expect(adapter.getLastConnectFirstAttemptCode()).toBe(gattStatus);
+    });
+
+    it('fails with the second error after GATT 133 twice: one retry, no third attempt', async () => {
+      const secondError = androidConnectError(201, 133);
+      const { devicePicker } = setupSelectedDevice();
+      mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+      mockBleManager.connectToDevice
+        .mockRejectedValueOnce(androidConnectError(201, 133))
+        .mockRejectedValueOnce(secondError);
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+      const settled = adapter.requestAndConnect().catch((error: unknown) => error);
+      // Well past the whole budget: nothing else may start.
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      await expect(settled).resolves.toBe(secondError);
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+      expect(adapter.getLastConnectAttemptCount()).toBe(2);
+      expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
+      expect(adapter.getLastConnectFirstAttemptCode()).toBe(133);
+    });
+
+    it('records a null first-attempt code when Android left the GATT status out', async () => {
+      const { devicePicker, connectedDevice } = setupSelectedDevice();
+      mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+      mockBleManager.connectToDevice
+        .mockRejectedValueOnce(androidConnectError(205))
+        .mockResolvedValueOnce(connectedDevice);
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+      const connecting = adapter.requestAndConnect();
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(connecting).resolves.toMatchObject({ retrySucceeded: true });
+      expect(adapter.getLastConnectFirstAttemptCode()).toBeNull();
+    });
+
+    it.each([
+      ['a denied GATT status', androidConnectError(201, 8)],
+      ['a native connect timeout', androidConnectError(3)],
+      ['a plain error', new Error('Device is not connected')],
+    ])('does not retry %s', async (_label, firstError) => {
+      const { devicePicker } = setupSelectedDevice();
+      mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+      mockBleManager.connectToDevice.mockRejectedValueOnce(firstError);
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+      const settled = adapter.requestAndConnect().catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(12_000);
+
+      await expect(settled).resolves.toBe(firstError);
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+      expect(mockBleManager.cancelDeviceConnection).not.toHaveBeenCalled();
+      expect(adapter.getLastConnectFirstAttemptCode()).toBeUndefined();
+    });
+
+    it('waits for the scan to stop before the first connect on Android', async () => {
+      const { devicePicker, connectedDevice } = setupSelectedDevice();
+      let finishScanStop!: () => void;
+      mockBleManager.stopDeviceScan.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishScanStop = resolve;
+          }),
+      );
+      mockBleManager.connectToDevice.mockResolvedValue(connectedDevice);
+
+      const connecting = new RNBleAdapter(devicePicker, 'aurora', {
+        enableAndroidConnectRetry: true,
+      }).requestAndConnect();
+      await flushMicrotasks();
+
+      expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+      expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+
+      finishScanStop();
+      await expect(connecting).resolves.toMatchObject({ deviceId: 'retry-device' });
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+    });
+
+    it('still connects when the scan stop rejects', async () => {
+      const { devicePicker, connectedDevice } = setupSelectedDevice();
+      mockBleManager.stopDeviceScan.mockRejectedValue(new Error('BluetoothLE is in unknown state'));
+      mockBleManager.connectToDevice.mockResolvedValue(connectedDevice);
+
+      const connecting = new RNBleAdapter(devicePicker, 'aurora', {
+        enableAndroidConnectRetry: true,
+      }).requestAndConnect();
+
+      await expect(connecting).resolves.toMatchObject({ deviceId: 'retry-device' });
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+    });
+
+    it('times out instead of hanging when the scan stop never answers', async () => {
+      const { devicePicker } = setupSelectedDevice();
+      mockBleManager.stopDeviceScan.mockImplementation(() => new Promise<void>(() => {}));
+
+      const settled = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true })
+        .requestAndConnect()
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(12_000);
+
+      const error = await settled;
+      expect((error as Error).message).toMatch(/timed out/i);
+      expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
+    });
+
+    it('keeps the iOS fire-and-forget scan stop: no wait before the connect', async () => {
+      const { devicePicker, connectedDevice } = setupSelectedDevice();
+      mockBleManager.stopDeviceScan.mockImplementation(() => new Promise<void>(() => {}));
+      mockBleManager.connectToDevice.mockResolvedValue(connectedDevice);
+
+      // No enableAndroidConnectRetry: what createBluetoothAdapter builds on iOS.
+      const connecting = new RNBleAdapter(devicePicker, 'aurora').requestAndConnect();
+
+      await expect(connecting).resolves.toMatchObject({ deviceId: 'retry-device' });
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('retry-device', { timeout: 12_000 });
+    });
+
+    describe('while Android has paused JS timers (#7038)', () => {
+      let pendingDelays: PendingDelay[] = [];
+
+      beforeEach(() => {
+        pendingDelays = [];
+        mockRuntime.platformOs = 'android';
+        mockRuntime.appState = 'background';
+        mockNativeModules.sessionPresenceNative = {
+          delay: vi.fn(
+            (ms: number) =>
+              new Promise<void>((resolve) => {
+                pendingDelays.push({ ms, resolve });
+              }),
+          ),
+        };
+      });
+
+      it('runs the retry backoff on the native clock', async () => {
+        const { devicePicker, connectedDevice } = setupSelectedDevice();
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 133))
+          .mockResolvedValueOnce(connectedDevice);
+
+        const connecting = new RNBleAdapter(devicePicker, 'aurora', {
+          enableAndroidConnectRetry: true,
+        }).requestAndConnect();
+        await flushMicrotasks();
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+
+        // The JS timers never fire. The native backoff does.
+        const backoff = pendingDelays.find((pending) => pending.ms === 500);
+        expect(backoff).toBeDefined();
+        backoff?.resolve();
+        await flushMicrotasks();
+
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        await expect(connecting).resolves.toMatchObject({ retrySucceeded: true });
+      });
+
+      it('ends a hanging retry on the native clock with the plain timeout', async () => {
+        const { devicePicker } = setupSelectedDevice();
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 147))
+          .mockImplementationOnce(() => new Promise(() => {}));
+
+        const settled = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true })
+          .requestAndConnect()
+          .catch((error: unknown) => error);
+        await flushMicrotasks();
+        pendingDelays.find((pending) => pending.ms === 500)?.resolve();
+        await flushMicrotasks();
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+
+        // Every native deadline still pending fires; the JS clock stays put.
+        for (const pending of pendingDelays) pending.resolve();
+        await flushMicrotasks();
+
+        const error = await settled;
+        expect((error as Error).message).toMatch(/timed out/i);
+      });
     });
   });
 

@@ -11,6 +11,7 @@ import {
   MAX_BLUETOOTH_MESSAGE_SIZE,
   parseSerialNumber,
   isRetryableAndroidConnectError,
+  blePlxErrorCodes,
 } from '@boardsesh/ble-protocol';
 import { getBleManager } from './ble-manager';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
@@ -49,6 +50,15 @@ const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// The connect stage waits on the native clock as well as the JS one, so a
+// connect from the session notification's bulb (#7038) still gets its retry and
+// still ends on time while Android has paused JS timers. iOS gets the plain JS
+// timer from the same helper.
+const backgroundSafeDelay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setBackgroundSafeTimeout(resolve, ms);
+  });
+
 type DeadlineSettlement<T> =
   | { kind: 'fulfilled'; result: T }
   | { kind: 'rejected'; error: unknown }
@@ -66,7 +76,7 @@ async function settleBeforeDeadline<T>(
   const remainingMs = deadlineMs - performance.now();
   if (remainingMs <= 0) return { kind: 'deadline' };
 
-  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  let cancelDeadline: (() => void) | null = null;
   const operationSettlement = Promise.resolve()
     .then(operation)
     .then(
@@ -74,12 +84,19 @@ async function settleBeforeDeadline<T>(
       (error: unknown): DeadlineSettlement<T> => ({ kind: 'rejected', error }),
     );
   const deadlineSettlement = new Promise<DeadlineSettlement<T>>((resolve) => {
-    deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
+    cancelDeadline = setBackgroundSafeTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
   });
 
   return Promise.race([operationSettlement, deadlineSettlement]).finally(() => {
-    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+    cancelDeadline?.();
   });
+}
+
+// What is left of the connect budget, in whole milliseconds, for ble-plx's
+// native connect timeout (#7038). Rounded up and never below 1: ble-plx reads
+// an integer, and a 0 would time the attempt out before it began.
+function remainingNativeTimeoutMs(deadlineMs: number): number {
+  return Math.max(1, Math.ceil(deadlineMs - performance.now()));
 }
 
 function connectionTimeoutError(): Error {
@@ -151,6 +168,10 @@ export class RNBleAdapter implements BluetoothAdapter {
   // discovery, and `lastConnectAttemptCount === 2` alone can't tell that apart
   // from a retry that lost.
   private lastConnectRetrySucceeded = false;
+  // The Android GATT status of the failed first attempt that set off the retry
+  // (133 or 147), null when Android left the status out, and undefined when no
+  // retry ran. For analytics: which handshake failure the retry was spent on.
+  private lastConnectFirstAttemptCode: number | null | undefined = undefined;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -165,6 +186,7 @@ export class RNBleAdapter implements BluetoothAdapter {
    * Android GATT handshake failure without rescanning or reopening the picker. */
   private async connectSelectedDevice(
     selectedDeviceId: string,
+    scanStopped: Promise<void>,
   ): Promise<{ connected: Device; retrySucceeded: boolean }> {
     // Monotonic clock so a mid-connect wall-clock correction cannot stretch or
     // collapse the budget. The deadline arithmetic here relies on Vitest faking
@@ -172,13 +194,28 @@ export class RNBleAdapter implements BluetoothAdapter {
     // an explicit `toFake` list that omits `performance` or the boundary tests
     // silently freeze the clock and pass for the wrong reason.
     const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
-    const attemptConnect = () => {
+
+    // Android: let the scan stop before the connect starts. Some Android stacks
+    // fail a GATT connect with status 133 while a scan is still running, and the
+    // retry below would race the same scan. ble-plx resolves the stop as soon as
+    // its native scan subscription is gone. The wait counts against the connect
+    // budget, so a stop that never answers ends as the plain timeout instead of
+    // a spinner. iOS keeps its fire-and-forget stop.
+    if (this.enableAndroidConnectRetry) {
+      const scanStop = await settleBeforeDeadline(() => scanStopped, deadlineMs);
+      if (scanStop.kind === 'deadline') throw connectionTimeoutError();
+    }
+
+    // ble-plx also times each attempt out on a native (RxJava) timer, which
+    // keeps running while Android has paused JS timers (#7038): the backstop on
+    // a binary without the native delay the JS deadline uses. The JS deadline
+    // stays: it is the iOS path's deadline and carries the copy we classify.
+    // Attempt one gets the whole budget, as before the retry; attempt two only
+    // what is left of it.
+    const attemptConnect = (nativeTimeoutMs: number) => {
       this.lastConnectAttemptCount += 1;
-      // ble-plx runs this timeout on a native (RxJava) timer, which keeps
-      // running while Android has paused JS timers (#7038). The JS deadline
-      // stays: it is the iOS path's deadline and carries the copy we classify.
       return settleBeforeDeadline(
-        () => getBleManager().connectToDevice(selectedDeviceId, { timeout: CONNECTION_TIMEOUT_MS }),
+        () => getBleManager().connectToDevice(selectedDeviceId, { timeout: nativeTimeoutMs }),
         deadlineMs,
       );
     };
@@ -188,7 +225,7 @@ export class RNBleAdapter implements BluetoothAdapter {
         .catch(() => {});
     };
 
-    const firstAttempt = await attemptConnect();
+    const firstAttempt = await attemptConnect(CONNECTION_TIMEOUT_MS);
     if (firstAttempt.kind === 'deadline') {
       cancelWithoutWaiting();
       throw connectionTimeoutError();
@@ -212,13 +249,16 @@ export class RNBleAdapter implements BluetoothAdapter {
     if (cleanup.kind === 'deadline') throw firstError;
 
     // Checked after cleanup, which can eat into the budget. With this much left
-    // the backoff always ends before the deadline, so a plain delay is enough.
+    // the backoff always ends before the deadline, so a plain wait is enough.
     if (deadlineMs - performance.now() < ANDROID_CONNECT_RETRY_BACKOFF_MS + MIN_RETRY_CONNECT_WINDOW_MS) {
       throw firstError;
     }
-    await delay(ANDROID_CONNECT_RETRY_BACKOFF_MS);
+    // Set once the retry is certain to run, so it never describes a retry that
+    // the window check above turned down.
+    this.lastConnectFirstAttemptCode = blePlxErrorCodes(firstError).androidErrorCode ?? null;
+    await backgroundSafeDelay(ANDROID_CONNECT_RETRY_BACKOFF_MS);
 
-    const secondAttempt = await attemptConnect();
+    const secondAttempt = await attemptConnect(remainingNativeTimeoutMs(deadlineMs));
     if (secondAttempt.kind === 'deadline') {
       cancelWithoutWaiting();
       throw connectionTimeoutError();
@@ -264,6 +304,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     this.negotiatedMtu = DEFAULT_ATT_MTU;
     this.lastConnectAttemptCount = 0;
     this.lastConnectRetrySucceeded = false;
+    this.lastConnectFirstAttemptCode = undefined;
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;
@@ -314,6 +355,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     let pickerFallbackId: ReturnType<typeof setTimeout> | undefined;
     let cancelScanTimeout: (() => void) | undefined;
     let selectedDeviceId: string;
+    let scanStopped: Promise<void>;
     try {
       // Scan UNFILTERED and filter results in JS (isLikelyBoardDevice below).
       // A hardware service-UUID ScanFilter never matches by name, and on Android
@@ -422,7 +464,9 @@ export class RNBleAdapter implements BluetoothAdapter {
       autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
       cancelScanTimeout?.();
-      void getBleManager().stopDeviceScan();
+      // Kept, not voided: on Android the connect below waits for the scan to
+      // stop first (connectSelectedDevice). A rejected stop never blocks it.
+      scanStopped = Promise.resolve(getBleManager().stopDeviceScan()).catch(() => {});
     }
 
     let selectedDeviceName: string | undefined;
@@ -437,7 +481,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
     }
 
-    const { connected, retrySucceeded } = await this.connectSelectedDevice(selectedDeviceId);
+    const { connected, retrySucceeded } = await this.connectSelectedDevice(selectedDeviceId, scanStopped);
 
     let deviceWithServices: Device;
     let writeCharacteristic: Characteristic;
@@ -652,6 +696,12 @@ export class RNBleAdapter implements BluetoothAdapter {
   // MTU/discovery then failed); 2 + false = the retry ran and lost.
   getLastConnectRetrySucceeded(): boolean {
     return this.lastConnectRetrySucceeded;
+  }
+
+  // The GATT status that set off the retry: 133 or 147, null when Android left
+  // it out, undefined when no retry ran.
+  getLastConnectFirstAttemptCode(): number | null | undefined {
+    return this.lastConnectFirstAttemptCode;
   }
 }
 

@@ -167,9 +167,10 @@ export type BleConnectDiagnostics = {
 export type BleAdapterOptions = {
   preferWriteWithResponse?: boolean;
   boardName?: string;
-  // RNBleAdapter only: retry one transient first GATT connect failure before
-  // surfacing it. Android only — set by createBluetoothAdapter from Platform.OS,
-  // never by a board's own preferences.
+  // RNBleAdapter only: wait for the scan to stop before the GATT connect, and
+  // retry one transient first GATT connect failure before surfacing it. Android
+  // only — set by createBluetoothAdapter from Platform.OS, never by a board's
+  // own preferences.
   enableAndroidConnectRetry?: boolean;
 };
 
@@ -205,4 +206,8 @@ export type BluetoothAdapter = {
   // downstream (MTU, discovery). Needed on the failure path, where the thrown
   // error carries no `retrySucceeded`. Optional: only the ble-plx adapter retries.
   getLastConnectRetrySucceeded?(): boolean;
+  // The Android GATT status of the first attempt that set off that retry (133
+  // or 147), null when Android left it out, undefined when no retry ran.
+  // Optional: only the ble-plx adapter retries.
+  getLastConnectFirstAttemptCode?(): number | null | undefined;
 };
