@@ -96,7 +96,7 @@ describe('FirstBoardChoice', () => {
     expect(screen.getByRole('heading').textContent).toBe('Where do you climb?');
     expect(
       screen.getByText(
-        "Pick your board to load its climbs. When you're connected, tapping a climb lights it on the wall.",
+        'Pick your board to load its climbs. A tap opens a climb as a preview; Put on board lights it on the wall.',
       ),
     ).toBeTruthy();
   });

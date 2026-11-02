@@ -206,7 +206,9 @@ describe('FirstConnectCard', () => {
     renderCard();
 
     expect(screen.getByRole('heading').textContent).toBe('Light climbs on Kilter at Blocs');
-    expect(screen.getByText('Connect this phone to the board, then tap any climb to light it.')).toBeTruthy();
+    expect(
+      screen.getByText('Connect this phone to the board, then tap a climb and Put on board to light it.'),
+    ).toBeTruthy();
     expect(screen.getByText('Connect')).toBeTruthy();
     expect(screen.getByText('This wall has no lights')).toBeTruthy();
     expect(screen.getByLabelText('Not now')).toBeTruthy();
