@@ -936,6 +936,7 @@
   },
   "bluetooth": {
     "boardNotFound": "Board introuvable. Vérifiez qu'elle est allumée et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",
+    "boardSwitchConnectFailed": "Vous avez changé de board, mais la connexion à la nouvelle a échoué. Rapprochez-vous d'elle et réessayez.",
     "connectFailed": "Connexion impossible. Rapprochez-vous de la board et réessayez.",
     "serviceMissing": "Connecté, mais la board n'a pas répondu. Redémarrez-la et réessayez.",
     "unavailable": "Le Bluetooth est éteint. Activez-le pour vous connecter à votre board.",
