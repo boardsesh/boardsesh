@@ -96,7 +96,7 @@ function builderFor(boardName: string): BoardFormProps['builder'] {
   } as unknown as BoardFormProps['builder'];
 }
 
-function renderForm(boardName: string) {
+function renderForm(boardName: string, withLedSection = false) {
   return render(
     <BoardForm
       builder={builderFor(boardName)}
@@ -107,6 +107,7 @@ function renderForm(boardName: string) {
       currentBoardUuid="board-uuid"
       sprayTrainingSection={<div data-testid="training" />}
       sprayBackgroundSection={<div data-testid="background" />}
+      sprayLedSection={withLedSection ? <div data-testid="led-settings" /> : undefined}
     />,
   );
 }
@@ -148,5 +149,20 @@ describe('BoardForm on a catalogue board', () => {
     privacy.settings = { enabled: true, isPrivate: false };
     const on = renderForm('kilter');
     expect(drawnSections(on.container)).toEqual(['identity', 'privacy-control']);
+  });
+});
+
+describe('BoardForm spray wall LED placement', () => {
+  it.each([false, true])('places LED directly above More options with privacy enabled=%s', (enabled) => {
+    privacy.settings = { enabled, isPrivate: false };
+    const view = renderForm('spray', true);
+    const ledSection = view.getByTestId('led-settings');
+    const moreOptionsHeader = view.getByText('mobile.create.moreOptions').parentElement;
+    expect(ledSection.nextElementSibling).toBe(moreOptionsHeader);
+  });
+
+  it('never renders the LED section for catalogue boards, even when supplied', () => {
+    const view = renderForm('kilter', true);
+    expect(view.queryByTestId('led-settings')).toBeNull();
   });
 });

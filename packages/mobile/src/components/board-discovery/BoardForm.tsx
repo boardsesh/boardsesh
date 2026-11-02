@@ -87,6 +87,8 @@ type BoardFormProps = {
   currentBoardUuid?: string;
   /** A spray wall's background picker, drawn under its visibility rows. */
   sprayBackgroundSection?: ReactNode;
+  /** Device-local spray wall lighting, immediately above More options. */
+  sprayLedSection?: ReactNode;
   /**
    * The owner's "Help train hold finding" switch. Drawn beside whichever control
    * says who sees the wall: under the three-way one, or directly above the
@@ -113,6 +115,7 @@ export function BoardForm({
   errorMessage = null,
   currentBoardUuid,
   sprayBackgroundSection,
+  sprayLedSection,
   sprayTrainingSection,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
@@ -441,6 +444,8 @@ export function BoardForm({
             <OwnPublicGymWarning gymUuid={builder.selectedGym?.uuid} />
           </View>
         ) : null}
+
+        {isSprayWall ? sprayLedSection : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
         <PressableSurface

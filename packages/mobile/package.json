@@ -32,6 +32,7 @@
     "@boardsesh/gym-filters": "workspace:*",
     "@boardsesh/i18n": "workspace:*",
     "@boardsesh/key-value-storage": "workspace:*",
+    "@boardsesh/led-controller": "workspace:*",
     "@boardsesh/logbook": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/party-profile": "workspace:*",
