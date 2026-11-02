@@ -12,6 +12,8 @@ export type StartDriveInput = {
   wallHeldByOtherUser: boolean;
   /** The party session, or null solo. A drive ends when it changes. */
   sessionId: string | null;
+  /** The board type on screen ('kilter', 'moonboard', ...), for Drive Mode Started / Ended. */
+  boardType?: string | null;
   /** What started it: the swipe, a solo press, or the screen-reader action / sheet row. */
   startedBy: DriveModeStartedBy;
   /** The climb on screen is a preview: it goes up first. */
@@ -64,7 +66,12 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
     return 'started';
   }
   if (input.model.holder === 'crew' || input.wallHeldByOtherUser) return 'held_by_crew';
-  enterDriveMode({ sessionId: input.sessionId, boardId: null, startedBy: input.startedBy });
+  enterDriveMode({
+    sessionId: input.sessionId,
+    boardId: null,
+    boardType: input.boardType ?? null,
+    startedBy: input.startedBy,
+  });
   const startedAt = getDriveMode()?.startedAt ?? null;
   const endThisDrive = (reason: 'connect_failed' | 'commit_failed') => {
     if (getDriveMode()?.startedAt === startedAt) exitDriveMode(reason);
@@ -100,16 +107,20 @@ export function startDrive(input: StartDriveInput): DriveStartOutcome {
 export function startKeepLighting({
   plan,
   sessionId,
+  boardType = null,
   wallHeldByOtherUser,
 }: {
   plan: KeepLightingPlan;
   sessionId: string | null;
+  /** The board type on screen, for Drive Mode Started / Ended. */
+  boardType?: string | null;
   wallHeldByOtherUser: boolean;
 }): boolean {
   if (getDriveMode() || wallHeldByOtherUser) return false;
   enterDriveMode({
     sessionId,
     boardId: null,
+    boardType,
     startedBy: 'tap',
     windowMs: plan.windowMs,
     windowSetting: plan.windowMs === null ? null : plan.setting,

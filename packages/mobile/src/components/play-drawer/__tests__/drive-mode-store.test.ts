@@ -53,6 +53,7 @@ describe('drive-mode store', () => {
       phase: 'arming',
       sessionId: 'session-1',
       boardId: null,
+      boardType: null,
       startedAt: 1_000,
       startedBy: 'swipe',
       climbsLit: 0,
@@ -140,7 +141,7 @@ describe('drive-mode store', () => {
 describe('Drive Mode Ended', () => {
   it('fires once when a drive ends, with how long it lasted and what it lit', () => {
     vi.spyOn(Date, 'now').mockReturnValue(31_400);
-    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, now: 1_000 });
+    enterDriveMode({ startedBy: 'swipe', sessionId: 'session-1', boardId: 7, boardType: 'moonboard', now: 1_000 });
     markDriveLive();
     noteDriveClimbLit();
     exitDriveMode('link_dropped');
@@ -153,6 +154,8 @@ describe('Drive Mode Ended', () => {
       climbsLit: 1,
       inSession: true,
       windowRenewals: 0,
+      windowSec: null,
+      boardType: 'moonboard',
     });
     vi.restoreAllMocks();
   });
@@ -196,6 +199,7 @@ describe('resolveDriveModeExit', () => {
     phase: 'live',
     sessionId: 'session-1',
     boardId: 7,
+    boardType: 'kilter',
     startedAt: 0,
     startedBy: 'swipe',
     climbsLit: 0,
@@ -270,15 +274,23 @@ describe('resolveDriveModeExit', () => {
 
 describe('Drive Mode Started', () => {
   it('fires once at every start, before the drive reaches the wall, with what started it', () => {
-    enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: null, windowMs: 45_000 });
+    enterDriveMode({ startedBy: 'tap', sessionId: 'session-1', boardId: null, boardType: 'kilter', windowMs: 45_000 });
     expect(analytics.track).toHaveBeenCalledTimes(1);
-    expect(analytics.track).toHaveBeenCalledWith('Drive Mode Started', { startedBy: 'tap', inSession: true });
+    expect(analytics.track).toHaveBeenCalledWith('Drive Mode Started', {
+      startedBy: 'tap',
+      inSession: true,
+      boardType: 'kilter',
+    });
     // Going live and lighting climbs say nothing more.
     markDriveLive();
     noteDriveClimbLit();
     expect(analytics.track).toHaveBeenCalledTimes(1);
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
-    expect(analytics.track).toHaveBeenLastCalledWith('Drive Mode Started', { startedBy: 'swipe', inSession: false });
+    expect(analytics.track).toHaveBeenLastCalledWith('Drive Mode Started', {
+      startedBy: 'swipe',
+      inSession: false,
+      boardType: null,
+    });
   });
 });
 
@@ -317,7 +329,13 @@ describe('the keep-lighting window', () => {
     exitDriveMode('window_ended');
     expect(analytics.track).toHaveBeenLastCalledWith(
       'Drive Mode Ended',
-      expect.objectContaining({ reason: 'window_ended', startedBy: 'tap', climbsLit: 3, windowRenewals: 2 }),
+      expect.objectContaining({
+        reason: 'window_ended',
+        startedBy: 'tap',
+        climbsLit: 3,
+        windowRenewals: 2,
+        windowSec: 45,
+      }),
     );
   });
 

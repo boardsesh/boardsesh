@@ -127,7 +127,9 @@ export const SHARED_EVENTS = {
   // keep-lighting window ran out, or its setting was turned off), durationSec,
   // climbsLit (the swipe's own climb included), inSession, windowRenewals (2.7:
   // lit climbs that renewed the keep-lighting window; 0 with no window, and
-  // absent before 2.7), startedBy: 'swipe' (the wall button's swipe) | 'tap'
+  // absent before 2.7), windowSec (2.7: the window's length, 30 | 45 | 60, or
+  // null for an open-ended drive), boardType (2.7: 'kilter', 'moonboard', ...,
+  // or null when unknown, for the MoonBoard field test), startedBy: 'swipe' (the wall button's swipe) | 'tap'
   // (a press on Put on board that keeps lighting: from 2.7 the keep-lighting
   // window, or an open-ended drive where the setting says Until I stop; before
   // 2.7 a solo press that put a climb up, #7113 QA) | 'action' (the
@@ -138,7 +140,7 @@ export const SHARED_EVENTS = {
   DriveModeEnded: 'Drive Mode Ended',
   // Mobile-only (2.7): a drive started, before it reached the wall (arming).
   // Props (built by `driveModeStarted`): { startedBy (as Drive Mode Ended),
-  // inSession }. Low volume: once per drive, never per climb. Every Drive Mode
+  // inSession, boardType (as Drive Mode Ended) }. Low volume: once per drive, never per climb. Every Drive Mode
   // Started has one Drive Mode Ended.
   DriveModeStarted: 'Drive Mode Started',
   // Mobile-only (#6940): the climber asked for the queue. Props (built by

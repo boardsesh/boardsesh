@@ -32,6 +32,8 @@ export type DriveModeState = {
   sessionId: string | null;
   /** The board being driven, once known. */
   boardId: number | null;
+  /** The board type driven ('kilter', 'moonboard', ...), for Drive Mode Started / Ended. Null when unknown. */
+  boardType: string | null;
   /** `Date.now()` when the swipe landed. */
   startedAt: number;
   /** What started it, for Drive Mode Ended. */
@@ -190,6 +192,8 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
     climbsLit: ended.climbsLit,
     inSession: ended.sessionId !== null,
     windowRenewals: ended.windowRenewals,
+    windowMs: ended.windowMs,
+    boardType: ended.boardType,
   });
 }
 
@@ -201,6 +205,7 @@ function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = D
 export function enterDriveMode({
   sessionId,
   boardId,
+  boardType = null,
   startedBy,
   windowMs = null,
   windowSetting = null,
@@ -208,6 +213,8 @@ export function enterDriveMode({
 }: {
   sessionId: string | null;
   boardId: number | null;
+  /** The board type driven, for analytics only. */
+  boardType?: string | null;
   startedBy: DriveModeStartedBy;
   windowMs?: number | null;
   windowSetting?: KeepLightingSettingKey | null;
@@ -218,6 +225,7 @@ export function enterDriveMode({
     phase: 'arming',
     sessionId,
     boardId,
+    boardType,
     startedAt: now,
     startedBy,
     climbsLit: 0,
@@ -229,7 +237,7 @@ export function enterDriveMode({
   stoppedForLink = false;
   lastExitReason = null;
   emit();
-  trackDriveModeStarted({ startedBy, inSession: sessionId !== null });
+  trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
 }
 
 /**
@@ -312,8 +320,16 @@ export function shouldCarryDriveIntoCrew({
 }
 
 /** Carry solo, setting-driven driving into the crew that just formed: a live drive. */
-export function carryDriveIntoCrew({ sessionId, boardId }: { sessionId: string | null; boardId: number | null }): void {
-  enterDriveMode({ sessionId, boardId, startedBy: 'solo_carry' });
+export function carryDriveIntoCrew({
+  sessionId,
+  boardId,
+  boardType = null,
+}: {
+  sessionId: string | null;
+  boardId: number | null;
+  boardType?: string | null;
+}): void {
+  enterDriveMode({ sessionId, boardId, boardType, startedBy: 'solo_carry' });
   markDriveLive({ boardId });
 }
 

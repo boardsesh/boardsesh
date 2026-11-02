@@ -181,7 +181,13 @@ import { climbChangeStaysViewOnly, swipeStaysViewOnly } from './play-drawer-navi
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
-import { isHolderSelfAccount, isWallControlDrawn, resolveWallControl, type WallControlState } from './wall-control';
+import {
+  isHolderSelfAccount,
+  isWallControlDrawn,
+  resolveBoardSheetStatus,
+  resolveWallControl,
+  type WallControlState,
+} from './wall-control';
 import { useWallControl, type DriveStartOutcome } from './use-wall-control';
 import { useDriveLightingMode, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
 import { startDrive, startKeepLighting } from './drive-runner';
@@ -1916,6 +1922,7 @@ export function PlayCore({
         model: wallControlForDriveRef.current,
         wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
         sessionId,
+        boardType: boardName,
         startedBy,
         committing,
         commit: () => handleSetActive({ skipBusyWall: true }),
@@ -1930,6 +1937,7 @@ export function PlayCore({
     [
       swipeToDriveEnabled,
       sessionId,
+      boardName,
       currentClimbQueueItem,
       commitBarModel.mode,
       handleSetActive,
@@ -1948,10 +1956,11 @@ export function PlayCore({
       startKeepLighting({
         plan,
         sessionId,
+        boardType: boardName,
         wallHeldByOtherUser: bluetoothForRelightRef.current?.wallHeldByOtherUser ?? false,
       });
     },
-    [sessionId],
+    [sessionId, boardName],
   );
   // Put on {board} (#7076): the climb on screen is on another board at this gym.
   // A preview goes up first (the busy-wall question can take the tap instead),
@@ -3248,6 +3257,7 @@ export function PlayCore({
           handleTickBarDismiss={handleTickBarDismiss}
           handleCloseBleControl={handleCloseBleControl}
           onBoardSheetDrive={sheetOffersDrive ? handleBoardSheetDrive : undefined}
+          boardSheetStatus={resolveBoardSheetStatus(wallControl)}
         />
       </View>
       {renderSidePanel ? renderSidePanel(sidePanelClimb) : null}

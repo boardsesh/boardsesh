@@ -104,9 +104,9 @@ export function DriveModeWatcher(): null {
         lightOnSwipe,
       })
     ) {
-      carryDriveIntoCrew({ sessionId, boardId });
+      carryDriveIntoCrew({ sessionId, boardId, boardType: bluetooth?.boardName ?? null });
     }
-  }, [isCrewSession, linked, lightOnSwipe, sessionId, boardId]);
+  }, [isCrewSession, linked, lightOnSwipe, sessionId, boardId, bluetooth?.boardName]);
 
   useEffect(() => {
     if (lightOnSwipeRef.current === lightOnSwipe) return;

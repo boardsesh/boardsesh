@@ -41,9 +41,9 @@ afterEach(() => resetDriveModeForTests());
 
 describe('startDrive', () => {
   it('with the link up: arms, commits the preview without asking, and lights it', () => {
-    const run = input({ committing: true });
+    const run = input({ committing: true, boardType: 'moonboard' });
     expect(startDrive(run)).toBe('started');
-    expect(getDriveMode()).toMatchObject({ phase: 'arming', sessionId: 'session-1' });
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', sessionId: 'session-1', boardType: 'moonboard' });
     expect(run.commit).toHaveBeenCalledOnce();
     expect(run.relight).toHaveBeenCalledOnce();
     expect(run.connect).not.toHaveBeenCalled();
@@ -179,6 +179,7 @@ describe('startKeepLighting', () => {
       startKeepLighting({
         plan: { windowMs: 30_000, setting: 'putOnBoardKeepsLighting' },
         sessionId: 'session-1',
+        boardType: 'kilter',
         wallHeldByOtherUser: false,
       }),
     ).toBe(true);
@@ -190,7 +191,11 @@ describe('startKeepLighting', () => {
       windowSetting: 'putOnBoardKeepsLighting',
       expiresAt: null,
     });
-    expect(effects.track).toHaveBeenCalledWith('Drive Mode Started', { startedBy: 'tap', inSession: true });
+    expect(effects.track).toHaveBeenCalledWith('Drive Mode Started', {
+      startedBy: 'tap',
+      inSession: true,
+      boardType: 'kilter',
+    });
   });
 
   it('arms an open-ended drive for Until I stop', () => {

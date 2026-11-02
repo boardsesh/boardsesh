@@ -38,6 +38,7 @@ vi.mock('../../../providers/bluetooth-provider', () => ({
     isConnected: reads.current.isConnected,
     virtualWallHeld: reads.current.virtualWallHeld,
     loading: reads.current.loading,
+    boardName: 'moonboard',
   }),
 }));
 // The queue is read narrowly: the current climb's uuid as the trigger, the
@@ -407,6 +408,8 @@ describe('DriveModeWatcher: a crew forms', () => {
       phase: 'live',
       sessionId: 'session-1',
       boardId: 7,
+      // The linked board's type, for Drive Mode Started / Ended.
+      boardType: 'moonboard',
       startedBy: 'solo_carry',
     });
     // It stays: the same session, the same board.
