@@ -269,6 +269,8 @@ bool serialQa(const String& encoded) {
     if (fixtureBle.snapshotQa("", snapshot, snapshotError)) {
         response["ready"] = snapshot.ready;
         response["runId"] = snapshot.runId;
+        // Schema 1 reports the MoonBoard's policy, the only one a QA run
+        // changes. Kilter and Tension are last-connection-wins either way.
         response["policy"] = snapshot.runId.isEmpty() ? "concurrent" : "last-connection-wins";
         response["leaseRemainingMs"] = snapshot.leaseRemainingMs;
         JsonArray boards = response["boards"].to<JsonArray>();
