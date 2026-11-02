@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { announceQueued } from '../../lib/announce-queued';
 import { hapticSelection } from '../../lib/haptics';
 import {
   DEFAULT_KEEP_LIGHTING,
@@ -12,6 +13,7 @@ import {
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { QueueActiveClimbContext } from '../../providers/queue/queue-contexts';
 import { markWallCleared, resetWallCleared } from './wall-cleared-store';
+import { getDriveMode, stopDrivingForLink } from '../play-drawer/drive-mode-store';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
@@ -125,11 +127,23 @@ export function BleControlSheetHost({
   }, [bluetooth]);
 
   // This phone's wall button reads the local store (#6939); every other viewer
-  // hears it through board presence (#7015).
+  // hears it through board presence (#7015). A dark wall is the climber
+  // stopping: a keep-lighting window or a drive ends here, as a press on the
+  // wall button would end it, so the next pick is a preview and the button's
+  // Put on board means what it says.
   const handleClearLights = useCallback(() => {
+    const drive = getDriveMode();
+    if (drive) {
+      stopDrivingForLink();
+      announceQueued(
+        drive.windowMs !== null
+          ? t('session:playView.wallControl.stoppedWindow')
+          : t('session:playView.wallControl.stoppedDriving'),
+      );
+    }
     markWallCleared(clearedClimbUuid === undefined ? activeClimbUuid : clearedClimbUuid);
     void bluetooth?.turnOffAllLights();
-  }, [bluetooth, activeClimbUuid, clearedClimbUuid]);
+  }, [bluetooth, activeClimbUuid, clearedClimbUuid, t]);
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {

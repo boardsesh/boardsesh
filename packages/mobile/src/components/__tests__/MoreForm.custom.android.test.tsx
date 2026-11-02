@@ -111,36 +111,3 @@ describe('MoreForm on Android with custom rows', () => {
     expect(getByTestId('compose-host')).toBe(host);
   });
 });
-
-describe('MoreForm on Android: a select row', () => {
-  it('marks the current choice in the open menu with a ✓, and only that one', () => {
-    const { container } = render(
-      createElement(MoreForm, {
-        model: {
-          sections: [
-            {
-              key: 'keep',
-              rows: [
-                {
-                  kind: 'select',
-                  key: 'keep',
-                  label: 'Keep lighting after Put on board',
-                  selectedKey: '45',
-                  options: [
-                    { key: 'off', label: 'Off' },
-                    { key: '45', label: '45 seconds' },
-                    { key: '60', label: '1 minute' },
-                  ],
-                  onSelect: () => undefined,
-                },
-              ],
-            },
-          ],
-        },
-      }),
-    );
-    const text = container.textContent ?? '';
-    expect(text.split('✓')).toHaveLength(2);
-    expect(text).toContain('✓45 seconds');
-  });
-});

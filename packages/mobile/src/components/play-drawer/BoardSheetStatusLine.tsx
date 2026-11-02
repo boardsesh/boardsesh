@@ -1,21 +1,32 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
+import { materialSurfaces } from '../../theme/colors';
 import { Text } from '../Text';
+import { spokenCaption } from './track-label-text';
 import type { BoardSheetStatus } from './wall-control';
+import { windowTimeValue } from './wall-control-text';
 import { useWindowSecondsLeft } from './WallWindowClock';
 
 /**
  * The player's board sheet's status line (spec B3), uncapped at every text
  * size: "Preview · not on the wall", "On the wall", "Each pick lights · 38
  * seconds left", or the open-ended drive's sentence. A leaf, so the window's
- * 1 Hz count re-renders only this line while the sheet is open.
+ * 1 Hz count re-renders only this line while the sheet is open. It is the
+ * full-size fallback for the capped wall button, so it takes Velvet's opaque
+ * secondary label, as the top bar's preview line does, and a screen reader
+ * hears the "·" as a pause. The window's spoken form keeps the button's 10 s
+ * step (spec B2.2): focus lands here when the sheet opens, and TalkBack
+ * re-reads a focused node's changed label, so a 1 Hz label would talk over
+ * the climber the whole time.
  */
 function BoardSheetStatusLineComponent({ status }: { status: BoardSheetStatus }) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { colorScheme } = useTheme();
   const clock = useWindowSecondsLeft(1);
+  const spokenClock = useWindowSecondsLeft(10);
   let line: string | null;
+  let spoken: string | null = null;
   switch (status) {
     case 'preview':
       line = t('playView.wallControl.sheetStatusPreview');
@@ -28,6 +39,9 @@ function BoardSheetStatusLineComponent({ status }: { status: BoardSheetStatus })
       line = clock
         ? `${t('playView.wallControl.eachPickLights')} · ${t('playView.wallControl.secondsLeft', { count: clock.secondsLeft })}`
         : null;
+      spoken = spokenClock
+        ? `${t('playView.wallControl.eachPickLights')}, ${windowTimeValue(spokenClock.secondsLeft * 1000, t)}`
+        : null;
       break;
     case 'driving':
       line = t('playView.wallControl.sheetStatusDriving');
@@ -35,7 +49,13 @@ function BoardSheetStatusLineComponent({ status }: { status: BoardSheetStatus })
   }
   if (!line) return null;
   return (
-    <Text variant="subheadline" color={systemColors.secondaryLabel} testID="ble-control-status">
+    <Text
+      variant="subheadline"
+      // iOS's translucent secondaryLabel measures 3.44:1 on a white sheet.
+      color={materialSurfaces[colorScheme].secondaryLabel}
+      accessibilityLabel={spoken ?? spokenCaption(line)}
+      testID="ble-control-status"
+    >
       {line}
     </Text>
   );

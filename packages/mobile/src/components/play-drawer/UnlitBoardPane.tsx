@@ -14,6 +14,7 @@ import { spacing } from '../../theme/tokens';
 import { computeContainedBoardSize } from './play-drawer-layout';
 import { ACTION_BAR_SECONDARY_ROW_HEIGHT } from './PlayDrawerActionBar';
 import type { BoardConfig } from './play-drawer-types';
+import { useClimbChangeLights } from './use-climb-change-lights';
 
 // The split player's first screen around the board (fit to the pane's height,
 // see computeFitToHeightFirstScreenHeight), approximated so the board sits where
@@ -26,10 +27,12 @@ const TICK_ROW_HEIGHT_ESTIMATE = 72;
 type BoardBox = { width: number; height: number };
 
 /**
- * The phone split's empty player: the active board drawn unlit with "Tap a
- * climb to light it" where the climb's name will be. The pane stays on screen
- * with nothing playing, so the split never reflows when the first climb opens;
- * the holds just light up. Passed to PlayDrawer as `paneEmptyState`.
+ * The phone split's empty player: the active board drawn unlit with what a
+ * tap on a climb does where the climb's name will be: "Tap a climb to preview
+ * it", or "Tap a climb to light it" where a list tap lights (Light the board
+ * when I tap a climb solo, or driving: `useClimbChangeLights('tap')`). The pane
+ * stays on screen with nothing playing, so the split never reflows when the
+ * first climb opens. Passed to PlayDrawer as `paneEmptyState`.
  */
 function UnlitBoardPaneComponent({ boardConfig, paneTopInset }: { boardConfig: BoardConfig; paneTopInset: boolean }) {
   const { t } = useTranslation('session');
@@ -37,6 +40,7 @@ function UnlitBoardPaneComponent({ boardConfig, paneTopInset }: { boardConfig: B
   const insets = useSafeAreaInsets();
   const topRowHeight = useChromeIconButtonSize();
   const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
+  const tapLights = useClimbChangeLights('tap');
   const renderData = useMemo(() => {
     const setIds = parseSetIds(boardConfig.setIds);
     if (setIds.length === 0) return null;
@@ -74,7 +78,7 @@ function UnlitBoardPaneComponent({ boardConfig, paneTopInset }: { boardConfig: B
       <View style={{ height: topRowHeight }} />
       <View style={styles.header}>
         <Text variant="headline" color={systemColors.secondaryLabel} style={styles.hint}>
-          {t('playView.paneEmpty.unlitHint')}
+          {tapLights ? t('playView.paneEmpty.unlitHintLights') : t('playView.paneEmpty.unlitHint')}
         </Text>
       </View>
       <View style={styles.boardArea} onLayout={handleBoardAreaLayout}>

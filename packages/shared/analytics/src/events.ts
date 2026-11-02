@@ -140,7 +140,8 @@ export const SHARED_EVENTS = {
   // the press lit the wall and the app adopts it when it next runs: durationSec
   // counts from that press, climbsLit only the climbs the app itself saw
   // light. Android arms it in the app at the press, like Put on board, and an
-  // unlit press ends 'arming_timed_out') }. A
+  // unlit press ends 'arming_timed_out'. A press after a window ran out ends
+  // that one 'window_ended' at its own end and starts its own) }. A
   // window that a swipe or Light every climb turned open-ended keeps
   // startedBy 'tap'. Fired once per drive by the drive-mode store.
   DriveModeEnded: 'Drive Mode Ended',
@@ -480,7 +481,11 @@ export const SHARED_EVENTS = {
   // auto-select), false when the tap opens the device picker. `placement`
   // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
   // bulb (open or collapsed), which shares 'board_control_indicator' with the
-  // floating JS capsule's bulb.
+  // floating JS capsule's bulb. 2.7: `boardUuid` (the board the connect is for:
+  // the selected gym or saved board, or the one a move to another gym board
+  // goes to; absent with no board identity) and `phoneNeverConnected` (true
+  // until this phone's first connect; absent while its history isn't loaded),
+  // to read a newcomer's first connect apart from a regular's.
   BoardConnectTapped: 'Board Connect Tapped',
   // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
   // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |
@@ -578,6 +583,15 @@ export const SHARED_EVENTS = {
   // devicesTotal=0 session with location denied is the OS suppressing results,
   // not an absent board. Analyse it by USERS, not events — see
   // posthog-empty-picker-oracle-is-weak.
+  // 2.7 release watch (built by `blePickerSessionProps`, ble-picker-events.ts):
+  // `targetFiltered` (the list first showed filtered to a known gym or saved
+  // board), `searchedAnyBoard` (Search for any board tapped), `listedCount`
+  // (boards the list showed at close), `targetNotListedSeen` ("your board isn't
+  // in the list" showed), `tipsSeen` (the troubleshooting tips showed),
+  // `secondsOpen` (list shown to close), `phoneNeverConnected` (null while the
+  // phone's history isn't loaded) and `entrySurface` (the last Board Connect
+  // Tapped surface within 2 minutes before the list, or null). Older events have
+  // none of them.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   // Consent-driven scan recon: fired once per discovered board when a user
   // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw

@@ -9,6 +9,7 @@ import {
   keepLightingWindowMs,
   lockScreenPressKeepsLighting,
   resolveKeepLightingPlan,
+  resolveKeepLightingReach,
   sanitiseKeepLighting,
 } from '../keep-lighting';
 import { DEFAULT_SETTINGS } from '../../settings/defaults';
@@ -103,5 +104,51 @@ describe('lockScreenPressKeepsLighting', () => {
     ],
   ])('%s', (_name, swipeToDriveEnabled, lightOnSwipe, inSession, expected) => {
     expect(lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession })).toBe(expected);
+  });
+});
+
+// What the copy promises after Put on board: the plan read against the two
+// settings it does not take.
+describe('resolveKeepLightingReach', () => {
+  const window45 = { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' } as const;
+  const untilStopped = { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } as const;
+  const none = { swipeLightsSolo: false, autoDisconnectSeconds: null };
+
+  it('reads the plan as it is with neither setting on', () => {
+    expect(resolveKeepLightingReach({ ...none, plan: window45 })).toEqual({ kind: 'window', seconds: 45 });
+    expect(resolveKeepLightingReach({ ...none, plan: untilStopped })).toEqual({
+      kind: 'until_stop',
+      autoDisconnects: false,
+    });
+    expect(resolveKeepLightingReach({ ...none, plan: null })).toEqual({ kind: 'one_climb' });
+  });
+
+  // The wall control's `tapDrive: 'resume'`: the press opens no window.
+  it('promises one climb solo with Light the board as I swipe on', () => {
+    expect(resolveKeepLightingReach({ ...none, plan: window45, swipeLightsSolo: true })).toEqual({ kind: 'one_climb' });
+    expect(resolveKeepLightingReach({ ...none, plan: untilStopped, swipeLightsSolo: true })).toEqual({
+      kind: 'one_climb',
+    });
+  });
+
+  // `clampWindowEnd`: the window ends when auto-disconnect lets go of the board.
+  it('takes a shorter auto-disconnect as the window, and lets it end Until I stop', () => {
+    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 30 })).toEqual({
+      kind: 'window',
+      seconds: 30,
+    });
+    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 45 })).toEqual({
+      kind: 'window',
+      seconds: 45,
+    });
+    expect(resolveKeepLightingReach({ ...none, plan: window45, autoDisconnectSeconds: 120 })).toEqual({
+      kind: 'window',
+      seconds: 45,
+    });
+    expect(resolveKeepLightingReach({ ...none, plan: untilStopped, autoDisconnectSeconds: 600 })).toEqual({
+      kind: 'until_stop',
+      autoDisconnects: true,
+    });
+    expect(resolveKeepLightingReach({ ...none, plan: null, autoDisconnectSeconds: 10 })).toEqual({ kind: 'one_climb' });
   });
 });

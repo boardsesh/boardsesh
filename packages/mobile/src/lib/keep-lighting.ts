@@ -125,3 +125,49 @@ export function lockScreenPressKeepsLighting({
 }): boolean {
   return swipeToDriveEnabled && !(lightOnSwipe && !inSession);
 }
+
+/**
+ * What a press on Put on board keeps lighting, as the climber will see it, for
+ * the copy that promises it (the first-connect confirmation, the player's
+ * preview-first card). It reads the plan against two settings the plan does
+ * not take:
+ *
+ * - Solo with Light the board as I swipe on, the press opens no window (the
+ *   wall control's `tapDrive: 'resume'`). The setting lights the swipes and a
+ *   climb picked from a list stays a preview, so nothing past the one climb is
+ *   promised.
+ * - Auto-disconnect lets go of the board its timeout after the last climb that
+ *   lit, and lighting stops with the link (`clampWindowEnd`). Each climb that
+ *   lights restarts both clocks, so a shorter timeout is the window, and an
+ *   Until I stop drive ends there too.
+ *
+ * - `one_climb` — the press lights that climb and nothing after it.
+ * - `window` — every pick lights for `seconds`.
+ * - `until_stop` — every pick lights until the climber taps the button;
+ *   `autoDisconnects` when auto-disconnect can end it first.
+ */
+export type KeepLightingReach =
+  | { kind: 'one_climb' }
+  | { kind: 'window'; seconds: number }
+  | { kind: 'until_stop'; autoDisconnects: boolean };
+
+export function resolveKeepLightingReach({
+  plan,
+  swipeLightsSolo,
+  autoDisconnectSeconds,
+}: {
+  /** `resolveKeepLightingPlan`'s plan, or null where the press lights one climb. */
+  plan: KeepLightingPlan | null;
+  /** Solo (no crew, not browsing a shared session) with Light the board as I swipe on. */
+  swipeLightsSolo: boolean;
+  /** Auto-disconnect's timeout, or null while auto-disconnect is off. */
+  autoDisconnectSeconds: number | null;
+}): KeepLightingReach {
+  if (plan === null || swipeLightsSolo) return { kind: 'one_climb' };
+  if (plan.windowMs === null) return { kind: 'until_stop', autoDisconnects: autoDisconnectSeconds !== null };
+  const windowSeconds = Math.round(plan.windowMs / 1000);
+  if (autoDisconnectSeconds !== null && autoDisconnectSeconds < windowSeconds) {
+    return { kind: 'window', seconds: autoDisconnectSeconds };
+  }
+  return { kind: 'window', seconds: windowSeconds };
+}

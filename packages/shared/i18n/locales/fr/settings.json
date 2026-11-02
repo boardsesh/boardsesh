@@ -468,8 +468,9 @@
     "relightBoard": "Rallumer la board",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Se déconnecter de la board après la durée choisie sans nouveau bloc affiché.",
+      "description": "Se déconnecter de la board après la durée choisie sans bloc allumé ni ouvert en aperçu.",
       "cutsLighting": "La déconnexion automatique libère la board après {{timeout}}, donc l'éclairage s'arrête aussi à ce moment-là.",
+      "disconnectedToast": "Board déconnectée après {{timeout}} sans nouveau bloc allumé ni ouvert en aperçu. Touche Allumer sur la board pour te reconnecter.",
       "enabledLabel": "Déconnexion automatique",
       "enabledDescription": "Laisser les autres grimpeurs se connecter à l'expiration du délai.",
       "timeoutLabel": "Déconnecter après",
@@ -495,9 +496,11 @@
         "off": "Désactivé",
         "untilStopped": "Jusqu'à ce que j'arrête",
         "moonboardLabel": "Sur un MoonBoard",
+        "moonboardAccessibilityLabel": "Continuer d'allumer sur un MoonBoard",
         "moonboardDescription": "La plupart des contrôleurs MoonBoard supportent mal qu'on change de téléphone, donc ce réglage s'applique aussi en session.",
         "sheetMoonboardLabel": "Continuer d'allumer sur ce MoonBoard",
         "inSessionLabel": "Aussi en session",
+        "inSessionAccessibilityLabel": "Continuer d'allumer aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
         "inSessionOffReason": "Activez Continuer d'allumer après Allumer sur la board pour utiliser ce réglage.",
         "footer": "Chaque bloc qui s'allume relance le chrono. Si vous vous reposez plus longtemps, le bloc suivant s'ouvre en aperçu."
@@ -507,7 +510,7 @@
       "onTapLabel": "Allumer la board quand je touche un bloc",
       "onTapDescription": "Chaque toucher dans une liste allume le bloc, sans limite de temps. Désactivé, le toucher ouvre un aperçu.",
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
-      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste dans votre file et ouvre en aperçu le bloc touché. La board garde son bloc jusqu'à Allumer sur la board."
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur charge cette liste. Si « Allumer la board quand je touche un bloc » est activé, la liste remplace votre file et le bloc touché s'allume. S'il est désactivé, la liste à partir du bloc touché passe dans À suivre et ce bloc s'ouvre en aperçu, tandis que la board garde son bloc jusqu'à Allumer sur la board."
     },
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",

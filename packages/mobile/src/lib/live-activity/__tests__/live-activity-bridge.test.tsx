@@ -566,6 +566,8 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
 
     expect(bt.armUndoWallChangeToast).not.toHaveBeenCalled();
     expect(bt.reassertWall).toHaveBeenCalledTimes(1);
+    // No connect of its own behind it, so nothing carries to a later link.
+    expect(bt.reassertWall).toHaveBeenCalledWith();
     expect(bt.connect).not.toHaveBeenCalled();
   });
 

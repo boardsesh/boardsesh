@@ -583,8 +583,8 @@
       },
       "crowd": {
         "title": "Cotillear sin mover el muro",
-        "p1": "Con alguien más en tu sesión, deslizar permite explorar sin cambiar el plafón, salvo que estés al mando. Toca Poner en el plafón para encender un bloque, o En el plafón arriba para volver al bloque encendido.",
-        "p2": "Si el botón del reproductor dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Un toque abre una vista previa y Poner en el plafón lo enciende, así que explorar no toca el muro salvo que actives Iluminar el plafón al tocar un bloque o Iluminar el plafón al deslizar en Ajustes, luego Plafón.",
+        "p1": "Con alguien más en tu sesión, deslizar permite explorar sin cambiar el plafón, salvo que tu teléfono tenga el plafón y estés al mando o acabes de poner un bloque. Toca Poner en el plafón para encender un bloque, o En el plafón arriba para volver al bloque encendido.",
+        "p2": "Si tu teléfono tiene el plafón, tras Poner en el plafón los bloques que elijas durante los 45 segundos siguientes también se encienden, mientras También en una sesión esté activado; un MoonBoard sigue encendiendo hasta que pares. El botón dice Cada bloque se enciende: tócalo para parar antes o deja que se acabe el tiempo. Si alguien de tu crew pone un bloque, también se acaba. En los demás teléfonos, Poner en el plafón enciende solo ese bloque. Si el botón dice Estás al mando del plafón, tócalo para dejar el mando sin desconectarte. Si no, un toque abre una vista previa, así que explorar no toca el muro salvo que actives Iluminar el plafón al tocar un bloque o Iluminar el plafón al deslizar en Ajustes, luego Plafón.",
         "previewLink": "Toca un bloque para verlo en vista previa",
         "drivingLink": "Cómo tomar y dejar el mando del plafón"
       },
@@ -714,7 +714,7 @@
       "breadcrumb": "Plafón y Bluetooth",
       "hero": {
         "title": "Conecta el móvil al plafón",
-        "subtitle": "Lee el botón esmerilado del muro: Poner en el plafón enciende este bloque. Estás al mando del plafón significa que cada bloque que elijas se enciende."
+        "subtitle": "Lee el botón del muro: Poner en el plafón enciende este bloque y los siguientes que elijas durante un rato; en un MoonBoard, hasta que pares. Estás al mando del plafón, brillante, enciende cada bloque hasta que pares."
       },
       "connect": {
         "title": "Conectar",
@@ -732,8 +732,8 @@
         "row2": "Apagar todas las luces. Tu móvil sigue conectado.",
         "row3": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
         "row4": "Iluminar la presa de arriba. Solo MoonBoard.",
-        "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, luego Plafón, y en el menú de la bombilla superior. Ahí mismo eliges cuánto tiempo sigue encendiendo Poner en el plafón. La desconexión automática libera el plafón tras 30 segundos sin uso. Para explorar sin encender, deja el mando y deja apagados ambos interruptores de iluminación. Mientras estás al mando, cada bloque que eliges se enciende aunque estén apagados.",
-        "p3": "Sin plafón conectado, Poner en el plafón conecta y enciende el bloque de la pantalla. Si escalas solo, los siguientes bloques que elijas se encienden durante 45 segundos tras cada bloque encendido; un MoonBoard sigue encendiendo hasta que lo dejes. En un grupo, hace falta activar También en una sesión. La bombilla superior puede reconectar al último plafón que usaste.",
+        "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, luego Plafón, y en el menú de la bombilla superior. Ahí mismo eliges cuánto tiempo sigue encendiendo Poner en el plafón. La desconexión automática libera el plafón tras 30 segundos sin uso. Para explorar sin encender, deja apagados ambos interruptores de iluminación, y antes deja el mando o espera a que se acabe el tiempo de Poner en el plafón (toca Cada bloque se enciende para acabarlo antes). Mientras estás al mando, o durante ese tiempo tras Poner en el plafón, cada bloque que eliges se enciende aunque estén apagados.",
+        "p3": "Sin plafón conectado, Poner en el plafón conecta y enciende el bloque de la pantalla. Después, los siguientes bloques que elijas se encienden durante 45 segundos tras cada bloque encendido; en grupo, solo en el teléfono que tiene el plafón y con También en una sesión activado. Un MoonBoard sigue encendiendo hasta que lo dejes, en ese teléfono también en grupo. La bombilla superior puede reconectar al último plafón que usaste.",
         "shotAlt": "Controles de un plafón conectado",
         "shotCaption": "Vuelve a iluminar, apaga todas las luces o desconecta. Encender cada bloque toma el mando cuando está disponible."
       },
@@ -778,7 +778,7 @@
       },
       "driving": {
         "title": "Sabe cuándo estás al mando del plafón",
-        "p1": "El botón esmerilado del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla, y los siguientes que elijas también se encienden durante un rato. Estás al mando del plafón, esmerilado y brillante, significa que cada bloque que elijas se enciende hasta que lo dejes, también en grupo. Desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque, para empezar; tócalo para parar.",
+        "p1": "El botón del muro controla el plafón físico. Lee su etiqueta: Poner en el plafón conecta si hace falta y enciende el bloque de la pantalla, y los siguientes que elijas también se encienden durante un rato. En un MoonBoard, Poner en el plafón te pone al mando hasta que pares. Estás al mando del plafón, esmerilado y brillante, significa que cada bloque que elijas se enciende hasta que lo dejes, también en grupo. Desliza el botón a la izquierda, o mantenlo pulsado y elige Encender cada bloque, para empezar; tócalo para parar.",
         "p2": "Para tomar el mando cuando el botón muestra ‹‹, desliza el botón del muro hacia la izquierda. Suelta cuando diga Suelta para encender cada bloque. Se conecta si hace falta, enciende el bloque de la pantalla y los que elijas después. Deslizar sobre el dibujo del plafón cambia de bloque.",
         "p3": "Toca Estás al mando del plafón para dejar el mando y explorar sin desconectarte. La etiqueta cambia a Desconectar plafón; tocarla desconecta. También puedes tomar el mando con Encender cada bloque en ⋯, luego Controles del plafón, o en las acciones del lector de pantalla del botón.",
         "clipAlt": "Deslizar el botón del muro hacia la izquierda para tomar el mando y tocarlo para dejarlo",
@@ -804,7 +804,7 @@
         "title": "Toca un bloque para verlo en vista previa",
         "intro": "Un toque en un bloque de una lista lo abre en vista previa, y el plafón se queda como está.",
         "p1": "La vista previa abre el bloque en el reproductor sin tocar tu cola ni el muro. Si la vista previa viene de una lista, los deslizamientos siguen esa lista. Una vista previa independiente puede no tener otro bloque al que deslizar.",
-        "p2": "Cuando exploras sin encender, el botón de arriba te lleva de vuelta: Mi elección a tu bloque, En el plafón al bloque encendido. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa · no está en el plafón cuando tu teléfono tiene un plafón. Toca Poner en el plafón (o Activar) cuando quieras el bloque. Se enciende, y los siguientes que elijas se encienden durante 45 segundos tras cada uno. Si el botón del reproductor dice Estás al mando del plafón, cambiar de bloque enciende el plafón; tócalo antes para dejar el mando.",
+        "p2": "Cuando exploras sin encender, el botón de arriba te lleva de vuelta: Mi elección a tu bloque, En el plafón al bloque encendido. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa · no está en el plafón cuando tu teléfono tiene un plafón o se encendió un bloque en la última hora. Toca Poner en el plafón cuando quieras el bloque: se enciende y, por defecto, los siguientes que elijas se encienden durante 45 segundos tras cada uno (un MoonBoard sigue encendiendo hasta que lo dejes). Activar lo elige sin encenderlo. Si el botón del reproductor dice Estás al mando del plafón, cambiar de bloque enciende el plafón; tócalo antes para dejar el mando.",
         "sessionsLink": "Cómo una sesión mantiene el muro quieto",
         "clipAlt": "Explorar una lista en el reproductor sin encender sus bloques",
         "clipCaption": "Explora la lista mientras el plafón mantiene su bloque. Poner en el plafón lo enciende cuando tú eliges.",

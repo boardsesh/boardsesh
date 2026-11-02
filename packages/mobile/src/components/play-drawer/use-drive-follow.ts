@@ -6,7 +6,7 @@ import { announceQueued } from '../../lib/announce-queued';
 import { hapticLight, hapticSuccess } from '../../lib/haptics';
 import { subscribeCrewMoves } from '../../lib/relay-receipt';
 import { clearCrewPutUp, formatCrewPutUp, resolveCrewPutUp, showCrewPutUp } from './crew-put-up-store';
-import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } from './drive-mode-store';
+import { exitDriveMode, getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } from './drive-mode-store';
 
 /**
  * A crewmate puts a climb up while this phone drives the wall (#7113). This
@@ -21,21 +21,43 @@ import { getDriveMode, markDriveLive, noteDriveClimbLit, type DriveModePhase } f
  * Any other change of current climb first drops it: a crewmate's move the
  * driver's own swipe overtook is never said later.
  *
+ * Put on board's keep-lighting window (2.7) is different: it lights this
+ * phone's own picks, so a crewmate's put-up ends it (`window_ended`). The
+ * auto-sender still lights their climb, and this phone's next pick is a
+ * preview again, with the busy-wall question in front of Put on board. A
+ * crewmate's relay never renews the window, or the holder's next swipe could
+ * take the wall back from the crewmate at it.
+ *
+ * A window a Lock Screen press opened while JS was suspended (2.7) is this
+ * phone's window too, so `beforeCrewMove` adopts it first
+ * (`adoptLockScreenLighting`) and the put-up ends it like any other. Left
+ * unadopted, the next adoption (the app coming back) would bring it back after
+ * the put-up. The climber's own Lock Screen press is never a crewmate's move:
+ * the server names them as its mover (`currentChangedBy`).
+ *
  * It reads the current climb through `useActiveClimbUuid` (a change of climb)
  * and the queue snapshot, so the app-root watcher doesn't re-render on every
  * queue change.
  */
-export function useDriveCrewPutUp(drivePhase: DriveModePhase | null): void {
+export function useDriveCrewPutUp(drivePhase: DriveModePhase | null, beforeCrewMove?: () => void): void {
   const { t } = useTranslation('session');
   const activeClimbUuid = useActiveClimbUuid();
   const { getQueueSnapshot } = useQueueActions();
   // The crewmate's move, by the queue item it makes current, until it lands.
   const pendingRef = useRef<string | null>(null);
+  const beforeCrewMoveRef = useRef(beforeCrewMove);
+  beforeCrewMoveRef.current = beforeCrewMove;
 
   useEffect(
     () =>
       subscribeCrewMoves((queueItemUuid) => {
-        if (getDriveMode()?.phase === 'live') pendingRef.current = queueItemUuid;
+        beforeCrewMoveRef.current?.();
+        const drive = getDriveMode();
+        if (drive?.windowMs != null) {
+          exitDriveMode('window_ended');
+          return;
+        }
+        if (drive?.phase === 'live') pendingRef.current = queueItemUuid;
       }),
     [],
   );

@@ -13,6 +13,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
 import { getSetting } from '../../settings/hooks';
 import { climbChangeStaysViewOnly, getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
+import { drivingAtPick } from './drive-mode-store';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
 
@@ -113,6 +114,21 @@ type SwipeSelectionInputs = PreviewSelection &
     onNavigationStep: (step: PlayNavigationStep) => void;
   };
 
+type PreviewCommit = {
+  queueItemUuid: string;
+  options: NonNullable<PlayDrawerOpenOptions['previewCommitOptions']>;
+};
+
+/** The deferred commit an open carries for the slot it previews, or null. */
+function previewCommitFor(
+  previewItem: ClimbQueueItem | null | undefined,
+  options: PlayDrawerOpenOptions | undefined,
+): PreviewCommit | null {
+  return previewItem && options?.previewCommitOptions
+    ? { queueItemUuid: previewItem.uuid, options: options.previewCommitOptions }
+    : null;
+}
+
 /**
  * One swipe intent, with independent callback identities for next and previous.
  * `method` says whether a button or a swipe asked for it, for the analytics.
@@ -145,7 +161,8 @@ function useSwipeSelection({
         targetItem,
         lightOnSwipe,
         inSharedSession: browseByDefault,
-        driving,
+        // A keep-lighting window past its end lights nothing (#7038).
+        driving: drivingAtPick(driving),
         stoppedForLink,
         previewOnOtherBoard,
       });
@@ -175,6 +192,27 @@ function useSwipeSelection({
         setSharedBrowseLatched(false);
         setDrawerPreviewItem(null);
         setDrawerPreviewSuggestionSource(null);
+        setDrawerPreviewIsWallClimb(false);
+        clearMirror();
+        onNavigationStep({ direction, method, outcome: 'moved' });
+        return;
+      }
+      // A trackless preview with a neighbour of its own: a queue slot (a
+      // queue-sheet row, Replay from here) or a look walked along the queue.
+      // The peek shows that neighbour, so it goes up, the way Put on board
+      // commits a look; the queue's own next would step from the climb on the
+      // wall instead. The slot's deferred commit options never follow a swipe.
+      if (drawerPreviewItem && targetItem) {
+        clearPreviewCommitOptions();
+        const { item, converted } = resolveCommittableQueueItem(targetItem);
+        setCurrentClimb(item, {
+          keepWalkedTrack: true,
+          ...(converted ? { walkedPeek: true } : {}),
+          trigger: direction,
+          historyCopy: 'fresh',
+        });
+        setSharedBrowseLatched(false);
+        setDrawerPreviewItem(null);
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
         onNavigationStep({ direction, method, outcome: 'moved' });
@@ -246,31 +284,23 @@ export function usePlaySelectionController({
 }: PlaySelectionInputs) {
   // A queue/history pick can defer its exact commit behavior until the board
   // button is pressed. It belongs to this slot only and never follows a swipe.
-  const previewCommitRef = useRef<{
-    queueItemUuid: string;
-    options: NonNullable<PlayDrawerOpenOptions['previewCommitOptions']>;
-  } | null>(
-    openTarget?.options?.previewQueueItem && openTarget.options.previewCommitOptions
-      ? { queueItemUuid: openTarget.options.previewQueueItem.uuid, options: openTarget.options.previewCommitOptions }
-      : null,
+  const previewCommitRef = useRef<PreviewCommit | null>(
+    previewCommitFor(openTarget?.options?.previewQueueItem, openTarget?.options),
   );
   const previewCommitTargetRef = useRef(openTarget);
   if (previewCommitTargetRef.current !== openTarget) {
     previewCommitTargetRef.current = openTarget;
-    previewCommitRef.current =
-      openTarget?.options?.previewQueueItem && openTarget.options.previewCommitOptions
-        ? { queueItemUuid: openTarget.options.previewQueueItem.uuid, options: openTarget.options.previewCommitOptions }
-        : null;
+    previewCommitRef.current = previewCommitFor(openTarget?.options?.previewQueueItem, openTarget?.options);
   }
   const clearPreviewCommitOptions = useCallback(() => {
     previewCommitRef.current = null;
   }, []);
   const previewQueueItemUuid = drawerPreviewItem?.uuid;
-  const getPreviewCommitOptions = useCallback(
-    () =>
-      previewCommitRef.current?.queueItemUuid === previewQueueItemUuid ? previewCommitRef.current?.options : undefined,
-    [previewQueueItemUuid],
-  );
+  // The deferred options, for the slot on screen only.
+  const getPreviewCommitOptions = useCallback(() => {
+    const commit = previewCommitRef.current;
+    return commit && commit.queueItemUuid === previewQueueItemUuid ? commit.options : undefined;
+  }, [previewQueueItemUuid]);
   const openDrawer = useCallback(
     // `replay`: a pane that mounts later applying a target another pane already
     // applied (see the target effect below). A look, not a pick.
@@ -308,7 +338,7 @@ export function usePlaySelectionController({
         (viewer === 'anonymous' ||
           showBoardMismatch ||
           climbChangeStaysViewOnly({
-            driving,
+            driving: drivingAtPick(driving),
             inSharedSession: browseByDefault,
             lightSetting: getSetting('lightOnClimbTap'),
             stoppedForLink,
@@ -317,10 +347,7 @@ export function usePlaySelectionController({
       // off this. Commit paths (committedExternally) and solo fresh active opens
       // leave it null so the drawer renders the real currentClimbQueueItem.
       const pinnedItem = previewItem ?? (opensAsBrowse ? climbToQueueItem(selectedClimb) : null);
-      previewCommitRef.current =
-        pinnedItem && options?.previewCommitOptions
-          ? { queueItemUuid: pinnedItem.uuid, options: options.previewCommitOptions }
-          : null;
+      previewCommitRef.current = previewCommitFor(pinnedItem, options);
       setDrawerPreviewItem(pinnedItem);
       setDrawerPreviewSuggestionSource(pinnedItem ? playlistSuggestionSource : null);
       setDrawerPreviewIsWallClimb(pinnedItem ? (options?.previewIsWallClimb ?? false) : false);
@@ -482,8 +509,7 @@ export function usePlaySelectionController({
       // verbatim — committing one straight would put a uuid on the wire that no
       // peer can reconcile against their queue. Same helper `nextClimb()` uses.
       const { item, converted } = resolveCommittableQueueItem(drawerPreviewItem);
-      const deferredOptions =
-        previewCommitRef.current?.queueItemUuid === drawerPreviewItem.uuid ? previewCommitRef.current.options : null;
+      const deferredOptions = getPreviewCommitOptions();
       // Re-anchor the track on the climb actually going up. Browsing moves
       // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
       // walk from A to Z the source still says the pass began at A — and committing
@@ -502,7 +528,7 @@ export function usePlaySelectionController({
       // fresh here, #7113 QA, where Put on board used to drop "Search results ·
       // 4 of 23" and leave swipes nowhere to go), and clears it as before
       // otherwise. Only the walk's own peek: a crew browse open of a list climb
-      // (a peer's tick, a logbook row, a deep link, the Preview action) is a
+      // (a peer's tick, a logbook row, a deep link, the Home new-climb card) is a
       // fresh item, not a peek, and never borrows the track (#5403). The peek
       // goes up as Next places a list step: a fresh copy at the Now slot, never
       // an older entry pulled out of History.
@@ -549,6 +575,7 @@ export function usePlaySelectionController({
       wallClimbUuid,
       displayedClimbUuid,
       clearPreviewCommitOptions,
+      getPreviewCommitOptions,
     ],
   );
 
@@ -577,7 +604,7 @@ export function usePlaySelectionController({
         targetItem: target,
         lightOnSwipe,
         inSharedSession: browseByDefault,
-        driving,
+        driving: drivingAtPick(driving),
         stoppedForLink,
         previewOnOtherBoard,
       });
@@ -637,11 +664,12 @@ export function usePlaySelectionController({
   const handleSimilarClimbPress = useCallback(
     (similarClimb: Climb, similarClimbs: Climb[] = []) => {
       clearPreviewCommitOptions();
+      const drivingNow = drivingAtPick(driving);
       const previewOnly =
-        getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving }) === 'preview' ||
+        getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault, driving: drivingNow }) === 'preview' ||
         showBoardMismatch ||
         climbChangeStaysViewOnly({
-          driving,
+          driving: drivingNow,
           inSharedSession: browseByDefault,
           lightSetting: getSetting('lightOnClimbTap'),
           stoppedForLink,

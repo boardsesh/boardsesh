@@ -969,8 +969,8 @@
       "secondsLeft_other": "{{count}} seconds left",
       "underTenSeconds": "Under 10 seconds left",
       "stopWindowHint": "Tap to stop. Hold for board controls.",
-      "windowStarted_other": "Each pick lights for {{count}} seconds. Light every climb keeps them lighting.",
-      "windowStartedMinute": "Each pick lights for 1 minute. Light every climb keeps them lighting.",
+      "windowStarted_other": "For the next {{count}} seconds, each climb you pick lights too. Light every climb keeps them lighting.",
+      "windowStartedMinute": "For the next minute, each climb you pick lights too. Light every climb keeps them lighting.",
       "stoppedWindow": "Stopped lighting picks",
       "windowEnded": "Picks are previews again",
       "sheetStatusPreview": "Preview · not on the wall",
@@ -980,7 +980,8 @@
     "paneEmpty": {
       "title": "Pick a climb",
       "subtitle": "Tap a climb to see it here.",
-      "unlitHint": "Tap a climb to preview it"
+      "unlitHint": "Tap a climb to preview it",
+      "unlitHintLights": "Tap a climb to light it"
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",

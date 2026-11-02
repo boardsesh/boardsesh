@@ -11,7 +11,13 @@ vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
   readLiveActivityLightingWindow: () => null,
 }));
 
-import { enterDriveMode, getDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
+import {
+  enterDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../drive-mode-store';
 import {
   adoptLockScreenLighting,
   armNotificationPressDrive,
@@ -86,6 +92,30 @@ describe('resolveLockScreenAdoption', () => {
     expect(resolve(snapshot({ endsAtMs: NOW + 5_000 }))).toEqual({ kind: 'none' });
   });
 
+  // A pick reads the end off the wall clock (#7038): a window over by the
+  // press is not one it renewed. Native found it over too and opened a new one.
+  it('starts a drive of its own for a press after the window here ran out', () => {
+    liveWindow(-20_000);
+    expect(resolve(snapshot({ updatedAtMs: NOW - 10_000 }))).toEqual({
+      kind: 'start',
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      expiresAt: NOW + 30_000,
+      startedAt: NOW - 10_000,
+      replacesLapsedWindow: true,
+    });
+    expect(resolve(snapshot({ mode: 'driving', endsAtMs: null, updatedAtMs: NOW - 20_000 }))).toMatchObject({
+      kind: 'start',
+      windowMs: null,
+      replacesLapsedWindow: true,
+    });
+  });
+
+  it('extends a window that is over now when the press came before its end', () => {
+    liveWindow(-20_000);
+    expect(resolve(snapshot({ updatedAtMs: NOW - 25_000 }))).toEqual({ kind: 'extend', expiresAt: NOW + 30_000 });
+  });
+
   it('opens a window up when the press drove the wall, and leaves a drive alone', () => {
     liveWindow(10_000);
     expect(resolve(snapshot({ mode: 'driving', endsAtMs: null }))).toEqual({ kind: 'open_ended' });
@@ -127,6 +157,22 @@ describe('adoptLockScreenLighting', () => {
     expect(getDriveMode()).toBeNull();
     // A newer press is adopted.
     expect(adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 1 }) })?.kind).toBe('start');
+  });
+
+  it('ends a window that ran out before the press at its end, and starts the press’s own', () => {
+    liveWindow(-20_000);
+    const adoption = adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 10_000 }) });
+    expect(adoption).toMatchObject({ kind: 'start', replacesLapsedWindow: true });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'window_ended', startedBy: 'tap' }),
+    );
+    expect(getDriveMode()).toMatchObject({
+      phase: 'live',
+      startedBy: 'lock_screen',
+      expiresAt: NOW + 30_000,
+      windowRenewals: 0,
+    });
   });
 
   it('leaves a write it cannot judge for the next try', () => {
@@ -205,13 +251,33 @@ describe('armNotificationPressDrive', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'arming', windowMs: null, windowSetting: null });
   });
 
+  // Android pauses JS timers with the activity (#7038): the watcher may not
+  // have ended a window that ran out. The press reads the end itself, so the
+  // window's confirm can't renew it.
+  it('ends a window past its end at the press, then arms the press’s own', () => {
+    liveWindow(-1_000);
+    expect(armNotificationPressDrive({ ...press, now: NOW })).toBe(true);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Drive Mode Ended',
+      expect.objectContaining({ reason: 'window_ended', startedBy: 'tap' }),
+    );
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'lock_screen', windowRenewals: 0 });
+  });
+
+  it('ends a window past its end at a press that lights one climb, and arms nothing', () => {
+    liveWindow(-1_000);
+    expect(armNotificationPressDrive({ ...press, plan: null, now: NOW })).toBe(false);
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(getDriveMode()).toBeNull();
+  });
+
   it('arms nothing without a link, for one-climb lighting, or with a drive on', () => {
     expect(armNotificationPressDrive({ ...press, linked: false })).toBe(false);
     expect(armNotificationPressDrive({ ...press, plan: null })).toBe(false);
     expect(getDriveMode()).toBeNull();
     liveWindow(10_000);
     const before = getDriveMode();
-    expect(armNotificationPressDrive(press)).toBe(false);
+    expect(armNotificationPressDrive({ ...press, now: NOW })).toBe(false);
     expect(getDriveMode()).toBe(before);
   });
 });

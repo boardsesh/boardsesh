@@ -468,8 +468,9 @@
     "relightBoard": "Illumina di nuovo il pannello",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Disconnetti dal pannello quando nessun blocco viene mostrato per il tempo selezionato.",
+      "description": "Disconnetti dal pannello quando nessun blocco viene illuminato o aperto in anteprima per il tempo selezionato.",
       "cutsLighting": "La disconnessione automatica libera il pannello dopo {{timeout}}, quindi anche l'illuminazione si ferma.",
+      "disconnectedToast": "Pannello disconnesso dopo {{timeout}} senza nuovi blocchi illuminati o aperti in anteprima. Tocca Illumina il pannello per riconnetterti.",
       "enabledLabel": "Disconnessione automatica",
       "enabledDescription": "Lascia connettere gli altri climber allo scadere del timer.",
       "timeoutLabel": "Disconnetti dopo",
@@ -495,9 +496,11 @@
         "off": "Disattivato",
         "untilStopped": "Finché non mi fermo",
         "moonboardLabel": "Su una MoonBoard",
+        "moonboardAccessibilityLabel": "Continua a illuminare su una MoonBoard",
         "moonboardDescription": "La maggior parte dei controller MoonBoard non gestisce bene il cambio di telefono, quindi vale anche in una session.",
         "sheetMoonboardLabel": "Continua a illuminare su questa MoonBoard",
         "inSessionLabel": "Anche in una session",
+        "inSessionAccessibilityLabel": "Continua a illuminare anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
         "inSessionOffReason": "Attiva Continua a illuminare dopo Illumina il pannello per usarlo.",
         "footer": "Ogni blocco che si illumina fa ripartire il timer. Se riposi più a lungo, il prossimo blocco che scegli si apre in anteprima."
@@ -507,7 +510,7 @@
       "onTapLabel": "Illumina il pannello quando tocco un blocco",
       "onTapDescription": "Ogni tocco in una lista illumina il blocco, senza limite di tempo. Se è disattivato, il tocco apre un'anteprima.",
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
-      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista nella tua coda e mostra in anteprima il blocco toccato. Il pannello tiene il suo blocco finché non scegli Illumina il pannello."
+      "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore carica quella lista. Se “Illumina il pannello quando tocco un blocco” è attivo, la lista sostituisce la tua coda e il blocco toccato si illumina in parete. Se è disattivato, la lista dal blocco toccato finisce in Prossimi e quel blocco si apre in anteprima, mentre il pannello tiene il suo blocco finché non scegli Illumina il pannello."
     },
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",

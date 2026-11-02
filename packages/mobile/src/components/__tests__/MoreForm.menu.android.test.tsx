@@ -28,7 +28,12 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     HorizontalDivider: () => null,
   };
 });
-vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({ clickable: () => ({}), padding: () => ({}) }));
+vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
+  clickable: () => ({}),
+  defaultMinSize: () => ({}),
+  padding: () => ({}),
+  selectable: () => ({}),
+}));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: (options: { android?: unknown }) => options.android },
   PlatformColor: (name: string) => name,

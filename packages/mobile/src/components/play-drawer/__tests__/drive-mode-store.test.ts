@@ -9,6 +9,7 @@ vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 import {
   clampWindowEnd,
   clearDrivingStopped,
+  drivingAtPick,
   enterDriveMode,
   exitDriveMode,
   extendDriveWindow,
@@ -351,6 +352,68 @@ describe('the keep-lighting window', () => {
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
     markDriveLive({ now: 5_000 });
     expect(isDriveWindowDue(getDriveMode(), Number.MAX_SAFE_INTEGER)).toBe(false);
+  });
+
+  // #7038: Android pauses JS timers with the activity, so the watcher's end can
+  // fire late. A pick reads the wall clock itself: past the end it lights
+  // nothing, while the drive is still there for the watcher to tidy.
+  describe('at the pick, past the end, before any timer has fired', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ now: 1_000 });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a render that read a live drive lights nothing once the clock is past the window', () => {
+      openWindow(45_000, 1_000);
+      markDriveLive({ now: 5_000 });
+      vi.setSystemTime(49_999);
+      expect(drivingAtPick(true)).toBe(true);
+      // Timers frozen: only the wall clock moves on.
+      vi.setSystemTime(50_000);
+      expect(drivingAtPick(true)).toBe(false);
+      expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: 50_000 });
+      expect(endedCalls()).toEqual([]);
+    });
+
+    it('never turns a render that read no drive into one, and never ends an open-ended drive', () => {
+      expect(drivingAtPick(false)).toBe(false);
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null, now: 1_000 });
+      markDriveLive({ now: 1_000 });
+      vi.setSystemTime(Number.MAX_SAFE_INTEGER);
+      expect(drivingAtPick(true)).toBe(true);
+    });
+
+    it('a window still arming is not past its end', () => {
+      openWindow(45_000, 1_000);
+      vi.setSystemTime(10 * 60_000);
+      expect(drivingAtPick(true)).toBe(true);
+    });
+  });
+
+  // The watcher can notice a lapsed window late (a paused timer, the app coming
+  // back): Drive Mode Ended says when it really ended.
+  it('reports a window that ran out as ending at its end, however late it is noticed', () => {
+    openWindow(45_000, 1_000);
+    markDriveLive({ now: 5_000 });
+    noteDriveClimbLit({ now: 5_000 });
+    // Noticed by a real clock far past 50_000.
+    exitDriveMode('window_ended');
+    expect(endedCalls().at(-1)?.[1]).toMatchObject({ reason: 'window_ended', durationSec: 49 });
+  });
+
+  it('reports a window whose setting was turned off as ending then', () => {
+    vi.useFakeTimers({ now: 1_000 });
+    try {
+      openWindow(45_000, 1_000);
+      markDriveLive({ now: 5_000 });
+      vi.setSystemTime(21_000);
+      exitDriveMode('window_ended');
+      expect(endedCalls().at(-1)?.[1]).toMatchObject({ reason: 'window_ended', durationSec: 20 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('turns open-ended on a swipe or Light every climb, and stays the same drive', () => {

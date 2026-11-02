@@ -13,7 +13,12 @@ const analytics = vi.hoisted(() => ({
   started: vi.fn(),
   swiped: vi.fn(),
 }));
-const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn(), hapticLight: vi.fn() }));
+const haptics = vi.hoisted(() => ({
+  hapticMedium: vi.fn(),
+  hapticWarning: vi.fn(),
+  hapticLight: vi.fn(),
+  hapticSuccess: vi.fn(),
+}));
 const announceQueued = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackWallControlTapped: analytics.tapped,
@@ -36,9 +41,15 @@ import {
   WINDOW_END_TAP_GRACE_MS,
   useWallControl,
   type DriveStartOutcome,
+  type WallControlHandlers,
   type WallControlRunners,
 } from '../use-wall-control';
 import type { KeepLightingPlan } from '../../../lib/keep-lighting';
+import {
+  registerAutoDisconnectActivity,
+  registerAutoDisconnectDeadlineReader,
+} from '../../../lib/auto-disconnect-deadline';
+import * as wallSwipeHint from '../../../lib/wall-swipe-hint';
 import { startKeepLighting } from '../drive-runner';
 import {
   EMPTY_WALL_CONTROL,
@@ -51,6 +62,7 @@ import {
   enterDriveMode,
   exitDriveMode,
   getDriveMode,
+  makeDriveOpenEnded,
   getLastDriveModeExitReason,
   isDrivingStoppedForLink,
   markDriveLive,
@@ -384,6 +396,81 @@ describe('useWallControl swipe', () => {
   });
 });
 
+// 2.7: auto-disconnect counted only writes, so a climber browsing previews with
+// the button in hand was dropped mid-look. Every press on the wall button is
+// activity: a tap (even one a guard drops), a hold, a swipe and its cancel,
+// and the screen-reader action.
+describe('useWallControl: presses keep auto-disconnect from letting go', () => {
+  const activity = vi.fn();
+  let release: () => void = () => undefined;
+  beforeEach(() => {
+    activity.mockClear();
+    release = registerAutoDisconnectActivity(activity);
+  });
+  afterEach(() => release());
+
+  type Handlers = WallControlHandlers;
+  const presses: Array<[string, (handlers: Handlers) => void]> = [
+    ['a tap', (handlers) => handlers.press('button')],
+    ['a tap on a bulb', (handlers) => handlers.press('bulb')],
+    ['a hold', (handlers) => handlers.longPress('button')],
+    [
+      'a swipe',
+      (handlers) => {
+        handlers.swipe('button');
+      },
+    ],
+    ['a swipe let go early', (handlers) => handlers.swipeCancelled('button')],
+    [
+      'the screen-reader action',
+      (handlers) => {
+        handlers.drive('button');
+      },
+    ],
+  ];
+  it.each(presses)('%s counts as activity, once', (_label, run) => {
+    const { hook } = setup(modelFor('lit', 'disconnect', { swipeAction: 'drive', longPress: 'sheet' }));
+    expect(activity).not.toHaveBeenCalled();
+    act(() => {
+      run(hook.result.current);
+    });
+    expect(activity).toHaveBeenCalledOnce();
+  });
+
+  it('counts a tap while a connect is in flight too: the climber is still there', () => {
+    const { hook } = setup(modelFor('connect', 'connect', { pending: true }));
+    act(() => {
+      hook.result.current.press('button');
+    });
+    expect(activity).toHaveBeenCalledOnce();
+  });
+
+  // Spec B3: the swipe peek's replay counts the presses that put a climb up.
+  it('counts a Put on board on the button towards the swipe peek’s replay, never a bulb or a stop', () => {
+    const presses = vi.spyOn(wallSwipeHint, 'noteWallPutOnBoardPress');
+    try {
+      const putUp = setup(modelFor('put_on_wall', 'put_on_wall'));
+      act(() => {
+        putUp.hook.result.current.press('button');
+        putUp.hook.result.current.press('bulb');
+      });
+      const stop = setup(modelFor('lit', 'stop_driving', { driving: true }));
+      act(() => {
+        stop.hook.result.current.press('button');
+      });
+      expect(presses).toHaveBeenCalledOnce();
+    } finally {
+      presses.mockRestore();
+    }
+  });
+
+  it('counts nothing on a render alone', () => {
+    const { hook } = setup(modelFor('lit', 'stop_driving', { driving: true }));
+    hook.rerender({ model: modelFor('lit', 'stop_driving', { driving: true }) });
+    expect(activity).not.toHaveBeenCalled();
+  });
+});
+
 describe('useWallControl: a press lights once without starting Driver mode', () => {
   beforeEach(() => {
     resetDriveModeForTests();
@@ -549,7 +636,7 @@ describe('useWallControl: Put on board keeps lighting', () => {
     expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
   });
 
-  it('drops the wait on Keep theirs, on another climb, or on a fresh press', () => {
+  it('drops the wait on Keep theirs or on another climb; a Put mine up that does not go up arms nothing', () => {
     const run = runners();
     run.light.mockReturnValue(false);
     const { hook } = setup(preview(), run);
@@ -569,6 +656,44 @@ describe('useWallControl: Put on board keeps lighting', () => {
     // A Put mine up that doesn't go up arms nothing either.
     run.light.mockReturnValue(false);
     act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+  });
+
+  it('keeps the wait through a noop tap while the question is up, so Put mine up still keeps lighting', () => {
+    const run = runners();
+    realKeepLighting(run);
+    run.light.mockReturnValueOnce(false);
+    const { hook } = setup(preview({ solo: false, crewSession: true }), run);
+    act(() => hook.result.current.press('button'));
+    // The question holds the second row: the first-row bulb and the MiniPlayer's do nothing.
+    const asking = preview({ solo: false, crewSession: true, confirmArmed: true });
+    expect(asking.bulbTapAction).toBe('noop');
+    hook.rerender({ model: asking });
+    act(() => hook.result.current.press('bulb'));
+    act(() => hook.result.current.press('mini_bar'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).toHaveBeenCalledOnce();
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', startedBy: 'tap', windowMs: 45_000 });
+  });
+
+  it('drops the wait on a fresh press that does something else', () => {
+    const run = runners();
+    run.light.mockReturnValueOnce(false);
+    const { hook } = setup(preview(), run);
+    act(() => hook.result.current.press('button'));
+    // Keep lighting turned Off before the next press: that one lights one climb.
+    hook.rerender({ model: preview({ keepLighting: 'off' }) });
+    act(() => hook.result.current.press('button'));
+    act(() => hook.result.current.confirmPut());
+    expect(run.keepLighting).not.toHaveBeenCalled();
+
+    run.light.mockReturnValueOnce(false);
+    hook.rerender({ model: preview() });
+    act(() => hook.result.current.press('button'));
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
     act(() => hook.result.current.confirmPut());
     expect(run.keepLighting).not.toHaveBeenCalled();
   });
@@ -698,6 +823,22 @@ describe('useWallControl: the keep-lighting window', () => {
     expect(announceQueued).toHaveBeenCalledOnce();
   });
 
+  // The clock counts to auto-disconnect when that comes first (spec B2), and
+  // the one spoken notice of the limit (WCAG 2.2.1) must say the same length.
+  it('says the length the clock shows when auto-disconnect comes first', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const release = registerAutoDisconnectDeadlineReader(() => 100_000 + 30_000);
+    try {
+      setup(windowModel());
+      openWindow(45_000);
+      expect(announceQueued).toHaveBeenCalledOnce();
+      expect(announceQueued).toHaveBeenCalledWith('playView.wallControl.windowStarted {"count":30}');
+    } finally {
+      release();
+    }
+  });
+
   it('says a one-minute window in minutes', () => {
     setup(windowModel());
     openWindow(60_000);
@@ -728,6 +869,25 @@ describe('useWallControl: the keep-lighting window', () => {
     });
     act(() => hook.result.current.press('button'));
     expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  // The route player closed and reopened from the mini player mid-window: the
+  // new player never saw the window open, and still owes its end (WCAG 2.2.1).
+  it('says the end of a window that was already running when the player mounted', () => {
+    vi.useFakeTimers();
+    openWindow();
+    announceQueued.mockClear();
+    const { hook, run } = setup(windowModel());
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => {
+      vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).not.toHaveBeenCalled();
   });
 
   it("drops a bulb's disconnect in those 2 s too", () => {
@@ -775,6 +935,92 @@ describe('useWallControl: the keep-lighting window', () => {
       exitDriveMode('window_ended');
     });
     expect(announceQueued).not.toHaveBeenCalled();
+  });
+
+  // A window that ends before the wall lit never started for the climber: a
+  // crewmate's put-up mid-connect, or the setting turned Off while arming.
+  it('says nothing about a window that ended while arming, and drops no tap after it', () => {
+    vi.useFakeTimers();
+    const { hook, run } = setup(windowModel());
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 45_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+    });
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).not.toHaveBeenCalledWith('playView.wallControl.windowEnded');
+    hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => {
+      vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS - 1_000);
+    });
+    act(() => hook.result.current.press('button'));
+    expect(run.disconnect).toHaveBeenCalledOnce();
+  });
+
+  // Nothing on the wall changes (the lit climb stays lit), so the screen
+  // reader and a buzz are the only sign the window turned into a drive.
+  it('says the drive is open-ended when a swipe or Light every climb opens the window up, with a buzz', () => {
+    setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.sheetStatusDriving');
+    expect(haptics.hapticSuccess).toHaveBeenCalledOnce();
+  });
+
+  it('says nothing about an open-ended drive that never was a window', () => {
+    setup(windowModel());
+    act(() => {
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+    });
+    act(() => markDriveLive());
+    expect(announceQueued).not.toHaveBeenCalled();
+    expect(haptics.hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  // The phone split mounts a player in every tab, each with its own control.
+  it('says each window line once with several players mounted, and a closed one never takes it', () => {
+    vi.useFakeTimers();
+    const closed = setup(windowModel());
+    closed.hook.rerender({ model: windowModel(), playerOpen: false });
+    const first = setup(windowModel());
+    setup(windowModel());
+    openWindow();
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowStarted {"count":45}');
+    announceQueued.mockClear();
+    act(() => {
+      exitDriveMode('window_ended');
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowEnded');
+    // The tap guard is each player's own: the one that stayed quiet still has it.
+    first.hook.rerender({ model: modelFor('lit', 'disconnect') });
+    act(() => first.hook.result.current.press('button'));
+    expect(first.run.disconnect).not.toHaveBeenCalled();
+    // The next window is news again.
+    announceQueued.mockClear();
+    vi.advanceTimersByTime(1);
+    openWindow();
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.windowStarted {"count":45}');
+  });
+
+  it('says the open-ended turn once with several players mounted', () => {
+    setup(windowModel());
+    setup(windowModel());
+    openWindow();
+    announceQueued.mockClear();
+    act(() => {
+      makeDriveOpenEnded();
+    });
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.wallControl.sheetStatusDriving');
+    expect(haptics.hapticSuccess).toHaveBeenCalledOnce();
   });
 });
 

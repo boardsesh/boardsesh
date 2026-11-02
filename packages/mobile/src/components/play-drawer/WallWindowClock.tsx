@@ -32,6 +32,14 @@ import { formatWindowClock, windowSecondsLeft, windowValueSeconds } from './wall
 const WINDOW_BAR_REFILL_MS = 250;
 
 /**
+ * How far the shown end may move under a running drain before the drain is
+ * aimed again. Auto-disconnect's deadline moves with no change of the window
+ * (a press, a hold, a short swipe, a preview, a new timeout in the sheet), and
+ * the digits re-read it every second; the drain checks on the same beat.
+ */
+const WINDOW_DRAIN_RETARGET_MS = 500;
+
+/**
  * The live window's end and length, or null outside one. Two primitive
  * subscriptions, so a climb counted outside a window re-renders nothing here.
  */
@@ -121,20 +129,40 @@ type WallWindowBarProps = {
   width: number;
   /** Reduce Motion / Remove animations: the bar steps once a second with the clock, and a refill jumps. */
   reduceMotion: boolean;
+  /**
+   * A drag or the peek wipes over the button: the bar steps aside but stays
+   * mounted, so its drain keeps running and it comes back where it stood.
+   */
+  hidden?: boolean;
 };
+
+/** How much of the window is left, 0 to 1: where the drain stands now. */
+function windowFractionLeft(expiresAt: number, totalMs: number): number {
+  return Math.min(1, Math.max(0, remainingMs(expiresAt)) / totalMs);
+}
 
 /**
  * The window's drain: 1 at a renewal, 0 at the shown end. On the UI thread (a
  * shared value with a linear `withTiming`), so the bar and a bulb's ring
  * (`WallWindowRing`) move with no React render per frame; under Reduce Motion
- * it steps with the clock's seconds instead, and a refill jumps. `active` is
- * false outside a window.
+ * it steps with the clock's seconds instead, and a refill jumps. A 1 s check
+ * (a timer, no render) re-aims it when auto-disconnect's end moves the shown
+ * end. `active` is false outside a window.
+ *
+ * Mounted mid-window (the player opening on a running window), it starts where
+ * the window stands, and only a renewal after that (a new end) refills: a
+ * mount is not a climb lighting.
  */
 export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<number>; active: boolean } {
   const timing = useWindowTiming();
-  const fraction = useSharedValue(1);
   const expiresAt = timing?.expiresAt ?? null;
   const totalMs = timing?.totalMs ?? null;
+  const [startFraction] = useState(() =>
+    expiresAt !== null && totalMs !== null && totalMs > 0 ? windowFractionLeft(expiresAt, totalMs) : 1,
+  );
+  const fraction = useSharedValue(startFraction);
+  // The end the drain last ran toward: a different one is a renewal.
+  const drainedForRef = useRef(expiresAt);
   // Under Reduce Motion the bar steps with the clock's seconds; otherwise this
   // only wakes every 10 s and the shared value does the moving.
   const stepped = useWindowSecondsLeft(reduceMotion ? 1 : 10);
@@ -142,20 +170,43 @@ export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<n
     stepped && stepped.totalMs > 0 ? Math.min(1, (stepped.secondsLeft * 1000) / stepped.totalMs) : null;
 
   useEffect(() => {
+    const renewed = drainedForRef.current !== expiresAt;
+    drainedForRef.current = expiresAt;
     if (expiresAt === null || totalMs === null || totalMs <= 0) return undefined;
+    const shownEnd = () => clampWindowEnd(expiresAt, readAutoDisconnectDeadlineMs());
     const left = Math.max(0, remainingMs(expiresAt));
-    const start = Math.min(1, left / totalMs);
     if (reduceMotion) {
       cancelAnimation(fraction);
-      fraction.value = start;
+      fraction.value = Math.min(1, left / totalMs);
       return undefined;
     }
-    const drainMs = Math.max(0, left - WINDOW_BAR_REFILL_MS);
-    fraction.value = withSequence(
-      withTiming(start, { duration: WINDOW_BAR_REFILL_MS }),
-      withTiming(0, { duration: drainMs, easing: Easing.linear }),
-    );
-    return () => cancelAnimation(fraction);
+    // To where the bar should be now (over 250 ms for a refill or a re-aim, at
+    // once otherwise), then linearly to empty at the shown end.
+    const drain = (leftMs: number, glide: boolean) => {
+      const glideMs = glide ? WINDOW_BAR_REFILL_MS : 0;
+      fraction.value = withSequence(
+        withTiming(Math.min(1, leftMs / totalMs), { duration: glideMs }),
+        withTiming(0, { duration: Math.max(0, leftMs - glideMs), easing: Easing.linear }),
+      );
+    };
+    drain(left, renewed);
+    // Aim the drain again when the shown end moves under it, as the digits do.
+    let drainingTo = shownEnd();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      const end = shownEnd();
+      const now = Date.now();
+      if (Math.abs(end - drainingTo) > WINDOW_DRAIN_RETARGET_MS) {
+        drainingTo = end;
+        drain(Math.max(0, end - now), true);
+      }
+      timer = end > now ? setTimeout(check, 1000) : null;
+    };
+    timer = setTimeout(check, 1000);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      cancelAnimation(fraction);
+    };
   }, [expiresAt, totalMs, reduceMotion, fraction]);
 
   useEffect(() => {
@@ -167,7 +218,7 @@ export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<n
 }
 
 /** The drain bar: full at a renewal, empty at the shown end (`useWindowDrain`). */
-function WallWindowBarComponent({ color, width, reduceMotion }: WallWindowBarProps) {
+function WallWindowBarComponent({ color, width, reduceMotion, hidden = false }: WallWindowBarProps) {
   const { fraction, active } = useWindowDrain(reduceMotion);
   const trackWidth = Math.max(0, width - WINDOW_BAR_INSET * 2);
 
@@ -183,7 +234,11 @@ function WallWindowBarComponent({ color, width, reduceMotion }: WallWindowBarPro
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[styles.track, { width: trackWidth, backgroundColor: withAlpha(color, WINDOW_BAR_TRACK_ALPHA) }]}
+      style={[
+        styles.track,
+        { width: trackWidth, backgroundColor: withAlpha(color, WINDOW_BAR_TRACK_ALPHA) },
+        hidden && styles.hidden,
+      ]}
       testID="play-drawer-wall-control-window-bar"
     >
       <Animated.View style={[styles.fill, { backgroundColor: color }, fillStyle]} />
@@ -204,6 +259,9 @@ const styles = StyleSheet.create({
     height: WINDOW_BAR_HEIGHT,
     borderRadius: WINDOW_BAR_HEIGHT / 2,
     overflow: 'hidden',
+  },
+  hidden: {
+    opacity: 0,
   },
   fill: {
     position: 'absolute',

@@ -84,7 +84,9 @@ export type DriveModeExitReason =
 /**
  * How long arming may wait for the wall before it gives up. The Bluetooth scan
  * is 15 s; past twice that the swipe's connect is not coming, and an arming
- * drive left behind would keep the button from offering the swipe again.
+ * drive left behind would keep the button from offering the swipe again. The
+ * clock runs only while no connect is in flight (`DriveModeWatcher`): an open
+ * device picker holds it, and it starts over when the connect settles.
  */
 export const DRIVE_ARMING_TIMEOUT_MS = 30_000;
 
@@ -159,6 +161,17 @@ export function isDriveWindowDue(drive: DriveModeState | null, now = Date.now())
 }
 
 /**
+ * A render's read of a live drive, checked again at the pick being made now.
+ * A keep-lighting window past its end lights nothing, even while the watcher's
+ * timer has not fired: Android pauses JS timers with the activity (#7038), so
+ * the end is read off the wall clock at every pick, never trusted to a timer.
+ * `DriveModeWatcher` still ends the drive and tidies the button.
+ */
+export function drivingAtPick(rendered: boolean, now = Date.now()): boolean {
+  return rendered && !isDriveWindowDue(driveMode, now);
+}
+
+/**
  * The end the window shows: its own, or auto-disconnect's when that comes
  * first (spec B2), since the link drops then and lighting stops with it.
  */
@@ -178,17 +191,39 @@ let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
 const listeners = new Set<() => void>();
 
+/** A line the player speaks about a keep-lighting window: its start, a swipe opening it up, its end. */
+export type DriveAnnouncement = 'window_started' | 'window_opened_up' | 'window_ended';
+/** The lines already said for one drive (by its start). A new drive starts empty. */
+let claimedAnnouncements: { startedAt: number; said: Set<DriveAnnouncement> } | null = null;
+
+/**
+ * Whether this caller says `line` for the drive that started at `startedAt`:
+ * true once per drive and line. Every mounted player (each tab's pane on the
+ * phone split) watches the same drive, so only the first to claim it speaks.
+ */
+export function claimDriveAnnouncement(startedAt: number, line: DriveAnnouncement): boolean {
+  if (claimedAnnouncements?.startedAt !== startedAt) claimedAnnouncements = { startedAt, said: new Set() };
+  if (claimedAnnouncements.said.has(line)) return false;
+  claimedAnnouncements.said.add(line);
+  return true;
+}
+
 function emit(): void {
   for (const listener of listeners) listener();
 }
 
-/** Drive Mode Ended, once per drive: whichever exit ran first reports it. */
+/**
+ * Drive Mode Ended, once per drive: whichever exit ran first reports it. A
+ * window that ran out ended at its end, not when a late timer (or the app
+ * coming back) noticed it (#7038), so its duration is the climber's.
+ */
 function reportEnded(ended: DriveModeState, reason: DriveModeExitReason, now = Date.now()): void {
+  const endedAt = reason === 'window_ended' && ended.expiresAt !== null ? Math.min(now, ended.expiresAt) : now;
   trackDriveModeEnded({
     reason,
     startedBy: ended.startedBy,
     startedAt: ended.startedAt,
-    endedAt: now,
+    endedAt,
     climbsLit: ended.climbsLit,
     inSession: ended.sessionId !== null,
     windowRenewals: ended.windowRenewals,
@@ -236,6 +271,7 @@ export function enterDriveMode({
   };
   stoppedForLink = false;
   lastExitReason = null;
+  claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
 }
@@ -325,6 +361,7 @@ export function startLockScreenDrive({
   };
   stoppedForLink = false;
   lastExitReason = null;
+  claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy: 'lock_screen', inSession: sessionId !== null, boardType });
   return true;
@@ -339,6 +376,23 @@ export function extendDriveWindow(expiresAt: number): boolean {
   if (driveMode?.phase !== 'live' || driveMode.windowMs === null || driveMode.expiresAt === null) return false;
   if (expiresAt <= driveMode.expiresAt) return false;
   driveMode = { ...driveMode, expiresAt, windowRenewals: driveMode.windowRenewals + 1 };
+  emit();
+  return true;
+}
+
+/**
+ * The window's own choice moved to another length while it runs (the board
+ * sheet's Keep lighting row, spec B4): the new length counts from now, as a
+ * climb that lights would restart it. An arming window only takes the length.
+ * Returns whether anything changed.
+ */
+export function retimeDriveWindow(windowMs: number, now = Date.now()): boolean {
+  if (!driveMode || driveMode.windowMs === null || windowMs <= 0 || driveMode.windowMs === windowMs) return false;
+  driveMode = {
+    ...driveMode,
+    windowMs,
+    expiresAt: driveMode.phase === 'live' ? now + windowMs : null,
+  };
   emit();
   return true;
 }
@@ -491,6 +545,7 @@ export function resetDriveModeForTests(): void {
   driveMode = null;
   stoppedForLink = false;
   lastExitReason = null;
+  claimedAnnouncements = null;
   emit();
 }
 

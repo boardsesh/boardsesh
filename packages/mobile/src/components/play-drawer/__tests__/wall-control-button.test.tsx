@@ -85,8 +85,8 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children, testID }: Children & { testID?: string }) =>
-    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true' }, children),
+  LargeContentViewer: ({ children, testID, title }: Children & { testID?: string; title: string }) =>
+    createElement('span', { 'data-testid': testID, 'data-native-viewer': 'true', 'data-title': title }, children),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -165,25 +165,53 @@ vi.mock('../WallSwipeWipe', () => ({
 vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: Children) => createElement('div', { 'data-testid': 'gesture' }, children),
 }));
-vi.mock('../../../lib/wall-swipe-hint', () => ({ useWallSwipePeek: () => 0 }));
+// The peek's triggers (spec B3): which the button hands its hint, and the screen reader read.
+const peekCtrl = vi.hoisted(() => ({
+  triggers: [] as { offered: boolean; windowLive: boolean; screenReaderOn: boolean }[],
+  screenReaderOn: false,
+}));
+vi.mock('../../../lib/wall-swipe-hint', () => ({
+  useWallSwipePeek: (triggers: { offered: boolean; windowLive: boolean; screenReaderOn: boolean }) => {
+    peekCtrl.triggers.push(triggers);
+    return 0;
+  },
+}));
+vi.mock('../../../hooks/use-screen-reader-enabled', () => ({ useScreenReaderEnabled: () => peekCtrl.screenReaderOn }));
 // The window's clock and bar tick on their own (wall-window-clock test); here
 // only whether the button draws them, and the time it says as its value.
-const windowClock = vi.hoisted(() => ({ secondsLeft: 38 as number | null }));
-vi.mock('../WallWindowClock', () => ({
-  useWindowSecondsLeft: (step: 1 | 10) => {
-    const seconds = windowClock.secondsLeft;
-    if (seconds === null) return null;
-    return { secondsLeft: step === 1 ? seconds : seconds < 10 ? 0 : Math.floor(seconds / 10) * 10, totalMs: 45_000 };
-  },
-  WallWindowDigits: ({ color }: { color: string }) =>
-    createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
-  WallWindowBar: ({ color, reduceMotion }: { color: string; reduceMotion: boolean }) =>
-    createElement('div', {
-      'data-testid': 'window-bar',
-      'data-color': color,
-      'data-reduce-motion': String(reduceMotion),
-    }),
-}));
+// A store, so a test can tick the clock and see which views re-render for it.
+const windowClock = vi.hoisted(() => ({ secondsLeft: 38 as number | null, listeners: new Set<() => void>() }));
+vi.mock('../WallWindowClock', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    windowClock.listeners.add(listener);
+    return () => {
+      windowClock.listeners.delete(listener);
+    };
+  };
+  const read = () => windowClock.secondsLeft;
+  return {
+    useWindowSecondsLeft: (step: 1 | 10) => {
+      const seconds = useSyncExternalStore(subscribe, read, read);
+      if (seconds === null) return null;
+      return { secondsLeft: step === 1 ? seconds : seconds < 10 ? 0 : Math.floor(seconds / 10) * 10, totalMs: 45_000 };
+    },
+    WallWindowDigits: ({ color }: { color: string }) =>
+      createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
+    WallWindowBar: ({ color, reduceMotion, hidden }: { color: string; reduceMotion: boolean; hidden?: boolean }) =>
+      createElement('div', {
+        'data-testid': 'window-bar',
+        'data-color': color,
+        'data-reduce-motion': String(reduceMotion),
+        'data-hidden': String(hidden === true),
+      }),
+  };
+});
+/** The window's clock moves on: every view that reads it hears it. */
+function tickWindow(secondsLeft: number) {
+  windowClock.secondsLeft = secondsLeft;
+  for (const listener of windowClock.listeners) listener();
+}
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 import { act } from '@testing-library/react';
@@ -193,6 +221,8 @@ import { resolveWallControl, type WallControlModel, type WallControlState, type 
 
 afterEach(() => {
   cleanup();
+  peekCtrl.triggers = [];
+  peekCtrl.screenReaderOn = false;
   windowClock.secondsLeft = 38;
   swipeCtrl.frostArmed = false;
   swipeCtrl.releaseArmed = false;
@@ -867,6 +897,45 @@ describe('WallControlButton: the keep-lighting window', () => {
     expect(view.getByTestId('window-digits').dataset.color).toBe('#5B21B6');
   });
 
+  // W3: the value steps every 10 s. It lives on a leaf around the pressable,
+  // so the pill (its row, glow and swipe) never re-renders for it.
+  it('steps its value on a leaf: the pill itself never re-renders for the clock', () => {
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const pillRenders = swipeCtrl.options.length;
+    act(() => tickWindow(28));
+    expect(view.getByRole('button').getAttribute('data-value')).toBe('playView.wallControl.secondsLeft:{"count":20}');
+    act(() => tickWindow(7));
+    expect(view.getByRole('button').getAttribute('data-value')).toBe('playView.wallControl.underTenSeconds');
+    expect(swipeCtrl.options.length).toBe(pillRenders);
+  });
+
+  // Spec B3: the peek waits for the window, the moment the swipe is news.
+  it('hands the swipe peek the window and the screen reader', () => {
+    peekCtrl.screenReaderOn = true;
+    renderButton(windowModel(), { onSwipe: () => 'started' });
+    expect(peekCtrl.triggers.at(-1)).toEqual({ offered: true, windowLive: true, screenReaderOn: true });
+    cleanup();
+    peekCtrl.screenReaderOn = false;
+    renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(peekCtrl.triggers.at(-1)).toEqual({ offered: false, windowLive: false, screenReaderOn: false });
+  });
+
+  // Spec B3: the Large Content Viewer shows the full label, and in a window
+  // the time left is part of it. The clock ticks on the viewer's own leaf.
+  it('shows the time left in the Large Content Viewer, ticking on its own leaf', () => {
+    windowClock.secondsLeft = 38;
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const viewerTitle = () => view.container.querySelector('[data-native-viewer]')?.getAttribute('data-title');
+    expect(viewerTitle()).toBe('playView.wallControl.eachPickLights · 0:38');
+    const pillRenders = swipeCtrl.options.length;
+    act(() => tickWindow(37));
+    expect(viewerTitle()).toBe('playView.wallControl.eachPickLights · 0:37');
+    expect(swipeCtrl.options.length).toBe(pillRenders);
+    cleanup();
+    const outside = renderButton(modelFor('lit', { holder: 'self', navigationCommits: false }));
+    expect(outside.container.querySelector('[data-native-viewer]')?.getAttribute('data-title')).not.toContain('0:');
+  });
+
   it('says under ten seconds without a count', () => {
     windowClock.secondsLeft = 7;
     const view = renderButton(windowModel());
@@ -893,8 +962,28 @@ describe('WallControlButton: the keep-lighting window', () => {
     swipeCtrl.frostArmed = true;
     const wiping = renderButton(windowModel(), { onSwipe: () => 'started' });
     measure();
-    expect(wiping.queryByTestId('window-bar')).toBeNull();
+    expect(wiping.getByTestId('window-bar').dataset.hidden).toBe('true');
     expect(wiping.queryByTestId('wall-swipe-wipe')).not.toBeNull();
+  });
+
+  // A cancelled drag or the peek: the same bar comes back, its drain still
+  // running, rather than a new one that refills from full as a lit climb would.
+  it('keeps the same bar mounted through a wipe, so it comes back where it stood', () => {
+    const handlers = { onPress: vi.fn(), onLongPress: vi.fn(), onSwipe: () => 'started' as const };
+    // A fresh model each time, so the memoised button draws the swipe's new state.
+    const element = () => createElement(WallControlButton, { model: windowModel(), ...handlers });
+    const view = render(element());
+    measure();
+    const bar = view.getByTestId('window-bar');
+    expect(bar.dataset.hidden).toBe('false');
+    swipeCtrl.frostArmed = true;
+    view.rerender(element());
+    expect(view.getByTestId('window-bar')).toBe(bar);
+    expect(bar.dataset.hidden).toBe('true');
+    swipeCtrl.frostArmed = false;
+    view.rerender(element());
+    expect(view.getByTestId('window-bar')).toBe(bar);
+    expect(bar.dataset.hidden).toBe('false');
   });
 
   it('draws no clock, bar or value outside a window', () => {

@@ -21,7 +21,20 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'span',
+      { 'data-hidden-ios': accessibilityElementsHidden, 'data-important-android': importantForAccessibility },
+      children,
+    ),
 }));
 vi.mock('../../AppMenu', () => ({
   AppMenu: (props: NonNullable<typeof mockMenu.props>) => {
@@ -74,4 +87,17 @@ it("delivers a pick queued before a re-render to the latest row's handler", () =
   queued?.(4);
   expect(latest).toHaveBeenCalledWith('until_stopped');
   expect(first).not.toHaveBeenCalled();
+});
+
+// The menu's name already starts with the label: VoiceOver and TalkBack read
+// the row once, on the control, not the label and then the label again.
+it('hides the visible label from screen readers, since the menu is named with it', () => {
+  const { getByText } = render(
+    <BleKeepLightingRow
+      model={{ label: 'Keep lighting after Put on board', choice: '45', options: OPTIONS, onChange: vi.fn() }}
+    />,
+  );
+  const label = getByText('Keep lighting after Put on board');
+  expect(label.getAttribute('data-hidden-ios')).toBe('true');
+  expect(label.getAttribute('data-important-android')).toBe('no-hide-descendants');
 });

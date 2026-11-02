@@ -21,14 +21,16 @@ export type QueuePickLanding = 'commit' | 'reopen' | 'preview';
  * (`isCommittedHeadClimb`), so its preview would show no Put on board and the
  * pick could never land. That pick:
  *
- * - commits when nothing on the wall would change: solo, the same orientation,
- *   and no #4979 hold. The entry moves into Now and the wall keeps its climb.
+ * - commits solo with no #4979 hold. The entry moves into Now. In the same
+ *   orientation the wall keeps its climb; a copy in the other orientation
+ *   lights it that way, as the tap did before 2.7. A preview of that copy
+ *   would show the picked orientation while the board control held only the
+ *   climb up's, so it could never go up.
  * - reopens the climb up for the Now slot itself (a commit would only restart
  *   its clock), in a crew (a look never writes the crew's queue), and while
  *   the hold keeps the wall dark (a new current releases the hold, and the
- *   auto-sender lights the wall).
- * - previews in the other orientation, which would light the wall mirrored.
- *   Its preview has no Put on board either, as before 2.7.
+ *   auto-sender lights the wall). The player then shows the climb up in its
+ *   own orientation, which is what the wall holds.
  */
 export function resolveQueuePickLanding({
   picked,
@@ -45,7 +47,6 @@ export function resolveQueuePickLanding({
 }): QueuePickLanding {
   if (lightsOnPick) return 'commit';
   if (!current || !isCommittedHeadClimb(picked.climb.uuid, current.climb.uuid)) return 'preview';
-  if ((picked.climb.mirrored === true) !== (current.climb.mirrored === true)) return 'preview';
   if (picked.uuid === current.uuid || inSharedSession || heldQueueItemUuid === current.uuid) return 'reopen';
   return 'commit';
 }

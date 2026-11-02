@@ -1,6 +1,12 @@
 import { useIsSharedSession } from '../../providers/queue-provider';
 import { getSetting, useSetting } from '../../settings';
-import { getDriveMode, isDrivingStoppedForLink, useDriveModePhase, useDrivingStoppedForLink } from './drive-mode-store';
+import {
+  drivingAtPick,
+  getDriveMode,
+  isDrivingStoppedForLink,
+  useDriveModePhase,
+  useDrivingStoppedForLink,
+} from './drive-mode-store';
 import { climbChangeStaysViewOnly } from './play-drawer-navigation';
 
 /** Which change of climb: a swipe, Next or Prev, or a tap on a climb in a list. */
@@ -26,9 +32,12 @@ export function useClimbChangeLights(kind: ClimbChangeKind): boolean {
   });
 }
 
-/** A live drive on this phone's link, read at the tap (#7113). */
+/**
+ * A live drive on this phone's link, read at the tap (#7113). A keep-lighting
+ * window past its end is not one, even before the watcher has ended it (#7038).
+ */
 export function isDrivingWall(): boolean {
-  return getDriveMode()?.phase === 'live';
+  return drivingAtPick(getDriveMode()?.phase === 'live');
 }
 
 /**

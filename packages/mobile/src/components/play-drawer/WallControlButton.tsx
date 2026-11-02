@@ -40,8 +40,8 @@
 // works there and makes the drive open-ended, which brings the frost. The
 // screen-reader value is the time left on a 10 s step, split from the label.
 
-import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { PressableSurface, type PressableSurfaceProps } from '../PressableSurface';
+import { memo, useCallback, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Platform, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -52,6 +52,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useTheme } from '../../providers/theme-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
 import { useWallSwipePeek } from '../../lib/wall-swipe-hint';
 import {
   LONG_PRESS_ACTION_NAME,
@@ -64,7 +65,7 @@ import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
-import { useWallControlText, windowTimeValue } from './wall-control-text';
+import { formatWindowClock, useWallControlText, windowTimeValue } from './wall-control-text';
 import { WallGlow } from './WallGlow';
 import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
@@ -206,7 +207,14 @@ function WallControlButtonComponent({
       : swipePreview.peek
         ? peekProgress(size.w)
         : (swipePreview.progress ?? 0);
-  const peekToken = useWallSwipePeek(swipeOffered && swipePreview === undefined);
+  // The peek (spec B3): at the first keep-lighting window in a session, and the
+  // session's one replay on a third Put on board within 5 minutes.
+  const screenReaderOn = useScreenReaderEnabled();
+  const peekToken = useWallSwipePeek({
+    offered: swipeOffered && swipePreview === undefined,
+    windowLive: model.lightWindow,
+    screenReaderOn,
+  });
   const swipe = useWallSwipe({
     enabled: swipeOffered,
     driving: model.driving,
@@ -227,10 +235,6 @@ function WallControlButtonComponent({
   const holdsBoard = model.holder === 'self';
   const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
   const text = useWallControlText(model);
-  // The window's time left, on a 10 s step, as the button's value (spec B2).
-  const { t } = useTranslation('session');
-  const windowClock = useWindowSecondsLeft(10);
-  const windowValue = model.lightWindow && windowClock ? windowTimeValue(windowClock.secondsLeft * 1000, t) : undefined;
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
   // Clear of Android's edge Back, the same on both sides so it stays centred.
@@ -322,13 +326,14 @@ function WallControlButtonComponent({
           />
         )}
       </View>
-      <LargeContentViewer
+      <WallLabelViewer
         testID={
           rowColors.resting && !sample
             ? `wall-control-${model.state}-${model.holder ?? 'none'}-${model.driving ? 'driving' : 'idle'}`
             : undefined
         }
         title={label}
+        lightWindow={model.lightWindow}
         onActivate={model.pending || !rowColors.resting ? undefined : handlePress}
         style={styles.labelViewer}
       >
@@ -350,7 +355,7 @@ function WallControlButtonComponent({
           {/* The clock is its own run, so the words shrink and cut first and the digits never do. */}
           {model.lightWindow ? <WallWindowDigits color={rowColors.foreground} /> : null}
         </View>
-      </LargeContentViewer>
+      </WallLabelViewer>
       {showChevrons ? (
         <View
           style={[styles.chevrons, { marginEnd: CHEVRON_FACE_GAP - (compact ? spacing[1] : spacing[2]) }]}
@@ -382,7 +387,8 @@ function WallControlButtonComponent({
     </>
   );
   const button = (
-    <PressableSurface
+    <WallControlSurface
+      lightWindow={model.lightWindow}
       testID={sample ? undefined : 'play-drawer-wall-control'}
       onPress={handlePress}
       onLongPress={hold ? handleLongPress : undefined}
@@ -390,7 +396,6 @@ function WallControlButtonComponent({
       onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={text.accessibilityLabel}
-      accessibilityValue={windowValue ? { text: windowValue } : undefined}
       accessibilityHint={text.accessibilityHint}
       accessibilityState={{ selected: model.selected, busy }}
       // The sheet's label colour is a platform colour on iOS, where no ripple draws anyway.
@@ -409,9 +414,10 @@ function WallControlButtonComponent({
       ]}
     >
       {fullGlow ? <WallGlow layer={fullGlow} width={size.w} /> : null}
-      {/* The window's drain bar; it steps aside while a drag or the peek wipes in. */}
-      {model.lightWindow && !wiping && size.w > 0 ? (
-        <WallWindowBar color={tonalForeground} width={size.w} reduceMotion={reduceMotion} />
+      {/* The window's drain bar; it steps aside while a drag or the peek wipes in,
+          still mounted, so it comes back where it stood rather than refilling. */}
+      {model.lightWindow && size.w > 0 ? (
+        <WallWindowBar color={tonalForeground} width={size.w} reduceMotion={reduceMotion} hidden={wiping} />
       ) : null}
       {row({
         foreground: restForeground,
@@ -439,7 +445,7 @@ function WallControlButtonComponent({
           })}
         </WallSwipeWipe>
       ) : null}
-    </PressableSurface>
+    </WallControlSurface>
   );
   // The pan is enabled only where the swipe is offered (`useWallSwipe`); always
   // wrapped, so the button never remounts as the offer comes and goes. `pan-y`
@@ -452,6 +458,44 @@ function WallControlButtonComponent({
 }
 
 export const WallControlButton = memo(WallControlButtonComponent);
+
+type WallLabelViewerProps = ComponentProps<typeof LargeContentViewer> & {
+  /** Put on board's keep-lighting window is on: the viewer shows the time left too. */
+  lightWindow: boolean;
+};
+
+/**
+ * The label's Large Content Viewer (spec B3). The label and its clock are both
+ * capped, and in a keep-lighting window the time left is the news, so the
+ * viewer shows "Each pick lights · 0:38". A leaf of its own, so the clock's
+ * 1 Hz tick re-renders only this; the row it wraps is the parent's element,
+ * which React keeps as it is.
+ */
+function WallLabelViewer({ lightWindow, title, ...viewer }: WallLabelViewerProps) {
+  const clock = useWindowSecondsLeft(1);
+  const shownTitle = lightWindow && clock ? `${title} · ${formatWindowClock(clock.secondsLeft * 1000)}` : title;
+  return <LargeContentViewer {...viewer} title={shownTitle} />;
+}
+
+type WallControlSurfaceProps = PressableSurfaceProps & {
+  /** Put on board's keep-lighting window is on: the time left is the value. */
+  lightWindow: boolean;
+};
+
+/**
+ * The button's pressable, which carries the window's time left as its
+ * screen-reader value (spec B2: "Each pick lights", then "30 seconds left").
+ * A leaf of its own because the value steps every 10 s: only this re-renders
+ * for it. The row, the glow and the swipe are the parent's elements, handed in
+ * as children, so React keeps them as they are.
+ */
+function WallControlSurface({ lightWindow, ...pressable }: WallControlSurfaceProps) {
+  const { t } = useTranslation('session');
+  const windowClock = useWindowSecondsLeft(10);
+  const windowValue = lightWindow && windowClock ? windowTimeValue(windowClock.secondsLeft * 1000, t) : null;
+  const accessibilityValue = useMemo(() => (windowValue ? { text: windowValue } : undefined), [windowValue]);
+  return <PressableSurface {...pressable} accessibilityValue={accessibilityValue} />;
+}
 
 const styles = StyleSheet.create({
   // Fills the row, whose own padding matches the Logbook card's edges below it

@@ -311,10 +311,9 @@ export type CommitBarModel = {
 export type CommitBarModelInput = {
   /**
    * A preview is pinned (`drawerPreviewItem != null`) — deliberately WIDER than
-   * the browse latch. A long-press "Preview" with `lightOnSwipe` on has
-   * committing swipes (so no browsing chrome), but the pinned climb still needs
-   * its activation button: today's banner offered "Set active" there, and losing
-   * it would strand the explicit Preview action with no way to promote.
+   * the browse latch. A deep-link preview with `lightOnSwipe` on has committing
+   * swipes (so no browsing chrome), but the pinned climb still needs its
+   * activation button, or that preview would have no way to promote.
    */
   previewPinned: boolean;
   isAnonymous: boolean;

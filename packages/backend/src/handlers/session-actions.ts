@@ -122,7 +122,7 @@ export async function handleSessionNavigate(req: IncomingMessage, res: ServerRes
   }
 
   try {
-    const outcome = await navigateSessionQueue(sessionId, action, 'session-navigate');
+    const outcome = await navigateSessionQueue(sessionId, action, 'session-navigate', auth.userId);
 
     if (outcome.kind === 'queue_empty') {
       sendJson(res, 409, { success: false, error: 'Queue is empty' });

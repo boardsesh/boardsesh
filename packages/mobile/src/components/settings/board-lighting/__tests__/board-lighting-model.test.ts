@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildBoardLightingSections, type BoardLightingModelInput } from '../board-lighting-model';
 import type { MoreRow } from '../../../MoreForm.types';
+import { toggleRowSubtitle } from '../../../MoreForm.logic';
 
 function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLightingModelInput {
   return {
@@ -169,6 +170,8 @@ describe('buildBoardLightingSections: keep lighting', () => {
     const row = findRow(input, 'moonboardPutOnBoardKeepsLighting');
     if (row.kind !== 'select') throw new Error('not a select');
     expect(row.label).toBe('settings:ble.lighting.keep.moonboardLabel');
+    // Named on its own for the rotor, Voice Control and TalkBack (spec B4).
+    expect(row.accessibilityLabel).toBe('settings:ble.lighting.keep.moonboardAccessibilityLabel');
     expect(row.subtitle).toBe('settings:ble.lighting.keep.moonboardDescription');
     expect(row.selectedKey).toBe('until_stopped');
     row.onSelect('30');
@@ -181,10 +184,12 @@ describe('buildBoardLightingSections: keep lighting', () => {
     if (on.kind !== 'toggle') throw new Error('not a toggle');
     expect(on).toMatchObject({
       label: 'settings:ble.lighting.keep.inSessionLabel',
+      accessibilityLabel: 'settings:ble.lighting.keep.inSessionAccessibilityLabel',
       subtitle: 'settings:ble.lighting.keep.inSessionDescription',
       value: true,
       disabled: false,
     });
+    expect(toggleRowSubtitle(on)).toEqual({ text: 'settings:ble.lighting.keep.inSessionDescription', isReason: false });
     const off = findRow(
       makeInput({
         keepLighting: { choice: 'off', onChange: vi.fn() },
@@ -193,7 +198,9 @@ describe('buildBoardLightingSections: keep lighting', () => {
       'putOnBoardDrivesInSession',
     );
     if (off.kind !== 'toggle') throw new Error('not a toggle');
-    expect(off).toMatchObject({ subtitle: 'settings:ble.lighting.keep.inSessionOffReason', disabled: true });
+    expect(off).toMatchObject({ disabledReason: 'settings:ble.lighting.keep.inSessionOffReason', disabled: true });
+    // The reason replaces the description while greyed out.
+    expect(toggleRowSubtitle(off)).toEqual({ text: 'settings:ble.lighting.keep.inSessionOffReason', isReason: true });
   });
 
   it('hands the session switch its own handler', () => {

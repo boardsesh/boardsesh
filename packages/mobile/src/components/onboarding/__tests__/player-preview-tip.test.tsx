@@ -238,6 +238,20 @@ describe('PlayerPreviewTip', () => {
     expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.moonboard);
   });
 
+  // The two settings Put on board's plan does not take (`resolveKeepLightingReach`).
+  it('reads Light the board as I swipe and auto-disconnect the way the press and the link do', () => {
+    renderTip({ swipeLightsSolo: true });
+    expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
+    cleanup();
+    renderTip({ autoDisconnectSeconds: 30 });
+    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(
+      tips.windowSeconds.replace('{{seconds}}', '30'),
+    );
+    cleanup();
+    renderTip({ boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED, autoDisconnectSeconds: 120 });
+    expect(screen.getByTestId('player-preview-tip-window').textContent).toBe(tips.untilStopOrDisconnect);
+  });
+
   it('goes on Got it, the close button and Lighting settings, saying which', () => {
     const onExit = renderTip();
     fireEvent.click(screen.getByText(tips.done));
@@ -266,10 +280,22 @@ describe('PlayerPreviewTip', () => {
 
   // A swipe or Light every climb during the window clears it: the same drive
   // (same start, still 'tap') now has no end, which is the frost.
-  it('goes when a swipe turns the running window open-ended', () => {
+  it('goes when a swipe turns a window it saw start open-ended', () => {
     const onExit = renderTip();
     const startedAt = Date.now() + 1;
     act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: 45_000 }));
+    expect(onExit).not.toHaveBeenCalled();
+    act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: null }));
+    expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');
+  });
+
+  // The window was already running when the card showed (it started before
+  // shownAt): only the card's own record of that window says the drive that
+  // now has no end is the same one, turned open-ended by the climber.
+  it('goes when a swipe turns a window already running when it showed open-ended', () => {
+    const startedAt = Date.now() - 5_000;
+    drive.current = { startedAt, startedBy: 'tap', windowMs: 45_000 };
+    const onExit = renderTip();
     expect(onExit).not.toHaveBeenCalled();
     act(() => drive.set({ startedAt, startedBy: 'tap', windowMs: null }));
     expect(onExit).toHaveBeenCalledExactlyOnceWith('drive');

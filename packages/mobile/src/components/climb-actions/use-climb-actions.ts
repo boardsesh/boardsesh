@@ -389,8 +389,8 @@ export function useClimbActions({
           // drives), open the History slot as a preview that carries the replay
           // placement to Put on board. A History copy of the climb already up
           // lands as a queue sheet tap does (`resolveQueuePickLanding`): it
-          // commits when the wall would keep its climb, and otherwise reopens
-          // the climb up, since its preview would have no Put on board.
+          // commits solo with no hold, in either orientation, and otherwise
+          // reopens the climb up, since its preview would have no Put on board.
           const commitOptions = { placement: 'STEP' as const, playlistSuggestionSource: null };
           const landing = readQueuePickLanding(replayItem, {
             current: getQueueSnapshot().currentClimbQueueItem,

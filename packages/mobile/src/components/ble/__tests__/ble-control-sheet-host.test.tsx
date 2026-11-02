@@ -60,8 +60,16 @@ vi.mock('../../../settings', () => ({
     mockSettings.setters[key] ??= vi.fn();
     return [key in mockSettings.values ? mockSettings.values[key] : false, mockSettings.setters[key]];
   },
+  getSetting: (key: string) => (key in mockSettings.values ? mockSettings.values[key] : false),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+const announceQueued = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued }));
+vi.mock('../../../lib/analytics-wall-control', () => ({
+  trackDriveModeEnded: vi.fn(),
+  trackDriveModeStarted: vi.fn(),
+}));
+vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../use-auto-disconnect-timeout-labels', () => ({
@@ -83,6 +91,14 @@ import { BleControlSheetHost } from '../BleControlSheetHost';
 import { QueueActiveClimbContext } from '../../../providers/queue/queue-contexts';
 import { resetWallCleared, useWallClearedClimbUuid } from '../wall-cleared-store';
 import { renderHook } from '@testing-library/react';
+import {
+  enterDriveMode,
+  getDriveMode,
+  getLastDriveModeExitReason,
+  markDriveLive,
+  resetDriveModeForTests,
+} from '../../play-drawer/drive-mode-store';
+import { readClimbChangeLights } from '../../play-drawer/use-climb-change-lights';
 
 describe('BleControlSheetHost', () => {
   beforeEach(() => {
@@ -172,6 +188,9 @@ describe('BleControlSheetHost', () => {
 
     expect(mockSetMoonboardLightAdjacentHolds).toHaveBeenCalledWith(true);
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
+    // A toggle, not a press: it never carries to the next connect's link, so a
+    // bulb connect right after it keeps the #4979 hold.
+    expect(mockReassertWall).toHaveBeenCalledWith();
     expect(mockSetMoonboardLightAdjacentHolds.mock.invocationCallOrder[0]).toBeLessThan(
       mockReassertWall.mock.invocationCallOrder[0],
     );
@@ -241,6 +260,40 @@ describe('BleControlSheetHost', () => {
     cleared.rerender();
     expect(cleared.result.current).toBeNull();
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
+  });
+
+  // 2.7: a dark wall is the climber stopping. A window (or a drive) left
+  // running behind a button that reads Put on board would light the next pick.
+  it.each([
+    ['a keep-lighting window', 45_000, 'session:playView.wallControl.stoppedWindow'],
+    ['an open-ended drive', null, 'session:playView.wallControl.stoppedDriving'],
+  ] as const)('Turn off all lights ends %s and says so', (_drive, windowMs, line) => {
+    resetDriveModeForTests();
+    mockBluetooth.boardName = 'kilter';
+    enterDriveMode({ startedBy: 'tap', sessionId: null, boardId: null, windowMs, windowSetting: null });
+    markDriveLive();
+    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(true);
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+
+    mockBleControlSheet.props?.onClearLights();
+
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('stopped');
+    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(false);
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith(line);
+    expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
+  });
+
+  it('Turn off all lights with nothing driving leaves the lighting settings alone', () => {
+    resetDriveModeForTests();
+    mockSettings.values = { lightOnClimbTap: true };
+    render(<BleControlSheetHost visible onClose={vi.fn()} />);
+
+    mockBleControlSheet.props?.onClearLights();
+
+    expect(announceQueued).not.toHaveBeenCalled();
+    expect(readClimbChangeLights('tap', { inSharedSession: false })).toBe(true);
+    expect(mockBluetooth.turnOffAllLights).toHaveBeenCalledTimes(1);
   });
 
   // #7000: the player passes the climb it shows, so Turn off all lights from a

@@ -969,8 +969,8 @@
       "secondsLeft_other": "{{count}} secondes restantes",
       "underTenSeconds": "Moins de 10 secondes restantes",
       "stopWindowHint": "Touche pour arrêter. Maintiens pour les commandes de la board.",
-      "windowStarted_other": "Chaque bloc que tu choisis s'allume pendant {{count}} secondes. Allumer chaque bloc les garde allumés.",
-      "windowStartedMinute": "Chaque bloc que tu choisis s'allume pendant 1 minute. Allumer chaque bloc les garde allumés.",
+      "windowStarted_other": "Pendant les {{count}} prochaines secondes, chaque bloc que tu choisis s'allume aussi. Allumer chaque bloc les garde allumés.",
+      "windowStartedMinute": "Pendant la prochaine minute, chaque bloc que tu choisis s'allume aussi. Allumer chaque bloc les garde allumés.",
       "stoppedWindow": "Les blocs ne s'allument plus",
       "windowEnded": "Les blocs s'ouvrent de nouveau en aperçu",
       "sheetStatusPreview": "Aperçu · pas au mur",
@@ -980,7 +980,8 @@
     "paneEmpty": {
       "title": "Choisis un bloc",
       "subtitle": "Touche un bloc pour le voir ici.",
-      "unlitHint": "Touche un bloc pour le voir en aperçu"
+      "unlitHint": "Touche un bloc pour le voir en aperçu",
+      "unlitHintLights": "Touche un bloc pour l’allumer"
     },
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",

@@ -5,8 +5,10 @@ import {
 } from '../../lib/live-activity/live-activity-plugin';
 import {
   enterDriveMode,
+  exitDriveMode,
   extendDriveWindow,
   getDriveMode,
+  isDriveWindowDue,
   makeDriveOpenEnded,
   startLockScreenDrive,
   type DriveModeState,
@@ -27,17 +29,30 @@ import {
  * - Android's receiver only forwards the press. JS moves the queue and its
  *   auto-sender lights the wall, so JS opens the window itself
  *   (`armNotificationPressDrive`), at the wall's lit confirm like Put on board.
+ *
+ * A press is a pick, so it reads a window's end off the wall clock (#7038),
+ * never the watcher's timer, which a suspended app or Android's paused timers
+ * hold back: a window over by the press is not one it renews. Native finds it
+ * over too and opens a new one (`afterPress`), so the press starts a drive of
+ * its own and the old one ends at its end (`window_ended`). A crewmate's
+ * put-up ends a window either way opened (`useDriveCrewPutUp`), and the
+ * climber's own press never reads as one: the server names them as its mover.
  */
 
 /** What adopting one lock-screen write does to the drive. */
 export type LockScreenAdoption =
-  /** No drive here: start one, live, ending where native's window ends (or open-ended). */
+  /**
+   * No drive here, or a window here that was over by the press: start one,
+   * live, ending where native's window ends (or open-ended).
+   */
   | {
       kind: 'start';
       windowMs: number | null;
       windowSetting: KeepLightingSettingKey | null;
       expiresAt: number | null;
       startedAt: number;
+      /** The drive here is a window that was over by the press: it ends first (`window_ended`). */
+      replacesLapsedWindow?: true;
     }
   /** The window here ends sooner than native's renewal: take the later end. */
   | { kind: 'extend'; expiresAt: number }
@@ -72,15 +87,21 @@ export function resolveLockScreenAdoption({
   if (snapshot?.source !== 'lockScreen') return null;
   if (sessionId === null || snapshot.sessionId !== sessionId || !linked) return null;
   if (drive?.phase === 'arming') return null;
-  const driveWindowed = drive !== null && drive.windowMs !== null;
+  // A window over by the press is not the one it renewed: the press's own
+  // drive takes its place.
+  const lapsed = isDriveWindowDue(drive, snapshot.updatedAtMs);
+  const current = lapsed ? null : drive;
+  const replaces = lapsed ? { replacesLapsedWindow: true as const } : {};
+  const driveWindowed = current !== null && current.windowMs !== null;
   if (snapshot.mode === 'driving') {
-    if (!drive) {
+    if (!current) {
       return {
         kind: 'start',
         windowMs: null,
         windowSetting: null,
         expiresAt: null,
         startedAt: Math.min(snapshot.updatedAtMs, now),
+        ...replaces,
       };
     }
     return driveWindowed ? { kind: 'open_ended' } : { kind: 'none' };
@@ -88,7 +109,7 @@ export function resolveLockScreenAdoption({
   if (snapshot.mode !== 'window') return { kind: 'none' };
   const endsAt = snapshot.endsAtMs ?? null;
   if (endsAt === null || !Number.isFinite(endsAt) || endsAt <= now) return { kind: 'none' };
-  if (!drive) {
+  if (!current) {
     const seconds = snapshot.windowSeconds ?? null;
     const windowMs = seconds !== null && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : endsAt - now;
     return {
@@ -97,9 +118,10 @@ export function resolveLockScreenAdoption({
       windowSetting: settingOf(snapshot.family ?? null),
       expiresAt: endsAt,
       startedAt: Math.min(snapshot.updatedAtMs, now),
+      ...replaces,
     };
   }
-  if (driveWindowed && drive.expiresAt !== null && drive.expiresAt < endsAt)
+  if (driveWindowed && current.expiresAt !== null && current.expiresAt < endsAt)
     return { kind: 'extend', expiresAt: endsAt };
   return { kind: 'none' };
 }
@@ -143,6 +165,7 @@ function applyAdoption(
 ): void {
   switch (adoption.kind) {
     case 'start':
+      if (adoption.replacesLapsedWindow) exitDriveMode('window_ended');
       startLockScreenDrive({
         sessionId: context.sessionId,
         boardId: context.boardId,
@@ -205,7 +228,9 @@ export function adoptLockScreenLighting({
  * (the party server turned it down, the write failed) leaves arming to time
  * out, and the notification, which reads arming as off, never shows a window
  * for it. A window already running renews at the confirm, a drive goes on,
- * and arming waits for its own confirm.
+ * and arming waits for its own confirm. A window over by the press (Android
+ * pauses JS timers with the activity, #7038, so the watcher may not have
+ * ended it) ends here first (`window_ended`): its confirm must not renew it.
  *
  * Returns whether it armed: not without a link (nothing lights), not with a
  * drive on, and not where the press lights one climb (`plan` null).
@@ -216,6 +241,7 @@ export function armNotificationPressDrive({
   boardType,
   linked,
   plan,
+  now = Date.now(),
 }: {
   sessionId: string | null;
   boardId: number | null;
@@ -224,7 +250,9 @@ export function armNotificationPressDrive({
   linked: boolean;
   /** What the press keeps lighting (`lockScreenPressKeepsLighting` + `resolveKeepLightingPlan`), or null for one climb. */
   plan: KeepLightingPlan | null;
+  now?: number;
 }): boolean {
+  if (isDriveWindowDue(getDriveMode(), now)) exitDriveMode('window_ended');
   if (!linked || plan === null || getDriveMode() !== null) return false;
   enterDriveMode({
     sessionId,

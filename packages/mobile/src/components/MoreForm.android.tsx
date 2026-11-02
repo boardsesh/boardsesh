@@ -125,8 +125,6 @@ const OPEN_EXTERNAL_ICON_SOURCE: ImageSourcePropType = require('../../assets/mat
 // Trailing disclosure chevron. The Compose `Icon` needs a vector-drawable source,
 // so a muted `›` glyph stands in for the disclosure indicator on these nav rows.
 const CHEVRON = '›';
-/** The open select menu's mark on the current choice (AppMenu.android draws the same). */
-const SELECTED_MARK = '✓';
 // M3's disabled-content opacity, for a select row that cannot open.
 const DISABLED_ROW = alpha(material.disabledContentOpacity);
 const ROW_PADDING = padding(spacing[4], spacing[3], spacing[4], spacing[3]);
@@ -170,14 +168,8 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
     <DropdownMenu expanded={expanded && !row.disabled} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
         <Row modifiers={triggerModifiers} verticalAlignment="center">
-          <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
+          <Column modifiers={[weight(1)]}>
             <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
-            {/* M3 supporting text, as the switch rows draw theirs. */}
-            {row.subtitle ? (
-              <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
-                {row.subtitle}
-              </Text>
-            ) : null}
           </Column>
           <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
             {currentLabel}
@@ -199,17 +191,6 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
               setExpanded(false);
             }}
           >
-            {/* The current choice carries a leading ✓, as AppMenu's rows do, so
-                the open menu says which one is set and TalkBack reads "check
-                mark" before it. The row has no Role.DropdownList or
-                stateDescription: this @expo/ui's `semantics` modifier takes
-                only contentType and contentDescription, so the value is read
-                from the trigger's merged text. */}
-            {option.key === row.selectedKey ? (
-              <DropdownMenuItem.LeadingIcon>
-                <Text color={colors.brandColors.primary}>{SELECTED_MARK}</Text>
-              </DropdownMenuItem.LeadingIcon>
-            ) : null}
             <DropdownMenuItem.Text>
               <Text color={colors.itemColor}>{option.label}</Text>
             </DropdownMenuItem.Text>

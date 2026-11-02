@@ -17,15 +17,24 @@ vi.mock('react-native', () => ({
   View: ({ testID, children }: { testID?: string; children?: ReactNode }) =>
     createElement('div', { 'data-testid': testID }, children),
 }));
-vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
-  cancelAnimation: vi.fn(),
-  Easing: { linear: (value: number) => value },
-  useAnimatedStyle: (build: () => unknown) => build(),
-  useSharedValue: (value: number) => ({ value }),
-  withSequence: (...steps: number[]) => steps[steps.length - 1],
-  withTiming: (value: number) => value,
-}));
+// Each `withTiming` the drain asks for: where to, and over how long.
+const timings = vi.hoisted(() => [] as { to: number; duration: number | undefined }[]);
+vi.mock('react-native-reanimated', async () => {
+  const { useRef } = await import('react');
+  return {
+    default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
+    cancelAnimation: vi.fn(),
+    Easing: { linear: (value: number) => value },
+    useAnimatedStyle: (build: () => unknown) => build(),
+    // Stable across renders, as Reanimated's own is.
+    useSharedValue: (value: number) => useRef({ value }).current,
+    withSequence: (...steps: number[]) => steps[steps.length - 1],
+    withTiming: (to: number, config?: { duration?: number }) => {
+      timings.push({ to, duration: config?.duration });
+      return to;
+    },
+  };
+});
 vi.mock('../../Text', () => ({
   Text: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('span', { 'data-testid': testID }, children),
@@ -41,7 +50,7 @@ import {
   noteDriveClimbLit,
   resetDriveModeForTests,
 } from '../drive-mode-store';
-import { useWindowSecondsLeft, WallWindowBar, WallWindowDigits } from '../WallWindowClock';
+import { useWindowDrain, useWindowSecondsLeft, WallWindowBar, WallWindowDigits } from '../WallWindowClock';
 import { formatWindowClock, windowSecondsLeft, windowStartedAnnouncement, windowTimeValue } from '../wall-control-text';
 
 const t = ((key: string, values?: Record<string, unknown>) =>
@@ -64,6 +73,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(100_000);
   resetDriveModeForTests();
+  timings.length = 0;
 });
 afterEach(() => {
   cleanup();
@@ -162,6 +172,82 @@ describe('useWindowSecondsLeft', () => {
       vi.advanceTimersByTime(5_000);
     });
     expect(clock.result.current?.secondsLeft).toBe(15);
+  });
+});
+
+describe('useWindowDrain', () => {
+  /** The drains to empty asked for so far, as [from, over how long]. */
+  const drains = () =>
+    timings.flatMap((step, index) =>
+      step.to === 0 && index > 0 ? [[timings[index - 1].to, step.duration] as const] : [],
+    );
+
+  it('drains to the shown end, and re-aims when auto-disconnect moves it under the window', () => {
+    let deadline: number | null = 100_000 + 30_000;
+    registerAutoDisconnectDeadlineReader(() => deadline);
+    renderHook(() => useWindowDrain(false));
+    openWindow();
+    // 45 s window, auto-disconnect at 30 s: empty at 30 s.
+    expect(drains()).toEqual([[30_000 / 45_000, 30_000 - 250]]);
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(drains()).toHaveLength(1);
+    // A hold on the wall button pushes auto-disconnect past the window's own end.
+    deadline = 120_000 + 30_000;
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(drains()).toEqual([
+      [30_000 / 45_000, 30_000 - 250],
+      [24_000 / 45_000, 24_000 - 250],
+    ]);
+    // Nothing moved since: no new drain.
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(drains()).toHaveLength(2);
+  });
+
+  // The player opening on a running window, or the bar coming back after a
+  // drag: it starts where the window stands, with no refill from full, which
+  // would read as a climb lighting.
+  it('mounted mid-window, starts where the window stands and refills only on a renewal', () => {
+    openWindow();
+    act(() => {
+      vi.advanceTimersByTime(33_000);
+    });
+    let firstFrame: number | null = null;
+    renderHook(() => {
+      const drain = useWindowDrain(false);
+      firstFrame ??= drain.fraction.value;
+      return drain;
+    });
+    expect(firstFrame).toBeCloseTo(12_000 / 45_000);
+    expect(timings.slice(0, 2)).toEqual([
+      { to: 12_000 / 45_000, duration: 0 },
+      { to: 0, duration: 12_000 },
+    ]);
+    timings.length = 0;
+    act(() => noteDriveClimbLit());
+    expect(timings.slice(0, 2)).toEqual([
+      { to: 1, duration: 250 },
+      { to: 0, duration: 45_000 - 250 },
+    ]);
+  });
+
+  it('under Reduce Motion, draws its first frame where the window stands', () => {
+    openWindow();
+    act(() => {
+      vi.advanceTimersByTime(33_000);
+    });
+    let firstFrame: number | null = null;
+    renderHook(() => {
+      const drain = useWindowDrain(true);
+      firstFrame ??= drain.fraction.value;
+      return drain;
+    });
+    expect(firstFrame).toBeCloseTo(12_000 / 45_000);
   });
 });
 

@@ -468,8 +468,9 @@
     "relightBoard": "Re-light board",
     "sectionTitle": "Bluetooth",
     "autoDisconnect": {
-      "description": "Disconnect from the board after no climb has been displayed for the selected time.",
+      "description": "Disconnect from the board after no climb has been lit or previewed for the selected time.",
       "cutsLighting": "Auto-disconnect lets go of the board after {{timeout}}, so lighting stops then too.",
+      "disconnectedToast": "Disconnected after {{timeout}} with no new climb lit or previewed. Put on board to reconnect.",
       "enabledLabel": "Auto-disconnect",
       "enabledDescription": "Let other climbers connect after the timer expires.",
       "timeoutLabel": "Disconnect after",
@@ -495,9 +496,11 @@
         "off": "Off",
         "untilStopped": "Until I stop",
         "moonboardLabel": "On a MoonBoard",
+        "moonboardAccessibilityLabel": "Keep lighting on a MoonBoard",
         "moonboardDescription": "Most MoonBoard controllers don't like phones switching, so this applies in a session too.",
         "sheetMoonboardLabel": "Keep lighting on this MoonBoard",
         "inSessionLabel": "In a session too",
+        "inSessionAccessibilityLabel": "Keep lighting in a session too",
         "inSessionDescription": "When your phone has the crew's board. Off, your picks in a session stay previews.",
         "inSessionOffReason": "Turn on Keep lighting after Put on board to use this.",
         "footer": "Each climb that lights restarts the clock. Rest longer than that and your next pick opens as a preview."
@@ -507,7 +510,7 @@
       "onTapLabel": "Light the board when I tap a climb",
       "onTapDescription": "Every tap in a list lights the climb, with no time limit. Off, a tap opens a preview.",
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
-      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list into Up next and previews the climb you tapped. The wall keeps its climb until you Put on board."
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter’s page loads that list. When “Light the board when I tap a climb” is on, the list replaces your queue and the climb you tapped lights. When it’s off, the list from the climb you tapped becomes Up next, and that climb opens as a preview while the wall keeps its climb until you Put on board."
     },
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",

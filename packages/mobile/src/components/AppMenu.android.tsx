@@ -21,7 +21,7 @@ import {
   Row,
   Text,
 } from '@expo/ui/jetpack-compose';
-import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, defaultMinSize, padding, selectable } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
@@ -40,6 +40,7 @@ export function AppMenu(props: AppMenuProps) {
   const { brandColors, m3, systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
+  const open = () => setExpanded(true);
 
   // Every `Text` carries an explicit, scheme-aware colour. The trigger and the menu
   // popup are separate Compose compositions, and a custom `Text` in a slot does NOT
@@ -54,6 +55,10 @@ export function AppMenu(props: AppMenuProps) {
 
   const showCaret = props.iconName == null && props.showCaret !== false;
   const headline = props.iconName == null ? props.headline : undefined;
+  // A text anchor over a ticked choice is a value picker (a settings row, the
+  // board sheet's Keep lighting): TalkBack says "drop-down list" for it, as it
+  // does for a Spinner. An action menu ("Review") stays a button.
+  const isValuePicker = props.iconName == null && headline == null && resolved.some((action) => action.showCheck);
 
   return (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
@@ -63,13 +68,14 @@ export function AppMenu(props: AppMenuProps) {
     // gym name isn't clipped in the open list (symmetric with the iOS Menu, which caps
     // the anchor, not the popup).
     //
-    // Accessibility rides the RN Host boundary: @expo/ui/jetpack-compose has no
-    // content-description modifier, and the Host forwards these props to its native
-    // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
-    // `Menu` a11y modifiers and the old Paper Pressable anchor.
+    // The anchor's name and role ride the RN Host boundary: the Host forwards
+    // these props to its native view, so the trigger reads as a labelled button
+    // (a drop-down list for a value picker) to TalkBack, matching the iOS `Menu`
+    // a11y modifiers. The open menu's rows are Compose nodes: the ticked one
+    // carries `selectable`, so TalkBack says "Selected" as well as the ✓.
     <ComposeHost
       matchContents
-      accessibilityRole="button"
+      accessibilityRole={isValuePicker ? 'dropdownlist' : 'button'}
       accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
       accessibilityHint={accessibilityHint}
       style={[maxWidth != null ? { maxWidth } : null, style]}
@@ -81,14 +87,14 @@ export function AppMenu(props: AppMenuProps) {
             // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
             // titleLarge text. Its spoken name rides the Host's label above.
             // `anchorSize` is not read: M3 keeps the 48dp target.
-            <IconButton onClick={() => setExpanded(true)}>
+            <IconButton onClick={open}>
               <Icon source={MORE_VERT_ICON} size={topBarByVariant.material.glyphSize} tint={caretColor} />
             </IconButton>
           ) : headline != null ? (
             // The M3 title-menu: titleLarge headline over a bodyMedium scope line,
             // one click target. No start padding, so the headline lands on the same
             // 56dp title inset as `MaterialAppBarTitle` on the other tabs.
-            <Column modifiers={[clickable(() => setExpanded(true)), padding(0, spacing[2], spacing[2], spacing[2])]}>
+            <Column modifiers={[clickable(open), padding(0, spacing[2], spacing[2], spacing[2])]}>
               <Text style={{ typography: 'titleLarge' }} color={labelColor} maxLines={1} overflow="ellipsis">
                 {headline}
               </Text>
@@ -105,7 +111,14 @@ export function AppMenu(props: AppMenuProps) {
             </Column>
           ) : (
             <Row
-              modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
+              modifiers={[
+                clickable(open),
+                // A text anchor (a settings value, the board sheet's Keep
+                // lighting) is a control in its own right: Material's 48dp
+                // minimum touch height. The bare glyph keeps its own size.
+                ...(props.iconName == null ? [defaultMinSize({ minHeight: 48 })] : []),
+                padding(spacing[2], spacing[1], spacing[2], spacing[1]),
+              ]}
               verticalAlignment="center"
             >
               {props.iconName != null ? (
@@ -132,6 +145,15 @@ export function AppMenu(props: AppMenuProps) {
               : action.isDestructive
                 ? (m3.error as string)
                 : labelColor;
+            // One pick per tap: the ticked row's `selectable` and its own click
+            // run the same pick, and a tap that reaches both reports it once.
+            let picked = false;
+            const pick = () => {
+              if (picked || !isMenuActionSelectable(resolved, index)) return;
+              picked = true;
+              setExpanded(false);
+              onSelectIndex(index);
+            };
             return (
               // Composite key: scope entries can share a display name (two gyms named
               // the same), so the label alone isn't unique — pair it with the position.
@@ -141,11 +163,8 @@ export function AppMenu(props: AppMenuProps) {
                 <DropdownMenuItem
                   enabled={!action.isDisabled}
                   elementColors={{ textColor: itemColor, disabledTextColor: disabledColor }}
-                  onClick={() => {
-                    if (!isMenuActionSelectable(resolved, index)) return;
-                    setExpanded(false);
-                    onSelectIndex(index);
-                  }}
+                  modifiers={action.showCheck ? [selectable(true, pick)] : undefined}
+                  onClick={pick}
                 >
                   {action.showCheck ? (
                     <DropdownMenuItem.LeadingIcon>

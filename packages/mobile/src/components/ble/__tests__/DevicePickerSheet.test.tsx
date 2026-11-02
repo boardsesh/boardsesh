@@ -688,6 +688,43 @@ describe('DevicePickerSheet for a known gym board (#7125)', () => {
     expect(container.querySelector('[data-button="ble.noLedsCta"]')).not.toBeNull();
   });
 
+  // 2.7 release watch: the sheet says what it showed, once each, while on
+  // screen (BLE Picker Devices Resolved's targetNotListedSeen and tipsSeen).
+  describe('what it reports seeing', () => {
+    it('reports the target not listed once, and nothing for tips it never showed', () => {
+      const onSeen = vi.fn();
+      const props = makeProps({ devices: [tension], targetBoard, onSearchAnyBoard: vi.fn(), onSeen });
+      const { rerender } = render(<DevicePickerSheet {...props} />);
+      expect(onSeen.mock.calls).toEqual([['target_not_listed']]);
+      // Another scan push with the same state says nothing new.
+      rerender(<DevicePickerSheet {...props} devices={[tension, unknown]} />);
+      expect(onSeen).toHaveBeenCalledOnce();
+    });
+
+    it('reports the tips after an empty scan', () => {
+      const onSeen = vi.fn();
+      render(<DevicePickerSheet {...makeProps({ devices: [], targetBoard, onSeen })} />);
+      expect(onSeen.mock.calls).toEqual([['tips']]);
+    });
+
+    it('reports nothing while the sheet is off screen, then what shows once it is', () => {
+      const onSeen = vi.fn();
+      const props = makeProps({ devices: [], open: false, onSeen });
+      const { rerender } = render(<DevicePickerSheet {...props} />);
+      expect(onSeen).not.toHaveBeenCalled();
+      rerender(<DevicePickerSheet {...props} open />);
+      expect(onSeen.mock.calls).toEqual([['tips']]);
+    });
+
+    it('reports nothing with the target board listed', () => {
+      const onSeen = vi.fn();
+      render(
+        <DevicePickerSheet {...makeProps({ devices: [kilter], resolvedBoards: resolutions, targetBoard, onSeen })} />,
+      );
+      expect(onSeen).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([undefined, { boardUuid: '', boardName: 'kilter' }])(
     'keeps the broad list when intended identity is absent: %s',
     (anonymousTarget) => {

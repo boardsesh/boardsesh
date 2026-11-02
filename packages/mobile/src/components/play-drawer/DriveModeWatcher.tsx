@@ -9,6 +9,7 @@ import { useSetting } from '../../settings';
 import {
   DEFAULT_KEEP_LIGHTING,
   DEFAULT_MOONBOARD_KEEP_LIGHTING,
+  keepLightingWindowMs,
   lockScreenPressKeepsLighting,
   resolveKeepLightingPlan,
   sanitiseKeepLighting,
@@ -24,8 +25,10 @@ import {
   exitDriveMode,
   getDriveMode,
   isDriveWindowDue,
+  makeDriveOpenEnded,
   markDriveLive,
   resolveDriveModeExit,
+  retimeDriveWindow,
   shouldCarryDriveIntoCrew,
   shouldEndWindowForSettings,
   useDriveMode,
@@ -51,7 +54,8 @@ import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
  * Put on board's keep-lighting window (2.7) ends here too (`window_ended`):
  * one timeout to its end, re-keyed by each climb that renews it, and a
  * catch-up when the app comes back to the foreground, since a timer doesn't
- * run while the app is suspended. Turning its setting off ends it as well.
+ * run while the app is suspended. Turning its setting off ends it as well, and
+ * changing its length mid-window applies to the running window.
  *
  * A Lock Screen or Dynamic Island Next / Previous opens or renews that window
  * natively on iOS, since JS may be suspended when the intent lights the wall
@@ -74,7 +78,6 @@ export function DriveModeWatcher(): null {
   const { boardId } = useBoardPresenceControls();
   const { isAuthenticated } = useAuth();
   const drive = useDriveMode();
-  useDriveCrewPutUp(drive?.phase ?? null);
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
   useDriveWallConfirms(bluetooth?.isConnected ?? false);
   const [lightOnSwipe] = useSetting('lightOnSwipe');
@@ -114,6 +117,9 @@ export function DriveModeWatcher(): null {
   const adoptFromLockScreen = useCallback(() => {
     adoptLockScreenLighting(adoptionInputRef.current);
   }, []);
+  // A crewmate's put-up ends a window a Lock Screen press opened too: adopted
+  // first, so it ends now instead of coming back at the next adoption.
+  useDriveCrewPutUp(drive?.phase ?? null, adoptFromLockScreen);
   useEffect(() => {
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') adoptFromLockScreen();
@@ -191,12 +197,22 @@ export function DriveModeWatcher(): null {
   // Off, or In a session too turned off in a crew. The window ends. "A crew"
   // is the roster's `isCrewSession`, the read the press's own `crewSession`
   // takes in PlayCore, so both agree on what a session is.
+  //
+  // Its own choice moved to another length (the board sheet's row, at the
+  // wall, spec B4): the running window takes it, counted from now, and Until I
+  // stop makes it open-ended. Only a change does: a window opened from a plan
+  // (or adopted from the Lock Screen) keeps its length until its choice moves.
+  // The settings are read above, with what a lock-screen press keeps lighting.
+  const choicesRef = useRef({ keepLighting, moonboardKeepLighting });
   const windowed = drive?.windowMs != null;
   useEffect(() => {
+    const previous = choicesRef.current;
+    choicesRef.current = { keepLighting, moonboardKeepLighting };
     if (!windowed) return;
+    const latest = getDriveMode();
     if (
       shouldEndWindowForSettings({
-        drive: getDriveMode(),
+        drive: latest,
         keepLighting,
         moonboardKeepLighting,
         drivesInSession,
@@ -204,7 +220,14 @@ export function DriveModeWatcher(): null {
       })
     ) {
       exitDriveMode('window_ended');
+      return;
     }
+    const moonboardWindow = latest?.windowSetting === 'moonboardPutOnBoardKeepsLighting';
+    const choice = moonboardWindow ? moonboardKeepLighting : keepLighting;
+    if (choice === (moonboardWindow ? previous.moonboardKeepLighting : previous.keepLighting)) return;
+    const windowMs = keepLightingWindowMs(choice);
+    if (windowMs === null) makeDriveOpenEnded();
+    else if (windowMs !== undefined) retimeDriveWindow(windowMs);
   }, [windowed, keepLighting, moonboardKeepLighting, drivesInSession, isCrewSession]);
 
   // The window's end, modelled on the arming timeout below: one timeout, keyed
@@ -237,18 +260,19 @@ export function DriveModeWatcher(): null {
     };
   }, [windowEndsAt, adoptFromLockScreen]);
 
+  // A connect in flight holds the arming clock: the device picker stays open
+  // while the climber reads the list, as long as they need (the tap's own
+  // relight waits on it too). The clock starts again when the connect settles;
+  // one that settled with no link is `connect_failed` above.
   const armingSince = drive?.phase === 'arming' ? drive.startedAt : null;
   useEffect(() => {
-    if (armingSince === null) return undefined;
-    const timer = setTimeout(
-      () => {
-        const latest = getDriveMode();
-        if (latest?.phase === 'arming' && latest.startedAt === armingSince) exitDriveMode('arming_timed_out');
-      },
-      Math.max(0, armingSince + DRIVE_ARMING_TIMEOUT_MS - Date.now()),
-    );
+    if (armingSince === null || pending) return undefined;
+    const timer = setTimeout(() => {
+      const latest = getDriveMode();
+      if (latest?.phase === 'arming' && latest.startedAt === armingSince) exitDriveMode('arming_timed_out');
+    }, DRIVE_ARMING_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [armingSince]);
+  }, [armingSince, pending]);
 
   return null;
 }

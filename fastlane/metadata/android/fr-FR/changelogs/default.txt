@@ -1,5 +1,5 @@
 Nouveautés de 2.7 :
-- Toucher affiche sans allumer. Allumer sur la board allume, puis tes choix pendant 45 s ; MoonBoard jusqu’à l’arrêt. Balaye le bouton à gauche pour piloter ; touche-le pour arrêter.
+- Toucher affiche sans allumer. Allumer sur la board allume le bloc, puis tes choix pendant 45 s ; MoonBoard jusqu’à l’arrêt. Balaye le bouton à gauche pour allumer chaque bloc ; touche-le pour arrêter.
 - Italien. Compte à rebours et son de repos dans la notification.
 - Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
 - Trie et filtre playlists, Aimées et Projets.

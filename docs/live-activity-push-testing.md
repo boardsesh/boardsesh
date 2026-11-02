@@ -386,8 +386,9 @@ Put on board's keep-lighting window (2.7) on the Lock Screen, in the Dynamic Isl
 6. Suspend the app (lock for 30 s or more), press **Next**, then open the app. The player shows the window still running, with the end the Lock Screen showed; Drive Mode Started reads `startedBy: 'lock_screen'` when nothing was driving before. On Android the header appears once the wall confirms the climb, not at the tap.
 7. Set Settings › Board's keep-lighting to **Off** and press **Next** with nothing driving. The wall lights that one climb; no ring, and no "Each pick lights" header.
 8. iOS: with the app suspended and nothing driving, press **Next** (the ring appears), swipe the app away in the app switcher, then open it. On relaunch the ring is gone and nothing is driving.
-9. From a second device, change the queue while the window runs. The countdown survives the crew push.
-10. On a crewmate's phone (`heldByPeer`), nothing about the holder's window shows.
+9. From a second device, add or reorder climbs while the window runs. The countdown survives the crew push.
+10. From the second device, put a climb up while the window runs. The wall lights their climb, the ring goes, and this phone's next pick is a preview. Your own Lock Screen **Next** never does this: it renews the window.
+11. On a crewmate's phone (`heldByPeer`), nothing about the holder's window shows.
 
 Known gap: if the app is suspended before the window's end, iOS has nothing to redraw the card at the deadline, so the ring sits empty at 0:00 until the next update (the next press, a push, or opening the app).
 

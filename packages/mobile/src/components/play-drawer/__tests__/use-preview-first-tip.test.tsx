@@ -25,6 +25,8 @@ const {
 } = await import('../../../lib/onboarding/preview-first-tip');
 const { _resetListCardPresenceForTests, setListCardShowing } =
   await import('../../../lib/onboarding/list-card-presence');
+const { _resetFirstConnectConfirmationPresenceForTests, setFirstConnectConfirmationShowing } =
+  await import('../../../lib/onboarding/first-connect-confirmation-presence');
 type Input = Parameters<typeof usePreviewFirstTip>[0];
 
 const firstPreview: Input = {
@@ -48,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   _resetPreviewFirstTipForTests();
   _resetListCardPresenceForTests();
+  _resetFirstConnectConfirmationPresenceForTests();
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -101,6 +104,30 @@ describe('usePreviewFirstTip', () => {
       setListCardShowing(card, false);
     }
     expect(getPreviewFirstTipState()).toMatchObject({ status: 'unseen', opens: 0 });
+  });
+
+  // Both say what Put on board keeps lighting: never the two at once.
+  it('waits out the first-connect confirmation without spending an open, then shows', async () => {
+    setFirstConnectConfirmationShowing(true);
+    const { result } = await renderTip();
+    expect(result.current.visible).toBe(false);
+    expect(getPreviewFirstTipState()).toMatchObject({ status: 'unseen', opens: 0 });
+
+    act(() => setFirstConnectConfirmationShowing(false));
+    expect(result.current.visible).toBe(true);
+    expect(getPreviewFirstTipState()).toMatchObject({ status: 'showing', opens: 1 });
+  });
+
+  it('steps aside for a confirmation that comes up while it shows, and comes back after', async () => {
+    const { result } = await renderTip();
+    expect(result.current.visible).toBe(true);
+
+    act(() => setFirstConnectConfirmationShowing(true));
+    expect(result.current.visible).toBe(false);
+
+    act(() => setFirstConnectConfirmationShowing(false));
+    expect(result.current.visible).toBe(true);
+    expect(getPreviewFirstTipState().opens).toBe(1);
   });
 
   it('steps aside while the player is asking something, and comes back after', async () => {
