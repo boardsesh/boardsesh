@@ -95,6 +95,9 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   // The walk starts from the pick, along its list, as the player's walk from a
   // preview does; otherwise from the climb on the wall, along the committed list.
   const stepFrom = pick ? pick.item : currentClimbQueueItem;
+  // The entry a step leaves: a step from Up next back onto the list records it
+  // on the detour, for Previous to retrace from (#7227).
+  const stepFromUuid = stepFrom?.uuid;
   const stepSource = useMemo(
     () =>
       pick
@@ -191,6 +194,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
           playlistSuggestionSource: resolvePreviewStepSource(
             pick ? pick.suggestionSource : playlistSuggestionSource,
             trackResume,
+            stepFromUuid,
           ),
           ...(pick?.boardConfig ? { boardConfig: pick.boardConfig } : {}),
         });
@@ -203,7 +207,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         // pick a look left on the list's climb steps into Up next, and without
         // that place the list would go dormant.
         const { item, options } = resolvePreviewStepCommit({
-          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume),
+          previewSuggestionSource: resolvePreviewStepSource(pick.suggestionSource, trackResume, stepFromUuid),
           targetItem,
           direction,
         });
@@ -225,6 +229,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       pick,
       pickOnOtherBoard,
       setCurrentClimb,
+      stepFromUuid,
     ],
   );
   const onPrevious = useCallback(

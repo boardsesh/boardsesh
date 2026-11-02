@@ -3,6 +3,7 @@ import type {
   ClimbQueueItem,
   ClimbQueue,
   PlaylistSuggestionSource,
+  PlaylistTrackDetour,
   PlaylistTrackResume,
 } from '@boardsesh/queue';
 import {
@@ -666,8 +667,9 @@ const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
  * climb is in the source, else null. The exception is a look off the climb on
  * the wall that played Up next and went on down the list (#7227): its track's
  * `detour` names the queue entry it left, so Previous retraces that stretch
- * from the queue's end, then lands on that entry, never on a peek of its climb
- * (see {@link retraceDetour}).
+ * from the Up next climb it stepped off (from the queue's end when the detour
+ * names none), then lands on that entry, never on a peek of its climb (see
+ * {@link retraceDetour}).
  *
  * `activeConfig` and `isReachable` steer which queue entry stands for the
  * list predecessor (see {@link findQueuedListNeighbour}) and which Up next
@@ -704,7 +706,7 @@ export function selectPreviousQueueItemWithSuggestions(
   if (source && position.kind === 'list') {
     const listPredecessor = source.climbs[position.trackIndex - 1];
     if (!listPredecessor) return NOTHING_PREVIOUS;
-    const detour = retraceDetour(queue, currentIndex, source, position.trackIndex, activeConfig, isReachable);
+    const detour = retraceDetour(queue, currentIndex, source, position.trackIndex, activeConfig, isReachable, prepared);
     if (detour) return detour;
     const upNextBehind = findUpNextBehind(
       queue,
@@ -757,6 +759,10 @@ export function selectPreviousQueueItemWithSuggestions(
  * passed over. With no stretch left (a crewmate cleared Up next), Previous
  * lands on that entry itself, not on a peek of its climb, so Next from there
  * plays whatever Up next holds by then.
+ *
+ * Either way the retrace starts at the Up next climb the walk stepped off, when
+ * the detour names it (`lastUpNextQueueItemUuid`) and it still sits in that
+ * stretch (see {@link detourRetraceStart}).
  */
 function retraceDetour(
   queue: ClimbQueue,
@@ -765,15 +771,18 @@ function retraceDetour(
   trackIndex: number,
   activeConfig: ActiveBoardForCompatibility | undefined,
   isReachable: ReachableClimbPredicate | undefined,
+  prepared: PreparedQueueNavigation | undefined,
 ): PreviousQueueItemSelection | null {
   const { detour } = source;
   if (!detour || trackIndexOf(source, detour.climbUuid) !== trackIndex - 1) return null;
   const orphan = currentIndex < 0;
+  // The detour as the resume Previous steps back into: its two halves only.
+  const trackResume: PlaylistTrackResume = { climbUuid: detour.climbUuid, queueItemUuid: detour.queueItemUuid };
   let lastPlayed: ClimbQueueItem | null = null;
-  for (let index = (orphan ? queue.length : currentIndex) - 1; index >= 0; index -= 1) {
+  for (let index = detourRetraceStart(queue, currentIndex, detour, prepared) - 1; index >= 0; index -= 1) {
     const item = queue[index];
     if (item.uuid === detour.queueItemUuid) {
-      if (lastPlayed) return { item: lastPlayed, trackResume: detour };
+      if (lastPlayed) return { item: lastPlayed, trackResume };
       return orphan ? { item, trackResume: null } : null;
     }
     if (isListWalkEntry(item, source)) {
@@ -783,6 +792,29 @@ function retraceDetour(
     if (!lastPlayed && !swipeWalksPast(item, activeConfig, isReachable)) lastPlayed = item;
   }
   return null;
+}
+
+/**
+ * Where {@link retraceDetour} starts walking back (exclusive): right after the
+ * Up next climb the walk stepped off (issue #7227), while that entry still sits
+ * after the entry the detour left from and, for a queued current, before it.
+ * Otherwise, or when the detour names none, from the current climb, or from the
+ * queue's end for an orphan, as before. A climb a crewmate queued after the
+ * walk came back to the list, or one a reorder moved behind the climb it
+ * stepped off, is then never taken for the last climb it played.
+ */
+function detourRetraceStart(
+  queue: ClimbQueue,
+  currentIndex: number,
+  detour: PlaylistTrackDetour,
+  prepared: PreparedQueueNavigation | undefined,
+): number {
+  const fallback = currentIndex < 0 ? queue.length : currentIndex;
+  const { lastUpNextQueueItemUuid } = detour;
+  if (!lastUpNextQueueItemUuid) return fallback;
+  const lastUpNextIndex = findQueueIndexOfEntry(queue, lastUpNextQueueItemUuid, prepared);
+  const leftIndex = findQueueIndexOfEntry(queue, detour.queueItemUuid, prepared);
+  return lastUpNextIndex > leftIndex && lastUpNextIndex < fallback ? lastUpNextIndex + 1 : fallback;
 }
 
 /**
@@ -1072,6 +1104,10 @@ export function computeNavigationTargetsWithSuggestions(
  * queue (Up next filled) or one climb past the climb on the wall (Up next
  * empty).
  *
+ * `steppedOffQueueItemUuid` is the entry the step leaves (the climb on screen):
+ * a step from Up next back onto the list records it on the detour, so
+ * Previous from the list retraces from the climb the look stepped off.
+ *
  * Null with no track: a step that walks only the queue carries no list. A
  * preview opened with no list resolves to no track
  * ({@link resolveNavigationSuggestionSource}), so its steps never pick up the
@@ -1080,8 +1116,11 @@ export function computeNavigationTargetsWithSuggestions(
 export function resolvePreviewStepSource(
   source: PlaylistSuggestionSource | null,
   trackResume: PlaylistTrackResume | null | undefined,
+  steppedOffQueueItemUuid?: string,
 ): PlaylistSuggestionSource | null {
-  return source && trackResume !== undefined ? withPlaylistTrackResume(source, trackResume) : source;
+  return source && trackResume !== undefined
+    ? withPlaylistTrackResume(source, trackResume, steppedOffQueueItemUuid)
+    : source;
 }
 
 export function countRemainingQueueItemsWithSuggestions(

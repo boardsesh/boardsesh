@@ -2797,9 +2797,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       // Skip the broadcast for an unresolved climb (#2527), see below.
       const broadcasts = isClimbResolved(item.climb);
-      // A step along a list onto a climb already queued (`keepQueue`, #7227)
-      // leaves the queue as Next does: no prune after it.
-      const stepsOntoQueuedClimb = keepQueue && stateRef.current.queue.some(({ uuid }) => uuid === item.uuid);
+      // A step along a list (`keepQueue`, #7227) leaves the queue as Next does,
+      // with no prune after it, when it lands on a climb already queued, or
+      // when its walk went through Up next on the way (the track holds a
+      // `resume` or a `detour`): the prune would drop the Up next it played, a
+      // workout's queued climbs among them. A list tap's climb, or a peek along
+      // a list that never entered Up next, still prunes as before.
+      const keepsQueue =
+        keepQueue &&
+        (stateRef.current.queue.some(({ uuid }) => uuid === item.uuid) ||
+          Boolean(playlistSuggestionSource?.resume ?? playlistSuggestionSource?.detour));
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
@@ -2825,7 +2832,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           correlationId,
           playlistSuggestionSource,
           insertAfterCurrent,
-          pruneSuggestedAfterCurrent: sessionIdRef.current == null && !stepsOntoQueuedClimb,
+          pruneSuggestedAfterCurrent: sessionIdRef.current == null && !keepsQueue,
           sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
           placement,
           // Solo, the phone trims History itself; in a session only the server
@@ -2998,14 +3005,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    * (same list, tap and board), so a track replaced meanwhile is left alone.
    * The same render batch commits it with the current climb, so there is no
    * render in which the queued climb is current and the track has gone dormant.
+   *
+   * `steppedOffQueueItemUuid` is the climb the step leaves: stepping back onto
+   * the list, the detour records it as the last Up next climb played (#7227),
+   * so a look's Previous later retraces from it.
    */
   const storeTrackResume = useCallback(
-    (walkedSource: PlaylistSuggestionSource | null, trackResume: PlaylistTrackResume | null | undefined) => {
+    (
+      walkedSource: PlaylistSuggestionSource | null,
+      trackResume: PlaylistTrackResume | null | undefined,
+      steppedOffQueueItemUuid?: string,
+    ) => {
       if (trackResume === undefined || !walkedSource) return;
       if (samePlaylistTrackResume(walkedSource.resume, trackResume)) return;
       if (credentialGeneration !== getCredentialGeneration()) return;
       setPlaylistSuggestionSourceState((held) =>
-        held && playlistSuggestionSourceMatches(held, walkedSource) ? withPlaylistTrackResume(held, trackResume) : held,
+        held && playlistSuggestionSourceMatches(held, walkedSource)
+          ? withPlaylistTrackResume(held, trackResume, steppedOffQueueItemUuid)
+          : held,
       );
     },
     [credentialGeneration],
@@ -3311,7 +3328,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem, committable?.item.uuid ?? null);
       if (!committable) return;
       const { item, converted } = committable;
-      storeTrackResume(walkedSource, trackResume);
+      storeTrackResume(walkedSource, trackResume, currentClimbQueueItem?.uuid);
       // New suggestions must match the server's insertion immediately after current.
       // In now-slot mode it is a NOW: a track peek goes on the wall at the Now
       // slot (History once you move on), and an already-queued neighbour moves
@@ -3351,7 +3368,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     );
     if (!prevItem) return;
     const { item, converted } = resolveCommittableQueueItem(prevItem);
-    storeTrackResume(walkedSource, trackResume);
+    storeTrackResume(walkedSource, trackResume, currentClimbQueueItem?.uuid);
     // Match nextClimb and the server: suggestions insert immediately after current.
     // In now-slot mode: from a list climb it is a NOW (the list's previous
     // climb, or the last Up next climb of a detour, goes up at the Now slot and
@@ -3401,8 +3418,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
                 activeConfig,
                 isReachableClimbRef.current,
               );
-        if (forward.item?.uuid === item.uuid) storeTrackResume(walkedSource, forward.trackResume);
-        else if (backward?.item?.uuid === item.uuid) storeTrackResume(walkedSource, backward.trackResume);
+        const steppedOff = currentClimbQueueItem.uuid;
+        if (forward.item?.uuid === item.uuid) storeTrackResume(walkedSource, forward.trackResume, steppedOff);
+        else if (backward?.item?.uuid === item.uuid) storeTrackResume(walkedSource, backward.trackResume, steppedOff);
       }
       // The native step itself is a STEP in now-slot mode: a pointer move onto
       // History's last entry or Up next[0], exactly what the server does with

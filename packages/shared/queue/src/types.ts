@@ -138,7 +138,7 @@ export type PlaylistSuggestionSource = {
    * `withPlaylistTrackResume` alone: clearing `resume` moves it here, setting a
    * new one drops it. Client-only, like the rest of the track.
    */
-  detour?: PlaylistTrackResume;
+  detour?: PlaylistTrackDetour;
 };
 
 /**
@@ -155,6 +155,20 @@ export type PlaylistSuggestionSource = {
 export type PlaylistTrackResume = {
   climbUuid: string;
   queueItemUuid: string;
+};
+
+/**
+ * A walk's last stretch of Up next. See {@link PlaylistSuggestionSource.detour}.
+ *
+ * `lastUpNextQueueItemUuid` is the Up next entry the walk stepped off when it
+ * came back to the list (issue #7227), where Previous starts retracing. Without
+ * it Previous takes everything queued after the entry the walk left from as
+ * the stretch, so a climb a crewmate added to Up next meanwhile, or one a
+ * reorder moved there, reads as the last climb played. Absent on a detour from
+ * before it was recorded, or when the step had no queued climb to name.
+ */
+export type PlaylistTrackDetour = PlaylistTrackResume & {
+  lastUpNextQueueItemUuid?: string;
 };
 
 /** Where a track's next page comes from. See {@link PlaylistSuggestionSource}. */
@@ -224,15 +238,17 @@ export type SetCurrentClimbOptions = {
    */
   walkedPeek?: boolean;
   /**
-   * With `playlistSuggestionSource`: when the climb is already in the queue,
-   * it goes up as Next puts a queued climb up, and the queue stays as it is
-   * (issue #7227). Passed by a step along a list (a preview's step that lights,
-   * Put on board from a look), which can now land on an Up next climb. Without
-   * it, a solo commit with a list drops the `suggested` climbs after the new
-   * current climb, which ends an earlier pass of a list but would also drop a
-   * workout's queued climbs. A climb not yet queued (a list tap, a list's
-   * peek) still prunes as before. Ignored in now-slot mode and in a session,
-   * where nothing is pruned.
+   * With `playlistSuggestionSource`: a step along a list, which leaves the
+   * queue as Next does (issue #7227). Passed by a preview's step that lights
+   * and by Put on board from a preview with a list, which can now land on an
+   * Up next climb, or on the list after walking one. Without it, a solo commit
+   * with a list drops the `suggested` climbs after the new current climb, which
+   * ends an earlier pass of a list but would also drop a workout's queued
+   * climbs. The queue stays when the climb is already in it, or when the
+   * source holds a `resume` or a `detour` (the walk went through Up next). A
+   * climb not yet queued along a list that never entered Up next (a list tap,
+   * its peeks) still prunes as before. Ignored in now-slot mode and in a
+   * session, where nothing is pruned.
    */
   keepQueue?: boolean;
   trigger?: SetCurrentClimbTrigger;

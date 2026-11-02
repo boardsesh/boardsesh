@@ -522,6 +522,9 @@ describe('explicit wall commitment', () => {
       }),
       {
         playlistSuggestionSource: expect.objectContaining({ activatedClimbUuid: 'preview' }),
+        // A step along the list, as Next takes it: the provider keeps the queue
+        // when the walk went through Up next (#7227).
+        keepQueue: true,
         // A peek is a step along the list: a fresh copy, as Next places one.
         historyCopy: 'fresh',
         trigger: 'put_on_wall',
@@ -530,9 +533,9 @@ describe('explicit wall commitment', () => {
   });
 
   // A list tap's own climb is not a peek: it goes up as a tap does, with no
-  // fresh copy. It asks to keep the queue as a queued climb would, which the
-  // provider grants only to a climb already in it (#7227), so a list tap's
-  // fresh climb still prunes after it.
+  // fresh copy. It asks to keep the queue as a step would, which the provider
+  // grants only to a climb already in it or a list that went through Up next
+  // (#7227), so a list tap's fresh climb still prunes after it.
   it('puts a tapped list climb up without the step rule', () => {
     const initialProps = inputs();
     initialProps.preview.drawerPreviewItem = item('preview');
@@ -587,6 +590,9 @@ describe('explicit wall commitment', () => {
       expect.objectContaining({ uuid: 'selection-1', climb: expect.objectContaining({ uuid: 'next' }) }),
       {
         playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'playlist', activatedClimbUuid: 'next' }),
+        // Leaving the queue as Next does: a workout the walk played in Up next
+        // stays queued (#7227).
+        keepQueue: true,
         // A step along the list, placed as Next places one: a fresh copy, never
         // an older entry of the climb pulled out of History.
         historyCopy: 'fresh',

@@ -414,6 +414,30 @@ describe('withPlaylistTrackResume', () => {
     // Nothing to carry: the fresh copy itself.
     expect(withPlaylistTrackPlace(fresh, track)).toBe(fresh);
   });
+
+  // #7227 review: Previous retraces from the Up next climb the walk stepped
+  // off, not from whatever is queued last by then.
+  it('records the Up next climb a step back onto the list stepped off', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    const back = withPlaylistTrackResume(walking, null, 'item-up-next');
+    expect(back.detour).toEqual({ ...resume, lastUpNextQueueItemUuid: 'item-up-next' });
+    // The list climb's own entry is no Up next climb: nothing recorded.
+    expect(withPlaylistTrackResume(walking, null, 'item-b').detour).toEqual(resume);
+    // Into Up next again, the detour and what it recorded go.
+    expect('detour' in withPlaylistTrackResume(back, resume, 'item-b')).toBe(false);
+  });
+
+  it('carries the recorded climb onto a fresh copy of the list', () => {
+    const fresh = createPlaylistSuggestionSource({
+      playlistUuid: 'p',
+      activatedClimb: climbs[0],
+      climbs,
+      boardKey: 'k',
+    });
+    const back = withPlaylistTrackResume(withPlaylistTrackResume(track, resume), null, 'item-up-next');
+    const unrecorded = withPlaylistTrackResume(withPlaylistTrackResume(track, resume), null);
+    expect(withPlaylistTrackPlace(withPlaylistTrackPlace(fresh, unrecorded), back).detour).toEqual(back.detour);
+  });
 });
 
 describe('findPlaylistClimbIndex on a track built elsewhere', () => {

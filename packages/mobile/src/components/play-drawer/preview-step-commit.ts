@@ -24,8 +24,10 @@ import { resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
  *   as Put on board commits a look.
  *
  * Either way it is a step, placed as `nextClimb` places one: a fresh copy at
- * the Now slot, never a climb pulled out of History, and a queued climb goes
- * up leaving the queue as it is (`keepQueue`). A list's transient
+ * the Now slot, never a climb pulled out of History. A step along a list asks
+ * to leave the queue as it is (`keepQueue`), as Next does: the provider keeps
+ * it for a queued climb, and for a peek whose walk went through Up next, so the
+ * Up next it played (a workout's climbs) stays queued. A list's transient
  * `playlist-peek:` item is laundered first, so no peer sees its uuid.
  */
 export function resolvePreviewStepCommit({
@@ -43,8 +45,8 @@ export function resolvePreviewStepCommit({
       item,
       options: {
         playlistSuggestionSource: reanchorPlaylistSuggestionSource(previewSuggestionSource, item.climb?.uuid),
-        // A step's target that is no peek is a queued climb (#7227).
-        ...(converted ? {} : { keepQueue: true }),
+        // A step, as Next takes it: the queue stays as it is (#7227).
+        keepQueue: true,
         trigger: direction,
         historyCopy: 'fresh',
       },

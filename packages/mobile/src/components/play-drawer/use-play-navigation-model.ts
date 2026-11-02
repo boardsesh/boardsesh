@@ -171,14 +171,17 @@ export function usePlayNavigationModel({
   // climb on the wall then goes on through Up next and down the list, as Next
   // would, rather than stopping at the end of the queue. Null when the walk
   // has no list: a preview opened without one never takes the committed track.
+  // A step back onto the list records the Up next climb on screen as the one
+  // it stepped off, where Previous retraces from.
   const { nextTrackResume, prevTrackResume } = navigationTargets;
+  const steppedOffQueueItemUuid = displayedQueueItem?.uuid;
   const nextPreviewSource = useMemo(
-    () => resolvePreviewStepSource(navigationSuggestionSource, nextTrackResume),
-    [navigationSuggestionSource, nextTrackResume],
+    () => resolvePreviewStepSource(navigationSuggestionSource, nextTrackResume, steppedOffQueueItemUuid),
+    [navigationSuggestionSource, nextTrackResume, steppedOffQueueItemUuid],
   );
   const previousPreviewSource = useMemo(
-    () => resolvePreviewStepSource(navigationSuggestionSource, prevTrackResume),
-    [navigationSuggestionSource, prevTrackResume],
+    () => resolvePreviewStepSource(navigationSuggestionSource, prevTrackResume, steppedOffQueueItemUuid),
+    [navigationSuggestionSource, prevTrackResume, steppedOffQueueItemUuid],
   );
 
   // The neighbours' headers stay mounted beside the current one, like their

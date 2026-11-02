@@ -1860,15 +1860,18 @@ describe('a look off the climb on the wall keeps walking its list (#7227)', () =
       const item = way === 'next' ? targets.nextItem : targets.prevItem;
       atTrackEnd = targets.atTrackEnd;
       if (!item) break;
+      // The climb on screen is the one the step leaves, as in PlayCore.
+      const steppedOff = (previewItem ?? committedItem).uuid;
       previewItem = item;
       previewSource = resolvePreviewStepSource(
         source,
         way === 'next' ? targets.nextTrackResume : targets.prevTrackResume,
+        steppedOff,
       );
       landed.push(item);
       carried.push(previewSource);
     }
-    return { landed: landed.map(({ uuid }) => uuid), carried, atTrackEnd };
+    return { landed: landed.map(({ uuid }) => uuid), carried, atTrackEnd, previewItem, previewSource };
   }
 
   it('with Up next empty, goes on down the list to its end, not dead after one climb', () => {
@@ -1949,6 +1952,72 @@ describe('a look off the climb on the wall keeps walking its list (#7227)', () =
     ]);
     // Back in Up next, the look holds the list's place again.
     expect(walk.carried[3]?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+  });
+
+  // #7227 review: the look came back to the list, then a crewmate queued X
+  // (Play last). X is Up next after the entry the look left from, but the look
+  // never played it: Previous retraces from the Up next climb it stepped off.
+  it('swipes back to the Up next climb it stepped off, past one queued after it came back', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    expect(there.landed.at(-1)).toBe(getPlaylistPeekQueueItemUuid('s3'));
+    expect(there.previewSource?.detour).toEqual({
+      climbUuid: 's2',
+      queueItemUuid: 'item-s2',
+      lastUpNextQueueItemUuid: 'play-next-2',
+    });
+
+    const playLastX = makeItem('play-last-x');
+    const back = look([...queue, playLastX], onWall, results, ['previous', 'previous', 'previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-2', 'play-next-1', 'item-s2']);
+  });
+
+  it('swipes back to the climb it stepped off after a reorder moved another behind it', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate drags play-next-1 to the end of Up next.
+    const back = look([history, onWall, playNext2, playNext1], onWall, results, ['previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-2']);
+  });
+
+  it('retraces from the queue’s end when the climb it stepped off moved before the climb it left', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate drags play-next-2 above the climb on the wall, into History.
+    const back = look([history, playNext2, onWall, playNext1], onWall, results, ['previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-1']);
+  });
+
+  it('retraces from the queue’s end when the climb it stepped off has gone', () => {
+    const queue = [history, onWall, playNext1, playNext2];
+    const there = look(queue, onWall, results, ['next', 'next', 'next']);
+    // A crewmate removed play-next-2: the stretch left is play-next-1.
+    const back = look([history, onWall, playNext1], onWall, results, ['previous', 'previous'], {
+      previewItem: there.previewItem,
+      previewSource: there.previewSource,
+    });
+    expect(back.landed).toEqual(['play-next-1', 'item-s2']);
+  });
+
+  // Committed on s3 after Next played Up next, a reorder dragged play-next-2
+  // behind it. Previous must not reach forward past the climb on screen.
+  it('from a queued list climb, never starts the retrace ahead of it', () => {
+    const s3Entry: ClimbQueueItem = { uuid: 'item-s3', climb: s3, suggested: true };
+    const backOnList = {
+      ...makeSource(s3, results.climbs),
+      detour: { climbUuid: 's2', queueItemUuid: 'item-s2', lastUpNextQueueItemUuid: 'play-next-2' },
+    };
+    const queue = [history, onWall, playNext1, s3Entry, playNext2];
+    expect(look(queue, s3Entry, backOnList, ['previous']).landed).toEqual(['play-next-1']);
   });
 
   it('passes over list-walk entries at the end of the queue going back', () => {
@@ -2069,6 +2138,12 @@ describe('resolvePreviewStepSource (#7227)', () => {
     const backOnList = resolvePreviewStepSource(intoUpNext, null);
     expect(backOnList?.resume).toBeUndefined();
     expect(backOnList?.detour).toEqual(resume);
+  });
+
+  it('records the Up next climb a step back onto the list stepped off', () => {
+    const intoUpNext = resolvePreviewStepSource(list, resume, 'item-a');
+    const backOnList = resolvePreviewStepSource(intoUpNext, null, 'item-up-next');
+    expect(backOnList?.detour).toEqual({ ...resume, lastUpNextQueueItemUuid: 'item-up-next' });
   });
 
   it('carries no list when the walk had none', () => {

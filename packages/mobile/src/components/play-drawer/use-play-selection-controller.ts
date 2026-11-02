@@ -580,11 +580,12 @@ export function usePlaySelectionController({
       // Either way a peek is a list climb the walk reached, minted fresh here.
       // It goes up as Next places a list step: a fresh copy at the Now slot,
       // never an older entry pulled out of History. A look that carries a list
-      // and stands on a queued climb (Up next, #7227) puts it up as Next would,
-      // leaving the queue as it is (`keepQueue`): solo, a commit with a list
-      // otherwise drops the suggested climbs after it, a workout's among them.
-      // The provider keeps the queue only for a climb already in it, so a list
-      // tap's own climb still prunes after it as before.
+      // goes up as Next would, leaving the queue as it is (`keepQueue`, #7227):
+      // solo, a commit with a list otherwise drops the suggested climbs after
+      // it, a workout's among them. The provider keeps the queue for a queued
+      // climb (Up next), and for a peek whose walk went through Up next (its
+      // list holds a `resume` or a `detour`). A list tap's climb, or a peek
+      // along a list that never entered Up next, still prunes as before.
       const keepWalkedTrack = !drawerPreviewSuggestionSource;
       const listStep = converted ? { historyCopy: 'fresh' as const } : {};
       setCurrentClimb(item, {
@@ -596,7 +597,8 @@ export function usePlaySelectionController({
                   drawerPreviewSuggestionSource,
                   item.climb?.uuid,
                 ),
-                ...(converted ? listStep : { keepQueue: true }),
+                keepQueue: true,
+                ...listStep,
               })),
         // Put on the wall: the deliberate commit at the end of a browse, told apart
         // from a plain list or queue pick so the crew ramp can be measured.

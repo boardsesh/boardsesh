@@ -442,6 +442,21 @@ describe('useMiniPlayerNavigation from the last pick', () => {
     });
   });
 
+  // #7227 re-review: a pick a look left in Up next steps back onto the list.
+  // The detour names the pick as the Up next climb stepped off, where the
+  // player's Previous retraces from.
+  it('records the pick as the Up next climb a step back onto the list stepped off', () => {
+    const resume = { climbUuid: 'climb-list', queueItemUuid: 'list-entry' };
+    pickWith({ ...track, resume });
+    targets.nextTrackResume = null;
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(targets.nextItem?.climb, {
+      previewQueueItem: targets.nextItem,
+      playlistSuggestionSource: { ...track, detour: { ...resume, lastUpNextQueueItemUuid: pickItem.uuid } },
+    });
+  });
+
   it('puts the next climb on the pick’s list up while driving, with the list as its track', () => {
     pickWith(track);
     enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: 7 });

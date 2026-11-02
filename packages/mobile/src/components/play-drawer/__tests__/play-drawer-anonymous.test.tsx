@@ -1767,9 +1767,61 @@ describe('PlayDrawer — a look off the climb on the wall keeps walking its list
       [{ climb: { uuid: string } }, { playlistSuggestionSource: PlaylistSuggestionSource }],
     ];
     expect(committed.climb.uuid).toBe(b.uuid);
-    // Back on the list: no resume left to go stale, the stretch kept for Previous.
+    // Back on the list: no resume left to go stale, the stretch kept for
+    // Previous, from the Up next climb the look stepped off.
     expect(options.playlistSuggestionSource.resume).toBeUndefined();
-    expect(options.playlistSuggestionSource.detour).toEqual({ climbUuid: a.uuid, queueItemUuid: onWall.uuid });
+    expect(options.playlistSuggestionSource.detour).toEqual({
+      climbUuid: a.uuid,
+      queueItemUuid: onWall.uuid,
+      lastUpNextQueueItemUuid: playNext2.uuid,
+    });
+  });
+
+  // #7227 re-review: solo, outside now-slot mode, a commit with a list prunes
+  // the suggested climbs after it, and a workout's climbs are suggested. A look
+  // that played the workout in Up next and went on to the list's next climb
+  // asks to keep the queue (`keepQueue`) with a list that holds the detour,
+  // which is what the provider keeps it for.
+  describe('a look that walked a workout in Up next', () => {
+    const limit1 = { uuid: 'queue-limit-1', climb: climb('climb-limit-1', 'Limit 1'), suggested: true };
+    const limit2 = { uuid: 'queue-limit-2', climb: climb('climb-limit-2', 'Limit 2'), suggested: true };
+    const walkedDetour = { climbUuid: a.uuid, queueItemUuid: onWall.uuid, lastUpNextQueueItemUuid: limit2.uuid };
+
+    it('Put on board from the list’s peek keeps the workout queued', () => {
+      onTheWall([onWall, limit1, limit2]);
+      expect(swipeNext(3)).toEqual([limit1.climb.uuid, limit2.climb.uuid, b.uuid]);
+      act(() => {
+        (lastActionBarProps().onCommit as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: b.uuid }) }),
+        {
+          playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'search', detour: walkedDetour }),
+          keepQueue: true,
+          historyCopy: 'fresh',
+          trigger: 'put_on_wall',
+        },
+      );
+    });
+
+    it('Next from limit 2 once a drive starts keeps the workout queued', () => {
+      onTheWall([onWall, limit1, limit2]);
+      expect(swipeNext(2)).toEqual([limit1.climb.uuid, limit2.climb.uuid]);
+      act(() => {
+        driveTheWall();
+      });
+      act(() => {
+        (lastActionBarProps().onNextClick as () => void)();
+      });
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: b.uuid }) }),
+        expect.objectContaining({
+          playlistSuggestionSource: expect.objectContaining({ playlistUuid: 'search', detour: walkedDetour }),
+          keepQueue: true,
+          trigger: 'next',
+        }),
+      );
+    });
   });
 
   it('driving, still commits and lights each step', () => {

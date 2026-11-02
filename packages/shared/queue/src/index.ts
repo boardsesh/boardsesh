@@ -17,6 +17,7 @@ export type {
   PlaylistSuggestionSource,
   PlaylistTrackContinuation,
   PlaylistTrackResume,
+  PlaylistTrackDetour,
   PlaylistTrackPage,
   SetCurrentClimbOptions,
   SetCurrentClimbTrigger,
