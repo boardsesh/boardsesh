@@ -99,6 +99,23 @@ export function bleConnectReportLevel(category: BleFailureCategory): 'warning' |
   return 'error';
 }
 
+// The Android GATT retry (#4143) on the connect outcome events, beside
+// connectAttempts and retrySucceeded. `retried`: attempt two ran.
+// `firstAttemptCode`: the GATT status that set it off (133 or 147), null when
+// Android left the status out. Both keys are dropped where the adapter doesn't
+// retry (native iOS, web), and firstAttemptCode also when no retry ran.
+function connectRetryProperties(adapter: BluetoothAdapter | null): {
+  retried?: boolean;
+  firstAttemptCode?: number | null;
+} {
+  const attempts = adapter?.getLastConnectAttemptCount?.();
+  if (attempts === undefined) return {};
+  return {
+    retried: attempts === 2,
+    firstAttemptCode: adapter?.getLastConnectFirstAttemptCode?.(),
+  };
+}
+
 // Per-write transport diagnostics → analytics props (#3230). Prefixed `ble` to
 // sit beside the connect-time `bleChosenWriteType`/`bleMaxWriteWithoutResponse`
 // props. Every field is optional (Android reports only its MTU/chunking story;
@@ -462,6 +479,17 @@ export type SendFramesToBoard = (
  * Both free the board for the next climber.
  */
 export type BluetoothDisconnectReason = 'user' | 'driving_ended';
+
+export type BoardConnectOptions = {
+  /**
+   * The connect follows a board switch the app made (a climb on another board
+   * at this gym, #7001, or the picker's switch to the board a box belongs to).
+   * A failure says the switch happened, so it doesn't read as the old board
+   * failing. Rides Bluetooth Connection Success and the classified Bluetooth
+   * Connection Failed as `afterBoardSwitch`.
+   */
+  afterBoardSwitch?: boolean;
+};
 
 export type BleDisconnectTrigger =
   | 'explicit_user'
@@ -1779,7 +1807,13 @@ export function useBoardBluetooth({
   );
 
   const connect = useCallback(
-    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
+    async (
+      initialFrames?: string,
+      mirrored?: boolean,
+      targetSerial?: string,
+      targetDeviceId?: string,
+      { afterBoardSwitch = false }: BoardConnectOptions = {},
+    ) => {
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -2154,6 +2188,13 @@ export function useBoardBluetooth({
           deviceNamePresent: !!connection.deviceName,
           boardId: analyticsBoardIdRef.current ?? undefined,
           connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
+          retrySucceeded: connection.retrySucceeded === true,
+          // Denominator for retrySucceeded: 0 = never reached the GATT connect,
+          // 1 = one attempt, 2 = the Android retry ran. Key is dropped on native
+          // iOS and web, whose adapters don't count attempts.
+          connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
+          ...connectRetryProperties(connectAdapter),
+          afterBoardSwitch,
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
@@ -2236,6 +2277,9 @@ export function useBoardBluetooth({
         // "Operation was cancelled", so those real failures showed nothing — the
         // connect just looked like a dead tap. Only an explicit user-cancel stays
         // silent now. Literal-key switch (the i18n linter forbids `t(variable)`).
+        // A connect that followed a board switch says so: the climber is now on
+        // another board than the one they tapped from, and "move closer" alone
+        // reads as if the old board had failed.
         switch (failureCategory) {
           case 'user_cancelled':
             break;
@@ -2249,10 +2293,16 @@ export function useBoardBluetooth({
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.serviceMissing'));
             break;
           case 'connect_failed':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.connectFailed'));
+            Alert.alert(
+              t('ble.connectionFailedTitle'),
+              afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.connectFailed'),
+            );
             break;
           default:
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unknownError'));
+            Alert.alert(
+              t('ble.connectionFailedTitle'),
+              afterBoardSwitch ? tCommon('bluetooth.boardSwitchConnectFailed') : tCommon('bluetooth.unknownError'),
+            );
         }
 
         // A dismissed picker gets its own event rather than being counted as a
@@ -2279,6 +2329,19 @@ export function useBoardBluetooth({
             layoutId,
             sizeId,
             failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+            // 0 = never reached the GATT connect (board not found, scan error),
+            // 1 = one attempt, 2 = the Android retry ran. Key is dropped on
+            // native iOS and web.
+            connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
+            // 2 alone does NOT mean the retry lost: a recovered GATT connect can
+            // still fail at MTU negotiation or service discovery, and that lands
+            // here too. `retrySucceeded: true` on a failure event is exactly that
+            // case — the retry saved the connect, something later broke it — so
+            // the retry hit rate is `retrySucceeded` over `connectAttempts = 2`
+            // across BOTH events, not success events over attempts = 2.
+            retrySucceeded: connectAdapter?.getLastConnectRetrySucceeded?.(),
+            ...connectRetryProperties(connectAdapter),
+            afterBoardSwitch,
             // Raw ble-plx codes (Android) so the real connect-failure cause and the
             // low-level GATT status are visible for re-measurement (#3608). Empty on
             // web / native iOS.

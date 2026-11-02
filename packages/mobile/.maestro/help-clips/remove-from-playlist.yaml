@@ -3,21 +3,12 @@ name: help clip - add to and remove from a playlist
 ---
 # Clip: remove-from-playlist -> packages/web/public/videos/help/remove-from-playlist.mp4
 #
-# Records: long-press a climb row -> Add to Playlist -> tick a list (it gains the
-# climb) -> tick it again to take the climb back out (the count drops back and
-# the check clears) -> dismiss. Net state on the account is unchanged, which is
-# why the clip unticks inside the same take.
-#
-# Coordinates, not selectors: nothing in this overlay is exposed to Maestro's
-# accessibility tree on this RN Fabric build.
-#   50%,23%  first climb row
-#   50%,67%  "Add to Playlist" in the lifted action card
-#   50%,78%  the second playlist row ("Test list", the empty one)
-#            Both moved down when the action list was cut to four rows and a
-#            peek and the board took the room (was 60% and 71%). Worked out from
-#            the layout math, not re-measured: check them on the next recording.
-#   50%,7%   the overlay scrim — one tap pops the playlist view back to the
-#            menu, a second tap closes the overlay
+# Records the lifted menu, Add to Playlist, removing the first climb from a
+# seeded local playlist, then restoring it. The seeded Aurora Circuit 5 starts
+# checked (8 climbs), becomes unchecked (7), then checked again (8).
+# Never use this take against a production account.
+# Measured 2026-11-02 on iPhone 16 Pro Max: row 50%,23%; Add to Playlist
+# 35%,38%; first playlist 50%,74%; dismissing scrim 50%,7%.
 #
 # `waitForAnimationToEnd` is used sparingly: each one costs about a second of
 # real time, and a 5-state clip runs long fast. The explicit pauses below are
@@ -38,25 +29,25 @@ name: help clip - add to and remove from a playlist
     timeout: 600
     optional: true
 
-# Add to Playlist -> the card swaps to the playlist list.
+# Add to Playlist closes the menu and opens the playlist sheet.
 - tapOn:
-    point: '50%,67%'
+    point: '35%,38%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 600
     optional: true
 
-# Tick the list: the climb goes in (count up, check on).
+# Untick the seeded list: count drops and the check clears.
 - tapOn:
-    point: '50%,78%'
+    point: '50%,74%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1100
     optional: true
 
-# Tick it again: the climb comes back out, so the account ends where it started.
+# Restore the seeded membership: count and check return to their starting state.
 - tapOn:
-    point: '50%,78%'
+    point: '50%,74%'
 - extendedWaitUntil:
     visible: 'zzz-help-clip-pause'
     timeout: 1100

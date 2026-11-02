@@ -1953,6 +1953,12 @@ export function BluetoothProvider({
      * when the request fires, once the provider is on that board (#7001).
      */
     useRememberedBoard?: boolean;
+    /**
+     * The app switched boards for this connect (#7001, or the picker's switch
+     * to the board a box belongs to), so a failure says so. Not for Scan again,
+     * which stays on the board the climber was already on.
+     */
+    afterBoardSwitch: boolean;
   } | null>(null);
   // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
   // promise. Kept beside the slot rather than in it, so a request that is
@@ -2014,7 +2020,7 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, armUndoToast, useRememberedBoard } = pendingAutoConnect;
+    const { serial, armUndoToast, useRememberedBoard, afterBoardSwitch } = pendingAutoConnect;
     setPendingAutoConnect(null);
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
@@ -2032,8 +2038,9 @@ export function BluetoothProvider({
           undefined,
           reconnectSerialForCurrentBoard ?? undefined,
           reconnectDeviceIdForCurrentBoard ?? undefined,
+          { afterBoardSwitch },
         )
-      : connect(undefined, undefined, serial);
+      : connect(undefined, undefined, serial, undefined, { afterBoardSwitch });
     if (waiter) {
       connecting.then(waiter.resolve, () => waiter.resolve(false));
     } else {
@@ -2067,6 +2074,7 @@ export function BluetoothProvider({
           // The bulb tap that got here is a deliberate take of the wall.
           armUndoToast: true,
           useRememberedBoard: true,
+          afterBoardSwitch: true,
         });
       }),
     [settlePendingConnectWaiter],
@@ -2105,6 +2113,7 @@ export function BluetoothProvider({
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
       setIds,
       armUndoToast: armUndoToastAfterRescan,
+      afterBoardSwitch: false,
     });
   }, [boardName, layoutId, sizeId, setIds, boardUuid, settlePendingConnectWaiter]);
 
@@ -2150,6 +2159,7 @@ export function BluetoothProvider({
           configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
           setIds: board.setIds,
           armUndoToast: armUndoToastAfterSwitch,
+          afterBoardSwitch: true,
         });
       } catch (error) {
         if (!intent.isPickerCurrent()) return;

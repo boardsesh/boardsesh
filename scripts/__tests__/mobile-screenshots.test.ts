@@ -361,6 +361,8 @@ describe('help wall-control capture', () => {
       openLink?: string;
       takeScreenshot?: string;
       longPressOn?: { point: string };
+      tapOn?: { point?: string };
+      swipe?: { start: string; end: string };
       extendedWaitUntil?: { visible?: { id: string }; notVisible?: { id: string } };
     }>;
     const driveRequest = commands.findIndex((command) => command.openLink?.includes('screenshotDrive=1'));
@@ -384,6 +386,14 @@ describe('help wall-control capture', () => {
     expect(
       commands.slice(drivingStopped + 1, preview).some((command) => command.openLink?.includes('screenshotDrive=')),
     ).toBe(false);
+    const previewCommands = commands.slice(drivingStopped + 1, preview);
+    expect(previewCommands.some((command) => command.tapOn?.point === '50%,33%')).toBe(true);
+    expect(previewCommands.some((command) => command.swipe?.start === '85%,50%')).toBe(true);
+    expect(previewCommands.some((command) => command.openLink?.includes('screenshotOpenPreview'))).toBe(false);
+    const lightingRoute = commands.findIndex((command) => command.openLink?.includes('section=lighting'));
+    const lightingShot = commands.findIndex((command) => command.takeScreenshot === '15-board-lighting');
+    expect(lightingRoute).toBeGreaterThan(preview);
+    expect(lightingShot).toBeGreaterThan(lightingRoute);
     expect(flow).not.toContain('screenshotOpenBoardSheet=1');
   });
 });

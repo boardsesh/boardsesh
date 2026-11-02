@@ -38,6 +38,11 @@ export default function BoardAndBluetoothContent() {
     >
       <PageSection id="connect" title={t('help.bluetooth.connect.title')}>
         <HelpShots>
+          <HelpClip
+            name="put-on-board-timed-drive"
+            alt={t('help.bluetooth.connect.timedClipAlt')}
+            caption={t('help.bluetooth.connect.timedClipCaption')}
+          />
           <HelpScreenshot
             shot="board-view"
             alt={t('help.bluetooth.connect.litShotAlt')}
@@ -81,6 +86,11 @@ export default function BoardAndBluetoothContent() {
             shot="board-sheet"
             alt={t('help.bluetooth.hidden.shotAlt')}
             caption={t('help.bluetooth.hidden.shotCaption')}
+          />
+          <HelpScreenshot
+            shot="board-lighting"
+            alt={t('help.bluetooth.hidden.lightingShotAlt')}
+            caption={t('help.bluetooth.hidden.lightingShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.bluetooth.hidden.p1')}</Prose>

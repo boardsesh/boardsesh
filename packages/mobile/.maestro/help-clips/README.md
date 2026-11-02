@@ -29,10 +29,11 @@ environment. Its tail captures the driving player (10), holds the wall button
 for real Board controls (09), then stops driving before the preview (12).
 The filenames are unchanged; the old board-history deep link is not used for 09.
 Simulated-board footage shows the app's actual controls, not a physical BLE test.
-The release wall-control captures use source `3c4fd3702d` on 2026-10-31.
-They are stale since #7170 (frost only while driving) and #7188 (wordless back
-chip, timed drive, last-look MiniPlayer); re-record pending on a build at or
-after `38eecfa2f0`.
+The refreshed help takes use main source `3b1d9be90c`, captured 2026-11-02
+on the dedicated `Boardsesh Help 7208` simulator against local Docker data.
+See [capture provenance and omissions](../../../../docs/help-screenshots.md).
+Normalize raw `recordVideo` takes to constant 30 fps before choosing trims:
+the variable-frame-rate sources do not seek accurately during conversion.
 
 The original recordings in this set used a throwaway iPhone 16 Pro Max (iOS 26.5) named
 "Boardsesh Help Clips": dark theme, Aura board drawing, status bar pinned to
@@ -86,10 +87,12 @@ and system dialogs. Nothing in the app is matchable by text or id, so each flow
 targets percentage points and its header lists what each one is. The exceptions
 are native: the delete confirm in `logbook-swipe-edit-delete` (an iOS Alert), the
 Start playlist? action sheet in `start-playlist-queue` (both match Cancel by
-text), and the Settings › Board switch label that
-`start-playlist-queue-setup.yaml` taps. That setup step is optional: if the
-SwiftUI switch row is not exposed, it does nothing and the clip records no
-prompt, so check the switch by eye before recording.
+text), and the playlist header Play button. The setup flow taps the native switch
+at its measured coordinates: tapping its text label matched but left it off.
+Verify it is ON before recording. Header Play invokes the first-climb callback;
+coordinate row taps did not activate on this cached iOS client. The refreshed
+take uses the compatible seeded Aurora Circuit 5 list, because Five Stars can
+select a MoonBoard climb while Tension is active.
 
 ## Per-clip traps
 

@@ -512,6 +512,36 @@ alerts read it; they were created switched off. The hold rule that uses them,
 their thresholds and their volume floor are in `docs/mobile-store-release.md`,
 "Phased release: hold at 5%".
 
+#### The Android GATT retry (#4143)
+
+On Android, a connect that fails with GATT status 133 or 147 (or with the
+status left out) retries once, inside the same 12 s budget. Both connect
+outcome events say what happened. `connectAttempts`, `retried` and
+`firstAttemptCode` are Android only: native iOS and web drop them
+(`firstAttemptCode` is also dropped when no retry ran). `retrySucceeded` is
+different: it is `false` on every `Bluetooth Connection Success` event without
+a retry, iOS and web included, and absent only on iOS and web failure events.
+So read the hit rate over `retried = true`, never over every event that
+carries `retrySucceeded`.
+
+| Prop               | Meaning                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `connectAttempts`  | 0 = never reached the GATT connect, 1 = one attempt, 2 = the retry ran.             |
+| `retried`          | `true` when the retry ran (`connectAttempts = 2`).                                  |
+| `firstAttemptCode` | The GATT status that set the retry off: 133, 147, or null when Android left it out. |
+| `retrySucceeded`   | The retry won its GATT connect, even when MTU or service discovery failed after it. |
+
+The retry hit rate is `retrySucceeded` over `retried`, across both
+`Bluetooth Connection Success` and `Bluetooth Connection Failed`: a failure
+event can carry a retry that saved the GATT connect.
+
+`afterBoardSwitch` is on `Bluetooth Connection Success` and on the
+`Bluetooth Connection Failed` events classified from the connect error (not
+`dropped_after_connect` or `board_switch_timeout`), on every platform. It is
+`true` when the app switched boards for the connect: a climb on another board
+at the gym (#7001), or the picker's switch to the board a box belongs to. A
+failure there shows its own copy, which says the switch happened.
+
 ### Spray-wall activation
 
 A spray wall has no Bluetooth (`docs/spray-walls.md`, "No Bluetooth, and the

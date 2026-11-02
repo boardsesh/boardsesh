@@ -936,6 +936,7 @@
   },
   "bluetooth": {
     "boardNotFound": "Impossibile trovare il tuo pannello. Controlla che sia acceso e vicino; se un altro telefono è connesso, disconnettilo prima da lì.",
+    "boardSwitchConnectFailed": "Hai cambiato pannello, ma non è stato possibile connettersi al nuovo. Avvicinati e riprova.",
     "connectFailed": "Impossibile connettersi. Avvicinati al pannello e riprova.",
     "serviceMissing": "Connesso, ma il pannello non ha risposto. Spegnilo e riaccendilo, poi riprova.",
     "unavailable": "Il Bluetooth è spento. Accendilo per connetterti al pannello.",

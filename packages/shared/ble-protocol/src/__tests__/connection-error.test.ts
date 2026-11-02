@@ -6,6 +6,7 @@ import {
   isBleWriteRecoveryFailedError,
   isBleWriteTimeoutError,
   isDisconnectionError,
+  isRetryableAndroidConnectError,
   type BleFailureCategory,
   type BleSendFailureReason,
 } from '../connection-error';
@@ -28,17 +29,19 @@ function bleError(message: string): Error {
 function bleErrorWithCode(
   errorCode: number,
   message: string,
-  extra?: { androidErrorCode?: number; iosErrorCode?: number },
+  extra?: { androidErrorCode?: number | null; iosErrorCode?: number | null },
 ): Error {
   const error = new Error(message) as Error & {
     errorCode: number;
-    androidErrorCode?: number;
-    iosErrorCode?: number;
+    androidErrorCode: number | null;
+    iosErrorCode: number | null;
   };
   error.name = 'BleError';
   error.errorCode = errorCode;
-  if (extra?.androidErrorCode !== undefined) error.androidErrorCode = extra.androidErrorCode;
-  if (extra?.iosErrorCode !== undefined) error.iosErrorCode = extra.iosErrorCode;
+  // This is the real ble-plx runtime shape: both properties exist and the
+  // inactive/omitted platform code is null (never an absent property).
+  error.androidErrorCode = extra?.androidErrorCode ?? null;
+  error.iosErrorCode = extra?.iosErrorCode ?? null;
   return error;
 }
 
@@ -437,5 +440,105 @@ describe('blePlxErrorCodes (#3608)', () => {
     cbError.name = 'CBError';
     cbError.errorCode = 7;
     expect(blePlxErrorCodes(cbError)).toEqual({});
+  });
+});
+
+describe('isRetryableAndroidConnectError (#4143)', () => {
+  it.each([200, 201, 205])('allows ble-plx connect code %i with its canonical null Android status', (errorCode) => {
+    expect(isRetryableAndroidConnectError(bleErrorWithCode(errorCode, 'connect failed'))).toBe(true);
+  });
+
+  it.each([200, 201, 205])(
+    'denies explicit user cancellation for connect code %i with null or absent platform fields',
+    (errorCode) => {
+      for (const message of [
+        'Device selection cancelled',
+        'The user cancelled the request',
+        'The user canceled the request',
+      ]) {
+        expect(isRetryableAndroidConnectError(bleErrorWithCode(errorCode, message))).toBe(false);
+
+        const absentPlatformFields = bleErrorWithCode(errorCode, message) as Error & {
+          androidErrorCode?: number | null;
+          iosErrorCode?: number | null;
+        };
+        delete absentPlatformFields.androidErrorCode;
+        delete absentPlatformFields.iosErrorCode;
+        expect(isRetryableAndroidConnectError(absentPlatformFields)).toBe(false);
+      }
+    },
+  );
+
+  it.each(['Operation was cancelled', 'Connection cancelled by peer'])(
+    'does not mistake the technical failure "%s" for a picker dismissal',
+    (message) => {
+      expect(isRetryableAndroidConnectError(bleErrorWithCode(201, message))).toBe(true);
+    },
+  );
+
+  it('also allows an older structural BleError shape which omitted the Android field entirely', () => {
+    const error = bleErrorWithCode(201, 'connect failed') as Error & { androidErrorCode?: number | null };
+    delete error.androidErrorCode;
+    expect(isRetryableAndroidConnectError(error)).toBe(true);
+  });
+
+  it.each([200, 201, 205])('allows ble-plx connect code %i with Android GATT status 133 or 147', (errorCode) => {
+    expect(
+      isRetryableAndroidConnectError(bleErrorWithCode(errorCode, 'connect failed', { androidErrorCode: 133 })),
+    ).toBe(true);
+    expect(
+      isRetryableAndroidConnectError(bleErrorWithCode(errorCode, 'connect failed', { androidErrorCode: 147 })),
+    ).toBe(true);
+  });
+
+  it.each([0, 2, 3, 100, 101, 102, 204, 206, 300, 302, 400, 404])(
+    'denies non-connect or terminal ble-plx code %i',
+    (errorCode) => {
+      expect(isRetryableAndroidConnectError(bleErrorWithCode(errorCode, 'opaque'))).toBe(false);
+      // An allowlisted low-level status cannot turn a non-allowlisted outer
+      // operation into a connect retry.
+      expect(isRetryableAndroidConnectError(bleErrorWithCode(errorCode, 'opaque', { androidErrorCode: 133 }))).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each([0, 1, 8, 19, 22, 62, 257])(
+    'lets a present non-transient Android status %i veto an otherwise allowlisted connect error',
+    (androidErrorCode) => {
+      expect(isRetryableAndroidConnectError(bleErrorWithCode(201, 'disconnected', { androidErrorCode }))).toBe(false);
+    },
+  );
+
+  it('denies a malformed Android status instead of treating it as absent', () => {
+    const error = bleErrorWithCode(201, 'disconnected') as Error & { androidErrorCode: unknown };
+    error.androidErrorCode = '133';
+    expect(isRetryableAndroidConnectError(error)).toBe(false);
+  });
+
+  it('denies a real ble-plx iOS shape even when its outer code is otherwise eligible', () => {
+    expect(isRetryableAndroidConnectError(bleErrorWithCode(201, 'iOS disconnected', { iosErrorCode: 7 }))).toBe(false);
+  });
+
+  it('denies a malformed populated iOS status conservatively', () => {
+    const error = bleErrorWithCode(201, 'iOS disconnected') as Error & { iosErrorCode: unknown };
+    error.iosErrorCode = '7';
+    expect(isRetryableAndroidConnectError(error)).toBe(false);
+  });
+
+  it('requires the real BleError name and numeric outer code', () => {
+    const plainError = new Error('GATT 133') as Error & { errorCode?: unknown; androidErrorCode?: number };
+    plainError.errorCode = 201;
+    plainError.androidErrorCode = 133;
+    expect(isRetryableAndroidConnectError(plainError)).toBe(false);
+
+    plainError.name = 'CBError';
+    expect(isRetryableAndroidConnectError(plainError)).toBe(false);
+
+    plainError.name = 'BleError';
+    plainError.errorCode = '201';
+    expect(isRetryableAndroidConnectError(plainError)).toBe(false);
+    expect(isRetryableAndroidConnectError('GATT 133')).toBe(false);
+    expect(isRetryableAndroidConnectError(null)).toBe(false);
   });
 });

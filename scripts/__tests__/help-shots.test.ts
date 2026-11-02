@@ -62,6 +62,8 @@ describe('help shot mapping', () => {
       'board-sheet',
       'board-view',
       'climb-actions',
+      'preview',
+      'board-lighting',
     ]);
     expect(helpShotAsset('03-home-live')).toBe('live-sessions');
     expect(helpShotAsset('03-nope')).toBeUndefined();
