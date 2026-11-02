@@ -629,27 +629,24 @@ the audit after all upload jobs finish.
 A native release reaches climbers in phases, and it stops at 5% until connecting
 to a board on it looks no worse than on the store version.
 
-The combined Mobile Store Submission (above) can't start a phased release on
-either store. It releases Android at 100%, and Android Production Release can't
-shrink a completed release afterwards. Its "Push listing text and What's New"
-step runs deliver, which removes an App Store phased release it wasn't asked
-for: deliver's `phased_release` option defaults to false, and false deletes a
-phased release the version already has. So a phased release goes through the two
-single-store workflows, Android first:
+The combined Mobile Store Submission (above) can't start a phased release: it
+releases Android at 100%, and Android Production Release can't shrink a completed
+release afterwards. Listing text pushes keep an App Store phased release the
+version already has (#7226) but never create one. So a phased release goes
+through the two single-store workflows, Android first:
 
 1. **Release Android at 5%.** Dispatch Android Production Release (above) with
    the exact versionCode, `rollout_percent=5` and `apply`, before anything else
    writes Android production. If the combined submission runs for the same build
    pair later, it reports Android `done` (production already carries the build)
    and leaves Android alone.
-2. **Submit iOS with phased release on.** Let the store draft and its listing
-   text push finish, then turn on phased release for automatic updates on the
-   version in App Store Connect. Submit with App Store Review Submission (below),
-   which writes no listing text. Any later listing text push to the editable
-   version (Mobile Store Metadata, a new draft, the combined submission) removes
-   the phased release again, so check it is still on right before you submit.
-   Apple's percentage covers automatic updates only; anyone can still update by
-   hand.
+2. **Submit iOS with phased release on.** Turn on phased release for automatic
+   updates on the version in App Store Connect, then submit with App Store Review
+   Submission (below). Later listing text pushes keep it on (#7226); each run's
+   step summary says "Phased release: on for <version>". Don't switch it while a
+   listing push is running, because the push reads it once at the start, and
+   check it is still on right before you submit. Apple's percentage covers
+   automatic updates only; anyone can still update by hand.
 3. **Turn the connect alerts on.** They sit on the PostHog dashboard
    [Boardsesh 2.7 connect release watch](https://us.posthog.com/project/412845/dashboard/2293063)
    and were created switched off, so nobody gets paged outside a release.
@@ -808,7 +805,7 @@ after the shipped fingerprint moves on.
 4. Plan the explicit build pair, then submit it in phases: Android at 5% through
    Android Production Release first, then iOS with phased release on through App
    Store Review Submission (Phased release: hold at 5%, above). The combined manual
-   workflow releases both stores at 100%.
+   workflow releases Android at 100%.
 5. Confirm public availability and immutable accepted-build anchors after store approval.
    The anchor closes the version; the next native merge opens the next patch.
 6. Hold the phased release at 5% until the connect alerts stay quiet for 48 hours
