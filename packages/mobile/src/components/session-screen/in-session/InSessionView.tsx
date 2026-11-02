@@ -1,3 +1,4 @@
+import { ClimbActionsPressable } from '../../climb-actions/ClimbActionsPressable';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View } from 'react-native';
@@ -47,7 +48,7 @@ import { withAlpha } from '../../../theme/colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
-import { hapticSelection, hapticMedium } from '../../../lib/haptics';
+import { hapticSelection } from '../../../lib/haptics';
 import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
@@ -153,7 +154,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const { t } = useTranslation(['session', 'climbs']);
   const { systemColors, brandColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
-  const { openClimbActions } = useDrawerHost();
+  const { getClimbActions } = useDrawerHost();
   const statusIconName = statusIcon(status);
   const statusColor = statusTint(status, brandColors, chartColors.secondaryLabel);
   let statusLabel: string;
@@ -197,25 +198,22 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
     onPress(tick);
   };
 
-  const handleLongPress = () => {
-    if (!climb || !boardConfig) return;
-    hapticMedium();
-    openClimbActions(climb, {
-      boardName: boardConfig.boardName,
-      layoutId: boardConfig.layoutId,
-      sizeId: boardConfig.sizeId,
-      setIds: boardConfig.setIds.join(','),
-      angle: tick.angle,
-    });
-  };
+  const menuTarget =
+    climb && boardConfig
+      ? getClimbActions(climb, {
+          boardName: boardConfig.boardName,
+          layoutId: boardConfig.layoutId,
+          sizeId: boardConfig.sizeId,
+          setIds: boardConfig.setIds.join(','),
+          angle: tick.angle,
+        })
+      : null;
 
   return (
     <View>
-      <PressableSurface
+      <ClimbActionsPressable
+        target={menuTarget}
         onPress={handlePress}
-        onLongPress={handleLongPress}
-        feedback="opacity"
-        opacityTo={0.7}
         accessibilityRole="button"
         accessibilityLabel={rowAccessibilityLabel}
         style={[styles.historyRow, { backgroundColor: systemColors.secondaryBackground }]}
@@ -255,7 +253,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
             ) : null}
           </>
         )}
-      </PressableSurface>
+      </ClimbActionsPressable>
       <View style={[styles.historySeparator, { backgroundColor: systemColors.separator }]} />
     </View>
   );

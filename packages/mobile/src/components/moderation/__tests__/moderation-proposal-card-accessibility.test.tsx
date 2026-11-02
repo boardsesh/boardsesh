@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../climb-actions/ClimbActionsPressable', () => import('../../../../test/climb-menu-stub'));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -8,6 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Proposal } from '@boardsesh/shared-schema';
+import type { ClimbActionsTarget } from '../../../providers/drawer-host-provider';
+import { climbMenuTestState } from '../../../../test/climb-menu-stub';
 
 type Children = { children?: ReactNode };
 
@@ -101,29 +104,62 @@ const proposal = {
   createdAt: '2026-06-15T10:00:00.000Z',
 } as unknown as Proposal;
 
-const onLongPressClimb = vi.fn();
+const target = {
+  climb: { uuid: 'climb-1', name: 'Test Climb' },
+  boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+} as ClimbActionsTarget;
+const onLongPressClimb = vi.fn(() => target);
 
-beforeEach(() => onLongPressClimb.mockClear());
+beforeEach(() => {
+  onLongPressClimb.mockClear();
+  climbMenuTestState.commands = [];
+  climbMenuTestState.openedRows = null;
+});
 
-describe('ModerationProposalCard — screen-reader route to the long-press menu', () => {
-  it('publishes a custom action that calls the same handler as a long press', () => {
-    const { getByTestId } = render(
+describe('ModerationProposalCard — native climb commands', () => {
+  it('shares the pinned proposal target between native long press and screen-reader commands', () => {
+    const onOpenClimb = vi.fn();
+    const { container } = render(
       <ModerationProposalCard
         proposal={proposal}
         roles={[]}
         isSignedIn
-        onOpenClimb={vi.fn()}
+        onOpenClimb={onOpenClimb}
         onLongPressClimb={onLongPressClimb}
       />,
     );
-    const block = getByTestId('climb-block');
-    expect(block.getAttribute('data-action-label')).toBe('mobile.climbRow.moreActions');
+    const block = container.querySelector('[data-climb-actions-body]')!;
+    expect(onLongPressClimb).toHaveBeenCalledExactlyOnceWith(proposal);
+    expect(block.getAttribute('data-action-label')).toBe('Share');
 
     fireEvent.contextMenu(block);
-    expect(onLongPressClimb).toHaveBeenCalledWith(proposal);
-    onLongPressClimb.mockClear();
+    expect(climbMenuTestState.openedRows?.map((action) => action.id)).toEqual(['share']);
+    expect(climbMenuTestState.commands).toEqual([]);
 
     fireEvent.doubleClick(block);
-    expect(onLongPressClimb).toHaveBeenCalledWith(proposal);
+    expect(climbMenuTestState.commands).toEqual([{ id: 'share', target }]);
+    expect(onLongPressClimb).toHaveBeenCalledTimes(1);
+    expect(onOpenClimb).not.toHaveBeenCalled();
+    fireEvent.click(block);
+    expect(onOpenClimb).toHaveBeenCalledWith(proposal);
+  });
+
+  it('keeps the primary action without advertising commands for an unresolved target', () => {
+    const onOpenClimb = vi.fn();
+    const { container } = render(
+      <ModerationProposalCard
+        proposal={proposal}
+        roles={[]}
+        isSignedIn
+        onOpenClimb={onOpenClimb}
+        onLongPressClimb={() => null}
+      />,
+    );
+    expect(container.querySelector('[data-native-climb-menu]')).toBeNull();
+    const block = container.querySelector('[data-climb-actions-body]')!;
+    fireEvent.doubleClick(block);
+    expect(climbMenuTestState.commands).toEqual([]);
+    fireEvent.click(block);
+    expect(onOpenClimb).toHaveBeenCalledWith(proposal);
   });
 });

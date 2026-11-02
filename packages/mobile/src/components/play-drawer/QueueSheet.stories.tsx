@@ -18,7 +18,7 @@ const STORY_BOARD = { boardName: 'kilter' as const, layoutId: 8, sizeId: 25, set
 function HistoryTickStory() {
   const liveQueue = useQueueData();
   const { setCurrentClimb } = useQueueActions();
-  const { openLogAscent, openPlayDrawer, openClimbActions } = useDrawerHost();
+  const { openLogAscent, openPlayDrawer, getClimbActions } = useDrawerHost();
   const queueRef = useRef<QueueSheetHandle>(null);
   const { data: sampleClimbs } = useSearchClimbs({
     boardName: 'kilter',
@@ -49,7 +49,7 @@ function HistoryTickStory() {
   const handlers = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    openClimbActions,
+    getClimbActions,
     openLogAscent,
     storedBoardConfig: STORY_BOARD,
     sessionId: null,

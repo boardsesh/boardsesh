@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AnalyticsEventProperties } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/shared-schema';
-import { AppMenu } from '../AppMenu';
+import { ClimbMenu } from '../climb-actions/ClimbMenu';
 import {
   useClimbActions,
   type ClimbActionsFavoriteControl,
@@ -169,25 +169,13 @@ export const PlayDrawerActionsMenu = memo(function PlayDrawerActionsMenu({
     () => buildPlayDrawerMenuRows(menuItems, { hidden, boardMismatch, isActiveClimb }),
     [menuItems, hidden, boardMismatch, isActiveClimb],
   );
-  // Disabled rows are refused here as well as by the platform menus: the row set
-  // is data, and the next row added to it may not guard itself.
-  const handleSelectIndex = useCallback(
-    (index: number) => {
-      const row = rows[index];
-      if (!row || row.disabled) return;
-      row.run();
-    },
-    [rows],
-  );
   const rowSignature = rows.map((row) => (row.disabled ? `${row.id}:off` : row.id)).join(',');
 
   return (
-    <AppMenu
-      key={`${climb.uuid}|${rowSignature}`}
-      iconName="more"
+    <ClimbMenu
+      menuKey={`${currentUserId}|${climb.uuid}|${boardConfig.boardName}|${boardConfig.layoutId}|${boardConfig.sizeId}|${boardConfig.setIds}|${boardConfig.angle}|${queueItemUuid}|${rowSignature}`}
       accessibilityLabel={t('playView.actionBar.climbActionsAria')}
-      actions={rows}
-      onSelectIndex={handleSelectIndex}
+      rows={rows}
     />
   );
 });

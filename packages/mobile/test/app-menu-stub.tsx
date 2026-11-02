@@ -21,17 +21,21 @@ export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, accessibilityLabel, accessibilityHint } = props;
   return (
     <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? props.label}
-        accessibilityHint={accessibilityHint}
-      >
-        {/* An icon anchor renders a glyph, so it has no visible text to mirror —
+      {props.trigger === 'longPress' ? (
+        props.children
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel ?? props.label}
+          accessibilityHint={accessibilityHint}
+        >
+          {/* An icon anchor renders a glyph, so it has no visible text to mirror —
             its `accessibilityLabel` is the only name it has, and it is required
             for exactly that reason. Deliberately NOT echoed as text here: doing
             so would let a screen test find by text an anchor that shows none. */}
-        <Text>{props.label}</Text>
-      </Pressable>
+          <Text>{props.label}</Text>
+        </Pressable>
+      )}
       {actions.map((action, index) => (
         <Fragment key={`${index}-${action.label}`}>
           {/* The real menus draw a separator here (never above the first row).

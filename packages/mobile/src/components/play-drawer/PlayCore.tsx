@@ -1,3 +1,4 @@
+import { registerClimbActionPresenters } from '../climb-actions/climb-action-presenters';
 import {
   useCallback,
   useEffect,
@@ -2305,7 +2306,7 @@ export function PlayCore({
   // it. ⋯ offers no tick row today (the hero button is always there), but the menu
   // still takes the opener so a row added later can't fall back to the root sheet.
   const handleOpenTickForClimb = useCallback(
-    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+    (targetClimb: Climb, targetBoardConfig: BoardConfig, source?: { queueItemUuid?: string }) => {
       resetZoomRef.current?.();
       const activeBoard = activeBoardForLoggingRef.current;
       const matchesActiveBoard =
@@ -2318,12 +2319,16 @@ export function PlayCore({
         climb: targetClimb,
         boardConfig: targetBoardConfig,
         isMirror:
-          isPreview && targetClimb.uuid === displayedClimbUuid
+          !source && isPreview && targetClimb.uuid === displayedClimbUuid
             ? isMirrored
             : resolveTickMirror(
                 getQueueSnapshot(),
                 targetClimb,
-                targetClimb.uuid === displayedClimbUuid ? (displayedQueueItemUuid ?? undefined) : undefined,
+                source
+                  ? source.queueItemUuid
+                  : targetClimb.uuid === displayedClimbUuid
+                    ? (displayedQueueItemUuid ?? undefined)
+                    : undefined,
                 matchesActiveBoard,
               ),
       });
@@ -2358,6 +2363,28 @@ export function PlayCore({
     },
     [setPlaylistTarget],
   );
+  const climbActionPresentersRef = useRef({
+    tick: handleOpenTickForClimb,
+    beta: handleOpenAddBetaVideoForClimb,
+    report: handleOpenReportClimbForClimb,
+    playlist: handleOpenAddToPlaylistForClimb,
+  });
+  climbActionPresentersRef.current = {
+    tick: handleOpenTickForClimb,
+    beta: handleOpenAddBetaVideoForClimb,
+    report: handleOpenReportClimbForClimb,
+    playlist: handleOpenAddToPlaylistForClimb,
+  };
+  useEffect(() => {
+    if (isPane || isAnonymous || !isAuthenticated) return;
+    return registerClimbActionPresenters({
+      tick: (climb, board, source) => climbActionPresentersRef.current.tick(climb, board, source),
+      beta: (climb, board) => climbActionPresentersRef.current.beta(climb, board),
+      report: (climb, board) => climbActionPresentersRef.current.report(climb, board),
+      playlist: (climb, board) => climbActionPresentersRef.current.playlist(climb, board),
+    });
+  }, [isPane, isAnonymous, isAuthenticated]);
+
   const handleCloseAddToPlaylist = useCallback(() => {
     setAddToPlaylistOpen(false);
   }, []);

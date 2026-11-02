@@ -733,7 +733,6 @@
       }
     },
     "hidden": {
-      "short": "nascosto",
       "chip": "Nascosto",
       "banner": "Nascosto dalla community"
     },
@@ -763,7 +762,6 @@
       "editEntry": "Modifica la salita",
       "report": "Segnala il blocco",
       "changeGrade": "Cambia il grado",
-      "closeOverlay": "Chiudi le azioni del blocco",
       "openQueue": "Apri la coda",
       "deleteClimb": {
         "row": "Elimina il blocco",

@@ -52,6 +52,14 @@ vi.mock('../../AppMenu', () => ({
     );
   },
 }));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@tanstack/react-query')>();
+  const client = new original.QueryClient();
+  return { ...original, useQueryClient: () => client };
+});
+vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
+vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../play-drawer/use-climb-change-lights', () => ({ readClimbChangeLights: () => false }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
@@ -316,10 +324,10 @@ describe('PlayDrawerActionsMenu', () => {
     expect(container.textContent).toContain('mobile.climbActions.report');
   });
 
-  it('keeps the same menu across an angle change', () => {
+  it('closes the native menu across an angle change', () => {
     const { rerender } = render(createElement(PlayDrawerActionsMenu, makeProps()));
     rerender(createElement(PlayDrawerActionsMenu, makeProps({ boardConfig: { ...TENSION, angle: 45 } })));
-    expect(menu.mounts).toBe(1);
+    expect(menu.mounts).toBe(2);
   });
 
   it('asks for no profile without a session', () => {

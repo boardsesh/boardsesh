@@ -112,7 +112,7 @@ const playlistKey = (playlist: Playlist) => playlist.id;
 /**
  * Membership-aware "add to playlist" body: a toggle list (checkmark = the climb
  * is in that playlist; tap to add or remove) plus an inline create form. Shared
- * by the reaction overlay (`ClimbReactionMenu`) and the add-to-playlist
+ * by the add-to-playlist
  * `ModalSheet` (`AddToPlaylistSheet`).
  *
  * Feedback is inline *while the picker is on screen*: a toast fired while a

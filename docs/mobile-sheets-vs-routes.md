@@ -55,22 +55,34 @@ genuinely going away out from under the parent — a user pan-down / backdrop, o
 another sheet in the group — never for a close the parent itself drove, so parent state can't be
 cleared behind your back. `AddToPlaylistSheet` is the reference.
 
-**Stacking above everything:** a **custom, non-sheet** overlay (Reanimated + plain views) can
-render in a higher iOS window via react-native-screens' `FullWindowOverlay` — that's how
-`ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. That wrapper
-does not supply a native sheet presenter. A native sheet must be physically mounted under the
-view controller it presents from: inside a modal route, or inside another sheet's native content.
-The Queue's Tick host uses the latter, with an explicit child presenter group and `parentId`.
-`HoldRoleSheet` presents inside the New climb editor's modal route. There is **no**
-`fullWindowOverlay` prop on `Sheet`; it was an inert no-op and has been removed.
+**Climb menus.** `ClimbActionsMenu` shares the core action definitions for row long-press,
+list ellipsis and player ellipsis. On the main iOS climb list, both row triggers open
+`ClimbListRowMenu`: the same opaque, rounded row above a dimmed list and a scrollable
+action menu. Public iOS context-menu APIs cannot present the preview from a tap, so
+these two triggers use one controlled `FullWindowOverlay`. The source body is replaced
+with a placeholder while lifted; the row content is mounted only once. Recycled rows,
+account changes and window-size changes retire the menu. Commands run after the overlay
+unmounts, preserving the normal sheet presenter for add-to-playlist and other actions.
+Other surfaces retain SwiftUI ContextMenu/Menu on iOS, Compose dropdowns on Android,
+and Paper on Expo web. `getClimbActions` resolves a snapshot without opening anything.
+The old `ClimbReactionMenu` overlay and its embedded sheets are removed.
+Native iOS captures: [before](./images/climb-menu-before.png),
+[long press](./images/climb-menu-after.png), [ellipsis](./images/climb-menu-ellipsis.png).
 
-**Inline body instead of a nested sheet:** when a surface needs a secondary picker/form without
-its own native presenter (rule 1), extract the body as a **presentation-agnostic component**
-that mounts no sheet/overlay of its own and takes its text input by injection, then render it inline
-in both hosts. `InlinePlaylistPicker` (the "add to playlist" list + create form) is the reference:
-it renders inline in `ClimbReactionMenu`'s `FullWindowOverlay` (plain `TextInput`) and inside
-`AddToPlaylistSheet`'s `ModalSheet` (`BottomSheetTextInput`), so add-to-playlist never stacks a
-second sheet. Feedback is inline, not a toast (a toast renders behind the overlay/sheet).
+A row's long-press body excludes drag handles and sibling controls, preserving
+queue reorder and swipe actions. Screen readers get direct enabled commands and the
+separately focusable ellipsis when visible.
+
+**Stacking above everything:** custom non-sheet overlays may use `FullWindowOverlay`, but
+native `@expo/ui` sheets present from their own view controller. A native sheet must be
+physically mounted under the view controller it presents from: inside a modal route, or inside
+another sheet's native content. The Queue's Tick host uses the latter, with an explicit child
+presenter group and `parentId`. `HoldRoleSheet` presents inside the New climb editor's modal
+route. `Sheet` has no `fullWindowOverlay` prop.
+
+**Inline body instead of a nested sheet:** when a second native sheet cannot stack,
+extract a presentation-independent body with injected input controls. `InlinePlaylistPicker`
+is the body used by `AddToPlaylistSheet`; feedback belongs inside its sheet.
 
 **In-tree openers — a menu opening a sheet over a route.** `useClimbActions` falls back to
 **root-level** openers (`useDrawerHost().openAddBetaVideo` / `openLogAscent` / `openReportClimb` →
@@ -86,8 +98,8 @@ one can't be left off by accident and silently take the root fallback; nothing i
 stops a root opener being passed in their place, so `play-drawer-cross-board.test.tsx` opens
 each sheet through the player and checks it is the player's own. The favourite row
 goes through the bar heart's own toggle (`handleToggleFavoriteFromMenu`), so the two never
-disagree. Off the player (climb list, logbook, board sheet) the long-press `ClimbReactionMenu`
-omits the overrides and the root sheet is correct — nothing covers it. **Any new ⋯ row that opens
+disagree. Off the player, native climb menus use the root presenter or dismiss their source sheet
+through its coordinator before presenting the next surface. **Any new ⋯ row that opens
 a native sheet needs an in-tree opener**, or it re-hits the bug.
 
 **Every native sheet must go through the presentation coordinator.** Sibling `@expo/ui`
@@ -104,7 +116,8 @@ the coordinator clears its desired-open flag and fires `onDisplaced`, which
 `useManagedSheet` delivers as the sheet's `onClose` (same contract as a user
 pan-down), so the parent clears the state that drove `open`. Never design a flow
 that expects a displaced sheet to come back by itself when the displacer closes —
-that implicit resume was the phantom-tick-sheet bug (PR #3595).
+that implicit resume was the phantom-tick-sheet bug (PR #3595). Native climb menus are
+not sheets; each command uses the appropriate sheet presenter and dismissal waiter.
 
 **Explicit native children:** Queue history logging mounts its `LogAscentSheet` inside Queue's
 native content, gives it a separate group, and passes Queue's managed `sheetId` as `parentId`.
@@ -117,11 +130,6 @@ On web, only the explicit child opts into modal `push`; ordinary siblings retain
 The Queue's Tick target stays pinned through dismissal, with a new native host per opening and
 request-guarded callbacks. iPad layout-only queue folding waits until Tick finishes, preserving
 its note through rotation. The `/play` side panel uses a Tick host inside the player route.
-
-`FullWindowOverlay` menus (e.g. `ClimbReactionMenu`), which are custom overlays in a higher
-window, are not native sheets and do not need a coordinator group. (`CreateDrawer` used to be a second one, a raw `BottomSheet` as the
-create-climb route's primary sheet; New climb is a modal route now, so it has no sheet to
-coordinate.)
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
@@ -742,7 +750,7 @@ pane (the JS tablet shell or the iPhone Duo's split, where there is no `/play` r
 whatever is focused instead. The gated
 version is `useCreateClimbNavigation`
 (`src/components/create-climb/use-create-climb-navigation.ts`), and both remix/edit entry
-points (`useClimbActions`, behind both the long-press reaction menu and the player's ⋯) go through
+points (`useClimbActions`, behind both the native row menu and the player's ⋯) go through
 it.
 
 Two things that are easy to get wrong:
@@ -1101,7 +1109,7 @@ second scroll view.
 a 44-point reveal threshold, and a 192-point full-swipe release threshold. A short
 swipe reveals a labelled button; a full swipe commits once and closes, including
 when Reduce Motion settles the opening animation before the JS release callback.
-Keep reaction-menu long-press and screen-reader actions available.
+Keep native climb-menu long-press and screen-reader commands available.
 
 **Wall capsule:** the Climbs header uses the player's shared connection and
 presence-freshness rules. With no live link it reads “Last on the wall” for an

@@ -136,8 +136,7 @@
         "a11yHasBetaVideo": "avec vidéo de beta",
         "a11yMirrored": "en miroir",
         "editAction": "Modifier l'entrée",
-        "deleteAction": "Supprimer l'entrée",
-        "moreActions": "Plus d'actions"
+        "deleteAction": "Supprimer l'entrée"
       },
       "day": {
         "today": "Aujourd'hui",

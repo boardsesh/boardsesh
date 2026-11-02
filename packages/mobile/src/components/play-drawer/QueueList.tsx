@@ -29,6 +29,7 @@ import { hapticSelection } from '../../lib/haptics';
 import { useBoardContinuationFeed } from '../../providers/queue/use-board-continuation-feed';
 import { useQueueDrag } from './use-queue-drag';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 
 // Synthetic suggestion-source id for tapping a climb from the queue sheet's
 // suggestion feed — distinct from real playlist activations. This is a plain
@@ -62,8 +63,8 @@ type QueueListProps = {
   autoScrollOnMount?: boolean;
   onToggleSelect: (uuid: string) => void;
   onClimbPress: (item: ClimbQueueItem) => void;
-  /** Long press a queue row → open the climb reaction menu. */
-  onOpenActions?: (item: ClimbQueueItem) => void;
+  /** Resolve the row's native menu target. */
+  onOpenActions?: (item: ClimbQueueItem) => ClimbActionsTarget | null | undefined;
   onRemove: (uuid: string) => void;
   onShowFullHistory: () => void;
   onTickHistory: (item: ClimbQueueItem) => void;

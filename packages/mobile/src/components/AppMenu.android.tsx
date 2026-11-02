@@ -10,7 +10,9 @@
 // select.
 
 import { Fragment, useMemo, useState } from 'react';
+import { Pressable } from 'react-native';
 import { ComposeHost } from './ComposeHost.android';
+import { MeasuredMenuAnchor } from './MeasuredMenuAnchor';
 import {
   Column,
   DropdownMenu,
@@ -19,6 +21,7 @@ import {
   Icon,
   IconButton,
   Row,
+  RNHostView,
   Text,
 } from '@expo/ui/jetpack-compose';
 import { clickable, defaultMinSize, padding, selectable } from '@expo/ui/jetpack-compose/modifiers';
@@ -41,6 +44,7 @@ export function AppMenu(props: AppMenuProps) {
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
   const open = () => setExpanded(true);
+  const hasLongPressAnchor = props.trigger === 'longPress';
 
   // Every `Text` carries an explicit, scheme-aware colour. The trigger and the menu
   // popup are separate Compose compositions, and a custom `Text` in a slot does NOT
@@ -60,7 +64,7 @@ export function AppMenu(props: AppMenuProps) {
   // does for a Spinner. An action menu ("Review") stays a button.
   const isValuePicker = props.iconName == null && headline == null && resolved.some((action) => action.showCheck);
 
-  return (
+  const renderMenu = (anchorWidth?: number) => (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
     // sits leading in the app bar (the find-climbers action is held trailing by a flex
     // spacer). `maxWidth` caps the RN Host (the anchor) only — the `DropdownMenu.Items`
@@ -74,15 +78,34 @@ export function AppMenu(props: AppMenuProps) {
     // a11y modifiers. The open menu's rows are Compose nodes: the ticked one
     // carries `selectable`, so TalkBack says "Selected" as well as the ✓.
     <ComposeHost
-      matchContents
-      accessibilityRole={isValuePicker ? 'dropdownlist' : 'button'}
-      accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
-      accessibilityHint={accessibilityHint}
-      style={[maxWidth != null ? { maxWidth } : null, style]}
+      key={anchorWidth}
+      matchContents={hasLongPressAnchor ? { vertical: true } : true}
+      accessible={hasLongPressAnchor ? false : undefined}
+      accessibilityRole={hasLongPressAnchor ? undefined : isValuePicker ? 'dropdownlist' : 'button'}
+      accessibilityLabel={
+        hasLongPressAnchor
+          ? undefined
+          : (accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label))
+      }
+      accessibilityHint={hasLongPressAnchor ? undefined : accessibilityHint}
+      style={[maxWidth != null ? { maxWidth } : null, hasLongPressAnchor ? { width: anchorWidth } : style]}
     >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
-          {props.iconName != null && isOverflowAnchor(props.iconName) ? (
+          {props.trigger === 'longPress' ? (
+            <RNHostView matchContents>
+              <Pressable
+                style={{ width: anchorWidth, flexDirection: 'row' }}
+                onLongPress={resolved.length > 0 ? open : undefined}
+                delayLongPress={400}
+                accessible={false}
+                focusable={false}
+                android_disableSound
+              >
+                {props.children}
+              </Pressable>
+            </RNHostView>
+          ) : props.iconName != null && isOverflowAnchor(props.iconName) ? (
             // The M3 overflow button: an IconButton (a 48dp touch target) holding
             // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
             // titleLarge text. Its spoken name rides the Host's label above.
@@ -181,5 +204,12 @@ export function AppMenu(props: AppMenuProps) {
         </DropdownMenu.Items>
       </DropdownMenu>
     </ComposeHost>
+  );
+  return props.trigger === 'longPress' ? (
+    <MeasuredMenuAnchor style={style}>
+      {(width) => (width === undefined ? props.children : renderMenu(width))}
+    </MeasuredMenuAnchor>
+  ) : (
+    renderMenu()
   );
 }

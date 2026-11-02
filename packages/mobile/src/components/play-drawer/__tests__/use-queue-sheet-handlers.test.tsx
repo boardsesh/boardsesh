@@ -56,7 +56,7 @@ function renderHandlers() {
     useQueueSheetHandlers({
       setCurrentClimb,
       openPlayDrawer,
-      openClimbActions: vi.fn(),
+      getClimbActions: vi.fn(),
       openLogAscent: vi.fn(),
       storedBoardConfig: null,
       sessionId: null,
@@ -105,7 +105,7 @@ describe('useQueueSheetHandlers', () => {
       useQueueSheetHandlers({
         setCurrentClimb: vi.fn(),
         openPlayDrawer: vi.fn(),
-        openClimbActions: vi.fn(),
+        getClimbActions: vi.fn(),
         openLogAscent: rootOpen,
         storedBoardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
         sessionId: 'session-local',
@@ -138,7 +138,7 @@ describe('useQueueSheetHandlers', () => {
       useQueueSheetHandlers({
         setCurrentClimb: vi.fn(),
         openPlayDrawer: vi.fn(),
-        openClimbActions: vi.fn(),
+        getClimbActions: vi.fn(),
         openLogAscent,
         storedBoardConfig: {
           boardName: 'kilter',
@@ -163,14 +163,14 @@ describe('useQueueSheetHandlers', () => {
   it('opens actions for the exact duplicate slot without playing or dismissing it', () => {
     const setCurrentClimb = vi.fn();
     const openPlayDrawer = vi.fn();
-    const openClimbActions = vi.fn();
+    const getClimbActions = vi.fn();
     const requestCloseQueueSheet = vi.fn();
     const dismissQueueSheetAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
     const { result } = renderHook(() =>
       useQueueSheetHandlers({
         setCurrentClimb,
         openPlayDrawer,
-        openClimbActions,
+        getClimbActions,
         openLogAscent: vi.fn(),
         storedBoardConfig: null,
         sessionId: 'session-1',
@@ -180,7 +180,7 @@ describe('useQueueSheetHandlers', () => {
     );
     const duplicateSlot = { ...queueItemWithCount(null), uuid: 'second-slot-for-climb-1' };
     act(() => result.current.handleOpenActions(duplicateSlot));
-    expect(openClimbActions).toHaveBeenCalledExactlyOnceWith(duplicateSlot.climb, undefined, {
+    expect(getClimbActions).toHaveBeenCalledExactlyOnceWith(duplicateSlot.climb, undefined, {
       queueItemUuid: 'second-slot-for-climb-1',
       dismissSourceSheet: dismissQueueSheetAndWait,
     });
@@ -198,7 +198,7 @@ describe('useQueueSheetHandlers', () => {
       useQueueSheetHandlers({
         setCurrentClimb,
         openPlayDrawer,
-        openClimbActions: vi.fn(),
+        getClimbActions: vi.fn(),
         openLogAscent: vi.fn(),
         storedBoardConfig: {
           boardName: 'kilter',
@@ -232,7 +232,7 @@ describe('preview-first queue selections', () => {
       useQueueSheetHandlers({
         setCurrentClimb,
         openPlayDrawer,
-        openClimbActions: vi.fn(),
+        getClimbActions: vi.fn(),
         openLogAscent: vi.fn(),
         storedBoardConfig: null,
         sessionId: 'session-1',
