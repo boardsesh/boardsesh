@@ -170,9 +170,10 @@ export const SHARED_EVENTS = {
   // `player`, because the climber asked for the same thing. Since
   // Then-signposts (2026-11-02): `from` is 'preview' when the player (or the
   // MiniPlayer's last pick) showed a climb that isn't the queue's current one,
-  // else 'current'; `upNextBucket` is Up next's size as '0' | '1' | '2-4' |
-  // '5-9' | '10+' (`upNextBucket`). `from: 'preview'` with Up next filled is a
-  // climber looking for their queue; that share should fall.
+  // else 'current'; `upNextBucket` is Up next's size as '0' | '1-3' | '4-10' |
+  // '11+' (`upNextBucket`, the buckets `Queue Navigation` sends too).
+  // `from: 'preview'` with Up next filled is a climber looking for their
+  // queue; that share should fall.
   QueueSheetOpened: 'Queue Sheet Opened',
   // A held swipe track stopped steering next/prev, so swipes fall back to the
   // queue. The climber still HAS a track; it just no longer anchors the climb

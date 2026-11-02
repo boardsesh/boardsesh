@@ -117,7 +117,7 @@ describe('queueSheetOpened', () => {
       queueSheetOpened({ surface: 'mini_player', boardType: 'moonboard', from: 'preview', upNextCount: 4 }),
     ).toEqual({
       name: 'Queue Sheet Opened',
-      properties: { surface: 'mini_player', boardType: 'moonboard', from: 'preview', upNextBucket: '2-4' },
+      properties: { surface: 'mini_player', boardType: 'moonboard', from: 'preview', upNextBucket: '4-10' },
     });
   });
 
@@ -129,22 +129,23 @@ describe('queueSheetOpened', () => {
       upNextCount: 37,
     });
     expect(properties).not.toHaveProperty('upNextCount');
-    expect(properties.upNextBucket).toBe('10+');
+    expect(properties.upNextBucket).toBe('11+');
   });
 });
 
+// The same buckets `Queue Navigation` sends (the then-signposts), so the two
+// events read on one scale.
 describe('upNextBucket', () => {
   it.each([
     [0, '0'],
     [-1, '0'],
     [Number.NaN, '0'],
-    [1, '1'],
-    [2, '2-4'],
-    [4, '2-4'],
-    [5, '5-9'],
-    [9, '5-9'],
-    [10, '10+'],
-    [500, '10+'],
+    [1, '1-3'],
+    [3, '1-3'],
+    [4, '4-10'],
+    [10, '4-10'],
+    [11, '11+'],
+    [500, '11+'],
   ] as const)('puts %s climbs in %s', (count, bucket) => {
     expect(upNextBucket(count)).toBe(bucket);
   });

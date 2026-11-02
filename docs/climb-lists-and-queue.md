@@ -607,7 +607,7 @@ previews instead (`:325`).
 
 ### 11. The queue sheet
 
-Then-signposts (owner decision, 2026-11-02) changed the sheet's sections, its count and
+Then-signposts (owner decision, 2026-11-02) changed the sheet's sections and
 `Queue Sheet Opened`. The player half of the same decision (the top bar's "then", the
 preview note, the crossing cue) is described with the player.
 
@@ -620,13 +620,18 @@ preview note, the crossing cue) is described with the player.
   so those stop reading as queued climbs.
 - **Then from Projects** holds exactly the climbs swipes from the current climb reach after
   Up next, in the order they reach them, under the list name the player's top bar uses
-  ("Projects"). A list nobody named reads "Then from the list"; the track a popular row's tap
-  starts reads "Then from Popular on this board". The rows are the walk itself,
-  `resolveThenFromListItems` in `packages/shared/play-view/src/queue-sheet-walk.ts`: one
-  `selectNextQueueItemWithSuggestions` step after another, each step's resume stored on the
-  track as a look's step or a commit stores it, filtered by the active board and the other
-  walls at its gym (`useQueueWalkBoard`), as `nextClimb` filters it. Climbs the sheet already
-  lists under Now or Up next are left out. A list climb that History holds is listed where a
+  ("Projects"). A list nobody named reads "Then from the list". So does the track a popular
+  row's tap starts: the top bar names nothing for it, and "Then from Popular on this board"
+  over a "Popular on this board" header read as the same section twice. The rows are the walk
+  itself, `resolveThenFromListItems` in `packages/shared/play-view/src/queue-sheet-walk.ts`:
+  one `selectNextQueueItemWithSuggestions` step after another from the queue's current climb
+  (`currentClimbQueueItem`, the object the player walks from, so a commit the server hasn't
+  echoed yet walks as the swipe does), each step's resume stored on the track as a look's
+  step or a commit stores it. The walk is filtered by the active board and the other walls at
+  its gym (`useQueueWalkBoard`), built by the same helpers as `nextClimb`'s filter
+  (`src/providers/queue/active-board-compatibility.ts`). The player's own navigation model
+  still builds the same rule in place (`use-play-navigation-model.ts`, `PlayCore.tsx`).
+  Climbs the sheet already lists under Now or Up next are left out. A list climb that History holds is listed where a
   swipe goes to it, and a climb queued on purpose that the list reaches again is listed again,
   because the swipe goes there twice. `queue-sheet-walk.test.ts` holds the rows to the
   player's swipe (`computeNavigationTargetsWithSuggestions` and `resolvePreviewStepSource`,
@@ -640,19 +645,19 @@ preview note, the crossing cue) is described with the player.
   Then from rows. No swipe reaches these (#5403). A tap on one gets a track of these rows only;
   a tap on a Then from row re-enters its list at that climb. Neither section is worked out, and
   the feed is not fetched, while the sheet is hidden (`active`): both QueueSheets stay mounted.
+- Up next still lists the raw queue after Now, which is not quite how swipes walk it. A list
+  climb queued as part of the list walk plays as the list, and a climb this wall can't draw is
+  walked past. With `[Now: s1, s2 (queued from the list), x1]` the swipe goes x1, s2, s3; the
+  sheet shows Up next s2, x1 and Then from s2, s3, so s2 is listed twice. Then from is right;
+  Up next is #7237.
 - The count in the sheet header is the Up next count: the climbs after the current one
-  (`QueueListBody.tsx`). While the player shows a climb whose swipes never reach Up next, it
-  reads "4 climbs · waiting", and screen readers hear "4 climbs waiting". The rule is
-  `isUpNextWaiting` (`queue-sheet-walk.ts`), the same one behind the player's "Up next: 4
-  waiting": a preview walking its own list, or no list, leaves Up next waiting; a queue slot
-  walks the queue, so it doesn't. The shown climb is the MiniPlayer's last pick while it stands
-  (`resolveBarPick`), which the player keeps up to date while it is open; the sheet reads it
-  only while it is on screen, so the hidden sheet never re-renders on a swipe.
+  (`QueueListBody.tsx`). It says nothing about whether the player's swipes reach them: the
+  player's "Up next: 4 waiting" note says that, on the preview where it applies.
 - `Queue Sheet Opened` carries `from` (`preview` when the player, or the MiniPlayer's last pick,
-  showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`, `1`,
-  `2-4`, `5-9`, `10+`) beside `surface` and `boardType` (`lib/queue-sheet-open-context.ts`).
-  Opens with `from: 'preview'` while Up next has climbs are climbers looking for their queue;
-  that share should fall.
+  showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`,
+  `1-3`, `4-10`, `11+`, the buckets `Queue Navigation` sends) beside `surface` and `boardType`
+  (`lib/queue-sheet-open-context.ts`). Opens with `from: 'preview'` while Up next has climbs
+  are climbers looking for their queue; that share should fall.
 - The header's ⋯ menu (⋮ on Android; `QueueSheetHeader.tsx`) holds Clear queue. Before it,
   Clear sat only behind the pencil, and climbers missed it (`Queue Cleared` fired 8 times on 2.6.0
   in 7 days and never on 2.7.x). Both controls run the same clear (`QueueListBody`
@@ -851,7 +856,7 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 | `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb` and `previousClimb` (which store the track's resume point, `storeTrackResume`), `setQueue`, `appendQueueItems`, and where the prune is switched on. |
 | `src/providers/queue/use-queue-persistence.ts`, `src/lib/queue-snapshot-store.ts` | The solo queue saved across restarts.                                                                |
 | `src/components/play-drawer/QueueList.tsx`, `use-queue-sheet-handlers.ts` | The queue sheet: sections (Now, Then from, Popular on this board), row taps.                                |
-| `packages/shared/play-view/src/queue-sheet-walk.ts`                    | The queue sheet's Then from rows (`resolveThenFromListItems`) and the "waiting" rule (`isUpNextWaiting`), both the swipe walk itself. |
+| `packages/shared/play-view/src/queue-sheet-walk.ts`                    | The queue sheet's Then from rows (`resolveThenFromListItems`), the swipe walk itself.                       |
 
 ## Follow-ups
 

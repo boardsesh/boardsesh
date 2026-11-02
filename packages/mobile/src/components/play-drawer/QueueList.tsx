@@ -7,7 +7,6 @@ import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh
 import { createPlaylistSuggestionSource, getQueueBoardKey, reanchorPlaylistSuggestionSource } from '@boardsesh/queue';
 import {
   buildQueueListModel,
-  prepareQueueNavigation,
   resolveThenFromListItems,
   type QueueFlatRow,
   type QueueWalkBoard,
@@ -56,7 +55,13 @@ const NO_ITEMS: readonly ClimbQueueItem[] = [];
 
 type QueueListProps = {
   queue: ClimbQueueItem[];
-  currentItemUuid: string | null;
+  /**
+   * The queue's current climb (`currentClimbQueueItem`), the object the player
+   * and `nextClimb` walk from. The "Then from" walk starts here too, so a
+   * current climb the queue doesn't hold yet (a commit before the server's
+   * echo) walks as the swipe does, not from the line.
+   */
+  currentItem: ClimbQueueItem | null;
   /** F3 now-slot mode: the History / Up next line with nothing current; null in legacy mode. */
   historyCount?: number | null;
   board: QueueItemRowBoard;
@@ -96,7 +101,7 @@ type QueueListProps = {
 
 function QueueListComponent({
   queue,
-  currentItemUuid,
+  currentItem,
   historyCount = null,
   board,
   isEditMode,
@@ -159,6 +164,7 @@ function QueueListComponent({
     [listBottomInset],
   );
 
+  const currentItemUuid = currentItem?.uuid ?? null;
   const { flatRows, currentItemFlatIndex } = useMemo(
     () =>
       buildQueueListModel(queue, currentItemUuid, {
@@ -181,22 +187,12 @@ function QueueListComponent({
   // Both are gated on `active` (sheet presented), not on the list: the sheet
   // stays mounted for the imperative present(), so without the gate the feed
   // would fetch, and the walk run, for the whole session.
-  const preparedQueue = useMemo(() => prepareQueueNavigation(queue), [queue]);
-  const currentItem = useMemo(() => {
-    if (!currentItemUuid) return null;
-    const index = preparedQueue.firstIndexByUuid.get(currentItemUuid);
-    return index === undefined ? null : queue[index];
-  }, [preparedQueue, queue, currentItemUuid]);
   const thenFromItems = useMemo(
     () =>
       active
-        ? resolveThenFromListItems(queue, currentItem, playlistSuggestionSource, {
-            ...walkBoard,
-            prepared: preparedQueue,
-            historyCount,
-          })
+        ? resolveThenFromListItems(queue, currentItem, playlistSuggestionSource, { ...walkBoard, historyCount })
         : NO_ITEMS,
-    [active, queue, currentItem, playlistSuggestionSource, walkBoard, preparedQueue, historyCount],
+    [active, queue, currentItem, playlistSuggestionSource, walkBoard, historyCount],
   );
 
   // Page 0 of the board's popular-by-ascents list, unfiltered on purpose: these
@@ -223,14 +219,13 @@ function QueueListComponent({
     return popular;
   }, [queue, thenFromItems, boardContinuationClimbs]);
 
-  // What the top bar calls the list ("Projects"). The board feed a popular tap
-  // started carries no name of its own, so it is called what it was tapped from.
+  // What the top bar calls the list ("Projects"). A list nobody named, the
+  // board feed a popular row's tap started among them, has no name up there
+  // either, so the sheet doesn't invent one: "Then from the list".
   const trackLabel = playlistSuggestionSource?.label?.trim();
   const thenFromTitle = trackLabel
     ? t('queueList.sectionThenFrom', { list: trackLabel })
-    : playlistSuggestionSource?.playlistUuid === QUEUE_SUGGESTION_SOURCE_ID
-      ? t('queueList.sectionThenFrom', { list: t('queueList.sectionPopular') })
-      : t('queueList.sectionThenFromUnnamed');
+    : t('queueList.sectionThenFromUnnamed');
 
   // Section labels are inserted here rather than in the shared model: they are a
   // presentation choice of this sheet. A header exists only when its section has

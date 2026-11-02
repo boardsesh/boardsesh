@@ -933,8 +933,8 @@ The defaults above were picked without data. Two events (#6940) let them be revi
   `surface`.
 - `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `mini_player_menu`, `snackbar`),
   `boardType`, and since Then-signposts (2026-11-02) `from` (`preview` when the player, or the MiniPlayer's last
-  pick, showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`, `1`, `2-4`,
-  `5-9`, `10+`). The
+  pick, showed a climb other than the queue's current; else `current`) and `upNextBucket` (`0`, `1-3`, `4-10`,
+  `11+`). The
   side-by-side iPad player's queue button shows Up next in its panel instead of a sheet, and still counts as
   `player`.
 

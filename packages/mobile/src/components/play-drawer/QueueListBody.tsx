@@ -1,18 +1,8 @@
 import { PressableSurface } from '../PressableSurface';
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { upNextStart, type Climb, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
-import { isUpNextWaiting } from '@boardsesh/play-view';
 import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
@@ -27,7 +17,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
-import { getLastPick, resolveBarPick, subscribeToLastPick } from '../../lib/last-pick-store';
 import { useQueueWalkBoard } from '../../providers/queue/use-queue-walk-board';
 import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
@@ -39,8 +28,6 @@ import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
 // Long enough to notice and reach for the button; the removal is already live
 // for the crew, so it isn't held open forever.
 const QUEUE_UNDO_DURATION = 8000;
-
-const subscribeToNothing = () => () => {};
 
 /** What one Undo would put back: the queue as it was, and what was taken out. */
 type PendingQueueUndo = {
@@ -121,14 +108,8 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const { undoScope } = useQueueSessionId();
   // The board the swipe walk is filtered against, so the sheet's Then from
-  // rows and its "waiting" agree with where a swipe lands.
+  // rows agree with where a swipe lands.
   const walkBoard = useQueueWalkBoard();
-  // The climb the player, or the MiniPlayer with it closed, shows: the last
-  // pick while it stands (`resolveBarPick`), else the queue's current. Read
-  // only while the list is on screen: both QueueSheets stay mounted, and the
-  // hidden one must not re-render on every swipe in the player.
-  const subscribeToShownPick = active ? subscribeToLastPick : subscribeToNothing;
-  const storedPick = useSyncExternalStore(subscribeToShownPick, getLastPick, getLastPick);
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
@@ -143,8 +124,6 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   useEffect(() => {
     setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
   }, [undoScope]);
-
-  const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
   useImperativeHandle(
     ref,
@@ -274,20 +253,6 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
     () => queue.length - upNextStart(queue, currentClimbQueueItem, historyCount),
     [queue, currentClimbQueueItem, historyCount],
   );
-  // "4 climbs · waiting" (Then-signposts): the player shows a climb whose
-  // swipes never reach Up next, a preview walking its own list, so the queue
-  // waits. The same rule as the player's "Up next: 4 waiting".
-  const shownPick = active ? resolveBarPick(storedPick, currentItemUuid) : null;
-  const upNextWaiting = useMemo(
-    () =>
-      shownPick !== null &&
-      isUpNextWaiting(queue, shownPick.item, shownPick.suggestionSource, {
-        ...walkBoard,
-        currentItem: currentClimbQueueItem,
-        historyCount,
-      }),
-    [shownPick, queue, walkBoard, currentClimbQueueItem, historyCount],
-  );
 
   return (
     <>
@@ -296,7 +261,6 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
         showHistory={showHistory}
         selectedCount={selectedItems.size}
         queueCount={upNextCount}
-        upNextWaiting={upNextWaiting}
         viewOnlyMode={viewOnlyMode}
         showTitle={presentation === 'sheet'}
         onToggleEditMode={handleToggleEditMode}
@@ -307,7 +271,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
 
       <QueueList
         queue={queue}
-        currentItemUuid={currentItemUuid}
+        currentItem={currentClimbQueueItem}
         historyCount={historyCount ?? null}
         board={board}
         isEditMode={isEditMode}

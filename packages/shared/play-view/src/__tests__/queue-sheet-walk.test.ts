@@ -15,7 +15,7 @@ import {
   resolvePreviewStepSource,
   selectNextQueueItemWithSuggestions,
 } from '../queue-navigation';
-import { isUpNextWaiting, resolveThenFromListItems } from '../queue-sheet-walk';
+import { resolveThenFromListItems } from '../queue-sheet-walk';
 
 // The queue sheet's "Then from Projects" rows (Then-signposts, 2026-11-02) must
 // be exactly the climbs swipes from the queue's current climb reach after Up
@@ -375,79 +375,5 @@ describe('Then from rows: parity with the swipe walk', () => {
       historyCount: 0,
     };
     expectParity(scenario, { upNext: ['x1'], thenFrom: [] });
-  });
-});
-
-describe('isUpNextWaiting', () => {
-  const current = walked('e-s3', S3);
-  const queue: ClimbQueue = [walked('e-s1', S1), current, entry('u1', climb('x1')), entry('u2', climb('x2'))];
-  const base = { currentItem: current, historyCount: 1 };
-
-  it('waits while a preview walks its own list', () => {
-    const results = createPlaylistSuggestionSource({
-      playlistUuid: 'search',
-      activatedClimb: climb('r1'),
-      climbs: ['r1', 'r2', 'r3'].map((uuid) => climb(uuid)),
-      boardKey: 'kilter:1:10:1',
-      label: 'Search results',
-    });
-    const preview = entry('fresh-r1', climb('r1'), { suggested: true });
-    expect(isUpNextWaiting(queue, preview, results, base)).toBe(true);
-  });
-
-  it('waits while a preview with no list walks nowhere', () => {
-    expect(isUpNextWaiting(queue, entry('fresh-z', climb('z')), null, base)).toBe(true);
-  });
-
-  it('does not wait on an Up next slot: it is already there', () => {
-    expect(isUpNextWaiting(queue, queue[3], null, base)).toBe(false);
-  });
-
-  it('does not wait on a History slot, which walks the queue forward into Up next', () => {
-    expect(isUpNextWaiting(queue, queue[0], null, base)).toBe(false);
-  });
-
-  it('does not wait on the climb up, whose swipes play Up next first', () => {
-    expect(isUpNextWaiting(queue, current, projects(S1), base)).toBe(false);
-  });
-
-  it("does not wait on a look off the wall's climb that stepped into Up next", () => {
-    // With Up next filled the look's first swipe lands on the queued climb.
-    const [firstSwipe] = swipeLook({ queue, current, source: projects(S1), historyCount: 1 });
-    expect(firstSwipe.uuid).toBe('u1');
-    expect(isUpNextWaiting(queue, firstSwipe, projects(S1), base)).toBe(false);
-  });
-
-  it('waits once a look has played Up next and gone on down the list', () => {
-    const reached = swipeLook({ queue, current, source: projects(S1), historyCount: 1 });
-    const pastUpNext = reached.find((item) => item.climb.uuid === 's4');
-    expect(pastUpNext && isPlaylistPeekQueueItemUuid(pastUpNext.uuid)).toBe(true);
-    expect(isUpNextWaiting(queue, pastUpNext ?? null, projects(S1), base)).toBe(true);
-  });
-
-  it('agrees with the swipes: waiting exactly when no swipe from the preview lands in Up next', () => {
-    const upNext = new Set(['u1', 'u2']);
-    const previews: Array<[ClimbQueueItem, PlaylistSuggestionSource | null]> = [
-      [queue[0], null],
-      [queue[0], projects(S1)],
-      [queue[2], null],
-      [entry('fresh-s2', S2, { suggested: true }), projects(S1)],
-      [entry('fresh-z', climb('z')), null],
-    ];
-    for (const [preview, source] of previews) {
-      const reached = swipeLook({ queue, current: preview, source, historyCount: 1 });
-      const swipesReachUpNext = upNext.has(preview.uuid) || reached.some((item) => upNext.has(item.uuid));
-      expect(isUpNextWaiting(queue, preview, source, base)).toBe(!swipesReachUpNext);
-    }
-  });
-
-  it('nothing waits when Up next is empty', () => {
-    const solo: ClimbQueue = [walked('e-s1', S1), current];
-    const preview = entry('fresh-r1', climb('r1'), { suggested: true });
-    expect(isUpNextWaiting(solo, preview, null, base)).toBe(false);
-  });
-
-  it('nothing waits with nothing shown', () => {
-    expect(isUpNextWaiting(queue, null, null, base)).toBe(false);
   });
 });

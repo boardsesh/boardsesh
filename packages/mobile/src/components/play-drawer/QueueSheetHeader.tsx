@@ -21,11 +21,6 @@ type QueueSheetHeaderProps = {
   showHistory: boolean;
   selectedCount: number;
   queueCount: number;
-  /**
-   * The player shows a climb whose swipes never reach Up next (a preview
-   * walking its own list): the count says the queue is waiting (Then-signposts).
-   */
-  upNextWaiting?: boolean;
   viewOnlyMode: boolean;
   /** False under the side panel's "Up next" segment, which already names the list. */
   showTitle?: boolean;
@@ -42,7 +37,6 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   showHistory,
   selectedCount,
   queueCount,
-  upNextWaiting = false,
   viewOnlyMode,
   showTitle = true,
   onToggleEditMode,
@@ -146,23 +140,11 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             {t('queueDrawer.title')}
           </Text>
         ) : null}
-        {queueCount > 0 &&
-          (upNextWaiting ? (
-            // "4 climbs · waiting": the dot is for the eye; screen readers hear
-            // "4 climbs waiting".
-            <Text
-              variant="caption1"
-              color={systemColors.secondaryLabel}
-              numberOfLines={1}
-              accessibilityLabel={t('mobile.queue.climbCountWaitingAria', { count: queueCount })}
-            >
-              {t('mobile.queue.climbCountWaiting', { count: queueCount })}
-            </Text>
-          ) : (
-            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-              {t('mobile.queue.climbCount', { count: queueCount })}
-            </Text>
-          ))}
+        {queueCount > 0 && (
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+            {t('mobile.queue.climbCount', { count: queueCount })}
+          </Text>
+        )}
       </View>
 
       <View style={styles.rightSection}>

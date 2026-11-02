@@ -1,5 +1,5 @@
 import { upNextStart } from '@boardsesh/queue';
-import type { QueueSheetOpenedFrom } from '@boardsesh/analytics';
+import type { QueueNavigationFrom } from '@boardsesh/analytics';
 import type { QueueContentSnapshot } from './queue-undo';
 import { getLastPick, resolveBarPick } from './last-pick-store';
 
@@ -18,7 +18,7 @@ import { getLastPick, resolveBarPick } from './last-pick-store';
 export function queueSheetOpenContext(
   { queue, currentClimbQueueItem, historyCount }: QueueContentSnapshot,
   showsPreview?: boolean,
-): { from: QueueSheetOpenedFrom; upNextCount: number } {
+): { from: QueueNavigationFrom; upNextCount: number } {
   const preview = showsPreview ?? resolveBarPick(getLastPick(), currentClimbQueueItem?.uuid ?? null) !== null;
   return {
     from: preview ? 'preview' : 'current',

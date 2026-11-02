@@ -16,6 +16,7 @@ import { render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { QueueWalkBoard } from '@boardsesh/play-view';
 
 // The queue sheet labels its sections (History, Now, Up next, then below the
 // queue "Then from <list>" and "Popular on this board"), shows a header only
@@ -151,18 +152,20 @@ function renderQueue(
   presentation: 'sheet' | 'panel' = 'sheet',
   playlistSuggestionSource: PlaylistSuggestionSource | null = null,
   active = true,
+  walkBoard?: QueueWalkBoard,
 ) {
   return render(
     createElement(QueueList, {
       presentation,
       queue,
-      currentItemUuid,
+      currentItem: queue.find(({ uuid }) => uuid === currentItemUuid) ?? null,
       board,
       isEditMode: false,
       showHistory: true,
       showFullHistory,
       selectedItems: new Set<string>(),
       playlistSuggestionSource,
+      walkBoard,
       active,
       autoScrollOnMount,
       onToggleSelect: vi.fn(),
@@ -291,10 +294,65 @@ describe('QueueList section headers', () => {
       expect(headings(container)).toContain('queueList.sectionThenFromUnnamed');
     });
 
-    it("names a popular climb's track after the popular rows it was tapped from", () => {
+    it('says "the list" for a popular climb\'s track too, which the top bar names nothing', () => {
+      // Not "Then from Popular on this board" over a "Popular on this board"
+      // header: two near-identical headings, one of them a name the top bar
+      // never shows.
+      feedFixture.climbs = [climb('p1')];
       const feedTrack = { ...projects(), playlistUuid: 'queue-suggestions' };
       const { container } = renderQueue(onList(), 'cur', false, false, 'sheet', feedTrack);
-      expect(headings(container)).toContain('queueList.sectionThenFrom(queueList.sectionPopular)');
+      expect(headings(container)).toEqual([
+        'queueList.sectionNow',
+        'queueList.sectionUpNext',
+        'queueList.sectionThenFromUnnamed',
+        'queueList.sectionPopular',
+      ]);
+    });
+
+    it("walks past a queued climb this wall can't draw, as the swipe does", () => {
+      // The list holds a Tension climb, and a queued copy of it sits between the
+      // current climb and the queued l3. On a Kilter board the swipe walks past
+      // it onto that l3 (#6664), so Then from is only what lies beyond. A walk
+      // blind to the board stops at it and lists a second l3 here.
+      const tension = { uuid: 't1', name: 'Climb t1', boardType: 'tension', layoutId: 9 } as Climb;
+      const mixedList = { ...projects('Projects'), climbs: [list[0], tension, list[1], list[2], list[3]] };
+      const queue = [
+        { uuid: 'cur', climb: list[1], suggested: true },
+        { uuid: 'e-t1', climb: tension, suggested: true },
+        { uuid: 'e-l3', climb: list[2], suggested: true },
+      ] as unknown as ClimbQueueItem[];
+      const kilter: QueueWalkBoard = { activeConfig: { boardName: 'kilter', layoutId: 1 } };
+      const onKilter = renderQueue(queue, 'cur', false, false, 'sheet', mixedList, true, kilter);
+      expect(offQueueRows(onKilter.container)).toEqual(['Climb l4']);
+    });
+
+    it('walks from the current climb the player walks from, even before the queue holds it', () => {
+      // A commit the server hasn't echoed yet: the current climb is not in the
+      // queue. The swipe walks the list on from it; so does Then from, rather
+      // than the whole queue from the line.
+      const pending = { uuid: 'pending', climb: list[1], suggested: true } as unknown as ClimbQueueItem;
+      const { container } = render(
+        createElement(QueueList, {
+          presentation: 'sheet',
+          queue: [item('f1')],
+          currentItem: pending,
+          board,
+          isEditMode: false,
+          showHistory: true,
+          showFullHistory: false,
+          selectedItems: new Set<string>(),
+          playlistSuggestionSource: projects('Projects'),
+          active: true,
+          onToggleSelect: vi.fn(),
+          onClimbPress: vi.fn(),
+          onRemove: vi.fn(),
+          onShowFullHistory: vi.fn(),
+          onTickHistory: vi.fn(),
+          onSuggestionPress: vi.fn(),
+          reorderQueue: vi.fn(),
+        }),
+      );
+      expect(offQueueRows(container)).toEqual(['Climb l3', 'Climb l4']);
     });
 
     it('walks nothing while the sheet is hidden', () => {
@@ -326,7 +384,7 @@ describe('QueueList section headers', () => {
         createElement(QueueList, {
           presentation: 'panel',
           queue,
-          currentItemUuid: current,
+          currentItem: queue.find(({ uuid }) => uuid === current) ?? null,
           board,
           isEditMode: false,
           showHistory: true,

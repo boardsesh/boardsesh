@@ -25,19 +25,13 @@ export type QueueWalkBoard = {
 };
 
 type QueueWalkOptions = QueueWalkBoard & {
-  prepared?: PreparedQueueNavigation;
   /** F3 now-slot mode: the History / Up next line while nothing is current. */
   historyCount?: number | null;
 };
 
-/** `prepared` when it indexes this queue, otherwise a fresh index. */
-function preparedFor(queue: ClimbQueue, prepared: PreparedQueueNavigation | undefined): PreparedQueueNavigation {
-  return prepared?.queue === queue ? prepared : prepareQueueNavigation(queue);
-}
-
 /**
  * Walk forward from `from` along `source` exactly as successive swipes do, and
- * hand each climb reached to `visit` until it returns false or the walk ends.
+ * return every climb reached, in order.
  *
  * One step is {@link selectNextQueueItemWithSuggestions}, the selection the
  * player's swipe, Next, the MiniPlayer's ⏭ and the provider's `nextClimb` all
@@ -48,7 +42,7 @@ function preparedFor(queue: ClimbQueue, prepared: PreparedQueueNavigation | unde
  * transient peek a swipe would mint.
  *
  * Unlike `findUpcomingQueueItemsWithSuggestions` (the render prefetch), a
- * climb reached twice is visited twice: the second visit is a swipe too. The
+ * climb reached twice is listed twice: the second visit is a swipe too. The
  * walk ends at the first queue entry or peek it has already reached (a peek's
  * uuid comes from its climb, so a list that loops would otherwise walk
  * forever), and after `queue.length + track length + 1` steps at most.
@@ -57,9 +51,10 @@ function walkForward(
   queue: ClimbQueue,
   from: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
-  { activeConfig, isReachable, prepared, historyCount }: QueueWalkOptions,
-  visit: (item: ClimbQueueItem) => boolean,
-): void {
+  prepared: PreparedQueueNavigation,
+  { activeConfig, isReachable, historyCount }: QueueWalkOptions,
+): ClimbQueueItem[] {
+  const walked: ClimbQueueItem[] = [];
   const reached = new Set<string>();
   if (from) reached.add(from.uuid);
   let walkFrom = from;
@@ -76,14 +71,15 @@ function walkForward(
       prepared,
       historyCount,
     );
-    if (!item || reached.has(item.uuid)) return;
+    if (!item || reached.has(item.uuid)) return walked;
     reached.add(item.uuid);
     if (walkSource && trackResume !== undefined) {
       walkSource = withPlaylistTrackResume(walkSource, trackResume, walkFrom?.uuid);
     }
     walkFrom = item;
-    if (!visit(item)) return;
+    walked.push(item);
   }
+  return walked;
 }
 
 /**
@@ -109,59 +105,10 @@ export function resolveThenFromListItems(
   options: QueueWalkOptions = {},
 ): ClimbQueueItem[] {
   if (!source) return [];
-  const prepared = preparedFor(queue, options.prepared);
+  const prepared = prepareQueueNavigation(queue);
   const line = upNextStart(queue, currentItem, options.historyCount);
-  const thenFrom: ClimbQueueItem[] = [];
-  walkForward(queue, currentItem, source, { ...options, prepared }, (item) => {
+  return walkForward(queue, currentItem, source, prepared, options).filter((item) => {
     const queueIndex = prepared.firstIndexByUuid.get(item.uuid);
-    if (queueIndex === undefined || queueIndex < line) thenFrom.push(item);
-    return true;
+    return queueIndex === undefined || queueIndex < line;
   });
-  return thenFrom;
-}
-
-/**
- * Whether the queue's Up next is waiting while the climber looks elsewhere:
- * Up next holds climbs, and swipes from the climb the player shows
- * (`shownItem`, walking `shownSource`) never reach any of them. Up next is the
- * climbs after `currentItem`, or from the History / Up next line on with
- * nothing current.
- *
- * True reads "Up next: 4 waiting" on a preview and "4 climbs · waiting" on the
- * queue sheet. A preview opened from a list walks only that list (#7227), so
- * Up next waits however far it goes; so does a preview with no list, whose
- * swipes go nowhere. A queue slot walks the queue, so it reaches Up next, and
- * a slot in Up next is already there.
- *
- * False with nothing shown, and with Up next empty: nothing is waiting.
- */
-export function isUpNextWaiting(
-  queue: ClimbQueue,
-  shownItem: ClimbQueueItem | null,
-  shownSource: PlaylistSuggestionSource | null,
-  {
-    currentItem,
-    ...options
-  }: QueueWalkOptions & {
-    /** The queue's current climb: Up next is what comes after it. */
-    currentItem: ClimbQueueItem | null;
-  },
-): boolean {
-  const line = upNextStart(queue, currentItem, options.historyCount);
-  if (!shownItem || line >= queue.length) return false;
-  const prepared = preparedFor(queue, options.prepared);
-  const inUpNext = (item: ClimbQueueItem) => (prepared.firstIndexByUuid.get(item.uuid) ?? -1) >= line;
-  if (inUpNext(shownItem)) return false;
-  let reachesUpNext = false;
-  walkForward(queue, shownItem, shownSource, { ...options, prepared }, (item) => {
-    if (inUpNext(item)) {
-      reachesUpNext = true;
-      return false;
-    }
-    // A step from a climb outside the queue only ever lands on its list's next
-    // peek (selectNextQueueItemWithSuggestions' orphan rule), so once the walk
-    // is off the queue it never comes back: stop rather than walk the list.
-    return prepared.firstIndexByUuid.has(item.uuid);
-  });
-  return !reachesUpNext;
 }

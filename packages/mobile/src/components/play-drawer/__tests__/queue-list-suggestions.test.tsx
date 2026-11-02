@@ -133,7 +133,7 @@ function renderList(
   return render(
     createElement(QueueList, {
       queue: [] as ClimbQueueItem[],
-      currentItemUuid: null,
+      currentItem: null,
       board,
       isEditMode: false,
       showHistory: true,
