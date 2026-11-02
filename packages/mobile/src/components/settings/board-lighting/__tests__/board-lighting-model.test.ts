@@ -63,6 +63,21 @@ describe('buildBoardLightingSections', () => {
     expect(lighting.footer).toBe('settings:ble.lighting.description');
   });
 
+  // The footer says what the chosen length does: a clock each lit climb
+  // restarts, a drive until you stop it, or one climb and no drive.
+  it.each([
+    ['30', 'settings:ble.lighting.keep.footer'],
+    ['45', 'settings:ble.lighting.keep.footer'],
+    ['60', 'settings:ble.lighting.keep.footer'],
+    ['120', 'settings:ble.lighting.keep.footer'],
+    ['300', 'settings:ble.lighting.keep.footer'],
+    ['until_stopped', 'settings:ble.lighting.keep.footerUntilStopped'],
+    ['off', 'settings:ble.lighting.keep.footerOff'],
+  ] as const)('footers Stop driving after set to %s with what it does', (choice, footer) => {
+    const [keep] = buildBoardLightingSections(makeInput({ keepLighting: { choice, onChange: vi.fn() } }));
+    expect(keep.footer).toBe(footer);
+  });
+
   // 2.7: auto-disconnect is gone; this switch is what frees the board now.
   it('offers Disconnect Bluetooth when driving ends under Stop driving after, off unless the climber chose it', () => {
     const input = makeInput();

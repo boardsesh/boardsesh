@@ -250,6 +250,30 @@ describe('PlayerPreviewTip', () => {
     expect(screen.queryByTestId('player-preview-tip-window')).toBeNull();
   });
 
+  // The frost sentence names a clock only where Put on board's drive has one:
+  // never on a MoonBoard's Until I stop, Right away, or where the press starts no drive.
+  it.each([
+    ['Until I stop', { keepLighting: UNTIL_STOPPED }],
+    ['a MoonBoard until stopped', { boardName: 'moonboard', keepLighting: MOONBOARD_UNTIL_STOPPED }],
+    ['Right away, or no drive in a session', { keepLighting: null }],
+    ['Light the board as I swipe, solo', { swipeLightsSolo: true }],
+  ] as const)('says the frost means driving until you stop, with no clock, for %s', (_case, props) => {
+    renderTip(props);
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEnded);
+    cleanup();
+    screenReader.enabled = true;
+    renderTip(props);
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frostOpenEndedScreenReader);
+  });
+
+  it("says a MoonBoard's timed drive stops after its time, as any timed drive", () => {
+    renderTip({
+      boardName: 'moonboard',
+      keepLighting: { windowMs: 30_000, setting: 'moonboardPutOnBoardKeepsLighting' },
+    });
+    expect(screen.getByTestId('player-preview-tip-frost').textContent).toBe(tips.frost);
+  });
+
   it('goes on Got it, the close button and Lighting settings, saying which', () => {
     const onExit = renderTip();
     fireEvent.click(screen.getByText(tips.done));

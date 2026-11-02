@@ -5,14 +5,15 @@ import { materialSurfaces } from '../../theme/colors';
 import { Text } from '../Text';
 import { spokenCaption } from './track-label-text';
 import type { BoardSheetStatus } from './wall-control';
-import { windowTimeValue } from './wall-control-text';
+import { formatWindowClock, windowTimeValue } from './wall-control-text';
 import { useWindowSecondsLeft } from './WallWindowClock';
 
 /**
  * The player's board sheet's status line (spec B3), uncapped at every text
  * size: "Preview · not on the wall", "On the wall", "You are driving the wall
- * · Stops in 38 seconds" (Put on board's timed drive), or the open-ended
- * drive's sentence. A leaf, so the timed drive's 1 Hz count re-renders only
+ * · Stops in 0:38" (Put on board's timed drive, its clock as the button draws
+ * it, so a 5 minute drive reads 4:47 rather than 287 seconds), or the
+ * open-ended drive's sentence. A leaf, so the timed drive's 1 Hz count re-renders only
  * this line while the sheet is open. It is the
  * full-size fallback for the capped wall button, so it takes Velvet's opaque
  * secondary label, as the top bar's preview line does, and a screen reader
@@ -36,9 +37,9 @@ function BoardSheetStatusLineComponent({ status }: { status: BoardSheetStatus })
       line = t('playView.wallControl.onWall');
       break;
     case 'window':
-      // The button's two runs, the clock in words. Before the clock's first read there is no count yet.
+      // The button's two runs, its clock in m:ss. Before the clock's first read there is no count yet.
       line = clock
-        ? `${t('playView.wallControl.youAreDriving')} · ${t('playView.wallControl.stopsInSeconds', { count: clock.secondsLeft })}`
+        ? `${t('playView.wallControl.youAreDriving')} · ${t('playView.wallControl.stopsInClock', { clock: formatWindowClock(clock.secondsLeft * 1000) })}`
         : null;
       spoken = spokenClock
         ? `${t('playView.wallControl.youAreDriving')}, ${windowTimeValue(spokenClock.secondsLeft * 1000, t)}`

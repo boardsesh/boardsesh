@@ -488,8 +488,10 @@
         "inSessionLabel": "Auch in einer Session",
         "inSessionAccessibilityLabel": "„Am Board beleuchten“ steuert auch in einer Session",
         "inSessionDescription": "Wenn dein Handy das Board der Crew hat. Ist das aus, bleiben die Boulder, die du in einer Session wählst, Vorschauen.",
-        "inSessionOffReason": "Wähle dafür unter „Steuern beenden nach“ eine Zeit.",
-        "footer": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet. Jeder startet die Uhr neu. Pausierst du länger, öffnet sich dein nächster Boulder als Vorschau."
+        "inSessionOffReason": "Stell dafür „Steuern beenden nach“ auf etwas anderes als „Sofort“.",
+        "footer": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, und jeder startet die Uhr neu. Ist die Zeit um, öffnet sich dein nächster Boulder als Vorschau.",
+        "footerUntilStopped": "„Am Board beleuchten“ beleuchtet den Boulder und du steuerst das Board: Jeder Boulder, den du wählst, wird auch beleuchtet, bis du auf „Du steuerst das Board“ tippst.",
+        "footerOff": "„Am Board beleuchten“ beleuchtet den Boulder, den du offen hast. Dein nächster Boulder öffnet sich als Vorschau."
       },
       "drivingEnds": {
         "label": "Bluetooth trennen, wenn das Steuern endet",

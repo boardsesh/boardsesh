@@ -50,7 +50,8 @@ import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
  * (`window_ended`): one timeout to its end, re-keyed by each climb that renews
  * it, and a catch-up when the app comes back to the foreground, since a timer
  * doesn't run while the app is suspended. Turning its setting to Right away
- * ends it as well, and changing its length mid-drive applies to the running one.
+ * ends it as well (keeping the link), and changing its length mid-drive
+ * applies to the running one.
  *
  * And with Disconnect Bluetooth when driving ends on, the ends the climber or
  * the clock caused let go of the board (`use-driving-ended-disconnect.ts`).
@@ -128,7 +129,10 @@ export function DriveModeWatcher(): null {
   }, [lightOnSwipe]);
 
   // Settings › Board changed under a timed drive: its choice turned to Right
-  // away, or In a session too turned off in a crew. The drive ends. "A crew"
+  // away, or In a session too turned off in a crew (or a crew formed with it
+  // off). The drive ends, and the link stays (`keepLink`): Disconnect
+  // Bluetooth when driving ends is for the ends the climber made at the wall
+  // or the clock made, never a settings change or a crewmate joining. "A crew"
   // is the roster's `isCrewSession`, the read the press's own `crewSession`
   // takes in PlayCore, so both agree on what a session is.
   //
@@ -157,7 +161,7 @@ export function DriveModeWatcher(): null {
         inSession: isCrewSession,
       })
     ) {
-      exitDriveMode('window_ended');
+      exitDriveMode('window_ended', { keepLink: true });
       return;
     }
     const moonboardWindow = latest?.windowSetting === 'moonboardPutOnBoardKeepsLighting';

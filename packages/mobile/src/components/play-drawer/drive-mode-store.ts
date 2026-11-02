@@ -85,8 +85,8 @@ export type DriveModeExitReason =
   | 'board_changed'
   | 'signed_out'
   /**
-   * Put on board's timed drive ran out, its setting was turned to Right away,
-   * or a crewmate's put-up ended it.
+   * Put on board's timed drive ran out, its setting was turned to Right away
+   * (or In a session too off under a crew), or a crewmate's put-up ended it.
    */
   | 'window_ended';
 
@@ -188,6 +188,8 @@ let driveMode: DriveModeState | null = null;
  */
 let stoppedForLink = false;
 let lastExitReason: DriveModeExitReason | null = null;
+/** The last end handed on, so a player reading the end in render knows whether it lets go of the board. */
+let lastEnded: DriveEnded | null = null;
 const listeners = new Set<() => void>();
 
 /** How a drive ended, as `subscribeDriveEnded` hands it on. */
@@ -204,18 +206,37 @@ export type DriveEnded = {
    * Called only by a listener that lets go. Null: nothing to wait for.
    */
   disconnectAfter: (() => Promise<void>) | null;
+  /**
+   * Settings › Board ended it, not the climber at the wall or the clock: Stop
+   * driving after turned to Right away, or In a session too off as a crew
+   * formed. The link stays, whatever Disconnect Bluetooth when driving ends
+   * says: a settings change, or a crewmate joining, never frees the board.
+   */
+  keepLink: boolean;
 };
 
 /** What the caller ending a drive knows about it. */
 export type DriveEndOptions = {
   /** See `DriveEnded.disconnectAfter`. */
   disconnectAfter?: () => Promise<void>;
+  /** See `DriveEnded.keepLink`. */
+  keepLink?: boolean;
 };
 
 const endedListeners = new Set<(ended: DriveEnded) => void>();
 
 function emitEnded(ended: DriveEnded): void {
+  lastEnded = ended;
   for (const listener of endedListeners) listener(ended);
+}
+
+function endedFor(reason: DriveModeExitReason, drive: DriveModeState | null, options: DriveEndOptions): DriveEnded {
+  return {
+    reason,
+    drive,
+    disconnectAfter: options.disconnectAfter ?? null,
+    keepLink: options.keepLink ?? false,
+  };
 }
 
 /**
@@ -310,6 +331,7 @@ export function enterDriveMode({
   };
   stoppedForLink = false;
   lastExitReason = null;
+  lastEnded = null;
   claimedAnnouncements = null;
   emit();
   trackDriveModeStarted({ startedBy, inSession: sessionId !== null, boardType });
@@ -433,7 +455,7 @@ export function exitDriveMode(reason: DriveModeExitReason, options: DriveEndOpti
   lastExitReason = reason;
   emit();
   reportEnded(ended, reason);
-  emitEnded({ reason, drive: ended, disconnectAfter: options.disconnectAfter ?? null });
+  emitEnded(endedFor(reason, ended, options));
   return ended;
 }
 
@@ -453,7 +475,7 @@ export function stopDrivingForLink(options: DriveEndOptions = {}): DriveModeStat
     emit();
   }
   if (ended) reportEnded(ended, 'stopped');
-  emitEnded({ reason: 'stopped', drive: ended, disconnectAfter: options.disconnectAfter ?? null });
+  emitEnded(endedFor('stopped', ended, options));
   return ended;
 }
 
@@ -513,11 +535,17 @@ export function getLastDriveModeExitReason(): DriveModeExitReason | null {
   return lastExitReason;
 }
 
+/** The last end handed on (`subscribeDriveEnded`), or null since a drive started. */
+export function getLastDriveEnded(): DriveEnded | null {
+  return lastEnded;
+}
+
 /** Tests only: back to nobody driving, nothing stopped, no end listeners. */
 export function resetDriveModeForTests(): void {
   driveMode = null;
   stoppedForLink = false;
   lastExitReason = null;
+  lastEnded = null;
   claimedAnnouncements = null;
   endedListeners.clear();
   emit();

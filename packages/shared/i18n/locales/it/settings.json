@@ -488,8 +488,10 @@
         "inSessionLabel": "Anche in una session",
         "inSessionAccessibilityLabel": "Illumina il pannello guida anche in una session",
         "inSessionDescription": "Quando il tuo telefono ha il pannello della crew. Se è disattivato, i blocchi che scegli in una session restano in anteprima.",
-        "inSessionOffReason": "Scegli un tempo in Smetti di guidare dopo per usarlo.",
-        "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli. Ognuno fa ripartire il timer. Se riposi più a lungo, il prossimo blocco che scegli si apre in anteprima."
+        "inSessionOffReason": "Scegli qualcosa di diverso da Subito in Smetti di guidare dopo per usarlo.",
+        "footer": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, e ognuno fa ripartire il timer. Quando il tempo finisce, il prossimo blocco che scegli si apre in anteprima.",
+        "footerUntilStopped": "Illumina il pannello illumina il blocco in parete e guidi tu il pannello: si illumina anche ogni blocco che scegli, finché non tocchi Guidi tu il pannello.",
+        "footerOff": "Illumina il pannello illumina in parete il blocco che hai aperto. Il prossimo blocco che scegli si apre in anteprima."
       },
       "drivingEnds": {
         "label": "Disconnetti il Bluetooth quando smetti di guidare",

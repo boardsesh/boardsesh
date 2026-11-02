@@ -4,10 +4,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
+import { createBleWriteActivityStore } from '../../../lib/ble/write-activity-store';
 import { enterDriveMode, resetDriveModeForTests, type DriveEnded, type DriveModeExitReason } from '../drive-mode-store';
-import { disconnectForDriveEnd, shouldDisconnectWhenDrivingEnds } from '../use-driving-ended-disconnect';
+import {
+  DRIVE_END_WRITE_WAIT_MS,
+  disconnectForDriveEnd,
+  shouldDisconnectWhenDrivingEnds,
+} from '../use-driving-ended-disconnect';
 
-afterEach(() => resetDriveModeForTests());
+afterEach(() => {
+  vi.useRealTimers();
+  resetDriveModeForTests();
+});
 
 const ALL_REASONS: readonly DriveModeExitReason[] = [
   'stopped',
@@ -21,15 +29,21 @@ const ALL_REASONS: readonly DriveModeExitReason[] = [
   'signed_out',
 ];
 
-function ended(reason: DriveModeExitReason, disconnectAfter: DriveEnded['disconnectAfter'] = null): DriveEnded {
-  return { reason, drive: null, disconnectAfter };
+function ended(
+  reason: DriveModeExitReason,
+  disconnectAfter: DriveEnded['disconnectAfter'] = null,
+  keepLink = false,
+): DriveEnded {
+  return { reason, drive: null, disconnectAfter, keepLink };
 }
 
 describe('shouldDisconnectWhenDrivingEnds', () => {
   it.each(ALL_REASONS)('%s', (reason) => {
     const climberOrClock = reason === 'stopped' || reason === 'window_ended';
-    expect(shouldDisconnectWhenDrivingEnds(reason, true)).toBe(climberOrClock);
-    expect(shouldDisconnectWhenDrivingEnds(reason, false)).toBe(false);
+    expect(shouldDisconnectWhenDrivingEnds({ reason, keepLink: false }, true)).toBe(climberOrClock);
+    expect(shouldDisconnectWhenDrivingEnds({ reason, keepLink: false }, false)).toBe(false);
+    // An end Settings › Board caused keeps the link, whatever its reason.
+    expect(shouldDisconnectWhenDrivingEnds({ reason, keepLink: true }, true)).toBe(false);
   });
 });
 
@@ -116,5 +130,60 @@ describe('disconnectForDriveEnd', () => {
     const after = vi.fn(async () => undefined);
     disconnectForDriveEnd({ ended: ended('link_dropped', after), enabled: true, readLink: () => null });
     expect(after).not.toHaveBeenCalled();
+  });
+
+  // A climb picked in the drive's last moments is still being written when the
+  // clock ends it: the link goes once that write lands, so the climb lights.
+  it('waits for a write in flight before letting go, then lets go at once', () => {
+    vi.useFakeTimers();
+    const writeActivity = createBleWriteActivityStore();
+    const release = writeActivity.begin();
+    const disconnect = vi.fn(async () => undefined);
+    disconnectForDriveEnd({
+      ended: ended('window_ended'),
+      enabled: true,
+      readLink: () => ({ isConnected: true, disconnect }),
+      writeActivity,
+    });
+    expect(disconnect).not.toHaveBeenCalled();
+    release();
+    expect(disconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('lets go anyway once a write in flight takes longer than the wait', () => {
+    vi.useFakeTimers();
+    const writeActivity = createBleWriteActivityStore();
+    writeActivity.begin();
+    const disconnect = vi.fn(async () => undefined);
+    disconnectForDriveEnd({
+      ended: ended('stopped'),
+      enabled: true,
+      readLink: () => ({ isConnected: true, disconnect }),
+      writeActivity,
+    });
+    vi.advanceTimersByTime(DRIVE_END_WRITE_WAIT_MS - 1);
+    expect(disconnect).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(disconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  it('lets go at once with no write in flight, and keeps the link on an end Settings caused', () => {
+    const writeActivity = createBleWriteActivityStore();
+    const disconnect = vi.fn(async () => undefined);
+    disconnectForDriveEnd({
+      ended: ended('window_ended', null, true),
+      enabled: true,
+      readLink: () => ({ isConnected: true, disconnect }),
+      writeActivity,
+    });
+    expect(disconnect).not.toHaveBeenCalled();
+    disconnectForDriveEnd({
+      ended: ended('window_ended'),
+      enabled: true,
+      readLink: () => ({ isConnected: true, disconnect }),
+      writeActivity,
+    });
+    expect(disconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
   });
 });

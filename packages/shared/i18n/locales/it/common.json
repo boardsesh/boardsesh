@@ -763,6 +763,8 @@
           "moonboard": "Su una MoonBoard poi guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non smetti.",
           "frost": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo che hai scelto nelle impostazioni di illuminazione, e lo smerigliato si restringe mentre il tempo passa. Scorri il pulsante verso sinistra per guidare senza limiti (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco). Toccalo per smettere.",
           "frostScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete. La guida avviata da Illumina il pannello finisce dopo il tempo che hai scelto nelle impostazioni di illuminazione. Usa l'azione Illumina ogni blocco per guidare senza limiti. Tocca il pulsante per smettere.",
+          "frostOpenEnded": "Il pulsante smerigliato vuol dire che guidi tu il pannello: ogni blocco che scegli si illumina in parete finché non lo tocchi per smettere. Scorri il pulsante verso sinistra per guidare (con il pannello connesso puoi anche tenerlo premuto e scegliere Illumina ogni blocco).",
+          "frostOpenEndedScreenReader": "Quando il pulsante dice Guidi tu il pannello, ogni blocco che scegli si illumina in parete finché non tocchi il pulsante per smettere. Usa l'azione Illumina ogni blocco per guidare.",
           "settings": "Impostazioni di illuminazione",
           "done": "Ok",
           "close": "Chiudi il suggerimento"
@@ -838,9 +840,9 @@
       },
       "previewFirstSpotlight": {
         "title": "Sfoglia i blocchi senza illuminare il pannello",
-        "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e si illuminano anche i blocchi che scegli nei 45 secondi successivi.",
-        "swipe": "Scorri verso sinistra il pulsante del pannello per continuare a illuminare finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete.",
-        "moonboard": "Sulle MoonBoard l'illuminazione continua finché non smetti. Cambia i tempi in Impostazioni › Pannello.",
+        "tap": "Un tocco apre un'anteprima. Illumina il pannello mette il blocco in parete, e poi guidi tu il pannello: si illuminano anche i blocchi che scegli, finché non finisce il tempo che hai scelto (45 secondi di default).",
+        "swipe": "Scorri verso sinistra il pulsante del pannello per guidare tu il pannello finché non smetti. Finché brilla dei colori del blocco, ogni blocco che scegli si illumina in parete.",
+        "moonboard": "Sulle MoonBoard guidi finché non smetti, di default. Scegli un tempo in Smetti di guidare dopo, in Impostazioni › Pannello.",
         "cta": "Scopri come funziona",
         "dismiss": "Ok"
       }

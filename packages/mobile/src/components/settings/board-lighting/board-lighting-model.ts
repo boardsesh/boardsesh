@@ -57,6 +57,26 @@ export function keepLightingLabel(t: SettingsTranslate, choice: KeepLightingChoi
   }
 }
 
+/**
+ * The Stop driving after card's footer, for the general choice: a drive with a
+ * clock that each lit climb restarts, a drive until the climber stops it, or
+ * Right away's one climb and no drive.
+ */
+export function keepLightingFooter(t: SettingsTranslate, choice: KeepLightingChoice): string {
+  switch (choice) {
+    case 'off':
+      return t('settings:ble.lighting.keep.footerOff');
+    case 'until_stopped':
+      return t('settings:ble.lighting.keep.footerUntilStopped');
+    case '30':
+    case '45':
+    case '60':
+    case '120':
+    case '300':
+      return t('settings:ble.lighting.keep.footer');
+  }
+}
+
 function keepLightingRow(
   t: SettingsTranslate,
   key: 'putOnBoardKeepsLighting' | 'moonboardPutOnBoardKeepsLighting',
@@ -175,7 +195,7 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
     {
       key: 'keepLighting',
       title: t('settings:ble.lighting.title'),
-      footer: t('settings:ble.lighting.keep.footer'),
+      footer: keepLightingFooter(t, input.keepLighting.choice),
       rows: keepRows,
     },
     {

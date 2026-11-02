@@ -763,6 +763,8 @@
           "moonboard": "Sur un MoonBoard, tu pilotes ensuite la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu arrêtes.",
           "frost": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée choisie dans les paramètres d'éclairage, et le givre rétrécit à mesure que le temps passe. Fais glisser le bouton vers la gauche pour piloter sans limite (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc). Touche-le pour arrêter.",
           "frostScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume. Le pilotage lancé par Allumer sur la board s'arrête après la durée choisie dans les paramètres d'éclairage. Utilise l'action Allumer chaque bloc pour piloter sans limite. Touche le bouton pour arrêter.",
+          "frostOpenEnded": "Le bouton givré veut dire que tu pilotes la board : chaque bloc que tu choisis s'allume jusqu'à ce que tu le touches pour arrêter. Fais glisser le bouton vers la gauche pour piloter (une fois la board connectée, tu peux aussi le maintenir et choisir Allumer chaque bloc).",
+          "frostOpenEndedScreenReader": "Quand le bouton affiche Tu pilotes la board, chaque bloc que tu choisis s'allume jusqu'à ce que tu touches le bouton pour arrêter. Utilise l'action Allumer chaque bloc pour piloter.",
           "settings": "Paramètres d'éclairage",
           "done": "C'est noté",
           "close": "Fermer l'astuce"
@@ -838,9 +840,9 @@
       },
       "previewFirstSpotlight": {
         "title": "Parcours les blocs sans allumer la board",
-        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, et les blocs que tu choisis dans les 45 secondes qui suivent s'allument aussi.",
-        "swipe": "Fais glisser le bouton de la board vers la gauche pour continuer à allumer jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume.",
-        "moonboard": "Sur un MoonBoard, l'éclairage continue jusqu'à ce que tu arrêtes. Change la durée dans Paramètres › Board.",
+        "tap": "Toucher un bloc ouvre un aperçu. Allumer sur la board l'allume, puis tu pilotes la board : les blocs que tu choisis s'allument aussi, jusqu'à la fin de la durée choisie (45 secondes par défaut).",
+        "swipe": "Fais glisser le bouton de la board vers la gauche pour piloter la board jusqu'à ce que tu arrêtes. Tant qu'il brille aux couleurs du bloc, chaque bloc que tu choisis s'allume.",
+        "moonboard": "Sur un MoonBoard, tu pilotes jusqu'à ce que tu arrêtes, par défaut. Choisis une durée dans Arrêter de piloter après, dans Paramètres › Board.",
         "cta": "Voir comment ça marche",
         "dismiss": "C'est noté"
       }

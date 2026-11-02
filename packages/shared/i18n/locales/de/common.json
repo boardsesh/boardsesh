@@ -763,6 +763,8 @@
           "moonboard": "An einem MoonBoard steuerst du danach das Board: Jeder Boulder, den du wählst, wird beleuchtet, bis du aufhörst.",
           "frost": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet. Mit „Am Board beleuchten“ endet das nach der Zeit, die du in der Beleuchtung eingestellt hast, und die Mattierung schrumpft, während sie abläuft. Wische den Button nach links, um ohne Ende zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen). Tippe ihn an, um aufzuhören.",
           "frostScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst. Mit „Am Board beleuchten“ endet das nach der Zeit, die du in der Beleuchtung eingestellt hast. Nutze die Aktion Jeden Boulder beleuchten, um ohne Ende zu steuern. Tippe den Button an, um aufzuhören.",
+          "frostOpenEnded": "Der mattierte Button heißt: Du steuerst das Board, und jeder Boulder, den du wählst, wird beleuchtet, bis du ihn antippst, um aufzuhören. Wische den Button nach links, um das Board zu steuern (mit verbundenem Board kannst du ihn auch gedrückt halten und Jeden Boulder beleuchten wählen).",
+          "frostOpenEndedScreenReader": "Steht auf dem Button Du steuerst das Board, wird jeder Boulder beleuchtet, den du wählst, bis du den Button antippst, um aufzuhören. Nutze die Aktion Jeden Boulder beleuchten, um das Board zu steuern.",
           "settings": "Beleuchtung einstellen",
           "done": "Alles klar",
           "close": "Tipp schließen"
@@ -838,9 +840,9 @@
       },
       "previewFirstSpotlight": {
         "title": "Boulder durchsehen, ohne das Board zu beleuchten",
-        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und die Boulder, die du in den 45 Sekunden danach wählst, werden auch beleuchtet.",
-        "swipe": "Wisch den Board-Button nach links, dann wird weiter beleuchtet, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst.",
-        "moonboard": "Am MoonBoard wird weiter beleuchtet, bis du aufhörst. Die Zeit stellst du unter Einstellungen › Board ein.",
+        "tap": "Antippen öffnet eine Vorschau. Am Board beleuchten bringt den Boulder zum Leuchten, und dann steuerst du das Board: Die Boulder, die du wählst, werden auch beleuchtet, bis die gewählte Zeit um ist (standardmäßig 45 Sekunden).",
+        "swipe": "Wisch den Board-Button nach links, dann steuerst du das Board, bis du aufhörst. Solange er in den Farben des Boulders leuchtet, wird jeder Boulder beleuchtet, den du wählst.",
+        "moonboard": "Am MoonBoard steuerst du standardmäßig, bis du aufhörst. Eine Zeit wählst du unter Steuern beenden nach in Einstellungen › Board.",
         "cta": "So funktioniert's",
         "dismiss": "Alles klar"
       }

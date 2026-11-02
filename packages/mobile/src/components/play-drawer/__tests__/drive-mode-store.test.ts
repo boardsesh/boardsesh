@@ -24,6 +24,7 @@ import {
   shouldEndWindowForSettings,
   stopDrivingForLink,
   subscribeDriveEnded,
+  getLastDriveEnded,
   subscribeDriveMode,
   useDriveLightingMode,
   useDriveMode,
@@ -525,6 +526,18 @@ describe('the timed drive', () => {
         ['stopped', 'swipe'],
       ]);
       unsubscribe();
+    });
+
+    // Settings › Board's ends keep the link (`keepLink`); the last end stays
+    // readable for a player's render, until a new drive starts.
+    it('hands on whether the end keeps the link, and keeps the last end until a drive starts', () => {
+      openWindow();
+      exitDriveMode('window_ended', { keepLink: true });
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'window_ended', keepLink: true, disconnectAfter: null });
+      stopDrivingForLink();
+      expect(getLastDriveEnded()).toMatchObject({ reason: 'stopped', keepLink: false });
+      enterDriveMode({ startedBy: 'swipe', sessionId: null, boardId: null });
+      expect(getLastDriveEnded()).toBeNull();
     });
 
     it('hands on nothing when nothing was driving, and stops after unsubscribing', () => {

@@ -276,19 +276,44 @@ describe('useWindowDrain', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('under Reduce Motion, draws its first frame on the step where the drive stands', () => {
+  // Mounted mid-drive with 12 of 45 s left: 15/45 from the first frame on, so
+  // the frost never grows back from 12/45 a frame later. The step timer then
+  // holds it there until the 10 s step, two seconds on.
+  it('under Reduce Motion, draws its first frame on the step where the drive stands, and holds it', () => {
     openWindow();
     act(() => {
       vi.advanceTimersByTime(33_000);
     });
     let firstFrame: number | null = null;
-    renderHook(() => {
-      const drain = useWindowDrain(true);
-      firstFrame ??= drain.fraction.value;
-      return drain;
+    const drain = renderHook(() => {
+      const result = useWindowDrain(true);
+      firstFrame ??= result.fraction.value;
+      return result;
     });
-    // Mounted mid-drive, it starts where the drive stands; the step lands on its first tick.
-    expect(firstFrame).toBeCloseTo(12_000 / 45_000);
+    expect(firstFrame).toBeCloseTo(15 / 45);
+    expect(drain.result.current.fraction.value).toBeCloseTo(15 / 45);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(drain.result.current.fraction.value).toBeCloseTo(15 / 45);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(drain.result.current.fraction.value).toBeCloseTo(10 / 45);
+    expect(timings).toEqual([]);
+  });
+
+  // The preview-first card's picture of a drive: whole while a real timed drive runs.
+  it('is inactive where the view draws no timed drive, whatever the store says', () => {
+    openWindow();
+    const drain = renderHook(() => useWindowDrain(false, false));
+    expect(drain.result.current.active).toBe(false);
+    expect(drain.result.current.fraction.value).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(timings).toEqual([]);
+    expect(drain.result.current.active).toBe(false);
   });
 
   it('is inactive outside a live timed drive', () => {
@@ -328,6 +353,7 @@ describe('WallWindowDigits and WallWindowFrost', () => {
           key: 'frost',
           width: 360,
           reduceMotion: false,
+          timed: true,
           children: createElement('b', { 'data-testid': 'glow' }),
         }),
       ]),
@@ -350,6 +376,7 @@ describe('WallWindowDigits and WallWindowFrost', () => {
           key: 'frost',
           width: 360,
           reduceMotion: false,
+          timed: true,
           children: createElement('b', { 'data-testid': 'glow' }),
         }),
       ]),
@@ -367,6 +394,23 @@ describe('WallWindowDigits and WallWindowFrost', () => {
     expect(view.getByTestId('play-drawer-wall-control-window-clock').textContent).toBe('· 0:11');
   });
 
+  it('keeps the frost whole on a button that draws no timed drive, during one', () => {
+    openWindow();
+    act(() => {
+      vi.advanceTimersByTime(33_000);
+    });
+    const view = render(
+      createElement(WallWindowFrost, {
+        width: 360,
+        reduceMotion: false,
+        timed: false,
+        children: createElement('b', { 'data-testid': 'glow' }),
+      }),
+    );
+    expect(frostOf(view)).toBeNull();
+    expect(view.getByTestId('glow')).not.toBeNull();
+  });
+
   it('shrinks toward the bulb on the right in a right-to-left layout', () => {
     layoutDirection.isRTL = true;
     openWindow();
@@ -377,6 +421,7 @@ describe('WallWindowDigits and WallWindowFrost', () => {
       createElement(WallWindowFrost, {
         width: 360,
         reduceMotion: false,
+        timed: true,
         children: createElement('b', { 'data-testid': 'glow' }),
       }),
     );

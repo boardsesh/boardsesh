@@ -877,6 +877,65 @@ describe('useWallControl: Put on board’s timed drive', () => {
     expect(analytics.tapped).toHaveBeenCalledWith({ state: 'put_on_wall', action: 'put_on_wall', control: 'button' });
   });
 
+  // Disconnect Bluetooth when driving ends: the end lets go of the board, so
+  // the label flips to Put on board. A tap aimed at You are driving the wall
+  // must not reconnect and start a fresh drive, and a screen reader hears the
+  // board go once the link drops.
+  describe('with Disconnect Bluetooth when driving ends on', () => {
+    beforeEach(() => setSetting('disconnectWhenDrivingEnds', true));
+    afterEach(() => resetAllSettings());
+
+    it('drops a Put on board for 2 s after the time ran out, then lets it through', () => {
+      vi.useFakeTimers();
+      const { hook, run } = setup(windowModel());
+      openWindow();
+      act(() => {
+        exitDriveMode('window_ended');
+      });
+      hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+      act(() => hook.result.current.press('button'));
+      hook.rerender({ model: modelFor('on_wall_unlinked', 'relight'), linked: false });
+      act(() => hook.result.current.press('button'));
+      expect(run.light).not.toHaveBeenCalled();
+      expect(run.lightAgain).not.toHaveBeenCalled();
+      expect(run.keepLighting).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(WINDOW_END_TAP_GRACE_MS);
+      });
+      hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+      act(() => hook.result.current.press('button'));
+      expect(run.light).toHaveBeenCalledOnce();
+    });
+
+    it('says Board disconnected once the link drops after the time ran out', () => {
+      const { hook } = setup(windowModel());
+      openWindow();
+      act(() => {
+        exitDriveMode('window_ended');
+      });
+      expect(announceQueued).toHaveBeenLastCalledWith('playView.wallControl.stoppedDriving');
+      hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+      expect(announceQueued).toHaveBeenLastCalledWith('ble.barControl.disconnectedLabel');
+    });
+
+    // Settings › Board ended it (Right away picked mid-drive): the link stays,
+    // so a Put on board on another climb goes up and no drop is owed.
+    it('drops no Put on board and owes no drop after an end Settings caused', () => {
+      vi.useFakeTimers();
+      const { hook, run } = setup(windowModel());
+      openWindow();
+      act(() => {
+        exitDriveMode('window_ended', { keepLink: true });
+      });
+      hook.rerender({ model: modelFor('put_on_wall', 'put_on_wall') });
+      act(() => hook.result.current.press('button'));
+      expect(run.light).toHaveBeenCalledOnce();
+      announceQueued.mockClear();
+      hook.rerender({ model: modelFor('connect', 'connect'), linked: false });
+      expect(announceQueued).not.toHaveBeenCalled();
+    });
+  });
+
   it('says nothing about an end it did not run out: a stop, a dropped link', () => {
     setup(windowModel());
     openWindow();

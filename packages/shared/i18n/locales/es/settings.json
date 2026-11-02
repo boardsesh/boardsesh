@@ -488,8 +488,10 @@
         "inSessionLabel": "También en una sesión",
         "inSessionAccessibilityLabel": "Poner en el plafón te da el mando también en una sesión",
         "inSessionDescription": "Cuando tu teléfono tiene el plafón de tu crew. Si lo desactivas, los bloques que elijas en una sesión se quedan en vista previa.",
-        "inSessionOffReason": "Elige un tiempo en Dejar el mando tras para usar esto.",
-        "footer": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende. Cada uno reinicia el reloj. Si descansas más tiempo, el siguiente bloque que elijas se abre como vista previa."
+        "inSessionOffReason": "Cambia Dejar el mando tras a algo distinto de Enseguida para usar esto.",
+        "footer": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, y cada uno reinicia el reloj. Cuando se acaba el tiempo, el siguiente bloque que elijas se abre como vista previa.",
+        "footerUntilStopped": "Poner en el plafón enciende el bloque y quedas al mando del plafón: cada bloque que elijas también se enciende, hasta que toques Estás al mando del plafón.",
+        "footerOff": "Poner en el plafón enciende el bloque que tienes abierto. El siguiente bloque que elijas se abre como vista previa."
       },
       "drivingEnds": {
         "label": "Desconectar el Bluetooth al dejar el mando",

@@ -17,6 +17,15 @@ export function BluetoothWriteActivityProvider({
 }
 
 /**
+ * The write activity store itself, or null outside the Bluetooth provider, for
+ * code that waits on a write outside render (letting go of the board once the
+ * last pick's write lands). Reading it subscribes to nothing.
+ */
+export function useBluetoothWriteActivityStore(): BleWriteActivityStore | null {
+  return useContext(BluetoothWriteActivityContext);
+}
+
+/**
  * Subscribe only the leaf that paints BLE write feedback. The main Bluetooth
  * context intentionally excludes this volatile state so a packet does not
  * rerender the navigation tree.

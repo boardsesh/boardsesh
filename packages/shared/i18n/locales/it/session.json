@@ -965,6 +965,7 @@
       "stopsInSeconds_one": "Finisce tra {{count}} secondo",
       "stopsInSeconds_other": "Finisce tra {{count}} secondi",
       "stopsInUnderTen": "Finisce tra meno di 10 secondi",
+      "stopsInClock": "Finisce tra {{clock}}",
       "windowStarted_other": "Guidi tu il pannello. Finisce {{count}} secondi dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",
       "windowStartedMinute": "Guidi tu il pannello. Finisce un minuto dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",
       "windowStartedMinutes_other": "Guidi tu il pannello. Finisce {{count}} minuti dopo l'ultimo blocco illuminato in parete. Illumina ogni blocco ti fa continuare.",

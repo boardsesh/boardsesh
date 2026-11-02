@@ -17,10 +17,12 @@ import {
   claimDriveAnnouncement,
   clearDrivingStopped,
   getDriveMode,
+  getLastDriveEnded,
   getLastDriveModeExitReason,
   stopDrivingForLink,
   useDriveLightingMode,
 } from './drive-mode-store';
+import { shouldDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 import { useWallControlShown } from './use-wall-control-shown';
 import { isPutUpAction, type WallControlModel } from './wall-control';
 import { windowStartedAnnouncement } from './wall-control-text';
@@ -102,9 +104,12 @@ export const DISCONNECT_TAP_GUARD_MS = 600;
  * After Put on board's timed drive ends on its own and the label flips to
  * Disconnect board, how long a tap that would disconnect is dropped (spec B2),
  * the button's or a bulb's: a tap aimed at You are driving the wall to stop it
- * must not let go of a crew's board instead. Any other tap (Put on board on a
- * preview) goes through. Touch, VoiceOver, Switch Control and Voice Control
- * all arrive as this one press.
+ * must not let go of a crew's board instead. With Disconnect Bluetooth when
+ * driving ends on, that end lets go of the board and the label flips to Put
+ * on board instead, so a put-up is dropped too: the stop the climber meant
+ * must not reconnect and start a fresh drive. Otherwise any other tap (Put on
+ * board on a preview) goes through. Touch, VoiceOver, Switch Control and
+ * Voice Control all arrive as this one press.
  */
 export const WINDOW_END_TAP_GRACE_MS = 2_000;
 
@@ -181,8 +186,9 @@ export function useWallControl({
   // The last tap-disconnect or stop (when, for the double-tap guard), and whether a drop still owes its announcement.
   const guardedTapAtRef = useRef<number | null>(null);
   const announceDropRef = useRef(false);
-  // When a timed drive last ran out on its own (the 2 s guard).
+  // When a timed drive last ran out on its own (the 2 s guard), and whether that end let go of the board.
   const windowEndedAtRef = useRef<number | null>(null);
+  const windowEndLetGoRef = useRef(false);
   // A press whose drive waits on the busy-wall question, for the climb it asked about.
   const pendingKeepLightingRef = useRef<{ plan: KeepLightingPlan; climbUuid: string | null } | null>(null);
 
@@ -231,6 +237,16 @@ export function useWallControl({
     }
     if (lightingMode === 'off' && getLastDriveModeExitReason() === 'window_ended') {
       windowEndedAtRef.current = Date.now();
+      // With Disconnect Bluetooth when driving ends on, this end lets go of the
+      // board too (`DriveModeWatcher`): a screen reader hears it once the link
+      // drops, as after a tap that stopped the drive.
+      const ended = getLastDriveEnded();
+      const letsGo =
+        wasLinkedRef.current &&
+        ended !== null &&
+        shouldDisconnectWhenDrivingEnds(ended, getSetting('disconnectWhenDrivingEnds') === true);
+      windowEndLetGoRef.current = letsGo;
+      if (letsGo) announceDropRef.current = true;
       if (!playerOpen || windowStartedAt === null || !claimDriveAnnouncement(windowStartedAt, 'window_ended')) return;
       announceQueued(t('playView.wallControl.stoppedDriving'));
     }
@@ -259,11 +275,12 @@ export function useWallControl({
     // A bulb draws no frost, so it never stops driving (`bulbTapAction`).
     const action = control === 'button' ? current.tapAction : current.bulbTapAction;
     // A timed drive just ran out under the climber's thumb: a stop aimed at it
-    // now reads Disconnect board. Only that is dropped; a Put on
-    // board on another climb still goes up.
+    // now reads Disconnect board, or Put on board once that end let go of the
+    // board. Only that is dropped; with the link kept, a Put on board on
+    // another climb still goes up.
     const windowEndedAt = windowEndedAtRef.current;
-    if (action === 'disconnect' && windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) {
-      return;
+    if (windowEndedAt !== null && Date.now() - windowEndedAt < WINDOW_END_TAP_GRACE_MS) {
+      if (action === 'disconnect' || (windowEndLetGoRef.current && isPutUpAction(action))) return;
     }
     trackWallControlTapped({
       state: current.state,

@@ -865,13 +865,37 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
     expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
   });
 
-  it('lets go when the time setting is turned to Right away mid-drive', () => {
+  // Settings › Board ends the drive, not the climber at the wall or the clock:
+  // the link stays, so a settings toggle never frees a crew's board.
+  it('keeps the board when the time setting is turned to Right away mid-drive', () => {
     reads.current = { ...reads.current, disconnectWhenDrivingEnds: true };
     const watcher = mount();
     openTimedDrive();
     watcher.change({ keepLighting: 'off' });
     expect(getLastDriveModeExitReason()).toBe('window_ended');
-    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the board when In a session too is turned off in a crew', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true, isCrew: true };
+    const watcher = mount();
+    openTimedDrive();
+    watcher.change({ drivesInSession: false });
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
+  });
+
+  // With In a session too off, a crewmate joining ends a solo timed drive. The
+  // owner excluded session changes: nobody at the wall, and no clock, ended it.
+  it('keeps the board when a crew forms under a solo timed drive with In a session too off', () => {
+    reads.current = { ...reads.current, disconnectWhenDrivingEnds: true, drivesInSession: false, isCrew: false };
+    const watcher = mount();
+    openTimedDrive();
+    expect(getDriveMode()).toMatchObject({ phase: 'live', windowMs: 45_000 });
+    watcher.change({ isCrew: true });
+    expect(getDriveMode()).toBeNull();
+    expect(getLastDriveModeExitReason()).toBe('window_ended');
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
   });
 
   it.each<[string, Partial<Reads> | null, DriveModeExitReason]>([
@@ -966,6 +990,33 @@ describe('DriveModeWatcher: Disconnect Bluetooth when driving ends', () => {
     expect(getLastDriveModeExitReason()).toBe('window_ended');
     expect(bluetoothDisconnect).not.toHaveBeenCalled();
     watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    await act(async () => {
+      emitWallConfirm('climb-q-2');
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).toHaveBeenCalledExactlyOnceWith('driving_ended');
+  });
+
+  // The confirm bus also replays the session's confirms: another climb's (a
+  // late echo of this phone's own, or any member's relay) never ends the wait.
+  it('after a crewmate’s put-up, waits for their climb, not any confirm', async () => {
+    vi.useFakeTimers();
+    reads.current = {
+      ...reads.current,
+      disconnectWhenDrivingEnds: true,
+      isCrew: true,
+      currentClimbQueueItem: queueItem('q-1', 'Mine'),
+    };
+    const watcher = mount();
+    openTimedDrive();
+    act(() => crewMove('q-2'));
+    watcher.change({ currentClimbQueueItem: queueItem('q-2', 'Crimp Ladder') });
+    await act(async () => {
+      emitWallConfirm('climb-q-1');
+      emitWallConfirm('climb-elsewhere');
+      await Promise.resolve();
+    });
+    expect(bluetoothDisconnect).not.toHaveBeenCalled();
     await act(async () => {
       emitWallConfirm('climb-q-2');
       await Promise.resolve();

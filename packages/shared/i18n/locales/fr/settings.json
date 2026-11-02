@@ -488,8 +488,10 @@
         "inSessionLabel": "Aussi en session",
         "inSessionAccessibilityLabel": "Allumer sur la board pilote aussi en session",
         "inSessionDescription": "Quand votre téléphone a la board de la crew. Désactivé, les blocs que vous choisissez en session restent des aperçus.",
-        "inSessionOffReason": "Choisissez une durée dans Arrêter de piloter après pour utiliser ce réglage.",
-        "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi. Chacun relance le chrono. Si vous vous reposez plus longtemps, le bloc suivant s'ouvre en aperçu."
+        "inSessionOffReason": "Choisissez autre chose que Tout de suite dans Arrêter de piloter après pour utiliser ce réglage.",
+        "footer": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, et chacun relance le chrono. Quand le temps est écoulé, le bloc suivant s'ouvre en aperçu.",
+        "footerUntilStopped": "Allumer sur la board allume le bloc et vous pilotez la board : chaque bloc que vous choisissez s'allume aussi, jusqu'à ce que vous touchiez le bouton Tu pilotes la board.",
+        "footerOff": "Allumer sur la board allume le bloc affiché. Le bloc suivant que vous choisissez s'ouvre en aperçu."
       },
       "drivingEnds": {
         "label": "Déconnecter le Bluetooth quand le pilotage s’arrête",

@@ -23,6 +23,7 @@ const {
   loadPreviewFirstTip,
   previewFirstAnnouncementDue,
   previewFirstTipRetiredByDrive,
+  resolvePreviewFirstFrostLine,
   resolvePreviewFirstWindowLine,
   retirePreviewFirstTip,
   shouldShowPreviewFirstTip,
@@ -248,6 +249,24 @@ describe('resolvePreviewFirstWindowLine', () => {
       key: 'windowSeconds',
       seconds: 30,
     });
+  });
+});
+
+// The frost sentence follows the same reach as the second line: a clock only
+// where Put on board's drive has one.
+describe('resolvePreviewFirstFrostLine', () => {
+  const plan = (windowMs: number | null) => ({ windowMs, setting: 'putOnBoardKeepsLighting' as const });
+
+  it('names the clock for a timed drive, whatever its length', () => {
+    for (const windowMs of [30_000, 45_000, 60_000, 120_000, 300_000]) {
+      expect(resolvePreviewFirstFrostLine({ plan: plan(windowMs) })).toBe('timed');
+    }
+  });
+
+  it('names none for Until I stop, Right away, or solo with Light the board as I swipe on', () => {
+    expect(resolvePreviewFirstFrostLine({ plan: plan(null) })).toBe('open_ended');
+    expect(resolvePreviewFirstFrostLine({ plan: null })).toBe('open_ended');
+    expect(resolvePreviewFirstFrostLine({ plan: plan(45_000), swipeLightsSolo: true })).toBe('open_ended');
   });
 });
 

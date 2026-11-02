@@ -131,19 +131,28 @@ export function steppedWindowFraction(leftMs: number, totalMs: number): number {
  * the frost and a bulb's ring (`WallWindowRing`) move with no JS and no React
  * render per frame. Under Reduce Motion it steps every 5 s instead, from a
  * timer that only writes the shared value (no render either), and a refill
- * jumps. `active` is false outside a timed drive.
+ * jumps. `active` is false outside a timed drive, and wherever `timed` says
+ * this view doesn't draw one (the preview-first card's picture of a drive,
+ * which stays whole while a real timed drive runs).
  *
  * Mounted mid-drive (the player opening on a running one), it starts where the
- * drive stands, and only a renewal after that (a new end) refills: a mount is
- * not a climb lighting.
+ * drive stands (on its 5 s step under Reduce Motion, so the frost never grows
+ * back a frame later), and only a renewal after that (a new end) refills: a
+ * mount is not a climb lighting.
  */
-export function useWindowDrain(reduceMotion: boolean): { fraction: SharedValue<number>; active: boolean } {
-  const timing = useWindowTiming();
+export function useWindowDrain(
+  reduceMotion: boolean,
+  timed = true,
+): { fraction: SharedValue<number>; active: boolean } {
+  const storeTiming = useWindowTiming();
+  const timing = timed ? storeTiming : null;
   const expiresAt = timing?.expiresAt ?? null;
   const totalMs = timing?.totalMs ?? null;
-  const [startFraction] = useState(() =>
-    expiresAt !== null && totalMs !== null ? windowFractionLeft(expiresAt - Date.now(), totalMs) : 1,
-  );
+  const [startFraction] = useState(() => {
+    if (expiresAt === null || totalMs === null) return 1;
+    const left = expiresAt - Date.now();
+    return reduceMotion ? steppedWindowFraction(left, totalMs) : windowFractionLeft(left, totalMs);
+  });
   const fraction = useSharedValue(startFraction);
   // The end the drain last ran toward: a different one is a renewal.
   const drainedForRef = useRef(expiresAt);
@@ -188,6 +197,12 @@ type WallWindowFrostProps = {
   width: number;
   /** Reduce Motion / Remove animations: the frost shrinks in 5 s steps, and a refill jumps. */
   reduceMotion: boolean;
+  /**
+   * This button draws Put on board's timed drive (`model.lightWindow`). False,
+   * the frost stays whole whatever the drive store says: a swipe drive, or the
+   * preview-first card's picture of one.
+   */
+  timed: boolean;
   /** The frost itself (`WallGlow`, or the flat amber where there are no holds to frost). */
   children: ReactNode;
 };
@@ -200,8 +215,8 @@ type WallWindowFrostProps = {
  * amount, so the frost stays put and only its trailing edge moves: two
  * transforms, no layout per frame. Drawing only.
  */
-function WallWindowFrostComponent({ width, reduceMotion, children }: WallWindowFrostProps) {
-  const { fraction, active } = useWindowDrain(reduceMotion);
+function WallWindowFrostComponent({ width, reduceMotion, timed, children }: WallWindowFrostProps) {
+  const { fraction, active } = useWindowDrain(reduceMotion, timed);
   // The bulb sits at the leading edge: left, or right in a right-to-left layout.
   const toward = I18nManager.isRTL ? 1 : -1;
   const clipStyle = useAnimatedStyle(() => ({

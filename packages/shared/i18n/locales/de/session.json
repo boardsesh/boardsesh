@@ -965,6 +965,7 @@
       "stopsInSeconds_one": "Endet in {{count}} Sekunde",
       "stopsInSeconds_other": "Endet in {{count}} Sekunden",
       "stopsInUnderTen": "Endet in weniger als 10 Sekunden",
+      "stopsInClock": "Endet in {{clock}}",
       "windowStarted_other": "Du steuerst das Board. Das endet {{count}} Sekunden nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",
       "windowStartedMinute": "Du steuerst das Board. Das endet eine Minute nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",
       "windowStartedMinutes_other": "Du steuerst das Board. Das endet {{count}} Minuten nach dem letzten beleuchteten Boulder. Mit „Jeden Boulder beleuchten“ geht es weiter.",

@@ -186,10 +186,14 @@ flat amber fallback; the label still says what the next press does.
   counts from the change, Until I stop makes it open-ended, and Right away ends it. The player's sheet carries a
   status line for the climb on screen. Auto-disconnect is gone (2.7): with **Disconnect Bluetooth when driving
   ends** on, the ends the climber or the clock caused (a tap on the frost, Turn off all lights during a drive, the
-  time running out or set to Right away, a crewmate's put-up) let go of the board without forgetting it
-  (`driving_ended`, `use-driving-ended-disconnect.ts`); a dropped link, a failed connect or first light, arming
-  timing out, a new session or board and sign-out never do. Turn off all lights waits for its write first, and a
-  crewmate's put-up waits for their climb to light (5 s at most). Climbers who had auto-disconnect on keep it in
+  time running out, a crewmate's put-up) let go of the board without forgetting it (`driving_ended`,
+  `use-driving-ended-disconnect.ts`); a dropped link, a failed connect or first light, arming timing out, a new
+  session or board, sign-out, and a drive Settings › Board ended (Right away picked mid-drive, In a session too
+  off as a crew forms; `keepLink`) never do. Turn off all lights waits for its write first, a crewmate's put-up
+  waits for their climb (by its uuid) to light (5 s at most), and every let-go waits for a write still in flight
+  on the link (5 s at most), so a climb picked in the drive's last moments lights before the board goes. For 2 s
+  after the time runs out, a tap that would disconnect is dropped, and so is a put-up when that end let go of the
+  board: a tap aimed at the frost never reconnects and starts a fresh drive. Climbers who had auto-disconnect on keep it in
   this form: a one-time migration (`settings/migrations.ts`) turns the switch on and carries their timeout into
   Stop driving after where they never chose one.
 - **One press through the #4979 hold.** A press that connects asked for the climb, so it lights a climb held dark

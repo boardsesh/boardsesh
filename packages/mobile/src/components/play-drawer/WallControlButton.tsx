@@ -429,11 +429,11 @@ function WallControlButtonComponent({
       {/* The frost, whole in a drive, shrinking in Put on board's timed one. Always
           wrapped, so a timed drive turning open-ended never remounts the glow. */}
       {fullGlow ? (
-        <WallWindowFrost width={size.w} reduceMotion={reduceMotion}>
+        <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed={timed}>
           <WallGlow layer={fullGlow} width={size.w} />
         </WallWindowFrost>
       ) : lit && timed ? (
-        <WallWindowFrost width={size.w} reduceMotion={reduceMotion}>
+        <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed>
           <View style={[styles.flatFrost, { backgroundColor: brandColors.live }]} />
         </WallWindowFrost>
       ) : null}

@@ -284,3 +284,24 @@ export function resolvePreviewFirstWindowLine({
     }
   }
 }
+
+/**
+ * Which sentence the card says about the frost, read by the same rule as its
+ * second line (`resolveKeepLightingReach`): the one about Put on board's drive
+ * stopping after the chosen time, and the frost shrinking as it runs out, only
+ * where that drive has a clock (`window`). Until I stop (a MoonBoard's
+ * default) and Right away (or no drive here at all) say the frost means
+ * driving until you stop, with nothing about a clock.
+ */
+export type PreviewFirstFrostLine = 'timed' | 'open_ended';
+
+export function resolvePreviewFirstFrostLine({
+  plan,
+  swipeLightsSolo = false,
+}: {
+  /** As `resolvePreviewFirstWindowLine`'s. */
+  plan: KeepLightingPlan | null;
+  swipeLightsSolo?: boolean;
+}): PreviewFirstFrostLine {
+  return resolveKeepLightingReach({ plan, swipeLightsSolo }).kind === 'window' ? 'timed' : 'open_ended';
+}

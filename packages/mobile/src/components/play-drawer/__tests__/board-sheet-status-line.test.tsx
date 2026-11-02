@@ -78,7 +78,7 @@ describe('BoardSheetStatusLine', () => {
     expect(lineOf(render(createElement(BoardSheetStatusLine, { status })).container)).toBe(line);
   });
 
-  it("counts the window's seconds down, once a second", () => {
+  it("counts the window down once a second, in the button's m:ss", () => {
     act(() => {
       enterDriveMode({
         startedBy: 'tap',
@@ -91,13 +91,37 @@ describe('BoardSheetStatusLine', () => {
     });
     const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
     expect(lineOf(container)).toBe(
-      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":45}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInClock {"clock":"0:45"}',
     );
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
     expect(lineOf(container)).toBe(
-      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":44}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInClock {"clock":"0:44"}',
+    );
+  });
+
+  // 2 and 5 minute drives: minutes and seconds, as the button's clock reads, never "287 seconds".
+  it('reads a 5 minute drive as 4:47, while the spoken value keeps its 10 s step', () => {
+    act(() => {
+      enterDriveMode({
+        startedBy: 'tap',
+        sessionId: null,
+        boardId: null,
+        windowMs: 300_000,
+        windowSetting: 'putOnBoardKeepsLighting',
+      });
+      markDriveLive();
+    });
+    const { container } = render(createElement(BoardSheetStatusLine, { status: 'window' }));
+    act(() => {
+      vi.advanceTimersByTime(13_000);
+    });
+    expect(lineOf(container)).toBe(
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInClock {"clock":"4:47"}',
+    );
+    expect(container.querySelector('[data-testid="ble-control-status"]')?.getAttribute('aria-label')).toBe(
+      'playView.wallControl.youAreDriving, playView.wallControl.stopsInSeconds {"count":280}',
     );
   });
 
@@ -148,7 +172,7 @@ describe('BoardSheetStatusLine', () => {
       vi.advanceTimersByTime(1_000);
     });
     expect(lineOf(container)).toBe(
-      'playView.wallControl.youAreDriving · playView.wallControl.stopsInSeconds {"count":44}',
+      'playView.wallControl.youAreDriving · playView.wallControl.stopsInClock {"clock":"0:44"}',
     );
     expect(label()).toBe(before);
     act(() => {

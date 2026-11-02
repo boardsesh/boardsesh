@@ -965,6 +965,7 @@
       "stopsInSeconds_one": "Stops in {{count}} second",
       "stopsInSeconds_other": "Stops in {{count}} seconds",
       "stopsInUnderTen": "Stops in under 10 seconds",
+      "stopsInClock": "Stops in {{clock}}",
       "windowStarted_other": "You are driving the wall. It stops {{count}} seconds after the last climb lights. Light every climb keeps it going.",
       "windowStartedMinute": "You are driving the wall. It stops a minute after the last climb lights. Light every climb keeps it going.",
       "windowStartedMinutes_other": "You are driving the wall. It stops {{count}} minutes after the last climb lights. Light every climb keeps it going.",

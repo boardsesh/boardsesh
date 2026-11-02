@@ -14,6 +14,8 @@ const layoutCtrl = vi.hoisted(() => ({
 }));
 const themeCtrl = vi.hoisted(() => ({ scheme: 'light' as 'light' | 'dark' }));
 const platformCtrl = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
+// Each render of the pressable, so a test can see what re-renders it.
+const pressableCtrl = vi.hoisted(() => ({ renders: 0 }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     onLayout,
@@ -40,8 +42,9 @@ vi.mock('../../PressableSurface', () => ({
     testID?: string;
     style?: (state: { pressed: boolean }) => unknown;
     onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
-  }) =>
-    createElement(
+  }) => {
+    pressableCtrl.renders += 1;
+    return createElement(
       'button',
       {
         type: 'button',
@@ -62,7 +65,8 @@ vi.mock('../../PressableSurface', () => ({
         },
       },
       children,
-    ),
+    );
+  },
 }));
 vi.mock('react-native', () => ({
   View: ({ testID, children }: { testID?: string; children?: ReactNode }) =>
@@ -191,17 +195,27 @@ vi.mock('../WallWindowClock', async () => {
     };
   };
   const read = () => windowClock.secondsLeft;
+  // The 10 s step's own snapshot, as the real hook's: it changes only on a step.
+  const readStepped = () => {
+    const seconds = windowClock.secondsLeft;
+    if (seconds === null) return null;
+    return seconds < 10 ? 0 : Math.floor(seconds / 10) * 10;
+  };
   return {
     useWindowSecondsLeft: (step: 1 | 10) => {
-      const seconds = useSyncExternalStore(subscribe, read, read);
+      const seconds = useSyncExternalStore(subscribe, step === 1 ? read : readStepped);
       if (seconds === null) return null;
-      return { secondsLeft: step === 1 ? seconds : seconds < 10 ? 0 : Math.floor(seconds / 10) * 10, totalMs: 45_000 };
+      return { secondsLeft: seconds, totalMs: 45_000 };
     },
     WallWindowDigits: ({ color }: { color: string }) =>
       createElement('span', { 'data-testid': 'window-digits', 'data-color': color }),
     // Whole outside a timed drive; there it shrinks on its own (wall-window-clock test).
-    WallWindowFrost: ({ children, reduceMotion }: Children & { reduceMotion: boolean }) =>
-      createElement('div', { 'data-testid': 'window-frost', 'data-reduce-motion': String(reduceMotion) }, children),
+    WallWindowFrost: ({ children, reduceMotion, timed }: Children & { reduceMotion: boolean; timed: boolean }) =>
+      createElement(
+        'div',
+        { 'data-testid': 'window-frost', 'data-reduce-motion': String(reduceMotion), 'data-timed': String(timed) },
+        children,
+      ),
   };
 });
 /** The window's clock moves on: every view that reads it hears it. */
@@ -930,6 +944,21 @@ describe('WallControlButton: Put on board’s timed drive', () => {
     expect(outside.container.querySelector('[data-native-viewer]')?.getAttribute('data-title')).not.toContain('0:');
   });
 
+  // The value steps every 10 s (`useWindowSecondsLeft(10)`): over the ten
+  // 1 Hz ticks from 0:39 to 0:30 the pressable never re-renders, then once at 0:29.
+  it('re-renders its pressable only on the 10 s step, never on the 1 Hz clock', () => {
+    windowClock.secondsLeft = 39;
+    const view = renderButton(windowModel(), { onSwipe: () => 'started' });
+    const before = pressableCtrl.renders;
+    for (let seconds = 38; seconds >= 30; seconds -= 1) act(() => tickWindow(seconds));
+    expect(pressableCtrl.renders).toBe(before);
+    act(() => tickWindow(29));
+    expect(pressableCtrl.renders).toBe(before + 1);
+    expect(view.getByRole('button').getAttribute('data-value')).toBe(
+      'playView.wallControl.stopsInSeconds:{"count":20}',
+    );
+  });
+
   it('says under ten seconds without a count', () => {
     windowClock.secondsLeft = 7;
     const view = renderButton(windowModel());
@@ -941,6 +970,8 @@ describe('WallControlButton: Put on board’s timed drive', () => {
     measure();
     const frost = view.getByTestId('window-frost');
     expect(frost.dataset.reduceMotion).toBe('false');
+    // The timed drive's frost is the one that shrinks.
+    expect(frost.dataset.timed).toBe('true');
     // The glow is the frost, and it is the frame's to shrink.
     expect(frost.contains(view.getByTestId('wall-glow'))).toBe(true);
     const style = view.getByRole('button').getAttribute('data-style') ?? '';
@@ -970,6 +1001,14 @@ describe('WallControlButton: Put on board’s timed drive', () => {
 
   // An open-ended drive draws the same frame, whole: a timed drive turning
   // open-ended (a swipe) keeps the glow mounted rather than starting it again.
+  // The preview-first card's picture (driving, no window) stays whole while a
+  // real timed drive shrinks the player's own button beside it.
+  it('keeps the frost whole on a drive with no clock, a picture of one included', () => {
+    const sample = renderButton(modelFor('lit', { holder: 'self', driveMode: 'live' }), { glow: GLOW, sample: true });
+    measure();
+    expect(sample.getByTestId('window-frost').dataset.timed).toBe('false');
+  });
+
   it('keeps the frost in the same frame when the drive turns open-ended, with no clock', () => {
     const handlers = { onPress: vi.fn(), onLongPress: vi.fn(), onSwipe: () => 'started' as const, glow: GLOW };
     const view = render(createElement(WallControlButton, { model: windowModel(), ...handlers }));

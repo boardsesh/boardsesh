@@ -41,7 +41,9 @@ import { useDriveMode } from '../play-drawer/drive-mode-store';
 import type { WallGlowInput } from '../play-drawer/use-wall-glow';
 import {
   previewFirstTipRetiredByDrive,
+  resolvePreviewFirstFrostLine,
   resolvePreviewFirstWindowLine,
+  type PreviewFirstFrostLine,
   type PreviewFirstTipDrive,
   type PreviewFirstWindowLine,
 } from '../../lib/onboarding/preview-first-tip';
@@ -160,11 +162,12 @@ function PlayerPreviewTipComponent({
   );
   const sampleModel = useMemo(() => buildDrivingSampleModel(selfFace), [selfFace]);
   const windowText = previewFirstWindowText(windowLine, t);
-  // A screen reader can't see the glow or make the swipe: name the label and
-  // the action that needs no gesture instead.
-  const frostText = screenReaderEnabled
-    ? t('mobile.onboarding.tips.previewFirst.frostScreenReader')
-    : t('mobile.onboarding.tips.previewFirst.frost');
+  // The clock and the shrinking frost only where Put on board's drive has one.
+  const frostText = previewFirstFrostText(
+    resolvePreviewFirstFrostLine({ plan: keepLighting, swipeLightsSolo }),
+    screenReaderEnabled,
+    t,
+  );
 
   return (
     <View
@@ -256,6 +259,21 @@ function previewFirstWindowText(line: PreviewFirstWindowLine, t: TFunction): str
     case 'moonboard':
       return t('mobile.onboarding.tips.previewFirst.moonboard');
   }
+}
+
+/**
+ * The frost sentence. A screen reader can't see the glow or make the swipe, so
+ * its form names the label and the action that needs no gesture instead.
+ */
+function previewFirstFrostText(line: PreviewFirstFrostLine, screenReader: boolean, t: TFunction): string {
+  if (line === 'timed') {
+    return screenReader
+      ? t('mobile.onboarding.tips.previewFirst.frostScreenReader')
+      : t('mobile.onboarding.tips.previewFirst.frost');
+  }
+  return screenReader
+    ? t('mobile.onboarding.tips.previewFirst.frostOpenEndedScreenReader')
+    : t('mobile.onboarding.tips.previewFirst.frostOpenEnded');
 }
 
 const styles = StyleSheet.create({
