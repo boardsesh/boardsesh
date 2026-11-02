@@ -74,4 +74,24 @@ describe('the drive on the Live Activity', () => {
     expect(status).toMatch(/case \.window, \.driving: return Text\("Every climb you pick lights up"\)/);
     expect(status).not.toContain('case let .window');
   });
+
+  it('says Driving the wall from the ring itself, so the compact and minimal islands still say it', () => {
+    const glyph = structSource('LightingBulbGlyph');
+    // Both drives (the draining ring and the disc) label their one element.
+    const labelled = glyph.match(
+      /\.frame\(width: size, height: size\)\s*\.accessibilityElement\(children: \.ignore\)\s*\.accessibilityLabel\(Text\("Driving the wall"\)\)/g,
+    );
+    expect(labelled).toHaveLength(2);
+    // The bare bulb (picks are previews) takes no drive label.
+    expect(glyph.indexOf('case .previews:')).toBeGreaterThan(glyph.lastIndexOf('Text("Driving the wall")'));
+    // The islands draw that glyph with no wrapper of their own, so its label is what VoiceOver reads there.
+    for (const view of ['CompactLeadingView', 'MinimalView']) {
+      expect(structSource(view), view).toContain('LightingBulbGlyph(lighting: lighting');
+      expect(structSource(view), view).not.toContain('accessibilityElement(children: .ignore)');
+    }
+    // The Lock Screen's status ignores its children, so the label isn't read twice.
+    expect(structSource('WallControlStatus')).toMatch(
+      /LightingBulbGlyph\([\s\S]*\.accessibilityElement\(children: \.ignore\)\s*\.accessibilityLabel\(lightingLabel\)/,
+    );
+  });
 });

@@ -4,6 +4,11 @@
 // shrink, so an amber ring round its edge drains as the button's frost does
 // (`useWindowDrain`): the Live Activity's ring, in the same amber (owner
 // decision 2026-11-02). The ring is the clock; no digits sit beside it.
+//
+// It has no track and no halo under it: the arc meets the bar (or the
+// player's row) itself, the only ground on which the light scheme's amber
+// clears the 3:1 a graphic needs everywhere. On the held Material bar a 16%
+// amber track behind the arc's end left that end at 2.6:1 against it.
 
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,8 +17,7 @@ import Animated, { useAnimatedProps } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { useTheme } from '../../providers/theme-provider';
-import { withAlpha } from '../../theme/colors';
-import { WINDOW_RING_TRACK_ALPHA, WINDOW_RING_WIDTH } from './wall-control';
+import { WINDOW_RING_WIDTH } from './wall-control';
 import { windowBulbValue } from './wall-control-text';
 import { useWindowDrain, useWindowSecondsLeft } from './WallWindowClock';
 
@@ -71,29 +75,19 @@ function WallWindowRingComponent({ size, kind = 'drain' }: WallWindowRingProps) 
         {whole ? (
           <Circle cx={centre} cy={centre} r={radius} stroke={color} strokeWidth={WINDOW_RING_WIDTH} fill="none" />
         ) : (
-          <>
-            <Circle
-              cx={centre}
-              cy={centre}
-              r={radius}
-              stroke={withAlpha(color, WINDOW_RING_TRACK_ALPHA)}
-              strokeWidth={WINDOW_RING_WIDTH}
-              fill="none"
-            />
-            <AnimatedCircle
-              cx={centre}
-              cy={centre}
-              r={radius}
-              stroke={color}
-              strokeWidth={WINDOW_RING_WIDTH}
-              strokeLinecap="round"
-              strokeDasharray={`${circumference} ${circumference}`}
-              fill="none"
-              // From 12 o'clock, draining clockwise.
-              transform={`rotate(-90 ${centre} ${centre})`}
-              animatedProps={arcProps}
-            />
-          </>
+          <AnimatedCircle
+            cx={centre}
+            cy={centre}
+            r={radius}
+            stroke={color}
+            strokeWidth={WINDOW_RING_WIDTH}
+            strokeLinecap="round"
+            strokeDasharray={`${circumference} ${circumference}`}
+            fill="none"
+            // From 12 o'clock, draining clockwise.
+            transform={`rotate(-90 ${centre} ${centre})`}
+            animatedProps={arcProps}
+          />
         )}
       </Svg>
     </View>

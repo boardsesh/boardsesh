@@ -267,7 +267,8 @@ marking: the bulb says whether the climb is lit. The same rule holds solo and in
   not the pick (QA #147). Lit, it is the bar's usual bulb. A pick this wall can't light, with
   no board at the gym to walk to, gets no bulb, as the player offers no board control for it.
   In the collapsed platter the pick's bulb takes the one slot only while the pick is unlit on a
-  board with lights; otherwise ✓ keeps it.
+  board with lights, or while this phone's timed drive runs (its ring is the time left);
+  otherwise ✓ keeps it.
 - **✓** logs the climb the bar shows, in the flip the bar draws: the pick's own, never its
   queue slot's. **Mirror** flips the pick's own flip, never the queue.
 - **⏮ ⏭** step from the pick along its own list by the player's swipe rules for a preview

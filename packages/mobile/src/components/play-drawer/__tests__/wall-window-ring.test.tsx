@@ -43,7 +43,6 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primaryStrong: '#5B21B6', warning: '#B45309' } }),
 }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}@${alpha}` }));
 vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
@@ -96,11 +95,12 @@ describe('WallWindowRing', () => {
     expect(container.querySelector('[data-testid="wall-window-ring"]')).toBeNull();
   });
 
-  it("draws the Live Activity's amber arc on its 16% track during a window, full at the window's start", () => {
+  it("draws the Live Activity's amber arc during a window, full at the window's start", () => {
     openWindow();
     const { container } = render(createElement(WallWindowRing, { size: 48 }));
     expect(container.querySelector('[data-testid="wall-window-ring"]')).not.toBeNull();
-    expect(container.querySelector('[data-track]')?.getAttribute('data-track')).toBe('#B45309@0.16');
+    // No track behind it: the arc meets the bar itself, the only ground where its amber clears 3:1.
+    expect(container.querySelector('[data-track]')).toBeNull();
     const arc = container.querySelector('[data-arc]');
     expect(arc?.getAttribute('data-arc')).toBe('#B45309');
     // Drawn whole (no dash offset) before the UI thread starts draining it.

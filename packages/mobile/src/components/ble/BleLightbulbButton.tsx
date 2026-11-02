@@ -30,6 +30,12 @@ type BleLightbulbButtonProps = {
   isConnected: boolean;
   /** Not lit but linked: an amber outline (see `getBleLightbulbVisualState`). */
   ready?: boolean;
+  /**
+   * Draw the lit bulb's amber halo and glow (the default). Off under Put on
+   * board's draining ring, which meets the row itself, as on the MiniPlayer
+   * and the Live Activity: amber on its own halo falls under 3:1.
+   */
+  halo?: boolean;
   isScanning: boolean;
   onPress: () => void;
   /**
@@ -76,6 +82,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export function BleLightbulbButton({
   isConnected,
   ready = false,
+  halo = true,
   isScanning,
   onPress,
   onLongPress,
@@ -175,11 +182,12 @@ export function BleLightbulbButton({
         styles.container,
         { width: containerSize, height: containerSize, borderRadius: containerSize / 2 },
         animatedStyle,
-        isConnected && {
-          backgroundColor: visualState.backgroundColor,
-          shadowColor: visualState.shadowColor,
-        },
-        isConnected && styles.connected,
+        isConnected &&
+          halo && {
+            backgroundColor: visualState.backgroundColor,
+            shadowColor: visualState.shadowColor,
+          },
+        isConnected && halo && styles.connected,
         pressed && styles.pressed,
       ]}
     >

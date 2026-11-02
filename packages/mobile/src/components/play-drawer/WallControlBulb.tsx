@@ -27,7 +27,8 @@ type WallControlBulbProps = {
  * `model.holderFace`, never from board presence, so it goes the moment the
  * link does. Taps and holds go to `useWallControl`, which buzzes and logs.
  * During Put on board's timed drive an amber arc drains round it and its value
- * says the time left (spec B3).
+ * says the time left (spec B3). The halo goes for that drive, as on the
+ * MiniPlayer's bulbs and the Live Activity, so the arc meets the row itself.
  */
 function WallControlBulbComponent({ model, showFace = true, onPress, onLongPress }: WallControlBulbProps) {
   const text = useWallControlText(model);
@@ -39,6 +40,7 @@ function WallControlBulbComponent({ model, showFace = true, onPress, onLongPress
       <BleLightbulbButton
         isConnected={model.look === 'lit' || model.look === 'driving'}
         ready={model.look === 'ready'}
+        halo={!model.lightWindow}
         accessibilitySelected={model.selected}
         accessibilityValueText={windowValue ?? text.bulbValue}
         accessibilityTapHint={text.bulbAccessibilityHint}

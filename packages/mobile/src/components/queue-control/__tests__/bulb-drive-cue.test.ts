@@ -12,7 +12,7 @@ vi.mock('react-native', () => ({
 
 import { contrastRatioHex } from '../../../lib/color-contrast-oracle';
 import { materialSurfaceContainers } from '../../../theme/colors';
-import { bulbHaloFor, resolveBulbDriveCue, resolvePaneBulbDriveCue } from '../bulb-drive-cue';
+import { bulbHaloFor, phoneDrivesTheWall, resolveBulbDriveCue, resolvePaneBulbDriveCue } from '../bulb-drive-cue';
 import type { DriveLightingMode } from '../../play-drawer/drive-mode-store';
 import { EMPTY_WALL_CONTROL } from '../../play-drawer/wall-control';
 
@@ -39,6 +39,27 @@ describe('resolveBulbDriveCue', () => {
   );
 });
 
+describe('phoneDrivesTheWall', () => {
+  it("is this phone's own link to a board with lights, and nothing else", () => {
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: true, ledless: false })).toBe(
+      true,
+    );
+    // A hold with no Bluetooth link behind it, a wall with no lights, a crewmate's board, a free board.
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: false, ledless: false })).toBe(
+      false,
+    );
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'connectedByMe', localConnected: true, ledless: true })).toBe(
+      false,
+    );
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'heldByPeer', localConnected: true, ledless: false })).toBe(
+      false,
+    );
+    expect(phoneDrivesTheWall({ inAppBoardConnection: 'disconnected', localConnected: true, ledless: false })).toBe(
+      false,
+    );
+  });
+});
+
 describe('resolvePaneBulbDriveCue', () => {
   it("follows the pane player's model: its timed drive drains, its live drive is the disc", () => {
     expect(resolvePaneBulbDriveCue({ ...EMPTY_WALL_CONTROL, look: 'driving', lightWindow: true })).toBe('drain');
@@ -62,7 +83,9 @@ describe('bulbHaloFor', () => {
 
 // The ring is a graphic that carries the time left, so WCAG 1.4.11 asks 3:1
 // against what it sits on: the bar itself, since the bulb draws no halo under
-// it (`bulbHaloFor`), in light and dark. Liquid Glass has no fixed colour; it
+// it (`bulbHaloFor`) and the ring no track behind it, in light and dark. The
+// worst case is 3.06:1, the held Material bar in light; a 16% amber track
+// behind the arc's end left that end at 2.6:1 there. Liquid Glass has no fixed colour; it
 // is measured on the iOS grounds it falls back to, under the 12% amber tint the
 // bar takes while this phone holds the board. The Material bar is the
 // surface-container tone, under the violet secondary container it composites

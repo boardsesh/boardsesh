@@ -1,3 +1,4 @@
+import type { BoardConnectionState } from '../ble/use-board-connection-state';
 import type { DriveLightingMode } from '../play-drawer/drive-mode-store';
 import type { WallControlModel } from '../play-drawer/wall-control';
 
@@ -30,6 +31,19 @@ type BulbDriveCueInput = {
   /** The bulb stands for the lit climb (the bar's usual bulb), not an unlit pick. */
   showsLitClimb: boolean;
 };
+
+/**
+ * Whether this phone drives the wall over its own Bluetooth link, on a board
+ * with lights: the only case a bar bulb draws a drive cue. The bar's usual
+ * bulb reaches the same answer through `resolveWallBulbLook`.
+ */
+export function phoneDrivesTheWall({
+  inAppBoardConnection,
+  localConnected,
+  ledless,
+}: Pick<BoardConnectionState, 'inAppBoardConnection' | 'localConnected' | 'ledless'>): boolean {
+  return inAppBoardConnection === 'connectedByMe' && localConnected && !ledless;
+}
 
 export function resolveBulbDriveCue({ mode, drivesTheWall, showsLitClimb }: BulbDriveCueInput): BulbDriveCue {
   if (!drivesTheWall) return null;

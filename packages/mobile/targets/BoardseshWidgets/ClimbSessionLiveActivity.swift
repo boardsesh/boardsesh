@@ -448,8 +448,11 @@ private struct NavigationButtonLabel: View {
 /// open-ended drive, or the bulb alone while picks are previews. The ring is
 /// the only sign of the time left: no digits beside it (owner decision
 /// 2026-11-02), as on the app's MiniPlayer bulb. Shape carries the state, so
-/// it survives greyscale and Differentiate Without Colour; the ring and the
-/// disc are decoration, hidden from VoiceOver.
+/// it survives greyscale and Differentiate Without Colour. During either
+/// drive the ring (or disc) and its bulb are one VoiceOver element that says
+/// "Driving the wall", so the compact and minimal islands still say it with
+/// the digits gone; the Lock Screen's `WallControlStatus` ignores its children
+/// and speaks for itself, so nothing is read twice.
 @available(iOS 17.0, *)
 private struct LightingBulbGlyph: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -477,6 +480,8 @@ private struct LightingBulbGlyph: View {
                 bulb(color: palette.warning, size: ringedGlyphSize)
             }
             .frame(width: size, height: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Driving the wall"))
         case .driving:
             ZStack {
                 Circle()
@@ -486,6 +491,8 @@ private struct LightingBulbGlyph: View {
                 bulb(color: palette.onAccent, size: ringedGlyphSize)
             }
             .frame(width: size, height: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Driving the wall"))
         case .previews:
             bulb(color: palette.warning, size: bareGlyphSize)
         }

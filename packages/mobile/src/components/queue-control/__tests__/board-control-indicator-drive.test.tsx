@@ -111,7 +111,6 @@ vi.mock('../../Icon', () => ({
 }));
 vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}@${alpha}` }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => signals.reduceMotion }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
@@ -209,9 +208,9 @@ describe('BoardControlIndicator while this phone drives the wall', () => {
     startDrive();
     const view = renderBulb();
     expect(view.ring()).not.toBeNull();
-    // The Live Activity's amber, on its 16% track.
+    // The Live Activity's amber, with no track behind it.
     expect(view.arc()?.getAttribute('data-arc')).toBe('#FBBF24');
-    expect(view.container.querySelector('[data-track]')?.getAttribute('data-track')).toBe('#FBBF24@0.16');
+    expect(view.container.querySelector('[data-track]')).toBeNull();
     // Neither the amber disc (the arc would vanish into it) nor the halo (the
     // arc meets the bar itself, as on the Live Activity).
     expect(view.style()).not.toContain('backgroundColor');

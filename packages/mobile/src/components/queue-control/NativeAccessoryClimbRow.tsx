@@ -70,6 +70,8 @@ import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
 import type { LastPick } from '../../lib/last-pick-store';
 import { PickBulbSlot } from './PickPutOnBoardBulb';
 import { usePickBulb } from './use-pick-bulb';
+import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
+import { phoneDrivesTheWall, resolveBulbDriveCue } from './bulb-drive-cue';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -182,8 +184,9 @@ function ClimbLabel({
  * one-tap Fell / Sent (`useMiniPlayerWorkoutOutcome`). How many controls fit is `miniPlayerSlotCount`; which ones is
  * `resolveMiniPlayerControls`. The collapsed platter has room for one control:
  * the lightbulb while the board is free (so connecting stays one tap away), the
- * tick once someone holds it. A mark on the thumbnail says who holds it, in both
- * placements. The
+ * tick once someone holds it, except during Put on board's timed drive, when
+ * the bulb's draining ring is the only sign of how long picks keep lighting.
+ * A mark on the thumbnail says who holds it, in both placements. The
  * displayed climb is resolved once by {@link QueueBottomAccessory} and passed in,
  * so this component never re-gates (a second gate could blank the live platter for
  * a frame, which UIKit snapshotted as doubled text). Tap-to-open is shared with
@@ -204,7 +207,10 @@ export function NativeAccessoryClimbRow({
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay } = useAccessoryClimbTap();
   const { t } = useTranslation('settings');
-  const { bluetooth, inAppBoardConnection, ledless, holderDisplayName } = useBoardConnectionState();
+  const { bluetooth, inAppBoardConnection, localConnected, ledless, holderDisplayName } = useBoardConnectionState();
+  // This phone's drive, as the bar's bulb reads it (`BulbDriveCue`). It changes
+  // as a drive starts and ends, never on the clock's ticks.
+  const lightingMode = useDriveLightingMode();
   const { isTablet } = useDeviceLayout();
   const phoneSplit = usePhoneSplit();
   const verticalTabBar = useVerticalTabBar();
@@ -310,11 +316,22 @@ export function NativeAccessoryClimbRow({
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot; nor is there one for a pick no board here can light.
   const bulbAvailable = bluetooth != null && pickBulb?.kind !== 'none';
-  // A last pick that isn't lit keeps Put on board one tap away, on a board
-  // with lights; otherwise ✓ keeps the slot, so the shown climb can be logged.
+  const driveCue = resolveBulbDriveCue({
+    mode: lightingMode,
+    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
+    showsLitClimb: true,
+  });
+  // Put on board's timed drive keeps the bulb in the one slot, whoever's climb
+  // the bar shows: its draining ring is the only sign of how long the wall keeps
+  // lighting picks (owner decision 2026-11-02), and the collapsed bar is what a
+  // climber scrolling the Climbs list sees. ✓ comes back when the drive ends.
+  // An open-ended drive has no end to show, so ✓ keeps the slot then.
+  // Otherwise a last pick that isn't lit keeps Put on board one tap away, on a
+  // board with lights, and ✓ keeps the slot, so the shown climb can be logged.
   const collapsedSlotShowsBulb =
     bulbAvailable &&
-    (pickBulb !== null ? pickBulb.kind === 'putOnBoard' && !ledless : inAppBoardConnection === 'disconnected');
+    (driveCue === 'drain' ||
+      (pickBulb !== null ? pickBulb.kind === 'putOnBoard' && !ledless : inAppBoardConnection === 'disconnected'));
   const isDraft = climb.is_draft === true;
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;
@@ -363,13 +380,18 @@ export function NativeAccessoryClimbRow({
       playerRouteUp,
     ],
   );
-  // A visible bulb already speaks the state (the pick's Put on board bulb
-  // too); without it, only the mark shows it, so the climb link says it.
+  // A visible bulb already speaks the state and the drive (the pick's Put on
+  // board bulb too); without it, only the mark shows who holds the board, so
+  // the climb link says it, and that this phone drives the wall.
   const bulbSpeaks = controls.trailing.includes('lightbulb') && bulbAvailable;
-  const connectionValue =
+  const connectionLabel =
     !bulbSpeaks && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
       : undefined;
+  const connectionValue =
+    connectionLabel !== undefined && driveCue !== null
+      ? `${connectionLabel}, ${t('ble.barControl.drivingValue')}`
+      : connectionLabel;
 
   const angleClimbUuid =
     climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined;

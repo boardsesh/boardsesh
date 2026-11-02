@@ -15,7 +15,7 @@ import { glassSize } from '../../theme/layout';
 import { useDriveLightingMode } from '../play-drawer/drive-mode-store';
 import { WallWindowRing } from '../play-drawer/WallWindowRing';
 import { getBoardConnectionLabel, getBoardControlIndicatorVisual } from './board-control-indicator-state';
-import { resolveBulbDriveCue } from './bulb-drive-cue';
+import { phoneDrivesTheWall, resolveBulbDriveCue } from './bulb-drive-cue';
 import type { PickBulb } from './use-pick-bulb';
 
 /**
@@ -133,7 +133,7 @@ function PickPutOnBoardBulb({
   // This pick isn't the lit climb, so an open-ended drive is a whole ring, never the disc.
   const driveCue = resolveBulbDriveCue({
     mode: lightingMode,
-    drivesTheWall: inAppBoardConnection === 'connectedByMe' && localConnected && !ledless,
+    drivesTheWall: phoneDrivesTheWall({ inAppBoardConnection, localConnected, ledless }),
     showsLitClimb: false,
   });
   const visual = getBoardControlIndicatorVisual({
