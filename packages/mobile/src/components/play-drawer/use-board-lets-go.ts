@@ -25,7 +25,7 @@ type LostLink = {
   droppedAt: number;
   /** The board presence was bound to at the drop: another board drops the notice. */
   boardId: number | null;
-  /** Presence's connection sequence when the drive started, and at the drop. */
+  /** The highest board sequence this phone had seen when the drive started, and at the drop. */
   driveStartSeq: number;
   dropSeq: number;
   /** A wall with no lights another climber took: never "disconnected". */
@@ -77,25 +77,32 @@ export function useBoardLetsGo({
   const presence = useContext(BoardPresenceCurrentContext);
   const holder = presence?.holder ?? null;
   const connectionSeq = presence?.lastConnectionSeq ?? 0;
+  // The highest board sequence this phone has seen: its holder events and its
+  // climbs. A catch-up moves `connectionSeq` up to the newest climb with
+  // whatever holder the server has, so the drive's start and the drop are
+  // marked past every climb seen by then, and only a holder event newer than
+  // that is someone who lit the wall since (`resolveLetsGoTaker`).
+  const seenSeq = Math.max(connectionSeq, presence?.currentClimb?.seq ?? 0, presence?.previousClimb?.seq ?? 0);
   const viewerUserId = useViewerUserId();
   const latestRef = useRef<{
     holder: BoardConnectionHolder | null;
     connectionSeq: number;
+    seenSeq: number;
     viewerUserId: string | null;
     signedIn: boolean;
     linked: boolean;
     pending: boolean;
     boardId: number | null;
     t: TFunction<'session'>;
-  }>({ holder, connectionSeq, viewerUserId, signedIn, linked, pending, boardId, t });
-  latestRef.current = { holder, connectionSeq, viewerUserId, signedIn, linked, pending, boardId, t };
+  }>({ holder, connectionSeq, seenSeq, viewerUserId, signedIn, linked, pending, boardId, t });
+  latestRef.current = { holder, connectionSeq, seenSeq, viewerUserId, signedIn, linked, pending, boardId, t };
 
-  // Presence's sequence when each drive started: a holder from before it took nothing.
+  // The highest sequence seen when each drive started: a holder from before it took nothing.
   const startSeqRef = useRef<{ startedAt: number; seq: number } | null>(null);
   const driveStartedAt = drive?.startedAt ?? null;
   useEffect(() => {
     if (driveStartedAt === null || startSeqRef.current?.startedAt === driveStartedAt) return;
-    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.connectionSeq };
+    startSeqRef.current = { startedAt: driveStartedAt, seq: latestRef.current.seenSeq };
   }, [driveStartedAt]);
 
   const lostRef = useRef<LostLink | null>(null);
@@ -115,27 +122,33 @@ export function useBoardLetsGo({
     announceQueued(spokenCaption(formatLetsGo(notice, translate)));
   }, []);
 
-  const settle = useCallback(() => {
-    const lost = lostRef.current;
-    if (!lost) return;
-    const now = latestRef.current;
-    // Back, on its way back, driving again, or on another board: nothing to say.
-    if (now.linked || now.pending || getDriveMode() !== null || now.boardId !== lost.boardId) {
-      finish(null);
-      return;
-    }
-    const taker = resolveLetsGoTaker({
-      holder: now.holder,
-      connectionSeq: now.connectionSeq,
-      driveStartSeq: lost.driveStartSeq,
-      dropSeq: lost.dropSeq,
-      viewerUserId: now.viewerUserId,
-      signedIn: now.signedIn,
-    });
-    if (taker) finish(taker);
-    else if (lost.takenByPeer) finish({ kind: 'taken' });
-    else if (Date.now() - lost.droppedAt >= LETS_GO_TAKER_WAIT_MS) finish({ kind: 'dropped' });
-  }, [finish]);
+  // `waitOver`: the wait's own timer, which settles the drop whatever the clock
+  // reads. A timer that fires a beat early, or a clock stepped back during the
+  // wait, would otherwise leave it unsaid with nothing to finish it.
+  const settle = useCallback(
+    ({ waitOver = false }: { waitOver?: boolean } = {}) => {
+      const lost = lostRef.current;
+      if (!lost) return;
+      const now = latestRef.current;
+      // Back, on its way back, driving again, or on another board: nothing to say.
+      if (now.linked || now.pending || getDriveMode() !== null || now.boardId !== lost.boardId) {
+        finish(null);
+        return;
+      }
+      const taker = resolveLetsGoTaker({
+        holder: now.holder,
+        connectionSeq: now.connectionSeq,
+        driveStartSeq: lost.driveStartSeq,
+        dropSeq: lost.dropSeq,
+        viewerUserId: now.viewerUserId,
+        signedIn: now.signedIn,
+      });
+      if (taker) finish(taker);
+      else if (lost.takenByPeer) finish({ kind: 'taken' });
+      else if (waitOver || Date.now() - lost.droppedAt >= LETS_GO_TAKER_WAIT_MS) finish({ kind: 'dropped' });
+    },
+    [finish],
+  );
 
   const endDriveForLinkDrop = useCallback(() => {
     const end = takeLinkEnd();
@@ -146,7 +159,7 @@ export function useBoardLetsGo({
     }
     const ended = exitDriveMode('link_dropped', { holdReport: true });
     if (!ended) return;
-    const { connectionSeq: dropSeq, boardId: droppedOn } = latestRef.current;
+    const { seenSeq: dropSeq, boardId: droppedOn } = latestRef.current;
     const start = startSeqRef.current;
     lostRef.current = {
       droppedAt: Date.now(),
@@ -157,7 +170,7 @@ export function useBoardLetsGo({
       takenByPeer: end.takenByPeer,
     };
     if (timerRef.current !== null) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(settle, LETS_GO_TAKER_WAIT_MS);
+    timerRef.current = setTimeout(() => settle({ waitOver: true }), LETS_GO_TAKER_WAIT_MS);
     settle();
   }, [settle]);
 

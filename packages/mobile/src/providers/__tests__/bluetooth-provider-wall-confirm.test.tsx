@@ -3564,11 +3564,25 @@ describe('BluetoothProvider wall-confirm integration', () => {
 
     // Board plan item 8: the drive's watcher says only a drop this phone didn't make.
     it.each([
-      ['an unexpected drop', 'unexpected', 'link_drop', false],
-      ['a hang-up', 'user', 'explicit_user', true],
-      ['a board switch', 'user', 'config_switch', true],
-      ['freeing the board as a drive ends', 'user', 'driving_ended', true],
-    ] as const)('notes %s as the link’s end', (_case, reason, disconnectTrigger, deliberate) => {
+      ['an unexpected drop', 'unexpected', 'link_drop', undefined, false],
+      [
+        'the board closing the link',
+        'unexpected',
+        'link_drop',
+        { source: 'native-ios', iosErrorCode: 7, errorDomain: 'CBErrorDomain' },
+        false,
+      ],
+      [
+        'switching Bluetooth off',
+        'unexpected',
+        'link_drop',
+        { source: 'native-ios', context: 'bluetooth_unavailable' },
+        true,
+      ],
+      ['a hang-up', 'user', 'explicit_user', undefined, true],
+      ['a board switch', 'user', 'config_switch', undefined, true],
+      ['freeing the board as a drive ends', 'user', 'driving_ended', undefined, true],
+    ] as const)('notes %s as the link’s end', (_case, reason, disconnectTrigger, disconnectInfo, deliberate) => {
       resetLinkEndForTests();
       renderProvider();
       act(() => {
@@ -3581,6 +3595,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
           sizeId: 10,
           setIds: '1,20',
           inSession: true,
+          ...(disconnectInfo ? { disconnectInfo } : {}),
         });
       });
       expect(takeLinkEnd()).toMatchObject({ deliberate, takenByPeer: false });

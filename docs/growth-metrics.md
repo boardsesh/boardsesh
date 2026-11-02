@@ -490,6 +490,11 @@ a bulb, a board switch or a replaced connection, so `takenBy` set is the drops
 a climber heard about, and `takenBy` not set on `link_dropped` is the ones they
 made. That end is sent once it is settled, up to 5 s after the drop, still
 with the drop's own `durationSec`. Before the OTA no end carries the key.
+A `link_dropped` end the phone didn't cause is lost if the app is killed
+inside that 5 s wait, so the dropped link share reads slightly low from this
+OTA on. Switching Bluetooth off mid-drive (iOS reports it as
+`bluetooth_unavailable`) counts as the climber's own end and carries no
+`takenBy`.
 
 An OTA keeps `$app_version`, so items that ship by OTA onto the release can't be
 told apart by version. To read one, split a chart by `ota_update_id` (a super

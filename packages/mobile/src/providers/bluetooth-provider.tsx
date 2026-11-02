@@ -1495,8 +1495,12 @@ export function BluetoothProvider({
     (connection: BleConnectionEnded) => {
       // Before the hook drops `isConnected`: a drive this link carried ends as
       // `link_dropped`, and only a drop this phone didn't make is said
-      // (`use-board-lets-go.ts`).
-      noteLinkEnded({ deliberate: connection.reason === 'user' });
+      // (`use-board-lets-go.ts`). Switching Bluetooth off is the climber's own
+      // doing too, and Put on board can't reconnect until it is back on.
+      noteLinkEnded({
+        deliberate:
+          connection.reason === 'user' || classifyBleDisconnect(connection.disconnectInfo) === 'bluetooth_off',
+      });
       wallOperationEpochRef.current += 1;
       clearPendingWallReportAndUndoToastArm();
       connectedViaMismatchOverrideRef.current = false;

@@ -67,6 +67,17 @@ describe('resolveLetsGoTaker', () => {
     // Signed in: an anonymous holder is never this phone, so the drive's start counts.
     expect(resolveLetsGoTaker({ ...BASE, holder: anonymous, connectionSeq: 5 })).toEqual({ kind: 'taken' });
   });
+
+  it('counts a holder with an account from the drive’s start when the climber is signed out', () => {
+    // A signed-out phone holds anonymously: Sam is never this phone.
+    const signedOut = { ...BASE, viewerUserId: null, signedIn: false };
+    const sam = { userId: 'user-sam', displayName: 'Sam' };
+    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, connectionSeq: 5 })).toEqual({
+      kind: 'taken_named',
+      name: 'Sam',
+    });
+    expect(resolveLetsGoTaker({ ...signedOut, holder: sam, connectionSeq: 4 })).toBeNull();
+  });
 });
 
 describe('takenByOf', () => {

@@ -19,6 +19,8 @@ type Reads = {
   viewerUserId: string | null;
   holder: BoardConnectionHolder | null;
   lastConnectionSeq: number;
+  /** The newest climb presence has for the wall, by its sequence; null for none. */
+  wallClimbSeq: number | null;
 };
 const DEFAULT_READS: Reads = {
   isConnected: true,
@@ -31,6 +33,7 @@ const DEFAULT_READS: Reads = {
   // This phone holds the board, as its own sends made it.
   holder: { userId: 'user-me', displayName: 'Me' },
   lastConnectionSeq: 4,
+  wallClimbSeq: null,
 };
 const reads = vi.hoisted((): { current: Reads } => ({ current: {} as Reads }));
 
@@ -123,9 +126,12 @@ import {
 } from '../drive-mode-store';
 
 function tree() {
+  const { wallClimbSeq } = reads.current;
   const presence = {
     holder: reads.current.holder,
     lastConnectionSeq: reads.current.lastConnectionSeq,
+    currentClimb: wallClimbSeq === null ? null : { climbUuid: `climb-${wallClimbSeq}`, seq: wallClimbSeq },
+    previousClimb: null,
   } as unknown as BoardPresenceCurrentState;
   return createElement(BoardPresenceCurrentContext.Provider, { value: presence }, createElement(DriveModeWatcher));
 }
@@ -282,6 +288,45 @@ describe('the board lets go mid-drive', () => {
     expect(getLetsGo()).toEqual({ kind: 'dropped' });
   });
 
+  it('never names a holder from before the drive that a catch-up re-reads during the wait', () => {
+    // Sam lit the wall before this drive (sequence 12), and this phone's
+    // reports never replaced Sam's hold.
+    reads.current = {
+      ...reads.current,
+      holder: { userId: 'user-sam', displayName: 'Sam' },
+      lastConnectionSeq: 4,
+      wallClimbSeq: 12,
+    };
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    linkEnds(watcher, { deliberate: false });
+    advance(1_000);
+    // The foreground catch-up: the same holder, moved up to the newest climb.
+    watcher.change({ lastConnectionSeq: 12 });
+    expect(effects.hapticWarning).not.toHaveBeenCalled();
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: null });
+  });
+
+  it('names the climber who held the board before the drive when they take it back', () => {
+    reads.current = {
+      ...reads.current,
+      holder: { userId: 'user-sam', displayName: 'Sam' },
+      lastConnectionSeq: 4,
+      wallClimbSeq: 4,
+    };
+    const watcher = mount();
+    driveLive();
+    // This phone's first climb made it the holder.
+    watcher.change({ holder: { userId: 'user-me', displayName: 'Me' }, lastConnectionSeq: 5, wallClimbSeq: 5 });
+    linkEnds(watcher, { deliberate: false });
+    // Sam's phone took the box and lit its climb.
+    watcher.change({ holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 6, wallClimbSeq: 6 });
+    expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+  });
+
   it('never names the climber’s own account', () => {
     const watcher = mount();
     driveLive();
@@ -314,6 +359,27 @@ describe('the board lets go mid-drive', () => {
     expect(getLetsGo()).toEqual({ kind: 'taken' });
   });
 
+  it('never reads a catch-up of this phone’s own anonymous hold as another phone', () => {
+    reads.current = {
+      ...reads.current,
+      isAuthenticated: false,
+      viewerUserId: null,
+      holder: { userId: null, displayName: null },
+      lastConnectionSeq: 5,
+      // This phone's own climbs, the newest at sequence 9: they never move the holder event.
+      wallClimbSeq: 9,
+    };
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    linkEnds(watcher, { deliberate: false });
+    // A catch-up re-reads the same anonymous hold up to the newest climb.
+    watcher.change({ lastConnectionSeq: 9 });
+    expect(effects.hapticWarning).not.toHaveBeenCalled();
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+  });
+
   it('says another phone has a wall with no lights a later holder took, at once', () => {
     reads.current = { ...reads.current, isConnected: false, virtualWallHeld: true };
     const watcher = mount();
@@ -332,6 +398,40 @@ describe('the board lets go mid-drive', () => {
     reads.current = { ...reads.current, holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 };
     linkEnds(watcher, { deliberate: false, takenByPeer: true }, { virtualWallHeld: false });
     expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+  });
+
+  it('names who took a wall with no lights from a signed-out climber', () => {
+    // A signed-out phone holds anonymously, so a holder with an account is never this phone.
+    reads.current = {
+      ...reads.current,
+      isConnected: false,
+      virtualWallHeld: true,
+      isAuthenticated: false,
+      viewerUserId: null,
+      holder: null,
+    };
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    // Sam's hold is what released this phone: it is in presence by the drop.
+    reads.current = { ...reads.current, holder: { userId: 'user-sam', displayName: 'Sam' }, lastConnectionSeq: 5 };
+    linkEnds(watcher, { deliberate: false, takenByPeer: true }, { virtualWallHeld: false });
+    expect(getLetsGo()).toEqual({ kind: 'taken_named', name: 'Sam' });
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ takenBy: 'named' });
+  });
+
+  it('says a plain drop when the wait’s timer runs, even with the clock stepped back', () => {
+    const watcher = mount();
+    driveLive();
+    watcher.change({});
+    linkEnds(watcher, { deliberate: false });
+    // A clock adjust during the wait: the timer is what ends it, not the clock.
+    vi.setSystemTime(Date.now() - 1_000);
+    advance(LETS_GO_TAKER_WAIT_MS);
+    expect(getLetsGo()).toEqual({ kind: 'dropped' });
+    expect(effects.hapticWarning).toHaveBeenCalledTimes(1);
+    expect(driveEndedCalls()).toHaveLength(1);
+    expect(driveEndedCalls()[0]?.[1]).toMatchObject({ reason: 'link_dropped', takenBy: null });
   });
 
   describe('says nothing', () => {

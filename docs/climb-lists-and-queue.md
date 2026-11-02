@@ -269,7 +269,10 @@ notification, a deep link), the MiniPlayer's ⏮ ⏭ (`useDrivingWall`), and eve
   board" (anyone not anonymous is named, crewmate or not), "Another phone has the board" (an
   anonymous holder, or no name), or "Board disconnected · Put on board reconnects" when no one
   took it. Only a holder that changed during the drive counts, and never the climber's own
-  account. Nothing is said for a hang-up or a board switch mid-drive, a stop the climber made,
+  account. "Changed" means a holder event newer than every climb the phone had seen at the
+  drive's start (or at the drop, when the holder could be this phone): a presence catch-up
+  re-reads the old holder up to the newest climb, and that alone never names anyone. Nothing is
+  said for a hang-up, a board switch or switching Bluetooth off mid-drive, a stop the climber made,
   a drop with nobody driving, or when the link comes back, a connect starts, a drive starts or
   the board changes before the wait ends. The Bluetooth provider notes how each link ended
   (`lib/ble/link-end-store.ts`); `use-board-lets-go.ts` does the rest, and that end's

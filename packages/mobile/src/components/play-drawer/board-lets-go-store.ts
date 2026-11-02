@@ -47,8 +47,16 @@ export const LETS_GO_STALE_MS = 15_000;
  * took anything. Where it could be this phone itself (the climber is signed
  * out and the holder anonymous, or the climber's own id isn't known yet), only
  * a change after the drop counts (`dropSeq`), since this phone holds nothing
- * after it. The climber's own account is never a taker, even on another
- * device: presence knows accounts, not phones.
+ * after it. A holder with an account while the climber is signed out is never
+ * this phone: a signed-out phone holds the board anonymously. The climber's
+ * own account is never a taker, even on another device: presence knows
+ * accounts, not phones.
+ *
+ * Both marks are the highest board sequence this phone had seen then, its
+ * climbs' as well as its holder events' (`use-board-lets-go.ts`). A presence
+ * catch-up moves `connectionSeq` up to the newest climb with whatever holder
+ * the server has, changed or not, so only a sequence past every climb this
+ * phone had seen is a holder event it hadn't: someone lit the wall since.
  */
 export function resolveLetsGoTaker({
   holder,
@@ -61,9 +69,9 @@ export function resolveLetsGoTaker({
   holder: BoardConnectionHolder | null;
   /** Presence's `lastConnectionSeq` now. */
   connectionSeq: number;
-  /** Presence's `lastConnectionSeq` when the drive started. */
+  /** The highest board sequence this phone had seen when the drive started. */
   driveStartSeq: number;
-  /** Presence's `lastConnectionSeq` when the link dropped. */
+  /** The highest board sequence this phone had seen when the link dropped. */
   dropSeq: number;
   /** The signed-in climber's id, or null when signed out or not known yet. */
   viewerUserId: string | null;
@@ -72,7 +80,7 @@ export function resolveLetsGoTaker({
   if (!holder) return null;
   const holderUserId = holder.userId ?? null;
   if (holderUserId !== null && holderUserId === viewerUserId) return null;
-  const surelySomeoneElse = holderUserId !== null ? viewerUserId !== null : signedIn;
+  const surelySomeoneElse = holderUserId !== null ? viewerUserId !== null || !signedIn : signedIn;
   if (connectionSeq <= (surelySomeoneElse ? driveStartSeq : dropSeq)) return null;
   const name = holderUserId !== null ? holder.displayName?.trim() : undefined;
   return name ? { kind: 'taken_named', name } : { kind: 'taken' };
