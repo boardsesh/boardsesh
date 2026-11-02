@@ -1,9 +1,10 @@
-import type { KeepLightingSettingKey } from '../../lib/keep-lighting';
+import type { KeepLightingPlan, KeepLightingSettingKey } from '../../lib/keep-lighting';
 import {
   readLiveActivityLightingWindow,
   type LiveActivityLightingWindowSnapshot,
 } from '../../lib/live-activity/live-activity-plugin';
 import {
+  enterDriveMode,
   extendDriveWindow,
   getDriveMode,
   makeDriveOpenEnded,
@@ -12,15 +13,20 @@ import {
 } from './drive-mode-store';
 
 /**
- * Lock Screen, Dynamic Island and Android notification Next / Previous light
- * the wall without JS (2.7): iOS writes the board from the intent, Android's
- * receiver acts before the event reaches JS. Each press also opens or renews
- * the keep-lighting window natively, from the settings JS mirrored
- * (`updateKeepLightingConfig`), and stores it with `source: 'lockScreen'`.
+ * Lock Screen, Dynamic Island and Android notification Next / Previous each
+ * open or renew Put on board's keep-lighting window (2.7), the way a climb lit
+ * in the app does. Who writes it depends on who lights the wall:
  *
- * This adopts that write into the drive store when JS next runs: the app
- * coming back, the press's own `queueNavigate` event, or the link coming up.
- * Each lock-screen write is adopted once, by its `updatedAtMs`.
+ * - iOS lights it without JS: the intent writes the board, and once that write
+ *   succeeded it opens or renews the window natively, from the settings JS
+ *   mirrored (`updateKeepLightingConfig`), and stores it with
+ *   `source: 'lockScreen'`. JS adopts that write when it next runs: the app
+ *   coming back, the press's own `queueNavigate` event, or the link coming up.
+ *   Each write is adopted once, by its `updatedAtMs`, and never one from before
+ *   this JS started.
+ * - Android's receiver only forwards the press. JS moves the queue and its
+ *   auto-sender lights the wall, so JS opens the window itself
+ *   (`armNotificationPressDrive`), at the wall's lit confirm like Put on board.
  */
 
 /** What adopting one lock-screen write does to the drive. */
@@ -102,6 +108,20 @@ export function resolveLockScreenAdoption({
 let lastSettledUpdatedAtMs: number | null = null;
 
 /**
+ * When this JS started. A lock-screen write from before then was left by a JS
+ * that is gone: the app was killed (or reloaded) between the press and its
+ * adoption, and the App Group outlives it. A relaunch starts with nobody
+ * driving (`drive-mode-store.ts`), so such a write is never adopted and never
+ * kept on the card: the first write from this JS covers it.
+ */
+let startedAtMs = Date.now();
+
+/** Settled here, or left by an earlier JS. */
+function isSettled(snapshot: LiveActivityLightingWindowSnapshot): boolean {
+  return snapshot.updatedAtMs === lastSettledUpdatedAtMs || snapshot.updatedAtMs < startedAtMs;
+}
+
+/**
  * Whether `snapshot` is a lock-screen window (or drive) this JS has not
  * settled yet and that is still running. The Live Activity writer never
  * covers one with "off": that would wipe a window the climber opened from the
@@ -111,7 +131,7 @@ export function isUnsettledLockScreenLighting(
   snapshot: LiveActivityLightingWindowSnapshot | null,
   now: number,
 ): boolean {
-  if (snapshot?.source !== 'lockScreen' || snapshot.updatedAtMs === lastSettledUpdatedAtMs) return false;
+  if (snapshot?.source !== 'lockScreen' || isSettled(snapshot)) return false;
   if (snapshot.mode === 'driving') return true;
   return snapshot.mode === 'window' && (snapshot.endsAtMs ?? 0) > now;
 }
@@ -167,7 +187,7 @@ export function adoptLockScreenLighting({
   read?: () => LiveActivityLightingWindowSnapshot | null;
 }): LockScreenAdoption | null {
   const snapshot = read();
-  if (!snapshot || snapshot.updatedAtMs === lastSettledUpdatedAtMs) return null;
+  if (!snapshot || isSettled(snapshot)) return null;
   const adoption = resolveLockScreenAdoption({ snapshot, drive: getDriveMode(), sessionId, linked, now });
   if (!adoption) return null;
   lastSettledUpdatedAtMs = snapshot.updatedAtMs;
@@ -175,7 +195,55 @@ export function adoptLockScreenLighting({
   return adoption;
 }
 
-/** Tests only: forget which lock-screen write was settled. */
-export function resetLockScreenLightingForTests(): void {
+/**
+ * Android: a notification Previous / Next, as JS hears it (`queueNavigate`).
+ * The receiver writes no window: JS moves the queue and its auto-sender
+ * lights the wall, so the window must start where a climb lit in the app
+ * starts it. With nothing driving, the press arms a drive the way Put on board
+ * does (`startedBy: 'lock_screen'`); the wall's lit confirm takes it live and
+ * starts the window there (`useDriveWallConfirms`). A press that never lights
+ * (the party server turned it down, the write failed) leaves arming to time
+ * out, and the notification, which reads arming as off, never shows a window
+ * for it. A window already running renews at the confirm, a drive goes on,
+ * and arming waits for its own confirm.
+ *
+ * Returns whether it armed: not without a link (nothing lights), not with a
+ * drive on, and not where the press lights one climb (`plan` null).
+ */
+export function armNotificationPressDrive({
+  sessionId,
+  boardId,
+  boardType,
+  linked,
+  plan,
+}: {
+  sessionId: string | null;
+  boardId: number | null;
+  boardType: string | null;
+  /** This phone's Bluetooth link, or its hold on a wall with no lights. */
+  linked: boolean;
+  /** What the press keeps lighting (`lockScreenPressKeepsLighting` + `resolveKeepLightingPlan`), or null for one climb. */
+  plan: KeepLightingPlan | null;
+}): boolean {
+  if (!linked || plan === null || getDriveMode() !== null) return false;
+  enterDriveMode({
+    sessionId,
+    boardId,
+    boardType,
+    startedBy: 'lock_screen',
+    windowMs: plan.windowMs,
+    windowSetting: plan.windowMs === null ? null : plan.setting,
+  });
+  return true;
+}
+
+/**
+ * Tests only: forget which lock-screen write was settled, and when this JS
+ * started (by default long ago, so a test's writes all count as this JS's).
+ */
+export function resetLockScreenLightingForTests({
+  startedAt = Number.NEGATIVE_INFINITY,
+}: { startedAt?: number } = {}): void {
   lastSettledUpdatedAtMs = null;
+  startedAtMs = startedAt;
 }

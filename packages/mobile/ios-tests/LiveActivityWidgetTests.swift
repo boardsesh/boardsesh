@@ -803,6 +803,76 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertFalse(app.drawsLike(lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 40, windowSeconds: 45)))
     }
 
+    func testLightingStartDropsAnotherSessionsWindowAndKeepsThisOne() {
+        let ours = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        SharedLightingWindowStore.save(ours, to: defaults)
+        SharedLightingWindowStore.clear(unlessSession: "session", in: defaults)
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), ours)
+
+        SharedLightingWindowStore.clear(unlessSession: "next-session", in: defaults)
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+    }
+
+    func testLightingEndSessionClearsTheWindowAndTheSettings() {
+        SharedLightingWindowStore.save(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults)
+        SharedKeepLightingConfigStore.save(keepLightingConfig(), to: defaults)
+        XCTAssertNotNil(SharedLightingWindowStore.load(from: defaults))
+        XCTAssertNotNil(SharedKeepLightingConfigStore.load(from: defaults))
+
+        SharedLightingWindowRuntime.endSession(in: defaults)
+
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.keepLightingConfigKey))
+    }
+
+    func testLightingWriteRedrawsOnlyWhenTheCardChanges() {
+        let window = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        // Clearing nothing draws nothing new.
+        XCTAssertFalse(SharedLightingWindowStore.write(nil, to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(window, to: defaults))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults), window)
+
+        // JS taking over the lock-screen window it adopted: same card, no redraw,
+        // but its own write replaces the lock-screen one so it isn't adopted twice.
+        let lockScreen = lightingState(
+            mode: SharedLightingWindowState.modeWindow,
+            endsInSeconds: 30,
+            windowSeconds: 45,
+            source: SharedLightingWindowState.sourceLockScreen
+        )
+        SharedLightingWindowStore.save(lockScreen, to: defaults)
+        XCTAssertFalse(SharedLightingWindowStore.write(window, to: defaults))
+        XCTAssertEqual(SharedLightingWindowStore.load(from: defaults)?.source, SharedLightingWindowState.sourceApp)
+
+        // A renewal, a drive, and off all redraw.
+        let renewed = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 45, windowSeconds: 45)
+        XCTAssertTrue(SharedLightingWindowStore.write(renewed, to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(lightingState(mode: SharedLightingWindowState.modeDriving), to: defaults))
+        XCTAssertTrue(SharedLightingWindowStore.write(nil, to: defaults))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+
+        // A window it cannot draw is never stored, and only redraws when it takes one off the card.
+        let unreadable = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 0)
+        XCTAssertFalse(SharedLightingWindowStore.write(unreadable, to: defaults))
+        SharedLightingWindowStore.save(window, to: defaults)
+        XCTAssertTrue(SharedLightingWindowStore.write(unreadable, to: defaults))
+        XCTAssertNil(defaults.data(forKey: SharedConstants.lightingWindowKey))
+    }
+
+    func testLightingNeedsRedrawComparesWhatTheCardDraws() {
+        let window = lightingState(mode: SharedLightingWindowState.modeWindow, endsInSeconds: 30, windowSeconds: 45)
+        XCTAssertFalse(SharedLightingWindowStore.needsRedraw(previous: nil, next: nil))
+        XCTAssertTrue(SharedLightingWindowStore.needsRedraw(previous: window, next: nil))
+        XCTAssertTrue(SharedLightingWindowStore.needsRedraw(previous: nil, next: window))
+        XCTAssertFalse(SharedLightingWindowStore.needsRedraw(previous: window, next: window))
+        XCTAssertTrue(
+            SharedLightingWindowStore.needsRedraw(
+                previous: window,
+                next: lightingState(mode: SharedLightingWindowState.modeWindow, sessionId: "other", endsInSeconds: 30, windowSeconds: 45)
+            )
+        )
+    }
+
     func testContentStateDecodesAPushWithoutTheRestRevision() throws {
         // What the backend sends today: no restRevision or lightingRevision (and no device-only fields).
         let json = """
@@ -821,6 +891,36 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(state.restRevision)
         XCTAssertNil(state.lightingRevision)
         XCTAssertEqual(state.climbName, "Masquerade")
+    }
+
+    func testContentStateRoundTripsTheLightingRevision() throws {
+        // What this binary's own redraw writes: the revision survives the trip,
+        // so ActivityKit sees a changed state.
+        let json = """
+        {
+          "climbName": "Masquerade",
+          "climbDifficulty": "6a/V3",
+          "angle": 40,
+          "currentIndex": 0,
+          "totalClimbs": 2,
+          "hasNext": true,
+          "hasPrevious": false,
+          "climbUuid": "climb-1",
+          "lightingRevision": 3
+        }
+        """
+        let decoded = try JSONDecoder().decode(ClimbSessionAttributes.ContentState.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.lightingRevision, 3)
+        XCTAssertNil(decoded.restRevision)
+
+        var bumped = decoded
+        bumped.lightingRevision = 4
+        let roundTripped = try JSONDecoder().decode(
+            ClimbSessionAttributes.ContentState.self,
+            from: JSONEncoder().encode(bumped)
+        )
+        XCTAssertEqual(roundTripped.lightingRevision, 4)
+        XCTAssertEqual(roundTripped, bumped)
     }
 
     func testSharedQueueItemDecodesOldPayloadWithoutMirroredField() throws {

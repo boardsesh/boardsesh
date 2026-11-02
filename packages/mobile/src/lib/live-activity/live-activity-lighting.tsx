@@ -1,7 +1,9 @@
 // Feeds the keep-lighting window (2.7) to the Lock Screen, the Dynamic Island
-// and the Android session notification, and mirrors Settings › Board's
-// keep-lighting choices so a lock-screen Next or Previous can open or renew
-// the window natively while JS is suspended.
+// and the Android session notification, and on iOS mirrors Settings › Board's
+// keep-lighting choices so a Lock Screen Next or Previous can open or renew
+// the window natively while JS is suspended. Android mirrors nothing: JS lights
+// the wall for a notification press and opens the window itself
+// (`armNotificationPressDrive`).
 //
 // PERFORMANCE CONTRACT: no per-second work. The native side counts the window
 // down with self-updating views (iOS timer text and ring, Android's header
@@ -23,6 +25,7 @@ import {
 import { isUnsettledLockScreenLighting } from '../../components/play-drawer/lock-screen-lighting';
 import {
   readLiveActivityLightingWindow,
+  sessionPresenceMirrorsKeepLighting,
   sessionPresenceSupportsLightingWindow,
   updateLiveActivityKeepLightingConfig,
   updateLiveActivityLightingWindow,
@@ -34,8 +37,8 @@ type UseLiveActivityLightingOptions = {
   boardName: string;
   /**
    * Bumped by useLiveActivity after every successful start. Native clears the
-   * settings when a session ends and the window when another session starts,
-   * so each start re-sends both.
+   * settings (iOS) when a session ends and the window when another session
+   * starts, so each start re-sends both.
    */
   activityStartCount: number;
 };
@@ -59,8 +62,9 @@ export function useLiveActivityLighting({
   const lastConfigRef = useRef<string | undefined>(undefined);
   const lastConfigStartRef = useRef(activityStartCount);
   useEffect(() => {
-    // A binary that predates the window (this JS over the air) has nowhere to put it.
-    if (!sessionPresenceSupportsLightingWindow) return;
+    // Only iOS reads it, and not a binary that predates the window (this JS
+    // over the air).
+    if (!sessionPresenceMirrorsKeepLighting) return;
     const config = sessionId
       ? buildKeepLightingConfig({
           keepLighting,

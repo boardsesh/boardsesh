@@ -96,17 +96,6 @@ class LightingWindowOptions : Record {
     @Field var family: String? = null
 }
 
-// Mirrors LiveActivityKeepLightingConfig. The defaults are what an absent field
-// means: one climb, no window.
-class KeepLightingConfigOptions : Record {
-    @Field var keepLighting: String = "off"
-    @Field var moonboardKeepLighting: String = "off"
-    @Field var drivesInSession: Boolean = false
-    @Field var inCrew: Boolean = false
-    @Field var moonboard: Boolean = false
-    @Field var enabled: Boolean = false
-}
-
 /**
  * Android counterpart to the iOS LiveActivity module. Thin Expo adapter over
  * [SessionPresenceController] (which owns the BoardSessionService lifecycle and
@@ -182,17 +171,14 @@ class SessionPresenceModule : Module() {
         // climb updates, a no-op until a session has started.
         AsyncFunction("updateRestTimer") { options: RestTimerOptions? -> controller?.updateRestTimer(options) }
 
-        // Put on board's keep-lighting window (2.7) in the notification header,
-        // and the settings a notification Previous / Next renews it from.
+        // Put on board's keep-lighting window (2.7) in the notification header.
+        // JS is its only writer: a notification Previous / Next opens or renews
+        // it in JS, at the wall's lit confirm, so no settings are mirrored here.
         AsyncFunction("updateLightingWindow") { options: LightingWindowOptions? ->
             controller?.updateLightingWindow(options)
         }
-        AsyncFunction("updateKeepLightingConfig") { options: KeepLightingConfigOptions? ->
-            controller?.updateKeepLightingConfig(options)
-        }
 
-        // Synchronous so the drive store can adopt a notification press before
-        // its own window-end check on the same foreground event.
+        // Synchronous, the same read as iOS's: what native holds for the card.
         Function("getLightingWindow") {
             appContext.reactContext?.applicationContext?.let { LightingWindowStore.loadWindow(it)?.toBridgeMap() }
         }

@@ -107,16 +107,28 @@ export async function updateLiveActivityLightingWindow(
 }
 
 /**
- * Mirrors Settings › Board's keep-lighting choices for the lock-screen and
- * notification Next / Previous, which open or renew the window natively.
- * `null` clears them. A silent no-op on a binary that predates it.
+ * Whether native opens or renews the keep-lighting window itself on a
+ * lock-screen Next / Previous, and so needs Settings › Board's choices
+ * mirrored. iOS only: its intent lights the wall without JS. Android's
+ * notification press reaches JS before anything lights, so JS opens the window
+ * there at the wall's lit confirm (`armNotificationPressDrive`).
+ */
+export const sessionPresenceMirrorsKeepLighting =
+  Platform.OS === 'ios' &&
+  sessionPresenceSupportsLightingWindow &&
+  typeof liveActivityNative?.updateKeepLightingConfig === 'function';
+
+/**
+ * Mirrors Settings › Board's keep-lighting choices for the iOS lock-screen
+ * Next / Previous, which open or renew the window natively. `null` clears
+ * them. A silent no-op on Android and on a binary that predates it.
  */
 export async function updateLiveActivityKeepLightingConfig(
   config: LiveActivityKeepLightingConfig | null,
 ): Promise<void> {
-  if (!sessionPresenceSupportsLightingWindow) return;
+  if (!sessionPresenceMirrorsKeepLighting) return;
   try {
-    await sessionModule?.updateKeepLightingConfig?.(config);
+    await liveActivityNative?.updateKeepLightingConfig?.(config);
   } catch (error) {
     console.warn('[LiveActivity] updateKeepLightingConfig failed:', error);
   }

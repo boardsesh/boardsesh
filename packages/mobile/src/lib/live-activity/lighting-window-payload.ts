@@ -1,6 +1,6 @@
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { DriveLightingSnapshot, DriveModeState } from '../../components/play-drawer/drive-mode-store';
-import type { KeepLightingChoice, KeepLightingSettingKey } from '../keep-lighting';
+import { lockScreenPressKeepsLighting, type KeepLightingChoice, type KeepLightingSettingKey } from '../keep-lighting';
 import type {
   LiveActivityKeepLightingConfig,
   LiveActivityLightingFamily,
@@ -46,14 +46,14 @@ function familyOf(setting: KeepLightingSettingKey | null): LiveActivityLightingF
 }
 
 /**
- * Settings › Board's keep-lighting choices for the lock-screen and
- * notification Next / Previous, which open or renew the window natively the
- * way Put on board would (`resolveKeepLightingPlan` reads the same inputs).
+ * Settings › Board's keep-lighting choices for the iOS Lock Screen and Dynamic
+ * Island Next / Previous, which light the wall without JS and so open or renew
+ * the window natively, the way Put on board would (`resolveKeepLightingPlan`
+ * reads the same inputs). Android mirrors nothing: JS lights the wall for a
+ * notification press and opens the window itself (`armNotificationPressDrive`).
  *
- * `enabled` is false where a press would not keep lighting in the app either:
- * the swipe flag (keep-lighting's kill switch) is off, or the climber lights
- * every pick solo with Light the board as I swipe (the press only drops a stop
- * there, `wall-control.ts`).
+ * `enabled` is `lockScreenPressKeepsLighting`: false where a press would not
+ * keep lighting in the app either.
  */
 export function buildKeepLightingConfig({
   keepLighting,
@@ -79,6 +79,6 @@ export function buildKeepLightingConfig({
     drivesInSession,
     inCrew: isCrewSession,
     moonboard: isMoonboardBoardName(boardName),
-    enabled: swipeToDriveEnabled && !(lightOnSwipe && !isCrewSession),
+    enabled: lockScreenPressKeepsLighting({ swipeToDriveEnabled, lightOnSwipe, inSession: isCrewSession }),
   };
 }

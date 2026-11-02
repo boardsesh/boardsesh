@@ -446,16 +446,16 @@ export type LiveActivityLightingWindowOptions = {
   mode: LiveActivityLightingMode;
   /** Epoch ms the window ends (clamped to auto-disconnect). null outside a window. */
   endsAtMs: number | null;
-  /** The window's length, so a lock-screen press renews it by its own length. null outside a window. */
+  /** The window's length: the iOS ring drains from it, and an iOS lock-screen press renews the window by it. null outside a window. */
   windowSeconds: number | null;
   family: LiveActivityLightingFamily | null;
 };
 
 /**
  * The stored window as `getLightingWindow` reads it back. `source` says who
- * wrote it: `app` (JS) or `lockScreen` (a lock-screen or notification Next or
- * Previous, written natively while JS may have been suspended). Optional
- * fields are absent rather than null.
+ * wrote it: `app` (JS) or, on iOS only, `lockScreen` (a Lock Screen or Dynamic
+ * Island Next or Previous that lit the wall, written natively while JS may
+ * have been suspended). Optional fields are absent rather than null.
  */
 export type LiveActivityLightingWindowSnapshot = {
   sessionId: string;
@@ -468,9 +468,9 @@ export type LiveActivityLightingWindowSnapshot = {
 };
 
 /**
- * Settings › Board's keep-lighting choices, mirrored for the lock-screen and
- * notification Next / Previous, which open or renew the window natively the
- * way `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) would.
+ * Settings › Board's keep-lighting choices, mirrored for the iOS Lock Screen
+ * and Dynamic Island Next / Previous, which open or renew the window natively
+ * the way `resolveKeepLightingPlan` (src/lib/keep-lighting.ts) would. iOS only.
  */
 export type LiveActivityKeepLightingConfig = {
   /** The general `KeepLightingChoice` ('off' | '30' | '45' | '60' | 'until_stopped'). */
@@ -612,10 +612,12 @@ type SessionPresenceNativeModule = {
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
   /** True on binaries that draw the keep-lighting window (2.7). */
   supportsLightingWindow?: boolean;
-  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
+  /**
+   * Optional for OTA compatibility with binaries predating 2.7; `null` clears
+   * it. JS is the only writer here: a notification Previous / Next writes no
+   * window natively, so there are no settings to mirror either.
+   */
   updateLightingWindow?(options: LiveActivityLightingWindowOptions | null): Promise<void>;
-  /** Optional for OTA compatibility with binaries predating 2.7; `null` clears it. */
-  updateKeepLightingConfig?(config: LiveActivityKeepLightingConfig | null): Promise<void>;
   /** Synchronous. Optional for OTA compatibility with binaries predating 2.7. */
   getLightingWindow?(): LiveActivityLightingWindowSnapshot | null;
   /**

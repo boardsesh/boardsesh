@@ -278,10 +278,11 @@ export function noteDriveClimbLit({ now = Date.now() }: { now?: number } = {}): 
 }
 
 /**
- * A Lock Screen, Dynamic Island or Android notification Next / Previous lit the
- * wall and opened a keep-lighting window (or, for Until I stop, an open-ended
- * drive) natively while this JS may have been suspended (2.7): adopt it as a
- * live drive. The press already lit its climb, so there is no arming, and the
+ * An iOS Lock Screen or Dynamic Island Next / Previous lit the wall and opened
+ * a keep-lighting window (or, for Until I stop, an open-ended drive) natively
+ * while this JS may have been suspended (2.7): adopt it as a live drive. (An
+ * Android notification press arms a drive in JS instead,
+ * `armNotificationPressDrive`.) The press already lit its climb, so there is no arming, and the
  * window ends where native said (`expiresAt`), not a full length from now.
  * `startedAt` is the press. Refuses (false) while a drive is on.
  *
@@ -330,7 +331,7 @@ export function startLockScreenDrive({
 }
 
 /**
- * A lock-screen press renewed the live keep-lighting window past the end this
+ * An iOS lock-screen press renewed the live keep-lighting window past the end this
  * JS knows (2.7): take the later end, counted as one renewal. Returns whether
  * it moved.
  */

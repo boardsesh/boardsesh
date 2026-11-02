@@ -87,6 +87,7 @@ describe('keep-lighting window bridge', () => {
       getLightingWindow: () => STORED,
     };
     const plugin = await loadPlugin();
+    expect(plugin.sessionPresenceMirrorsKeepLighting).toBe(true);
     await plugin.updateLiveActivityLightingWindow(WINDOW);
     await plugin.updateLiveActivityLightingWindow(null);
     await plugin.updateLiveActivityKeepLightingConfig(CONFIG);
@@ -96,16 +97,25 @@ describe('keep-lighting window bridge', () => {
     expect(plugin.readLiveActivityLightingWindow()).toEqual(STORED);
   });
 
-  it('routes to the Android module on Android', async () => {
+  it('routes the window to the Android module on Android, and mirrors no settings there', async () => {
     native.platform = 'android';
     const iosUpdate = vi.fn(async () => {});
+    const iosConfig = vi.fn(async () => {});
     const androidUpdate = vi.fn(async () => {});
-    native.liveActivity = { supportsLightingWindow: true, updateLightingWindow: iosUpdate };
+    native.liveActivity = {
+      supportsLightingWindow: true,
+      updateLightingWindow: iosUpdate,
+      updateKeepLightingConfig: iosConfig,
+    };
     native.sessionPresence = { supportsLightingWindow: true, updateLightingWindow: androidUpdate };
     const plugin = await loadPlugin();
     await plugin.updateLiveActivityLightingWindow(WINDOW);
     expect(androidUpdate).toHaveBeenCalledWith(WINDOW);
     expect(iosUpdate).not.toHaveBeenCalled();
+    // A notification press opens its window in JS: nothing native reads the settings.
+    expect(plugin.sessionPresenceMirrorsKeepLighting).toBe(false);
+    await plugin.updateLiveActivityKeepLightingConfig(CONFIG);
+    expect(iosConfig).not.toHaveBeenCalled();
   });
 
   it('turns a native failure into a warning and a failed read into null', async () => {

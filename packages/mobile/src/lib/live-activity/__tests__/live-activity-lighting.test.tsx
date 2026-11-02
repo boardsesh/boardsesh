@@ -16,6 +16,8 @@ import type {
 
 const harness = vi.hoisted(() => ({
   supported: true,
+  /** iOS: native opens the window on a lock-screen press, from the mirrored settings. */
+  mirrorsConfig: true,
   windows: [] as (LiveActivityLightingWindowOptions | null)[],
   configs: [] as (LiveActivityKeepLightingConfig | null)[],
   stored: null as LiveActivityLightingWindowSnapshot | null,
@@ -35,6 +37,9 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 vi.mock('../live-activity-plugin', () => ({
   get sessionPresenceSupportsLightingWindow() {
     return harness.supported;
+  },
+  get sessionPresenceMirrorsKeepLighting() {
+    return harness.mirrorsConfig;
   },
   updateLiveActivityLightingWindow: async (options: LiveActivityLightingWindowOptions | null) => {
     harness.windows.push(options);
@@ -92,6 +97,7 @@ function openWindow(now = T0) {
 
 beforeEach(() => {
   harness.supported = true;
+  harness.mirrorsConfig = true;
   harness.windows = [];
   harness.configs = [];
   harness.stored = null;
@@ -114,10 +120,21 @@ afterEach(() => {
 describe('LiveActivityLightingSync', () => {
   it('stays silent on a binary that predates the window', () => {
     harness.supported = false;
+    harness.mirrorsConfig = false;
     renderSync();
     openWindow();
     expect(harness.windows).toEqual([]);
     expect(harness.configs).toEqual([]);
+  });
+
+  it('mirrors no settings on Android, where JS opens a notification press’s window itself', () => {
+    harness.mirrorsConfig = false;
+    const view = renderSync();
+    harness.settings.putOnBoardKeepsLighting = '30';
+    view.rerender(<LiveActivityLightingSync sessionId={SESSION} boardName="kilter" activityStartCount={1} />);
+    expect(harness.configs).toEqual([]);
+    // The window itself still reaches the notification.
+    expect(harness.windows).toEqual([OFF, OFF]);
   });
 
   it('speaks on mount: the settings, and off with nothing driving', () => {

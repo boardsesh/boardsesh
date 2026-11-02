@@ -6,6 +6,7 @@ import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -406,7 +407,7 @@ class SessionPresenceControllerTest {
         this.mode = mode
         this.endsAtMs = endsAtMs
         windowSeconds = if (mode == LightingWindowStore.MODE_WINDOW) 45.0 else null
-        family = if (mode == LightingWindowStore.MODE_WINDOW) LightingWindowStore.FAMILY_GENERAL else null
+        family = if (mode == LightingWindowStore.MODE_WINDOW) "general" else null
     }
 
     @Test
@@ -429,26 +430,19 @@ class SessionPresenceControllerTest {
 
     @Test
     @Config(sdk = [30])
-    fun `taking over an adopted lock-screen window draws nothing new`() {
+    fun `re-sending the window the header already shows wakes no service`() {
         val (controller, launchedIntents) = startedController()
-        LightingWindowStore.saveWindow(
-            application,
-            LightingWindowSnapshot(
-                sessionId = "session-1",
-                mode = LightingWindowStore.MODE_WINDOW,
-                endsAtMs = 1_800_000_045_000L,
-                windowSeconds = 45.0,
-                family = LightingWindowStore.FAMILY_GENERAL,
-                source = LightingWindowStore.SOURCE_LOCK_SCREEN,
-                updatedAtMs = 1_800_000_000_000L,
-            ),
-        )
+        controller.wallClockMs = { 1_800_000_000_000L }
+        controller.updateLightingWindow(windowOptions())
+        assertEquals(1, launchedIntents.size)
 
+        // JS re-sends the same window after every start.
+        controller.wallClockMs = { 1_800_000_010_000L }
         controller.updateLightingWindow(windowOptions())
 
-        assertTrue(launchedIntents.isEmpty())
-        // The app's write still replaces it, so JS doesn't adopt it again.
-        assertEquals(LightingWindowStore.SOURCE_APP, LightingWindowStore.loadWindow(application)?.source)
+        assertEquals(1, launchedIntents.size)
+        // It is still stored, with the new write time.
+        assertEquals(1_800_000_010_000L, LightingWindowStore.loadWindow(application)?.updatedAtMs)
     }
 
     @Test
@@ -481,20 +475,13 @@ class SessionPresenceControllerTest {
 
     @Test
     @Config(sdk = [30])
-    fun `the settings are stored for the receiver and ending the session clears both`() {
+    fun `ending the session clears the stored window`() {
         val (controller, _) = startedController()
-        controller.updateKeepLightingConfig(KeepLightingConfigOptions().apply {
-            keepLighting = "30"
-            moonboard = true
-            enabled = true
-        })
         controller.updateLightingWindow(windowOptions())
-        assertEquals("30", LightingWindowStore.loadConfig(application)?.keepLighting)
-        assertEquals(true, LightingWindowStore.loadConfig(application)?.moonboard)
+        assertNotNull(LightingWindowStore.loadWindow(application))
 
         controller.endSession()
 
-        assertEquals(null, LightingWindowStore.loadConfig(application))
         assertEquals(null, LightingWindowStore.loadWindow(application))
     }
 

@@ -1,5 +1,6 @@
-// A lock-screen or notification Next / Previous opens or renews the
-// keep-lighting window natively (2.7); this is how the drive store takes it on.
+// A Lock Screen or Dynamic Island Next / Previous opens or renews the
+// keep-lighting window natively on iOS (2.7); this is how the drive store takes
+// it on. An Android notification press arms the drive from JS instead.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveActivityLightingWindowSnapshot } from '../../../../modules/live-activity/src/index';
 
@@ -13,6 +14,7 @@ vi.mock('../../../lib/live-activity/live-activity-plugin', () => ({
 import { enterDriveMode, getDriveMode, markDriveLive, resetDriveModeForTests } from '../drive-mode-store';
 import {
   adoptLockScreenLighting,
+  armNotificationPressDrive,
   isUnsettledLockScreenLighting,
   resetLockScreenLightingForTests,
   resolveLockScreenAdoption,
@@ -132,6 +134,19 @@ describe('adoptLockScreenLighting', () => {
     expect(adoptLockScreenLighting({ ...context, linked: false, read })).toBeNull();
     expect(adoptLockScreenLighting({ ...context, read })?.kind).toBe('start');
   });
+
+  it('never adopts a write from before this JS started (a kill or a reload in between)', () => {
+    resetLockScreenLightingForTests({ startedAt: NOW - 10_000 });
+    expect(adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 15_000 }) })).toBeNull();
+    expect(
+      adoptLockScreenLighting({ ...context, read: () => snapshot({ mode: 'driving', endsAtMs: null }) }),
+    ).toBeNull();
+    expect(getDriveMode()).toBeNull();
+    // A press after the start is this JS's to adopt.
+    expect(adoptLockScreenLighting({ ...context, read: () => snapshot({ updatedAtMs: NOW - 5_000 }) })?.kind).toBe(
+      'start',
+    );
+  });
 });
 
 describe('isUnsettledLockScreenLighting', () => {
@@ -150,5 +165,53 @@ describe('isUnsettledLockScreenLighting', () => {
       read: () => snapshot(),
     });
     expect(isUnsettledLockScreenLighting(snapshot(), NOW)).toBe(false);
+  });
+
+  it('lets this JS cover a window or drive an earlier JS left unsettled', () => {
+    resetLockScreenLightingForTests({ startedAt: NOW - 10_000 });
+    expect(isUnsettledLockScreenLighting(snapshot(), NOW)).toBe(false);
+    expect(isUnsettledLockScreenLighting(snapshot({ mode: 'driving', endsAtMs: null }), NOW)).toBe(false);
+    expect(isUnsettledLockScreenLighting(snapshot({ updatedAtMs: NOW - 5_000 }), NOW)).toBe(true);
+  });
+});
+
+describe('armNotificationPressDrive', () => {
+  const press = {
+    sessionId: 'session-1',
+    boardId: 7,
+    boardType: 'kilter',
+    linked: true,
+    plan: { windowMs: 45_000, setting: 'putOnBoardKeepsLighting' as const },
+  };
+
+  it('arms a window that the lit confirm starts', () => {
+    expect(armNotificationPressDrive(press)).toBe(true);
+    expect(getDriveMode()).toMatchObject({
+      phase: 'arming',
+      startedBy: 'lock_screen',
+      windowMs: 45_000,
+      windowSetting: 'putOnBoardKeepsLighting',
+      expiresAt: null,
+      boardType: 'kilter',
+    });
+    markDriveLive({ now: NOW });
+    expect(getDriveMode()).toMatchObject({ phase: 'live', expiresAt: NOW + 45_000 });
+  });
+
+  it('arms an open-ended drive for Until I stop', () => {
+    expect(
+      armNotificationPressDrive({ ...press, plan: { windowMs: null, setting: 'moonboardPutOnBoardKeepsLighting' } }),
+    ).toBe(true);
+    expect(getDriveMode()).toMatchObject({ phase: 'arming', windowMs: null, windowSetting: null });
+  });
+
+  it('arms nothing without a link, for one-climb lighting, or with a drive on', () => {
+    expect(armNotificationPressDrive({ ...press, linked: false })).toBe(false);
+    expect(armNotificationPressDrive({ ...press, plan: null })).toBe(false);
+    expect(getDriveMode()).toBeNull();
+    liveWindow(10_000);
+    const before = getDriveMode();
+    expect(armNotificationPressDrive(press)).toBe(false);
+    expect(getDriveMode()).toBe(before);
   });
 });

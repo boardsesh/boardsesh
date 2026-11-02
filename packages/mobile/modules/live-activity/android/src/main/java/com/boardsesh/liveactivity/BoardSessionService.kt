@@ -715,8 +715,6 @@ class BoardSessionService : Service() {
         return PendingIntent.getActivity(this, REQ_CONTENT, launch, pendingFlags())
     }
 
-    // Previous / Next carry the session so the receiver can open or renew the
-    // keep-lighting window (2.7) for this card before the press reaches JS.
     private fun actionPendingIntent(navAction: String, requestCode: Int): PendingIntent {
         // The JS bridge navigates to the ABSOLUTE queue[currentIndex] (it ignores
         // the action), so send the TARGET index — currentIndex ∓ 1 — not the
@@ -732,7 +730,6 @@ class BoardSessionService : Service() {
             action = navAction
             putExtra(EXTRA_CURRENT_INDEX, targetIndex)
             putExtra(EXTRA_CORRELATION_ID, UUID.randomUUID().toString())
-            putExtra(EXTRA_SESSION_ID, sessionId)
         }
         return PendingIntent.getBroadcast(this, requestCode, intent, pendingFlags())
     }

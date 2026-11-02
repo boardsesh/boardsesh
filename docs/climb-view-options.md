@@ -139,9 +139,10 @@ flat amber fallback; the label still says what the next press does.
 - **The window and the drive reach the Lock Screen, the Dynamic Island and the Android notification (2.7).** iOS draws
   an amber ring that drains around the bulb (window) or a full amber disc (driving); Android's header says "Each pick
   lights" with the system countdown, or "Driving the wall". Lock-screen and notification **Next** / **Previous**
-  light the wall and open or renew the window natively from the settings JS mirrors, and `DriveModeWatcher` adopts it
-  when the app runs again (`startedBy: 'lock_screen'`). Details: `docs/live-activity-board-control.md`; QA steps:
-  `docs/live-activity-push-testing.md`.
+  light the wall and open or renew the window once it is lit. On iOS the intent writes it natively from the settings JS
+  mirrors, and `DriveModeWatcher` adopts it when the app runs again; on Android JS lights the wall, so the press arms a
+  drive that the lit confirm takes live, as Put on board does. Either way `startedBy: 'lock_screen'`. Details:
+  `docs/live-activity-board-control.md`; QA steps: `docs/live-activity-push-testing.md`.
 - **The three looks of the wall button.** Plain tonal: a preview, or a single lit climb.
   Plain with a violet drain bar and an m:ss clock ("Each pick lights · 0:38"): the window.
   A tap on it stops the window and keeps the link. Frost: open-ended driving only, "You are

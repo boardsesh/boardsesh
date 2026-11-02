@@ -752,9 +752,7 @@ public class LiveActivityModule: Module {
                 SharedRestTimerStore.clear(in: defaults)
             }
             // The keep-lighting window follows the same rule.
-            if let lighting = SharedLightingWindowStore.load(from: defaults), lighting.sessionId != sessionId {
-                SharedLightingWindowStore.clear(in: defaults)
-            }
+            SharedLightingWindowStore.clear(unlessSession: sessionId, in: defaults)
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
             defaults.set(widgetMirrorUrl, forKey: SharedConstants.widgetMirrorUrlKey)
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
@@ -927,10 +925,8 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.widgetNavigationAllowedKey)
             defaults.removeObject(forKey: SharedConstants.partySessionKey)
             SharedRestTimerStore.clear(in: defaults)
-            // No session, no lock-screen card to open a window from. JS sends
-            // the config again after the next start.
-            SharedLightingWindowStore.clear(in: defaults)
-            SharedKeepLightingConfigStore.clear(in: defaults)
+            // No session, no lock-screen card to open a window from.
+            SharedLightingWindowRuntime.endSession(in: defaults)
         }
         SharedKeychain.remove(SharedKeychain.authTokenKey)
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
@@ -1194,14 +1190,15 @@ extension LiveActivityModule {
 
 extension LiveActivityModule {
     /// Stage (or clear) JS's keep-lighting window in the App Group, then ask the
-    /// activity to re-render so the widget reads it. A write that only takes
-    /// over a lock-screen window JS just adopted draws the same card, so it
-    /// skips the redraw.
+    /// activity to re-render so the widget reads it. A write that draws the
+    /// card it already shows (taking over a lock-screen window JS just adopted,
+    /// or the re-send after a start) skips the redraw
+    /// (`SharedLightingWindowStore.write`).
     fileprivate func updateLightingWindow(options: UpdateLightingWindowOptions?) {
         guard let defaults = SharedConstants.sharedDefaults else { return }
+        var next: SharedLightingWindowState?
         if let options, !options.sessionId.isEmpty {
-            let previous = SharedLightingWindowStore.load(from: defaults)
-            let state = SharedLightingWindowState(
+            next = SharedLightingWindowState(
                 v: SharedLightingWindowState.currentVersion,
                 sessionId: options.sessionId,
                 mode: options.mode,
@@ -1211,11 +1208,8 @@ extension LiveActivityModule {
                 source: SharedLightingWindowState.sourceApp,
                 updatedAtMs: Date().timeIntervalSince1970 * 1000
             )
-            let stored = SharedLightingWindowStore.save(state, to: defaults)
-            if stored && state.drawsLike(previous) { return }
-        } else if !SharedLightingWindowStore.clear(in: defaults) {
-            return
         }
+        guard SharedLightingWindowStore.write(next, to: defaults) else { return }
 
         guard #available(iOS 17.0, *) else { return }
         enqueueLifecycleWork {

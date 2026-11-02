@@ -795,6 +795,36 @@ enum SharedLightingWindowStore {
         defaults.removeObject(forKey: SharedConstants.lightingWindowKey)
         return existed
     }
+
+    /// A session starts: another session's window (a killed app's leftover)
+    /// goes, this one's survives. JS sends its own again after every start.
+    static func clear(unlessSession sessionId: String, in defaults: UserDefaults) {
+        if let stored = load(from: defaults), stored.sessionId != sessionId {
+            clear(in: defaults)
+        }
+    }
+
+    /// Whether the card must redraw when the stored window goes from
+    /// `previous` to `next` (nil: nothing stored). Not when nothing was there
+    /// and nothing is, and not when `next` draws like `previous`: JS taking over
+    /// a lock-screen window it adopted, or re-sending its own after a start.
+    static func needsRedraw(previous: SharedLightingWindowState?, next: SharedLightingWindowState?) -> Bool {
+        guard let next else { return previous != nil }
+        return !next.drawsLike(previous)
+    }
+
+    /// Stores JS's window, or with nil clears it, and returns whether the card
+    /// must redraw. A window out of bounds is never stored: it reads as nil.
+    @discardableResult
+    static func write(_ next: SharedLightingWindowState?, to defaults: UserDefaults) -> Bool {
+        let previous = load(from: defaults)
+        guard let next else {
+            clear(in: defaults)
+            return needsRedraw(previous: previous, next: nil)
+        }
+        let stored = save(next, to: defaults)
+        return needsRedraw(previous: previous, next: stored ? next : nil)
+    }
 }
 
 /// Settings › Board's keep-lighting choices, as JS mirrors them for the
@@ -879,6 +909,13 @@ enum SharedKeepLighting {
 }
 
 enum SharedLightingWindowRuntime {
+    /// A session ended: no card to open a window from, so the window and the
+    /// mirrored settings both go. JS sends the settings again after the next start.
+    static func endSession(in defaults: UserDefaults) {
+        SharedLightingWindowStore.clear(in: defaults)
+        SharedKeepLightingConfigStore.clear(in: defaults)
+    }
+
     /// The snapshot a lock-screen Next or Previous leaves once it lit the wall,
     /// or nil when the press changes nothing.
     ///

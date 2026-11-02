@@ -191,11 +191,10 @@ internal class SessionPresenceController(
     }
 
     /**
-     * Stores JS's keep-lighting window (2.7) for the receiver and
-     * `getLightingWindow`, and shows it in the notification header; `null`
-     * takes it off. Dropped outside a session window and for another session.
-     * A write that only takes over a window JS just adopted from a press draws
-     * the same header, so the service isn't woken for it.
+     * Stores JS's keep-lighting window (2.7) for `getLightingWindow`, and shows
+     * it in the notification header; `null` takes it off. Dropped outside a
+     * session window and for another session. A write that draws the header it
+     * already shows (the re-send after every start) doesn't wake the service.
      */
     fun updateLightingWindow(options: LightingWindowOptions?) {
         if (!sessionActive) return
@@ -228,34 +227,13 @@ internal class SessionPresenceController(
         launchService(BoardSessionService.lightingIntent(context, activeSessionId, shown), clearSessionOnFailure = false)
     }
 
-    /** Stores (or, with `null`, clears) Settings › Board's keep-lighting choices for the receiver. */
-    fun updateKeepLightingConfig(options: KeepLightingConfigOptions?) {
-        if (options == null) {
-            LightingWindowStore.clearConfig(context)
-            return
-        }
-        LightingWindowStore.saveConfig(
-            context,
-            KeepLightingConfig(
-                keepLighting = options.keepLighting,
-                moonboardKeepLighting = options.moonboardKeepLighting,
-                drivesInSession = options.drivesInSession,
-                inCrew = options.inCrew,
-                moonboard = options.moonboard,
-                enabled = options.enabled,
-            ),
-        )
-    }
-
     fun endSession() {
         val hadActiveSession = sessionActive
         sessionActive = false
         activeSessionId = ""
         restTimer = null
-        // No session, no notification to open a window from; JS sends the
-        // settings again after the next start.
+        // No session, no notification to draw the window on.
         LightingWindowStore.clearWindow(context)
-        LightingWindowStore.clearConfig(context)
         val stopIntent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_STOP
         }

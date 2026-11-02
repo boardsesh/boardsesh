@@ -1419,21 +1419,6 @@ class BoardSessionServiceTest {
 
     @Test
     @Config(sdk = [30])
-    fun `Previous and Next carry the session so the receiver can renew the window`() {
-        val captured = slot<Notification>()
-        val service = startLightingService(captured)
-        service.onStartCommand(updateIntent("connectedByMe", hasPrevious = true, hasNext = true).apply {
-            putExtra(BoardSessionService.EXTRA_SESSION_ID, restSessionId)
-        }, 0, 2)
-
-        for (title in listOf("Previous", "Next")) {
-            val action = captured.captured.actions.first { it.title.toString() == title }
-            assertEquals(restSessionId, shadowOf(action.actionIntent).savedIntent.getStringExtra(BoardSessionService.EXTRA_SESSION_ID))
-        }
-    }
-
-    @Test
-    @Config(sdk = [30])
     fun `resolveLighting shows a window only before its end and only to the holder`() {
         val now = restNowMs
         val window = BoardSessionService.LIGHT_STATE_WINDOW

@@ -11,7 +11,6 @@ import io.mockk.Runs
 import io.mockk.unmockkObject
 import io.mockk.verify
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -47,7 +46,6 @@ class BoardSessionActionReceiverTest {
     @After
     fun tearDown() {
         unmockkObject(SessionPresenceModule.Companion)
-        BoardSessionActionReceiver.wallClockMs = { System.currentTimeMillis() }
     }
 
     @Test
@@ -103,80 +101,19 @@ class BoardSessionActionReceiverTest {
 
     // --- Keep-lighting window (2.7) ---
 
-    private val pressNowMs = 1_800_000_000_000L
-
-    private fun navIntent(action: String, sessionId: String?): Intent = Intent(action).apply {
-        putExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 2)
-        putExtra(BoardSessionService.EXTRA_CORRELATION_ID, "corr-3")
-        sessionId?.let { putExtra(BoardSessionService.EXTRA_SESSION_ID, it) }
-    }
-
-    private fun saveSettings(keepLighting: String = "45") {
-        LightingWindowStore.saveConfig(
-            context,
-            KeepLightingConfig(
-                keepLighting = keepLighting,
-                moonboardKeepLighting = "until_stopped",
-                drivesInSession = true,
-                inCrew = false,
-                moonboard = false,
-                enabled = true,
-            ),
-        )
-    }
-
     @Test
-    fun `next opens the keep-lighting window before the press reaches JS, and shows it`() {
-        BoardSessionActionReceiver.wallClockMs = { pressNowMs }
-        saveSettings()
+    fun `Previous and Next write no keep-lighting window and wake no service, so JS opens it at the lit confirm`() {
+        for (action in listOf(BoardSessionService.ACTION_NAV_NEXT, BoardSessionService.ACTION_NAV_PREVIOUS)) {
+            receiver.onReceive(context, Intent(action).apply {
+                putExtra(BoardSessionService.EXTRA_CURRENT_INDEX, 2)
+                putExtra(BoardSessionService.EXTRA_CORRELATION_ID, "corr-3")
+                putExtra(BoardSessionService.EXTRA_SESSION_ID, "session")
+            })
+        }
 
-        receiver.onReceive(context, navIntent(BoardSessionService.ACTION_NAV_NEXT, "session"))
-
-        val window = LightingWindowStore.loadWindow(context)
-        assertEquals(LightingWindowStore.MODE_WINDOW, window?.mode)
-        assertEquals(pressNowMs + 45_000, window?.endsAtMs)
-        assertEquals(LightingWindowStore.SOURCE_LOCK_SCREEN, window?.source)
-        val started = requireNotNull(shadowOf(context as Application).nextStartedService)
-        assertEquals(BoardSessionService.ACTION_LIGHTING, started.action)
-        assertEquals("session", started.getStringExtra(BoardSessionService.EXTRA_SESSION_ID))
-        assertEquals(BoardSessionService.LIGHT_STATE_WINDOW, started.getStringExtra(BoardSessionService.EXTRA_LIGHT_STATE))
-        assertEquals(pressNowMs + 45_000, started.getLongExtra(BoardSessionService.EXTRA_LIGHT_WINDOW_END_MS, -1))
-        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-3") }
-    }
-
-    @Test
-    fun `previous renews an open window by its own length`() {
-        saveSettings(keepLighting = "60")
-        LightingWindowStore.saveWindow(
-            context,
-            LightingWindowSnapshot(
-                sessionId = "session",
-                mode = LightingWindowStore.MODE_WINDOW,
-                endsAtMs = pressNowMs + 5_000,
-                windowSeconds = 30.0,
-                family = LightingWindowStore.FAMILY_GENERAL,
-                source = LightingWindowStore.SOURCE_APP,
-                updatedAtMs = pressNowMs - 25_000,
-            ),
-        )
-        BoardSessionActionReceiver.wallClockMs = { pressNowMs }
-
-        receiver.onReceive(context, navIntent(BoardSessionService.ACTION_NAV_PREVIOUS, "session"))
-
-        assertEquals(pressNowMs + 30_000, LightingWindowStore.loadWindow(context)?.endsAtMs)
-        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("previous", 2, "corr-3") }
-    }
-
-    @Test
-    fun `a press from an older notification, or with Off, opens nothing and still navigates`() {
-        saveSettings()
-        receiver.onReceive(context, navIntent(BoardSessionService.ACTION_NAV_NEXT, null))
-        assertNull(LightingWindowStore.loadWindow(context))
-
-        saveSettings(keepLighting = "off")
-        receiver.onReceive(context, navIntent(BoardSessionService.ACTION_NAV_NEXT, "session"))
         assertNull(LightingWindowStore.loadWindow(context))
         assertNull(shadowOf(context as Application).nextStartedService)
-        verify(exactly = 2) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-3") }
+        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("next", 2, "corr-3") }
+        verify(exactly = 1) { SessionPresenceModule.dispatchQueueNavigate("previous", 2, "corr-3") }
     }
 }
