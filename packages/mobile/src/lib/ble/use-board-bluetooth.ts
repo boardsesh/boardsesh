@@ -788,8 +788,9 @@ export function useBoardBluetooth({
   // the bulb started, `connectOrigin: 'liveActivityIntent'`) is adopted despite
   // adoptionSuppressedRef, or the in-app bulb and the Live Activity would go on
   // saying disconnected over a lit wall. A hang-up's pairing lasts as long as
-  // its JS stamp: once that runs out, native forgets it too. A hang-up from a
-  // wrong-box connect forgets the pairing and never sets this.
+  // its JS stamp, and only while the route shows that board: once either ends,
+  // native forgets it too. A hang-up from a wrong-box connect forgets the
+  // pairing and never sets this.
   const keptBoardReleaseSettledRef = useRef(false);
   // The config key whose remembered board a hang-up of the live connection
   // keeps (stamped for HANG_UP_REMEMBER_MS), or null when it forgets at once:
@@ -799,17 +800,30 @@ export function useBoardBluetooth({
   // connection ends.
   const hangUpKeepsBoardRef = useRef<string | null>(null);
 
+  // How many times native has forgotten a pairing JS let go of, since mount.
+  // The Live Activity card reads the pairing only when it redraws, so each
+  // forget pushes one update (live-activity-bridge.tsx). Without it the card
+  // goes on offering "Tap to reconnect", and that tap can only fail.
+  const [nativeBoardForgets, setNativeBoardForgets] = useState(0);
+  // The hang-up stamp whose native pairing a board switch already forgot, so
+  // switching on to a third board doesn't forget it again.
+  const nativeForgotForStampRef = useRef<number | null>(null);
+
   // The iOS native pairing (the board the Live Activity bulb reconnects to)
   // follows the JS memory: once JS forgets a board it kept, native forgets it
   // too. Only while JS holds no link and no connect runs: a live link's own
   // teardown decides, and a connect's preparation already forgets the old
   // pairing (#7122). A native snapshot asked for before the forget must not be
   // adopted after it, and a bulb reconnect is no longer a kept board coming back.
-  const forgetNativeBoardWhileIdle = useCallback(() => {
-    if (adapterRef.current || connectInFlightRef.current) return;
+  // Returns whether it asked native to forget.
+  const forgetNativeBoardWhileIdle = useCallback((): boolean => {
+    if (adapterRef.current || connectInFlightRef.current) return false;
     keptBoardReleaseSettledRef.current = false;
     nativeReconciliationGenerationRef.current += 1;
-    void forgetNativeKeptBoard();
+    void forgetNativeKeptBoard().then((forgot) => {
+      if (forgot) setNativeBoardForgets((count) => count + 1);
+    });
+    return true;
   }, []);
 
   // A hang-up's memory runs out (remembered-board-expiry.ts). Drops every
@@ -2639,6 +2653,23 @@ export function useBoardBluetooth({
   const reconnectSerialForCurrentBoard = rememberedForCurrentBoard?.serial ?? null;
   const reconnectDeviceIdForCurrentBoard = rememberedForCurrentBoard?.deviceId ?? null;
 
+  // A hang-up keeps the iOS native pairing so the Live Activity bulb can take
+  // the board back, but only while the route still shows that board, the same
+  // rule as the JS memory above. Native keeps that board's LED map, and on a
+  // bulb reconnect it lights the queue's current climb, which says nothing
+  // about its board. Once the route shows another board, that tap would light
+  // the old wall with this board's climbs (#7122), so native forgets the
+  // pairing on the switch. The JS handle keeps its stamp: walking back within
+  // the 10 minutes still reconnects silently from the app. Disconnect
+  // Bluetooth when driving ends and a link drop keep the pairing across a
+  // switch; that gap stays with #7122.
+  useEffect(() => {
+    const kept = lastConnectedBoard;
+    if (kept?.forgetAfter === undefined || !currentConfigKey || kept.configKey === currentConfigKey) return;
+    if (nativeForgotForStampRef.current === kept.forgetAfter) return;
+    if (forgetNativeBoardWhileIdle()) nativeForgotForStampRef.current = kept.forgetAfter;
+  }, [currentConfigKey, lastConnectedBoard, forgetNativeBoardWhileIdle]);
+
   // Rehydrate the remembered board from storage on mount so a one-tap silent
   // reconnect survives a cold start / provider remount, not just the in-memory
   // session (#3609). Any deliberate remember/forget during the read wins over
@@ -2815,6 +2846,7 @@ export function useBoardBluetooth({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     hasRememberedDeviceForConfigKey,
+    nativeBoardForgets,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   };

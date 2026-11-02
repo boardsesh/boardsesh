@@ -176,7 +176,8 @@ describe('forgetNativeKeptBoard', () => {
     platformMock.OS = 'ios';
     const native = nativeThatKeepsBoards();
     harness.module.boardBleNative = native;
-    await forgetNativeKeptBoard();
+    // True: the caller redraws the Live Activity card off the forgotten pairing.
+    await expect(forgetNativeKeptBoard()).resolves.toBe(true);
     expect(native.disconnect).toHaveBeenCalledOnce();
     expect(native.disconnectKeepingBoard).not.toHaveBeenCalled();
   });
@@ -185,17 +186,17 @@ describe('forgetNativeKeptBoard', () => {
     const oldBinary = { disconnect: vi.fn(async () => {}) };
     platformMock.OS = 'ios';
     harness.module.boardBleNative = oldBinary;
-    await forgetNativeKeptBoard();
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
     expect(oldBinary.disconnect).not.toHaveBeenCalled();
 
     const native = nativeThatKeepsBoards();
     harness.module.boardBleNative = native;
     platformMock.OS = 'android';
-    await forgetNativeKeptBoard();
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
     platformMock.OS = 'ios';
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
-    await forgetNativeKeptBoard();
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
     expect(native.disconnect).not.toHaveBeenCalled();
   });
 
@@ -204,7 +205,7 @@ describe('forgetNativeKeptBoard', () => {
     const native = nativeThatKeepsBoards();
     native.disconnect.mockRejectedValue(new Error('BLE_DISCONNECT_FAILED'));
     harness.module.boardBleNative = native;
-    await expect(forgetNativeKeptBoard()).resolves.toBeUndefined();
+    await expect(forgetNativeKeptBoard()).resolves.toBe(false);
   });
 });
 

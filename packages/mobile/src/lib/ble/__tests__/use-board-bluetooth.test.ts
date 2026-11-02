@@ -173,8 +173,9 @@ vi.mock('../adapter-factory', () => ({
   // layer drives every board; the old-binary tests flip it to false.
   nativeBleSupportsBoard: vi.fn(() => true),
   nativeBleSupportsPreparedConnections: vi.fn(() => false),
-  // The native forget of a kept pairing (a hang-up's 10 minutes ran out, sign-out).
-  forgetNativeKeptBoard: vi.fn(async () => {}),
+  // The native forget of a kept pairing (a hang-up's 10 minutes ran out, a
+  // board switch, sign-out). Resolves whether native forgot it.
+  forgetNativeKeptBoard: vi.fn(async () => false),
 }));
 
 import {
@@ -6120,6 +6121,117 @@ describe('useBoardBluetooth prepared native pairing (#7122)', () => {
       await bulbReconnects('restored');
       expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
       expect(result.current.isConnected).toBe(false);
+    });
+
+    // Native keeps the hung-up board's LED map and, on a bulb reconnect,
+    // lights the queue's current climb, which names no board. With the route
+    // on another board that tap would light the old wall with the new board's
+    // climbs (#7122), so the switch forgets the pairing. The JS handle stays.
+    it('forgets a hang-up’s pairing once the route shows another board, and keeps the board for a walk back', async () => {
+      const adapter = makePreparedAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin: 'userConnect',
+      });
+      const hook = renderHook((board: typeof currentBoard) => useBoardBluetooth(board), {
+        initialProps: currentBoard,
+      });
+      await act(async () => {});
+      expect(hook.result.current.isConnected).toBe(true);
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+      await act(async () => {
+        await hook.result.current.disconnect('user');
+      });
+      expect(adapter.disconnect).toHaveBeenLastCalledWith({ keepBoard: true });
+      expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+
+      vi.mocked(forgetNativeKeptBoard).mockResolvedValueOnce(true);
+      hook.rerender({ ...currentBoard, boardUuid: 'wall-c' });
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+      // The Live Activity card redraws off the forgotten pairing.
+      expect(hook.result.current.nativeBoardForgets).toBe(1);
+
+      // Back on the hung-up board within the 10 minutes: the app still
+      // reconnects silently, but a bulb reconnect is no longer the climber
+      // taking a kept board back.
+      hook.rerender(currentBoard);
+      await act(async () => {});
+      expect(hook.result.current.reconnectDeviceIdForCurrentBoard).toBe('board-b');
+      await bulbReconnects('liveActivityIntent');
+      expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
+      expect(hook.result.current.isConnected).toBe(false);
+
+      // A third board doesn't forget the same pairing again.
+      hook.rerender({ ...currentBoard, boardUuid: 'wall-d' });
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a hang-up’s pairing while no board is in view', async () => {
+      const adapter = makePreparedAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin: 'userConnect',
+      });
+      type HookOptions = Parameters<typeof useBoardBluetooth>[0];
+      const initialProps: HookOptions = currentBoard;
+      const hook = renderHook((board: HookOptions) => useBoardBluetooth(board), { initialProps });
+      await act(async () => {});
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+      await act(async () => {
+        await hook.result.current.disconnect('user');
+      });
+      hook.rerender({});
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
+    });
+
+    it('forgets a hang-up’s pairing for another board on launch', async () => {
+      mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue({
+        configKey: 'kilter::1::1::wall-a',
+        deviceId: 'board-a',
+        forgetAfter: Date.now() + HANG_UP_REMEMBER_MS / 2,
+      });
+      const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).toHaveBeenCalledOnce();
+      // Native forgot nothing (an older binary): the card has nothing to redraw.
+      expect(result.current.nativeBoardForgets).toBe(0);
+    });
+
+    it('leaves a driving-ends release’s pairing across a board switch (still #7122)', async () => {
+      const adapter = makePreparedAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({
+        deviceId: 'board-b',
+        name: 'Kilter Board',
+        configKey: currentConfigKey,
+        connectOrigin: 'userConnect',
+      });
+      const hook = renderHook((board: typeof currentBoard) => useBoardBluetooth(board), {
+        initialProps: currentBoard,
+      });
+      await act(async () => {});
+      vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+      await act(async () => {
+        await hook.result.current.disconnect('driving_ended');
+      });
+      hook.rerender({ ...currentBoard, boardUuid: 'wall-c' });
+      await act(async () => {});
+      expect(forgetNativeKeptBoard).not.toHaveBeenCalled();
     });
 
     it('forgets the pairing on a hang-up of a box nothing remembers and adopts nothing, the bulb included', async () => {

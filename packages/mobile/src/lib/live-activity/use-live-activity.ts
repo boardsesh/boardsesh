@@ -67,6 +67,12 @@ type UseLiveActivityOptions = {
   /** Android notification only: a connect is running; the outline bulb says so (#7087). */
   boardConnecting?: boolean;
   /**
+   * iOS only: changes when native forgets the board it kept for the Live
+   * Activity bulb. The card reads that pairing only when it redraws, so a
+   * change pushes one full update. Never forwarded to native.
+   */
+  nativePairingRevision?: number;
+  /**
    * The climber's saved board look, for the iOS server-rendered thumbnail.
    * Sent on start AND on every update so a settings change reaches a running
    * activity (the session is never restarted for it). Android ignores it —
@@ -178,6 +184,7 @@ export function useLiveActivity({
   holderDisplayName,
   bulbOpensApp = false,
   boardConnecting = false,
+  nativePairingRevision = 0,
   renderMode,
   androidNotification,
   androidThumbnailOverlayPath,
@@ -556,6 +563,9 @@ export function useLiveActivity({
     bulbOpensApp,
     boardConnecting,
     isPartySession,
+    // Read by nothing in the payload: the iOS card's footer reads native's
+    // pairing at render, so a forget only needs the push.
+    nativePairingRevision,
     // A board-look change must push mid-session so the iOS widget re-fetches
     // its thumbnail in the new mode.
     renderMode,

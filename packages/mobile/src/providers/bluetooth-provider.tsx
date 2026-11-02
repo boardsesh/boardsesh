@@ -185,6 +185,14 @@ type BluetoothContextValue = {
    * board instead of opening the picker.
    */
   reconnectDeviceIdForCurrentBoard: string | null;
+  /**
+   * iOS: how many times native has forgotten the board it kept for the Live
+   * Activity bulb (a hang-up's 10 minutes ran out, the route moved to another
+   * board, or a sign-out). The card reads that pairing only when it redraws, so
+   * the Live Activity bridge pushes one update each time this changes. Always 0
+   * on Android.
+   */
+  nativeBoardForgets: number;
   /** The board type this provider is scoped to (route-derived), so BLE-controls
    * UI can gate MoonBoard-only affordances. Undefined off a board route. */
   boardName: string | undefined;
@@ -1539,6 +1547,7 @@ export function BluetoothProvider({
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
     hasRememberedDeviceForConfigKey,
+    nativeBoardForgets,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   } = useBoardBluetooth({
@@ -2753,6 +2762,7 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      nativeBoardForgets,
       boardName,
       layoutId,
       sizeId,
@@ -2784,6 +2794,7 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      nativeBoardForgets,
       boardName,
       layoutId,
       sizeId,

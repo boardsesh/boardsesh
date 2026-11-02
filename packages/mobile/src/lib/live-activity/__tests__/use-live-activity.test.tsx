@@ -281,6 +281,29 @@ describe('useLiveActivity start-failure contract', () => {
     expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
   });
 
+  // The iOS card offers "Tap to reconnect" only while native pairs a board, and
+  // reads that pairing only when it redraws. When native forgets the board the
+  // app kept, one push redraws it; the revision itself never reaches native.
+  it('pushes one full update when native forgets the kept board, without a restart', async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const props = activeProps({ boardConnection: 'disconnected' });
+    const { rerender } = render(<Harness {...props} nativePairingRevision={0} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    plugin.updateLiveActivity.mockClear();
+    plugin.updateLiveActivityClimb.mockClear();
+
+    rerender(<Harness {...props} nativePairingRevision={1} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
+      expect.not.objectContaining({ nativePairingRevision: expect.anything() }),
+    );
+    expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+    expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
+  });
+
   it('refreshes an Android thumbnail when its generation changes at the same path', async () => {
     plugin.startLiveActivitySession.mockResolvedValue(undefined);
     const props = activeProps({

@@ -110,14 +110,22 @@ export async function getNativeBleConnectedDevice(): Promise<NativeBleConnectedD
  * letting go of it; on an older one every disconnect already forgot it, so
  * there is nothing to do. No-op on Android, where nothing native reconnects.
  * Native errors are swallowed: the caller already forgot the board in JS.
+ *
+ * Resolves true once native has forgotten the pairing, so the caller can
+ * redraw the Live Activity card: it reads the pairing only when it redraws,
+ * and would otherwise go on offering a "Tap to reconnect" that can only fail.
  */
-export async function forgetNativeKeptBoard(): Promise<void> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') return;
+export async function forgetNativeKeptBoard(): Promise<boolean> {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
+    return false;
+  }
   const native = boardBleNative;
-  if (Platform.OS !== 'ios' || !native || typeof native.disconnectKeepingBoard !== 'function') return;
+  if (Platform.OS !== 'ios' || !native || typeof native.disconnectKeepingBoard !== 'function') return false;
   try {
     await native.disconnect();
+    return true;
   } catch {
     // Nothing to recover: JS already counts the board as forgotten.
+    return false;
   }
 }
